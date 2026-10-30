@@ -2,6 +2,7 @@ import type * as React from "react"
 import { useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { CaretDown, Eye, EyeSlash, Info, User, UserFocus, Users } from "@/components/icons"
+import type { Character } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem } from "@/components/ui/context-menu"
@@ -14,6 +15,7 @@ import { ProjectNav } from "@/features/project/ProjectNav"
 import { firstFailure, useCast, useMediaList, useProject, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { CharacterCard } from "./CharacterCard"
+import { RenameCharacterDialog } from "./RenameCharacterDialog"
 import { plural, splitHidden, unplacedNote, useProjectAnalysis } from "./cast"
 
 /** Everyone the analysis found, most screen time first. */
@@ -28,6 +30,7 @@ export function CastPage() {
   const { data: settings } = useSettings()
   const running = useProjectAnalysis(pid)
   const [showHidden, setShowHidden] = useState(false)
+  const [renaming, setRenaming] = useState<Character | null>(null)
   const navigate = useNavigate()
   const { shown, hidden } = splitHidden(cast)
   // Anime runs its own character pipeline while the feature stays behind
@@ -120,7 +123,7 @@ export function CastPage() {
           <>
             <CardGrid>
               {shown.map((c) => (
-                <CharacterCard key={c.id} pid={pid} character={c} />
+                <CharacterCard key={c.id} pid={pid} character={c} onRename={() => setRenaming(c)} />
               ))}
               {cast && cast.unassigned > 0 && (
                 <ContextArea
@@ -157,7 +160,7 @@ export function CastPage() {
                 {showHidden && (
                   <CardGrid className="mt-5 opacity-60 transition-opacity hover:opacity-100">
                     {hidden.map((c) => (
-                      <CharacterCard key={c.id} pid={pid} character={c} />
+                      <CharacterCard key={c.id} pid={pid} character={c} onRename={() => setRenaming(c)} />
                     ))}
                   </CardGrid>
                 )}
@@ -166,6 +169,13 @@ export function CastPage() {
           </>
         )}
       </div>
+
+      <RenameCharacterDialog
+        pid={pid}
+        character={renaming}
+        open={renaming != null}
+        onOpenChange={(open) => !open && setRenaming(null)}
+      />
     </Page>
   )
 }

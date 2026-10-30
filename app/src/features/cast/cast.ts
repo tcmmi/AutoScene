@@ -46,6 +46,36 @@ export function splitHidden(cast: Cast | undefined): { shown: Character[]; hidde
   return { shown: all.filter((c) => !c.hidden), hidden: all.filter((c) => c.hidden) }
 }
 
+/**
+ * Split shown characters into main and supporting characters.
+ * Characters with custom names or substantial screen time (>= 60s) are treated as main cast.
+ */
+export function splitTiers(shown: Character[]): { main: Character[]; supporting: Character[] } {
+  const main: Character[] = []
+  const supporting: Character[] = []
+
+  for (const c of shown) {
+    // Named characters or characters with >= 60 seconds of screen time belong in main cast
+    if (c.name || (c.screenSec ?? 0) >= 60) {
+      main.push(c)
+    } else {
+      supporting.push(c)
+    }
+  }
+
+  // If there are very few characters in total (<= 8), keep them all in one primary tier
+  if (shown.length <= 8) {
+    return { main: shown, supporting: [] }
+  }
+
+  // If none qualified for main, take the top 6 as main
+  if (main.length === 0 && shown.length > 0) {
+    return { main: shown.slice(0, 6), supporting: shown.slice(6) }
+  }
+
+  return { main, supporting }
+}
+
 /** The analysis jobs of a project that are queued or running, oldest first. */
 export function useProjectAnalysis(pid: string): JobInfo[] {
   const jobs = useActivity((s) => s.jobs)

@@ -4,6 +4,7 @@
 **Authors:** @moongetsu & community contributors  
 **Target:** Core Maintainers & AI Architectural Agent (Claude / Codex)  
 **Tracking Pull Request:** https://github.com/tcmmi/AutoScene/pull/93  
+**Resolves Issue:** https://github.com/tcmmi/AutoScene/issues/91  
 
 ---
 

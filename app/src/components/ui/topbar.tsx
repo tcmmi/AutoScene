@@ -11,6 +11,7 @@ import { usePageScrolled } from "@/components/ui/page-scroll"
 import { Tooltip } from "@/components/ui/tooltip"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
+import { ExtensionNavItems } from "@/features/extensions/ExtensionNavItems"
 import { useUi } from "@/state/ui"
 
 /** What in the bar is a control of its own (not the window's caption). */
@@ -107,6 +108,7 @@ export function TopBar({
         </div>
         <div className="flex justify-center">{nav}</div>
         <div data-tauri-drag-region className="flex h-full min-w-0 items-center justify-end gap-2">
+          <ExtensionNavItems />
           {children}
         </div>
       </header>

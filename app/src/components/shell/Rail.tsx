@@ -31,6 +31,7 @@ import { commands } from "@/lib/ipc"
 import { useProjects } from "@/lib/queries"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
+import { ExtensionRailItems } from "@/features/extensions/ExtensionRailItems"
 import { useActiveCount, useActiveProgress, useActivity, useProjectIndexProgress, useProjectIndexing } from "@/state/activity"
 import { useNewProject } from "@/state/new-project"
 import { useUi } from "@/state/ui"
@@ -118,6 +119,7 @@ export function Rail() {
           }
         />
         <ActivityButton />
+        <ExtensionRailItems />
         <RailLink
           to="/extensions"
           icon={<Package />}
@@ -227,7 +229,7 @@ function IconWeight({ icon }: { icon: React.ReactElement<{ weight?: string }> })
   return <Comp {...icon.props} weight="fill" />
 }
 
-function RailButton({
+export function RailButton({
   icon,
   label,
   onClick,

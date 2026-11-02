@@ -721,6 +721,51 @@ export type ExtensionKind = "exporter" | "post-processor" | "webhook" | "custom"
 export type ExtensionManifest = ExtensionManifest_Serialize | ExtensionManifest_Deserialize;
 
 /**  The `extension.json` manifest structure. */
+export type NavButtonContribution = {
+	id: string,
+	label: string,
+	icon?: string | null,
+	tooltip?: string | null,
+	when?: string | null,
+};
+
+export type RailButtonContribution = {
+	id: string,
+	label: string,
+	icon?: string | null,
+	tooltip?: string | null,
+};
+
+export type CommandContribution = {
+	id: string,
+	title: string,
+	category?: string | null,
+	icon?: string | null,
+};
+
+export type MenuContribution = {
+	target: string,
+	label: string,
+	icon?: string | null,
+};
+
+export type SettingFieldContribution = {
+	id: string,
+	label: string,
+	type: string,
+	defaultValue?: unknown,
+	description?: string | null,
+	options?: string[] | null,
+};
+
+export type ExtensionContributions = {
+	navButtons?: NavButtonContribution[],
+	railButtons?: RailButtonContribution[],
+	commands?: CommandContribution[],
+	menus?: MenuContribution[],
+	settings?: SettingFieldContribution[],
+};
+
 export type ExtensionManifest_Deserialize = {
 	id: string,
 	name: string,
@@ -739,6 +784,7 @@ export type ExtensionManifest_Deserialize = {
 	repository?: string | null,
 	capabilities: ExtensionCapability_Deserialize[],
 	triggers?: string[],
+	contributes?: ExtensionContributions | null,
 };
 
 /**  The `extension.json` manifest structure. */
@@ -760,6 +806,7 @@ export type ExtensionManifest_Serialize = {
 	repository: string | null,
 	capabilities: ExtensionCapability_Serialize[],
 	triggers: string[],
+	contributes: ExtensionContributions | null,
 };
 
 /**  One face followed through one shot. */

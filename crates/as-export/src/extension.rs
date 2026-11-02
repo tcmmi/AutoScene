@@ -52,6 +52,86 @@ pub enum ExtensionKind {
     Custom,
 }
 
+/// Button injected into the TopBar navigation bar.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NavButtonContribution {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub tooltip: Option<String>,
+    #[serde(default)]
+    pub when: Option<String>,
+}
+
+/// Button or entry injected into the Left Navigation Rail.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RailButtonContribution {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub tooltip: Option<String>,
+}
+
+/// Command registered into the Command Palette.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandContribution {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+/// Context menu item contribution across pages.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuContribution {
+    pub target: String,
+    pub label: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+/// Declarative setting field for extension configuration.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingFieldContribution {
+    pub id: String,
+    pub label: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
+    #[serde(default)]
+    pub default_value: Option<serde_json::Value>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub options: Option<Vec<String>>,
+}
+
+/// Container for declarative UI contribution points.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionContributions {
+    #[serde(default)]
+    pub nav_buttons: Vec<NavButtonContribution>,
+    #[serde(default)]
+    pub rail_buttons: Vec<RailButtonContribution>,
+    #[serde(default)]
+    pub commands: Vec<CommandContribution>,
+    #[serde(default)]
+    pub menus: Vec<MenuContribution>,
+    #[serde(default)]
+    pub settings: Vec<SettingFieldContribution>,
+}
+
 /// The `extension.json` manifest structure.
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +162,8 @@ pub struct ExtensionManifest {
     pub capabilities: Vec<ExtensionCapability>,
     #[serde(default)]
     pub triggers: Vec<String>,
+    #[serde(default)]
+    pub contributes: Option<ExtensionContributions>,
 }
 
 impl ExtensionManifest {
@@ -246,6 +328,7 @@ mod tests {
             repository: Some("https://github.com/example/repo".into()),
             capabilities: vec![ExtensionCapability::NetworkWebhook],
             triggers: vec!["post-export".into()],
+            contributes: None,
         };
 
         assert!(manifest.validate().is_ok());
@@ -271,6 +354,7 @@ mod tests {
             repository: None,
             capabilities: vec![],
             triggers: vec![],
+            contributes: None,
         };
 
         assert!(manifest.validate().is_err());
@@ -300,6 +384,7 @@ mod tests {
             repository: None,
             capabilities: vec![ExtensionCapability::FilesystemWriteExport],
             triggers: vec![],
+            contributes: None,
         };
 
         let manifest_bytes = serde_json::to_vec_pretty(&manifest).unwrap();

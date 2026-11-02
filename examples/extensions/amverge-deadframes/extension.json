@@ -15,6 +15,53 @@
   ],
   "triggers": [
     "post-export"
-  ]
+  ],
+  "contributes": {
+    "navButtons": [
+      {
+        "id": "amverge.clean.topbar",
+        "label": "AMVerge Clean",
+        "icon": "Scissors",
+        "tooltip": "Run optical flow deadframe compaction",
+        "when": "route == exports || route == timeline"
+      }
+    ],
+    "railButtons": [
+      {
+        "id": "amverge.rail.quick",
+        "label": "AMVerge",
+        "icon": "FilmStrip",
+        "tooltip": "AMVerge Tools"
+      }
+    ],
+    "menus": [
+      {
+        "target": "exports:clip",
+        "label": "Remove Deadframes (AMVerge)",
+        "icon": "Scissors"
+      },
+      {
+        "target": "exports:card",
+        "label": "Batch Remove Deadframes (AMVerge)",
+        "icon": "Scissors"
+      }
+    ],
+    "settings": [
+      {
+        "id": "motionThreshold",
+        "label": "Motion Threshold",
+        "type": "number",
+        "defaultValue": 0.4,
+        "description": "Optical flow threshold above which frames are classified as motion."
+      },
+      {
+        "id": "syncAudio",
+        "label": "Sync Audio",
+        "type": "boolean",
+        "defaultValue": true,
+        "description": "Keep audio in sync when removing motionless holding frames."
+      }
+    ]
+  }
 }
 

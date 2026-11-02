@@ -240,6 +240,43 @@ function ExtensionCard({
   const bannerSrc = extension.bannerPath ? (isTauri ? convertFileSrc(extension.bannerPath) : extension.bannerPath) : null
   const accent = manifest.accentColor ?? "#e0b45c"
 
+  // Derive author avatar and GitHub info cleanly
+  const authorAvatarSrc = useMemo(() => {
+    if (extension.authorAvatarPath) {
+      return isTauri ? convertFileSrc(extension.authorAvatarPath) : extension.authorAvatarPath
+    }
+    if (manifest.authorAvatar?.startsWith("http://") || manifest.authorAvatar?.startsWith("https://")) {
+      return manifest.authorAvatar
+    }
+    if (manifest.authorGithub) {
+      const clean = manifest.authorGithub.replace(/^@/, "").trim()
+      return `https://github.com/${clean}.png?size=64`
+    }
+    // Fallback: extract owner from repository URL if it points to github.com
+    if (manifest.repository) {
+      const match = manifest.repository.match(/github\.com\/([^/]+)/i)
+      if (match?.[1]) {
+        return `https://github.com/${match[1]}.png?size=64`
+      }
+    }
+    return null
+  }, [extension.authorAvatarPath, manifest.authorAvatar, manifest.authorGithub, manifest.repository])
+
+  const authorProfileUrl = useMemo(() => {
+    if (manifest.authorUrl) return manifest.authorUrl
+    if (manifest.authorGithub) {
+      const clean = manifest.authorGithub.replace(/^@/, "").trim()
+      return `https://github.com/${clean}`
+    }
+    if (manifest.repository) {
+      const match = manifest.repository.match(/github\.com\/([^/]+)/i)
+      if (match?.[1]) {
+        return `https://github.com/${match[1]}`
+      }
+    }
+    return null
+  }, [manifest.authorUrl, manifest.authorGithub, manifest.repository])
+
   return (
     <div
       className={cn(
@@ -326,7 +363,45 @@ function ExtensionCard({
               v{manifest.version}
             </span>
           </div>
-          <div className="mt-0.5 text-xs text-fg-4">By {manifest.author}</div>
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-fg-4">
+            <span>By</span>
+            {authorProfileUrl ? (
+              <button
+                type="button"
+                onClick={() => void openExternalUrl(authorProfileUrl)}
+                className="group/author inline-flex items-center gap-1.5 rounded-full hover:text-fg-1 transition-colors"
+              >
+                {authorAvatarSrc && (
+                  <img
+                    src={authorAvatarSrc}
+                    alt=""
+                    className="size-4 rounded-full object-cover ring-1 ring-white/10"
+                    onError={(e) => {
+                      // Hide if image fails to load (e.g. offline or private)
+                      ;(e.target as HTMLElement).style.display = "none"
+                    }}
+                  />
+                )}
+                <span className="font-medium underline decoration-white/20 underline-offset-2 group-hover/author:decoration-white/60">
+                  {manifest.author}
+                </span>
+              </button>
+            ) : (
+              <div className="inline-flex items-center gap-1.5">
+                {authorAvatarSrc && (
+                  <img
+                    src={authorAvatarSrc}
+                    alt=""
+                    className="size-4 rounded-full object-cover ring-1 ring-white/10"
+                    onError={(e) => {
+                      ;(e.target as HTMLElement).style.display = "none"
+                    }}
+                  />
+                )}
+                <span className="font-medium text-fg-3">{manifest.author}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <p className="mt-3 text-sm leading-relaxed text-fg-3 line-clamp-2">{manifest.description}</p>

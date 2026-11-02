@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Plays an alert chime and displays a native desktop notification when an export finishes.",
   "author": "AutoScene Team",
+  "authorGithub": "tcmmi",
   "kind": "post-processor",
   "entrypoint": "run.sh",
   "accentColor": "#e0b45c",

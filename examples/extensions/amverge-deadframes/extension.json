@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Detects and removes motionless holding frames from exported clips using optical flow and frame compaction.",
   "author": "AMVerge Team & AutoScene",
+  "authorGithub": "AMVerge-team",
   "kind": "post-processor",
   "entrypoint": "run.sh",
   "accentColor": "#6366f1",

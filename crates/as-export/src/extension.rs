@@ -61,6 +61,12 @@ pub struct ExtensionManifest {
     pub version: String,
     pub description: String,
     pub author: String,
+    #[serde(default)]
+    pub author_avatar: Option<String>,
+    #[serde(default)]
+    pub author_url: Option<String>,
+    #[serde(default)]
+    pub author_github: Option<String>,
     pub kind: ExtensionKind,
     pub entrypoint: String,
     #[serde(default)]
@@ -100,6 +106,13 @@ impl ExtensionManifest {
                 return Err(ExtensionError::InsecurePath(format!("banner '{banner}' contains invalid traversal")));
             }
         }
+        if let Some(avatar) = &self.author_avatar {
+            if !avatar.starts_with("http://") && !avatar.starts_with("https://") {
+                if avatar.contains("..") || avatar.starts_with('/') || avatar.starts_with('\\') {
+                    return Err(ExtensionError::InsecurePath(format!("authorAvatar '{avatar}' contains invalid traversal")));
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -115,6 +128,8 @@ pub struct InstalledExtension {
     pub icon_path: Option<String>,
     #[serde(default)]
     pub banner_path: Option<String>,
+    #[serde(default)]
+    pub author_avatar_path: Option<String>,
 }
 
 /// Scans a directory for installed extensions containing `extension.json`.
@@ -160,12 +175,20 @@ pub fn discover_extensions(extensions_dir: &Path) -> Vec<InstalledExtension> {
             .map(|b| path.join(b))
             .filter(|p| p.is_file())
             .map(|p| p.to_string_lossy().to_string());
+        let author_avatar_path = manifest
+            .author_avatar
+            .as_ref()
+            .filter(|a| !a.starts_with("http://") && !a.starts_with("https://"))
+            .map(|a| path.join(a))
+            .filter(|p| p.is_file())
+            .map(|p| p.to_string_lossy().to_string());
 
         installed.push(InstalledExtension {
             path: path.to_string_lossy().to_string(),
             entrypoint_path: entrypoint_path.to_string_lossy().to_string(),
             icon_path,
             banner_path,
+            author_avatar_path,
             manifest,
         });
     }
@@ -211,6 +234,9 @@ mod tests {
             version: "1.0.0".into(),
             description: "Sends notifications".into(),
             author: "Tester".into(),
+            author_avatar: None,
+            author_url: None,
+            author_github: None,
             kind: ExtensionKind::Webhook,
             entrypoint: "notify.sh".into(),
             icon: Some("icon.png".into()),
@@ -233,6 +259,9 @@ mod tests {
             version: "1.0.0".into(),
             description: "Bad".into(),
             author: "Attacker".into(),
+            author_avatar: None,
+            author_url: None,
+            author_github: None,
             kind: ExtensionKind::Custom,
             entrypoint: "../../etc/passwd".into(),
             icon: None,
@@ -259,6 +288,9 @@ mod tests {
             version: "0.1.0".into(),
             description: "Test".into(),
             author: "Dev".into(),
+            author_avatar: None,
+            author_url: None,
+            author_github: None,
             kind: ExtensionKind::Exporter,
             entrypoint: "main.py".into(),
             icon: None,

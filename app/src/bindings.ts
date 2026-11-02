@@ -725,6 +725,9 @@ export type ExtensionManifest_Deserialize = {
 	version: string,
 	description: string,
 	author: string,
+	authorAvatar?: string | null,
+	authorUrl?: string | null,
+	authorGithub?: string | null,
 	kind: ExtensionKind,
 	entrypoint: string,
 	icon?: string | null,
@@ -743,6 +746,9 @@ export type ExtensionManifest_Serialize = {
 	version: string,
 	description: string,
 	author: string,
+	authorAvatar: string | null,
+	authorUrl: string | null,
+	authorGithub: string | null,
 	kind: ExtensionKind,
 	entrypoint: string,
 	icon: string | null,
@@ -863,6 +869,7 @@ export type InstalledExtension_Deserialize = {
 	entrypointPath: string,
 	iconPath?: string | null,
 	bannerPath?: string | null,
+	authorAvatarPath?: string | null,
 };
 
 /**  Discovered extension installed in the system. */
@@ -872,6 +879,7 @@ export type InstalledExtension_Serialize = {
 	entrypointPath: string,
 	iconPath: string | null,
 	bannerPath: string | null,
+	authorAvatarPath: string | null,
 };
 
 /**  A job was queued, started or finished. */

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" width="600" height="200">
+  <defs>
+    <linearGradient id="amverge-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e101f" />
+      <stop offset="50%" stop-color="#181c3b" />
+      <stop offset="100%" stop-color="#0a0c16" />
+    </linearGradient>
+    <radialGradient id="amverge-glow" cx="80%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="600" height="200" fill="url(#amverge-bg)"/>
+  <rect width="600" height="200" fill="url(#amverge-glow)"/>
+  <!-- Decorative timeline tracks -->
+  <line x1="20" y1="50" x2="580" y2="50" stroke="#6366f1" stroke-opacity="0.1" stroke-width="2"/>
+  <line x1="20" y1="100" x2="580" y2="100" stroke="#6366f1" stroke-opacity="0.15" stroke-width="2"/>
+  <line x1="20" y1="150" x2="580" y2="150" stroke="#6366f1" stroke-opacity="0.1" stroke-width="2"/>
+  <rect x="360" y="85" width="80" height="30" rx="4" fill="#6366f1" fill-opacity="0.2" stroke="#6366f1" stroke-opacity="0.4"/>
+  <rect x="460" y="85" width="60" height="30" rx="4" fill="#6366f1" fill-opacity="0.3" stroke="#6366f1" stroke-opacity="0.6"/>
+</svg>

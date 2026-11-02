@@ -15,3 +15,4 @@ else
     echo "Python 3 is required to run AMVerge Deadframe Remover" >&2
     exit 1
 fi
+

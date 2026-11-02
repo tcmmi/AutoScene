@@ -6,6 +6,9 @@
   "author": "AutoScene Team",
   "kind": "post-processor",
   "entrypoint": "run.sh",
+  "accentColor": "#e0b45c",
+  "homepage": "https://github.com/tcmmi/AutoScene",
+  "repository": "https://github.com/tcmmi/AutoScene",
   "capabilities": [
     "filesystem:write-export"
   ],

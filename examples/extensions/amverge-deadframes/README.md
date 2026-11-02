@@ -12,3 +12,4 @@ Ported from [AMVerge-CLI](https://github.com/AMVerge-team/AMVerge-CLI).
 
 ## Manual Test
 Click **Run Test** on the AMVerge card in AutoScene's **Extensions** page to run diagnostics.
+

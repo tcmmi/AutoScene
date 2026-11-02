@@ -6,6 +6,9 @@
   "author": "AMVerge Team & AutoScene",
   "kind": "post-processor",
   "entrypoint": "run.sh",
+  "accentColor": "#6366f1",
+  "homepage": "https://github.com/AMVerge-team/AMVerge-CLI",
+  "repository": "https://github.com/AMVerge-team/AMVerge-CLI",
   "capabilities": [
     "filesystem:write-export"
   ],
@@ -13,3 +16,4 @@
     "post-export"
   ]
 }
+

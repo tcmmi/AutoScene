@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { ArrowCounterClockwise, FolderOpen, MagnifyingGlass, Package, Play } from "@/components/icons"
+import { ArrowCounterClockwise, ArrowSquareOut, FolderOpen, GithubLogo, MagnifyingGlass, Package, Play } from "@/components/icons"
 import { toast } from "sonner"
 import type { ExtensionKind, InstalledExtension } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,9 @@ import { ContextMenuItem } from "@/components/ui/context-menu"
 import { Switch } from "@/components/ui/switch"
 import { TopBar } from "@/components/ui/topbar"
 import { commands, errorMessage } from "@/lib/ipc"
+import { convertFileSrc } from "@tauri-apps/api/core"
+import { openExternalUrl } from "@/lib/os"
+import { isTauri } from "@/lib/platform"
 import { qk, queryClient, useAppInfo, useExtensions, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 
@@ -233,28 +236,41 @@ function ExtensionCard({
     }
   }
 
+  const iconSrc = extension.iconPath ? (isTauri ? convertFileSrc(extension.iconPath) : extension.iconPath) : null
+  const bannerSrc = extension.bannerPath ? (isTauri ? convertFileSrc(extension.bannerPath) : extension.bannerPath) : null
+  const accent = manifest.accentColor ?? "#e0b45c"
+
   return (
     <div
       className={cn(
-        "flex flex-col justify-between rounded-2xl border border-white/[0.08] p-5 transition-colors",
-        enabled ? "bg-white/[0.02] hover:border-white/[0.14] hover:bg-white/[0.03]" : "bg-black/20 opacity-60",
+        "group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] transition-all",
+        enabled ? "bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.03]" : "bg-black/20 opacity-60",
       )}
     >
-      <div>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="truncate font-semibold text-fg-1">{manifest.name}</h3>
-              <span className="rounded bg-white/[0.08] px-1.5 py-0.5 text-[11px] font-mono text-fg-3">
-                v{manifest.version}
-              </span>
-            </div>
-            <div className="mt-0.5 text-xs text-fg-4">By {manifest.author}</div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="shrink-0 rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-0.5 text-[11px] uppercase tracking-wider text-fg-3">
-              {manifest.kind}
-            </span>
+      {/* Banner Header */}
+      <div className="relative h-24 w-full overflow-hidden bg-white/[0.03]">
+        {bannerSrc ? (
+          <img
+            src={bannerSrc}
+            alt=""
+            className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <div
+            className="size-full opacity-35"
+            style={{
+              background: `radial-gradient(circle at top right, ${accent}33, transparent 70%), linear-gradient(to bottom, transparent, rgba(0,0,0,0.6))`,
+            }}
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-bg-canvas via-transparent to-black/20" />
+
+        {/* Top Badges / Switch */}
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          <span className="shrink-0 rounded-full border border-white/[0.1] bg-black/60 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-fg-3 backdrop-blur-md">
+            {manifest.kind}
+          </span>
+          <div className="rounded-full bg-black/40 p-0.5 backdrop-blur-md">
             <Switch
               checked={enabled}
               onCheckedChange={onToggle}
@@ -262,11 +278,62 @@ function ExtensionCard({
             />
           </div>
         </div>
-
-        <p className="mt-3 text-sm leading-relaxed text-fg-3">{manifest.description}</p>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between">
+      <div className="relative p-5 pt-0">
+        {/* PFP / Icon overlapping banner */}
+        <div className="-mt-8 mb-3 flex items-end justify-between">
+          <div className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-bg-canvas bg-white/[0.06] shadow-xl">
+            {iconSrc ? (
+              <img src={iconSrc} alt={manifest.name} className="size-full object-cover" />
+            ) : (
+              <Package className="size-7 text-fg-3" />
+            )}
+          </div>
+
+          {/* Social Links */}
+          <div className="flex items-center gap-1.5">
+            {manifest.repository && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="size-8 p-0 text-fg-3 hover:text-fg-1"
+                onClick={() => void openExternalUrl(manifest.repository!)}
+                aria-label="View repository"
+              >
+                <GithubLogo className="size-4" />
+              </Button>
+            )}
+            {manifest.homepage && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="size-8 p-0 text-fg-3 hover:text-fg-1"
+                onClick={() => void openExternalUrl(manifest.homepage!)}
+                aria-label="Visit homepage"
+              >
+                <ArrowSquareOut className="size-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Title & Author */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-base font-semibold text-fg-1">{manifest.name}</h3>
+            <span className="rounded bg-white/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-fg-3">
+              v{manifest.version}
+            </span>
+          </div>
+          <div className="mt-0.5 text-xs text-fg-4">By {manifest.author}</div>
+        </div>
+
+        <p className="mt-3 text-sm leading-relaxed text-fg-3 line-clamp-2">{manifest.description}</p>
+      </div>
+
+      {/* Footer Controls */}
+      <div className="flex items-center justify-between border-t border-white/[0.06] bg-black/10 px-5 py-3">
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -276,7 +343,7 @@ function ExtensionCard({
           >
             <Play /> {testing ? "Running…" : "Run Test"}
           </Button>
-          <span className="font-mono text-xs text-fg-4 truncate max-w-[150px]">{manifest.entrypoint}</span>
+          <span className="max-w-[130px] truncate font-mono text-xs text-fg-4">{manifest.entrypoint}</span>
         </div>
         <div className="flex flex-wrap gap-1">
           {manifest.capabilities.map((cap) => (

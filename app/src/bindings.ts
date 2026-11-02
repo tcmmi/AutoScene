@@ -727,6 +727,11 @@ export type ExtensionManifest_Deserialize = {
 	author: string,
 	kind: ExtensionKind,
 	entrypoint: string,
+	icon?: string | null,
+	banner?: string | null,
+	accentColor?: string | null,
+	homepage?: string | null,
+	repository?: string | null,
 	capabilities: ExtensionCapability_Deserialize[],
 	triggers?: string[],
 };
@@ -740,6 +745,11 @@ export type ExtensionManifest_Serialize = {
 	author: string,
 	kind: ExtensionKind,
 	entrypoint: string,
+	icon: string | null,
+	banner: string | null,
+	accentColor: string | null,
+	homepage: string | null,
+	repository: string | null,
 	capabilities: ExtensionCapability_Serialize[],
 	triggers: string[],
 };
@@ -851,6 +861,8 @@ export type InstalledExtension_Deserialize = {
 	manifest: ExtensionManifest_Deserialize,
 	path: string,
 	entrypointPath: string,
+	iconPath?: string | null,
+	bannerPath?: string | null,
 };
 
 /**  Discovered extension installed in the system. */
@@ -858,6 +870,8 @@ export type InstalledExtension_Serialize = {
 	manifest: ExtensionManifest_Serialize,
 	path: string,
 	entrypointPath: string,
+	iconPath: string | null,
+	bannerPath: string | null,
 };
 
 /**  A job was queued, started or finished. */

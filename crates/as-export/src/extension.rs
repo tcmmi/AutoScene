@@ -63,6 +63,16 @@ pub struct ExtensionManifest {
     pub author: String,
     pub kind: ExtensionKind,
     pub entrypoint: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub banner: Option<String>,
+    #[serde(default)]
+    pub accent_color: Option<String>,
+    #[serde(default)]
+    pub homepage: Option<String>,
+    #[serde(default)]
+    pub repository: Option<String>,
     pub capabilities: Vec<ExtensionCapability>,
     #[serde(default)]
     pub triggers: Vec<String>,
@@ -80,6 +90,16 @@ impl ExtensionManifest {
                 self.entrypoint
             )));
         }
+        if let Some(icon) = &self.icon {
+            if icon.contains("..") || icon.starts_with('/') || icon.starts_with('\\') {
+                return Err(ExtensionError::InsecurePath(format!("icon '{icon}' contains invalid traversal")));
+            }
+        }
+        if let Some(banner) = &self.banner {
+            if banner.contains("..") || banner.starts_with('/') || banner.starts_with('\\') {
+                return Err(ExtensionError::InsecurePath(format!("banner '{banner}' contains invalid traversal")));
+            }
+        }
         Ok(())
     }
 }
@@ -91,6 +111,10 @@ pub struct InstalledExtension {
     pub manifest: ExtensionManifest,
     pub path: String,
     pub entrypoint_path: String,
+    #[serde(default)]
+    pub icon_path: Option<String>,
+    #[serde(default)]
+    pub banner_path: Option<String>,
 }
 
 /// Scans a directory for installed extensions containing `extension.json`.
@@ -124,9 +148,24 @@ pub fn discover_extensions(extensions_dir: &Path) -> Vec<InstalledExtension> {
         }
 
         let entrypoint_path = path.join(&manifest.entrypoint);
+        let icon_path = manifest
+            .icon
+            .as_ref()
+            .map(|i| path.join(i))
+            .filter(|p| p.is_file())
+            .map(|p| p.to_string_lossy().to_string());
+        let banner_path = manifest
+            .banner
+            .as_ref()
+            .map(|b| path.join(b))
+            .filter(|p| p.is_file())
+            .map(|p| p.to_string_lossy().to_string());
+
         installed.push(InstalledExtension {
             path: path.to_string_lossy().to_string(),
             entrypoint_path: entrypoint_path.to_string_lossy().to_string(),
+            icon_path,
+            banner_path,
             manifest,
         });
     }
@@ -174,6 +213,11 @@ mod tests {
             author: "Tester".into(),
             kind: ExtensionKind::Webhook,
             entrypoint: "notify.sh".into(),
+            icon: Some("icon.png".into()),
+            banner: Some("banner.jpg".into()),
+            accent_color: Some("#ff0000".into()),
+            homepage: Some("https://example.com".into()),
+            repository: Some("https://github.com/example/repo".into()),
             capabilities: vec![ExtensionCapability::NetworkWebhook],
             triggers: vec!["post-export".into()],
         };
@@ -191,6 +235,11 @@ mod tests {
             author: "Attacker".into(),
             kind: ExtensionKind::Custom,
             entrypoint: "../../etc/passwd".into(),
+            icon: None,
+            banner: None,
+            accent_color: None,
+            homepage: None,
+            repository: None,
             capabilities: vec![],
             triggers: vec![],
         };
@@ -212,6 +261,11 @@ mod tests {
             author: "Dev".into(),
             kind: ExtensionKind::Exporter,
             entrypoint: "main.py".into(),
+            icon: None,
+            banner: None,
+            accent_color: None,
+            homepage: None,
+            repository: None,
             capabilities: vec![ExtensionCapability::FilesystemWriteExport],
             triggers: vec![],
         };

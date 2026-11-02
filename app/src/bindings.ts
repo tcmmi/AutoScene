@@ -584,6 +584,14 @@ export type ClipRequest = {
 	name: string | null,
 };
 
+/**  Command registered into the Command Palette. */
+export type CommandContribution = {
+	id: string,
+	title: string,
+	category?: string | null,
+	icon?: string | null,
+};
+
 export type Container = "mov" | "mp4";
 
 export type ContentKind = 
@@ -714,50 +722,7 @@ export type ExtensionCapability_Deserialize = "filesystem:read-project" | "files
 /**  Declared capability permissions an extension can request. */
 export type ExtensionCapability_Serialize = "filesystem:read-project" | "filesystem:write-export" | "network:webhook" | "gpu";
 
-/**  Extension type and lifecycle target. */
-export type ExtensionKind = "exporter" | "post-processor" | "webhook" | "custom";
-
-/**  The `extension.json` manifest structure. */
-export type ExtensionManifest = ExtensionManifest_Serialize | ExtensionManifest_Deserialize;
-
-/**  The `extension.json` manifest structure. */
-export type NavButtonContribution = {
-	id: string,
-	label: string,
-	icon?: string | null,
-	tooltip?: string | null,
-	when?: string | null,
-};
-
-export type RailButtonContribution = {
-	id: string,
-	label: string,
-	icon?: string | null,
-	tooltip?: string | null,
-};
-
-export type CommandContribution = {
-	id: string,
-	title: string,
-	category?: string | null,
-	icon?: string | null,
-};
-
-export type MenuContribution = {
-	target: string,
-	label: string,
-	icon?: string | null,
-};
-
-export type SettingFieldContribution = {
-	id: string,
-	label: string,
-	type: string,
-	defaultValue?: unknown,
-	description?: string | null,
-	options?: string[] | null,
-};
-
+/**  Container for declarative UI contribution points. */
 export type ExtensionContributions = {
 	navButtons?: NavButtonContribution[],
 	railButtons?: RailButtonContribution[],
@@ -766,6 +731,13 @@ export type ExtensionContributions = {
 	settings?: SettingFieldContribution[],
 };
 
+/**  Extension type and lifecycle target. */
+export type ExtensionKind = "exporter" | "post-processor" | "webhook" | "custom";
+
+/**  The `extension.json` manifest structure. */
+export type ExtensionManifest = ExtensionManifest_Serialize | ExtensionManifest_Deserialize;
+
+/**  The `extension.json` manifest structure. */
 export type ExtensionManifest_Deserialize = {
 	id: string,
 	name: string,
@@ -1095,6 +1067,13 @@ export type MediaToolsStatus = {
 /**  A native menu item was chosen (macOS). Payload is the item id, e.g. `view:cast`. */
 export type MenuAction = string;
 
+/**  Context menu item contribution across pages. */
+export type MenuContribution = {
+	target: string,
+	label: string,
+	icon?: string | null,
+};
+
 /**  The one file of an export that joins its clips. */
 export type MergedFile = {
 	/**  File name without extension. */
@@ -1125,6 +1104,15 @@ export type ModelInfo = {
 	sizeBytes: number | null,
 	/**  Downloaded and verified. */
 	installed: boolean,
+};
+
+/**  Button injected into the TopBar navigation bar. */
+export type NavButtonContribution = {
+	id: string,
+	label: string,
+	icon?: string | null,
+	tooltip?: string | null,
+	when?: string | null,
 };
 
 export type NewProject = {
@@ -1381,6 +1369,14 @@ export type ProxyState =
 /**  Not decided yet (media not indexed). */
 "unknown" | "not_needed" | "pending" | "building" | "ready" | "failed";
 
+/**  Button or entry injected into the Left Navigation Rail. */
+export type RailButtonContribution = {
+	id: string,
+	label: string,
+	icon?: string | null,
+	tooltip?: string | null,
+};
+
 /**  Exact rational number (time bases, frame rates). Always reduced, `den > 0`. */
 export type Rational = {
 	num: number,
@@ -1435,6 +1431,16 @@ export type SegmentKind = "shot" |
 "black" | 
 /**  A brief flash (muzzle flash, lightning, anime impact frame) inside a shot. */
 "flash";
+
+/**  Declarative setting field for extension configuration. */
+export type SettingFieldContribution = {
+	id: string,
+	label: string,
+	type: string,
+	defaultValue?: string | null,
+	description?: string | null,
+	options?: string[] | null,
+};
 
 /**
  *  The keys the person chose: an editor's keys to start from, and their own

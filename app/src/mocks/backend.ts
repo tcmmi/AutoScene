@@ -1073,7 +1073,6 @@ const handlers: Record<string, Handler> = {
   open_extensions_dir: () => null,
   extension_test: () => "Extension test ran successfully!",
   extension_run_on_files: () => "Completed successfully",
-  extension_uninstall: () => null,
   extensions_list: (): InstalledExtension[] => [
     {
       manifest: {

@@ -109,7 +109,8 @@ pub struct SettingFieldContribution {
     #[serde(rename = "type")]
     pub field_type: String,
     #[serde(default)]
-    pub default_value: Option<serde_json::Value>,
+    #[specta(type = Option<serde_json::Value>)]
+    pub default_value: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]

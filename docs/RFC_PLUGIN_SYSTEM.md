@@ -1,0 +1,103 @@
+# RFC & Architectural Specification: AutoScene Plugin Framework (.asp) & Extension SDK
+
+**Status:** Prototype / Request for Comments (RFC)  
+**Authors:** @moongetsu & community contributors  
+**Target:** Core Maintainers & AI Architectural Agent (Claude / Codex)  
+**Tracking Pull Request:** https://github.com/tcmmi/AutoScene/pull/93  
+
+---
+
+## 1. Executive Summary & Design Vision
+
+This pull request introduces a working proof-of-concept for an **ecosystem-level Plugin Architecture** in AutoScene, centered around a custom container file format: **`.asp` (AutoScene Plugin)**.
+
+The objective is to achieve an extensibility standard on par with professional creative tools like **Adobe After Effects (`.aex`)**, **Figma Plugins**, or **VS Code Extensions (`.vsix`)**, while preserving AutoScene’s hallmark performance, minimal memory footprint, and tight security boundaries.
+
+> **Important Note for the AI Reviewer (Claude / Core Team):**  
+> This implementation is an initial prototype and conceptual spike. It serves to crystallize the architectural vision, establish initial API contracts, and demonstrate feasibility. Maintainers and AI systems are expected and encouraged to conduct an exhaustive analysis, refactor boundaries, propose superior primitives, and enhance ergonomics.
+
+---
+
+## 2. Core Pillars & Capability Requirements
+
+### 2.1 The Custom UI Library & Host Extension Hooks
+We want plugin authors to possess expressive freedom to build first-class user experiences without hardcoding them into the AutoScene monolith:
+- **Declarative Host Contribution Points:**
+  - Dynamic button injection into the Top Navigation Bar (`navButtons`).
+  - Native Left Navigation Rail entries (`railButtons`).
+  - Context menu hooks across timeline clips, exports, and library items (`menus`).
+  - Configuration panels in AutoScene Settings via declarative schema definitions (`settings`).
+- **Dedicated Custom Full-Screen Pages & Views:**
+  - The framework must allow plugins to register first-class route mounts (e.g., `/plugins/:pluginId/*`).
+  - Example: A plugin offering specialized video frame interpolation, optical flow deadframe repair, or dataset curation tools can present its own dedicated multi-step UI inside the AutoScene window shell.
+- **AutoScene Component Primitives:**
+  - Expose an `@autoscene/plugin-sdk` or standard Web Component / React component bridge matching AutoScene's native styling (dark theme, phosphor icons, high-density layouts, custom sliders, switches, and progress rings).
+
+### 2.2 IPC, Asynchronous Pipelines & External Integrations
+- **Subprocess & Out-of-Process Execution:**
+  - Plugin logic executes decoupled from the main Tauri UI thread (via background child processes, CLI scripts, Python environments, or WebAssembly).
+  - Streamed JSON-RPC / IPC protocols across standard input/output for live progress bars, frame counts, and cancellation tokens (`CancelToken`).
+- **Third-Party Services & APIs:**
+  - Out-of-the-box support for network-enabled extensions (e.g., Discord webhook web-alerts, GitHub release checkers, cloud storage uploaders, custom REST/gRPC backends) governed by a declared permissions manifest.
+
+### 2.3 The `.asp` Container Specification & Cryptographic Security
+Distributing executable code carries security risks. A user downloading an archive renamed to `.asp` must never unknowingly run arbitrary malware.
+
+The `.asp` file format implements a multi-layer verification pipeline:
+1. **Container Isolation & Safe Extraction:**
+   - Archive extraction with Zip-Slip path traversal rejection (`..`, absolute paths).
+   - Automatic execution permission restoration (`chmod 0o755`) for declared scripts/binaries on Unix platforms.
+2. **Ed25519 Cryptographic Signatures & SHA-256 Manifest:**
+   - Every `.asp` contains a `META-INF/MANIFEST.json` containing SHA-256 hashes of every payload file.
+   - A companion `META-INF/SIGNATURE.sig` contains an Ed25519 signature over the manifest, the developer's public key, and identity metadata.
+3. **Trust Tiers:**
+   - 🟢 **Verified Official:** Signed with AutoScene's built-in master key.
+   - 🔵 **Community Signed:** Valid cryptographic signature from a registered developer key (fingerprint: `SHA256:...`).
+   - 🟠 **Unsigned / Self-Signed:** Triggers a security confirmation dialog where users must explicitly acknowledge the lack of verification.
+   - 🔴 **Tampered / Corrupted:** File checksum mismatch or invalid signature. Installation is completely blocked.
+4. **Pre-Install Security Modal:**
+   - Inspects package contents without unpacking to disk.
+   - Displays requested capabilities (`filesystem:write-export`, `network:webhook`, `subprocess`, etc.) and author identity.
+
+---
+
+## 3. Discord Community Distribution & Automated CI/CD Review Pipeline
+
+The long-term distribution roadmap envisions a community-driven marketplace:
+1. **Developer Publication:** Developers export `.asp` packages via GitHub Actions (`docs/templates/package-asp.yml`) and share them in a dedicated Discord Forum or repository.
+2. **Automated Security Bot / Scanner:**
+   - A CI/Discord verification bot automatically unpacks the `.asp`, runs static analysis (SAST) for malicious calls, verifies cryptographic signatures, and generates an automated audit report.
+3. **Approval & Trusted Status:**
+   - Once approved by maintainers, the plugin is cataloged in the official directory as trusted.
+   - Subsequent updates trigger incremental diff audits.
+
+---
+
+## 4. Current Prototype Implementation Artifacts
+
+| Component | Path | Description |
+| :--- | :--- | :--- |
+| **Packaging & Crypto Engine** | `crates/as-export/src/extension.rs` | Implements `package_asp_signed`, `inspect_asp`, `install_asp`, and Ed25519 validation. |
+| **Re-exports & Aliases** | `crates/as-export/src/lib.rs` | Exposes plugin types, manifest structs, and signature verification helpers. |
+| **Path Configuration** | `crates/as-core/src/paths.rs` | Resolves `plugins/` directory with backward-compatible fallback to `extensions/`. |
+| **Tauri IPC Layer** | `app/src-tauri/src/commands/system.rs` | Commands for listing, testing, inspecting, packaging, and installing `.asp` packages. |
+| **Frontend UI Page** | `app/src/features/extensions/ExtensionsPage.tsx` | Route `/plugins` with filter pills, status badges, test trigger, and uninstallation. |
+| **Security Modal** | `app/src/features/extensions/PluginInstallModal.tsx` | Pre-installation inspection modal reviewing signature validity and declared permissions. |
+| **Reference Plugin** | `examples/plugins/amverge-deadframes/` | Sample optical flow deadframe compaction plugin with `plugin.json`. |
+| **CI/CD Template** | `docs/templates/package-asp.yml` | GitHub Actions workflow for building and signing `.asp` releases. |
+
+---
+
+## 5. Architectural Inquiries & Future Work for Claude / Maintainers
+
+1. **Sandboxed Webview / iframe Hosting for Custom Pages:**
+   - Should dedicated plugin pages run in an isolated Webview / iframe context with a scoped RPC bridge to prevent unauthorized DOM manipulation of the host shell?
+2. **Plugin SDK Package:**
+   - Should we extract TypeScript definitions and React UI primitives into an npm package (e.g. `@autoscene/sdk`) so authors can develop plugins with full autocomplete and type safety?
+3. **Dynamic Route Registration:**
+   - What is the most resilient pattern in TanStack Router to register runtime plugin routes (`/plugins/:id/*`) without rebuilding the host client?
+4. **Wasm / Wasi Micro-runtimes:**
+   - Should computationally lightweight plugins (metadata filters, timecode translators, format converters) be supported via WebAssembly for instantaneous startup and strict sandboxing?
+
+---
+*Contributions, architectural feedback, and PR reviews are welcome. Please treat this document as an active RFC.*

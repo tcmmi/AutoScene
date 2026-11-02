@@ -223,6 +223,29 @@ pub fn extension_run_on_files(
     Ok("Completed successfully".into())
 }
 
+/// Safely uninstall an extension by deleting its directory.
+#[tauri::command]
+#[specta::specta]
+pub fn extension_uninstall(id: String) -> AppResult<()> {
+    let dir = AppPaths::resolve().extensions();
+    let installed = as_export::discover_extensions(&dir);
+    let ext = installed
+        .into_iter()
+        .find(|e| e.manifest.id == id)
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Extension not found"))?;
+
+    let path = std::path::PathBuf::from(&ext.path);
+    // Boundary check: ensure path is strictly inside the extensions directory
+    if path.starts_with(&dir) && path != dir {
+        std::fs::remove_dir_all(&path).map_err(|e| {
+            AppError::new(ErrorCode::Io, format!("Failed to delete extension: {e}"))
+        })?;
+        Ok(())
+    } else {
+        Err(AppError::new(ErrorCode::Invalid, "Invalid extension path"))
+    }
+}
+
 /// Open the logs folder (Settings → About, Help menu on Windows).
 #[tauri::command]
 #[specta::specta]

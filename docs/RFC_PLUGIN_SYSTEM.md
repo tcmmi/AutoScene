@@ -7,14 +7,29 @@
 
 ---
 
-## 1. Executive Summary & Design Vision
+## 1. Executive Summary & Author's Vision
 
-This pull request introduces a working proof-of-concept for an **ecosystem-level Plugin Architecture** in AutoScene, centered around a custom container file format: **`.asp` (AutoScene Plugin)**.
+### 1.1 Direct Note from the Author (@moongetsu) to the AI Reviewer (Claude & Core Team)
 
+> *"This is just a prototype that I made so you can clearly grasp the vision of what I want to achieve with plugins in AutoScene.*
+> 
+> *The AI (Claude or whoever reviews this) should make a deep check into it, refine it, and make sure that it can be way, way better. This implementation is here to teach what I meant with the whole plugin system:*
+> 
+> - *I want to **let developers do anything via a custom-made UI library**.*
+> - *I want them to be able to **add new settings, new items in the navbar, and entirely new pages** (for example, a dedicated full-screen page where users can upload videos and run AI interpolations, just as an example).*
+> - *I want plugins to be able to **leverage external APIs and services** (such as Discord notifications, GitHub updates, external ML pipelines, etc.).*
+> - *I want developers to have the **freedom to create amazing things** inside AutoScene, pushing the application forward without bloating the core app or making it heavy. That is the ultimate goal, something like After Effects (`.aex`) plugins.*
+> 
+> *This can be an absolute **game changer** for AutoScene: developers can build custom tools and continuously improve the app alongside the core team. It is a heavy task, but doing it right now while the application is still in beta is 100% worth it.*
+> 
+> *The `.asp` file format must be a custom, safe package for AutoScene. Developers will share plugins via our Discord forum, and our team/automated bots will verify that the code is safe at every update, marking approved plugins as trusted on the download page.*
+> 
+> *If Claude has more ideas to elevate this further, please do them without hesitating. I'm really looking forward to your work!"*
+
+---
+
+### 1.2 High-Level Architectural Goal
 The objective is to achieve an extensibility standard on par with professional creative tools like **Adobe After Effects (`.aex`)**, **Figma Plugins**, or **VS Code Extensions (`.vsix`)**, while preserving AutoScene’s hallmark performance, minimal memory footprint, and tight security boundaries.
-
-> **Important Note for the AI Reviewer (Claude / Core Team):**  
-> This implementation is an initial prototype and conceptual spike. It serves to crystallize the architectural vision, establish initial API contracts, and demonstrate feasibility. Maintainers and AI systems are expected and encouraged to conduct an exhaustive analysis, refactor boundaries, propose superior primitives, and enhance ergonomics.
 
 ---
 
@@ -101,3 +116,4 @@ The long-term distribution roadmap envisions a community-driven marketplace:
 
 ---
 *Contributions, architectural feedback, and PR reviews are welcome. Please treat this document as an active RFC.*
+

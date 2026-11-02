@@ -35,6 +35,8 @@ export const commands = {
 	extensionsList: () => __TAURI_INVOKE<InstalledExtension_Serialize[]>("extensions_list"),
 	/**  Run an extension directly to test its execution. */
 	extensionTest: (id: string) => __TAURI_INVOKE<string>("extension_test", { id }),
+	/**  Run an extension on specific clip output files. */
+	extensionRunOnFiles: (id: string, projectId: string, files: string[]) => __TAURI_INVOKE<string>("extension_run_on_files", { id, projectId, files }),
 	/**
 	 *  Put the person's keys (Settings → Shortcuts) on the macOS menu, which
 	 *  answers them there before the page sees them: `keys` maps a menu item's id

@@ -41,6 +41,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::system::open_extensions_dir,
             commands::system::extensions_list,
             commands::system::extension_test,
+            commands::system::extension_run_on_files,
             commands::system::menu_set_keys,
             commands::system::media_tools,
             commands::system::models,

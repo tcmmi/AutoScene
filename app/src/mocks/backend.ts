@@ -1072,6 +1072,7 @@ const handlers: Record<string, Handler> = {
   update_relaunch: () => false,
   open_extensions_dir: () => null,
   extension_test: () => "Extension test ran successfully!",
+  extension_run_on_files: () => "Completed successfully",
   extensions_list: (): InstalledExtension[] => [
     {
       manifest: {

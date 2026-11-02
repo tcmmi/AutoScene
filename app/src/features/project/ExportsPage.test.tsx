@@ -18,6 +18,8 @@ vi.mock("@/lib/queries", () => ({
   useProject: () => ({ data: { title: "Show" } }),
   useExports: () => ({ data: list.exports }),
   useMediaList: () => ({ data: list.media }),
+  useExtensions: () => ({ data: [] }),
+  useSettings: () => ({ data: { disabledExtensions: [] } }),
   firstFailure: () => null,
 }))
 

@@ -14,7 +14,7 @@ import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { formatBytes, formatDateTime, formatDuration, formatPercent } from "@/lib/format"
 import { commands, errorMessage } from "@/lib/ipc"
 import { copyText, reveal } from "@/lib/os"
-import { firstFailure, useExports, useMediaList, useProject } from "@/lib/queries"
+import { firstFailure, useExports, useExtensions, useMediaList, useProject, useSettings } from "@/lib/queries"
 import { fpsValue, isDropFrameRate, timecode } from "@/lib/timecode"
 import { cn } from "@/lib/utils"
 import { useActivity } from "@/state/activity"
@@ -30,6 +30,14 @@ export function ExportsPage() {
   const { data: project } = projectQuery
   const { data: exports } = exportsQuery
   const { data: media } = mediaQuery
+  const { data: extensions = [] } = useExtensions()
+  const { data: settings } = useSettings()
+
+  const disabledSet = new Set(settings?.disabledExtensions ?? [])
+  const postProcessors = extensions
+    .filter((e) => e.manifest.kind === "post-processor" && !disabledSet.has(e.manifest.id))
+    .map((e) => ({ id: e.manifest.id, name: e.manifest.name }))
+
   const byId = new Map(media?.map((m) => [m.id, m]))
   const failure = firstFailure(projectQuery, exportsQuery, mediaQuery)
 
@@ -69,7 +77,15 @@ export function ExportsPage() {
             description="Open an episode, mark in and out, and export the clip. Finished exports are listed here."
           />
         )}
-        {exports?.map((ex) => <ExportCard key={ex.id} pid={pid} ex={ex} media={byId} />)}
+        {exports?.map((ex) => (
+          <ExportCard
+            key={ex.id}
+            pid={pid}
+            ex={ex}
+            media={byId}
+            postProcessors={postProcessors}
+          />
+        ))}
       </div>
     </Page>
   )
@@ -78,7 +94,17 @@ export function ExportsPage() {
 /** Above this many clips, a finished export's list starts folded: the cards stay short. */
 const FOLD_OVER = 4
 
-function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media: Map<string, MediaItem> }) {
+function ExportCard({
+  pid,
+  ex,
+  media,
+  postProcessors,
+}: {
+  pid: string
+  ex: ExportSummary
+  media: Map<string, MediaItem>
+  postProcessors: { id: string; name: string }[]
+}) {
   const job = useActivity((s) => s.order.map((id) => s.jobs[id]).find((j) => j.exportId === ex.id))
   const done = ex.items.filter((i) => i.status === "done").length
   const status = exportStatus(ex, job)
@@ -96,6 +122,19 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
   const seconds = open ? null : runTime(ex.items, media)
   const listId = useId()
 
+  const completedPaths = (file?.path ? [file.path] : ex.items.map((i) => i.path).filter(Boolean)) as string[]
+
+  const runBatchExtension = async (extId: string, extName: string) => {
+    if (completedPaths.length === 0) return
+    const toastId = toast.loading(`Running ${extName} on ${completedPaths.length} clips…`)
+    try {
+      await commands.extensionRunOnFiles(extId, pid, completedPaths)
+      toast.success(`${extName} finished on all clips!`, { id: toastId })
+    } catch (e) {
+      toast.error(`Extension failed: ${errorMessage(e)}`, { id: toastId })
+    }
+  }
+
   return (
     <section className="overflow-hidden rounded-3xl border border-white/[0.07] bg-white/[0.03]">
       <ContextArea
@@ -107,6 +146,16 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
             <ContextMenuItem onSelect={() => void copyText(ex.outDir, "folder path")}>
               <Copy /> Copy folder path
             </ContextMenuItem>
+            {completedPaths.length > 0 && postProcessors.length > 0 && (
+              <>
+                <ContextMenuSeparator />
+                {postProcessors.map((ext) => (
+                  <ContextMenuItem key={ext.id} onSelect={() => void runBatchExtension(ext.id, ext.name)}>
+                    <Play /> Run {ext.name} (Batch {completedPaths.length})
+                  </ContextMenuItem>
+                ))}
+              </>
+            )}
           </>
         }
       >
@@ -125,9 +174,21 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
               {file && " in one file"}
             </p>
           </div>
-          <Button variant="secondary" onClick={() => reveal(ex.outDir)}>
-            <FolderOpen /> Show folder
-          </Button>
+          <div className="flex items-center gap-2">
+            {completedPaths.length > 0 && postProcessors.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-fg-3 hover:text-fg-1"
+                onClick={() => void runBatchExtension(postProcessors[0].id, postProcessors[0].name)}
+              >
+                <Play /> Run {postProcessors[0].name.split(" ")[0]}
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => reveal(ex.outDir)}>
+              <FolderOpen /> Show folder
+            </Button>
+          </div>
         </header>
       </ContextArea>
       {running && job && (
@@ -155,7 +216,14 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
         )}
         <ul id={listId}>
           {listed.map((it) => (
-            <ItemRow key={it.id} pid={pid} item={it} media={media.get(it.mediaId)} ownFile={!file} />
+            <ItemRow
+              key={it.id}
+              pid={pid}
+              item={it}
+              media={media.get(it.mediaId)}
+              ownFile={!file}
+              postProcessors={postProcessors}
+            />
           ))}
         </ul>
       </div>
@@ -254,10 +322,34 @@ function FileRow({ ex, status: ofExport, file }: { ex: ExportSummary; status: Ex
   )
 }
 
-function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: ExportItem; media?: MediaItem; ownFile: boolean }) {
+function ItemRow({
+  pid,
+  item: it,
+  media: m,
+  ownFile,
+  postProcessors,
+}: {
+  pid: string
+  item: ExportItem
+  media?: MediaItem
+  ownFile: boolean
+  postProcessors: { id: string; name: string }[]
+}) {
   const navigate = useNavigate()
   const fps = m?.fps
   const tc = (f: number) => (fps ? timecode(f, fps, isDropFrameRate(fps)) : String(f))
+
+  const runExtension = async (extId: string, extName: string) => {
+    if (!it.path) return
+    const toastId = toast.loading(`Running ${extName} on "${it.name}"…`)
+    try {
+      await commands.extensionRunOnFiles(extId, pid, [it.path])
+      toast.success(`${extName} finished!`, { id: toastId })
+    } catch (e) {
+      toast.error(`Extension failed: ${errorMessage(e)}`, { id: toastId })
+    }
+  }
+
   return (
     <ContextArea
       menu={
@@ -288,6 +380,16 @@ function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: Expo
             <ContextMenuItem onSelect={() => void copyText(it.error!, "error")}>
               <Copy /> Copy the error
             </ContextMenuItem>
+          )}
+          {it.path && it.status === "done" && postProcessors.length > 0 && (
+            <>
+              <ContextMenuSeparator />
+              {postProcessors.map((ext) => (
+                <ContextMenuItem key={ext.id} onSelect={() => void runExtension(ext.id, ext.name)}>
+                  <Play /> Run {ext.name}
+                </ContextMenuItem>
+              ))}
+            </>
           )}
         </>
       }

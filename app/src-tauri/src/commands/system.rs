@@ -181,6 +181,48 @@ pub fn extension_test(id: String) -> AppResult<String> {
     Ok("Extension test ran successfully!".into())
 }
 
+/// Run an extension on specific clip output files.
+#[tauri::command]
+#[specta::specta]
+pub fn extension_run_on_files(
+    id: String,
+    project_id: String,
+    files: Vec<String>,
+) -> AppResult<String> {
+    if files.is_empty() {
+        return Err(AppError::new(ErrorCode::Invalid, "No files specified"));
+    }
+
+    let dir = AppPaths::resolve().extensions();
+    let installed = as_export::discover_extensions(&dir);
+    let ext = installed
+        .into_iter()
+        .find(|e| e.manifest.id == id)
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Extension not found"))?;
+
+    let out_dir = std::path::Path::new(&files[0])
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ext.path.clone());
+
+    let payload = as_export::PostExportPayload {
+        export_id: format!("clip-action-{}", as_api::now_ms()),
+        project_id,
+        project_title: None,
+        out_dir,
+        clip_count: files.len(),
+        output_files: files,
+        completed_at: as_api::now_ms() as u64,
+    };
+
+    let cancel = as_core::CancelToken::new();
+    let scratch = AppPaths::resolve().cache().join("extension_action");
+    as_export::run_hook(&ext.entrypoint_path, &payload, &scratch, &cancel, Some(std::time::Duration::from_secs(300)))
+        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Extension failed: {e}")))?;
+
+    Ok("Completed successfully".into())
+}
+
 /// Open the logs folder (Settings → About, Help menu on Windows).
 #[tauri::command]
 #[specta::specta]

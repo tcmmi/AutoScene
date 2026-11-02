@@ -1,0 +1,15 @@
+{
+  "id": "amverge.deadframes.remover",
+  "name": "AMVerge Deadframe Remover",
+  "version": "1.0.0",
+  "description": "Detects and removes motionless holding frames from exported clips using optical flow and frame compaction.",
+  "author": "AMVerge Team & AutoScene",
+  "kind": "post-processor",
+  "entrypoint": "run.sh",
+  "capabilities": [
+    "filesystem:write-export"
+  ],
+  "triggers": [
+    "post-export"
+  ]
+}

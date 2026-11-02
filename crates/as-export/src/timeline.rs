@@ -41,9 +41,7 @@ pub fn export_cmx3600_edl(title: &str, clips: &[TimelineClip], time_base: Ration
         let rec_in = Timecode::from_frame(clip.record_range.start as u64, time_base, false);
         let rec_out = Timecode::from_frame(clip.record_range.end as u64, time_base, false);
 
-        out.push_str(&format!(
-            "{event_num:03}  {reel} {track}{src_in} {src_out} {rec_in} {rec_out}\n"
-        ));
+        out.push_str(&format!("{event_num:03}  {reel} {track}{src_in} {src_out} {rec_in} {rec_out}\n"));
         out.push_str(&format!("* FROM CLIP NAME: {}\n\n", clip.source_file));
     }
 

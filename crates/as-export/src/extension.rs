@@ -192,22 +192,22 @@ impl ExtensionManifest {
                 self.entrypoint
             )));
         }
-        if let Some(icon) = &self.icon {
-            if icon.contains("..") || icon.starts_with('/') || icon.starts_with('\\') {
-                return Err(ExtensionError::InsecurePath(format!("icon '{icon}' contains invalid traversal")));
-            }
+        if let Some(icon) = &self.icon
+            && (icon.contains("..") || icon.starts_with('/') || icon.starts_with('\\'))
+        {
+            return Err(ExtensionError::InsecurePath(format!("icon '{icon}' contains invalid traversal")));
         }
-        if let Some(banner) = &self.banner {
-            if banner.contains("..") || banner.starts_with('/') || banner.starts_with('\\') {
-                return Err(ExtensionError::InsecurePath(format!("banner '{banner}' contains invalid traversal")));
-            }
+        if let Some(banner) = &self.banner
+            && (banner.contains("..") || banner.starts_with('/') || banner.starts_with('\\'))
+        {
+            return Err(ExtensionError::InsecurePath(format!("banner '{banner}' contains invalid traversal")));
         }
-        if let Some(avatar) = &self.author_avatar {
-            if !avatar.starts_with("http://") && !avatar.starts_with("https://") {
-                if avatar.contains("..") || avatar.starts_with('/') || avatar.starts_with('\\') {
-                    return Err(ExtensionError::InsecurePath(format!("authorAvatar '{avatar}' contains invalid traversal")));
-                }
-            }
+        if let Some(avatar) = &self.author_avatar
+            && !avatar.starts_with("http://")
+            && !avatar.starts_with("https://")
+            && (avatar.contains("..") || avatar.starts_with('/') || avatar.starts_with('\\'))
+        {
+            return Err(ExtensionError::InsecurePath(format!("authorAvatar '{avatar}' contains invalid traversal")));
         }
         Ok(())
     }
@@ -297,16 +297,11 @@ pub fn generate_plugin_signing_keypair() -> PluginSigningKeyPair {
     hasher.update(verifying_key.as_bytes());
     let fingerprint = format!("SHA256:{}", hex::encode(hasher.finalize()));
 
-    PluginSigningKeyPair {
-        private_key_hex: priv_hex,
-        public_key_hex: pub_hex,
-        fingerprint,
-    }
+    PluginSigningKeyPair { private_key_hex: priv_hex, public_key_hex: pub_hex, fingerprint }
 }
 
 /// Built-in official AutoScene verifying public key (hex-encoded 32-byte Ed25519).
-pub const AUTOSCENE_OFFICIAL_PUBLIC_KEY: &str =
-    "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0";
+pub const AUTOSCENE_OFFICIAL_PUBLIC_KEY: &str = "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0";
 
 /// Discovered plugin/extension installed in the system.
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -428,9 +423,7 @@ pub fn package_asp_signed(
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            let rel = path
-                .strip_prefix(base)
-                .map_err(|e| PluginError::Archive(e.to_string()))?;
+            let rel = path.strip_prefix(base).map_err(|e| PluginError::Archive(e.to_string()))?;
             let rel_str = rel.to_string_lossy().replace('\\', "/");
 
             if rel_str.starts_with("META-INF/") || rel_str == "META-INF" {
@@ -456,11 +449,10 @@ pub fn package_asp_signed(
     // Step 2: If a signing key is provided, generate META-INF/MANIFEST.json and META-INF/SIGNATURE.sig
     let mut key_pair_info = None;
     if let Some(key_hex) = signing_key_hex {
-        let key_bytes = hex::decode(key_hex.trim())
-            .map_err(|e| PluginError::Signature(format!("Invalid signing key hex: {e}")))?;
-        let signing_key_bytes: [u8; 32] = key_bytes
-            .try_into()
-            .map_err(|_| PluginError::Signature("Private key must be exactly 32 bytes".into()))?;
+        let key_bytes =
+            hex::decode(key_hex.trim()).map_err(|e| PluginError::Signature(format!("Invalid signing key hex: {e}")))?;
+        let signing_key_bytes: [u8; 32] =
+            key_bytes.try_into().map_err(|_| PluginError::Signature("Private key must be exactly 32 bytes".into()))?;
         let signing_key = SigningKey::from_bytes(&signing_key_bytes);
         let verifying_key = signing_key.verifying_key();
 
@@ -505,8 +497,7 @@ pub fn package_asp_signed(
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     for (name, content) in file_map {
-        zip.start_file(name, options)
-            .map_err(|e| PluginError::Archive(e.to_string()))?;
+        zip.start_file(name, options).map_err(|e| PluginError::Archive(e.to_string()))?;
         zip.write_all(&content)?;
     }
 
@@ -572,9 +563,7 @@ pub fn inspect_asp(asp_path: &Path) -> PluginResult<AspInspectionResult> {
 
     // Evaluate signature status
     let signature_info = match (meta_manifest_data, meta_signature_data) {
-        (Some(manifest_bytes), Some(sig_bytes)) => {
-            verify_asp_signature(&manifest_bytes, &sig_bytes, &file_contents)
-        }
+        (Some(manifest_bytes), Some(sig_bytes)) => verify_asp_signature(&manifest_bytes, &sig_bytes, &file_contents),
         _ => PluginSignatureInfo {
             status: PluginSignatureStatus::Unsigned,
             public_key: None,
@@ -585,12 +574,7 @@ pub fn inspect_asp(asp_path: &Path) -> PluginResult<AspInspectionResult> {
         },
     };
 
-    Ok(AspInspectionResult {
-        manifest,
-        signature: signature_info,
-        file_count,
-        total_uncompressed_bytes,
-    })
+    Ok(AspInspectionResult { manifest, signature: signature_info, file_count, total_uncompressed_bytes })
 }
 
 fn verify_asp_signature(
@@ -640,9 +624,7 @@ fn verify_asp_signature(
                         key_fingerprint: None,
                         author_identity: sig_block.author_identity,
                         signed_at: Some(sig_block.signed_at),
-                        error_message: Some(format!(
-                            "File digest mismatch on '{filename}'. File has been altered!"
-                        )),
+                        error_message: Some(format!("File digest mismatch on '{filename}'. File has been altered!")),
                     };
                 }
             }
@@ -765,27 +747,19 @@ fn verify_asp_signature(
 
 /// Installs a `.asp` (AutoScene Plugin) archive by unpacking it into the plugins folder.
 /// Automatically verifies archive integrity and cryptographic signature.
-pub fn install_asp(
-    asp_path: &Path,
-    plugins_dir: &Path,
-    allow_unsigned: bool,
-) -> PluginResult<InstalledPlugin> {
+pub fn install_asp(asp_path: &Path, plugins_dir: &Path, allow_unsigned: bool) -> PluginResult<InstalledPlugin> {
     let inspection = inspect_asp(asp_path)?;
 
     if inspection.signature.status == PluginSignatureStatus::Tampered {
         return Err(PluginError::Security(format!(
             "Plugin package verification failed: {}",
-            inspection
-                .signature
-                .error_message
-                .unwrap_or_else(|| "Tampered files detected".into())
+            inspection.signature.error_message.unwrap_or_else(|| "Tampered files detected".into())
         )));
     }
 
     if inspection.signature.status == PluginSignatureStatus::Unsigned && !allow_unsigned {
         return Err(PluginError::Security(
-            "Installation blocked: Plugin is not signed. Explicit confirmation required."
-                .into(),
+            "Installation blocked: Plugin is not signed. Explicit confirmation required.".into(),
         ));
     }
 
@@ -817,10 +791,10 @@ pub fn install_asp(
         if file.name().ends_with('/') {
             fs::create_dir_all(&outpath)?;
         } else {
-            if let Some(p) = outpath.parent() {
-                if !p.exists() {
-                    fs::create_dir_all(p)?;
-                }
+            if let Some(p) = outpath.parent()
+                && !p.exists()
+            {
+                fs::create_dir_all(p)?;
             }
             let mut outfile = File::create(&outpath)?;
             std::io::copy(&mut file, &mut outfile)?;
@@ -834,7 +808,7 @@ pub fn install_asp(
                 if mode & 0o111 != 0 {
                     let _ = fs::set_permissions(&outpath, fs::Permissions::from_mode(0o755));
                 }
-            } else if outpath.extension().map_or(false, |ext| ext == "sh" || ext == "py") {
+            } else if outpath.extension().is_some_and(|ext| ext == "sh" || ext == "py") {
                 let _ = fs::set_permissions(&outpath, fs::Permissions::from_mode(0o755));
             }
         }
@@ -1083,10 +1057,7 @@ mod tests {
         assert_eq!(inspection.signature.status, PluginSignatureStatus::CommunitySigned);
         assert_eq!(inspection.signature.public_key, Some(keypair.public_key_hex));
         assert!(inspection.signature.key_fingerprint.is_some());
-        assert_eq!(
-            inspection.signature.author_identity,
-            Some("Security Author <sec@example.com>".into())
-        );
+        assert_eq!(inspection.signature.author_identity, Some("Security Author <sec@example.com>".into()));
 
         // 3. Install package
         let target_dir = temp.path().join("installed");

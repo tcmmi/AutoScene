@@ -11,24 +11,23 @@ pub mod timeline;
 
 pub use clip::{ClipJob, ClipOutcome, Part, export_clip};
 pub use estimate::{EstimateClip, estimate_bytes};
+pub use extension as plugin;
 pub use extension::{
-    AspInspectionResult, AspIntegrityManifest, AspSignatureBlock, CommandContribution,
-    ExtensionCapability, ExtensionContributions, ExtensionError, ExtensionKind, ExtensionManifest,
-    ExtensionResult, InstalledExtension, InstalledPlugin, MenuContribution,
-    NavButtonContribution, PluginCapability, PluginError, PluginKind, PluginManifest,
-    PluginResult, PluginSignatureInfo, PluginSignatureStatus, PluginSigningKeyPair,
+    AspInspectionResult, AspIntegrityManifest, AspSignatureBlock, CommandContribution, ExtensionCapability,
+    ExtensionContributions, ExtensionError, ExtensionKind, ExtensionManifest, ExtensionResult, InstalledExtension,
+    InstalledPlugin, MenuContribution, NavButtonContribution, PluginCapability, PluginError, PluginKind,
+    PluginManifest, PluginResult, PluginSignatureInfo, PluginSignatureStatus, PluginSigningKeyPair,
     RailButtonContribution, SettingFieldContribution, discover_extensions, discover_plugins,
     generate_plugin_signing_keypair, inspect_asp, install_asp, package_asp, package_asp_signed,
 };
-pub use extension as plugin;
 pub use hook::{PostExportPayload, run_hook};
 pub use lossless::{LosslessCodec, exact_format};
-pub use timeline::{TimelineClip, export_cmx3600_edl, export_davinci_csv};
 pub use merge::{
     JoinJob, JoinPart, LosslessShape, MergePlan, MergeShape, MergeSource, PartTiming, join_parts,
     lossless_merge_blocker, plan_lossless_merge, plan_merge,
 };
 pub use preset::{ExportPreset, builtin_presets};
+pub use timeline::{TimelineClip, export_cmx3600_edl, export_davinci_csv};
 
 use thiserror::Error;
 

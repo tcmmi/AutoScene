@@ -142,10 +142,7 @@ mod tests {
         let meta_path = Path::new("/tmp/exports/meta.json");
         let result = payload.substitute_tokens(template, meta_path);
 
-        assert_eq!(
-            result,
-            "echo 'Finished 5 clips in /tmp/exports (id: exp-123, meta: /tmp/exports/meta.json)'"
-        );
+        assert_eq!(result, "echo 'Finished 5 clips in /tmp/exports (id: exp-123, meta: /tmp/exports/meta.json)'");
     }
 
     #[test]
@@ -185,4 +182,3 @@ mod tests {
         assert!(res.is_err());
     }
 }
-

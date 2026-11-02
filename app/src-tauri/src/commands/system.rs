@@ -171,8 +171,7 @@ pub fn extensions_list() -> Vec<as_export::InstalledPlugin> {
 #[specta::specta]
 pub fn plugin_inspect_asp(path: String) -> AppResult<as_export::AspInspectionResult> {
     let p = std::path::Path::new(&path);
-    as_export::inspect_asp(p)
-        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin inspection failed: {e}")))
+    as_export::inspect_asp(p).map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin inspection failed: {e}")))
 }
 
 /// Install a `.asp` (AutoScene Plugin) archive.
@@ -250,8 +249,14 @@ pub fn plugin_test(id: String) -> AppResult<String> {
 
     let cancel = as_core::CancelToken::new();
     let scratch = AppPaths::resolve().cache().join("test_plugin");
-    as_export::run_hook(&ext.entrypoint_path, &dummy_payload, &scratch, &cancel, Some(std::time::Duration::from_secs(10)))
-        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin failed: {e}")))?;
+    as_export::run_hook(
+        &ext.entrypoint_path,
+        &dummy_payload,
+        &scratch,
+        &cancel,
+        Some(std::time::Duration::from_secs(10)),
+    )
+    .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin failed: {e}")))?;
 
     Ok("Plugin test ran successfully!".into())
 }
@@ -266,11 +271,7 @@ pub fn extension_test(id: String) -> AppResult<String> {
 /// Run a plugin on specific clip output files.
 #[tauri::command]
 #[specta::specta]
-pub fn plugin_run_on_files(
-    id: String,
-    project_id: String,
-    files: Vec<String>,
-) -> AppResult<String> {
+pub fn plugin_run_on_files(id: String, project_id: String, files: Vec<String>) -> AppResult<String> {
     if files.is_empty() {
         return Err(AppError::new(ErrorCode::Invalid, "No files specified"));
     }
@@ -308,11 +309,7 @@ pub fn plugin_run_on_files(
 /// Run an extension on specific clip output files (backward compatibility).
 #[tauri::command]
 #[specta::specta]
-pub fn extension_run_on_files(
-    id: String,
-    project_id: String,
-    files: Vec<String>,
-) -> AppResult<String> {
+pub fn extension_run_on_files(id: String, project_id: String, files: Vec<String>) -> AppResult<String> {
     plugin_run_on_files(id, project_id, files)
 }
 

@@ -49,3 +49,4 @@ export function getExtensionIcon(name: string | undefined | null) {
       return Icons.Package
   }
 }
+

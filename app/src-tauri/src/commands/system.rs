@@ -131,37 +131,112 @@ pub async fn clipboard_read(app: AppHandle) -> AppResult<Option<String>> {
     .await
 }
 
-/// Open the extensions folder (Settings → Extensions).
+/// Open the plugins folder (Settings → Plugins).
 #[tauri::command]
 #[specta::specta]
-pub fn open_extensions_dir() -> AppResult<()> {
-    let dir = AppPaths::resolve().extensions();
+pub fn open_plugins_dir() -> AppResult<()> {
+    let dir = AppPaths::resolve().plugins();
     std::fs::create_dir_all(&dir)?;
     tauri_plugin_opener::open_path(dir.display().to_string(), None::<&str>).map_err(|e| {
-        log::warn!("opening the extensions folder: {e}");
-        AppError::new(ErrorCode::Io, "The extensions folder couldn't be opened.")
+        log::warn!("opening the plugins folder: {e}");
+        AppError::new(ErrorCode::Io, "The plugins folder couldn't be opened.")
     })
 }
 
-/// List extensions installed in the extensions folder.
+/// Open the extensions folder (backward compatibility alias).
 #[tauri::command]
 #[specta::specta]
-pub fn extensions_list() -> Vec<as_api::InstalledExtension> {
-    let dir = AppPaths::resolve().extensions();
-    let _ = std::fs::create_dir_all(&dir);
-    as_export::discover_extensions(&dir)
+pub fn open_extensions_dir() -> AppResult<()> {
+    open_plugins_dir()
 }
 
-/// Run an extension directly to test its execution.
+/// List plugins installed in the plugins folder.
 #[tauri::command]
 #[specta::specta]
-pub fn extension_test(id: String) -> AppResult<String> {
-    let dir = AppPaths::resolve().extensions();
-    let installed = as_export::discover_extensions(&dir);
+pub fn plugins_list() -> Vec<as_export::InstalledPlugin> {
+    let dir = AppPaths::resolve().plugins();
+    let _ = std::fs::create_dir_all(&dir);
+    as_export::discover_plugins(&dir)
+}
+
+/// List extensions installed (backward compatibility alias).
+#[tauri::command]
+#[specta::specta]
+pub fn extensions_list() -> Vec<as_export::InstalledPlugin> {
+    plugins_list()
+}
+
+/// Inspect an `.asp` plugin package before installing, returning metadata and cryptographic signature status.
+#[tauri::command]
+#[specta::specta]
+pub fn plugin_inspect_asp(path: String) -> AppResult<as_export::AspInspectionResult> {
+    let p = std::path::Path::new(&path);
+    as_export::inspect_asp(p)
+        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin inspection failed: {e}")))
+}
+
+/// Install a `.asp` (AutoScene Plugin) archive.
+#[tauri::command]
+#[specta::specta]
+pub fn plugin_install_asp(path: String, allow_unsigned: Option<bool>) -> AppResult<as_export::InstalledPlugin> {
+    let p = std::path::Path::new(&path);
+    let plugins_dir = AppPaths::resolve().plugins();
+    let _ = std::fs::create_dir_all(&plugins_dir);
+    as_export::install_asp(p, &plugins_dir, allow_unsigned.unwrap_or(false))
+        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin installation failed: {e}")))
+}
+
+/// Package a plugin directory into an `.asp` file, optionally signing it with an Ed25519 private key.
+#[tauri::command]
+#[specta::specta]
+pub fn plugin_package_asp(
+    dir_path: String,
+    out_file: String,
+    signing_key_hex: Option<String>,
+    author_identity: Option<String>,
+) -> AppResult<Option<as_export::PluginSigningKeyPair>> {
+    let p = std::path::Path::new(&dir_path);
+    let out = std::path::Path::new(&out_file);
+    as_export::package_asp_signed(p, out, signing_key_hex.as_deref(), author_identity.as_deref())
+        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin packaging failed: {e}")))
+}
+
+/// Generate a new Ed25519 keypair for signing `.asp` plugins.
+#[tauri::command]
+#[specta::specta]
+pub fn plugin_generate_keypair() -> as_export::PluginSigningKeyPair {
+    as_export::generate_plugin_signing_keypair()
+}
+
+/// Uninstall an installed plugin by its manifest id.
+#[tauri::command]
+#[specta::specta]
+pub fn plugin_uninstall(id: String) -> AppResult<()> {
+    let dir = AppPaths::resolve().plugins();
+    let installed = as_export::discover_plugins(&dir);
     let ext = installed
         .into_iter()
         .find(|e| e.manifest.id == id)
-        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Extension not found"))?;
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Plugin not found"))?;
+
+    let plugin_path = std::path::Path::new(&ext.path);
+    if plugin_path.is_dir() {
+        std::fs::remove_dir_all(plugin_path)
+            .map_err(|e| AppError::new(ErrorCode::Io, format!("Failed to delete plugin: {e}")))?;
+    }
+    Ok(())
+}
+
+/// Run a plugin directly to test its execution.
+#[tauri::command]
+#[specta::specta]
+pub fn plugin_test(id: String) -> AppResult<String> {
+    let dir = AppPaths::resolve().plugins();
+    let installed = as_export::discover_plugins(&dir);
+    let ext = installed
+        .into_iter()
+        .find(|e| e.manifest.id == id)
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Plugin not found"))?;
 
     let dummy_payload = as_export::PostExportPayload {
         export_id: "test-run".into(),
@@ -174,17 +249,24 @@ pub fn extension_test(id: String) -> AppResult<String> {
     };
 
     let cancel = as_core::CancelToken::new();
-    let scratch = AppPaths::resolve().cache().join("test_extension");
+    let scratch = AppPaths::resolve().cache().join("test_plugin");
     as_export::run_hook(&ext.entrypoint_path, &dummy_payload, &scratch, &cancel, Some(std::time::Duration::from_secs(10)))
-        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Extension failed: {e}")))?;
+        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin failed: {e}")))?;
 
-    Ok("Extension test ran successfully!".into())
+    Ok("Plugin test ran successfully!".into())
 }
 
-/// Run an extension on specific clip output files.
+/// Run an extension directly to test its execution (backward compatibility).
 #[tauri::command]
 #[specta::specta]
-pub fn extension_run_on_files(
+pub fn extension_test(id: String) -> AppResult<String> {
+    plugin_test(id)
+}
+
+/// Run a plugin on specific clip output files.
+#[tauri::command]
+#[specta::specta]
+pub fn plugin_run_on_files(
     id: String,
     project_id: String,
     files: Vec<String>,
@@ -193,12 +275,12 @@ pub fn extension_run_on_files(
         return Err(AppError::new(ErrorCode::Invalid, "No files specified"));
     }
 
-    let dir = AppPaths::resolve().extensions();
-    let installed = as_export::discover_extensions(&dir);
+    let dir = AppPaths::resolve().plugins();
+    let installed = as_export::discover_plugins(&dir);
     let ext = installed
         .into_iter()
         .find(|e| e.manifest.id == id)
-        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Extension not found"))?;
+        .ok_or_else(|| AppError::new(ErrorCode::NotFound, "Plugin not found"))?;
 
     let out_dir = std::path::Path::new(&files[0])
         .parent()
@@ -216,11 +298,22 @@ pub fn extension_run_on_files(
     };
 
     let cancel = as_core::CancelToken::new();
-    let scratch = AppPaths::resolve().cache().join("extension_action");
+    let scratch = AppPaths::resolve().cache().join("plugin_action");
     as_export::run_hook(&ext.entrypoint_path, &payload, &scratch, &cancel, Some(std::time::Duration::from_secs(300)))
-        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Extension failed: {e}")))?;
+        .map_err(|e| AppError::new(ErrorCode::Invalid, format!("Plugin failed: {e}")))?;
 
     Ok("Completed successfully".into())
+}
+
+/// Run an extension on specific clip output files (backward compatibility).
+#[tauri::command]
+#[specta::specta]
+pub fn extension_run_on_files(
+    id: String,
+    project_id: String,
+    files: Vec<String>,
+) -> AppResult<String> {
+    plugin_run_on_files(id, project_id, files)
 }
 
 /// Open the logs folder (Settings → About, Help menu on Windows).

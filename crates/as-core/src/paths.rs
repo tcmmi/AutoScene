@@ -46,8 +46,15 @@ impl AppPaths {
     pub fn cache(&self) -> PathBuf {
         self.data.join("cache")
     }
+    pub fn plugins(&self) -> PathBuf {
+        let p = self.data.join("plugins");
+        if !p.exists() && self.data.join("extensions").exists() {
+            return self.data.join("extensions");
+        }
+        p
+    }
     pub fn extensions(&self) -> PathBuf {
-        self.data.join("extensions")
+        self.plugins()
     }
     /// Character images from AniList, by AniList character id (only while
     /// names from AniList are on).

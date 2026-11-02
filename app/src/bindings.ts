@@ -29,13 +29,35 @@ export const commands = {
 	clipboardRead: () => __TAURI_INVOKE<string | null>("clipboard_read"),
 	/**  Open the logs folder (Settings → About, Help menu on Windows). */
 	openLogsDir: () => __TAURI_INVOKE<null>("open_logs_dir"),
-	/**  Open the extensions folder (Settings → Extensions). */
+	/**  Open the plugins folder (Settings → Plugins). */
+	openPluginsDir: () => __TAURI_INVOKE<null>("open_plugins_dir"),
+	/**  Open the extensions folder (backward compatibility alias). */
 	openExtensionsDir: () => __TAURI_INVOKE<null>("open_extensions_dir"),
-	/**  List extensions installed in the extensions folder. */
+	/**  List plugins installed in the plugins folder. */
+	pluginsList: () => __TAURI_INVOKE<InstalledExtension_Serialize[]>("plugins_list"),
+	/**  List extensions installed (backward compatibility alias). */
 	extensionsList: () => __TAURI_INVOKE<InstalledExtension_Serialize[]>("extensions_list"),
-	/**  Run an extension directly to test its execution. */
+	/**  Inspect an `.asp` plugin package before installing, returning metadata and cryptographic signature status. */
+	pluginInspectAsp: (path: string) => __TAURI_INVOKE<AspInspectionResult_Serialize>("plugin_inspect_asp", { path }),
+	/**  Install a `.asp` (AutoScene Plugin) archive. */
+	pluginInstallAsp: (path: string, allowUnsigned: boolean | null) => __TAURI_INVOKE<InstalledExtension_Serialize>("plugin_install_asp", { path, allowUnsigned }),
+	/**  Package a plugin directory into an `.asp` file, optionally signing it with an Ed25519 private key. */
+	pluginPackageAsp: (dirPath: string, outFile: string, signingKeyHex: string | null, authorIdentity: string | null) => __TAURI_INVOKE<{
+	privateKeyHex: string,
+	publicKeyHex: string,
+	fingerprint: string,
+} | null>("plugin_package_asp", { dirPath, outFile, signingKeyHex, authorIdentity }),
+	/**  Generate a new Ed25519 keypair for signing `.asp` plugins. */
+	pluginGenerateKeypair: () => __TAURI_INVOKE<PluginSigningKeyPair>("plugin_generate_keypair"),
+	/**  Uninstall an installed plugin by its manifest id. */
+	pluginUninstall: (id: string) => __TAURI_INVOKE<null>("plugin_uninstall", { id }),
+	/**  Run a plugin directly to test its execution. */
+	pluginTest: (id: string) => __TAURI_INVOKE<string>("plugin_test", { id }),
+	/**  Run an extension directly to test its execution (backward compatibility). */
 	extensionTest: (id: string) => __TAURI_INVOKE<string>("extension_test", { id }),
-	/**  Run an extension on specific clip output files. */
+	/**  Run a plugin on specific clip output files. */
+	pluginRunOnFiles: (id: string, projectId: string, files: string[]) => __TAURI_INVOKE<string>("plugin_run_on_files", { id, projectId, files }),
+	/**  Run an extension on specific clip output files (backward compatibility). */
 	extensionRunOnFiles: (id: string, projectId: string, files: string[]) => __TAURI_INVOKE<string>("extension_run_on_files", { id, projectId, files }),
 	/**
 	 *  Put the person's keys (Settings → Shortcuts) on the macOS menu, which
@@ -428,6 +450,25 @@ export type AppSettings = {
 	shortcuts?: Shortcuts,
 	/**  Extension IDs that the user has disabled. */
 	disabledExtensions?: string[],
+};
+
+/**  Result of inspecting an `.asp` file before deciding to install it. */
+export type AspInspectionResult = AspInspectionResult_Serialize | AspInspectionResult_Deserialize;
+
+/**  Result of inspecting an `.asp` file before deciding to install it. */
+export type AspInspectionResult_Deserialize = {
+	manifest: ExtensionManifest_Deserialize,
+	signature: PluginSignatureInfo,
+	fileCount: number,
+	totalUncompressedBytes: number,
+};
+
+/**  Result of inspecting an `.asp` file before deciding to install it. */
+export type AspInspectionResult_Serialize = {
+	manifest: ExtensionManifest_Serialize,
+	signature: PluginSignatureInfo,
+	fileCount: number,
+	totalUncompressedBytes: number,
 };
 
 export type AudioCodec = { codec: "none" } | 
@@ -880,10 +921,10 @@ export type ImportCandidate = {
 	refused: string | null,
 };
 
-/**  Discovered extension installed in the system. */
+/**  Discovered plugin/extension installed in the system. */
 export type InstalledExtension = InstalledExtension_Serialize | InstalledExtension_Deserialize;
 
-/**  Discovered extension installed in the system. */
+/**  Discovered plugin/extension installed in the system. */
 export type InstalledExtension_Deserialize = {
 	manifest: ExtensionManifest_Deserialize,
 	path: string,
@@ -891,9 +932,10 @@ export type InstalledExtension_Deserialize = {
 	iconPath?: string | null,
 	bannerPath?: string | null,
 	authorAvatarPath?: string | null,
+	signatureStatus?: PluginSignatureStatus | null,
 };
 
-/**  Discovered extension installed in the system. */
+/**  Discovered plugin/extension installed in the system. */
 export type InstalledExtension_Serialize = {
 	manifest: ExtensionManifest_Serialize,
 	path: string,
@@ -901,6 +943,7 @@ export type InstalledExtension_Serialize = {
 	iconPath: string | null,
 	bannerPath: string | null,
 	authorAvatarPath: string | null,
+	signatureStatus: PluginSignatureStatus | null,
 };
 
 /**  A job was queued, started or finished. */
@@ -1297,6 +1340,34 @@ export type PackTotals = {
 };
 
 export type Platform = "windows" | "macos" | "linux";
+
+/**  Metadata and cryptographic verification details of an `.asp` package. */
+export type PluginSignatureInfo = {
+	status: PluginSignatureStatus,
+	publicKey: string | null,
+	keyFingerprint: string | null,
+	authorIdentity: string | null,
+	signedAt: string | null,
+	errorMessage: string | null,
+};
+
+/**  Status of the cryptographic signature on an `.asp` plugin package. */
+export type PluginSignatureStatus = 
+/**  Cryptographically verified with AutoScene's official master key. */
+"official" | 
+/**  Cryptographically verified with a community/author developer key. */
+"communitySigned" | 
+/**  No digital signature present (unverified/unsigned archive). */
+"unsigned" | 
+/**  Signature is present but verification failed, or file digests were tampered with. */
+"tampered";
+
+/**  Key pair generated for plugin authors to sign their packages. */
+export type PluginSigningKeyPair = {
+	privateKeyHex: string,
+	publicKeyHex: string,
+	fingerprint: string,
+};
 
 /**
  *  Character covers of a project got sharp portraits (the cast itself is

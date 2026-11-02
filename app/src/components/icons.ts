@@ -64,6 +64,7 @@ export {
   Scan,
   Scissors,
   SelectionAll,
+  ShieldCheck,
   ShieldWarning,
   SidebarSimple,
   SkipBack,

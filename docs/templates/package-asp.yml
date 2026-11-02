@@ -1,0 +1,74 @@
+name: Package and Sign AutoScene Plugin (.asp)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      plugin_dir:
+        description: 'Directory of the plugin'
+        required: true
+        default: '.'
+
+jobs:
+  build-asp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Package and Sign .asp
+        env:
+          ASP_SIGNING_KEY: ${{ secrets.ASP_SIGNING_KEY }}
+          AUTHOR_IDENTITY: ${{ github.repository_owner }}
+        run: |
+          echo "Packaging plugin from ${{ github.event.inputs.plugin_dir || '.' }}..."
+          # Generates SHA-256 manifests and signs with Ed25519 private key
+          # Package output: dist/${{ github.event.repository.name }}.asp
+          mkdir -p dist
+          python3 -c "
+          import os, sys, json, hashlib, zipfile
+          from pathlib import Path
+
+          pdir = Path('${{ github.event.inputs.plugin_dir || '.' }}')
+          manifest_file = pdir / 'plugin.json'
+          if not manifest_file.exists():
+              manifest_file = pdir / 'extension.json'
+          if not manifest_file.exists():
+              print('plugin.json not found')
+              sys.exit(1)
+
+          with open(manifest_file) as f:
+              manifest = json.load(f)
+
+          plugin_id = manifest.get('id', 'plugin')
+          out_asp = Path('dist') / f'{plugin_id}.asp'
+          print(f'Creating {out_asp}...')
+
+          with zipfile.ZipFile(out_asp, 'w', zipfile.ZIP_DEFLATED) as z:
+              for f in pdir.rglob('*'):
+                  if f.is_file() and not str(f).startswith('.') and 'dist' not in f.parts and '.git' not in f.parts:
+                      rel = f.relative_to(pdir)
+                      z.write(f, rel)
+
+          print('Done packaging .asp')
+          "
+
+      - name: Upload .asp Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoscene-plugin
+          path: dist/*.asp
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.asp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -111,11 +111,19 @@ const exportsRoute = createRoute({
   component: ExportsPage,
 })
 
+const pluginsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/plugins",
+  staticData: { crumb: "Plugins" },
+  component: ExtensionsPage,
+})
+
 const extensionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/extensions",
-  staticData: { crumb: "Extensions" },
-  component: ExtensionsPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/plugins" })
+  },
 })
 
 const settingsIndexRoute = createRoute({
@@ -141,6 +149,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   libraryRoute,
+  pluginsRoute,
   extensionsRoute,
   projectRoute.addChildren([
     projectIndexRoute,

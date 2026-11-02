@@ -136,3 +136,4 @@ export function usePaletteContributions(): ActiveCommandContribution[] {
     return results
   }, [enabled])
 }
+

@@ -12,9 +12,15 @@ pub mod timeline;
 pub use clip::{ClipJob, ClipOutcome, Part, export_clip};
 pub use estimate::{EstimateClip, estimate_bytes};
 pub use extension::{
-    ExtensionCapability, ExtensionError, ExtensionKind, ExtensionManifest, ExtensionResult, InstalledExtension,
-    discover_extensions,
+    AspInspectionResult, AspIntegrityManifest, AspSignatureBlock, CommandContribution,
+    ExtensionCapability, ExtensionContributions, ExtensionError, ExtensionKind, ExtensionManifest,
+    ExtensionResult, InstalledExtension, InstalledPlugin, MenuContribution,
+    NavButtonContribution, PluginCapability, PluginError, PluginKind, PluginManifest,
+    PluginResult, PluginSignatureInfo, PluginSignatureStatus, PluginSigningKeyPair,
+    RailButtonContribution, SettingFieldContribution, discover_extensions, discover_plugins,
+    generate_plugin_signing_keypair, inspect_asp, install_asp, package_asp, package_asp_signed,
 };
+pub use extension as plugin;
 pub use hook::{PostExportPayload, run_hook};
 pub use lossless::{LosslessCodec, exact_format};
 pub use timeline::{TimelineClip, export_cmx3600_edl, export_davinci_csv};

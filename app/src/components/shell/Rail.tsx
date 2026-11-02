@@ -121,17 +121,17 @@ export function Rail() {
         <ActivityButton />
         <ExtensionRailItems />
         <RailLink
-          to="/extensions"
+          to="/plugins"
           icon={<Package />}
-          label="Extensions"
-          active={path.startsWith("/extensions")}
+          label="Plugins"
+          active={path.startsWith("/plugins") || path.startsWith("/extensions")}
           menu={
             <>
-              <ContextMenuItem onSelect={actions.goExtensions}>
-                <Package /> Extensions
+              <ContextMenuItem onSelect={() => actions.navigate("/plugins")}>
+                <Package /> Plugins
               </ContextMenuItem>
-              <ContextMenuItem onSelect={() => void commands.openExtensionsDir()}>
-                <DownloadSimple /> Open extensions folder
+              <ContextMenuItem onSelect={() => void commands.openPluginsDir()}>
+                <DownloadSimple /> Open plugins folder
               </ContextMenuItem>
             </>
           }

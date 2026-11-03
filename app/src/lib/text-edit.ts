@@ -116,8 +116,11 @@ function exec(command: string, value?: string): boolean {
   }
 }
 
-/** The field focused again, with the selection the menu was opened on. */
-export function restoreSelection(field: TextField, state: TextState) {
+/** The field focused again, with the selection the menu was opened on (or the one given). */
+export function restoreSelection(
+  field: TextField,
+  state: Pick<TextState, "start" | "end"> & Partial<Pick<TextState, "direction">>,
+) {
   if (document.activeElement !== field) field.focus({ preventScroll: true })
   field.setSelectionRange(state.start, state.end, state.direction)
 }
@@ -133,6 +136,34 @@ export function insertText(field: TextField, text: string) {
   const end = field.selectionEnd ?? start
   field.setRangeText(text, start, end, "end")
   field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }))
+}
+
+let measuring: CanvasRenderingContext2D | null = null
+
+/** How wide `text` is in the font `style` gives, or null where nothing can measure it. */
+function textWidth(style: CSSStyleDeclaration, text: string): number | null {
+  measuring ??= document.createElement("canvas").getContext("2d")
+  if (!measuring) return null
+  // The longhands: the computed `font` shorthand is empty when font features are set.
+  measuring.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+  measuring.letterSpacing = style.letterSpacing === "normal" ? "0px" : style.letterSpacing
+  return measuring.measureText(text).width
+}
+
+/**
+ * Scroll a one-line field so its caret shows. The webview does that when a
+ * person types, not when text is put in by script (`insertText`), so a part
+ * put in at the end of a long name would land out of sight. It only scrolls:
+ * no blur, no focus, so a screen reader doesn't read the field again.
+ */
+export function revealCaret(field: HTMLInputElement) {
+  if (field.scrollWidth <= field.clientWidth) return
+  const style = getComputedStyle(field)
+  const x = textWidth(style, field.value.slice(0, field.selectionEnd ?? field.value.length))
+  if (x == null) return
+  const view = field.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+  if (x - field.scrollLeft > view - 1) field.scrollLeft = Math.ceil(x - view + 1)
+  else if (x < field.scrollLeft) field.scrollLeft = Math.floor(x)
 }
 
 /** Remove the selection, as the Delete key would. */

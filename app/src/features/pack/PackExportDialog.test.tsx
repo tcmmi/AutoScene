@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { type Character, type ExportPreset, FILE_PARTS, NAME_PARTS, type PackNaming } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -91,7 +92,20 @@ afterEach(() => {
   cleanup()
   queryClient.clear()
   vi.clearAllMocks()
+  vi.restoreAllMocks()
+  Reflect.deleteProperty(document, "execCommand")
 })
+
+/** The name-part button `label` under the field labelled `field`. */
+const chip = (field: string, label: string) =>
+  within(screen.getByLabelText(field).parentElement!).getByRole("button", { name: label })
+
+/** The engine's own typing command, stubbed: jsdom has none. */
+function stubExec() {
+  const exec = vi.fn<(...args: unknown[]) => boolean>(() => true)
+  Object.defineProperty(document, "execCommand", { value: exec, configurable: true })
+  return exec
+}
 
 describe("PackExportDialog", () => {
   it("exports the pack into one file, with the shots' names as chapters", async () => {
@@ -148,10 +162,94 @@ describe("PackExportDialog", () => {
     expect(buttons("Chapter names")).toEqual(NAME_PARTS.map(([, l]) => l))
     expect(buttons("File name")).toEqual(FILE_PARTS.map(label))
     // Each button puts in its own part: "Number" is {index}.
-    fireEvent.click(within(screen.getByLabelText("Chapter names").parentElement!).getByRole("button", { name: "Number" }))
-    expect(p.setNaming).toHaveBeenLastCalledWith({ ...naming(true), template: `${naming(true).template}{index}` })
-    fireEvent.click(within(screen.getByLabelText("File name").parentElement!).getByRole("button", { name: "Character" }))
+    fireEvent.click(chip("Chapter names", "Number"))
+    expect(p.setNaming).toHaveBeenLastCalledWith({ ...naming(true), template: `${naming(true).template} {index}` })
+    fireEvent.click(chip("File name", "Character"))
     expect(p.setNaming).toHaveBeenLastCalledWith({ ...naming(true), file: `${naming(true).file}{character}` })
+  })
+
+  it("a name-part button types its part at the cursor", async () => {
+    const user = userEvent.setup()
+    const exec = stubExec()
+    const select = vi.spyOn(HTMLInputElement.prototype, "setSelectionRange")
+    const p = pack(naming(false))
+    render(<PackExportDialog pid="p" character={walter} pack={p} open onOpenChange={() => {}} />, { wrapper })
+    const field = (await screen.findByLabelText("File names")) as HTMLInputElement
+    await user.click(field)
+    // "{character}" selected: Episode takes its place.
+    field.setSelectionRange(9, 20)
+    select.mockClear()
+    await user.click(chip("File names", "Episode"))
+    expect(exec).toHaveBeenCalledWith("insertText", false, "{episode}")
+    expect(select).toHaveBeenCalledWith(9, 20, undefined)
+    expect(select.mock.invocationCallOrder[0]).toBeLessThan(exec.mock.invocationCallOrder[0])
+    // Without the engine's command the field is changed directly, and the dialog hears it.
+    Reflect.deleteProperty(document, "execCommand")
+    field.setSelectionRange(9, 20)
+    await user.click(chip("File names", "Episode"))
+    expect(p.setNaming).toHaveBeenLastCalledWith({ ...naming(false), template: "{series} {episode} {episode} {tc}" })
+  })
+
+  it("pressing a name-part button leaves the focus in the field", async () => {
+    const user = userEvent.setup()
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(false))} open onOpenChange={() => {}} />, { wrapper })
+    const field = await screen.findByLabelText("File names")
+    await user.click(field)
+    const blurred = vi.fn()
+    field.addEventListener("blur", blurred)
+    await user.click(chip("File names", "Frame"))
+    expect(document.activeElement).toBe(field)
+    // Not even for a moment: the button never took the focus.
+    expect(blurred).not.toHaveBeenCalled()
+  })
+
+  it("Tab into the field and a button by keyboard keep the template", async () => {
+    const user = userEvent.setup()
+    const p = pack(naming(false))
+    render(<PackExportDialog pid="p" character={walter} pack={p} open onOpenChange={() => {}} />, { wrapper })
+    const field = (await screen.findByLabelText("File names")) as HTMLInputElement
+    // From the switch above it, Tab selects all of the field, as the webview does.
+    screen.getAllByRole("switch")[0].focus()
+    await user.tab()
+    expect(document.activeElement).toBe(field)
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, field.value.length])
+    await user.tab()
+    expect(document.activeElement).toBe(chip("File names", "Series"))
+    await user.keyboard("{Enter}")
+    // The part goes at the end; the template stays.
+    expect(p.setNaming).toHaveBeenLastCalledWith({ ...naming(false), template: `${naming(false).template} {series}` })
+    expect(document.activeElement).toBe(field)
+  })
+
+  it("a button fills its own field, not the one with the focus", async () => {
+    const user = userEvent.setup()
+    const p = pack(naming(true))
+    render(<PackExportDialog pid="p" character={walter} pack={p} open onOpenChange={() => {}} />, { wrapper })
+    const file = await screen.findByLabelText("File name")
+    await user.click(file)
+    await user.click(chip("Chapter names", "Frame"))
+    expect(p.setNaming).toHaveBeenCalledTimes(1)
+    expect(p.setNaming).toHaveBeenLastCalledWith({ ...naming(true), template: `${naming(true).template} {frame}` })
+    expect(document.activeElement).toBe(screen.getByLabelText("Chapter names"))
+  })
+
+  it("each press is its own undo step", async () => {
+    const user = userEvent.setup()
+    const exec = stubExec()
+    const select = vi.spyOn(HTMLInputElement.prototype, "setSelectionRange")
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(false))} open onOpenChange={() => {}} />, { wrapper })
+    const field = await screen.findByLabelText("File names")
+    await user.click(field)
+    select.mockClear()
+    for (const label of ["Frame", "Number", "Timecode"]) await user.click(chip("File names", label))
+    const inserts = exec.mock.invocationCallOrder.filter((_, i) => exec.mock.calls[i][0] === "insertText")
+    expect(inserts).toHaveLength(3)
+    // Before each one the selection is set again: that ends the engine's
+    // typing command, so Ctrl+Z takes back one part at a time.
+    const selects = select.mock.invocationCallOrder
+    inserts.forEach((at, i) => {
+      expect(selects.filter((s) => s < at && (i === 0 || s > inserts[i - 1]))).toHaveLength(1)
+    })
   })
 
   it("names a file per shot, in the character's folder", async () => {

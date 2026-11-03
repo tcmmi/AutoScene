@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { type ReactNode, useRef, useState } from "react"
 import { CircleNotch, FolderOpen } from "@/components/icons"
 import { toast } from "sonner"
 import type { Character } from "@/bindings"
@@ -13,8 +13,9 @@ import { rememberPreset } from "@/features/export/export"
 import { formatBytes, shortFormatName } from "@/lib/format"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder } from "@/lib/media"
-import { ALL_PARTS, FILE_PARTS, type NamePart, PART_LABELS } from "@/lib/naming"
+import { ALL_PARTS, FILE_PARTS, insertion, type NamePart, PART_LABELS } from "@/lib/naming"
 import { qk, queryClient, useExportDir, usePresets, useSettings } from "@/lib/queries"
+import { insertText, restoreSelection, revealCaret } from "@/lib/text-edit"
 import { useUi } from "@/state/ui"
 import { type Pack, packExportStarted } from "./use-pack"
 
@@ -135,9 +136,9 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
           <Switch checked={merge} onCheckedChange={(merge) => pack.setNaming({ ...naming, merge })} />
         </label>
         {oneFile && (
-          <Field
+          <TemplateField
+            id="pack-file"
             label="File name"
-            htmlFor="pack-file"
             hint={
               fileProblem ? (
                 <span className="text-danger">{fileProblem}</span>
@@ -150,32 +151,24 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
                 )
               )
             }
-          >
-            <TemplateInput
-              id="pack-file"
-              value={naming.file}
-              onChange={(f) => pack.setNaming({ ...naming, file: f })}
-              parts={FILE_PARTS}
-              invalid={fileProblem != null}
-              // Enter exports: Ctrl/⌘ E, then Enter.
-              autoFocus
-            />
-          </Field>
-        )}
-        <Field
-          label={oneFile ? "Chapter names" : "File names"}
-          htmlFor="pack-template"
-          hint={namesProblem ? <span className="text-danger">{namesProblem}</span> : nameList}
-        >
-          <TemplateInput
-            id="pack-template"
-            value={naming.template}
-            onChange={(template) => pack.setNaming({ ...naming, template })}
-            parts={ALL_PARTS}
-            invalid={namesProblem != null}
-            autoFocus={!oneFile}
+            value={naming.file}
+            onChange={(f) => pack.setNaming({ ...naming, file: f })}
+            parts={FILE_PARTS}
+            invalid={fileProblem != null}
+            // Enter exports: Ctrl/⌘ E, then Enter.
+            autoFocus
           />
-        </Field>
+        )}
+        <TemplateField
+          id="pack-template"
+          label={oneFile ? "Chapter names" : "File names"}
+          hint={namesProblem ? <span className="text-danger">{namesProblem}</span> : nameList}
+          value={naming.template}
+          onChange={(template) => pack.setNaming({ ...naming, template })}
+          parts={ALL_PARTS}
+          invalid={namesProblem != null}
+          autoFocus={!oneFile}
+        />
         <Field
           label="Format"
           hint={
@@ -241,9 +234,25 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
   )
 }
 
-/** A name template, with buttons that put a name part where the cursor is. */
-function TemplateInput({
+/**
+ * Where a name-part button puts its part in `field`: over the selection the
+ * field shows, as a key would. A field without the focus keeps the selection
+ * it had, except the select-all a Tab into it leaves: then the part goes at
+ * the end, so a button pressed by keyboard never replaces the whole name.
+ */
+function insertionRange(field: HTMLInputElement): { start: number; end: number } {
+  const length = field.value.length
+  const start = field.selectionStart ?? length
+  const end = field.selectionEnd ?? start
+  const tabbedIn = document.activeElement !== field && length > 0 && start === 0 && end === length
+  return tabbedIn ? { start: length, end: length } : { start, end }
+}
+
+/** A name template: its label, the field, buttons that put a name part where the cursor is, and what it gives. */
+function TemplateField({
   id,
+  label,
+  hint,
   value,
   onChange,
   parts,
@@ -251,6 +260,9 @@ function TemplateInput({
   autoFocus,
 }: {
   id: string
+  label: string
+  /** The names it gives, or why it won't do. */
+  hint: ReactNode
   value: string
   onChange: (value: string) => void
   /** The name parts this field may use, one button each. */
@@ -259,18 +271,22 @@ function TemplateInput({
   autoFocus?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
-  const insert = (token: string) => {
-    const el = input.current
-    const at = el?.selectionStart ?? value.length
-    const to = el?.selectionEnd ?? at
-    onChange(value.slice(0, at) + token + value.slice(to))
-    requestAnimationFrame(() => {
-      el?.focus()
-      el?.setSelectionRange(at + token.length, at + token.length)
-    })
+  // A button types its part as a key would: Ctrl+Z takes it back, React hears
+  // it, and the focus ends in this field with the caret after the part.
+  const insert = (part: NamePart) => {
+    const field = input.current
+    if (!field) return
+    const { start, end } = insertionRange(field)
+    const at = insertion(field.value, start, end, part)
+    // Always set the selection, also in a focused field: that ends the typing
+    // before, so each press is its own undo step.
+    restoreSelection(field, at)
+    insertText(field, at.text)
+    // The webview scrolls to a caret only for typing: show where the part went.
+    revealCaret(field)
   }
   return (
-    <>
+    <Field label={label} htmlFor={id} hint={hint}>
       <Input
         id={id}
         ref={input}
@@ -285,13 +301,15 @@ function TemplateInput({
           <button
             key={part}
             type="button"
-            onClick={() => insert(`{${part}}`)}
+            // The pointer never takes the focus from a field: its caret and selection stay put.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insert(part)}
             className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-xs leading-6 text-fg-2 hover:border-white/20 hover:text-fg-1"
           >
             {PART_LABELS[part]}
           </button>
         ))}
       </div>
-    </>
+    </Field>
   )
 }

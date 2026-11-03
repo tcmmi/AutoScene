@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { act, cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { type TextState, canDo, captureText, pastable, runTextAction, textFieldAt } from "./text-edit"
+import { type TextState, canDo, captureText, pastable, revealCaret, runTextAction, textFieldAt } from "./text-edit"
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   Reflect.deleteProperty(document, "execCommand")
 })
 
@@ -132,6 +133,56 @@ describe("what it does", () => {
     const input = document.createElement("input")
     expect(pastable(area, "a\nb")).toBe("a\nb")
     expect(pastable(input, "a\r\nb\rc")).toBe("a b c")
+  })
+})
+
+describe("revealCaret", () => {
+  /** A field 200 px wide inside its padding, holding 60 characters of 8 px: it scrolls. */
+  function long() {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      font: "",
+      letterSpacing: "",
+      measureText: (text: string) => ({ width: text.length * 8 }),
+    } as unknown as CanvasRenderingContext2D)
+    render(<input aria-label="Name" style={{ padding: "0 12px" }} defaultValue={"x".repeat(60)} />)
+    const field = screen.getByLabelText("Name") as HTMLInputElement
+    let left = 0
+    const scrolled = vi.fn((to: number) => (left = to))
+    Object.defineProperties(field, {
+      clientWidth: { value: 224, configurable: true },
+      scrollWidth: { value: 504, configurable: true },
+      scrollLeft: { get: () => left, set: scrolled },
+    })
+    return { field, scrolled }
+  }
+
+  it("scrolls a field to a caret past its right edge", () => {
+    const { field, scrolled } = long()
+    field.setSelectionRange(60, 60)
+    revealCaret(field)
+    // The caret at 480 px shows 1 px inside the right edge.
+    expect(scrolled).toHaveBeenLastCalledWith(281)
+  })
+
+  it("scrolls back to a caret left of the view", () => {
+    const { field, scrolled } = long()
+    field.scrollLeft = 281
+    field.setSelectionRange(10, 10)
+    revealCaret(field)
+    expect(scrolled).toHaveBeenLastCalledWith(80)
+  })
+
+  it("leaves a caret in view, and a field that doesn't scroll, alone", () => {
+    const { field, scrolled } = long()
+    field.scrollLeft = 281
+    scrolled.mockClear()
+    field.setSelectionRange(50, 50)
+    revealCaret(field)
+    expect(scrolled).not.toHaveBeenCalled()
+    Object.defineProperty(field, "scrollWidth", { value: 224 })
+    field.setSelectionRange(60, 60)
+    revealCaret(field)
+    expect(scrolled).not.toHaveBeenCalled()
   })
 })
 

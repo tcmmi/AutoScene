@@ -145,17 +145,34 @@ Rules:
   on by default) or a file per shot, named from templates: the parts stand out in the field as quiet pills, a
   mistyped one in red where it is; the name-part buttons are one Tab stop, and each says what it gives.
 - **Review:** one face against the suggestion, both big, the face lighting the room; answers on the keyboard.
-- **Player:** a dark room — the picture on a rounded screen with its own ambilight, a large timecode and a white
-  play button, the timeline in one card (ruler, scrubber, shots, character lanes), details on the right (shown or
-  hidden from the top bar). The timeline zooms (Ctrl/⌘ + wheel, pinch, + and −, Shift+Z for the whole episode)
-  and scrolls with the wheel; zoomed in, a thin overview of the episode shows the part in view. J/K/L shuttle
-  like an editing suite (a gold chip shows the speed). Only the timecode, the playhead and the glow follow every
-  video frame; shots and lanes are drawn on canvases.
+- **Player:** a dark room — the picture as large as the stage allows at the file's own shape (a preview copy or a
+  small file grows too), on a rounded screen with its own ambilight. Every control has one place; a right-click
+  may list it again.
+  - **Transport:** one row under the picture, grouped round the white play button. Volume sits at the left edge,
+    then the speed slot (a gold chip while J/K/L shuttle), the large timecode and the frame counter against the
+    buttons. On their other side In and Out (gold once set), the clip's length (behind a quiet |↔| mark, so it
+    never reads as a third timecode) and ✕, and Export at the right edge.
+    In, Out and Export show only here. Nothing in the row moves while the episode plays or shuttles: the slot is
+    always there and the timecode keeps one width per display mode. A narrower row drops extras in steps (the
+    In/Out timecodes and the counter, then the volume slider and Export's label, then the rest of the volume, the
+    clip's length and ✕), each still in a tooltip, a menu or a key.
+  - **Details:** one panel on the right without cards. Cast · File as a pill, remembered. Cast holds the shot
+    under the playhead, what the analysis still has to find (with the button that finds it), who is in the shot
+    first, then the episode's characters and Open the cast. File holds the file, its length and frame count, and
+    the audio track. The top bar shows or hides the panel (remembered too); it opens at once, and its content
+    fades in.
+  - **Player keys dialog:** opens from the panel's header and the player menu. It lists the player's keys as set,
+    with Change keys… for Settings → Shortcuts, so someone can try a key without leaving the playhead.
+  - **Timeline:** on the page, without a card (ruler, scrubber, shots, character lanes), each row drawn at its
+    real size. A character highlighted in the panel always gets a lane. It zooms (Ctrl/⌘ + wheel, pinch, + and −,
+    Shift+Z for the whole episode) and scrolls with the wheel; zoomed in, a thin overview of the episode shows the
+    part in view.
+  - Only the timecode, the playhead and the glow follow every video frame; shots and lanes are drawn on canvases.
 - **Settings → Shortcuts:** the keymap first — Keys like in AutoScene · Premiere Pro · DaVinci Resolve as a pill
   (a card under each option lists where its keys differ) and Reset all — then every shortcut by place. A click on
   a key listens for the new one (a gold pill, held modifiers shown, Esc stops); a key another shortcut in reach
   had is taken from it (a toast says so, with Undo), one that can't be a shortcut there says why in red. Keys the
-  person chose are gold, with a reset beside them. Every tooltip, menu entry and the player's Keys card shows the
+  person chose are gold, with a reset beside them. Every tooltip, menu entry and the Player keys dialog shows the
   keys as set (`lib/shortcuts.ts`); on macOS the menu bar gets them too.
 
 ## Copy

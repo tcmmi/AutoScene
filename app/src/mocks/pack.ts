@@ -17,6 +17,7 @@ import type {
   Segment,
   ShotSize,
 } from "@/bindings"
+import { ALL_PARTS, FILE_PARTS } from "@/lib/naming"
 import { characterLabel, characterShots, othersInShot } from "./cast"
 
 const states = new Map<string, PackState>()
@@ -163,7 +164,14 @@ export function packChoices(preview: PackPreview): PackChoices {
   }
 }
 
-const NAME_TOKENS = ["series", "character", "episode", "index", "tc", "frame"]
+/** `{a}, {b} or {c}`: parts as the backend's messages list them. */
+function listed(parts: readonly string[], last: "or" | "and"): string {
+  const spelled = parts.map((part) => `{${part}}`)
+  return spelled.length < 2 ? spelled.join("") : `${spelled.slice(0, -1).join(", ")} ${last} ${spelled[spelled.length - 1]}`
+}
+
+/** A part that names a shot but not the one file holding them all. */
+const shotPart = new RegExp(String.raw`\{(${ALL_PARTS.filter((part) => !FILE_PARTS.includes(part)).join("|")})\}`)
 
 /** What the backend says about a template that doesn't work (as_project::naming), or null. */
 export function templateProblem(template: string): string | null {
@@ -172,8 +180,8 @@ export function templateProblem(template: string): string | null {
     const close = rest.indexOf("}", open)
     if (close < 0) return "A “{” isn't closed with “}”."
     const token = rest.slice(open + 1, close)
-    if (!NAME_TOKENS.includes(token)) {
-      return `“{${token}}” isn't a name part. Use {series}, {character}, {episode}, {index}, {tc} or {frame}.`
+    if (!(ALL_PARTS as readonly string[]).includes(token)) {
+      return `“{${token}}” isn't a name part. Use ${listed(ALL_PARTS, "or")}.`
     }
     rest = rest.slice(close + 1)
   }
@@ -182,8 +190,10 @@ export function templateProblem(template: string): string | null {
 
 /** Why a name for one file holding the whole pack won't do (as_project::naming::render_file_name). */
 export function fileProblem(template: string): string | null {
-  const shot = /\{(episode|index|tc|frame)\}/.exec(template)
-  if (shot) return `“{${shot[1]}}” names a shot, not the file. The file's name can use {series} and {character}.`
+  const shot = shotPart.exec(template)
+  if (shot) {
+    return `“{${shot[1]}}” names a shot, not the file. The file's name can use ${listed(FILE_PARTS, "and")}.`
+  }
   return templateProblem(template)
 }
 

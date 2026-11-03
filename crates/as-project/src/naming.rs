@@ -125,8 +125,47 @@ pub struct NameParts<'a> {
     pub frame: u32,
 }
 
-/// The template tokens, in the order a template editor offers them.
-pub const NAME_TOKENS: &[&str] = &["series", "character", "episode", "index", "tc", "frame"];
+/// The name parts a template can use, each with the label of the button
+/// that puts it in, in the order the export dialog shows those buttons. The
+/// one list of them: the checks, their messages and the dialog (through
+/// `bindings.ts`) all read it.
+pub const NAME_PARTS: &[(&str, &str)] = &[
+    ("series", "Series"),
+    ("character", "Character"),
+    ("episode", "Episode"),
+    ("index", "Number"),
+    ("tc", "Timecode"),
+    ("frame", "Frame"),
+];
+
+/// The parts the name of one file holding a whole pack may use: the others
+/// name a shot.
+pub const FILE_PARTS: &[&str] = &["series", "character"];
+
+fn is_name_part(token: &str) -> bool {
+    NAME_PARTS.iter().any(|(part, _)| *part == token)
+}
+
+/// `{a}, {b} or {c}`: parts as a message lists them.
+fn listed<'a>(parts: impl IntoIterator<Item = &'a str>, last: &str) -> String {
+    let parts: Vec<String> = parts.into_iter().map(|part| format!("{{{part}}}")).collect();
+    match parts.split_last() {
+        Some((end, [])) => end.clone(),
+        Some((end, rest)) => format!("{} {last} {end}", rest.join(", ")),
+        None => String::new(),
+    }
+}
+
+fn unknown_message(token: &str) -> String {
+    format!("“{{{token}}}” isn't a name part. Use {}.", listed(NAME_PARTS.iter().map(|(part, _)| *part), "or"))
+}
+
+fn not_for_file_message(token: &str) -> String {
+    format!(
+        "“{{{token}}}” names a shot, not the file. The file's name can use {}.",
+        listed(FILE_PARTS.iter().copied(), "and")
+    )
+}
 
 /// Single clips: `Title_S01E03_00-12-03-05`.
 pub const CLIP_TEMPLATE: &str = "{series} {episode} {tc}";
@@ -137,13 +176,13 @@ pub const PACK_FILE_TEMPLATE: &str = "{series} {character} scenepack";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NameError {
-    #[error("“{{{0}}}” isn't a name part. Use {{series}}, {{character}}, {{episode}}, {{index}}, {{tc}} or {{frame}}.")]
+    #[error("{}", unknown_message(.0))]
     UnknownToken(String),
     #[error("A “{{” isn't closed with “}}”.")]
     Unclosed,
     #[error("The name would be empty.")]
     Empty,
-    #[error("“{{{0}}}” names a shot, not the file. The file's name can use {{series}} and {{character}}.")]
+    #[error("{}", not_for_file_message(.0))]
     NotForFile(String),
 }
 
@@ -187,7 +226,7 @@ pub fn render_file_name(template: &str, series: &str, character: &str) -> Result
         let after = &rest[open + 1..];
         let close = after.find('}').ok_or(NameError::Unclosed)?;
         let token = &after[..close];
-        if NAME_TOKENS.contains(&token) && !matches!(token, "series" | "character") {
+        if is_name_part(token) && !FILE_PARTS.contains(&token) {
             return Err(NameError::NotForFile(token.to_string()));
         }
         rest = &after[close + 1..];
@@ -297,6 +336,44 @@ mod tests {
         assert_eq!(render_file_name("{series", "S", "C"), Err(NameError::Unclosed));
         assert_eq!(render_file_name(" ", "S", "C"), Err(NameError::Empty));
         assert!(NameError::NotForFile("tc".into()).to_string().starts_with("“{tc}” names a shot"));
+    }
+
+    #[test]
+    fn each_name_part_works_where_it_may() {
+        for (part, label) in NAME_PARTS {
+            assert!(!label.is_empty(), "{part} has a button label");
+            let template = format!("{{{part}}}");
+            assert_eq!(check_template(&template), Ok(()), "{template} works in a shot's name");
+            assert!(!render_name(&template, &parts(Some("Walter"), (1, 1))).unwrap().is_empty());
+            if FILE_PARTS.contains(part) {
+                assert_eq!(render_file_name(&template, "S", "C").map(|_| ()), Ok(()), "{template} names the file");
+            } else {
+                assert_eq!(render_file_name(&template, "S", "C"), Err(NameError::NotForFile(part.to_string())));
+            }
+        }
+        // The file's parts are name parts, and no part is listed twice.
+        assert!(FILE_PARTS.iter().all(|part| is_name_part(part)));
+        let mut tokens: Vec<_> = NAME_PARTS.iter().map(|(part, _)| *part).collect();
+        tokens.sort_unstable();
+        tokens.dedup();
+        assert_eq!(tokens.len(), NAME_PARTS.len());
+    }
+
+    #[test]
+    fn the_messages_name_every_part() {
+        // Built from the lists, word for word as they were written by hand.
+        assert_eq!(
+            NameError::UnknownToken("nme".into()).to_string(),
+            "“{nme}” isn't a name part. Use {series}, {character}, {episode}, {index}, {tc} or {frame}."
+        );
+        assert_eq!(
+            NameError::NotForFile("tc".into()).to_string(),
+            "“{tc}” names a shot, not the file. The file's name can use {series} and {character}."
+        );
+        let unknown = NameError::UnknownToken("nme".into()).to_string();
+        assert!(NAME_PARTS.iter().all(|(part, _)| unknown.contains(&format!("{{{part}}}"))));
+        let not_for_file = NameError::NotForFile("tc".into()).to_string();
+        assert!(FILE_PARTS.iter().all(|part| not_for_file.contains(&format!("{{{part}}}"))));
     }
 
     #[test]

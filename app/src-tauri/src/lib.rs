@@ -135,6 +135,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             events::PluginPageEvent,
             updater::UpdateProgress,
         ])
+        // The name parts the pack export's templates can use: its buttons read them.
+        .constant("NAME_PARTS", as_project::naming::NAME_PARTS)
+        .constant("FILE_PARTS", as_project::naming::FILE_PARTS)
 }
 
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/bindings.ts");

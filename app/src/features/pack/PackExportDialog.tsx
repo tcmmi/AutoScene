@@ -13,24 +13,16 @@ import { rememberPreset } from "@/features/export/export"
 import { formatBytes, shortFormatName } from "@/lib/format"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder } from "@/lib/media"
+import { ALL_PARTS, FILE_PARTS, type NamePart, PART_LABELS } from "@/lib/naming"
 import { qk, queryClient, useExportDir, usePresets, useSettings } from "@/lib/queries"
 import { useUi } from "@/state/ui"
 import { type Pack, packExportStarted } from "./use-pack"
 
-/** What a file name can be made of (as_project::naming). */
-const TOKENS = [
-  { token: "{series}", label: "Series" },
-  { token: "{character}", label: "Character" },
-  { token: "{episode}", label: "Episode" },
-  { token: "{index}", label: "Number" },
-  { token: "{tc}", label: "Timecode" },
-  { token: "{frame}", label: "Frame" },
-]
-/** What names one file holding the whole pack: the rest name a shot. */
-const FILE_TOKENS = TOKENS.slice(0, 2)
+/** A "{" that doesn't open one of the parts the one file's name may use. */
+const notAFilePart = new RegExp(String.raw`\{(?!(?:${FILE_PARTS.join("|")})\})`)
 
 /** Does the one file's name use a part that only names a shot (or no name at all)? */
-const fileNameIsWrong = (template: string) => template.trim() === "" || /\{(?!series\}|character\})/.test(template)
+const fileNameIsWrong = (template: string) => template.trim() === "" || notAFilePart.test(template)
 
 /** Name the pack's files, choose format and place, and export exactly the shots the grid shows. */
 export function PackExportDialog({
@@ -163,7 +155,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
               id="pack-file"
               value={naming.file}
               onChange={(f) => pack.setNaming({ ...naming, file: f })}
-              tokens={FILE_TOKENS}
+              parts={FILE_PARTS}
               invalid={fileProblem != null}
               // Enter exports: Ctrl/⌘ E, then Enter.
               autoFocus
@@ -179,7 +171,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
             id="pack-template"
             value={naming.template}
             onChange={(template) => pack.setNaming({ ...naming, template })}
-            tokens={TOKENS}
+            parts={ALL_PARTS}
             invalid={namesProblem != null}
             autoFocus={!oneFile}
           />
@@ -254,14 +246,15 @@ function TemplateInput({
   id,
   value,
   onChange,
-  tokens,
+  parts,
   invalid,
   autoFocus,
 }: {
   id: string
   value: string
   onChange: (value: string) => void
-  tokens: typeof TOKENS
+  /** The name parts this field may use, one button each. */
+  parts: readonly NamePart[]
   invalid: boolean
   autoFocus?: boolean
 }) {
@@ -288,14 +281,14 @@ function TemplateInput({
         aria-invalid={invalid}
       />
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {tokens.map((t) => (
+        {parts.map((part) => (
           <button
-            key={t.token}
+            key={part}
             type="button"
-            onClick={() => insert(t.token)}
+            onClick={() => insert(`{${part}}`)}
             className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-xs leading-6 text-fg-2 hover:border-white/20 hover:text-fg-1"
           >
-            {t.label}
+            {PART_LABELS[part]}
           </button>
         ))}
       </div>

@@ -378,6 +378,11 @@ export const events = {
 	updateProgress: makeEvent<UpdateProgress>("update:progress"),
 };
 
+/* Constants */
+export const FILE_PARTS = ["series","character"] as const;
+
+export const NAME_PARTS = [["series","Series"],["character","Character"],["episode","Episode"],["index","Number"],["tc","Timecode"],["frame","Frame"]] as const;
+
 /* Types */
 /**  Which of a plugin's contributions a run is for. */
 export type ActionKind = "exportAction" | "command";

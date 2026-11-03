@@ -156,8 +156,38 @@ fn listed<'a>(parts: impl IntoIterator<Item = &'a str>, last: &str) -> String {
     }
 }
 
+/// The name part `token` was most likely meant to be, if one is close enough
+/// to say so: the same part in other letters (`Episode`), the label of its
+/// button (`Number` for `{index}`), or the start of exactly one part, or the
+/// whole of one with something after it (`ep`, `time`, `episodes`).
+fn closest_part(token: &str) -> Option<&'static str> {
+    let token = token.trim().to_lowercase();
+    let same = |name: &str| name.to_lowercase() == token;
+    if let Some((part, _)) = NAME_PARTS.iter().find(|(part, _)| same(part)) {
+        return Some(part);
+    }
+    if let Some((part, _)) = NAME_PARTS.iter().find(|(_, label)| same(label)) {
+        return Some(part);
+    }
+    // A prefix either way round, of at least two letters, that only one part has.
+    let starts = |name: &str| {
+        let name = name.to_lowercase();
+        name.chars().count().min(token.chars().count()) >= 2 && (name.starts_with(&token) || token.starts_with(&name))
+    };
+    let mut close = NAME_PARTS.iter().filter(|(part, label)| starts(part) || starts(label));
+    match (close.next(), close.next()) {
+        (Some((part, _)), None) => Some(part),
+        _ => None,
+    }
+}
+
 fn unknown_message(token: &str) -> String {
-    format!("“{{{token}}}” isn't a name part. Use {}.", listed(NAME_PARTS.iter().map(|(part, _)| *part), "or"))
+    match closest_part(token) {
+        Some(part) => format!("“{{{token}}}” isn't a name part. Did you mean {{{part}}}?"),
+        None => {
+            format!("“{{{token}}}” isn't a name part. Use {}.", listed(NAME_PARTS.iter().map(|(part, _)| *part), "or"))
+        }
+    }
 }
 
 fn not_for_file_message(token: &str) -> String {
@@ -374,6 +404,30 @@ mod tests {
         assert!(NAME_PARTS.iter().all(|(part, _)| unknown.contains(&format!("{{{part}}}"))));
         let not_for_file = NameError::NotForFile("tc".into()).to_string();
         assert!(FILE_PARTS.iter().all(|part| not_for_file.contains(&format!("{{{part}}}"))));
+    }
+
+    #[test]
+    fn a_mistyped_part_suggests_the_close_one() {
+        let message = |token: &str| NameError::UnknownToken(token.into()).to_string();
+        assert_eq!(message("ep"), "“{ep}” isn't a name part. Did you mean {episode}?");
+        for (typed, meant) in [
+            ("ep", "episode"),
+            ("Episode", "episode"),
+            ("timecode", "tc"),
+            ("number", "index"),
+            ("time", "tc"),
+            ("char", "character"),
+            ("episodes", "episode"),
+            (" Series ", "series"),
+        ] {
+            assert_eq!(closest_part(typed), Some(meant), "{{{typed}}} is close to {{{meant}}}");
+            assert!(message(typed).ends_with(&format!("Did you mean {{{meant}}}?")));
+        }
+        // Nothing close: the message lists every part.
+        for typed in ["nme", "x", "e", "ser {tc"] {
+            assert_eq!(closest_part(typed), None, "{{{typed}}} is close to no part");
+            assert!(message(typed).ends_with("Use {series}, {character}, {episode}, {index}, {tc} or {frame}."));
+        }
     }
 
     #[test]

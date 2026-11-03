@@ -497,19 +497,7 @@ pub async fn media_analyze(
         Some(stage) => {
             // A running job restarts the analysis once it has stopped; with
             // none running, a queued one is dropped and the restart made here.
-            let handed_over = {
-                let mut runs = state.analysis.lock();
-                if runs.running.contains(&media_id) {
-                    let merged = match runs.redo.get(&media_id) {
-                        Some(AnalysisStage::Shots) => AnalysisStage::Shots,
-                        _ => stage,
-                    };
-                    runs.redo.insert(media_id, merged);
-                    true
-                } else {
-                    false
-                }
-            };
+            let handed_over = work::hand_over_restart(&mut state.analysis.lock(), media_id, stage);
             state.jobs.cancel_where(analysis);
             if !handed_over {
                 let app2 = app.clone();

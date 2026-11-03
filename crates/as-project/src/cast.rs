@@ -850,6 +850,23 @@ impl Project {
         Ok(self.db().faces_model(id)?.is_some_and(|m| m != key))
     }
 
+    /// Media whose faces pass, or the people pass after it, runs the way
+    /// this project found faces before Fast Scan or the footage was switched
+    /// (see [`Self::faces_outdated`]): they are to start over the new way at
+    /// once. A media still finding its shots is never one of them, whatever
+    /// way its faces were found before: its faces pass reads the new way.
+    pub fn outdated_passes(&self) -> ProjectResult<Vec<MediaId>> {
+        let mut ids = Vec::new();
+        for m in self.media_list_uncounted()? {
+            let passing =
+                m.faces == StageState::Running || (m.faces == StageState::Ready && m.bodies == StageState::Running);
+            if passing && self.faces_outdated(m.id)? {
+                ids.push(m.id);
+            }
+        }
+        Ok(ids)
+    }
+
     /// Where the face pass of `id` with embedder `model` resumes.
     /// Checkpoints of another embedder or search (see [`faces_key`]), or
     /// that don't line up, are dropped with everything after them; a fresh
@@ -2654,6 +2671,44 @@ pub(crate) mod tests {
         let theirs = project.cast_tracks(TrackFilter::Character(walter)).unwrap();
         assert_eq!(theirs.iter().map(|t| t.start).collect::<Vec<_>>(), [0]);
         assert!(project.faces_found_fast().unwrap());
+    }
+
+    #[test]
+    fn only_a_pass_running_the_old_way_is_outdated() {
+        use StageState::*;
+        let fast_scan = |p: &Project| assert!(p.set_fast_scan(true).unwrap());
+        let animation = |p: &Project| assert!(p.set_content(ContentKind::Animation).unwrap());
+        let nothing = |_: &Project| {};
+        // A media that found (or began to find) its faces the full way, at
+        // the given stages when the project is switched: is its pass one to
+        // start over, and were its faces found another way?
+        let after = |shots, faces, people, switch: &dyn Fn(&Project)| {
+            let (_dir, project, id) = project_with_media(400);
+            let key = project.faces_key_now(project.face_embedder()).unwrap();
+            project.db().use_faces_model(id, &key).unwrap();
+            project.set_shots_state(id, shots, None).unwrap();
+            project.set_faces_state(id, faces, None).unwrap();
+            project.set_bodies_state(id, people, None).unwrap();
+            switch(&project);
+            let passes = project.outdated_passes().unwrap();
+            assert!(passes.is_empty() || passes == [id], "{passes:?}");
+            (!passes.is_empty(), project.faces_outdated(id).unwrap())
+        };
+        // Finding its characters the old way, or the people for them.
+        assert_eq!(after(Ready, Running, Pending, &fast_scan), (true, true));
+        assert_eq!(after(Ready, Running, Pending, &animation), (true, true));
+        assert_eq!(after(Ready, Ready, Running, &fast_scan), (true, true));
+        // Finding its shots again: faces found before ("Find shots again")
+        // leave their way behind, but its faces pass will read the new one.
+        assert_eq!(after(Running, Pending, Pending, &fast_scan), (false, true));
+        assert_eq!(after(Ready, Pending, Pending, &fast_scan), (false, true), "waiting for its faces pass");
+        // No pass runs: those are queued to find their faces again instead.
+        assert_eq!(after(Ready, Ready, Pending, &fast_scan), (false, true));
+        assert_eq!(after(Ready, Ready, Ready, &fast_scan), (false, true));
+        assert_eq!(after(Ready, Stopped, Pending, &fast_scan), (false, true));
+        // Running the way the project finds faces now.
+        assert_eq!(after(Ready, Running, Pending, &nothing), (false, false));
+        assert_eq!(after(Ready, Ready, Running, &nothing), (false, false));
     }
 
     #[test]

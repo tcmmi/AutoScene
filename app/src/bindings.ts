@@ -51,13 +51,15 @@ export const commands = {
 	/**
 	 *  Say what a project's footage is (live action, 3D animation, mixed; a
 	 *  project never moves to or from anime). Its cast is grouped again for it,
-	 *  and its faces found again when it moves to or from 3D animation.
+	 *  and its faces found again when it moves to or from 3D animation (a
+	 *  faces pass under way starts over at once).
 	 */
 	projectSetContent: (projectId: ProjectId, content: ContentKind) => __TAURI_INVOKE<ProjectSummary>("project_set_content", { projectId, content }),
 	/**
 	 *  Say whether a project's faces are found with Fast Scan (the way the
 	 *  Scener app finds them). Faces found the other way are found again, the
-	 *  user's decisions on them kept, and the cast is grouped again.
+	 *  user's decisions on them kept, and the cast is grouped again. A faces
+	 *  pass under way starts over at once.
 	 */
 	projectSetFastScan: (projectId: ProjectId, fastScan: boolean) => __TAURI_INVOKE<ProjectSummary>("project_set_fast_scan", { projectId, fastScan }),
 	/**

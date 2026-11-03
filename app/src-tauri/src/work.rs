@@ -316,6 +316,64 @@ pub fn queue_outdated_faces(app: &AppHandle, project: &Arc<Project>) {
     }
 }
 
+/// Fast Scan or the footage was switched: the faces passes (and the people
+/// passes after them) that run the old way start over the new way at once,
+/// instead of finishing the old way first. A pass still waiting reads the
+/// new way when it gets there; one the user cancelled stays cancelled.
+pub fn restart_outdated_passes(app: &AppHandle, project: &Project) {
+    let ids = match project.outdated_passes() {
+        Ok(ids) => ids,
+        Err(e) => {
+            log::warn!("checking for passes running the old way: {}", e.detail());
+            return;
+        }
+    };
+    let state = app.state::<AppState>();
+    let restarted = start_over_now(&state.jobs, &state.analysis, &ids);
+    if !restarted.is_empty() {
+        let title = project.title().unwrap_or_default();
+        log::info!("'{title}': {} media find their faces again the new way at once", restarted.len());
+    }
+}
+
+/// The analyses of `ids` that run are handed a restart from their faces and
+/// stopped: each starts over once it has stopped writing. Only an analysis
+/// that runs, that nobody cancelled, and that has registered (see
+/// [`AnalysisRuns`]); one that hasn't yet finds its faces the new way.
+/// Returns the media started over.
+fn start_over_now(jobs: &JobRunner, runs: &parking_lot::Mutex<AnalysisRuns>, ids: &[MediaId]) -> Vec<MediaId> {
+    // Held throughout: a run can't unregister between the check and the cancel.
+    let mut runs = runs.lock();
+    ids.iter()
+        .copied()
+        .filter(|&media| {
+            let runs_it =
+                |j: &JobInfo| j.kind == JobKind::Analyze && j.media_id == Some(media) && j.state == JobState::Running;
+            if !jobs.is_under_way(runs_it) || !hand_over_restart(&mut runs, media, AnalysisStage::Faces) {
+                return false;
+            }
+            jobs.cancel_where(runs_it);
+            true
+        })
+        .collect()
+}
+
+/// Ask the analysis of `media` that runs to clear the results from `stage`
+/// on and analyse again once it has stopped (see [`Running::finish`]); a
+/// restart from the shots wins over one from the faces. False when none
+/// runs (or it hasn't registered yet).
+pub fn hand_over_restart(runs: &mut AnalysisRuns, media: MediaId, stage: AnalysisStage) -> bool {
+    if !runs.running.contains(&media) {
+        return false;
+    }
+    let earliest = match runs.redo.get(&media) {
+        Some(AnalysisStage::Shots) => AnalysisStage::Shots,
+        _ => stage,
+    };
+    runs.redo.insert(media, earliest);
+    true
+}
+
 pub fn queue_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) {
     submit_analysis(app, project, media_id, true);
 }
@@ -1235,11 +1293,14 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    use as_api::{JobInfo, JobKind, JobState, StageState};
+    use as_api::{AnalysisStage, JobInfo, JobKind, JobState, StageState};
     use as_core::{CancelToken, JobId, MediaId};
     use as_jobs::{Class, JobError, JobEvent, JobRunner, JobSpec};
 
-    use super::{StageError, Unstarted, analysed_otherwise, ended_for_restart, failed_message, guarded};
+    use super::{
+        StageError, Unstarted, analysed_otherwise, ended_for_restart, failed_message, guarded, hand_over_restart,
+        start_over_now,
+    };
     use crate::state::AnalysisRuns;
 
     #[test]
@@ -1332,6 +1393,81 @@ mod tests {
         assert!(jobs.cancel(waiting).is_some());
         assert!(!analysed_otherwise(&jobs, &runs, other));
         stop_tx.send(()).unwrap();
+    }
+
+    #[test]
+    fn a_restart_goes_to_the_analysis_that_runs_and_from_the_earliest_stage() {
+        use AnalysisStage::{Faces, Shots};
+        let mut runs = AnalysisRuns::default();
+        let (media, other) = (MediaId::new(), MediaId::new());
+        assert!(!hand_over_restart(&mut runs, media, Faces), "none runs: the caller restarts it");
+        assert!(runs.redo.is_empty());
+        runs.running.insert(media);
+        assert!(hand_over_restart(&mut runs, media, Faces));
+        assert_eq!(runs.redo.get(&media), Some(&Faces));
+        // From the shots wins, whichever came first: they come before the faces.
+        assert!(hand_over_restart(&mut runs, media, Shots));
+        assert!(hand_over_restart(&mut runs, media, Faces));
+        assert_eq!(runs.redo.get(&media), Some(&Shots));
+        assert!(!hand_over_restart(&mut runs, other, Shots), "only to its own analysis");
+        assert_eq!(runs.redo.len(), 1);
+    }
+
+    #[test]
+    fn only_passes_under_way_and_not_cancelled_start_over() {
+        let jobs = JobRunner::new(&[(Class::Analysis, 3)], |_| {});
+        let runs = parking_lot::Mutex::new(AnalysisRuns::default());
+        let (started_tx, started) = mpsc::channel();
+        let mut stops = Vec::new();
+        let mut analyse = |media| {
+            let (stop_tx, stop) = mpsc::channel::<()>();
+            stops.push(stop_tx);
+            let started_tx = started_tx.clone();
+            let spec = JobSpec {
+                kind: JobKind::Analyze,
+                class: Class::Analysis,
+                title: "Analysing".into(),
+                subtitle: None,
+                project_id: None,
+                media_id: Some(media),
+                export_id: None,
+            };
+            jobs.submit(spec, move |ctx| {
+                started_tx.send(()).unwrap();
+                let _ = stop.recv_timeout(Duration::from_secs(10));
+                if ctx.cancel.is_cancelled() { Err(JobError::Cancelled) } else { Ok(()) }
+            })
+        };
+        let [running, cancelled, unregistered, waiting, idle] = std::array::from_fn(|_| MediaId::new());
+        analyse(running);
+        let by_user = analyse(cancelled);
+        analyse(unregistered);
+        for _ in 0..3 {
+            started.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+        analyse(waiting);
+        // Each registers as it begins its stages; the person cancelled one,
+        // which still writes them as it stops.
+        runs.lock().running.extend([running, cancelled]);
+        assert!(jobs.cancel(by_user).is_none());
+
+        let ids = [running, cancelled, unregistered, waiting, idle];
+        assert_eq!(start_over_now(&jobs, &runs, &ids), [running]);
+        // Handed its restart from the faces, and stopped.
+        assert_eq!(runs.lock().redo.get(&running), Some(&AnalysisStage::Faces));
+        assert!(!jobs.is_under_way(|j| j.media_id == Some(running)));
+        assert!(jobs.is_active(|j| j.media_id == Some(running)), "it stops on its own");
+        // The cancelled one isn't started again; the others go on and find
+        // their faces the new way themselves.
+        assert_eq!(runs.lock().redo.len(), 1);
+        assert!(jobs.is_under_way(|j| j.media_id == Some(unregistered) && j.state == JobState::Running));
+        assert!(jobs.is_under_way(|j| j.media_id == Some(waiting) && j.state == JobState::Queued));
+        assert!(start_over_now(&jobs, &runs, &ids).is_empty(), "once");
+
+        jobs.cancel_where(|_| true);
+        for stop in stops {
+            let _ = stop.send(());
+        }
     }
 
     #[test]

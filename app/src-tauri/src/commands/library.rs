@@ -63,7 +63,8 @@ pub async fn project_rename(
 
 /// Say what a project's footage is (live action, 3D animation, mixed; a
 /// project never moves to or from anime). Its cast is grouped again for it,
-/// and its faces found again when it moves to or from 3D animation.
+/// and its faces found again when it moves to or from 3D animation (a
+/// faces pass under way starts over at once).
 #[tauri::command]
 #[specta::specta]
 pub async fn project_set_content(
@@ -81,6 +82,7 @@ pub async fn project_set_content(
     if let Some(project) = regroup {
         work::queue_regroup(&app, &project);
         work::queue_outdated_faces(&app, &project);
+        work::restart_outdated_passes(&app, &project);
     }
     let _ = LibraryChanged { project_id: Some(project_id) }.emit(&app);
     Ok(summary)
@@ -88,7 +90,8 @@ pub async fn project_set_content(
 
 /// Say whether a project's faces are found with Fast Scan (the way the
 /// Scener app finds them). Faces found the other way are found again, the
-/// user's decisions on them kept, and the cast is grouped again.
+/// user's decisions on them kept, and the cast is grouped again. A faces
+/// pass under way starts over at once.
 #[tauri::command]
 #[specta::specta]
 pub async fn project_set_fast_scan(
@@ -106,6 +109,7 @@ pub async fn project_set_fast_scan(
     if let Some(project) = changed {
         work::queue_regroup(&app, &project);
         work::queue_outdated_faces(&app, &project);
+        work::restart_outdated_passes(&app, &project);
     }
     let _ = LibraryChanged { project_id: Some(project_id) }.emit(&app);
     Ok(summary)

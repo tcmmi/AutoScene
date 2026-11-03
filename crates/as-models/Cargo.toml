@@ -19,6 +19,8 @@ ureq.workspace = true
 # Where a redirect leads: requests follow theirs themselves (see `get`).
 url.workspace = true
 flate2.workspace = true
+# A runtime that ships as a .tar.gz: one member is taken out of it.
+tar.workspace = true
 
 # The free space on the models folder's drive, before a download.
 [target.'cfg(windows)'.dependencies]

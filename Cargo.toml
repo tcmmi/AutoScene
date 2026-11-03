@@ -60,6 +60,7 @@ windows-sys = "=0.61.2"
 ureq = "=3.5.1"
 url = "=2.5.8"
 flate2 = "=1.1.10"
+tar = { version = "=0.4.46", default-features = false }
 keyring = "=4.2.0"
 # The desktop shell. The app and the red team (app/redteam) build on the
 # same Tauri, so a bump moves both and the red team runs on it.

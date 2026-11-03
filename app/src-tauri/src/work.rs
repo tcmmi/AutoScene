@@ -12,9 +12,9 @@ use std::sync::Arc;
 use as_api::{
     AnalysisStage, CastEdit, ExportSummary, JobInfo, JobKind, JobState, MediaItem, MediaStatus, ProxyState, StageState,
 };
-use as_core::{ExportId, MediaId, ProjectId};
+use as_core::{CancelToken, ExportId, MediaId, ProjectId};
 use as_engine::{Devices, EngineError, FacesEvent, FacesInput, ShotsEvent};
-use as_jobs::{Class, JobCtx, JobError, JobSpec};
+use as_jobs::{Class, JobCtx, JobError, JobResult, JobSpec};
 use as_models::ModelError;
 use as_project::{Pass, Portrait, Project, ProjectError};
 use tauri::{AppHandle, Manager};
@@ -394,10 +394,18 @@ fn submit_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, o
         // Asked to start over while this ran: now nothing writes any more.
         if let Some(stage) = running.finish() {
             restart_analysis(&app2, &project, media_id, stage);
-            return Ok(());
+            return ended_for_restart(&ctx.cancel);
         }
         result.map_err(JobError::from)
     });
+}
+
+/// How a run ends that hands its media a restart. Stopped to start over
+/// (the hand-over cancels it), it ends cancelled: Activity shows it
+/// cancelled beside the new run, not done at 100 % although it was cut
+/// short. A run nothing stopped ends done.
+fn ended_for_restart(cancel: &CancelToken) -> JobResult {
+    if cancel.is_cancelled() { Err(JobError::Cancelled) } else { Ok(()) }
 }
 
 /// Clear a media's results from `stage` on and analyse it again. Only call
@@ -1180,10 +1188,14 @@ pub fn recover_all(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
+    use std::sync::mpsc;
+    use std::time::Duration;
 
-    use as_api::StageState;
+    use as_api::{JobInfo, JobKind, JobState, StageState};
+    use as_core::{CancelToken, JobId};
+    use as_jobs::{Class, JobError, JobEvent, JobRunner, JobSpec};
 
-    use super::{StageError, Unstarted, failed_message, guarded};
+    use super::{StageError, Unstarted, ended_for_restart, failed_message, guarded};
 
     #[test]
     fn a_stage_that_panics_fails_only_while_it_runs() {
@@ -1194,6 +1206,51 @@ mod tests {
         let r = guarded(|| Some(StageState::Ready), breaks);
         assert!(matches!(r, Err(StageError::Bug(m)) if m == "grouping broke"));
         assert!(matches!(guarded(|| unreachable!(), || Err(StageError::Cancelled)), Err(StageError::Cancelled)));
+    }
+
+    #[test]
+    fn a_run_stopped_to_start_over_ends_cancelled() {
+        // The hand-over cancels the run it restarts; a run nothing stopped is done.
+        let cut = CancelToken::new();
+        cut.cancel();
+        assert!(matches!(ended_for_restart(&cut), Err(JobError::Cancelled)));
+        assert!(ended_for_restart(&CancelToken::new()).is_ok());
+
+        // How Activity shows each: the cut run stopped, not done at 100 %.
+        let (tx, rx) = mpsc::channel();
+        let jobs = JobRunner::new(&[(Class::Analysis, 1)], move |e| drop(tx.send(e)));
+        let spec = || JobSpec {
+            kind: JobKind::Analyze,
+            class: Class::Analysis,
+            title: "Analysing Pilot".into(),
+            subtitle: None,
+            project_id: None,
+            media_id: None,
+            export_id: None,
+        };
+        let finished = |id: JobId| -> JobInfo {
+            loop {
+                match rx.recv_timeout(Duration::from_secs(10)).expect("job event") {
+                    JobEvent::Changed(i) if i.id == id && i.state.is_finished() => return i,
+                    _ => {}
+                }
+            }
+        };
+        let (started_tx, started) = mpsc::channel();
+        let stopped = jobs.submit(spec(), move |ctx| {
+            started_tx.send(()).unwrap();
+            while !ctx.cancel.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            ended_for_restart(&ctx.cancel)
+        });
+        started.recv_timeout(Duration::from_secs(5)).unwrap();
+        jobs.cancel(stopped);
+        let info = finished(stopped);
+        assert_eq!(info.state, JobState::Cancelled);
+        assert_ne!(info.progress, Some(1.0));
+        let whole = jobs.submit(spec(), |ctx| ended_for_restart(&ctx.cancel));
+        assert_eq!(finished(whole).state, JobState::Done);
     }
 
     #[test]

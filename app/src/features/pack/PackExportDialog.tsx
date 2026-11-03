@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { CircleNotch, FolderOpen, Warning } from "@/components/icons"
 import { Toolbar } from "radix-ui"
 import { toast } from "sonner"
@@ -345,9 +345,18 @@ function TemplateField({
     window.clearTimeout(pause.current)
     pause.current = window.setTimeout(() => setTyping(false), TYPING_MS)
   }
-  const part = problem && typing && caret != null ? reported(value, forFile) : null
-  const waiting = part != null && caret != null && part.start < caret && (part.kind === "unclosed" || caret < part.end)
-  const error = waiting ? null : problem
+  // Is this piece being typed: the caret in it, a key in less than a second ago?
+  const typedIn = (s: Segment) => typing && caret != null && s.start < caret && (s.kind === "unclosed" || caret < s.end)
+  const part = problem ? reported(value, forFile) : null
+  const error = part && typedIn(part) ? null : problem
+  const segments = parseTemplate(value, parts)
+  // The parts stand out behind the field's own text, and while its problem
+  // shows a mistyped one is red where it is (not one still being typed).
+  const layer = useRef<HTMLDivElement>(null)
+  const follow = () => {
+    if (layer.current && input.current) layer.current.scrollLeft = input.current.scrollLeft
+  }
+  useLayoutEffect(follow, [value])
   const errorId = `${id}-problem`
   // A button types its part as a key would: Ctrl+Z takes it back, React hears
   // it, and the focus ends in this field with the caret after the part.
@@ -365,24 +374,57 @@ function TemplateField({
   }
   return (
     <Field label={label} htmlFor={id} hint={hint} error={error} errorId={errorId}>
-      <Input
-        id={id}
-        ref={input}
-        value={value}
-        onChange={(e) => {
-          typed(e.target)
-          onChange(e.target.value)
-        }}
-        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-        onBlur={() => {
-          window.clearTimeout(pause.current)
-          setTyping(false)
-        }}
-        className="font-mono text-sm"
-        // Only while its problem shows: the names under it never describe it.
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-      />
+      <div className="relative">
+        {/* The field's text box (its 1 px border and px-3 off), grown by the
+            pills' 2 px edge: the field clips its text there. The text sits as
+            the field's does, to the pixel wherever the dialog lands: one line
+            as tall as the box (h-10 less the border; centring it in a flex box
+            puts it a pixel off at some positions), rendered as a field renders
+            (a field doesn't inherit text-rendering). The pieces sit in one
+            inline span. */}
+        <div
+          ref={layer}
+          aria-hidden
+          className="pointer-events-none absolute inset-y-px right-[calc(--spacing(3)-1px)] left-[calc(--spacing(3)-1px)] overflow-hidden px-[2px] font-mono text-sm leading-[calc(--spacing(10)-2px)] whitespace-pre text-transparent [text-rendering:auto]"
+        >
+          <span>
+            {segments.map((s) =>
+              s.kind === "text" ? (
+                s.text
+              ) : (
+                <span
+                  key={s.start}
+                  data-part={s.kind}
+                  data-bad={error && s.kind !== "part" && !typedIn(s) ? "" : undefined}
+                  className="rounded-[4px] bg-white/[0.07] shadow-[0_0_0_2px_rgb(255_255_255/0.07)] data-bad:bg-danger-subtle data-bad:underline data-bad:decoration-danger data-bad:decoration-wavy data-bad:underline-offset-4 data-bad:shadow-[0_0_0_2px_var(--danger-subtle)]"
+                >
+                  {s.text}
+                </span>
+              ),
+            )}
+          </span>
+        </div>
+        <Input
+          id={id}
+          ref={input}
+          value={value}
+          onChange={(e) => {
+            typed(e.target)
+            onChange(e.target.value)
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          onBlur={() => {
+            window.clearTimeout(pause.current)
+            setTyping(false)
+          }}
+          onScroll={follow}
+          // Over the layer: its own text, caret and selection stay the field's.
+          className="relative block font-mono text-sm"
+          // Only while its problem shows: the names under it never describe it.
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+        />
+      </div>
       {/* One Tab stop: the arrows, Home and End go from button to button. */}
       <Toolbar.Root
         aria-label="Name parts"

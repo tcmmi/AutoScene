@@ -105,9 +105,11 @@ afterEach(() => {
   Reflect.deleteProperty(document, "execCommand")
 })
 
+/** The field's whole box: label, field, buttons, problem and names (the field sits in its marks' box). */
+const box = (field: HTMLElement) => field.parentElement!.parentElement!
+
 /** The name-part button `label` under the field labelled `field`. */
-const chip = (field: string, label: string) =>
-  within(screen.getByLabelText(field).parentElement!).getByRole("button", { name: label })
+const chip = (field: string, label: string) => within(box(screen.getByLabelText(field))).getByRole("button", { name: label })
 
 /**
  * The dialog over a pack that takes what the dialog sets, as `usePack` does.
@@ -121,7 +123,7 @@ function LiveDialog({ initial, refuse }: { initial: PackNaming; refuse?: (naming
 }
 
 /** The field's problem line: always there, read out when it changes. */
-const problemLine = (field: HTMLElement) => field.parentElement!.querySelector<HTMLElement>('[aria-live="polite"]')!
+const problemLine = (field: HTMLElement) => box(field).querySelector<HTMLElement>('[aria-live="polite"]')!
 
 /** Is `field` marked wrong, with its problem as its description? */
 function marked(field: HTMLElement): string | null {
@@ -133,8 +135,10 @@ function marked(field: HTMLElement): string | null {
 }
 
 /** The name-part toolbar under the field labelled `field`. */
-const toolbar = (field: string) =>
-  within(screen.getByLabelText(field).parentElement!).getByRole("toolbar", { name: "Name parts" })
+const toolbar = (field: string) => within(box(screen.getByLabelText(field))).getByRole("toolbar", { name: "Name parts" })
+
+/** The marks behind `field`: its parts as they stand out, and a mistyped one in red. */
+const marks = (field: HTMLElement) => field.parentElement!.querySelector<HTMLElement>('[aria-hidden="true"]')!
 
 /** The engine's own typing command, stubbed: jsdom has none. */
 function stubExec() {
@@ -191,7 +195,7 @@ describe("PackExportDialog", () => {
     const p = pack(naming(true))
     render(<PackExportDialog pid="p" character={walter} pack={p} open onOpenChange={() => {}} />, { wrapper })
     const buttons = (field: string) =>
-      within(screen.getByLabelText(field).parentElement!)
+      within(box(screen.getByLabelText(field)))
         .getAllByRole("button")
         .map((b) => b.textContent)
     const label = (part: string) => NAME_PARTS.find(([p]) => p === part)?.[1]
@@ -587,6 +591,73 @@ describe("PackExportDialog", () => {
     // The dialog's own line is live too, and stays empty.
     const lines = screen.getByRole("dialog").querySelectorAll('[aria-live="polite"]')
     expect([...lines].map((l) => l.textContent)).toEqual([unknownEp, ""])
+  })
+
+  it("the parts stand out in the field", async () => {
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(true))} open onOpenChange={() => {}} />, { wrapper })
+    for (const [label, value, parts] of [
+      ["Chapter names", "{series} {character} {episode} {tc}", ["{series}", "{character}", "{episode}", "{tc}"]],
+      ["File name", "{series} {character} scenepack", ["{series}", "{character}"]],
+    ] as const) {
+      const layer = marks(await screen.findByLabelText(label))
+      // One inline span holds the pieces, as one line of text: laid out as
+      // flex items, the spaces between parts would drop out and the marks shift.
+      expect(layer.childNodes).toHaveLength(1)
+      expect((layer.firstChild as HTMLElement).tagName).toBe("SPAN")
+      expect([...layer.querySelectorAll('[data-part="part"]')].map((m) => m.textContent)).toEqual(parts)
+      expect(layer.querySelectorAll("[data-bad]")).toHaveLength(0)
+      // Under the field's own text, letter for letter.
+      expect(layer.textContent).toBe(value)
+      expect(layer.compareDocumentPosition(screen.getByLabelText(label)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+  })
+
+  it("a mistyped part is marked where it is", async () => {
+    // The backend names the first wrong part: here "{ep}" comes before any unclosed one.
+    const refuse = ({ template }: PackNaming) => (template.includes("{ep}") ? unknownEp : /\{[^}]*$/.test(template) ? unclosed : null)
+    const before = "{series} {ep} {tc}"
+    render(<LiveDialog initial={{ ...naming(false), template: before }} refuse={refuse} />, { wrapper })
+    const field = (await screen.findByLabelText("File names")) as HTMLInputElement
+    const layer = marks(field)
+    const bad = () => [...layer.querySelectorAll("[data-bad]")].map((m) => [m.getAttribute("data-part"), m.textContent])
+    // Red where it is; the parts around it stay as they are.
+    expect(bad()).toEqual([["unknown", "{ep}"]])
+    expect([...layer.querySelectorAll('[data-part="part"]')].map((m) => m.textContent)).toEqual(["{series}", "{tc}"])
+    expect(layer.querySelector("[data-bad]")!.className).toMatch(/decoration-wavy/)
+    // A part still being typed isn't marked: "{x" with the caret in it. "{ep}" still is.
+    await waitFor(() => expect(document.activeElement).toBe(field))
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    fireEvent.change(field, { target: { value: `${before} {x` } })
+    expect(bad()).toEqual([["unknown", "{ep}"]])
+    expect(layer.querySelector('[data-part="unclosed"]')!.textContent).toBe("{x")
+    // A second after the last key it is.
+    act(() => vi.advanceTimersByTime(1000))
+    expect(bad()).toEqual([
+      ["unknown", "{ep}"],
+      ["unclosed", "{x"],
+    ])
+    // The only wrong part, being typed: neither it nor the field is red yet.
+    fireEvent.change(field, { target: { value: "{series} {x" } })
+    expect(bad()).toEqual([])
+    expect(field.getAttribute("aria-invalid")).toBeNull()
+    // Mended: nothing red.
+    fireEvent.change(field, { target: { value: "{series} {episode} {tc}" } })
+    expect(bad()).toEqual([])
+  })
+
+  it("the marks follow the field's scroll", async () => {
+    render(<LiveDialog initial={naming(false)} />, { wrapper })
+    const field = await screen.findByLabelText("File names")
+    const layer = marks(field)
+    const scrolled = vi.fn()
+    Object.defineProperty(layer, "scrollLeft", { configurable: true, get: () => 0, set: scrolled })
+    Object.defineProperty(field, "scrollLeft", { configurable: true, get: () => 40 })
+    fireEvent.scroll(field)
+    expect(scrolled).toHaveBeenLastCalledWith(40)
+    // And after a change of the value, before it paints.
+    Object.defineProperty(field, "scrollLeft", { configurable: true, get: () => 72 })
+    fireEvent.change(field, { target: { value: `${naming(false).template} {frame}` } })
+    expect(scrolled).toHaveBeenLastCalledWith(72)
   })
 
   it("names a file per shot, in the character's folder", async () => {

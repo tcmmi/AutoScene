@@ -139,7 +139,8 @@ Rules:
   the ones the pack takes bright with a gold tick, the rest dimmed with the reason. A click takes a shot in or out,
   Shift every shot since the last. A glass bar floats at the bottom with the count, length and size, the picks by
   hand and Export as the white pill; the export dialog makes one file with a chapter per shot (a switch at the top,
-  on by default) or a file per shot, named from templates with name-part buttons.
+  on by default) or a file per shot, named from templates: the parts stand out in the field as quiet pills, a
+  mistyped one in red where it is; the name-part buttons are one Tab stop, and each says what it gives.
 - **Review:** one face against the suggestion, both big, the face lighting the room; answers on the keyboard.
 - **Player:** a dark room — the picture on a rounded screen with its own ambilight, a large timecode and a white
   play button, the timeline in one card (ruler, scrubber, shots, character lanes), details on the right (shown or

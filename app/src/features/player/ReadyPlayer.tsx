@@ -7,6 +7,7 @@ import {
   Copy,
   FilmStrip,
   FolderOpen,
+  Keyboard,
   Pause,
   Play,
   Scissors,
@@ -34,7 +35,7 @@ import { usePlayback } from "@/state/playback"
 import { useUi } from "@/state/ui"
 import { Ambilight } from "./Ambilight"
 import { CharactersPanel } from "./panels/CharactersPanel"
-import { KeysCard } from "./panels/KeysCard"
+import { PlayerKeysDialog } from "./panels/PlayerKeysDialog"
 import { ShotsPanel } from "./panels/ShotsPanel"
 import { SourceCard } from "./panels/SourceCard"
 import { PlayerPicture } from "./Picture"
@@ -89,6 +90,7 @@ export function ReadyPlayer({
   const inFrame = marks.in
   const outFrame = marks.out
   const [exportOpen, setExportOpen] = useState(false)
+  const [keysOpen, setKeysOpen] = useState(false)
   const [gotoOpen, setGotoOpen] = useState(false)
   const { volume, muted, setVolume, toggleMute } = usePlayback()
   const { data: segments } = useSegments(pid, m.id, m.shots === "ready")
@@ -311,6 +313,9 @@ export function ReadyPlayer({
       <ContextMenuItem onSelect={() => useUi.getState().toggleInspector()}>
         <SidebarSimple mirrored /> {inspector ? "Hide details" : "Show details"}
       </ContextMenuItem>
+      <ContextMenuItem onSelect={() => setKeysOpen(true)}>
+        <Keyboard /> Player keys…
+      </ContextMenuItem>
       <ContextMenuItem onSelect={showFile}>
         <FolderOpen /> Show in folder
       </ContextMenuItem>
@@ -405,11 +410,11 @@ export function ReadyPlayer({
             }}
           />
           <SourceCard pid={pid} media={m} fps={fps} />
-          <KeysCard />
         </aside>
       )}
 
       <ExportDialog projectId={pid} clips={[clip]} notice={oneSided} open={exportOpen} onOpenChange={setExportOpen} />
+      <PlayerKeysDialog open={keysOpen} onOpenChange={setKeysOpen} />
     </div>
   )
 }

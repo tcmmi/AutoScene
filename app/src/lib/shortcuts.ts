@@ -5,7 +5,7 @@ import { altKey, isMac, modKey, shiftKey } from "./platform"
 
 /**
  * Every keyboard shortcut of the app, as data: the handlers (`useShortcuts`),
- * Settings → Shortcuts and the player's Keys card all read these lists, so
+ * Settings → Shortcuts and the Player keys dialog all read these lists, so
  * what is documented is what works. The lists hold AutoScene's own keys; the
  * keymap (`setKeymap`) says which keys do what now — an editor's preset and
  * the person's own changes, from Settings → Shortcuts.

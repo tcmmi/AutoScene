@@ -29,6 +29,10 @@ ui/src-tauri/gen/
 app/node_modules/
 app/dist/
 app/src-tauri/gen/schemas/
+# `cargo run -p autoscene-redteam`
+app/redteam/gen/
+app/redteam/result.json
+app/redteam/summary.md
 fixtures/out/
 fixtures/models/
 # `cargo xtask fetch-sidecars`

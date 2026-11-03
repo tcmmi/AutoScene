@@ -29,7 +29,7 @@ required-features = ["export-bindings"]
 export-bindings = []
 
 [build-dependencies]
-tauri-build = { version = "=3.0.0-alpha.3", features = [] }
+tauri-build.workspace = true
 
 [dependencies]
 as-core.workspace = true
@@ -52,8 +52,8 @@ tokio.workspace = true
 log = "0.4.34"
 # Bridge `tracing` events from library crates into tauri-plugin-log.
 tracing = { workspace = true, features = ["log"] }
-tauri = { version = "=3.0.0-alpha.4", features = ["protocol-asset"] }
-tauri-runtime-wry = "=3.0.0-alpha.4"
+tauri = { workspace = true, features = ["protocol-asset"] }
+tauri-runtime-wry.workspace = true
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta-typescript = "0.0.12"
 tauri-plugin-log = "=3.0.0-alpha.2"

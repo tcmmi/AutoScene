@@ -1,0 +1,81 @@
+/*
+ * The harness's page: AutoScene's dark canvas (--bg-canvas comes from the
+ * app's tokens at the start), the checks on the left and the frames on the
+ * right, all inside the window so check 15 can read a frame's pixel.
+ */
+:root {
+  color-scheme: dark;
+  --bg-canvas: #09090b;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg-canvas);
+  color: #f5f3ef;
+  font: 13px/1.5 system-ui, sans-serif;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  height: 100%;
+}
+
+.checks {
+  padding: 16px 20px;
+  overflow: auto;
+  border-right: 1px solid rgb(255 255 255 / 0.07);
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+#engine {
+  margin: 0 0 12px;
+  color: #8a8783;
+  overflow-wrap: anywhere;
+}
+
+ol {
+  margin: 0;
+  padding-left: 24px;
+}
+
+li[data-state="running"] {
+  color: #e0b45c;
+}
+
+li[data-state="held"]::after {
+  content: " · held";
+  color: #8a8783;
+}
+
+li[data-state="measured"]::after {
+  content: " · measured";
+  color: #8a8783;
+}
+
+li[data-state="fell"]::after {
+  content: " · fell";
+  color: #ff6b6b;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.stage iframe {
+  width: 600px;
+  height: 320px;
+  border: 1px solid rgb(255 255 255 / 0.11);
+}

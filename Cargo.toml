@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "app/src-tauri", "xtask"]
+members = ["crates/*", "app/src-tauri", "app/redteam", "xtask"]
 default-members = ["crates/*", "app/src-tauri"]
 exclude = ["vendor"]
 
@@ -61,6 +61,11 @@ ureq = "=3.5.1"
 url = "=2.5.8"
 flate2 = "=1.1.10"
 keyring = "=4.2.0"
+# The desktop shell. The app and the red team (app/redteam) build on the
+# same Tauri, so a bump moves both and the red team runs on it.
+tauri = "=3.0.0-alpha.4"
+tauri-build = "=3.0.0-alpha.3"
+tauri-runtime-wry = "=3.0.0-alpha.4"
 
 [profile.dev]
 # Media/vision code is unusable unoptimised; keep debug info but optimise deps.

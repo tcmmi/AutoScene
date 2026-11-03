@@ -1,0 +1,42 @@
+[package]
+name = "autoscene-redteam"
+description = "A test app that tries every known way out of a plugin page"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# `cargo run -p autoscene-redteam` opens a window: never a test of its own.
+# Its tests are in tests/config.rs.
+[[bin]]
+name = "autoscene-redteam"
+path = "src/main.rs"
+test = false
+
+# Only crates the app builds on, with the app's Tauri, so the workspace
+# compiles nothing new for it.
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+as-plugin.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { workspace = true, features = ["protocol-asset"] }
+tauri-runtime-wry.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# The window's pixels, for the frame's colour (check 15): features the app
+# builds windows-sys with already.
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+toml.workspace = true

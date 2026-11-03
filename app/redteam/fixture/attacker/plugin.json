@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 2,
+  "id": "dev.redteam.attacker",
+  "version": "1.0.0",
+  "name": "Attacker",
+  "description": "Tries every known way out of its page.",
+  "author": { "name": "AutoScene red team" },
+  "engines": { "autoscene": ">=1.0.0", "protocol": 2 },
+  "runtime": { "type": "none" },
+  "contributes": {
+    "pages": [{ "id": "main", "title": "Attacker", "entry": "ui/index.html" }]
+  }
+}

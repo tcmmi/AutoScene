@@ -7,7 +7,8 @@
   ],
   "ignorePatterns": [
     "src/bindings.ts",
-    "dist"
+    "dist",
+    "redteam"
   ],
   "rules": {
     "react/rules-of-hooks": "error",

@@ -1,0 +1,103 @@
+name: Red team
+
+# Every known way out of a plugin page, tried in each system's real webview
+# (WebView2, WKWebView, WebKitGTK) by app/redteam. Runs when anything the
+# walls rest on changes, weekly (WebView2 updates itself on the runners),
+# and by hand before each release: a public repo's schedule stops after 60
+# days without a push.
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      # The Tauri pins live here.
+      - Cargo.toml
+      - app/redteam/**
+      - crates/as-plugin/src/**
+      - app/src-tauri/src/plugins/pages.rs
+      - app/src-tauri/tauri*.json
+      - app/src/styles/tokens.css
+      - app/src/plugin-kit/**
+      - app/src/features/plugins/PluginFrame.tsx
+      - app/src/features/plugins/bridge.ts
+      - .github/workflows/redteam.yml
+  pull_request:
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - app/redteam/**
+      - crates/as-plugin/src/**
+      - app/src-tauri/src/plugins/pages.rs
+      - app/src-tauri/tauri*.json
+      - app/src/styles/tokens.css
+      - app/src/plugin-kit/**
+      - app/src/features/plugins/PluginFrame.tsx
+      - app/src/features/plugins/bridge.ts
+      - .github/workflows/redteam.yml
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: redteam-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  redteam:
+    name: Red team (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # WebKitGTK and friends, as in ci.yml, and a display to run it on.
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf xvfb
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # The kit (sdk.js, theme.css) the pages load, into app/dist/_as.
+      - name: Kit
+        working-directory: app
+        run: |
+          npm ci
+          npm run build:kit
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Red team
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a cargo run -p autoscene-redteam
+          else
+            cargo run -p autoscene-redteam
+          fi
+      - name: Result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: redteam-${{ matrix.os }}
+          path: app/redteam/result.json
+          if-no-files-found: warn
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f app/redteam/summary.md ]; then
+            cat app/redteam/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The red team wrote no summary on ${{ matrix.os }}." >> "$GITHUB_STEP_SUMMARY"
+          fi

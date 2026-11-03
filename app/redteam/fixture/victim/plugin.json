@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 2,
+  "id": "dev.redteam.victim",
+  "version": "1.0.0",
+  "name": "Victim",
+  "description": "A page the attacker aims at.",
+  "author": { "name": "AutoScene red team" },
+  "engines": { "autoscene": ">=1.0.0", "protocol": 2 },
+  "runtime": { "type": "none" },
+  "contributes": {
+    "pages": [{ "id": "main", "title": "Victim", "entry": "ui/index.html" }]
+  }
+}

@@ -117,6 +117,7 @@ cd app && npm test
 | --- | --- |
 | `crates/` | The Rust core: media and frame index (`as-media`), projects and database (`as-project`, `as-db`), analysis engine and inference (`as-engine`, `as-infer`, `as-analysis`, `as-identity`), exports (`as-export`), plugins and the `asp` tool (`as-plugin`) |
 | `app/` | The desktop app: Tauri shell (`app/src-tauri`) and React UI (`app/src`) |
+| `app/redteam/` | A test app that tries every known way out of a plugin page |
 | `xtask/` | Dev tasks: sidecars, fixtures, test models |
 | `models/manifest.toml` | The AI models, pinned by URL and SHA-256 |
 | `tools/model-prep/` | Dev-only Python that prepares models (never shipped) |

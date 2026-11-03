@@ -363,6 +363,12 @@ impl Services {
         }
     }
 
+    /// Starts them again when a page asks: AutoScene didn't quit after all
+    /// (an update's installer didn't start).
+    pub fn resume(&self) {
+        self.inner.lock().quitting = false;
+    }
+
     /// The service of `id`, while it runs.
     #[cfg(test)]
     fn running(&self, id: &PluginId) -> Option<Arc<dyn Service>> {
@@ -795,6 +801,11 @@ mod tests {
         assert!(host.services.running(&id).is_none());
         assert_eq!(host.service(&m, None).err().unwrap().message, "AutoScene is quitting.");
         assert_eq!(starter.asked.load(Ordering::SeqCst), 1);
+        // It didn't quit after all (an update's installer didn't start): a page's ask starts it again.
+        host.resume();
+        host.service(&m, None).unwrap();
+        assert_eq!(starter.asked.load(Ordering::SeqCst), 2);
+        host.shutdown();
         alone(&host);
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -893,6 +904,9 @@ mod tests {
     struct Nobody;
 
     impl super::super::calls::PageIo for Nobody {
+        fn in_front(&self) -> bool {
+            unreachable!()
+        }
         fn copy_text(&self, _: &str) -> Result<(), String> {
             unreachable!()
         }
@@ -902,10 +916,21 @@ mod tests {
         fn open_url(&self, _: &str) -> Result<(), String> {
             unreachable!()
         }
-        fn save_to(&self, _: &str, _: &[as_plugin::calls::FileFilter]) -> Option<std::path::PathBuf> {
+        fn save_to(&self, _: &str, _: &str, _: &[as_plugin::calls::FileFilter]) -> Option<std::path::PathBuf> {
             unreachable!()
         }
-        fn pick(&self, _: &[as_plugin::calls::FileFilter]) -> Option<std::path::PathBuf> {
+        fn pick(&self, _: &str, _: &[as_plugin::calls::FileFilter]) -> Option<std::path::PathBuf> {
+            unreachable!()
+        }
+        fn queue_run(
+            &self,
+            _: &PluginId,
+            _: as_plugin::ActionKind,
+            _: &str,
+            _: Option<as_core::ProjectId>,
+            _: Option<as_core::ExportId>,
+            _: Option<Value>,
+        ) -> crate::error::AppResult<Option<as_core::JobId>> {
             unreachable!()
         }
     }
@@ -918,10 +943,8 @@ mod tests {
         let id = served(&host, &lib, &tmp, "dev.a.service");
         let session = pages::open(&host, &lib, &id, "main", None).unwrap().session;
         let lib = Arc::new(lib);
-        let ask = |params: Value| {
-            let params = serde_json::value::to_raw_value(&params).unwrap();
-            page_call(lib.clone(), &host, &Nobody, &session, "service.request", &params)
-        };
+        let ask =
+            |params: Value| page_call(lib.clone(), &host, &Nobody, &session, "service.request", &params.to_string());
         assert_eq!(
             ask(json!({"method": "count", "params": {"text": "a b"}})),
             PageReply::Ok { result: json!({"method": "count"}) }
@@ -961,10 +984,8 @@ mod tests {
         let id = served(&host, &lib, &tmp, "dev.a.service");
         let session = page_of(&host, &id).token.clone();
         let lib = Arc::new(lib);
-        let ask = |params: Value| {
-            let params = serde_json::value::to_raw_value(&params).unwrap();
-            page_call(lib.clone(), &host, &Nobody, &session, "service.request", &params)
-        };
+        let ask =
+            |params: Value| page_call(lib.clone(), &host, &Nobody, &session, "service.request", &params.to_string());
         let asked = Instant::now();
         let late = ask(json!({"method": "count", "timeoutMs": 300}));
         let PageReply::Err { error } = late else { panic!("{late:?}") };

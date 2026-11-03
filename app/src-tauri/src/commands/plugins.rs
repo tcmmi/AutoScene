@@ -30,7 +30,7 @@ use tauri_specta::Event;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::PluginsChanged;
 use crate::paths;
-use crate::plugins::calls::{self, PageIo, PageParams, PageReply};
+use crate::plugins::calls::{self, PageIo, PageReply};
 use crate::plugins::pages::{self, PageMount};
 use crate::plugins::{self, PluginInfo, PluginReview, host, info, review};
 use crate::state::{AppState, blocking};
@@ -388,7 +388,7 @@ pub async fn plugin_run(
         ActionKind::ExportAction => Trigger::Menu,
         ActionKind::Command => Trigger::Palette,
     };
-    blocking(move || plugins::queue_run(&app, &id, kind, &action_id, trigger, project_id, export_id)).await
+    blocking(move || plugins::queue_run(&app, &id, kind, &action_id, trigger, project_id, export_id, None)).await
 }
 
 /// Open a plugin's page `page_id` for its frame, in the project
@@ -422,8 +422,9 @@ pub async fn plugin_page_close(state: State<'_, AppState>, session: String) -> A
 
 /// A plugin page's call of `method` with `params`, which the app's page
 /// hands on with the page's `session`: Rust knows the plugin from it, never
-/// from the page. Its answer, an effect for the app's page to carry out
-/// first, or the page's error; a closed page's call gets `closed`.
+/// from the page. The params come as their JSON, so nothing reads params
+/// past their method's cap. Its answer, an effect for the app's page to
+/// carry out first, or the page's error; a closed page's call gets `closed`.
 #[tauri::command]
 #[specta::specta]
 pub async fn plugin_page_call(
@@ -431,14 +432,10 @@ pub async fn plugin_page_call(
     state: State<'_, AppState>,
     session: String,
     method: String,
-    params: PageParams,
+    params: String,
 ) -> AppResult<PageReply> {
     let (host, lib) = (host(&state)?, state.library.clone());
-    blocking(move || {
-        let params = serde_json::value::to_raw_value(&params.0).map_err(|e| AppError::internal(e.to_string()))?;
-        Ok(calls::page_call(lib, &host, &AppIo(&app), &session, &method, &params))
-    })
-    .await
+    blocking(move || Ok(calls::page_call(lib, &host, &AppIo(&app), &session, &method, &params))).await
 }
 
 /// The app's page is there for the open plugin page `session`: it says so
@@ -455,13 +452,14 @@ pub async fn plugin_page_heartbeat(state: State<'_, AppState>, session: String) 
 }
 
 /// What a page's own methods reach in the app: the clipboard, the person's
-/// browser after their yes, and the system's file dialogs over the window.
+/// browser after their yes, the system's file dialogs over the window, and
+/// the jobs its plugin's runs are.
 struct AppIo<'a>(&'a AppHandle);
 
 impl AppIo<'_> {
-    /// A file dialog over the window that offers `filters`.
-    fn file_dialog(&self, filters: &[FileFilter]) -> FileDialogBuilder<tauri::DynRuntime> {
-        let mut dialog = self.0.dialog().file();
+    /// A file dialog titled `title` over the window that offers `filters`.
+    fn file_dialog(&self, title: &str, filters: &[FileFilter]) -> FileDialogBuilder<tauri::DynRuntime> {
+        let mut dialog = self.0.dialog().file().set_title(title);
         for f in filters {
             let extensions: Vec<&str> = f.extensions.iter().map(String::as_str).collect();
             dialog = dialog.add_filter(&f.name, &extensions);
@@ -474,6 +472,10 @@ impl AppIo<'_> {
 }
 
 impl PageIo for AppIo<'_> {
+    fn in_front(&self) -> bool {
+        self.0.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false)
+    }
+
     fn copy_text(&self, text: &str) -> Result<(), String> {
         self.0.clipboard().write_text(text).map_err(|e| e.to_string())
     }
@@ -486,12 +488,24 @@ impl PageIo for AppIo<'_> {
         self.0.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
     }
 
-    fn save_to(&self, name: &str, filters: &[FileFilter]) -> Option<PathBuf> {
-        self.file_dialog(filters).set_file_name(name).blocking_save_file()?.into_path().ok()
+    fn save_to(&self, title: &str, name: &str, filters: &[FileFilter]) -> Option<PathBuf> {
+        self.file_dialog(title, filters).set_file_name(name).blocking_save_file()?.into_path().ok()
     }
 
-    fn pick(&self, filters: &[FileFilter]) -> Option<PathBuf> {
-        self.file_dialog(filters).blocking_pick_file()?.into_path().ok()
+    fn pick(&self, title: &str, filters: &[FileFilter]) -> Option<PathBuf> {
+        self.file_dialog(title, filters).blocking_pick_file()?.into_path().ok()
+    }
+
+    fn queue_run(
+        &self,
+        id: &PluginId,
+        kind: ActionKind,
+        action: &str,
+        project_id: Option<ProjectId>,
+        export_id: Option<ExportId>,
+        input: Option<serde_json::Value>,
+    ) -> AppResult<Option<JobId>> {
+        plugins::queue_run(self.0, id, kind, action, Trigger::Page, project_id, export_id, input)
     }
 }
 

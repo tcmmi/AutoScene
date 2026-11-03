@@ -520,11 +520,19 @@ const pluginJobs = new Map<string, { pluginId: string; run: string }>()
 
 /**
  * A plugin run as a job of its own, as `queue_run` queues it: `null` when
- * the same run runs already. It ends with what the plugin says.
+ * the same run (with the same input from a page) runs already. It ends
+ * with what the plugin says.
  */
-function startPluginJob(pluginId: string, actionId: string, kind: ActionKind, projectId: string | null, exportId: string | null) {
+function startPluginJob(
+  pluginId: string,
+  actionId: string,
+  kind: ActionKind,
+  projectId: string | null,
+  exportId: string | null,
+  input: unknown = null,
+) {
   const run = pluginRun(pluginId, kind, actionId, projectId, exportId, allows())
-  const key = [pluginId, kind, actionId, projectId, exportId].join(" ")
+  const key = [pluginId, kind, actionId, projectId, exportId, JSON.stringify(input)].join(" ")
   if (jobs.some((j) => j.state === "running" && pluginJobs.get(j.id)?.run === key)) return null
   const p = projectId ? find(projectId) : null
   const job = startJob(
@@ -582,6 +590,7 @@ const pagePlaces: PagePlaces = {
   },
   fixture: "cfr24_h264.mp4",
   tell: (session, event) => void emit("plugin-page:event", { session, event }),
+  run: (pluginId, kind, action, projectId, exportId, input) => startPluginJob(pluginId, action, kind, projectId, exportId, input),
 }
 
 /**
@@ -1232,7 +1241,7 @@ const handlers: Record<string, Handler> = {
     closePage(String(session))
     return null
   },
-  plugin_page_call: ({ session, method, params }) => pageCall(String(session), String(method), params, pagePlaces),
+  plugin_page_call: ({ session, method, params }) => pageCall(String(session), String(method), String(params), pagePlaces),
   plugin_page_heartbeat: () => null,
   plugin_run: ({ pluginId, actionId, kind, projectId, exportId }) =>
     startPluginJob(String(pluginId), String(actionId), kind as ActionKind, (projectId as string | null) ?? null, (exportId as string | null) ?? null),

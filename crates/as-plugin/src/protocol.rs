@@ -274,7 +274,9 @@ pub enum Trigger {
     AfterExport,
     /// The command palette.
     Palette,
-    /// A page of the plugin (protocol 2). Reserved: no run starts so yet.
+    /// A page of the plugin (`actions.run`), which starts only runs of a
+    /// program that speaks protocol 2: a protocol 1 program never reads it.
+    /// Its run gets what the page handed it as `input`.
     Page,
 }
 
@@ -445,20 +447,23 @@ impl CallHead {
     }
 }
 
-/// The id of the request a service's line that is no message answers: a
-/// response cut at its limit, whose id came before the break. Its type
-/// may come after it (serde_json writes its keys in order): then a line
-/// that names a method or params is a call's.
-pub(crate) fn response_id(line: &str) -> Option<String> {
+/// Whether a service's line that is no message is a response cut at its
+/// limit, and the id of the request it answers when that came before the
+/// break. Its type may come after its id (serde_json writes its keys in
+/// order): then a line that names a method or params is a call's, and one
+/// with neither an id nor a result is no response. Its id may come after
+/// its result too (`JSON.stringify` keeps the order the code wrote): then
+/// it is a response all the same, whose request is unknown.
+pub(crate) fn cut_response(line: &str) -> Option<Option<String>> {
     let head = Head::read(line);
     let response = match &head.kind {
         Some(kind) => kind == "response",
-        None => head.method.is_none() && !head.params,
+        None => head.method.is_none() && !head.params && (head.id.is_some() || head.result),
     };
-    match head.id {
-        Some(CallId::Text(id)) if response => Some(id),
+    response.then_some(match head.id {
+        Some(CallId::Text(id)) => Some(id),
         _ => None,
-    }
+    })
 }
 
 /// The keys of a line that is no message, read in turn until it breaks off.
@@ -468,6 +473,8 @@ struct Head {
     id: Option<CallId>,
     method: Option<String>,
     params: bool,
+    /// It has a result or an error, as a response does.
+    result: bool,
 }
 
 impl Head {
@@ -497,6 +504,10 @@ impl<'de> Visitor<'de> for HeadVisitor<'_> {
                 "method" => self.0.method = Some(kept(map.next_value()?)),
                 "params" => {
                     self.0.params = true;
+                    map.next_value::<IgnoredAny>()?;
+                }
+                "result" | "error" => {
+                    self.0.result = true;
                     map.next_value::<IgnoredAny>()?;
                 }
                 _ => {
@@ -806,18 +817,25 @@ mod tests {
     #[test]
     fn a_cut_response_names_its_request() {
         let cut = format!(r#"{{"type":"response","id":"r12","result":"{}"#, "x".repeat(100));
-        assert_eq!(response_id(&cut).as_deref(), Some("r12"));
+        assert_eq!(cut_response(&cut), Some(Some("r12".to_owned())));
         // Its keys in serde_json's order: its type after the break.
-        assert_eq!(response_id(r#"{"id":"r12","result":"xxx"#).as_deref(), Some("r12"));
-        // Its id after the break, a call's, or not a response: none.
+        assert_eq!(cut_response(r#"{"id":"r12","result":"xxx"#), Some(Some("r12".to_owned())));
+        // Its id after the break, or not text: a response all the same, of an unknown request.
         for line in [
-            r#"{"type":"response","result":"xxx"#.to_owned(),
-            r#"{"type":"response","id":12,"result":"#.to_owned(),
-            r#"{"type":"emit","id":"r12","data":"#.to_owned(),
-            r#"{"id":"c1","method":"net.fetch","params":{"body":"#.to_owned(),
-            r#"{"id":"c1","params":{"body":"#.to_owned(),
+            r#"{"type":"response","result":{"token":"xxx"#,
+            r#"{"result":{"token":"xxx"#,
+            r#"{"type":"response","id":12,"result":"#,
         ] {
-            assert_eq!(response_id(&line), None, "{line}");
+            assert_eq!(cut_response(line), Some(None), "{line}");
+        }
+        // A call's, or not a response: none.
+        for line in [
+            r#"{"type":"emit","id":"r12","data":"#,
+            r#"{"id":"c1","method":"net.fetch","params":{"body":"#,
+            r#"{"id":"c1","params":{"body":"#,
+            r#"{"type":"log","message":"xxx"#,
+        ] {
+            assert_eq!(cut_response(line), None, "{line}");
         }
     }
 

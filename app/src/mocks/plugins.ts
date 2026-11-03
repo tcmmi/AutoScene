@@ -321,7 +321,7 @@ function review(p: MockPlugin, allow: boolean): PluginReview {
         sourceBefore: previous.source,
         addedPermissions: p.permissions.filter((x: Permission) => !previous.permissions.includes(x)),
         addedHosts: p.networkHosts.filter((h) => !previous.networkHosts.includes(h)),
-        addedPages: p.pages.filter((x) => !previous.pages.some((y) => y.id === x.id)).map((x) => x.title),
+        addedPages: p.pages.filter((x) => !previous.pages.some((y) => y.id === x.id)).map((x) => x.id),
         startsProgram: previous.runtime === "none" && p.runtime !== "none",
         becomesService: previous.runtime !== "service" && p.runtime === "service",
       }
@@ -528,6 +528,11 @@ export type PagePlaces = {
   fixture: string
   /** Tells the open page `session` what became of it, as `plugin-page:event` does. */
   tell(session: string, event: PageEvent): void
+  /**
+   * Queues the run a page started as a job, as `queue_run` does with `Trigger::Page`: its id, `null` when the same
+   * run (with the same input) waits already. Throws `{ code, message }` when it can't run.
+   */
+  run(pluginId: string, kind: ActionKind, action: string, projectId: string | null, exportId: string | null, input: unknown): string | null
 }
 
 /** How many words Hello service counted since the mock started, as its service counts them since it started. */
@@ -557,7 +562,6 @@ type PageHandler = (s: PageSession, params: Record<string, unknown>, places: Pag
 
 const ok = (result: unknown = null): PageReply => ({ kind: "ok", result })
 const refused = (code: CallCode, message: string): PageReply => ({ kind: "err", error: { code, message } })
-const later = (method: HostMethod): PageReply => refused("invalid", `${method} comes in a later AutoScene.`)
 
 /** What `method` needs that `p` doesn't hold, as `HostMethod::needs` and `check` say it; null when it holds it. */
 function missing(method: HostMethod, p: MockPlugin): string | null {
@@ -689,7 +693,22 @@ export const pluginPageCall: Record<HostMethod, PageHandler> = {
   },
   "state.keys": (s) => ok([...(pageState.get(s.pluginId)?.keys() ?? [])].sort()),
   "service.request": helloServiceRequest,
-  "actions.run": () => later("actions.run"),
+  // A run in Activity, as one from the export's menu or the palette: an export action on an export of the page's
+  // project, else a command in that project.
+  "actions.run": (s, params, places) => {
+    const exportId = typeof params.exportId === "string" ? params.exportId : null
+    if (exportId !== null) {
+      if (!s.projectId) return refused("invalid", "This page isn't open in a project.")
+      if (!places.exports(s.projectId).some((e) => e.id === exportId)) return refused("not_found", "This export no longer exists.")
+    }
+    const kind: ActionKind = exportId === null ? "command" : "exportAction"
+    try {
+      return ok({ jobId: places.run(s.pluginId, kind, String(params.action ?? ""), s.projectId, exportId, params.input ?? null) })
+    } catch (e) {
+      const { code, message } = e as { code: CallCode; message: string }
+      return refused(code, message)
+    }
+  },
   "ui.toast": (s, params) => {
     const text = String(params.text ?? "").trim()
     if (text.length < 1 || text.length > 200) return refused("invalid", "A toast says 1 to 200 characters.")
@@ -767,15 +786,21 @@ export const pluginPageCall: Record<HostMethod, PageHandler> = {
     }),
 }
 
-/** The call of `method` of the page `session`, as `plugin_page_call` answers it. */
-export async function pageCall(session: string, method: string, params: unknown, places: PagePlaces): Promise<PageReply> {
+/** The call of `method` of the page `session` with `params` (their JSON), as `plugin_page_call` answers it. */
+export async function pageCall(session: string, method: string, params: string, places: PagePlaces): Promise<PageReply> {
   const open = sessions.get(session)
   if (!open) return refused("closed", "This page was closed.")
   if (!Object.hasOwn(pluginPageCall, method)) return refused("invalid", `AutoScene has no method ${method}.`)
   const m = method as HostMethod
+  let read: unknown
+  try {
+    read = JSON.parse(params)
+  } catch {
+    return refused("invalid", `The params of ${m} aren't JSON.`)
+  }
   const why = missing(m, open.plugin)
   if (why) return refused("denied", why)
-  const args = typeof params === "object" && params !== null ? (params as Record<string, unknown>) : {}
+  const args = typeof read === "object" && read !== null ? (read as Record<string, unknown>) : {}
   return pluginPageCall[m]({ session, ...open }, args, places)
 }
 
@@ -799,7 +824,12 @@ export function pluginRun(
   const refuse = (message: string) => {
     throw { code: "invalid", message }
   }
-  const spec = kind === "exportAction" ? p.exportActions.find((a) => a.id === action) : p.commands.find((c) => c.id === action)
+  const command = p.commands.find((c) => c.id === action)
+  const exportAction = p.exportActions.find((a) => a.id === action)
+  const spec = kind === "exportAction" ? exportAction : command
+  // A page names an action without its kind: one of the other kind says what it needs.
+  if (!spec && kind === "command" && exportAction) return refuse("Choose an export to run it on.")
+  if (!spec && kind === "exportAction" && command) return refuse("A command doesn't run on an export.")
   if (!spec) return refuse(`${p.name} has no such action.`)
   if (kind === "exportAction" && (!exportId || !projectId)) refuse("Choose an export to run it on.")
   if (kind === "command" && exportId) refuse("A command doesn't run on an export.")

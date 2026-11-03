@@ -30,6 +30,7 @@ use specta::Type;
 
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{Permission, RuntimeKind, shown};
+use crate::protocol::ActionKind;
 use crate::store::{Installed, manifest_of};
 
 const KIB: usize = 1 << 10;
@@ -791,6 +792,17 @@ pub struct ActionsRun {
     pub input: Option<Value>,
 }
 
+impl ActionsRun {
+    /// What it runs: an export action when it names an export, else a
+    /// command.
+    pub fn kind(&self) -> ActionKind {
+        match self.export_id {
+            Some(_) => ActionKind::ExportAction,
+            None => ActionKind::Command,
+        }
+    }
+}
+
 /// `ui.toast`; it gives `{ shown }`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -1191,6 +1203,11 @@ mod tests {
         );
         let t: Toast = params(HostMethod::UiToast, &text(r#"{"text":"Hi"}"#)).unwrap();
         assert_eq!(t.tone, ToastTone::Neutral);
+        // A run names an export for an export action; without, it runs a command.
+        let r: ActionsRun = params(HostMethod::ActionsRun, &text(r#"{"action":"post","exportId":"e1"}"#)).unwrap();
+        assert_eq!((r.kind(), r.input), (ActionKind::ExportAction, None));
+        let r: ActionsRun = params(HostMethod::ActionsRun, &text(r#"{"action":"hello","input":{"n":1}}"#)).unwrap();
+        assert_eq!((r.kind(), r.input), (ActionKind::Command, Some(json!({"n": 1}))));
     }
 
     #[test]

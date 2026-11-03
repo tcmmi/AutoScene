@@ -1,7 +1,8 @@
 //! Plugins: programs by other people that AutoScene runs on request, after
-//! an export or from the command palette. A plugin describes itself in a
-//! `plugin.json` ([`manifest`]); AutoScene draws what it adds (menu entries,
-//! commands, settings) and runs it as a separate process. It comes as a
+//! an export, from the command palette or from the plugin's own pages. A
+//! plugin describes itself in a `plugin.json` ([`manifest`]); AutoScene
+//! draws what it adds (menu entries, commands, settings) and runs it as a
+//! separate process. It comes as a
 //! package ([`package`]): a zip whose `files.lock` lists and hashes each of
 //! its files. Who signed that list decides the plugin's trust ([`trust`]):
 //! AutoScene's review, its author's pinned key, or nobody AutoScene knows.

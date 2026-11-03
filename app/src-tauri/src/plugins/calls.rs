@@ -24,6 +24,10 @@
 //! runs ([`super::services`]). The service's own calls are answered as a
 //! run's, and it names the project it reads: its program runs with the
 //! person's rights anyway.
+//!
+//! A page starts one of its plugin's actions as a run, queued as the
+//! person's own are ([`super::queue_run`]): in the project the page is open
+//! in, and on an export of that project only.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
@@ -33,28 +37,31 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use as_api::{ExportStatus, ExportSummary, MediaStatus};
-use as_core::{CancelToken, ExportId, MediaId, ProjectId};
+use as_core::{CancelToken, ExportId, JobId, MediaId, ProjectId};
 use as_plugin::calls::{
-    self, CallCode, CallError, Caller, CopyText, ExportRef, FileFilter, FileRef, Grants, HostCalls, HostMethod,
-    Navigate, NetRequest, OpenExternal, OpenFile, OpenedFile, PageClip, PageEpisode, PageExport, PageExportSummary,
-    PageProject, ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, SaveFile, SecretsGet, ServiceRequestParams,
-    StateKey, StateSet, Toast, ToastTone,
+    self, ActionsRun, CallCode, CallError, Caller, CopyText, ExportRef, FileFilter, FileRef, Grants, HostCalls,
+    HostMethod, Navigate, NetRequest, OpenExternal, OpenFile, OpenedFile, PageClip, PageEpisode, PageExport,
+    PageExportSummary, PageProject, ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, SaveFile, SecretsGet,
+    ServiceRequestParams, StateKey, StateSet, Toast, ToastTone,
 };
 use as_plugin::manifest::plain_link;
 use as_plugin::pages::{self, Mount};
 use as_plugin::service::{MAX_REQUEST_TIMEOUT, REQUEST_TIMEOUT};
-use as_plugin::{Installed, PluginError, PluginId, PluginResult, RequestContext, net, package, page_state, runtime};
+use as_plugin::{
+    ActionKind, Installed, PluginError, PluginId, PluginResult, RequestContext, net, package, page_state, runtime,
+};
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
 use specta::Type;
 use specta_typescript::Unknown;
 
 use super::{PluginHost, RunKey, export_context, serde_name};
+use crate::error::{AppError, AppResult, ErrorCode};
 use crate::paths;
 
 /// A run's or an open page's calls, bound to its plugin and the project
@@ -74,9 +81,9 @@ pub struct AppCalls {
     service: bool,
 }
 
-/// Where calls find a project and its exports: the library (a test's
-/// stand-in has exports no export job wrote).
-trait Places: Send + Sync {
+/// Where calls, and a run's line, find a project and its exports: the
+/// library (a test's stand-in has exports no export job wrote).
+pub(super) trait Places: Send + Sync {
     fn project(&self, id: ProjectId) -> ProjectResult<Arc<Project>>;
     fn exports(&self, project: &Project) -> ProjectResult<Vec<ExportSummary>>;
     fn export(&self, project: &Project, id: ExportId) -> ProjectResult<ExportSummary>;
@@ -332,7 +339,7 @@ impl AppCalls {
             | HostMethod::UiCopyText
             | HostMethod::UiOpenExternal
             | HostMethod::FilesSave
-            | HostMethod::FilesOpen => Err(later(method)),
+            | HostMethod::FilesOpen => Err(PluginError::Denied(format!("Only a page calls {}.", method.name())).into()),
         }
     }
 
@@ -372,6 +379,9 @@ impl AppCalls {
                 if text.len() > MAX_COPIED || text.contains('\0') {
                     return Err(invalid("ui.copyText copies text of up to 64 KB, without NUL characters."));
                 }
+                if !io.in_front() {
+                    return Err(denied("A page copies only while AutoScene is in front."));
+                }
                 if !limits.copy(&m.token, now) {
                     return Err(CallError::new(CallCode::Busy, "A page copies at most 10 times a minute."));
                 }
@@ -386,7 +396,7 @@ impl AppCalls {
                     return Err(invalid("ui.openExternal opens only plain https:// links."));
                 }
                 let asked = format!("Plugin “{}” asks to open:\n\n{url}", m.name);
-                let dialog = limits.dialog(m, now)?;
+                let dialog = limits.dialog(m, io, now)?;
                 let yes = io.confirm("Open this link in your browser?", &asked, "Open");
                 dialog.closed(yes)?;
                 if !yes {
@@ -419,8 +429,8 @@ impl AppCalls {
                 if bytes.len() > MAX_SAVED {
                     return Err(too_large());
                 }
-                let dialog = limits.dialog(m, now)?;
-                let path = io.save_to(&name, &filters);
+                let dialog = limits.dialog(m, io, now)?;
+                let path = io.save_to(&format!("Plugin “{}” saves a file", m.name), &name, &filters);
                 dialog.closed(path.is_some())?;
                 let Some(path) = path else { return Ok(PageAnswer::value(json!({ "saved": false }))) };
                 paths::check(&path).map_err(|e| invalid(e.message))?;
@@ -436,12 +446,29 @@ impl AppCalls {
                 let OpenFile { filters, max_bytes } = calls::params(method, params)?;
                 check_filters(&filters)?;
                 let most = max_bytes.map_or(MAX_OPENED, |n| u64::from(n).min(MAX_OPENED));
-                let dialog = limits.dialog(m, now)?;
-                let path = io.pick(&filters);
+                let dialog = limits.dialog(m, io, now)?;
+                let path = io.pick(&format!("Plugin “{}” asks for a file", m.name), &filters);
                 dialog.closed(path.is_some())?;
                 let Some(path) = path else { return Ok(PageAnswer::value(Value::Null)) };
                 paths::check(&path).map_err(|e| invalid(e.message))?;
                 Ok(PageAnswer::value(answer(read_opened(&path, most)?)))
+            }
+            // A read may ask the person in a dialog of the system's (macOS's
+            // keychain after an update, a locked one on Linux): one at a
+            // time, and none again once one failed, until the page opens
+            // again. So a page can't keep the person in those dialogs either.
+            HostMethod::SecretsGet => {
+                let SecretsGet { key } = calls::params(method, params)?;
+                calls::check_secret(&key, &self.grants)?;
+                let turn = limits.keychain(&m.token);
+                let mut refused = turn.lock();
+                if let Some(e) = &*refused {
+                    return Err(e.clone());
+                }
+                match self.host.store.secret(&self.plugin, &key) {
+                    Ok(value) => Ok(PageAnswer::value(json!({ "value": value }))),
+                    Err(e) => Err(refused.insert(e.into()).clone()),
+                }
             }
             // Its plugin's service, started for it when none runs. Its answer
             // is the page's only while the page is open.
@@ -461,6 +488,21 @@ impl AppCalls {
                     Err(_) if m.closed.is_cancelled() => Err(PluginError::Closed.into()),
                     answered => Ok(PageAnswer::value(answered?)),
                 }
+            }
+            // One of its plugin's actions as a run in Activity, queued as the
+            // person's own are: in the project the page is open in, and an
+            // export action on an export of that project only.
+            HostMethod::ActionsRun => {
+                let asked: ActionsRun = calls::params(method, params)?;
+                let kind = asked.kind();
+                let ActionsRun { action, export_id, input } = asked;
+                let export_id = match export_id {
+                    Some(id) => Some(self.export(&*self.project(None)?, &id)?.id),
+                    None => None,
+                };
+                let project_id = m.project.as_deref().and_then(|id| ProjectId::parse(id).ok());
+                let job = io.queue_run(&m.plugin, kind, &action, project_id, export_id, input).map_err(app_error)?;
+                Ok(PageAnswer::value(json!({ "jobId": job })))
             }
             // As a run's call, which its page's close ends as a run's end does.
             _ => match self.answer(method, params, &m.closed) {
@@ -523,11 +565,13 @@ fn check_save_name(name: &str) -> Result<(), CallError> {
 
 /// The kinds of file a page never saves, on any system: programs, scripts,
 /// installers, libraries, disk images and shortcuts, which run something,
-/// or open where they point, as the person opens them: Windows' first, then
-/// macOS's, then Linux's and Java's, by their extensions. A page's file
-/// would skip the warning a browser's download gets.
+/// or open where they point, as the person opens them: Windows' first
+/// (with a remote desktop's and a sandbox's settings, which connect and
+/// run), then macOS's, then Linux's and Java's, by their extensions. An
+/// archive may hold any of them: on Windows and macOS it is marked as a
+/// download ([`mark_downloaded`]), and what comes out of it with it.
 const RUNNABLE: &str = "exe com scr pif cpl dll ocx sys drv bat cmd msi msix msixbundle msp mst appx appxbundle \
-                        appinstaller application appref-ms lnk url website scf hta chm hlp js jse vbs vbe vb wsf wsh \
+                        appinstaller application appref-ms lnk url website scf hta chm hlp rdp wsb js jse vbs vbe vb wsf wsh \
                         wsc ws sct ps1 ps1xml ps2 psc1 psd1 psm1 msh msh1 msh2 mshxml reg inf ins isp gadget diagcab \
                         msc xll xbap vsix settingcontent-ms library-ms search-ms searchconnector-ms iso img vhd vhdx \
                         py pyw pyz pyzw app command tool terminal pkg mpkg dmg webloc inetloc fileloc scpt scptd \
@@ -615,8 +659,30 @@ fn mark_downloaded(path: &Path) {
     }
 }
 
+/// Marks the file at `path` as one from the internet, as a browser marks
+/// its downloads: Gatekeeper then checks what it is, or what comes out of
+/// it, before it runs. A disk that keeps no such marks saves the file
+/// without one.
+#[cfg(target_os = "macos")]
+fn mark_downloaded(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    // Downloaded, by AutoScene, not yet opened.
+    let value = format!("0083;{now:x};AutoScene;");
+    let (Ok(path), Ok(name)) =
+        (std::ffi::CString::new(path.as_os_str().as_bytes()), std::ffi::CString::new("com.apple.quarantine"))
+    else {
+        return;
+    };
+    // SAFETY: both names are NUL-terminated, and `value` lives for the call.
+    let set = unsafe { libc::setxattr(path.as_ptr(), name.as_ptr(), value.as_ptr().cast(), value.len(), 0, 0) };
+    if set != 0 {
+        log::warn!("a plugin page's saved file isn't marked as a download: {}", std::io::Error::last_os_error());
+    }
+}
+
 /// Nothing marks a file so here: [`RUNNABLE`] keeps out what would run.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn mark_downloaded(_: &Path) {}
 
 /// `n` bytes as people read them: 16 MB, 512 KB, 100 bytes.
@@ -669,19 +735,6 @@ pub enum PageReply {
     },
 }
 
-/// The params of a page's call, as it sent them: JSON of any shape,
-/// `unknown` to TypeScript (specta can't spell `serde_json::Value`, which
-/// holds itself).
-#[derive(Clone, Debug, Deserialize)]
-#[serde(transparent)]
-pub struct PageParams(pub Value);
-
-impl Type for PageParams {
-    fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
-        Unknown::<()>::definition(types)
-    }
-}
-
 /// What a page's call asks the app's page to do.
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -712,44 +765,65 @@ impl PageAnswer {
 /// What a page's own methods reach outside AutoScene's data, each only
 /// through the person's step: the clipboard, a link they said yes to in a
 /// dialog of the system's own, and a file they save or pick in the system's
-/// dialog. The app goes through Tauri's plugins (`commands::plugins`), a
-/// test through its own.
+/// dialog; and the runs it starts, which the person sees and stops in
+/// Activity. The app goes through Tauri's plugins and its job runner
+/// (`commands::plugins`), a test through its own.
 pub trait PageIo: Send + Sync {
+    /// Whether AutoScene's window has the person's focus: a page copies and
+    /// opens dialogs only then, never while they work in another app.
+    fn in_front(&self) -> bool;
     fn copy_text(&self, text: &str) -> Result<(), String>;
     /// Asks the person `title`, as `text` says, with `yes` and Cancel:
     /// whether they said yes.
     fn confirm(&self, title: &str, text: &str, yes: &str) -> bool;
     /// Opens `url` in the person's browser.
     fn open_url(&self, url: &str) -> Result<(), String>;
-    /// Where the person saves the file `name`; none when they cancel.
-    fn save_to(&self, name: &str, filters: &[FileFilter]) -> Option<PathBuf>;
-    /// The file the person picks; none when they cancel.
-    fn pick(&self, filters: &[FileFilter]) -> Option<PathBuf>;
+    /// Where the person saves the file `name`, in a dialog titled `title`;
+    /// none when they cancel.
+    fn save_to(&self, title: &str, name: &str, filters: &[FileFilter]) -> Option<PathBuf>;
+    /// The file the person picks in a dialog titled `title`; none when they
+    /// cancel.
+    fn pick(&self, title: &str, filters: &[FileFilter]) -> Option<PathBuf>;
+    /// Queues the run of `action` (of `kind`) of the plugin `id` that its
+    /// page started, in the project `project_id` and on the export
+    /// `export_id`, with what the page handed it, as [`super::queue_run`]
+    /// does: none when the same run waits or runs already.
+    fn queue_run(
+        &self,
+        id: &PluginId,
+        kind: ActionKind,
+        action: &str,
+        project_id: Option<ProjectId>,
+        export_id: Option<ExportId>,
+        input: Option<Value>,
+    ) -> AppResult<Option<JobId>>;
 }
 
-/// The call of `method` with `params` of the open page `session`. A page
-/// that closed gets `closed`, never an error of the command, so a closed
-/// page's last calls make no toast. Past [`MAX_PAGE_CALLS`] at once a call
-/// gets `busy`.
+/// The call of `method` with `params` (their JSON, as the app's page hands
+/// it on) of the open page `session`. A page that closed gets `closed`,
+/// never an error of the command, so a closed page's last calls make no
+/// toast. Past [`MAX_PAGE_CALLS`] at once a call gets `busy`.
 pub fn page_call(
     library: Arc<Library>,
     host: &Arc<PluginHost>,
     io: &dyn PageIo,
     session: &str,
     method: &str,
-    params: &RawValue,
+    params: &str,
 ) -> PageReply {
     page_reply(library, host, io, session, method, params, Instant::now())
 }
 
 /// [`page_call`] at `now`, with the project and its exports from `places`.
+/// Params past their method's cap are refused before anything reads them:
+/// they are only text until then, never a tree of values.
 fn page_reply(
     places: Arc<dyn Places>,
     host: &Arc<PluginHost>,
     io: &dyn PageIo,
     session: &str,
     method: &str,
-    params: &RawValue,
+    params: &str,
     now: Instant,
 ) -> PageReply {
     let refused = |code, message: String| PageReply::Err { error: CallError::new(code, message) };
@@ -758,6 +832,12 @@ fn page_reply(
     };
     let Some(method) = HostMethod::parse(method) else {
         return refused(CallCode::Invalid, format!("AutoScene has no method {}.", runtime::sanitize(method, 40)));
+    };
+    if let Err(e) = calls::check_size(method, params.len()) {
+        return PageReply::Err { error: e.into() };
+    }
+    let Ok(params) = serde_json::from_str::<&RawValue>(params) else {
+        return refused(CallCode::Invalid, format!("The params of {} aren't JSON.", method.name()));
     };
     let Some(_waiting) = Waiting::start(&m) else {
         return refused(CallCode::Busy, format!("This page has {MAX_PAGE_CALLS} calls waiting already."));
@@ -790,9 +870,11 @@ impl Drop for Waiting<'_> {
 /// How often each open page did what it may do only so often: a toast (one
 /// in 2 s, and none while two of its last minute's may still be on screen,
 /// which shows three: AutoScene's own keep their place), a copy to the
-/// clipboard (ten a minute), and a dialog of the system's (one at a time,
-/// and none for [`DECLINED_GAP`] after the person said no to one, so they
-/// can reach the page's Close between them). Forgotten as the page closes.
+/// clipboard (ten a minute), a dialog of the system's (one at a time, only
+/// while AutoScene is in front, and none for [`DECLINED_GAP`] after the
+/// person said no to one, so they can reach the page's Close between them),
+/// and a read of the keychain (one at a time, and none after one failed).
+/// Forgotten as the page closes.
 #[derive(Default)]
 pub struct PageLimits(Mutex<HashMap<String, Used>>);
 
@@ -804,6 +886,8 @@ struct Used {
     dialog: bool,
     /// When the person last said no to one of its dialogs.
     declined: Option<Instant>,
+    /// Its turn at the keychain, and why its read failed, once one did.
+    keychain: Arc<Mutex<Option<CallError>>>,
 }
 
 /// How long a page's toast counts, how many count at once, and how long
@@ -843,10 +927,13 @@ impl PageLimits {
         true
     }
 
-    /// The dialog the page `m` opens at `now`, while none of its others is
-    /// open and the person didn't just say no to one. It counts as open
-    /// while it lives.
-    fn dialog<'a>(&'a self, m: &'a Mount, now: Instant) -> Result<Dialog<'a>, CallError> {
+    /// The dialog the page `m` opens at `now`, while AutoScene is in front
+    /// (`io` says), none of its others is open and the person didn't just
+    /// say no to one. It counts as open while it lives.
+    fn dialog<'a>(&'a self, m: &'a Mount, io: &dyn PageIo, now: Instant) -> Result<Dialog<'a>, CallError> {
+        if !io.in_front() {
+            return Err(denied("A page opens a dialog only while AutoScene is in front."));
+        }
         let mut pages = self.0.lock();
         let used = pages.entry(m.token.clone()).or_default();
         if used.dialog {
@@ -857,6 +944,12 @@ impl PageLimits {
         }
         used.dialog = true;
         Ok(Dialog { limits: self, m, now, opened: Instant::now() })
+    }
+
+    /// The page `session`'s turn at the keychain: held while it reads, it
+    /// keeps why a read failed.
+    fn keychain(&self, session: &str) -> Arc<Mutex<Option<CallError>>> {
+        self.0.lock().entry(session.to_owned()).or_default().keychain.clone()
     }
 
     /// Forgets what the page `session` did: it closed.
@@ -935,9 +1028,16 @@ impl Drop for Fetching<'_> {
     }
 }
 
-/// The answer of a method this AutoScene doesn't answer yet.
-fn later(method: HostMethod) -> CallError {
-    CallError::new(CallCode::Invalid, format!("{} comes in a later AutoScene.", method.name()))
+/// `e`, the app's, as a page's call gets it.
+fn app_error(e: AppError) -> CallError {
+    let code = match e.code {
+        ErrorCode::NotFound => CallCode::NotFound,
+        ErrorCode::Invalid => CallCode::Invalid,
+        ErrorCode::NotReady => CallCode::Busy,
+        ErrorCode::Cancelled => CallCode::Cancelled,
+        ErrorCode::Media | ErrorCode::Io | ErrorCode::Update | ErrorCode::Internal => CallCode::Failed,
+    };
+    CallError::new(code, e.message)
 }
 
 fn not_found(message: impl Into<String>) -> CallError {
@@ -946,6 +1046,10 @@ fn not_found(message: impl Into<String>) -> CallError {
 
 fn invalid(message: impl Into<String>) -> CallError {
     CallError::new(CallCode::Invalid, message)
+}
+
+fn denied(message: impl Into<String>) -> CallError {
+    CallError::new(CallCode::Denied, message)
 }
 
 /// What AutoScene couldn't do for a page, said as `message`; why (`detail`)
@@ -1048,15 +1152,16 @@ fn export_summary(export: &ExportSummary) -> PageExportSummary {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Barrier;
     use std::sync::atomic::AtomicBool;
+    use std::sync::{Barrier, mpsc};
 
-    use as_api::{ContentKind, ExportItem, MergedFile, NewProject, ProjectKind};
+    use as_api::{ContentKind, ExportItem, JobInfo, JobKind, MergedFile, NewProject, ProjectKind};
+    use as_jobs::{Class, JobCtx, JobError, JobRunner};
     use as_plugin::net::{Incoming, Outgoing, Transport};
-    use as_plugin::{ActionKind, Permission, RuntimeKind, Trust};
+    use as_plugin::{ActionContext, Permission, RunMessage, RuntimeKind, Trigger, Trust};
 
-    use super::super::tests::{folder, host_in, host_reaching, key, page_only, plugin};
-    use super::super::{RunKey, calls_for};
+    use super::super::tests::{folder, host_in, host_keeping, host_reaching, key, page_only, plugin};
+    use super::super::{MAX_PAGE_RUNS, RunKey, add_context, calls_for, startable};
     use super::*;
 
     /// A call of a run still going, and one of a run `ended` tells about.
@@ -1110,7 +1215,11 @@ mod tests {
     }
 
     fn place(tmp: &Path) -> Place {
-        let (library, host) = host_in(tmp);
+        place_with(tmp, host_in(tmp))
+    }
+
+    /// [`place`], of `library` and `host`.
+    fn place_with(tmp: &Path, (library, host): (Library, Arc<PluginHost>)) -> Place {
         let file = |name: &str| {
             let file = tmp.join("files").join(name);
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -1548,6 +1657,8 @@ mod tests {
         pick: Mutex<Option<PathBuf>>,
         dialogs: Mutex<Vec<String>>,
         held: Mutex<Option<Arc<Barrier>>>,
+        /// They work in another app: AutoScene isn't in front.
+        away: AtomicBool,
     }
 
     impl Person {
@@ -1562,6 +1673,10 @@ mod tests {
     }
 
     impl PageIo for Person {
+        fn in_front(&self) -> bool {
+            !self.away.load(Ordering::SeqCst)
+        }
+
         fn copy_text(&self, text: &str) -> Result<(), String> {
             self.copied.lock().push(text.to_owned());
             Ok(())
@@ -1578,14 +1693,26 @@ mod tests {
             Ok(())
         }
 
-        fn save_to(&self, name: &str, _: &[FileFilter]) -> Option<PathBuf> {
-            self.dialogs.lock().push(format!("save {name}"));
+        fn save_to(&self, title: &str, name: &str, _: &[FileFilter]) -> Option<PathBuf> {
+            self.dialogs.lock().push(format!("{title}: {name}"));
             self.save_at.lock().clone()
         }
 
-        fn pick(&self, _: &[FileFilter]) -> Option<PathBuf> {
-            self.dialogs.lock().push("open".into());
+        fn pick(&self, title: &str, _: &[FileFilter]) -> Option<PathBuf> {
+            self.dialogs.lock().push(title.to_owned());
             self.pick.lock().clone()
+        }
+
+        fn queue_run(
+            &self,
+            _: &PluginId,
+            _: ActionKind,
+            _: &str,
+            _: Option<ProjectId>,
+            _: Option<ExportId>,
+            _: Option<Value>,
+        ) -> AppResult<Option<JobId>> {
+            unreachable!("its pages start no run")
         }
     }
 
@@ -1614,9 +1741,8 @@ mod tests {
         }
 
         /// The page `session` calls `method` with `params` at `now`.
-        fn page_asks(&self, io: &Person, session: &str, method: &str, params: Value, now: Instant) -> PageReply {
-            let params = serde_json::value::to_raw_value(&params).unwrap();
-            page_reply(self.stand.clone(), &self.host, io, session, method, &params, now)
+        fn page_asks(&self, io: &dyn PageIo, session: &str, method: &str, params: Value, now: Instant) -> PageReply {
+            page_reply(self.stand.clone(), &self.host, io, session, method, &params.to_string(), now)
         }
     }
 
@@ -1909,6 +2035,106 @@ mod tests {
     }
 
     #[test]
+    fn params_past_their_cap_or_not_json_are_refused_unread() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-params-{}", std::process::id()));
+        let place = place(&tmp);
+        let page = place.open_page(&tmp, "Sender", &[], false);
+        let ask = |method: &str, params: &str| {
+            page_reply(place.stand.clone(), &place.host, &Person::default(), &page, method, params, Instant::now())
+        };
+        // A toast's params of 2 KB and one more byte: never read, whatever they hold.
+        let large = format!("[{}0]", "0,".repeat(1023));
+        assert_eq!(large.len(), 2049);
+        assert_eq!(
+            refused(ask("ui.toast", &large)),
+            (CallCode::Invalid, "The params of ui.toast are larger than 2 KB.".into())
+        );
+        assert_eq!(
+            refused(ask("ui.toast", "{\"text\": ")),
+            (CallCode::Invalid, "The params of ui.toast aren't JSON.".into())
+        );
+        assert_eq!(refused(ask("ui.nope", "{}")).0, CallCode::Invalid);
+        assert_eq!(got(ask("ui.toast", r#"{"text": "Hi"}"#)), json!({"shown": true}));
+        drop(place);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// A keychain the person keeps locked: each read asks them, and they
+    /// say no, until they unlock it.
+    #[derive(Default)]
+    struct Locked {
+        kept: as_plugin::MemorySecrets,
+        reads: std::sync::atomic::AtomicUsize,
+        locked: AtomicBool,
+    }
+
+    impl as_plugin::SecretStore for Locked {
+        fn get(&self, library: &str, plugin: &PluginId, key: &str) -> PluginResult<Option<String>> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            match self.locked.load(Ordering::SeqCst) {
+                true => {
+                    Err(PluginError::Keychain { reason: "it is locked, or refused AutoScene.".into(), detail: None })
+                }
+                false => self.kept.get(library, plugin, key),
+            }
+        }
+
+        fn set(&self, library: &str, plugin: &PluginId, key: &str, value: &str) -> PluginResult<()> {
+            self.kept.set(library, plugin, key, value)
+        }
+
+        fn delete(&self, library: &str, plugin: &PluginId, key: &str) -> PluginResult<()> {
+            self.kept.delete(library, plugin, key)
+        }
+    }
+
+    #[test]
+    fn a_page_asks_a_keychain_that_said_no_again_only_once_it_opens_again() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-keychain-{}", std::process::id()));
+        let keychain = Arc::new(Locked::default());
+        let place = place_with(&tmp, host_keeping(&tmp, keychain.clone()));
+        let dir = tmp.join("dev.a.poster");
+        std::fs::create_dir_all(dir.join("ui")).unwrap();
+        std::fs::write(dir.join("ui/index.html"), b"<!doctype html>").unwrap();
+        let mut manifest =
+            page_only("dev.a.poster", json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]));
+        manifest["contributes"]["settings"] = json!([{"key": "token", "type": "secret", "title": "Token"}]);
+        std::fs::write(dir.join("plugin.json"), manifest.to_string()).unwrap();
+        let p = place.host.store.commit(place.host.store.stage_folder(&dir).unwrap(), true, true).unwrap();
+        place.host.store.secret_set(&p.record.id, "token", "hunter2").unwrap();
+        let open = || {
+            let grants = Grants {
+                runtime: RuntimeKind::None,
+                permissions: Vec::new(),
+                hosts: Vec::new(),
+                secrets: vec!["token".into()],
+                protocol: 2,
+            };
+            let page = p.manifest.as_ref().unwrap().pages[0].clone();
+            place.host.pages.open(&p, grants, &page, None).unwrap().0.token.clone()
+        };
+        let page = open();
+        let person = Person::default();
+        let get = |page: &str| place.page_asks(&person, page, "secrets.get", json!({"key": "token"}), Instant::now());
+
+        // It said no: the page's next reads get that, without asking again.
+        keychain.locked.store(true, Ordering::SeqCst);
+        let no = refused(get(&page));
+        for _ in 0..5 {
+            assert_eq!(refused(get(&page)), no);
+        }
+        keychain.locked.store(false, Ordering::SeqCst);
+        assert_eq!(refused(get(&page)), no);
+        assert_eq!(keychain.reads.load(Ordering::SeqCst), 1);
+        // Opened again, it reads.
+        let again = open();
+        assert_eq!(got(get(&again)), json!({"value": "hunter2"}));
+        assert_eq!(keychain.reads.load(Ordering::SeqCst), 2);
+        drop(place);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
     fn copy_text_past_ten_a_minute_is_refused() {
         let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-copy-{}", std::process::id()));
         let place = place(&tmp);
@@ -1933,6 +2159,19 @@ mod tests {
         assert_eq!(refused(copy("a\0b", 200)).0, CallCode::Invalid);
         assert_eq!(refused(copy(&"x".repeat(64 << 10), 200)).0, CallCode::Invalid);
         assert_eq!(person.copied.lock().len(), 12);
+        // None while the person works in another app, nor a dialog.
+        person.away.store(true, Ordering::SeqCst);
+        assert_eq!(
+            refused(copy("swapped", 300)),
+            (CallCode::Denied, "A page copies only while AutoScene is in front.".into())
+        );
+        let away = (CallCode::Denied, "A page opens a dialog only while AutoScene is in front.".to_owned());
+        let at = start + Duration::from_secs(300);
+        assert_eq!(refused(place.page_asks(&person, &page, "files.open", json!({}), at)), away);
+        let link = json!({"url": "https://example.org/"});
+        assert_eq!(refused(place.page_asks(&person, &page, "ui.openExternal", link, at)), away);
+        assert_eq!(person.copied.lock().len(), 12);
+        assert!(person.dialogs.lock().is_empty() && person.asked.lock().is_empty());
         drop(place);
         std::fs::remove_dir_all(&tmp).unwrap();
     }
@@ -1990,7 +2229,8 @@ mod tests {
         assert_eq!(got(save(json!({"name": "clips.txt", "dataBase64": "dHdv"}))), json!({"saved": true}));
         assert_eq!(std::fs::read_to_string(&out).unwrap(), "two");
         assert_eq!(std::fs::read_dir(out.parent().unwrap()).unwrap().count(), 1, "nothing left beside it");
-        assert_eq!(person.dialogs.lock()[0], "save clips.txt");
+        // The dialog says whose it is.
+        assert_eq!(person.dialogs.lock()[0], "Plugin “Saver” saves a file: clips.txt");
         // Marked as a download is, so Windows asks before it runs anything in it.
         if cfg!(windows) {
             let zone = std::fs::read_to_string(format!("{}:Zone.Identifier", out.display())).unwrap();
@@ -2083,7 +2323,7 @@ mod tests {
         // Sixteen plain ones open the dialog.
         let sixteen: Vec<Value> = (0..16).map(|i| kind(&format!("Kind {i}"), &["txt", "srt"])).collect();
         assert_eq!(got(pick(json!(sixteen))), Value::Null);
-        assert_eq!(*person.dialogs.lock(), ["open"]);
+        assert_eq!(*person.dialogs.lock(), ["Plugin “Filters” asks for a file"]);
         drop(place);
         std::fs::remove_dir_all(&tmp).unwrap();
     }
@@ -2179,6 +2419,308 @@ mod tests {
         assert_eq!(said(set("closed")), (CallCode::Closed, PluginError::Closed.to_string()));
         assert_eq!(page_state::keys(&data).unwrap(), ["open"]);
         drop((calls, m, place));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// Where a page's runs go here: a job runner of their own, whose jobs
+    /// start as `queue_run`'s do and hand on the line their program would
+    /// get, then wait until they are stopped. A page reaches nothing else.
+    struct Activity {
+        stand: Arc<Stand>,
+        host: Arc<PluginHost>,
+        jobs: JobRunner,
+        lines: mpsc::Sender<RunMessage>,
+    }
+
+    impl Activity {
+        /// The runs of the pages of `place`, with the setting on (its
+        /// plugins are loaded folders), and where their lines arrive.
+        fn of(place: &Place) -> (Self, mpsc::Receiver<RunMessage>) {
+            place.stand.library.set_allows_unreviewed_plugins(true).unwrap();
+            let (lines, heard) = mpsc::channel();
+            let jobs = JobRunner::new(&[(Class::Plugin, 1)], |_| {});
+            (Self { stand: place.stand.clone(), host: place.host.clone(), jobs, lines }, heard)
+        }
+
+        /// The job `id` names, as a page's call gave it.
+        fn job(&self, id: &Value) -> JobInfo {
+            self.jobs.jobs().into_iter().find(|j| json!(j.id) == *id).unwrap()
+        }
+
+        /// Stops every run, and waits until each ended.
+        fn stop(&self) {
+            self.jobs.cancel_where(|_| true);
+            let until = Instant::now() + Duration::from_secs(10);
+            while self.jobs.jobs().iter().any(|j| !j.state.is_finished()) {
+                assert!(Instant::now() < until, "a run never stopped");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+
+    impl PageIo for Activity {
+        fn in_front(&self) -> bool {
+            true
+        }
+
+        fn copy_text(&self, _: &str) -> Result<(), String> {
+            unreachable!()
+        }
+
+        fn confirm(&self, _: &str, _: &str, _: &str) -> bool {
+            unreachable!()
+        }
+
+        fn open_url(&self, _: &str) -> Result<(), String> {
+            unreachable!()
+        }
+
+        fn save_to(&self, _: &str, _: &str, _: &[FileFilter]) -> Option<PathBuf> {
+            unreachable!()
+        }
+
+        fn pick(&self, _: &str, _: &[FileFilter]) -> Option<PathBuf> {
+            unreachable!()
+        }
+
+        fn queue_run(
+            &self,
+            id: &PluginId,
+            kind: ActionKind,
+            action: &str,
+            project_id: Option<ProjectId>,
+            export_id: Option<ExportId>,
+            input: Option<Value>,
+        ) -> AppResult<Option<JobId>> {
+            let key = RunKey::new(id, kind, action, project_id, export_id, input.as_ref());
+            let work = |gpu| {
+                let (stand, host, key, lines) =
+                    (self.stand.clone(), self.host.clone(), key.clone(), self.lines.clone());
+                move |ctx: &JobCtx| {
+                    let _running = host.hold(ctx, &key.plugin)?;
+                    let p = startable(&host.store, &stand.library, &key, Trigger::Page, gpu)?;
+                    let action = ActionContext { kind: key.kind, id: key.action.clone(), trigger: Trigger::Page };
+                    let failed = |e: String| JobError::Failed(e);
+                    let spec = host.store.run_spec(&p, action, Path::new("ffmpeg"), Path::new("ffprobe"), "9.0");
+                    let mut message = spec.map_err(|e| failed(e.to_string()))?.message;
+                    add_context(&mut message, &*stand, &key, input).map_err(|e| failed(e.to_string()))?;
+                    lines.send(message).unwrap();
+                    while !ctx.cancel.is_cancelled() {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(JobError::Cancelled)
+                }
+            };
+            let allow = self.stand.library.allows_unreviewed_plugins()?;
+            Ok(self.host.queue(&self.jobs, allow, key.clone(), Trigger::Page, work)?)
+        }
+    }
+
+    impl Place {
+        /// Loads the plugin `name` from its folder in `tmp`, a program of
+        /// `protocol` with the export action `post`, the command `hello` and
+        /// the command `count` (which needs a project), and opens its page,
+        /// in the project when `in_project`: its session.
+        fn open_actions(&self, tmp: &Path, name: &str, protocol: u32, in_project: bool) -> String {
+            let id = format!("dev.a.{}", name.to_ascii_lowercase());
+            let dir = tmp.join(&id);
+            std::fs::create_dir_all(dir.join("ui")).unwrap();
+            for file in ["main.py", "main.py.lock", "ui/index.html"] {
+                std::fs::write(dir.join(file), b"").unwrap();
+            }
+            let manifest = json!({
+                "manifestVersion": 2,
+                "id": id,
+                "version": "1.0.0",
+                "name": name,
+                "description": "Runs from its page.",
+                "author": {"name": "Someone"},
+                "engines": {"autoscene": ">=1.0.0, <2", "protocol": protocol},
+                "runtime": {"type": "process", "command": {"*": ["uv", "run", "--script", "--locked", "main.py"]}},
+                "contributes": {
+                    "pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}],
+                    "exportActions": [{"id": "post", "title": "Post"}],
+                    "commands": [
+                        {"id": "hello", "title": "Say hello"},
+                        {"id": "count", "title": "Count clips", "needsProject": true}
+                    ]
+                }
+            });
+            std::fs::write(dir.join("plugin.json"), manifest.to_string()).unwrap();
+            let p = self.host.store.commit(self.host.store.stage_folder(&dir).unwrap(), true, true).unwrap();
+            let page = p.manifest.as_ref().unwrap().pages[0].clone();
+            let project = in_project.then(|| self.project.to_string());
+            self.host.pages.open(&p, Grants::of(&p).unwrap(), &page, project).unwrap().0.token.clone()
+        }
+    }
+
+    const STARTED: Duration = Duration::from_secs(10);
+
+    #[test]
+    fn a_page_run_is_a_job_with_its_input() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-run-{}", std::process::id()));
+        let place = place(&tmp);
+        let (activity, lines) = Activity::of(&place);
+        let page = place.open_actions(&tmp, "Poster", 2, true);
+        let ask = |params: Value| got(place.page_asks(&activity, &page, "actions.run", params, Instant::now()));
+        let mine = place.exports[0];
+        let input = json!({"caption": "Walter", "clips": [0, 1]});
+
+        // An export action on an export of its project: a job in Activity,
+        // as one from the export's menu is.
+        let ran = ask(json!({"action": "post", "exportId": mine.to_string(), "input": input}));
+        let job = activity.job(&ran["jobId"]);
+        assert_eq!((job.kind, job.title.as_str(), job.subtitle.as_deref()), (JobKind::Plugin, "Post", Some("Poster")));
+        assert_eq!((job.project_id, job.export_id, job.media_id), (Some(place.project), Some(mine), None));
+        // Its program is told the page started it, and gets what the page handed it.
+        let line = lines.recv_timeout(STARTED).unwrap();
+        assert_eq!(
+            (line.protocol, line.action.kind, line.action.trigger),
+            (2, ActionKind::ExportAction, Trigger::Page)
+        );
+        assert_eq!((line.action.id.as_str(), line.input.as_ref()), ("post", Some(&input)));
+        let (project, export) = (line.project.unwrap(), line.export.unwrap());
+        assert_eq!((project.id, export.id), (place.project.to_string(), mine.to_string()));
+        assert_eq!(export.clips.len(), 2);
+
+        // A command runs in the project the page is open in. Without input,
+        // its line has none.
+        activity.stop();
+        let ran = ask(json!({"action": "count"}));
+        let line = lines.recv_timeout(STARTED).unwrap();
+        assert_eq!((line.action.kind, line.action.trigger, line.input), (ActionKind::Command, Trigger::Page, None));
+        assert_eq!((line.project.unwrap().id, line.export.is_none()), (place.project.to_string(), true));
+        let job = activity.job(&ran["jobId"]);
+        assert_eq!((job.title.as_str(), job.project_id, job.export_id), ("Count clips", Some(place.project), None));
+        activity.stop();
+        drop((activity, place));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_protocol_1_plugin_can_t_be_run_from_a_page() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-run-old-{}", std::process::id()));
+        let place = place(&tmp);
+        let (activity, lines) = Activity::of(&place);
+        let ask = |session: &str| {
+            place.page_asks(&activity, session, "actions.run", json!({"action": "hello"}), Instant::now())
+        };
+        let needs = "actions.run needs a plugin whose program speaks protocol 2.";
+
+        // Its program would read a trigger it doesn't know; a page-only
+        // plugin has no program to run.
+        let old = place.open_actions(&tmp, "Elder", 1, true);
+        let viewer = place.open_page(&tmp, "Viewer", &[], true);
+        for session in [&old, &viewer] {
+            assert_eq!(refused(ask(session)), (CallCode::Denied, needs.to_owned()));
+        }
+        // Nor once its plugin.json went back to protocol 1 after its page
+        // opened: the run is refused as it is queued.
+        let shifter = place.open_actions(&tmp, "Shifter", 2, true);
+        let file = tmp.join("dev.a.shifter").join("plugin.json");
+        let manifest = std::fs::read_to_string(&file).unwrap().replace(r#""protocol":2"#, r#""protocol":1"#);
+        std::fs::write(&file, manifest).unwrap();
+        assert_eq!(refused(ask(&shifter)), (CallCode::Invalid, needs.to_owned()));
+        assert!(activity.jobs.jobs().is_empty());
+        assert!(lines.try_recv().is_err());
+
+        // From the palette it runs as it always did.
+        let elder = PluginId::parse("dev.a.elder").unwrap();
+        let hello = key(&elder, ActionKind::Command, "hello", None, None);
+        let palette = place.host.queue(&activity.jobs, true, hello, Trigger::Palette, |_| |_: &JobCtx| Ok(()));
+        assert!(palette.unwrap().is_some());
+        activity.stop();
+        drop((activity, place));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_same_page_run_is_queued_once() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-run-once-{}", std::process::id()));
+        let place = place(&tmp);
+        let (activity, lines) = Activity::of(&place);
+        let page = place.open_actions(&tmp, "Counter", 2, true);
+        let ask = |params: Value| place.page_asks(&activity, &page, "actions.run", params, Instant::now());
+        let job = |params: Value| got(ask(params))["jobId"].clone();
+        let one = json!({"action": "count", "input": {"n": 1}});
+
+        let first = job(one.clone());
+        lines.recv_timeout(STARTED).unwrap();
+        // The same run again, while it runs: none.
+        assert_eq!(got(ask(one.clone())), json!({"jobId": null}));
+        // With other input, or none, it is another run, which waits its turn.
+        let other = job(json!({"action": "count", "input": {"n": 2}}));
+        let bare = job(json!({"action": "count"}));
+        assert!(other.is_string() && bare.is_string() && other != bare, "{other} {bare}");
+        // The person's own run of it, from the palette, is the one without input.
+        let counter = PluginId::parse("dev.a.counter").unwrap();
+        let count = key(&counter, ActionKind::Command, "count", Some(place.project), None);
+        let palette = place.host.queue(&activity.jobs, true, count, Trigger::Palette, |_| |_: &JobCtx| Ok(()));
+        assert_eq!(palette.unwrap(), None);
+        // Once it ended, the same run is queued again.
+        let first: JobId = serde_json::from_value(first).unwrap();
+        activity.jobs.cancel(first);
+        let until = Instant::now() + STARTED;
+        while !activity.job(&json!(first)).state.is_finished() {
+            assert!(Instant::now() < until, "a stopped run never ended");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(job(one).is_string());
+
+        // A page can't fill Activity: with MAX_PAGE_RUNS of its plugin's
+        // runs waiting or running, it queues none more.
+        for n in 3..MAX_PAGE_RUNS {
+            assert!(job(json!({"action": "count", "input": {"n": n}})).is_string(), "{n}");
+        }
+        assert_eq!(
+            refused(ask(json!({"action": "count", "input": {"n": "more"}}))),
+            (CallCode::Busy, "Counter is running. Wait for it to finish, or stop it in Activity.".into())
+        );
+        activity.stop();
+        assert!(job(json!({"action": "count", "input": {"n": "more"}})).is_string());
+        activity.stop();
+        drop((activity, place));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_page_run_of_an_export_action_needs_an_export_of_its_project() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-run-export-{}", std::process::id()));
+        let place = place(&tmp);
+        let (activity, lines) = Activity::of(&place);
+        let inside = place.open_actions(&tmp, "Poster", 2, true);
+        let outside = place.open_actions(&tmp, "Rover", 2, false);
+        let ask =
+            |session: &str, params: Value| place.page_asks(&activity, session, "actions.run", params, Instant::now());
+        let mine = place.exports[0].to_string();
+        let invalid = |why: &str| (CallCode::Invalid, why.to_owned());
+
+        // Without one, an export action says what it needs.
+        assert_eq!(refused(ask(&inside, json!({"action": "post"}))), invalid("Choose an export to run it on."));
+        // Only an export of the project its page is open in.
+        let gone = json!({"action": "post", "exportId": ExportId::new().to_string()});
+        assert_eq!(refused(ask(&inside, gone)), (CallCode::NotFound, "This export no longer exists.".into()));
+        let wrong = json!({"action": "post", "exportId": "e1"});
+        assert_eq!(refused(ask(&inside, wrong)), (CallCode::NotFound, "That export doesn't exist.".into()));
+        let elsewhere = json!({"action": "post", "exportId": mine});
+        assert_eq!(refused(ask(&outside, elsewhere)), invalid("This page isn't open in a project."));
+        // A command never runs on one, and one that needs a project needs the page's.
+        let on_export = json!({"action": "hello", "exportId": mine});
+        assert_eq!(refused(ask(&inside, on_export)), invalid("A command doesn't run on an export."));
+        assert_eq!(refused(ask(&outside, json!({"action": "count"}))), invalid("Open a project to run it in."));
+        // An action its plugin hasn't is named by the plugin, not by the page's words.
+        assert_eq!(refused(ask(&inside, json!({"action": "rm -rf /"}))), invalid("Poster has no such action."));
+        assert!(activity.jobs.jobs().is_empty());
+
+        // On an export of its project, it runs on that one.
+        let ran = got(ask(&inside, json!({"action": "post", "exportId": mine})));
+        assert_eq!(activity.job(&ran["jobId"]).export_id, Some(place.exports[0]));
+        assert_eq!(lines.recv_timeout(STARTED).unwrap().export.unwrap().id, mine);
+        // A page outside a project runs a command that needs none.
+        let ran = got(ask(&outside, json!({"action": "hello"})));
+        assert_eq!(activity.job(&ran["jobId"]).project_id, None);
+        activity.stop();
+        drop((activity, place));
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

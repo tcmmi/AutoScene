@@ -26,6 +26,13 @@
 //! project, its export and its settings, and reach the hosts it names on
 //! the internet ([`calls`]).
 //!
+//! A page of such a plugin may start its actions (`actions.run`): each is
+//! queued as the person's own runs are, shown in Activity and stopped with
+//! them, in the project the page is open in, and gets what the page handed
+//! it as its `input`. The same run with the same input waits once. Only a
+//! program of protocol 2 is started by a page: one of protocol 1 would read
+//! a trigger it doesn't know.
+//!
 //! A plugin's pages open in a frame of the app's page, each as a session
 //! the `asp` scheme serves ([`pages`]). A page opens only while its plugin
 //! is active, and closes, saying why, when the plugin is turned off or
@@ -59,13 +66,14 @@ use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage
 use as_plugin::service::STOP_GRACE;
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
-    ActionContext, ActionKind, CommandSpec, Extra, HostCalls, Installed, Keys, Launch, Manifest, OsKeyring, PageSpec,
-    Permission, PluginError, PluginId, PluginResult, Record, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger,
-    Trust, package, runtime,
+    ActionContext, ActionKind, Caller, CommandSpec, Extra, Grants, HostCalls, HostMethod, Installed, Keys, Launch,
+    Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record, RuntimeKind, SettingSpec,
+    Source, Store, Ticket, Trigger, Trust, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
 use serde::Serialize;
+use serde_json::Value;
 use specta::Type;
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
@@ -84,6 +92,10 @@ pub const TICKET_TTL: Duration = Duration::from_secs(600);
 /// whether it was cancelled.
 const WAIT_TICK: Duration = Duration::from_millis(50);
 
+/// How many runs of a plugin may wait or run before its pages queue no
+/// more: a page can't fill Activity.
+const MAX_PAGE_RUNS: usize = 16;
+
 /// Tells the app's page what became of one of its open plugin pages.
 pub type PageEvents = Box<dyn Fn(PluginPageEvent) + Send + Sync>;
 
@@ -98,9 +110,10 @@ pub struct PluginHost {
     /// ticket id.
     tickets: Mutex<HashMap<String, Ticket>>,
     /// The runs [`queue_run`] queued that may not have ended yet, by job:
-    /// what each runs, so the same run isn't queued twice, and a plugin
-    /// turned off loses those still waiting too. Taken before the job
-    /// runner's lock, never inside it (see [`PluginHost::submit`]).
+    /// what each runs, so the same run isn't queued twice, a plugin turned
+    /// off loses those still waiting too, and its pages queue only so many
+    /// ([`MAX_PAGE_RUNS`]). Taken before the job runner's lock, never inside
+    /// it (see [`PluginHost::submit`]).
     runs: Mutex<HashMap<JobId, RunKey>>,
     /// What runs, and what is being changed ([`PluginHost::hold`],
     /// [`PluginHost::change`]). Never held while the job runner is called.
@@ -131,8 +144,8 @@ struct Busy {
     changing: HashSet<PluginId>,
 }
 
-/// What a run runs, and on what: two runs alike are the same run, whatever
-/// started them.
+/// What a run runs, on what, and with what: two runs alike are the same
+/// run, whatever started them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct RunKey {
     plugin: PluginId,
@@ -141,6 +154,31 @@ struct RunKey {
     action: String,
     project_id: Option<ProjectId>,
     export_id: Option<ExportId>,
+    /// The SHA-256 of what a page handed the run (its JSON), if it handed
+    /// it anything: the same action with other input is another run.
+    input_sha256: Option<String>,
+}
+
+impl RunKey {
+    /// The run of `action` (of `kind`) of the plugin `plugin`, in the
+    /// project `project_id` and on the export `export_id`, with `input`.
+    fn new(
+        plugin: &PluginId,
+        kind: ActionKind,
+        action: &str,
+        project_id: Option<ProjectId>,
+        export_id: Option<ExportId>,
+        input: Option<&Value>,
+    ) -> Self {
+        Self {
+            plugin: plugin.clone(),
+            kind,
+            action: action.to_owned(),
+            project_id,
+            export_id,
+            input_sha256: input.map(|v| package::sha256_hex(v.to_string().as_bytes())),
+        }
+    }
 }
 
 /// An installed plugin, as Settings → Plugins shows it.
@@ -254,7 +292,7 @@ pub struct PluginUpdate {
     /// Permissions it says it needs that the installed version didn't.
     pub added_permissions: Vec<Permission>,
     pub added_hosts: Vec<String>,
-    /// The titles of the pages it adds.
+    /// The ids of the pages it adds.
     pub added_pages: Vec<String>,
     /// It runs a program, and the installed version, as the person agreed
     /// to it, runs none: from now on it runs with their user rights.
@@ -438,6 +476,19 @@ impl PluginHost {
         self.services.stop_all(services::QUIT_GRACE);
     }
 
+    /// AutoScene didn't quit after [`PluginHost::shutdown`] after all: its
+    /// pages' services start again when they ask.
+    pub fn resume(&self) {
+        self.services.resume();
+    }
+
+    /// The app's page loaded again (a reload, or one after its renderer
+    /// crashed): its frames went with it, so every page closes, and its
+    /// plugin's service may stop once it idles.
+    pub fn close_all_pages(&self) {
+        self.close_pages(|_| true, "AutoScene's window loaded again.");
+    }
+
     /// Closes the open pages `close` picks, and tells each why (`reason`).
     /// They close under the busy lock, which a page is opened under
     /// ([`pages::open`]): a page that was opening as what closes it was
@@ -514,6 +565,40 @@ impl PluginHost {
         let job = jobs.submit_unless(|j| same.contains(&j.id), spec, work)?;
         runs.insert(job, key);
         Some(job)
+    }
+
+    /// Queues on `jobs` the run `key`, started by `trigger`, as
+    /// [`queue_run`] says, with `allow_unreviewed` the setting: `work` makes
+    /// what its job does, given whether it waits as analysis. A page queues
+    /// none while [`MAX_PAGE_RUNS`] of its plugin's wait or run.
+    fn queue<W>(
+        &self,
+        jobs: &JobRunner,
+        allow_unreviewed: bool,
+        key: RunKey,
+        trigger: Trigger,
+        work: impl FnOnce(bool) -> W,
+    ) -> PluginResult<Option<JobId>>
+    where
+        W: FnOnce(&JobCtx) -> JobResult + Send + 'static,
+    {
+        let p = self.store.get(&key.plugin)?;
+        let m = runnable(&p, allow_unreviewed)?;
+        let title = action_title(m, key.kind, &key.action, key.project_id, key.export_id)?;
+        takes(&p, trigger)?;
+        if trigger == Trigger::Page && self.live_runs(jobs, &key.plugin) >= MAX_PAGE_RUNS {
+            return Err(PluginError::Busy(m.name.clone()));
+        }
+        let spec = job_spec(m, &title, key.project_id, key.export_id);
+        Ok(self.submit(jobs, key, spec, work(m.runtime.gpu)))
+    }
+
+    /// How many runs of `id` [`queue_run`] queued that wait or run, as
+    /// `jobs` has them now. Counted outside [`PluginHost::submit`]: pages
+    /// that ask at once may each find one fewer.
+    fn live_runs(&self, jobs: &JobRunner, id: &PluginId) -> usize {
+        let live: HashSet<JobId> = jobs.jobs().into_iter().filter(|j| !j.state.is_finished()).map(|j| j.id).collect();
+        self.runs.lock().iter().filter(|(job, key)| key.plugin == *id && live.contains(job)).count()
     }
 
     /// Holds the job of `ctx` as the run of `id` until the guard drops, once
@@ -749,7 +834,7 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
             .pages
             .iter()
             .filter(|p| !pages_before.iter().any(|b| b.id == p.id))
-            .map(|p| p.title.clone())
+            .map(|p| p.id.clone())
             .collect(),
         starts_program: agreed == RuntimeKind::None && m.runs_program(),
         // Only by what the person agreed to: one whose row is gone isn't
@@ -761,8 +846,11 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
 /// Queues a run of `action` (an action of `kind`) of the plugin `id`,
 /// started by `trigger`: an export action runs on the export `export_id`
 /// of the project `project_id`, a command in the project when it needs
-/// one. None when the same run waits or runs already. A plugin that isn't
-/// active is refused.
+/// one. `input` is what a page handed it, and comes only with
+/// `Trigger::Page`. None when the same run waits or runs already. A plugin
+/// that isn't active is refused, and so is a run from a page of one whose
+/// program doesn't speak protocol 2.
+#[allow(clippy::too_many_arguments)]
 pub fn queue_run(
     app: &AppHandle,
     id: &PluginId,
@@ -771,19 +859,29 @@ pub fn queue_run(
     trigger: Trigger,
     project_id: Option<ProjectId>,
     export_id: Option<ExportId>,
+    input: Option<Value>,
 ) -> AppResult<Option<JobId>> {
     let state = app.state::<AppState>();
     let host = host(&state)?;
-    let p = host.store.get(id)?;
-    let m = runnable(&p, state.library.allows_unreviewed_plugins()?)?;
-    let title = action_title(m, kind, action, project_id, export_id)?;
-    let spec = job_spec(m, &title, project_id, export_id);
-    let key = RunKey { plugin: id.clone(), kind, action: action.to_owned(), project_id, export_id };
-    let work = {
-        let (app, host, key, gpu) = (app.clone(), host.clone(), key.clone(), m.runtime.gpu);
-        move |ctx: &JobCtx| run(&app, &host, ctx, &key, trigger, gpu)
+    let key = RunKey::new(id, kind, action, project_id, export_id, input.as_ref());
+    let work = |gpu| {
+        let (app, host, key) = (app.clone(), host.clone(), key.clone());
+        move |ctx: &JobCtx| run(&app, &host, ctx, &key, trigger, input, gpu)
     };
-    Ok(host.submit(&state.jobs, key, spec, work))
+    Ok(host.queue(&state.jobs, state.library.allows_unreviewed_plugins()?, key.clone(), trigger, work)?)
+}
+
+/// Whether `p` takes a run that `trigger` started: one from a page only
+/// while its program speaks protocol 2, as its page's call was checked,
+/// with the plugin as it is now. A protocol 1 program would read a trigger
+/// it doesn't know.
+fn takes(p: &Installed, trigger: Trigger) -> PluginResult<()> {
+    match trigger {
+        Trigger::Page => {
+            as_plugin::calls::check(HostMethod::ActionsRun, &Caller::Page { project: None }, &Grants::of(p)?)
+        }
+        Trigger::Menu | Trigger::AfterExport | Trigger::Palette => Ok(()),
+    }
 }
 
 /// The title of the action `action` of `kind` in `m`, when it may run with
@@ -798,16 +896,24 @@ fn action_title(
 ) -> PluginResult<String> {
     let refused = |why: &str| Err(PluginError::Invalid(why.into()));
     let no_such = || PluginError::Invalid(format!("{} has no such action.", m.name));
+    // A page names an action without its kind: one of the other kind is
+    // said to be so.
+    let is_command = || m.commands.iter().any(|c| c.id == action);
+    let is_export_action = || m.export_actions.iter().any(|a| a.id == action);
     match kind {
         ActionKind::ExportAction => {
-            let a = m.export_actions.iter().find(|a| a.id == action).ok_or_else(no_such)?;
+            let Some(a) = m.export_actions.iter().find(|a| a.id == action) else {
+                return if is_command() { refused("A command doesn't run on an export.") } else { Err(no_such()) };
+            };
             if export_id.is_none() || project_id.is_none() {
                 return refused("Choose an export to run it on.");
             }
             Ok(a.title.clone())
         }
         ActionKind::Command => {
-            let c = m.commands.iter().find(|c| c.id == action).ok_or_else(no_such)?;
+            let Some(c) = m.commands.iter().find(|c| c.id == action) else {
+                return if is_export_action() { refused("Choose an export to run it on.") } else { Err(no_such()) };
+            };
             if export_id.is_some() {
                 return refused("A command doesn't run on an export.");
             }
@@ -836,20 +942,28 @@ fn job_spec(m: &Manifest, title: &str, project_id: Option<ProjectId>, export_id:
     }
 }
 
-/// The queued run `key`, started by `trigger`, now it starts; `gpu` is
-/// whether it waited as analysis. A plugin of protocol 2 gets its calls
-/// answered.
-fn run(app: &AppHandle, host: &Arc<PluginHost>, ctx: &JobCtx, key: &RunKey, trigger: Trigger, gpu: bool) -> JobResult {
+/// The queued run `key`, started by `trigger` with `input`, now it starts;
+/// `gpu` is whether it waited as analysis. A plugin of protocol 2 gets its
+/// calls answered.
+fn run(
+    app: &AppHandle,
+    host: &Arc<PluginHost>,
+    ctx: &JobCtx,
+    key: &RunKey,
+    trigger: Trigger,
+    input: Option<Value>,
+    gpu: bool,
+) -> JobResult {
     // Held before it looks whether it may run: a change to the plugin or
     // the setting from here on finds it and stops it.
     let _running = host.hold(ctx, &key.plugin)?;
     let state = app.state::<AppState>();
-    let p = startable(&host.store, &state.library, key, gpu)?;
+    let p = startable(&host.store, &state.library, key, trigger, gpu)?;
     let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
     let action = ActionContext { kind: key.kind, id: key.action.clone(), trigger };
     let mut spec =
         host.store.run_spec(&p, action, &tools.ffmpeg, &tools.ffprobe, &tools.version).map_err(plugin_job_error)?;
-    add_place(&mut spec.message, &state.library, key).map_err(job_error)?;
+    add_context(&mut spec.message, &*state.library, key, input).map_err(job_error)?;
     let calls = calls_for(&state.library, host, &p, key, spec.protocol).map_err(plugin_job_error)?;
     spec.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
     ctx.stage(&format!("Starting {}", spec.name));
@@ -877,31 +991,39 @@ fn calls_for(
     }
 }
 
-/// The plugin of the queued run `key` now it starts, unless it may no
-/// longer run (see [`active`]) or no longer runs `key` as it was queued: an
-/// update, or a loaded folder's changed `plugin.json`, may have taken the
-/// action away, changed what it needs, or moved the plugin to or from the
-/// GPU (`gpu`: it waited as analysis).
-fn startable(store: &Store, lib: &Library, key: &RunKey, gpu: bool) -> Result<Installed, JobError> {
+/// The plugin of the queued run `key`, started by `trigger`, now it
+/// starts, unless it may no longer run (see [`active`]) or no longer runs
+/// `key` as it was queued: an update, or a loaded folder's changed
+/// `plugin.json`, may have taken the action away, changed what it needs,
+/// moved the plugin to or from the GPU (`gpu`: it waited as analysis), or
+/// left its page's run to a program of protocol 1.
+fn startable(store: &Store, lib: &Library, key: &RunKey, trigger: Trigger, gpu: bool) -> Result<Installed, JobError> {
     let refused = |e: PluginError| JobError::Failed(e.to_string());
     let p = store.get(&key.plugin).map_err(plugin_job_error)?;
     let allow = lib.allows_unreviewed_plugins().map_err(job_error)?;
     let m = runnable(&p, allow).map_err(refused)?;
     action_title(m, key.kind, &key.action, key.project_id, key.export_id).map_err(refused)?;
-    if m.runtime.gpu != gpu {
+    if m.runtime.gpu != gpu || takes(&p, trigger).is_err() {
         return Err(JobError::Failed(format!("{} changed since this run was queued. Run it again.", m.name)));
     }
     Ok(p)
 }
 
-/// Gives `message` the project the run `key` runs in and the export it
-/// runs on, as they are now.
-fn add_place(message: &mut RunMessage, lib: &Library, key: &RunKey) -> ProjectResult<()> {
+/// Gives `message` what the run `key` is for: the project it runs in and
+/// the export it runs on, as `places` has them now, and `input`, what its
+/// page handed it.
+fn add_context(
+    message: &mut RunMessage,
+    places: &dyn calls::Places,
+    key: &RunKey,
+    input: Option<Value>,
+) -> ProjectResult<()> {
+    message.input = input;
     let Some(project_id) = key.project_id else { return Ok(()) };
-    let project = lib.project(project_id)?;
+    let project = places.project(project_id)?;
     message.project = Some(project_context(&project)?);
     if let Some(export_id) = key.export_id {
-        message.export = Some(export_context(&project, &project.export(export_id)?)?);
+        message.export = Some(export_context(&project, &places.export(&project, export_id)?)?);
     }
     Ok(())
 }
@@ -1003,6 +1125,7 @@ pub fn queue_after_export(app: &AppHandle, project: &Project, summary: &ExportSu
                 Trigger::AfterExport,
                 Some(project_id),
                 Some(export_id),
+                None,
             );
             match queued {
                 Ok(Some(_)) => {}
@@ -1043,7 +1166,6 @@ mod tests {
     use std::time::Instant;
 
     use as_api::{AppSettings, ContentKind, ExportItem, ExportStatus, JobState, NewProject, ProjectKind};
-    use as_plugin::Grants;
     use as_plugin::pages::MemoryKit;
 
     use super::*;
@@ -1132,7 +1254,12 @@ mod tests {
     }
 
     fn host_with(tmp: &Path, net: impl Transport + 'static, page_events: PageEvents) -> (Library, Arc<PluginHost>) {
-        host_of(tmp, net, page_events, Box::new(NoStart))
+        host_of(tmp, net, page_events, Box::new(NoStart), Arc::new(as_plugin::MemorySecrets::default()))
+    }
+
+    /// [`host_in`], whose secrets `secrets` keeps.
+    pub(super) fn host_keeping(tmp: &Path, secrets: Arc<dyn as_plugin::SecretStore>) -> (Library, Arc<PluginHost>) {
+        host_of(tmp, UreqTransport::new(), Box::new(|_: PluginPageEvent| {}), Box::new(NoStart), secrets)
     }
 
     /// [`host_hearing`], whose services start through `start`.
@@ -1140,7 +1267,8 @@ mod tests {
         let heard = Heard::default();
         let keep = heard.clone();
         let page_events = Box::new(move |e: PluginPageEvent| keep.lock().push(e));
-        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, Box::new(start));
+        let secrets = Arc::new(as_plugin::MemorySecrets::default());
+        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, Box::new(start), secrets);
         (lib, host, heard)
     }
 
@@ -1149,13 +1277,13 @@ mod tests {
         net: impl Transport + 'static,
         page_events: PageEvents,
         start: Box<dyn StartService>,
+        secrets: Arc<dyn as_plugin::SecretStore>,
     ) -> (Library, Arc<PluginHost>) {
         let paths = AppPaths::at(tmp.join("data"));
         let lib = Library::open(&paths).unwrap();
         let root = tmp.join("library").display().to_string();
         lib.update_settings(&AppSettings { library_root: root, ..lib.settings().unwrap() }).unwrap();
         let app = semver::Version::parse("1.0.3-BETA").unwrap();
-        let secrets = Arc::new(as_plugin::MemorySecrets::default());
         let store = Store::open(&paths, lib.shared_db(), Keys::new(&[]).unwrap(), app, secrets).unwrap();
         let pages = Pages::new(Arc::new(MemoryKit::default()), Vec::new());
         (lib, Arc::new(PluginHost::reaching(store, pages, page_events, Box::new(net), start)))
@@ -1328,7 +1456,7 @@ mod tests {
         project: Option<ProjectId>,
         export: Option<ExportId>,
     ) -> RunKey {
-        RunKey { plugin: id.clone(), kind, action: action.into(), project_id: project, export_id: export }
+        RunKey::new(id, kind, action, project, export, None)
     }
 
     #[test]
@@ -1414,7 +1542,13 @@ mod tests {
         assert_eq!(said(refused(ActionKind::ExportAction, "post", project, None)), "Choose an export to run it on.");
         assert_eq!(said(refused(ActionKind::ExportAction, "post", None, export)), "Choose an export to run it on.");
         assert_eq!(said(refused(ActionKind::Command, "hello", project, export)), "A command doesn't run on an export.");
-        assert_eq!(said(refused(ActionKind::Command, "post", None, None)), "Plugin dev.a.post has no such action.");
+        assert_eq!(said(refused(ActionKind::Command, "tell", None, None)), "Plugin dev.a.post has no such action.");
+        // An action asked for as the other kind (a page names none) says what it needs.
+        assert_eq!(said(refused(ActionKind::Command, "post", project, None)), "Choose an export to run it on.");
+        assert_eq!(
+            said(refused(ActionKind::ExportAction, "hello", project, export)),
+            "A command doesn't run on an export."
+        );
     }
 
     #[test]
@@ -1470,8 +1604,8 @@ mod tests {
             {"id": "main", "title": "Home", "entry": "ui/home.html"},
             {"id": "clips", "title": "Clips", "entry": "ui/clips.html"}
         ]));
-        assert_eq!(update(&previous, Some(&before), &after).added_pages, ["Clips"]);
-        assert_eq!(update(&previous, None, &after).added_pages, ["Home", "Clips"]);
+        assert_eq!(update(&previous, Some(&before), &after).added_pages, ["clips"]);
+        assert_eq!(update(&previous, None, &after).added_pages, ["main", "clips"]);
 
         // A plugin the person agreed to as one that runs no program, which
         // now runs one: said, by what they agreed to, not by its manifest.
@@ -1718,11 +1852,12 @@ mod tests {
         let (lib, host) = host_in(&tmp);
         let id = host.store.commit(folder(&host, &tmp, &manifest("dev.a.one", false)), true, true).unwrap().record.id;
         let allow = |on| lib.set_allows_unreviewed_plugins(on).unwrap();
-        let said = |key: &RunKey, gpu| match startable(&host.store, &lib, key, gpu) {
+        let said_to = |key: &RunKey, trigger, gpu| match startable(&host.store, &lib, key, trigger, gpu) {
             Ok(_) => "starts".to_owned(),
             Err(JobError::Failed(why) | JobError::FailedFirst(why)) => why,
             Err(JobError::Cancelled) => "cancelled".to_owned(),
         };
+        let said = |key: &RunKey, gpu| said_to(key, Trigger::Menu, gpu);
         let (project, export) = (Some(ProjectId::new()), Some(ExportId::new()));
         let post = key(&id, ActionKind::ExportAction, "post", project, export);
         let tag = key(&id, ActionKind::ExportAction, "tag", project, export);
@@ -1734,6 +1869,13 @@ mod tests {
         assert_eq!([said(&post, false), said(&hello, false)], ["starts", "starts"]);
         // Its plugin.json changed while the run waited.
         assert_eq!(said(&post, true), "Plugin dev.a.one changed since this run was queued. Run it again.");
+        // A page's run starts only while its program speaks protocol 2.
+        let stale = "Plugin dev.a.one changed since this run was queued. Run it again.";
+        assert_eq!(said_to(&hello, Trigger::Page, false), stale);
+        let mut two = manifest("dev.a.one", false);
+        two["engines"]["protocol"] = serde_json::json!(2);
+        std::fs::write(tmp.join("dev.a.one").join("plugin.json"), two.to_string()).unwrap();
+        assert_eq!(said_to(&hello, Trigger::Page, false), "starts");
         let mut changed = manifest("dev.a.one", false);
         changed["contributes"]["exportActions"] = serde_json::json!([{"id": "tag", "title": "Tag"}]);
         changed["contributes"]["commands"][0]["needsProject"] = serde_json::json!(true);
@@ -1831,7 +1973,7 @@ mod tests {
         let mut message =
             host.store.run_spec(&p, action, Path::new("ffmpeg"), Path::new("ffprobe"), "9.0").unwrap().message;
         let count = key(&p.record.id, ActionKind::Command, "count", Some(summary.id), None);
-        add_place(&mut message, &lib, &count).unwrap();
+        add_context(&mut message, &lib, &count, None).unwrap();
         let place = message.project.as_ref().unwrap();
         assert_eq!(
             (place.id.clone(), place.title.as_str(), place.folder.clone()),
@@ -1840,7 +1982,7 @@ mod tests {
         assert!(message.export.is_none());
         // An export removed since stops the run.
         let removed = key(&p.record.id, ActionKind::ExportAction, "post", Some(summary.id), Some(ExportId::new()));
-        assert!(matches!(add_place(&mut message, &lib, &removed), Err(ProjectError::NotFound(_))));
+        assert!(matches!(add_context(&mut message, &lib, &removed, None), Err(ProjectError::NotFound(_))));
         drop((host, project, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
     }

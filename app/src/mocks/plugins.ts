@@ -36,6 +36,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     commands: [],
     settings: [],
     icon: null,
+    color: null,
     logPath: `${DATA}\\logs\\plugins\\${o.id}.log`,
     warnings: [],
     ...o,

@@ -1350,7 +1350,7 @@ export type PluginInfo = {
 	settings: SettingSpec[],
 	/**  A `data:` URL of its icon (PNG or SVG), when it has a sound one. */
 	icon: string | null,
-	/**  An optional hex brand/accent color (e.g. #2a2a2a). */
+	/**  An optional hex brand/accent color (e.g. `#2a2a2a`). */
 	color: string | null,
 	/**  Where its runs write their log. */
 	logPath: string,

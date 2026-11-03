@@ -11,9 +11,10 @@ import { locateFile } from "./relink"
 /**
  * What an episode (or a movie's file) offers wherever it is shown — its row,
  * its card, their ⋯ menus: open it, its file, stop or redo its work, remove
- * it. The redo items and removal stay while it works: the backend restarts
- * a running analysis once it has stopped, and stops its work before
- * removing it.
+ * it. Finding a stage again waits (disabled: it can't apply yet) while the
+ * analysis is finding that stage anyway; "Cancel analysis" right above it
+ * says what runs. Removal stays while it works: the backend stops the
+ * episode's work before it removes it.
  */
 export function EpisodeItems({
   kit,
@@ -39,6 +40,13 @@ export function EpisodeItems({
   const preview = useMediaJob(m.id, "proxy")
   const working = [ingest, analysis, preview].filter((j) => j !== undefined)
   const ready = m.status === "ready"
+  // The analysis under way (or waiting) finds every stage that isn't ready
+  // yet, from its checkpoints: finding one of those again now would only
+  // start it over at the back of the queue. Shots found while characters are
+  // being found can still be found again (it starts over from them). A
+  // preview or an indexing never holds a redo back.
+  const findingShots = analysis !== undefined && m.shots !== "ready"
+  const findingFaces = analysis !== undefined && m.faces !== "ready"
   const redo = (stage: "shots" | "faces") =>
     void commands
       .mediaAnalyze(projectId, m.id, stage)
@@ -76,12 +84,12 @@ export function EpisodeItems({
         </Item>
       ))}
       {ready && (
-        <Item onSelect={() => redo("shots")}>
+        <Item disabled={findingShots} onSelect={() => redo("shots")}>
           <Scissors /> Find shots again
         </Item>
       )}
       {ready && m.shots === "ready" && (
-        <Item onSelect={() => redo("faces")}>
+        <Item disabled={findingFaces} onSelect={() => redo("faces")}>
           <UserFocus /> Find characters again
         </Item>
       )}

@@ -18,10 +18,14 @@ vi.mock("@/lib/ipc", () => ({
 }))
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
 
-/** The items as plain buttons. */
+type ItemProps = { onSelect?: () => void; disabled?: boolean; children: React.ReactNode }
+
+/** The items as plain buttons; a disabled item is a disabled button. */
 const kit: MenuKit = {
-  Item: ({ onSelect, children }: { onSelect?: () => void; children: React.ReactNode }) => (
-    <button onClick={onSelect}>{children}</button>
+  Item: ({ onSelect, disabled, children }: ItemProps) => (
+    <button disabled={disabled} onClick={onSelect}>
+      {children}
+    </button>
   ),
   Separator: () => null,
 }
@@ -46,7 +50,15 @@ const job = (o: Partial<JobInfo>): JobInfo => ({
   ...o,
 })
 
-const analysed = { id: "m", path: "C:\\Show\\E01.mkv", status: "ready", shots: "ready" } as MediaItem
+const analysed = { id: "m", path: "C:\\Show\\E01.mkv", status: "ready", shots: "ready", faces: "ready" } as MediaItem
+/** An indexed episode whose stages stand as given. */
+const episode = (o: Partial<MediaItem>) => ({ ...analysed, ...o }) as MediaItem
+const items = (m: MediaItem, onRemove = () => {}) =>
+  render(<EpisodeItems kit={kit} projectId="p" media={m} onOpen={() => {}} onRemove={onRemove} />)
+/** The item named so, or null when it isn't offered. */
+const item = (name: RegExp) => screen.queryByRole("button", { name }) as HTMLButtonElement | null
+/** How an item is offered. */
+const look = (b: HTMLButtonElement | null) => (b == null ? "left out" : b.disabled ? "disabled" : "enabled")
 
 afterEach(() => {
   cleanup()
@@ -79,17 +91,67 @@ describe("an episode's actions", () => {
     expect(commands.jobCancel).toHaveBeenLastCalledWith("preview")
   })
 
-  it("keeps redoing and removing while it works", () => {
-    // The backend restarts a running analysis once it stops, and stops the
-    // work of what it removes: none of them waits for the job.
-    useActivity.getState().replaceAll([job({ id: "analysis" })])
-    const onRemove = vi.fn()
-    render(<EpisodeItems kit={kit} projectId="p" media={analysed} onOpen={() => {}} onRemove={onRemove} />)
-    fireEvent.click(screen.getByRole("button", { name: /Find shots again/ }))
+  it("waits to find a stage again while the analysis finds it", () => {
+    // The analysis under way, or waiting, finds every stage that isn't ready
+    // itself: finding one of those again would only start it over at the
+    // back of the queue. A stage that is done can be found again.
+    // [shots, characters, the analysis] -> [Find shots again, Find characters again]
+    type Look = ReturnType<typeof look>
+    const matrix: [MediaItem["shots"], MediaItem["faces"], "running" | "queued" | null, Look, Look][] = [
+      ["running", "pending", "running", "disabled", "left out"], // finding shots
+      ["pending", "pending", "queued", "disabled", "left out"], // waits to find shots
+      ["ready", "running", "running", "enabled", "disabled"], // finding characters: shots can start over
+      ["ready", "pending", "queued", "enabled", "disabled"], // waits to find characters
+      ["ready", "ready", "running", "enabled", "enabled"], // finding people, or grouping
+      ["ready", "ready", null, "enabled", "enabled"], // analysed
+      ["failed", "pending", null, "enabled", "left out"], // shots failed
+      ["ready", "stopped", null, "enabled", "enabled"], // characters stopped
+    ]
+    for (const [shots, faces, analysis, wantShots, wantFaces] of matrix) {
+      const row = `shots ${shots}, characters ${faces}, analysis ${analysis ?? "none"}`
+      useActivity.setState({ jobs: {}, order: [] })
+      if (analysis) {
+        useActivity.getState().replaceAll([job({ state: analysis, progress: analysis === "running" ? 0.4 : null })])
+      }
+      const { unmount } = items(episode({ shots, faces }))
+      expect([look(item(/Find shots again/)), look(item(/Find characters again/))], row).toEqual([wantShots, wantFaces])
+      // What runs is named right above, and removal never waits.
+      expect(look(item(/Cancel analysis/)), row).toBe(analysis ? "enabled" : "left out")
+      expect(look(item(/Remove from project/)), row).toBe("enabled")
+      unmount()
+    }
+  })
+
+  it("finds the shots again while characters are being found", () => {
+    // The shots are done, so they can start over: the analysis begins again
+    // from them. The characters it is finding wait.
+    useActivity.getState().replaceAll([job({ id: "analysis", stage: "Finding characters" })])
+    items(episode({ faces: "running" }))
+    fireEvent.click(item(/Find shots again/)!)
     expect(commands.mediaAnalyze).toHaveBeenCalledWith("p", "m", "shots")
-    fireEvent.click(screen.getByRole("button", { name: /Find characters again/ }))
+    expect(look(item(/Find characters again/))).toBe("disabled")
+  })
+
+  it("a preview built beside it never holds a redo back", () => {
+    // Only the analysis finds stages: a preview of the episode leaves both
+    // redo items as they are.
+    useActivity.getState().replaceAll([job({ id: "preview", kind: "proxy", stage: "Preparing preview" })])
+    items(episode({ faces: "stopped" }))
+    fireEvent.click(item(/Find shots again/)!)
+    expect(commands.mediaAnalyze).toHaveBeenCalledWith("p", "m", "shots")
+    fireEvent.click(item(/Find characters again/)!)
     expect(commands.mediaAnalyze).toHaveBeenLastCalledWith("p", "m", "faces")
-    fireEvent.click(screen.getByRole("button", { name: /Remove from project/ }))
+  })
+
+  it("removing stays while it works", () => {
+    // The backend stops the episode's work before it removes it.
+    useActivity.getState().replaceAll([
+      job({ id: "analysis", stage: "Finding shots" }),
+      job({ id: "preview", kind: "proxy", stage: "Preparing preview", createdAt: 2, rev: 2 }),
+    ])
+    const onRemove = vi.fn()
+    items(episode({ shots: "running", faces: "pending" }), onRemove)
+    fireEvent.click(item(/Remove from project/)!)
     expect(onRemove).toHaveBeenCalled()
   })
 

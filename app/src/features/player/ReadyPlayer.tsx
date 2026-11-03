@@ -34,10 +34,8 @@ import { NO_MARKS, useMarks } from "@/state/marks"
 import { usePlayback } from "@/state/playback"
 import { useUi } from "@/state/ui"
 import { Ambilight } from "./Ambilight"
-import { CharactersPanel } from "./panels/CharactersPanel"
+import { DetailsPanel } from "./panels/DetailsPanel"
 import { PlayerKeysDialog } from "./panels/PlayerKeysDialog"
-import { ShotsPanel } from "./panels/ShotsPanel"
-import { SourceCard } from "./panels/SourceCard"
 import { PlayerPicture } from "./Picture"
 import type { ShuttleKey } from "./shuttle"
 import { Timeline } from "./timeline/Timeline"
@@ -393,25 +391,26 @@ export function ReadyPlayer({
         </div>
       </div>
 
-      {inspector && (
-        <aside className="flex w-[340px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-white/[0.06] bg-canvas p-3">
-          <ShotsPanel pid={pid} media={m} segments={shots} store={store} tc={tc} onMark={() => markShot()} onGo={seek} />
-          <CharactersPanel
-            pid={pid}
-            media={m}
-            lanes={lanes}
-            segments={shots}
-            store={store}
-            focus={focus}
-            onFocus={setFocus}
-            onGo={(f) => {
-              pause()
-              seek(f)
-            }}
-          />
-          <SourceCard pid={pid} media={m} fps={fps} />
-        </aside>
-      )}
+      <DetailsPanel
+        open={inspector}
+        pid={pid}
+        media={m}
+        fps={fps}
+        frames={clock.frames}
+        lanes={lanes}
+        segments={shots}
+        store={store}
+        tc={tc}
+        focus={focus}
+        onFocus={setFocus}
+        onMarkShot={() => markShot()}
+        onSeek={seek}
+        onGo={(f) => {
+          pause()
+          seek(f)
+        }}
+        onKeys={() => setKeysOpen(true)}
+      />
 
       <ExportDialog projectId={pid} clips={[clip]} notice={oneSided} open={exportOpen} onOpenChange={setExportOpen} />
       <PlayerKeysDialog open={keysOpen} onOpenChange={setKeysOpen} />

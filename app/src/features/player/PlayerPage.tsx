@@ -78,6 +78,7 @@ export function PlayerPage() {
               variant={inspector ? "secondary" : "ghost"}
               aria-pressed={inspector}
               aria-label="Details"
+              aria-controls={inspector ? "player-details" : undefined}
               onClick={toggleInspector}
             >
               <SidebarSimple mirrored />

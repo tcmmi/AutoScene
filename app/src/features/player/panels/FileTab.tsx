@@ -15,10 +15,27 @@ import { commands, errorMessage } from "@/lib/ipc"
 import { audioOption, codecLabel, currentAudio, formatFlags, releaseTitle } from "@/lib/media"
 import { copyText, reveal } from "@/lib/os"
 import { formatFps } from "@/lib/timecode"
-import { Card } from "./Card"
+import { cn } from "@/lib/utils"
+import { TabBody } from "./TabBody"
 
-/** The file: its name, picture, flags, audio track and folder. */
-export function SourceCard({ pid, media: m, fps }: { pid: string; media: MediaItem; fps: Rational }) {
+/**
+ * The File tab: the file's name, picture, length, flags, audio track and
+ * folder. `frames` is the episode's frame count (the transport's counter
+ * shows frame numbers, which count from 0).
+ */
+export function FileTab({
+  pid,
+  media: m,
+  fps,
+  frames,
+  tc,
+}: {
+  pid: string
+  media: MediaItem
+  fps: Rational
+  frames: number
+  tc: (f: number) => string
+}) {
   const audio = m.info?.audio ?? []
   const flags = formatFlags(m)
   const setAudio = (v: string) =>
@@ -52,7 +69,7 @@ export function SourceCard({ pid, media: m, fps }: { pid: string; media: MediaIt
     </>
   )
   return (
-    <Card title="Source" menu={menu}>
+    <TabBody label="File" menu={menu}>
       <p className="text-md font-medium text-fg-1">{releaseTitle(m.fileName)}</p>
       <p data-selectable className="mt-0.5 text-xs [overflow-wrap:anywhere] text-fg-3">
         {m.fileName}
@@ -62,6 +79,9 @@ export function SourceCard({ pid, media: m, fps }: { pid: string; media: MediaIt
           {m.info.video.width}×{m.info.video.height} · {formatFps(fps)} fps · {codecLabel(m.info.video.codec)}
         </p>
       )}
+      <p className={cn("timecode text-xs text-fg-2", m.info ? "mt-0.5" : "mt-2")}>
+        Length {tc(frames)} · {frames.toLocaleString("en-GB")} frames
+      </p>
       {flags.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
           {flags.map((f) => (
@@ -86,6 +106,6 @@ export function SourceCard({ pid, media: m, fps }: { pid: string; media: MediaIt
       <Button size="sm" variant="ghost" className="mt-3 -ml-2" onClick={() => reveal(m.path)}>
         <FolderOpen /> Show in folder
       </Button>
-    </Card>
+    </TabBody>
   )
 }

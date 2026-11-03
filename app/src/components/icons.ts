@@ -5,6 +5,7 @@
  * stars) stay out. See docs/DESIGN.md.
  */
 export {
+  AppWindow,
   ArrowCounterClockwise,
   ArrowLeft,
   ArrowLineLeft,
@@ -65,6 +66,7 @@ export {
   Scan,
   Scissors,
   SelectionAll,
+  ShieldCheck,
   ShieldWarning,
   SidebarSimple,
   SkipBack,

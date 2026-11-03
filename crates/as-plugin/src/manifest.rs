@@ -1071,6 +1071,22 @@ fn is_label(s: &str, max: usize) -> bool {
     is_name(s, max) && !s.ends_with('-')
 }
 
+/// Whether `url` is a plain `https://` link, as a plugin's links must be
+/// (its repository, a page's `ui.openExternal`): at most 2000 characters
+/// of ASCII without spaces, its address a host name with a port at most,
+/// and no `user@` before it, which would make
+/// `https://autoscene.app@evil.example` read as the first and lead to the
+/// second.
+pub fn plain_link(url: &str) -> bool {
+    let plain = url.len() <= 2000
+        && url.is_ascii()
+        && !url.bytes().any(|b| b.is_ascii_whitespace() || b.is_ascii_control() || b == b'\\');
+    let address = url.strip_prefix("https://").and_then(|rest| rest.split(['/', '?', '#']).next());
+    let (host, port) = address.map_or(("", ""), |a| a.split_once(':').unwrap_or((a, "443")));
+    let port_ok = port.bytes().all(|b| b.is_ascii_digit()) && port.parse::<u16>().is_ok_and(|p| p > 0);
+    plain && port_ok && is_host(&host.to_ascii_lowercase())
+}
+
 /// A host name as the network permission names it: lowercase labels of 1
 /// to 63 letters, digits and dashes, joined by dots; no port, no scheme.
 fn is_host(h: &str) -> bool {
@@ -1290,13 +1306,7 @@ impl<'a> Obj<'a> {
     /// the second. Anything else is left out with a warning.
     fn link(&self, key: &str, w: &mut Vec<String>) -> PluginResult<Option<String>> {
         let Some(url) = self.text(key)? else { return Ok(None) };
-        let plain = url.len() <= 2000
-            && url.is_ascii()
-            && !url.bytes().any(|b| b.is_ascii_whitespace() || b.is_ascii_control() || b == b'\\');
-        let address = url.strip_prefix("https://").and_then(|rest| rest.split(['/', '?', '#']).next());
-        let (host, port) = address.map_or(("", ""), |a| a.split_once(':').unwrap_or((a, "443")));
-        let port_ok = port.bytes().all(|b| b.is_ascii_digit()) && port.parse::<u16>().is_ok_and(|p| p > 0);
-        if plain && port_ok && is_host(&host.to_ascii_lowercase()) {
+        if plain_link(url) {
             return Ok(Some(url.to_owned()));
         }
         w.push(format!("Left out {}: a link must be a plain https:// address.", self.at(key)));
@@ -2015,7 +2025,8 @@ mod tests {
         program["network"] = json!({"hosts": ["discord.com"]});
         program["runtime"] = json!({"type": "process", "command": {"*": ["bin/tool.exe", "--fast"]}, "gpu": true});
         let mut fixtures = vec![plugin(), program];
-        fixtures.extend(examples());
+        // The examples of version 1 (hello-page shows a page: it is version 2).
+        fixtures.extend(examples().into_iter().filter(|e| e["manifestVersion"] == json!(1)));
         assert!(fixtures.len() >= 4, "{}", fixtures.len());
         for v1 in fixtures {
             assert_eq!(v1["manifestVersion"], json!(1));

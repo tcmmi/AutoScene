@@ -1,9 +1,11 @@
 //! Plugins (Settings → Plugins): what is installed, installing it after a
 //! review, uninstalling, turning plugins and their after-export actions on
 //! or off, their settings and secrets, whether plugins AutoScene hasn't
-//! reviewed may run, running their actions, and opening and closing their
-//! pages. Each change emits `plugins:changed`; runs report as jobs, and an
-//! open page hears of its plugin's changes through `plugin-page:event`.
+//! reviewed may run, running their actions, and opening, closing and
+//! answering their pages. Each change emits `plugins:changed`; runs report
+//! as jobs, and an open page hears of its plugin's changes through
+//! `plugin-page:event`. A page's frame calls nothing itself: the app's page
+//! hands its calls on with the session it holds ([`plugin_page_call`]).
 //!
 //! The page can't say yes alone to code AutoScene hasn't reviewed: turning
 //! the setting on, and installing such a plugin, each ask the person in a
@@ -11,19 +13,24 @@
 //! A script in the page could call these commands; it can't answer that.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use as_api::AppSettings;
 use as_core::{ExportId, JobId, ProjectId};
+use as_plugin::calls::FileFilter;
 use as_plugin::{ActionKind, PluginError, PluginId, SettingValue, Source, Ticket, Trigger, Trust};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_clipboard_manager::ClipboardExt;
+use tauri_plugin_dialog::{DialogExt, FileDialogBuilder, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_opener::OpenerExt;
 use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::PluginsChanged;
 use crate::paths;
+use crate::plugins::calls::{self, PageIo, PageParams, PageReply};
 use crate::plugins::pages::{self, PageMount};
 use crate::plugins::{self, PluginInfo, PluginReview, host, info, review};
 use crate::state::{AppState, blocking};
@@ -407,10 +414,85 @@ pub async fn plugin_page_open(
 pub async fn plugin_page_close(state: State<'_, AppState>, session: String) -> AppResult<()> {
     let host = host(&state)?;
     blocking(move || {
-        host.pages.close(&session);
+        host.close_page(&session);
         Ok(())
     })
     .await
+}
+
+/// A plugin page's call of `method` with `params`, which the app's page
+/// hands on with the page's `session`: Rust knows the plugin from it, never
+/// from the page. Its answer, an effect for the app's page to carry out
+/// first, or the page's error; a closed page's call gets `closed`.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_page_call(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session: String,
+    method: String,
+    params: PageParams,
+) -> AppResult<PageReply> {
+    let (host, lib) = (host(&state)?, state.library.clone());
+    blocking(move || {
+        let params = serde_json::value::to_raw_value(&params.0).map_err(|e| AppError::internal(e.to_string()))?;
+        Ok(calls::page_call(lib, &host, &AppIo(&app), &session, &method, &params))
+    })
+    .await
+}
+
+/// The app's page is there for the open plugin page `session`: it says so
+/// every 2 s on macOS and Linux, where a page that hangs would hang it too,
+/// and is asked about once it stops ([`pages::watch`]).
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_page_heartbeat(state: State<'_, AppState>, session: String) -> AppResult<()> {
+    let host = host(&state)?;
+    if host.pages.get(&session).is_some() {
+        host.beats.beat(&session, Instant::now());
+    }
+    Ok(())
+}
+
+/// What a page's own methods reach in the app: the clipboard, the person's
+/// browser after their yes, and the system's file dialogs over the window.
+struct AppIo<'a>(&'a AppHandle);
+
+impl AppIo<'_> {
+    /// A file dialog over the window that offers `filters`.
+    fn file_dialog(&self, filters: &[FileFilter]) -> FileDialogBuilder<tauri::DynRuntime> {
+        let mut dialog = self.0.dialog().file();
+        for f in filters {
+            let extensions: Vec<&str> = f.extensions.iter().map(String::as_str).collect();
+            dialog = dialog.add_filter(&f.name, &extensions);
+        }
+        if let Some(window) = self.0.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog
+    }
+}
+
+impl PageIo for AppIo<'_> {
+    fn copy_text(&self, text: &str) -> Result<(), String> {
+        self.0.clipboard().write_text(text).map_err(|e| e.to_string())
+    }
+
+    fn confirm(&self, title: &str, text: &str, yes: &str) -> bool {
+        confirm(self.0, title, text.to_owned(), yes)
+    }
+
+    fn open_url(&self, url: &str) -> Result<(), String> {
+        self.0.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+    }
+
+    fn save_to(&self, name: &str, filters: &[FileFilter]) -> Option<PathBuf> {
+        self.file_dialog(filters).set_file_name(name).blocking_save_file()?.into_path().ok()
+    }
+
+    fn pick(&self, filters: &[FileFilter]) -> Option<PathBuf> {
+        self.file_dialog(filters).blocking_pick_file()?.into_path().ok()
+    }
 }
 
 fn changed(app: &AppHandle, plugin_id: Option<String>) {

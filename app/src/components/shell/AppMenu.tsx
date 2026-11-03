@@ -27,6 +27,7 @@ import { layerOpen } from "@/lib/layers"
 import { copyText } from "@/lib/os"
 import { modKey } from "@/lib/platform"
 import { useShortcutKeys } from "@/lib/shortcuts"
+import { leavePage, pageOpen } from "@/lib/places"
 import { textFieldAt } from "@/lib/text-edit"
 import { useTextMenu } from "@/state/text-menu"
 import { useUi } from "@/state/ui"
@@ -210,7 +211,8 @@ export function FullAppItems() {
   const railHidden = useUi((s) => s.sidebarCollapsed)
   return (
     <>
-      <ContextMenuItem disabled={!canGoBack} onSelect={() => window.history.back()}>
+      {/* On a plugin page, Back leaves it: its frame's own entries are never stepped through. */}
+      <ContextMenuItem disabled={!canGoBack && !pageOpen()} onSelect={() => leavePage() || window.history.back()}>
         <ArrowLeft /> Back
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.openPalette} shortcut={keys("global.palette")}>

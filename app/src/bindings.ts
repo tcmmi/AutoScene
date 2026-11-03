@@ -311,6 +311,19 @@ export const commands = {
 	 *  already is no error.
 	 */
 	pluginPageClose: (session: string) => __TAURI_INVOKE<null>("plugin_page_close", { session }),
+	/**
+	 *  A plugin page's call of `method` with `params`, which the app's page
+	 *  hands on with the page's `session`: Rust knows the plugin from it, never
+	 *  from the page. Its answer, an effect for the app's page to carry out
+	 *  first, or the page's error; a closed page's call gets `closed`.
+	 */
+	pluginPageCall: (session: string, method: string, params: unknown) => __TAURI_INVOKE<PageReply>("plugin_page_call", { session, method, params }),
+	/**
+	 *  The app's page is there for the open plugin page `session`: it says so
+	 *  every 2 s on macOS and Linux, where a page that hangs would hang it too,
+	 *  and is asked about once it stops ([`pages::watch`]).
+	 */
+	pluginPageHeartbeat: (session: string) => __TAURI_INVOKE<null>("plugin_page_heartbeat", { session }),
 	/**  Newest first. Live updates arrive as `job:changed` / `job:progress`. */
 	jobsList: () => __TAURI_INVOKE<JobInfo[]>("jobs_list"),
 	jobCancel: (jobId: JobId) => __TAURI_INVOKE<void>("job_cancel", { jobId }),
@@ -540,6 +553,28 @@ export type AudioStream = {
 	default: boolean,
 	/**  Director's commentary or audio description, not the programme sound. */
 	commentary: boolean,
+};
+
+/**  What kind of error a call got. */
+export type CallCode = 
+/**  The plugin has no grant for it. */
+"denied" | 
+/**  The call itself is wrong (an unknown method, params that don't fit). */
+"invalid" | "not_found" | 
+/**  Too many calls at once, or the plugin is busy. */
+"busy" | 
+/**  AutoScene couldn't answer it. */
+"failed" | 
+/**  The page that called was closed. */
+"closed" | "cancelled";
+
+/**
+ *  The error a call got: its kind, and a sentence for the plugin's log or
+ *  its page.
+ */
+export type CallError = {
+	code: CallCode,
+	message: string,
 };
 
 /**  The cast of a project. */
@@ -1299,6 +1334,16 @@ export type PackTotals = {
 	seconds: number | null,
 };
 
+/**  What a page's call asks the app's page to do. */
+export type PageEffect = 
+/**
+ *  A toast. `title` is its whole first line, `Plugin “<name>”: <text>`:
+ *  the app's page shows it as it is.
+ */
+{ type: "toast"; title: string; description: string | null; tone: ToastTone } | 
+/**  The path inside the page becomes `path` (the route's splat). */
+{ type: "navigate"; path: string; replace: boolean };
+
 /**  What became of an open plugin page. */
 export type PageEvent = 
 /**  Its plugin's settings or secrets changed: it may read them again. */
@@ -1339,6 +1384,14 @@ export type PageMountPlugin = {
 	/**  A `data:` URL of its icon, when it has a sound one. */
 	icon: string | null,
 };
+
+/**
+ *  What an open page's call gets: its answer; an effect the app's page
+ *  carries out, then answers with `result`; or an error.
+ */
+export type PageReply = { kind: "ok"; result: unknown } | 
+/**  The app's page does `effect`, then answers the page with `result`. */
+{ kind: "effect"; effect: PageEffect; result: unknown } | { kind: "err"; error: CallError };
 
 /**  Where a page opens: on its own, or in a project, which it may then read. */
 export type PageScope = "global" | "project";
@@ -1720,6 +1773,8 @@ export type SubtitleStream = {
 	/**  Text subtitles (SRT/ASS/…) can feed dialogue search; bitmap ones can't. */
 	textBased: boolean,
 };
+
+export type ToastTone = "neutral" | "error";
 
 /**  How a face track got to its character. */
 export type TrackAssign = 

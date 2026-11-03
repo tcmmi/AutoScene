@@ -3,6 +3,7 @@ import { useRouterState } from "@tanstack/react-router"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
 import { FolderPlus } from "@/components/icons"
 import { toast } from "sonner"
+import { isPluginPagePath } from "@/features/plugins/page-items"
 import { commands, errorMessage } from "@/lib/ipc"
 import { isTauri } from "@/lib/platform"
 import { useNewProject } from "@/state/new-project"
@@ -11,18 +12,22 @@ import { useNewProject } from "@/state/new-project"
  * Files and folders dropped anywhere on the window: inside a project they are
  * added to it, elsewhere they start a new project. While the New Project
  * dialog is open they fill its file list, which lights up for them (no
- * window-wide "Create a project" over it).
+ * window-wide "Create a project" over it). On a plugin's page a drop adds
+ * nothing and shows nothing: the window takes every drop, also one meant
+ * for the page, which never gets it.
  */
 export function DropZone() {
   const [over, setOver] = useState(false)
   const dialogOpen = useNewProject((s) => s.open)
   const path = useRouterState({ select: (s) => s.location.pathname })
   const pid = path.match(/^\/p\/([^/]+)/)?.[1]
+  const pluginPage = isPluginPagePath(path)
 
   useEffect(() => {
     if (!isTauri) return
     const dragging = (on: boolean) => {
-      setOver(on)
+      // Over a plugin's page only the New Project dialog takes files.
+      setOver(on && !pluginPage)
       useNewProject.getState().setDragging(on)
     }
     const un = getCurrentWebview().onDragDropEvent(({ payload }) => {
@@ -36,6 +41,7 @@ export function DropZone() {
         if (!paths.length) return
         const np = useNewProject.getState()
         if (np.open) np.show([...np.seed, ...paths])
+        else if (pluginPage) return
         else if (pid) {
           commands
             .mediaAdd(pid, paths)
@@ -45,7 +51,7 @@ export function DropZone() {
       }
     })
     return () => void un.then((f) => f())
-  }, [pid])
+  }, [pid, pluginPage])
 
   if (!over || dialogOpen) return null
   return (

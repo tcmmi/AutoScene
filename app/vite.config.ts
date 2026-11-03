@@ -3,13 +3,27 @@ import path from "node:path"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
+import { mockAsp } from "./vite.mock-asp.ts"
 
 const repoRoot = path.resolve(import.meta.dirname, "..")
 const fixtures = path.join(repoRoot, "fixtures", "out")
 
-// Tauri expects a fixed port and must not have the terminal cleared.
-export default defineConfig(({ command }) => ({
-  plugins: [react(), tailwindcss()],
+// Tauri expects a fixed port and must not have the terminal cleared. While
+// developing, the browser mock's plugin pages load from a second server, on
+// an origin of their own (vite.mock-asp.ts); not while testing.
+export default defineConfig(({ command, mode }) => ({
+  plugins: [
+    react(),
+    tailwindcss(),
+    command === "serve" &&
+      mode !== "test" &&
+      mockAsp({
+        examples: path.join(repoRoot, "examples", "plugins"),
+        golden: path.join(import.meta.dirname, "src", "plugin-kit", "page-csp.golden.txt"),
+        kit: path.join(import.meta.dirname, "dist", "_as"),
+        fixtures,
+      }),
+  ],
   clearScreen: false,
   server: {
     port: 5173,
@@ -32,7 +46,7 @@ export default defineConfig(({ command }) => ({
   },
   test: {
     environment: "jsdom",
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "vite.mock-asp.test.ts"],
     setupFiles: ["src/test/setup.ts"],
     // The kit's built theme.css is read as text (plugin-kit/kit.test.ts);
     // other CSS stays out of the tests.

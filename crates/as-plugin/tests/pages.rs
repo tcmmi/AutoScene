@@ -380,7 +380,14 @@ fn every_response_has_the_page_csp_nosniff_and_acao() {
         assert_eq!(served.header("cache-control"), Some("no-store"), "{said}");
         assert_eq!(served.header("referrer-policy"), Some("no-referrer"), "{said}");
         let permissions = served.header("permissions-policy").unwrap();
-        for denied in ["camera=()", "microphone=()", "clipboard-read=()", "clipboard-write=()", "payment=()"] {
+        for denied in [
+            "camera=()",
+            "microphone=()",
+            "clipboard-read=()",
+            "clipboard-write=()",
+            "payment=()",
+            "picture-in-picture=()",
+        ] {
             assert!(permissions.contains(denied), "{said}: {denied}");
         }
         assert_eq!(served.header("content-length"), Some(served.body.len().to_string().as_str()), "{said}");
@@ -438,6 +445,16 @@ fn the_csp_names_the_session_path_never_self() {
     }
     // A session serves only its own plugin's files.
     assert_eq!(get(&pages, &format!("/{}/../{}/ui/index.html", a.token, b.token)).status, 404);
+}
+
+#[test]
+fn the_mock_csp_is_the_page_csp() {
+    // The browser mock serves pages from an origin of their own, framed by
+    // Vite's, with the CSP this file holds (app/vite.mock-asp.ts, whose own
+    // test checks that it sends it): the page CSP, as Rust makes it.
+    let golden = include_str!("../../../app/src/plugin-kit/page-csp.golden.txt");
+    let csp = page_csp("http://localhost:5174", "0123456789abcdef0123456789abcdef", &["http://localhost:5173".into()]);
+    assert_eq!(golden.trim_end(), csp, "write the golden file again from page_csp");
 }
 
 #[test]
@@ -502,6 +519,9 @@ fn an_unknown_or_closed_session_is_404() {
     pages.close(&first.token);
     assert_eq!(status(&pages, &first, "ui/index.html"), 404);
     assert!(pages.get(&first.token).is_none());
+    // What it still had waiting hears it closed; the others' don't.
+    assert!(first.closed.is_cancelled());
+    assert!(!second.closed.is_cancelled());
     assert_eq!(status(&pages, &second, "ui/more/deep.html"), 200);
     // Closing one that is closed already is no error.
     pages.close(&first.token);
@@ -512,6 +532,7 @@ fn an_unknown_or_closed_session_is_404() {
     assert_eq!(status(&pages, &other, "ui/index.html"), 200);
     assert_eq!(pages.close_where(|m| m.trust != Trust::Reviewed), std::slice::from_ref(&other.token));
     assert_eq!(status(&pages, &other, "ui/index.html"), 404);
+    assert!(second.closed.is_cancelled() && other.closed.is_cancelled());
 }
 
 #[test]
@@ -741,6 +762,7 @@ fn sessions_past_eight_drop_the_oldest() {
     // one, serve.
     assert_eq!(closed, std::slice::from_ref(&opened[0].token));
     assert!(pages.get(&opened[0].token).is_none());
+    assert!(opened[0].closed.is_cancelled() && !opened[1].closed.is_cancelled());
     assert_eq!(status(&pages, &opened[0], "ui/index.html"), 404);
     for m in &opened[1..] {
         assert_eq!(status(&pages, m, "ui/index.html"), 200);

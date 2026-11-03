@@ -75,10 +75,16 @@ Rules:
   "web link"), text not selectable outside fields and paths.
 - **Rail** (76px, `components/shell/Rail.tsx`) on the window's left edge, on the native material where there is
   one: the mark, Library, each recent project as its picture (gold ring when open), New project, and at the bottom
-  Search (`Ctrl/⌘ K`), Activity (a ring fills as work runs) and Settings. `Ctrl/⌘ B` hides it.
+  Search (`Ctrl/⌘ K`), Activity (a ring fills as work runs) and Settings. `Ctrl/⌘ B` hides it. Under Library sit up
+  to four plugin page tiles, each with the plugin's icon, AutoScene's plugin mark in its corner and a tooltip that
+  starts with "Plugin"; the other pages are in the palette.
 - **Top bar** (56px, `components/ui/topbar.tsx`) per view: back and title on the left, a project's sections
   (Overview · Episodes · Cast · Exports) as a pill in the middle, actions on the right. It is the drag region
-  (double-click maximises); over a hero it is clear until the page scrolls, then glass with the title.
+  (double-click maximises); over a hero it is clear until the page scrolls, then glass with the title. A project's
+  pill gains a fifth item, More, when plugins add pages to projects; it never grows past five.
+- **Plugin pages** (`features/plugins/PluginPageView.tsx`) fill the view under AutoScene's top bar, whose title
+  shows the plugin's icon, the page's title and a "Plugin" badge no plugin can word. What is inside the frame is the
+  plugin's; its ⋯ menu and right-click are AutoScene's.
 - **Native chrome** per platform: Windows 11 Mica behind the rail with our own caption buttons over the top-right
   corner (`--caption-inset`); macOS vibrancy with the traffic lights over the rail's top (`--traffic-inset`);
   Linux and Windows 10 solid. The material is only claimed where it exists (`detectMaterial`), so nothing turns
@@ -92,7 +98,8 @@ Rules:
 
 - Nothing shows the browser's own chrome: no native tooltips, context menus, form controls, autofill, find bar or
   link drags. oxlint refuses `title` and native controls (`select`, `progress`, range and checkbox inputs…);
-  browser keys the app has no use for are swallowed (`lib/browser-guards.ts`).
+  browser keys the app has no use for are swallowed (`lib/browser-guards.ts`). Inside a plugin page, native controls
+  (a select, a checkbox, a range) are the page's own and may show; these rules hold for everything outside its frame.
 - **Tooltips** (`ui/tooltip.tsx`) are glass: the label, an optional second line in `--fg-3` (`hint`) and the key
   that does the same (`shortcut`). Text cut by its box (`TruncatedText`) shows the rest only when it is cut.
 - **One context menu** for the window (`shell/AppMenu.tsx`). An element says what a right-click offers with

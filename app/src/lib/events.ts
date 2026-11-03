@@ -21,6 +21,7 @@ import { exportsQuery, qk, queryClient } from "./queries"
  * | pack:changed     | pack(pid, cid): its settings (an export keeps them) |
  * | export:changed   | exports(pid)                                       |
  * | plugins:changed  | plugins and every plugin's settings; settings when no plugin is named |
+ * | plugin-page:event | an open plugin page (PluginFrame listens)         |
  */
 export function startEventBridge(): () => void {
   const unlisten: Promise<() => void>[] = []

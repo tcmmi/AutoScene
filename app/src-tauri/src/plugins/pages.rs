@@ -1,7 +1,8 @@
 //! Plugin pages in the app: the `asp` scheme's handler, which answers the
 //! frames of the main webview from the plugin host's open pages
-//! ([`as_plugin::pages`]), the kit the app was built with, and opening a
-//! page ([`open`]).
+//! ([`as_plugin::pages`]), the kit the app was built with, opening a page
+//! ([`open`]), and asking the person about one that hangs the app's page
+//! ([`watch`]).
 //!
 //! The main webview is the only one that frames a page, and the only one
 //! the scheme answers ([`scheme_allowed`]): there is never a second
@@ -24,17 +25,21 @@
 //! hears `postMessage` only from the main frame (it listens on the webview,
 //! not on its frames). Only a real frame shows that the last one holds.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 
 use as_core::ProjectId;
 use as_plugin::pages::{self, AssetKit, KitSource, Served};
 use as_plugin::{Grants, PageScope, PageSpec, Permission, PluginError, PluginId, Trust};
 use as_project::Library;
+use parking_lot::Mutex;
 use serde::Serialize;
 use specta::Type;
 use tauri::http::header::RANGE;
 use tauri::http::{HeaderValue, Request, Response, StatusCode};
 use tauri::{AppHandle, DynRuntime, Manager, UriSchemeContext, UriSchemeResponder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::Semaphore;
 
 use super::{PluginHost, PluginSource, runnable, source, trust};
@@ -110,7 +115,14 @@ pub fn open(
         (PageScope::Global, None) => None,
     };
     let grants = Grants::of(&p)?;
+    // Where `state.*` keeps what its pages keep (a program's run makes it
+    // too). Under the lock: an uninstall that deletes it waits, and closes
+    // this page first.
+    std::fs::create_dir_all(host.store.data_dir(id)).map_err(PluginError::from)?;
     let (mount, closed) = host.pages.open(&p, grants, page, project)?;
+    // Its silence counts from here: a page that hangs the app's page before
+    // its first heartbeat is asked about too.
+    host.beats.beat(&mount.token, Instant::now());
     drop(busy);
     host.tell_closed(closed, "Too many plugin pages were open.");
     let grants = &mount.grants;
@@ -136,6 +148,136 @@ pub fn open(
 
 fn invalid(message: &str) -> AppError {
     AppError::new(ErrorCode::Invalid, message)
+}
+
+/// How long the app's page may go without saying it is there for an open
+/// plugin page before the person is asked about it.
+pub const STALLED: Duration = Duration::from_secs(5);
+
+/// When the app's page last said it is there for each open page: as the
+/// page opened, then every 2 s on macOS and Linux. There a page's frame
+/// shares the app page's thread, so a page that hangs hangs the app's page
+/// too, and its own watchdog with it ([`watch`]). On Windows the frame runs
+/// in a process of its own, and the app's page sees a hung page itself:
+/// nothing reads these there.
+#[derive(Default)]
+pub struct Heartbeats(Mutex<HashMap<String, Beat>>);
+
+#[derive(Clone, Copy, Debug)]
+struct Beat {
+    last: Instant,
+    /// The person was asked about it since.
+    asked: bool,
+}
+
+impl Heartbeats {
+    /// The app's page is there for the page `session` at `now`.
+    pub fn beat(&self, session: &str, now: Instant) {
+        self.0.lock().insert(session.to_owned(), Beat { last: now, asked: false });
+    }
+
+    /// Forgets the page `session`: it closed.
+    pub fn forget(&self, session: &str) {
+        self.0.lock().remove(session);
+    }
+
+    /// The app's window is out of the person's sight at `now` (minimized,
+    /// hidden, or behind another window): WebKit slows the timers of a page
+    /// no one sees, so the silence until now doesn't count.
+    pub fn hold(&self, now: Instant) {
+        for beat in self.0.lock().values_mut() {
+            beat.last = beat.last.max(now);
+        }
+    }
+
+    /// The pages whose app page said nothing for [`STALLED`] at `now`, each
+    /// once until it says something again; those `open` no longer has are
+    /// forgotten.
+    pub fn stalled(&self, now: Instant, open: impl Fn(&str) -> bool) -> Vec<String> {
+        let mut beats = self.0.lock();
+        beats.retain(|session, _| open(session));
+        let mut stalled = Vec::new();
+        for (session, beat) in beats.iter_mut() {
+            if !beat.asked && now.saturating_duration_since(beat.last) >= STALLED {
+                beat.asked = true;
+                stalled.push(session.clone());
+            }
+        }
+        stalled
+    }
+}
+
+/// Asks the person about each open page whose app page stopped saying it is
+/// there ([`Heartbeats`]), in a dialog of the system's own: "Close it"
+/// closes the page and sends the app's page home, which ends the frame;
+/// "Wait" asks again after [`STALLED`]. Only while the app's window is in
+/// front of the person: there WebKit runs the page's timers on time, and
+/// the person is there to answer. Nothing to do on Windows (see
+/// [`Heartbeats`]). Ends with the host.
+pub fn watch(app: AppHandle, host: Weak<PluginHost>) {
+    if cfg!(windows) {
+        return;
+    }
+    let watching = std::thread::Builder::new().name("plugin-pages".into()).spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            let Some(host) = host.upgrade() else { return };
+            // The window answers from the app's own thread, which a hung page
+            // doesn't hold: WebKit runs pages in a process of their own.
+            if !in_front(&app) {
+                host.beats.hold(Instant::now());
+                continue;
+            }
+            for session in host.beats.stalled(Instant::now(), |s| host.pages.get(s).is_some()) {
+                let Some(m) = host.pages.get(&session) else { continue };
+                if ask_hung(&app, &m.name) {
+                    host.close_page(&session);
+                    go_home(&app);
+                } else {
+                    host.beats.beat(&session, Instant::now());
+                }
+            }
+        }
+    });
+    if let Err(e) = watching {
+        log::warn!("plugin pages can't be watched: {e}");
+    }
+}
+
+/// Whether the app's window is in front of the person: shown, not
+/// minimized, and the window they are in. One that can't say counts as in
+/// front.
+fn in_front(app: &AppHandle) -> bool {
+    let Some(window) = app.get_webview_window("main") else { return false };
+    let seen = window.is_visible().unwrap_or(true) && !window.is_minimized().unwrap_or(false);
+    seen && window.is_focused().unwrap_or(true)
+}
+
+/// Asks the person whether to close the page of the plugin `name` that
+/// stopped responding: true for "Close it".
+fn ask_hung(app: &AppHandle, name: &str) -> bool {
+    let mut dialog = app
+        .dialog()
+        .message("Close it to use AutoScene again, or wait for it.")
+        .title(format!("Plugin “{name}”'s page stopped responding."))
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom("Close it".into(), "Wait".into()));
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.parent(&window);
+    }
+    dialog.blocking_show()
+}
+
+/// Sends the app's page to the library, which ends a page's frame.
+fn go_home(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else { return };
+    let home = window.url().map(|mut url| {
+        url.set_fragment(Some("/"));
+        url
+    });
+    if let Err(e) = home.and_then(|url| window.navigate(url)) {
+        log::warn!("the app's page couldn't go home from a hung plugin page: {e}");
+    }
 }
 
 /// Whether the webview `label` gets answers of the asp scheme: only the
@@ -376,6 +518,74 @@ mod tests {
             }
         }
         assert!(configs >= 2, "the configs are next to Cargo.toml");
+    }
+
+    #[test]
+    fn a_page_whose_app_page_goes_quiet_is_asked_about_once() {
+        let beats = Heartbeats::default();
+        let start = Instant::now();
+        let at = |s: u64| start + Duration::from_secs(s);
+        let open = |session: &str| session != "closed";
+        beats.beat("a", at(0));
+        beats.beat("b", at(3));
+        beats.beat("closed", at(0));
+
+        assert!(beats.stalled(at(4), open).is_empty());
+        assert_eq!(beats.stalled(at(0) + STALLED, open), ["a"]);
+        // Asked once, until it says something again.
+        assert!(beats.stalled(at(7), open).is_empty());
+        assert_eq!(beats.stalled(at(8), open), ["b"]);
+        beats.beat("a", at(9));
+        assert!(beats.stalled(at(13), open).is_empty());
+        assert_eq!(beats.stalled(at(14), open), ["a"]);
+        // One that closed is forgotten.
+        assert!(!beats.0.lock().contains_key("closed"));
+        beats.forget("a");
+        assert_eq!(beats.0.lock().keys().collect::<Vec<_>>(), ["b"]);
+    }
+
+    #[test]
+    fn silence_while_the_window_is_out_of_sight_doesnt_count() {
+        let beats = Heartbeats::default();
+        let start = Instant::now();
+        let at = |s: u64| start + Duration::from_secs(s);
+        let open = |_: &str| true;
+        beats.beat("a", at(0));
+        // Minimized from 1 s to 30 s: WebKit held its timers back.
+        for s in 1..=30 {
+            beats.hold(at(s));
+        }
+        assert!(beats.stalled(at(34), open).is_empty());
+        assert_eq!(beats.stalled(at(35), open), ["a"]);
+        // Holding never says something for it: asked once, still.
+        beats.hold(at(36));
+        assert!(beats.stalled(at(45), open).is_empty());
+        // Nor takes its time back.
+        beats.beat("b", at(50));
+        beats.hold(at(40));
+        assert_eq!(beats.stalled(at(55), open), ["b"]);
+    }
+
+    #[test]
+    fn a_page_that_hangs_before_its_first_heartbeat_is_asked_about() {
+        // Its frame loads as the app's page starts beating for it: a page
+        // whose script loops from its start hangs it before the first beat.
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-beat-{}", std::process::id()));
+        let (lib, host) = host_in(&tmp);
+        let id = loaded(&host, &tmp, "dev.a.page");
+        lib.set_allows_unreviewed_plugins(true).unwrap();
+        let opened = Instant::now();
+        let mount = open(&host, &lib, &id, "main", None).unwrap();
+        let open_now = |s: &str| host.pages.get(s).is_some();
+        assert!(host.beats.stalled(opened, open_now).is_empty());
+        let later = Instant::now() + STALLED;
+        assert_eq!(host.beats.stalled(later, open_now), std::slice::from_ref(&mount.session));
+        assert!(host.beats.stalled(later + STALLED, open_now).is_empty(), "asked once");
+        // Closed, it is forgotten.
+        host.close_page(&mount.session);
+        assert!(host.beats.0.lock().is_empty());
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

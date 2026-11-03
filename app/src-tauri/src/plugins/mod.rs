@@ -32,8 +32,9 @@
 //! changes, and when the setting goes off for one AutoScene hasn't reviewed.
 //! A page opens under the busy lock, and pages close under it: one that
 //! was opening as its plugin or the setting went off is refused or closed.
+//! A page calls AutoScene through its session ([`calls::page_call`]).
 
-mod calls;
+pub mod calls;
 pub mod pages;
 
 use std::collections::hash_map::Entry;
@@ -102,6 +103,11 @@ pub struct PluginHost {
     net: Box<dyn Transport>,
     /// The `net.fetch` calls of each plugin waiting for their answer.
     fetching: Mutex<HashMap<PluginId, usize>>,
+    /// What each open page did that it may do only so often.
+    page_limits: calls::PageLimits,
+    /// When the app's page last said it is there for each open page (macOS
+    /// and Linux, see [`pages::watch`]).
+    pub beats: pages::Heartbeats,
 }
 
 /// The plugins in use: by a run, or by an install, update or uninstall.
@@ -254,7 +260,11 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
         let _ = e.emit_to(&to, "main");
     });
     match Store::open(paths, library.shared_db(), Keys::builtin(), version, Arc::new(OsKeyring)) {
-        Ok(store) => Some(Arc::new(PluginHost::new(store, pages, page_events))),
+        Ok(store) => {
+            let host = Arc::new(PluginHost::new(store, pages, page_events));
+            pages::watch(app.clone(), Arc::downgrade(&host));
+            Some(host)
+        }
         Err(e) => {
             log::warn!("plugins couldn't start: {}", e.detail());
             None
@@ -289,6 +299,8 @@ impl PluginHost {
             freed: Condvar::new(),
             net,
             fetching: Mutex::default(),
+            page_limits: calls::PageLimits::default(),
+            beats: pages::Heartbeats::default(),
         }
     }
 
@@ -399,8 +411,22 @@ impl PluginHost {
     /// Tells each page of `sessions`, which closed, why (`reason`).
     fn tell_closed(&self, sessions: Vec<String>, reason: &str) {
         for session in sessions {
+            self.forget_page(&session);
             (self.page_events)(PluginPageEvent { session, event: PageEvent::Closed { reason: reason.to_owned() } });
         }
+    }
+
+    /// Closes the page `session`: its frame went away, or the person closed
+    /// it. One closed already is no error.
+    pub fn close_page(&self, session: &str) {
+        self.pages.close(session);
+        self.forget_page(session);
+    }
+
+    /// Forgets what the page `session`, which closed, did and said.
+    fn forget_page(&self, session: &str) {
+        self.page_limits.forget(session);
+        self.beats.forget(session);
     }
 
     /// Tells the open pages of `id` that its settings changed.

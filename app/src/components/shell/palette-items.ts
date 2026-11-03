@@ -1,5 +1,6 @@
 import type { Cast, MediaItem, PluginInfo } from "@/bindings"
 import { formatScreenTime, plural } from "@/features/cast/cast"
+import { pageLink, pagesFor } from "@/features/plugins/page-items"
 import { formatDuration } from "@/lib/format"
 import { fileStem, mediaTitle } from "@/lib/media"
 
@@ -82,4 +83,31 @@ export function pluginCommandEntries(plugins: PluginInfo[] | undefined, pid: str
           icon: p.icon,
         })),
     )
+}
+
+/** A plugin's page, as the palette lists it. */
+export type PluginPageEntry = {
+  id: string
+  label: string
+  hint: string
+  keywords: string[]
+  icon: string | null
+  /** Where it opens. */
+  to: string
+}
+
+/**
+ * The pages of the plugins that may run now: each global page, and while a
+ * project is open (`pid`) each project page, in that project.
+ */
+export function pluginPageEntries(plugins: PluginInfo[] | undefined, pid: string | undefined): PluginPageEntry[] {
+  const pages = [...pagesFor(plugins, "global"), ...(pid != null ? pagesFor(plugins, "project") : [])]
+  return pages.map((pg) => ({
+    id: `plugin-page-${pg.key}`,
+    label: `Open ${pg.title}`,
+    hint: pg.pluginName,
+    keywords: [pg.pluginName, pg.title],
+    icon: pg.icon,
+    to: pageLink(pg, pg.scope === "project" ? pid : undefined),
+  }))
 }

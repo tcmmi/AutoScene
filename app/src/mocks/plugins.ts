@@ -1,14 +1,21 @@
 /**
- * Mock plugins for the browser backend, shaped like `plugins.rs`: one
- * reviewed plugin installed, packages to install (each .asp picked offers
- * the next: one AutoScene hasn't reviewed and one its author signed, as
- * every real package is for now, then a reviewed one and an update of the
- * installed one), a developer's folder to load, and what each run says when
- * it ends. The jobs are the backend's to run.
+ * Mock plugins for the browser backend, shaped like `plugins.rs`: two
+ * reviewed plugins installed (Hello Export, and Hello page with its pages),
+ * packages to install (each .asp picked offers the next: one AutoScene
+ * hasn't reviewed and one its author signed, as every real package is for
+ * now, then a reviewed one and an update of the installed one), a
+ * developer's folder to load, and what each run says when it ends. The jobs
+ * are the backend's to run.
+ *
+ * A page's frame loads from the mock's own origin (`vite.mock-asp.ts`,
+ * started with Vite), as the app's asp scheme serves it; its calls are
+ * answered here (`pageCall`), as `plugins/calls.rs` answers them.
  */
 import type {
   ActionKind,
+  CallCode,
   PageMount,
+  PageReply,
   Permission,
   PluginInfo,
   PluginReview,
@@ -16,6 +23,7 @@ import type {
   SettingSpec,
   SettingValue,
 } from "@/bindings"
+import type { HostMethod } from "@/plugin-kit/protocol"
 
 /** A plugin as installed or offered: what the setting decides is worked out when it is shown. */
 type MockPlugin = Omit<PluginInfo, "active" | "blockedReason">
@@ -216,7 +224,29 @@ const MESSAGES = new Map([
   ["dev.someone.frame-guard check", "No frame was dropped or repeated."],
 ])
 
-const installed = new Map<string, MockPlugin>([[hello("1.0.0").id, hello("1.0.0")]])
+/** The example page-only plugin (examples/plugins/hello-page), which the mock serves. */
+const helloPage = plugin({
+  id: "dev.autoscene.hello-page",
+  name: "Hello page",
+  version: "1.0.0",
+  trust: "reviewed",
+  description: "A page in the rail that keeps a note, and one in each project that shows its episodes and clips. An example plugin.",
+  repository: "https://github.com/tcmmi/AutoScene",
+  permissions: ["project:read", "exports:read"],
+  icon: icon("#5fb4c5"),
+  uvScript: false,
+  runtime: "none",
+  protocol: 2,
+  pages: [
+    { id: "main", title: "Hello page", description: "Keeps a note, and says hello.", entry: "ui/index.html", scope: "global", rail: true },
+    { id: "clips", title: "Clips", description: "The project's episodes and clips.", entry: "ui/clips.html", scope: "project", rail: false },
+  ],
+})
+
+const installed = new Map<string, MockPlugin>([
+  [hello("1.0.0").id, hello("1.0.0")],
+  [helloPage.id, helloPage],
+])
 const tickets = new Map<string, MockPlugin>()
 /** The settings the person changed, by plugin. */
 const changed = new Map<string, Map<string, SettingValue>>()
@@ -401,8 +431,8 @@ export function clearPluginSecret(id: string, key: string, allow: boolean): Plug
 /** Where the mock's pages load from: an origin of their own, as the app's asp scheme is. */
 export const MOCK_PAGE_BASE = "http://localhost:5174"
 
-/** The pages open in the mock, by session. */
-const sessions = new Map<string, { pluginId: string; pageId: string }>()
+/** The pages open in the mock, by session: what each may use is its plugin's as it opened. */
+const sessions = new Map<string, { pluginId: string; pageId: string; projectId: string | null; plugin: MockPlugin }>()
 
 /**
  * The page `pageId` of `id`, opened as `plugin_page_open` opens it: its
@@ -419,7 +449,7 @@ export function openPage(id: string, pageId: string, projectId: string | null, a
   if (page.scope === "global" && projectId) throw { code: "invalid", message: "This page isn't a project's." }
   // As Rust makes one: 32 lowercase hex digits.
   const session = crypto.randomUUID().replaceAll("-", "")
-  sessions.set(session, { pluginId: id, pageId })
+  sessions.set(session, { pluginId: id, pageId, projectId: page.scope === "project" ? projectId : null, plugin: p })
   return {
     session,
     src: `${MOCK_PAGE_BASE}/${session}/${page.entry}`,
@@ -443,6 +473,273 @@ export function openPage(id: string, pageId: string, projectId: string | null, a
 /** Closes the page `session`; one closed already is no error. */
 export function closePage(session: string) {
   sessions.delete(session)
+  shown.delete(session)
+  copies.delete(session)
+}
+
+/** Closes the pages of the plugins `of` matches: their sessions. */
+export function pagesOf(of: (pluginId: string) => boolean): string[] {
+  const closing = [...sessions].filter(([, s]) => of(s.pluginId)).map(([session]) => session)
+  closing.forEach(closePage)
+  return closing
+}
+
+/**
+ * Tells the mock's page server (`vite.mock-asp.ts`, through Vite's own
+ * origin) what it serves: a session's plugin, or a file a page was given.
+ * Outside Vite (tests) there is none, and nothing is served.
+ */
+export async function tellPageServer(said: { session: string; pluginId: string } | { session: string; token: string; fixture: string }) {
+  const body = JSON.stringify(said)
+  await fetch("/__mock-asp", { method: "POST", headers: { "content-type": "application/json" }, body }).catch(() => undefined)
+}
+
+/** What a page's calls read of the mock backend: its projects, with their episodes and exports. */
+export type PagePlaces = {
+  project(id: string): { id: string; title: string; episodes: { id: string; name: string; frames: number | null; fps: string | null; missing: boolean }[] } | null
+  exports(id: string): {
+    id: string
+    label: string | null
+    preset: string
+    createdAt: number
+    merged: boolean
+    clips: { name: string; status: string; mediaId: string; episode: string; start: number; end: number; fps: string | null }[]
+  }[]
+  /** The fixture every file a page is given plays (its name in fixtures/out). */
+  fixture: string
+}
+
+/** What each plugin's pages keep (`state.*`). */
+const pageState = new Map<string, Map<string, unknown>>()
+/** When each page's toasts were shown, and its copies made, in the last minute: `calls.rs` limits both. */
+const shown = new Map<string, number[]>()
+const copies = new Map<string, number[]>()
+
+type PageSession = { session: string; pluginId: string; projectId: string | null; plugin: MockPlugin }
+type PageHandler = (s: PageSession, params: Record<string, unknown>, places: PagePlaces) => PageReply | Promise<PageReply>
+
+const ok = (result: unknown = null): PageReply => ({ kind: "ok", result })
+const refused = (code: CallCode, message: string): PageReply => ({ kind: "err", error: { code, message } })
+const later = (method: HostMethod): PageReply => refused("invalid", `${method} comes in a later AutoScene.`)
+
+/** What `method` needs that `p` doesn't hold, as `HostMethod::needs` and `check` say it; null when it holds it. */
+function missing(method: HostMethod, p: MockPlugin): string | null {
+  const has = (perm: Permission) => p.permissions.includes(perm)
+  switch (method) {
+    case "secrets.get":
+      return p.settings.some((s) => s.kind.type === "secret") ? null : `${method} needs a secret setting, and this plugin has none.`
+    case "project.get":
+      return has("project:read") ? null : `${method} needs the project:read permission.`
+    case "exports.list":
+    case "exports.get":
+      return has("exports:read") ? null : `${method} needs the exports:read permission.`
+    case "files.resolve":
+      return has("exports:read") || has("project:read") ? null : `${method} needs the exports:read or the project:read permission.`
+    case "net.fetch":
+      return has("network") ? null : `${method} needs the network permission.`
+    case "service.request":
+      return p.runtime === "service" ? null : `${method} needs a plugin that runs a service.`
+    case "actions.run":
+      return p.runtime !== "none" && p.protocol >= 2 ? null : `${method} needs a plugin whose program speaks protocol 2.`
+    default:
+      return null
+  }
+}
+
+/** The project a page reads: the one it is open in, named or not. */
+function projectOf(s: PageSession, params: Record<string, unknown>): string | PageReply {
+  const asked = typeof params.projectId === "string" ? params.projectId : null
+  if (s.projectId && (!asked || asked === s.projectId)) return s.projectId
+  if (!s.projectId && !asked) return refused("invalid", "This page isn't open in a project.")
+  return refused("denied", "A page reads only the project it is open in.")
+}
+
+/** Whether `path` stays inside the page, as `check_page_path` has it. */
+function insidePage(path: string): boolean {
+  const parts = path.split("/")
+  return (
+    path.length <= 512 &&
+    parts.every(
+      (p, i) =>
+        /^(?:[A-Za-z0-9._~!&'()*+,;=:@-]|%[0-9A-Fa-f]{2})*$/.test(p) && p !== "." && p !== ".." && (p !== "" || i === parts.length - 1),
+    )
+  )
+}
+
+/** The kinds of file a page never saves, as `RUNNABLE` in `calls.rs` lists them. */
+const RUNNABLE = new Set(
+  (
+    "exe com scr pif cpl dll ocx sys drv bat cmd msi msix msixbundle msp mst appx appxbundle appinstaller application appref-ms " +
+    "lnk url website scf hta chm hlp js jse vbs vbe vb wsf wsh wsc ws sct ps1 ps1xml ps2 psc1 psd1 psm1 msh msh1 msh2 mshxml reg " +
+    "inf ins isp gadget diagcab msc xll xbap vsix settingcontent-ms library-ms search-ms searchconnector-ms iso img vhd vhdx py " +
+    "pyw pyz pyzw app command tool terminal pkg mpkg dmg webloc inetloc fileloc scpt scptd applescript workflow action prefpane " +
+    "kext osax desktop sh run bin appimage deb rpm flatpakref snap so jar jnlp"
+  ).split(" "),
+)
+
+/** Whether the extension `ext`, or a file called `name` (Windows drops the dots and spaces it ends with), runs as it opens. */
+const runnable = (ext: string) => RUNNABLE.has(ext.toLowerCase())
+function runnableName(name: string): boolean {
+  const trimmed = name.replace(/[. ]+$/, "")
+  const dot = trimmed.lastIndexOf(".")
+  return dot >= 0 && runnable(trimmed.slice(dot + 1))
+}
+
+/** Each host method, answered as `calls.rs` answers a page: one missing here fails `npm run typecheck`. */
+export const pluginPageCall: Record<HostMethod, PageHandler> = {
+  "settings.get": (s) => ok(pluginValues(s.pluginId)),
+  "secrets.get": (s, params) => {
+    const key = String(params.key ?? "")
+    if (!s.plugin.settings.some((x) => x.key === key && x.kind.type === "secret")) {
+      return refused("denied", `secrets.get reads only the plugin's secret settings, and ${key} isn't one.`)
+    }
+    return ok({ value: s.plugin.secretsSet.includes(key) ? "mock-secret" : null })
+  },
+  "project.get": (s, params, places) => {
+    const id = projectOf(s, params)
+    if (typeof id !== "string") return id
+    const project = places.project(id)
+    return project ? ok(project) : refused("not_found", "That project doesn't exist.")
+  },
+  "exports.list": (s, params, places) => {
+    const id = projectOf(s, params)
+    if (typeof id !== "string") return id
+    const summaries = places.exports(id).map(({ clips, ...e }) => {
+      const done = clips.filter((c) => c.status === "done").length
+      return { ...e, clips: clips.length, done, status: done === clips.length ? "done" : "running" }
+    })
+    return ok(summaries)
+  },
+  "exports.get": (s, params, places) => {
+    const id = projectOf(s, params)
+    if (typeof id !== "string") return id
+    const found = places.exports(id).find((e) => e.id === params.exportId)
+    if (!found) return refused("not_found", "This export no longer exists.")
+    return ok({ ...found, clips: found.clips.map((c, index) => ({ index, ...c })) })
+  },
+  // Every file plays the fixture, from the page's own origin.
+  "files.resolve": async (s, params, places) => {
+    const permission: Permission = params.kind === "episode" ? "project:read" : "exports:read"
+    if (!s.plugin.permissions.includes(permission)) {
+      return refused("denied", `files.resolve needs the ${permission} permission for that file.`)
+    }
+    const id = projectOf(s, params)
+    if (typeof id !== "string") return id
+    const token = crypto.randomUUID().replaceAll("-", "")
+    await tellPageServer({ session: s.session, token, fixture: places.fixture })
+    return ok({ url: `${MOCK_PAGE_BASE}/${s.session}/~f/${token}`, path: null, mime: "video/mp4", size: 2_400_000 })
+  },
+  "net.fetch": (s, params) => {
+    let host = ""
+    try {
+      host = new URL(String(params.url)).hostname
+    } catch {
+      return refused("invalid", "net.fetch takes an https:// address.")
+    }
+    if (!s.plugin.networkHosts.includes(host)) return refused("denied", `net.fetch can't reach ${host}: the plugin doesn't name it.`)
+    return ok({ status: 200, url: String(params.url), headers: [["content-type", "application/json"]], body: '{"ok":true}', bodyBase64: null })
+  },
+  "state.get": (s, params) => ok({ value: pageState.get(s.pluginId)?.get(String(params.key)) ?? null }),
+  "state.set": (s, params) => {
+    const kept = pageState.get(s.pluginId) ?? new Map<string, unknown>()
+    kept.set(String(params.key), params.value)
+    pageState.set(s.pluginId, kept)
+    return ok()
+  },
+  "state.delete": (s, params) => {
+    pageState.get(s.pluginId)?.delete(String(params.key))
+    return ok()
+  },
+  "state.keys": (s) => ok([...(pageState.get(s.pluginId)?.keys() ?? [])].sort()),
+  "service.request": () => later("service.request"),
+  "actions.run": () => later("actions.run"),
+  "ui.toast": (s, params) => {
+    const text = String(params.text ?? "").trim()
+    if (text.length < 1 || text.length > 200) return refused("invalid", "A toast says 1 to 200 characters.")
+    const now = Date.now()
+    const last = (shown.get(s.session) ?? []).filter((t) => now - t < 60_000)
+    if (last.length >= 2 || now - (last.at(-1) ?? -Infinity) < 2000) return ok({ shown: false })
+    shown.set(s.session, [...last, now])
+    const description = typeof params.description === "string" ? params.description : null
+    const tone = params.tone === "error" ? "error" : "neutral"
+    const title = `Plugin “${s.plugin.name}”: ${text}`
+    return { kind: "effect", effect: { type: "toast", title, description, tone }, result: { shown: true } }
+  },
+  "ui.navigate": (_, params) => {
+    const path = String(params.path ?? "")
+    if (!insidePage(path)) return refused("invalid", "ui.navigate takes a path inside the page, like clips/3.")
+    return { kind: "effect", effect: { type: "navigate", path, replace: params.replace === true }, result: null }
+  },
+  // The host answers `denied` itself while the frame doesn't have the focus.
+  "ui.copyText": async (s, params) => {
+    const now = Date.now()
+    const last = (copies.get(s.session) ?? []).filter((t) => now - t < 60_000)
+    if (last.length >= 10) return refused("busy", "A page copies at most 10 times a minute.")
+    copies.set(s.session, [...last, now])
+    await navigator.clipboard.writeText(String(params.text ?? ""))
+    return ok()
+  },
+  // The browser's confirm stands in for the system's dialog.
+  "ui.openExternal": (s, params) => {
+    const url = String(params.url ?? "")
+    if (url.length > 2000 || !/^https:\/\/[a-z0-9.-]+(?::\d+)?(?:[/?#][^\s\\]*)?$/i.test(url)) {
+      return refused("invalid", "ui.openExternal opens only plain https:// links.")
+    }
+    if (!window.confirm(`Open this link in your browser?\n\nPlugin “${s.plugin.name}” asks to open:\n\n${url}`)) return ok({ opened: false })
+    window.open(url, "_blank", "noopener")
+    return ok({ opened: true })
+  },
+  // A download stands in for the save dialog.
+  "files.save": (_, params) => {
+    const name = String(params.name ?? "")
+    if (!/^[A-Za-z0-9._@+-]{1,100}$/.test(name) || name === "." || name === "..") {
+      return refused("invalid", "files.save takes a plain file name of up to 100 characters, like clips.txt.")
+    }
+    const kinds = Array.isArray(params.filters) ? (params.filters as { extensions?: unknown }[]) : []
+    const offered = kinds.flatMap((f) => (Array.isArray(f.extensions) ? f.extensions.map(String) : []))
+    if (runnableName(name) || offered.some(runnable)) return refused("invalid", "A page can't save a program, a script or a shortcut.")
+    const text = typeof params.text === "string" ? params.text : null
+    const data = typeof params.dataBase64 === "string" ? params.dataBase64 : null
+    if ((text == null) === (data == null)) return refused("invalid", "files.save takes text or dataBase64, one of them.")
+    const blob = new Blob([text ?? Uint8Array.from(atob(data ?? ""), (c) => c.charCodeAt(0))])
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(a.href)
+    return ok({ saved: true })
+  },
+  // A file input made in code, never shown, stands in for the open dialog.
+  "files.open": (_, params) =>
+    new Promise<PageReply>((resolve) => {
+      const most = Math.min(typeof params.maxBytes === "number" ? params.maxBytes : 16 << 20, 16 << 20)
+      const input = document.createElement("input")
+      input.type = "file"
+      input.addEventListener("cancel", () => resolve(ok(null)))
+      input.addEventListener("change", () => {
+        const file = input.files?.[0]
+        if (!file) return resolve(ok(null))
+        if (file.size > most) return resolve(refused("invalid", `That file is larger than ${most} bytes.`))
+        void file.arrayBuffer().then((buf) => {
+          let bin = ""
+          for (const b of new Uint8Array(buf)) bin += String.fromCharCode(b)
+          resolve(ok({ name: file.name, size: file.size, dataBase64: btoa(bin) }))
+        })
+      })
+      input.click()
+    }),
+}
+
+/** The call of `method` of the page `session`, as `plugin_page_call` answers it. */
+export async function pageCall(session: string, method: string, params: unknown, places: PagePlaces): Promise<PageReply> {
+  const open = sessions.get(session)
+  if (!open) return refused("closed", "This page was closed.")
+  if (!Object.hasOwn(pluginPageCall, method)) return refused("invalid", `AutoScene has no method ${method}.`)
+  const m = method as HostMethod
+  const why = missing(m, open.plugin)
+  if (why) return refused("denied", why)
+  const args = typeof params === "object" && params !== null ? (params as Record<string, unknown>) : {}
+  return pluginPageCall[m]({ session, ...open }, args, places)
 }
 
 /**

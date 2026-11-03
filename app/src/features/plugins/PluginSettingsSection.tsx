@@ -1,8 +1,9 @@
 import type * as React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
 import type { PluginInfo, SettingKind, SettingSpec, SettingValue } from "@/bindings"
-import { CircleNotch, FolderOpen, PuzzlePiece } from "@/components/icons"
+import { AppWindow, CircleNotch, FolderOpen, PuzzlePiece, ShieldCheck } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -17,7 +18,9 @@ import { commands, errorMessage } from "@/lib/ipc"
 import { reveal } from "@/lib/os"
 import { isMac } from "@/lib/platform"
 import { qk, queryClient, usePluginSettings, usePlugins } from "@/lib/queries"
+import { pageLink } from "./page-items"
 import { keepPlugin } from "./plugin-actions"
+import { permissionLabel } from "./plugin-items"
 
 type Values = Partial<Record<string, SettingValue>>
 type NumberKind = Extract<SettingKind, { type: "number" }>
@@ -45,8 +48,8 @@ export function PluginName({ id }: { id: string }) {
 
 /**
  * A plugin's settings: what it lets the person set (a secret only into the
- * system's keychain), the export actions to run after every export, and
- * where its files and log are.
+ * system's keychain), the export actions to run after every export, its
+ * pages, what it may use, and where its files and log are.
  */
 export function PluginSettingsSection({ id }: { id: string }) {
   const { data: plugins, isPending, error } = usePlugins()
@@ -137,6 +140,9 @@ function PluginSettings({ p }: { p: PluginInfo }) {
         </SettingsGroup>
       )}
 
+      {p.pages.length > 0 && <Pages p={p} />}
+      {(p.pages.length > 0 || p.permissions.length > 0) && <MayUse p={p} />}
+
       <SettingsGroup title="Files">
         <SettingRow label="Its folder" description={<PathText path={p.folder} />}>
           <Button size="sm" variant="ghost" onClick={() => reveal(p.folder)}>
@@ -160,6 +166,68 @@ function PluginSettings({ p }: { p: PluginInfo }) {
         </SettingsGroup>
       )}
     </>
+  )
+}
+
+/** A plugin's pages: one of its own opens from here, a project's from that project. */
+function Pages({ p }: { p: PluginInfo }) {
+  const navigate = useNavigate()
+  return (
+    <SettingsGroup title="Pages" description="Each opens full screen. What is on it is the plugin's.">
+      {p.pages.map((pg) => (
+        <SettingRow
+          key={pg.id}
+          label={pg.title}
+          description={pg.scope === "project" ? "Open it from a project's More menu." : (pg.description ?? undefined)}
+        >
+          {pg.scope === "global" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Open ${pg.title}`}
+              disabled={!p.active}
+              onClick={() => void navigate({ to: pageLink({ pluginId: p.id, pageId: pg.id }) })}
+            >
+              <AppWindow /> Open
+            </Button>
+          )}
+        </SettingRow>
+      ))}
+    </SettingsGroup>
+  )
+}
+
+/**
+ * What a plugin may use: what it asked for and the person agreed to, the
+ * hosts it reaches, and the secrets set for it. What checks that depends on
+ * how it runs: its pages always ask AutoScene, a program needn't.
+ */
+function MayUse({ p }: { p: PluginInfo }) {
+  const secrets = p.settings.filter((s) => s.kind.type === "secret" && p.secretsSet.includes(s.key))
+  const checked =
+    p.runtime === "none"
+      ? "AutoScene checks these each time its pages ask."
+      : "Its program runs with your user rights. AutoScene checks these only when its pages ask."
+  return (
+    <SettingsGroup title="What it may use" description={checked}>
+      {p.permissions.map((perm) => (
+        <SettingRow
+          key={perm}
+          leading={<ShieldCheck className="size-5 shrink-0 text-fg-3" />}
+          label={permissionLabel(perm)}
+          description={perm === "network" && p.networkHosts.length > 0 ? p.networkHosts.join(", ") : undefined}
+        />
+      ))}
+      {p.permissions.length === 0 && <p className="px-5 py-3.5 text-sm text-fg-2">Nothing beyond its own settings.</p>}
+      {secrets.map((s) => (
+        <SettingRow
+          key={s.key}
+          leading={<ShieldCheck className="size-5 shrink-0 text-fg-3" />}
+          label={s.title}
+          description="Saved in your system's keychain"
+        />
+      ))}
+    </SettingsGroup>
   )
 }
 

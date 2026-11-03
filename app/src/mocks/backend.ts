@@ -45,6 +45,8 @@ import {
   mockPlugin,
   nextPluginPackage,
   openPage,
+  pageCall,
+  pagesOf,
   pluginRun,
   pluginValues,
   pluginsList,
@@ -53,8 +55,10 @@ import {
   setPluginEnabled,
   setPluginSecret,
   setPluginValues,
+  tellPageServer,
   uninstallPlugin,
 } from "./plugins"
+import type { PagePlaces } from "./plugins"
 import type {
   ActionKind,
   AniListMedia,
@@ -541,9 +545,42 @@ function startPluginJob(pluginId: string, actionId: string, kind: ActionKind, pr
   return job.id
 }
 
-/** Stop the runs of the plugins `of` matches. */
-function stopPlugins(of: (pluginId: string) => boolean) {
+/** Stop the runs of the plugins `of` matches, and close their pages, saying `why`. */
+function stopPlugins(of: (pluginId: string) => boolean, why = "It was turned off.") {
   cancelJobs((j) => j.kind === "plugin" && of(pluginJobs.get(j.id)?.pluginId ?? ""))
+  for (const session of pagesOf(of)) void emit("plugin-page:event", { session, event: { type: "closed", reason: why } })
+}
+
+/** What a plugin page's calls read here: the projects, their episodes and exports, as a page sees them. */
+const pagePlaces: PagePlaces = {
+  project(id) {
+    const p = projects.find((x) => x.id === id)
+    if (!p) return null
+    const episodes = p.media.map((m) => ({
+      id: m.id,
+      name: m.label || m.fileName,
+      frames: m.frames,
+      fps: m.fps ? `${m.fps.num}/${m.fps.den}` : null,
+      missing: m.status === "missing",
+    }))
+    return { id: p.id, title: p.title, episodes }
+  },
+  exports(id) {
+    const p = projects.find((x) => x.id === id)
+    return (p?.exports ?? []).map((e) => ({
+      id: e.id,
+      label: e.label,
+      preset: e.preset.id,
+      createdAt: e.createdAt,
+      merged: e.merged != null,
+      clips: e.items.map((it) => {
+        const m = p?.media.find((x) => x.id === it.mediaId)
+        const fps = m?.fps ? `${m.fps.num}/${m.fps.den}` : null
+        return { name: it.name, status: it.status, mediaId: it.mediaId, episode: m ? m.label || m.fileName : "", start: it.start, end: it.end, fps }
+      }),
+    }))
+  },
+  fixture: "cfr24_h264.mp4",
 }
 
 /**
@@ -1178,12 +1215,18 @@ const handlers: Record<string, Handler> = {
     void emit("plugins:changed", { pluginId: p.id })
     return p
   },
-  plugin_page_open: ({ pluginId, pageId, projectId }) =>
-    openPage(String(pluginId), String(pageId), (projectId as string | null) ?? null, allows()),
+  // Its frame loads from the mock's page server, which hears of it first.
+  plugin_page_open: async ({ pluginId, pageId, projectId }) => {
+    const mount = openPage(String(pluginId), String(pageId), (projectId as string | null) ?? null, allows())
+    await tellPageServer({ session: mount.session, pluginId: mount.plugin.id })
+    return mount
+  },
   plugin_page_close: ({ session }) => {
     closePage(String(session))
     return null
   },
+  plugin_page_call: ({ session, method, params }) => pageCall(String(session), String(method), params, pagePlaces),
+  plugin_page_heartbeat: () => null,
   plugin_run: ({ pluginId, actionId, kind, projectId, exportId }) =>
     startPluginJob(String(pluginId), String(actionId), kind as ActionKind, (projectId as string | null) ?? null, (exportId as string | null) ?? null),
   jobs_list: () => jobs,

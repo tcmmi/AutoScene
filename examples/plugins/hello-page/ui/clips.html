@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="/_as/theme.css" />
+    <link rel="stylesheet" href="page.css" />
+    <script src="/_as/sdk.js"></script>
+    <script src="clips.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <p class="as-eyebrow">Hello page</p>
+      <h1 id="title" class="as-display">Clips</h1>
+      <p id="about" class="quiet">Connecting to AutoScene…</p>
+
+      <div class="split">
+        <section class="as-card">
+          <h2>Episodes</h2>
+          <ul id="episodes" class="list"></ul>
+          <h2>The last export's clips</h2>
+          <ul id="clips" class="list"></ul>
+        </section>
+        <section class="as-card">
+          <video id="player" controls hidden></video>
+          <p id="playing" class="quiet">Choose an episode or a clip to watch it here.</p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

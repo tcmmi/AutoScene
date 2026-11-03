@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+use as_core::CancelToken;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -60,9 +61,12 @@ pub const RANGE_PART: u64 = 1 << 20;
 /// The kit's files, served under `/_as/`.
 pub const KIT_FILES: [&str; 2] = ["sdk.js", "theme.css"];
 
-/// What a page may not use, said to the webview on every answer.
+/// What a page may not use, said to the webview on every answer: also no
+/// picture-in-picture, a window over every other that shows what the page
+/// draws.
 const PERMISSIONS: &str = "camera=(), microphone=(), geolocation=(), display-capture=(), clipboard-read=(), \
-                           clipboard-write=(), usb=(), serial=(), hid=(), bluetooth=(), payment=()";
+                           clipboard-write=(), usb=(), serial=(), hid=(), bluetooth=(), payment=(), \
+                           picture-in-picture=()";
 
 /// Where the scheme's addresses start: `http://asp.localhost` on Windows
 /// (and Android), whose webview takes a custom scheme only so, and
@@ -123,6 +127,9 @@ pub struct Mount {
     pub trust: Trust,
     /// Its calls waiting for their answer.
     pub inflight: AtomicUsize,
+    /// Fires as it closes: a call of it that still waits (a dialog the
+    /// person hasn't closed, a write waiting its turn) then does nothing.
+    pub closed: CancelToken,
     /// The files it resolved, by token, oldest first.
     files: Mutex<VecDeque<(String, ResolvedPath)>>,
     /// Its place in the order the open pages opened in.
@@ -207,6 +214,7 @@ impl Pages {
             lock,
             grants,
             inflight: AtomicUsize::new(0),
+            closed: CancelToken::new(),
             files: Mutex::default(),
             opened: self.opened.fetch_add(1, Ordering::Relaxed),
         });
@@ -214,7 +222,9 @@ impl Pages {
         let mut closed = Vec::new();
         while sessions.len() >= MAX_SESSIONS {
             let Some(oldest) = sessions.values().min_by_key(|m| m.opened).map(|m| m.token.clone()) else { break };
-            sessions.remove(&oldest);
+            if let Some(m) = sessions.remove(&oldest) {
+                m.closed.cancel();
+            }
             closed.push(oldest);
         }
         sessions.insert(mount.token.clone(), mount.clone());
@@ -228,7 +238,9 @@ impl Pages {
 
     /// Closes the session `token`, if it is open.
     pub fn close(&self, token: &str) {
-        self.sessions.lock().remove(token);
+        if let Some(m) = self.sessions.lock().remove(token) {
+            m.closed.cancel();
+        }
     }
 
     /// Closes every open page of `id`; gives their tokens.
@@ -241,7 +253,9 @@ impl Pages {
         let mut sessions = self.sessions.lock();
         let closing: Vec<String> = sessions.values().filter(|m| close(m)).map(|m| m.token.clone()).collect();
         for token in &closing {
-            sessions.remove(token);
+            if let Some(m) = sessions.remove(token) {
+                m.closed.cancel();
+            }
         }
         closing
     }
@@ -573,7 +587,7 @@ fn content_type(path: &str) -> Option<&'static str> {
 
 /// The type of the picture, video or sound at `path`, of those a page is
 /// served; none for any other file (an SVG may hold a script).
-fn media_type(path: &Path) -> Option<&'static str> {
+pub fn media_type(path: &Path) -> Option<&'static str> {
     let kind = content_type(path.file_name()?.to_str()?)?;
     let media = ["image/", "video/", "audio/"].iter().any(|k| kind.starts_with(k));
     (media && kind != "image/svg+xml").then_some(kind)

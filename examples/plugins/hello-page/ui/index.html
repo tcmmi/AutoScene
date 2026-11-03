@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- AutoScene's look and its SDK, which it serves to every page. -->
+    <link rel="stylesheet" href="/_as/theme.css" />
+    <link rel="stylesheet" href="page.css" />
+    <script src="/_as/sdk.js"></script>
+    <script src="hello.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <p class="as-eyebrow">An example plugin</p>
+      <h1 class="as-display">Hello page</h1>
+      <p id="about" class="quiet">Connecting to AutoScene…</p>
+
+      <section class="as-card">
+        <label for="note">A note this page keeps</label>
+        <textarea id="note" class="as-input" rows="4" placeholder="Write anything. It's here when you come back." disabled></textarea>
+        <div class="row">
+          <button id="save" class="as-btn" data-variant="primary" disabled>Keep it</button>
+          <button id="hello" class="as-btn" disabled>Say hello</button>
+          <span id="kept" class="quiet" aria-live="polite"></span>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

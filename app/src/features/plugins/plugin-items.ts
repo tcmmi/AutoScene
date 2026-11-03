@@ -55,9 +55,27 @@ export function permissionLabel(p: Permission): string {
   return PERMISSIONS.get(p) ?? p
 }
 
-/** Whether a plugin has something to set in Settings: its settings, or its export actions to run after every export. */
-export function hasSettings(p: Pick<PluginInfo, "settings" | "exportActions">): boolean {
-  return p.settings.length > 0 || p.exportActions.length > 0
+/**
+ * When AutoScene holds a plugin to its permissions: each time its pages
+ * ask, and each time its program asks AutoScene for something (protocol 2).
+ * None for a program that does neither: they are only what it says it does.
+ */
+export function checkedWhen(p: Pick<PluginInfo, "runtime" | "pages" | "protocol">): string | null {
+  if (p.runtime === "none") return "AutoScene checks these each time its pages ask."
+  const pages = p.pages.length > 0
+  const calls = p.protocol >= 2
+  if (pages && calls) return "AutoScene checks these each time its pages or its program ask it for something."
+  if (pages) return "AutoScene checks these each time its pages ask."
+  if (calls) return "AutoScene checks these each time its program asks it for something."
+  return null
+}
+
+/**
+ * Whether a plugin has something to show in Settings: its settings, its
+ * export actions to run after every export, or its pages.
+ */
+export function hasSettings(p: Pick<PluginInfo, "settings" | "exportActions" | "pages">): boolean {
+  return p.settings.length > 0 || p.exportActions.length > 0 || p.pages.length > 0
 }
 
 /** The plugins Settings lists by name: each that has settings, also while it can't run (its settings say why). */

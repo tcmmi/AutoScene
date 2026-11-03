@@ -1,0 +1,19 @@
+{
+  "manifestVersion": 2,
+  "id": "dev.autoscene.hello-page",
+  "version": "1.0.0",
+  "name": "Hello page",
+  "description": "A page in the rail that keeps a note, and one in each project that shows its episodes and clips. An example plugin.",
+  "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
+  "repository": "https://github.com/tcmmi/AutoScene",
+  "engines": { "autoscene": ">=1.0.0, <2", "protocol": 2 },
+  "runtime": { "type": "none" },
+  "permissions": ["project:read", "exports:read"],
+  "contributes": {
+    "pages": [
+      { "id": "main", "title": "Hello page", "description": "Keeps a note, and says hello.", "entry": "ui/index.html", "rail": true },
+      { "id": "clips", "title": "Clips", "description": "The project's episodes and clips.", "entry": "ui/clips.html", "scope": "project" }
+    ]
+  },
+  "icon": "icon.svg"
+}

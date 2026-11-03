@@ -17,6 +17,7 @@ import { EpisodesPage } from "@/features/project/EpisodesPage"
 import { ExportsPage } from "@/features/project/ExportsPage"
 import { OverviewPage } from "@/features/project/OverviewPage"
 import { CharacterCrumb, MediaCrumb, PackCrumb, ProjectCrumb } from "@/features/project/crumbs"
+import { PluginPageCrumb, PluginPageView } from "@/features/plugins/PluginPageView"
 import { PluginCrumb } from "@/features/plugins/PluginSettingsSection"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { settingsLabel } from "@/features/settings/sections"
@@ -24,6 +25,7 @@ import { NotFound } from "@/features/not-found"
 import { PackPage } from "@/features/pack/PackPage"
 import { RouteError } from "@/features/route-error"
 import { type PluginSection, type SettingsSection, isPluginSection, settingsSection } from "@/lib/actions"
+import { followPlaces } from "@/lib/places"
 
 declare module "@tanstack/react-router" {
   interface Register {
@@ -111,6 +113,25 @@ const exportsRoute = createRoute({
   component: ExportsPage,
 })
 
+// A plugin's page: on its own, or in a project. The splat is the path inside
+// the page; an empty one is its start. Ids are checked by the page, so a bad
+// link is no error while routes are matched.
+const pluginPagePath = "/x/$plugin/$page/$"
+
+const pluginPageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: pluginPagePath,
+  staticData: { crumb: (p) => <PluginPageCrumb plugin={p.plugin} page={p.page} /> },
+  component: PluginPageView,
+})
+
+const projectPluginPageRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: pluginPagePath,
+  staticData: { crumb: (p) => <PluginPageCrumb plugin={p.plugin} page={p.page} /> },
+  component: PluginPageView,
+})
+
 const settingsIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -143,7 +164,9 @@ const routeTree = rootRoute.addChildren([
     characterRoute,
     packRoute,
     exportsRoute,
+    projectPluginPageRoute,
   ]),
+  pluginPageRoute,
   settingsIndexRoute,
   settingsRoute,
 ])
@@ -158,3 +181,6 @@ export const router = createRouter({
   defaultNotFoundComponent: NotFound,
   defaultErrorComponent: RouteError,
 })
+
+// Where a plugin page was opened from, which its Close goes back to.
+followPlaces(router.history)

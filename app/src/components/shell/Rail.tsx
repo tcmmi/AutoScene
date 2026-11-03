@@ -1,9 +1,11 @@
 import type * as React from "react"
 import { useState } from "react"
-import { Link, useRouterState } from "@tanstack/react-router"
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
+  AppWindow,
   ArrowCounterClockwise,
   DownloadSimple,
+  FileText,
   FilmStrip,
   GearSix,
   Info,
@@ -12,6 +14,7 @@ import {
   Plus,
   PuzzlePiece,
   Queue,
+  SlidersHorizontal,
   SquaresFour,
   Television,
   Trash,
@@ -26,9 +29,12 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { contextKit } from "@/components/ui/menu-actions"
 import { DeleteProjectDialog, ProjectDetailsDialog } from "@/features/library/ProjectDialogs"
 import { NewProjectItems, ProjectItems } from "@/features/library/project-actions"
+import { PluginIcon } from "@/features/plugins/PluginIcon"
+import { type PageItem, pageLink, railPages, railTooltip } from "@/features/plugins/page-items"
 import { useAppActions } from "@/lib/actions"
 import { commands } from "@/lib/ipc"
-import { useProjects } from "@/lib/queries"
+import { reveal } from "@/lib/os"
+import { usePlugins, useProjects } from "@/lib/queries"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
 import { useActiveCount, useActiveProgress, useActivity, useProjectIndexProgress, useProjectIndexing } from "@/state/activity"
@@ -40,8 +46,8 @@ const RECENT = 7
 
 /**
  * The window's left edge, on the native material where there is one: the
- * mark, the library, the projects as their pictures, and at the bottom
- * search, background work and settings.
+ * mark, the library and up to four plugin pages, the projects as their
+ * pictures, and at the bottom search, background work and settings.
  */
 export function Rail() {
   const keys = useShortcutKeys()
@@ -79,6 +85,7 @@ export function Rail() {
         shortcut={keys("global.library")}
         menu={<LibraryItems />}
       />
+      <PluginRailLinks path={path} />
 
       <div className="my-3 h-px w-8 bg-white/10" />
 
@@ -172,6 +179,72 @@ function LibraryItems() {
   )
 }
 
+/**
+ * The plugin pages that asked for a tile, under Library: each with its
+ * plugin's icon and AutoScene's plugin mark, and a tooltip that starts with
+ * "Plugin", whatever the page is called.
+ */
+function PluginRailLinks({ path }: { path: string }) {
+  const { data: plugins } = usePlugins()
+  return (
+    <>
+      {railPages(plugins).map((pg) => {
+        const to = pageLink(pg)
+        return (
+          <RailLink
+            key={pg.key}
+            to={to}
+            icon={<PageTileIcon src={pg.icon} />}
+            label={pg.title}
+            tooltip={railTooltip(pg)}
+            name={railTooltip(pg)}
+            active={path === to || path.startsWith(`${to}/`)}
+            menu={<PageTileItems page={pg} to={to} />}
+          />
+        )
+      })}
+    </>
+  )
+}
+
+/** A plugin page's icon in the rail, with AutoScene's mark for a plugin in its corner. */
+function PageTileIcon({ src }: { src: string | null }) {
+  return (
+    <span className="relative flex size-5 items-center justify-center [&_svg]:size-5">
+      <PluginIcon src={src} className="size-5" />
+      <span
+        aria-hidden
+        className="absolute -right-1.5 -bottom-1.5 flex size-3 items-center justify-center rounded-full bg-rail text-fg-2 [&_svg]:size-2.5"
+      >
+        <PuzzlePiece weight="fill" />
+      </span>
+    </span>
+  )
+}
+
+/** What a plugin page's tile offers. */
+function PageTileItems({ page, to }: { page: PageItem; to: string }) {
+  const actions = useAppActions()
+  const navigate = useNavigate()
+  const { data: plugins } = usePlugins()
+  const log = plugins?.find((p) => p.id === page.pluginId)?.logPath
+  return (
+    <>
+      <ContextMenuItem onSelect={() => void navigate({ to })}>
+        <AppWindow /> Open
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => actions.goSettings(`plugin.${page.pluginId}`)}>
+        <SlidersHorizontal /> Its settings
+      </ContextMenuItem>
+      {log && (
+        <ContextMenuItem onSelect={() => reveal(log)}>
+          <FileText /> Show its log
+        </ContextMenuItem>
+      )}
+    </>
+  )
+}
+
 const itemClass = "group flex w-[64px] flex-col items-center gap-1 rounded-xl py-1.5"
 const pillClass =
   "flex h-8 w-11 items-center justify-center rounded-full transition-[background-color,color] duration-[var(--dur-fast)] [&>svg]:size-5"
@@ -180,6 +253,8 @@ function RailLink({
   to,
   icon,
   label,
+  tooltip,
+  name,
   active,
   shortcut,
   menu,
@@ -187,19 +262,28 @@ function RailLink({
   to: string
   icon: React.ReactElement<{ weight?: string }>
   label: string
+  /** What its tooltip says, when not its label. */
+  tooltip?: string
+  /** What a screen reader calls it, when not its label: a plugin's page starts with "Plugin", whatever its title. */
+  name?: string
   active: boolean
   shortcut?: string[]
   /** What its right-click offers (only that: a rail tile has no app entries under it). */
   menu?: MenuContent
 }) {
   return (
-    <Tooltip label={label} shortcut={shortcut} side="right">
+    <Tooltip label={tooltip ?? label} shortcut={shortcut} side="right">
       <ContextArea tail={false} menu={menu ?? null} disabled={!menu}>
-        <Link to={to} aria-current={active ? "page" : undefined} className={itemClass}>
+        <Link to={to} aria-label={name} aria-current={active ? "page" : undefined} className={itemClass}>
           <span className={cn(pillClass, active ? "bg-white/[0.14] text-fg-1" : "text-fg-2 group-hover:bg-white/[0.07] group-hover:text-fg-1")}>
             {active ? <IconWeight icon={icon} /> : icon}
           </span>
-          <span className={cn("text-[10.5px] leading-3 font-medium", active ? "text-fg-1" : "text-fg-3 group-hover:text-fg-2")}>
+          <span
+            className={cn(
+              "max-w-full truncate px-1 text-[10.5px] leading-3 font-medium",
+              active ? "text-fg-1" : "text-fg-3 group-hover:text-fg-2",
+            )}
+          >
             {label}
           </span>
         </Link>

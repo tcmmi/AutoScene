@@ -1,7 +1,7 @@
 import type * as React from "react"
 import { useId, useState } from "react"
 import { toast } from "sonner"
-import type { PluginInfo, PluginReview, PluginUpdate } from "@/bindings"
+import type { PageSpec, PluginInfo, PluginReview, PluginUpdate } from "@/bindings"
 import { CircleNotch } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -280,15 +280,28 @@ function Runs({ review }: { review: PluginReview }) {
   )
 }
 
+/** Where AutoScene offers a page: in the rail, in each project's More menu, else in the palette. */
+function pagePlace(page: PageSpec): string {
+  if (page.scope === "project") return ", in each project's More menu"
+  return page.rail ? ", in the rail" : ", in the command palette"
+}
+
 /**
- * The pages, menu entries, palette commands and settings it adds, with the
- * pages an update adds marked, and the secrets it keeps.
+ * The pages (and where they show), menu entries, palette commands and
+ * settings it adds, with the pages an update adds marked, and the secrets
+ * it keeps.
  */
 function Adds({ p, addedPages }: { p: PluginInfo; addedPages: string[] }) {
   const adds = [
-    ...p.pages.map((page) => ({ key: `page-${page.id}`, where: "A page", what: page.title, added: addedPages.includes(page.title) })),
-    ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title, added: false })),
-    ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title, added: false })),
+    ...p.pages.map((page) => ({
+      key: `page-${page.id}`,
+      where: "A page",
+      what: page.title,
+      after: pagePlace(page),
+      added: addedPages.includes(page.title),
+    })),
+    ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title, after: "", added: false })),
+    ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title, after: "", added: false })),
   ]
   const secrets = p.settings.filter((s) => s.kind.type === "secret")
   const settings = p.settings.length - secrets.length
@@ -300,6 +313,7 @@ function Adds({ p, addedPages }: { p: PluginInfo; addedPages: string[] }) {
           <li key={a.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span>
               <span className="text-fg-2">{a.where}:</span> {a.what}
+              {a.after && <span className="text-fg-2">{a.after}</span>}
             </span>
             {a.added && <Badge tone="accent">New</Badge>}
           </li>

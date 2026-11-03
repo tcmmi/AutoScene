@@ -22,26 +22,26 @@ type NumberKind = Extract<SettingKind, { type: "number" }>
 /** How long a slider rests before what it shows is saved. */
 const SETTLE_MS = 400
 
-/** The window title's name of a plugin's page in Settings. */
+/** The window title's name of a plugin's settings. */
 export function PluginCrumb({ id }: { id: string }) {
   return <>Settings · <PluginName id={id} /></>
 }
 
-/** A plugin's name, as its page in Settings is headed. */
+/** A plugin's name, as its settings are headed. */
 export function PluginName({ id }: { id: string }) {
   const { data } = usePlugins()
   return <>{data?.find((p) => p.id === id)?.name ?? "Plugin"}</>
 }
 
 /**
- * A plugin's page in Settings: its own settings, the export actions to run
- * after every export, and where its files and log are.
+ * A plugin's settings: what it lets the person set, the export actions to
+ * run after every export, and where its files and log are.
  */
 export function PluginSettingsSection({ id }: { id: string }) {
   const { data: plugins, isPending, error } = usePlugins()
   const { goSettings } = useAppActions()
   const p = plugins?.find((x) => x.id === id)
-  if (p) return <PluginPage p={p} />
+  if (p) return <PluginSettings p={p} />
   if (isPending) return null
   return (
     <EmptyState
@@ -54,7 +54,7 @@ export function PluginSettingsSection({ id }: { id: string }) {
   )
 }
 
-function PluginPage({ p }: { p: PluginInfo }) {
+function PluginSettings({ p }: { p: PluginInfo }) {
   const { data: values, error: unread } = usePluginSettings(p.id)
   const { goSettings } = useAppActions()
   const save = async (key: string, value: SettingValue) => {

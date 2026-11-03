@@ -47,17 +47,17 @@ function currentProjectId(): string | undefined {
 
 export const SETTINGS_SECTIONS = ["general", "shortcuts", "updates", "plugins", "about", "contributors"] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
-/** A plugin's own page in Settings: `plugin.<its id>`. */
+/** A plugin's settings, a section of Settings: `plugin.<its id>`. */
 export type PluginSection = `plugin.${string}`
 
-/** Whether `section` is a plugin's page, not one of the app's. */
+/** Whether `section` is a plugin's settings, not one of the app's sections. */
 export function isPluginSection(section: string): section is PluginSection {
   return /^plugin\.[a-z0-9.-]{3,200}$/.test(section)
 }
 
 /**
- * The page of Settings a link names: one of the app's, a plugin's (whether
- * it is installed shows on the page), else General.
+ * The section of Settings a link names: one of the app's, a plugin's
+ * settings (whether it is installed shows there), else General.
  */
 export function settingsSection(section: string): SettingsSection | PluginSection {
   if ((SETTINGS_SECTIONS as readonly string[]).includes(section)) return section as SettingsSection

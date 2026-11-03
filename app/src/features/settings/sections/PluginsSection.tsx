@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch"
 import { InstallReviewDialog } from "@/features/plugins/InstallReviewDialog"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { allowUnreviewed, keepPlugin } from "@/features/plugins/plugin-actions"
-import { hasPage, reviewedPackage, trustLabel } from "@/features/plugins/plugin-items"
+import { hasSettings, reviewedPackage, trustLabel } from "@/features/plugins/plugin-items"
 import { useAppActions } from "@/lib/actions"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder, pickPluginFile } from "@/lib/media"
@@ -131,7 +131,7 @@ function PluginItems({ kit, p, onUninstall }: { kit: MenuKit; p: PluginInfo; onU
       <Item onSelect={() => reveal(p.logPath)}>
         <FileText /> Show its log
       </Item>
-      {hasPage(p) && (
+      {hasSettings(p) && (
         <Item onSelect={() => goSettings(`plugin.${p.id}`)}>
           <SlidersHorizontal /> Its settings
         </Item>
@@ -181,7 +181,7 @@ function PluginRow({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void 
             </>
           }
         >
-          {hasPage(p) && (
+          {hasSettings(p) && (
             <Button size="sm" variant="ghost" onClick={() => goSettings(`plugin.${p.id}`)}>
               Settings
             </Button>

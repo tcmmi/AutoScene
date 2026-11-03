@@ -250,7 +250,7 @@ pub struct CommandSpec {
     pub needs_project: bool,
 }
 
-/// A setting AutoScene shows on the plugin's page and hands to each run.
+/// A setting AutoScene shows in the plugin's settings and hands to each run.
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingSpec {

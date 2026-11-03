@@ -81,7 +81,7 @@ def webhook(settings: dict) -> str:
     """The webhook URL in the settings, once it is one of Discord's."""
     url = (settings.get("webhookUrl") or "").strip()
     if not url:
-        raise Refused("Set the webhook URL on Discord Notify's page in Settings first.")
+        raise Refused("Set the webhook URL in Discord Notify's settings first.")
     try:
         parts = urlsplit(url)
         port = parts.port

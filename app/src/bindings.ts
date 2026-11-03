@@ -1548,7 +1548,7 @@ export type SelectOption = {
 
 export type SettingKind = { type: "string"; default: string | null; placeholder: string | null; maxLength: number } | { type: "number"; default: number | null; min: number | null; max: number | null; step: number | null; integer: boolean } | { type: "boolean"; default: boolean } | { type: "select"; options: SelectOption[]; default: string | null };
 
-/**  A setting AutoScene shows on the plugin's page and hands to each run. */
+/**  A setting AutoScene shows in the plugin's settings and hands to each run. */
 export type SettingSpec = {
 	key: string,
 	title: string,

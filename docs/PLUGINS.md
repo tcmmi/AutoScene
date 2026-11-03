@@ -3,7 +3,7 @@
 A plugin is a program that AutoScene runs for the person: on an export, from
 the command palette, or by itself after every export. It describes itself in
 a `plugin.json`, and AutoScene draws what it adds (menu entries, palette
-commands, a settings page). It ships as a package, an `.asp` file, which the
+commands, its settings). It ships as a package, an `.asp` file, which the
 `asp` tool makes and signs.
 
 This guide is for plugin authors. It describes AutoScene's plugins as they
@@ -29,8 +29,8 @@ It can add:
 - **Export actions**: entries in each export's menu. The person can also
   turn each one on to run after every export.
 - **Commands**: entries in the command palette, with or without a project.
-- **Settings**: a page in Settings, which AutoScene draws and saves. Each
-  run gets the values.
+- **Settings**: listed under the plugin's name in Settings, which AutoScene
+  draws and saves. Each run gets the values.
 
 Each run is a job in Activity, with its progress, a Stop button, and the
 plugin's message when it is done.
@@ -181,8 +181,8 @@ person can stop it in Activity.
 
 ### After every export
 
-Each export action can be turned on in the plugin's page in Settings,
-under **After every export**. It is off until the person turns it on. It
+Each export action can be turned on in the plugin's settings, under
+**After every export**. It is off until the person turns it on. It
 then runs once an export finishes with every clip made: never after an
 export that failed, was cancelled, or made only some of its clips. It runs
 as a job of its own, so a plugin never fails an export or holds it up.
@@ -528,8 +528,8 @@ a warning, without the `network` permission.
 ```
 
 - **`exportActions`** (at most 8): each an entry in each export's menu, and
-  a switch under "After every export" on the plugin's page. An entry is off
-  while its export runs.
+  a switch under "After every export" in the plugin's settings. An entry is
+  off while its export runs.
 - **`commands`** (at most 16): each an entry in the palette's Plugins group.
   With `"needsProject": true` it is offered only inside a project, and runs
   with it; otherwise it runs with the open project, if any.
@@ -596,7 +596,7 @@ AutoScene. A higher `manifestVersion` or `engines.protocol`, or a
 `runtime.type` other than `process`, needs a newer AutoScene.
 
 The review lists the warnings under "Skipped in its plugin.json", and so
-does the plugin's page.
+do the plugin's settings.
 
 ## Packages
 
@@ -814,7 +814,7 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
   time it lists the plugins, so turning the plugin off and on shows a new
   action or setting. A uv script still needs its `.lock`.
 - **The log**: right-click the plugin in Settings → Plugins, then **Show its
-  log**. Its page in Settings names its folder and its log too. Each run
+  log**. Its settings name its folder and its log too. Each run
   starts with `--- <time> run <runId> <action>`. The plugin's lines are
   marked `[stdout]`, `[stderr]` and `[<level>]` for its log lines;
   AutoScene's own are marked `[host]`, `[result]` and `[failed]`, with the

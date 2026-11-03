@@ -55,14 +55,14 @@ export function permissionLabel(p: Permission): string {
   return PERMISSIONS.get(p) ?? p
 }
 
-/** Whether a plugin has a page of its own in Settings: its settings, or its export actions to run after every export. */
-export function hasPage(p: Pick<PluginInfo, "settings" | "exportActions">): boolean {
+/** Whether a plugin has something to set in Settings: its settings, or its export actions to run after every export. */
+export function hasSettings(p: Pick<PluginInfo, "settings" | "exportActions">): boolean {
   return p.settings.length > 0 || p.exportActions.length > 0
 }
 
-/** The plugins Settings lists a page of: each that has one, also while it can't run (its page says why). */
-export function pluginPages(plugins: PluginInfo[] | undefined): PluginInfo[] {
-  return (plugins ?? []).filter(hasPage)
+/** The plugins Settings lists by name: each that has settings, also while it can't run (its settings say why). */
+export function withSettings(plugins: PluginInfo[] | undefined): PluginInfo[] {
+  return (plugins ?? []).filter(hasSettings)
 }
 
 /** An entry a plugin adds to each export's menu. */

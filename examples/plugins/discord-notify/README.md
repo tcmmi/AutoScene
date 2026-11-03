@@ -43,9 +43,9 @@ asp pack examples/plugins/discord-notify discord-notify.asp
 
 Turn on **Settings → Plugins → Allow plugins that AutoScene has not
 reviewed**, then **Install a plugin…** and pick `discord-notify.asp`. Paste
-the webhook URL on its page in Settings, and run **Send a test message to
-Discord** from the palette. Its page also has **After every export**, to
-post each export once it finishes.
+the webhook URL in its settings, and run **Send a test message to
+Discord** from the palette. Its settings also have **After every export**,
+to post each export once it finishes.
 
 The first run can take a while: uv may need to fetch a Python and
 truststore.

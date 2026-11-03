@@ -6,7 +6,7 @@ import { ContextMenuItem, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMe
 import { TopBar } from "@/components/ui/topbar"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { PluginName, PluginSettingsSection } from "@/features/plugins/PluginSettingsSection"
-import { pluginPages } from "@/features/plugins/plugin-items"
+import { withSettings } from "@/features/plugins/plugin-items"
 import { type PluginSection, SETTINGS_SECTIONS, type SettingsSection, isPluginSection, useAppActions } from "@/lib/actions"
 import { usePlugins } from "@/lib/queries"
 import { cn } from "@/lib/utils"
@@ -31,10 +31,10 @@ export function SettingsPage() {
   const { section } = useParams({ from: "/settings/$section" })
   const navigate = useNavigate()
   const { checkUpdates } = useAppActions()
-  // A plugin's page, else one of the app's.
+  // A plugin's settings, else one of the app's sections.
   const plugin = isPluginSection(section) ? section.slice("plugin.".length) : null
   const { data: plugins } = usePlugins()
-  const pages = pluginPages(plugins)
+  const settable = withSettings(plugins)
   const menu = (
     <>
       <ContextMenuRadioGroup
@@ -66,10 +66,10 @@ export function SettingsPage() {
                   {SETTINGS_LABELS[s]}
                 </NavLink>
               ))}
-              {pages.length > 0 && <div role="separator" className="mx-2 my-2 h-px bg-white/[0.06]" />}
-              {pages.map((p) => (
+              {settable.length > 0 && <div role="separator" className="mx-2 my-2 h-px bg-white/[0.06]" />}
+              {settable.map((p) => (
                 <NavLink key={p.id} section={`plugin.${p.id}`} current={section} icon={<PluginIcon src={p.icon} />}>
-                  {/* One that can't run now stays, dimmed: its page says why. */}
+                  {/* One that can't run now stays, dimmed: its settings say why. */}
                   <span className={cn("truncate", !p.active && "opacity-50")}>{p.name}</span>
                 </NavLink>
               ))}

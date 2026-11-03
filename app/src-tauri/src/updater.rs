@@ -30,7 +30,7 @@
 //! never do, so a file left behind (or planted) can't fake an update, hide
 //! real ones, or point the check at another feed.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -44,6 +44,11 @@ use crate::error::{AppError, AppResult, ErrorCode};
 const FAKE_BYTES: u64 = 48 * 1024 * 1024;
 const FAKE_STEPS: u64 = 40;
 const FAKE_STEP_MS: u64 = 60;
+
+/// How often a download tells its progress. Four times a second keeps the bar
+/// moving smoothly; one event per network chunk (hundreds a second on a fast
+/// line) only made the webview re-render for nothing.
+const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Default, Deserialize)]
 struct LocalConfig {
@@ -202,27 +207,16 @@ pub async fn update_install(app: AppHandle) -> AppResult<()> {
         .map_err(update_err)?
         .ok_or_else(|| update_err("That update is no longer available."))?;
 
-    let mut downloaded: u64 = 0;
     let progress_app = app.clone();
-    let finish_app = app.clone();
-    update
-        .download_and_install(
-            move |chunk, total| {
-                downloaded += chunk as u64;
-                emit_progress(&progress_app, downloaded, total);
-            },
-            move || {
-                log::info!("Update download finished; installing");
-                emit_progress(&finish_app, 0, None);
-            },
-        )
-        .await
-        .map_err(|e| {
-            // On Windows our jobs were stopped just before the installer was
-            // to start; it didn't, so the app keeps running and needs them.
-            crate::state::resume_work(&app);
-            update_err(e)
-        })
+    let (on_chunk, on_finish) = download_progress(Instant::now, move |downloaded, total| {
+        emit_progress(&progress_app, downloaded, total);
+    });
+    update.download_and_install(on_chunk, on_finish).await.map_err(|e| {
+        // On Windows our jobs were stopped just before the installer was
+        // to start; it didn't, so the app keeps running and needs them.
+        crate::state::resume_work(&app);
+        update_err(e)
+    })
 }
 
 /// Restart into the freshly installed build. A no-op under the simulate
@@ -241,6 +235,49 @@ pub fn update_relaunch(app: AppHandle) -> bool {
     true
 }
 
+/// Adds up a download's chunks and hands the running count to `emit` at most
+/// once per `interval`, and always the chunk that reaches a known total, so
+/// the bar ends full. A download of unknown size has no end of its own: the
+/// caller's "installing" sentinel follows it. Nothing is told before the first
+/// byte, so a count can't pass for that sentinel (`0` with no total).
+fn throttled(
+    interval: Duration,
+    now: impl Fn() -> Instant,
+    mut emit: impl FnMut(u64, Option<u64>),
+) -> impl FnMut(usize, Option<u64>) {
+    let mut downloaded: u64 = 0;
+    let mut last: Option<Instant> = None;
+    let mut told_end = false;
+    move |chunk, total| {
+        downloaded = downloaded.saturating_add(chunk as u64);
+        if downloaded == 0 {
+            return;
+        }
+        let at = now();
+        let reaches_end = !told_end && total.is_some_and(|t| downloaded >= t);
+        let due = last.is_none_or(|l| at.saturating_duration_since(l) >= interval);
+        if reaches_end || due {
+            told_end |= reaches_end;
+            last = Some(at);
+            emit(downloaded, total);
+        }
+    }
+}
+
+/// The two callbacks of a real download: its chunks, throttled, and its end,
+/// which tells the "installing" sentinel at once (never throttled away).
+fn download_progress(
+    now: impl Fn() -> Instant,
+    emit: impl Fn(u64, Option<u64>) + Clone,
+) -> (impl FnMut(usize, Option<u64>), impl FnOnce()) {
+    let tell = emit.clone();
+    let on_finish = move || {
+        log::info!("Update download finished; installing");
+        tell(0, None);
+    };
+    (throttled(PROGRESS_EVERY, now, emit), on_finish)
+}
+
 fn emit_progress(app: &AppHandle, downloaded: u64, total: Option<u64>) {
     let ev = UpdateProgress { downloaded, total };
     if let Err(e) = ev.emit(app) {
@@ -250,15 +287,23 @@ fn emit_progress(app: &AppHandle, downloaded: u64, total: Option<u64>) {
 
 async fn simulate_install(app: &AppHandle) -> AppResult<()> {
     log::info!("Simulated update: faking a {FAKE_BYTES}-byte download");
+    let mut on_chunk = throttled(PROGRESS_EVERY, Instant::now, |downloaded, total| {
+        emit_progress(app, downloaded, total);
+    });
     for step in 1..=FAKE_STEPS {
         tokio::time::sleep(Duration::from_millis(FAKE_STEP_MS)).await;
-        emit_progress(app, FAKE_BYTES * step / FAKE_STEPS, Some(FAKE_BYTES));
+        // Chunks that add up to exactly FAKE_BYTES, like a real download's.
+        let chunk = FAKE_BYTES * step / FAKE_STEPS - FAKE_BYTES * (step - 1) / FAKE_STEPS;
+        on_chunk(chunk as usize, Some(FAKE_BYTES));
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
     use super::*;
 
     #[test]
@@ -280,5 +325,93 @@ mod tests {
         assert!(read_override(&path, true).simulate.is_none());
         let _ = std::fs::remove_file(&path);
         assert!(read_override(&path, true).endpoint.is_none());
+    }
+
+    /// What a download told: the running count and its total, in order.
+    type Told = Rc<RefCell<Vec<(u64, Option<u64>)>>>;
+
+    /// A hand-turned clock and a log of what `throttled` told.
+    struct Rig {
+        clock: Rc<Cell<Instant>>,
+        told: Told,
+    }
+
+    impl Rig {
+        fn new() -> Self {
+            Rig { clock: Rc::new(Cell::new(Instant::now())), told: Told::default() }
+        }
+
+        fn callbacks(&self) -> (impl FnMut(usize, Option<u64>) + use<>, impl FnOnce() + use<>) {
+            let clock = self.clock.clone();
+            let told = self.told.clone();
+            download_progress(move || clock.get(), move |d, t| told.borrow_mut().push((d, t)))
+        }
+
+        fn throttled(&self) -> impl FnMut(usize, Option<u64>) + use<> {
+            self.callbacks().0
+        }
+
+        fn advance(&self, by: Duration) {
+            self.clock.set(self.clock.get() + by);
+        }
+    }
+
+    #[test]
+    fn update_progress_is_told_at_most_four_times_a_second_and_at_the_end() {
+        // A known total: 1000 chunks of 1 KB over one second.
+        let rig = Rig::new();
+        let mut on_chunk = rig.throttled();
+        for _ in 0..1000 {
+            on_chunk(1000, Some(1_000_000));
+            rig.advance(Duration::from_millis(1));
+        }
+        let told = rig.told.borrow().clone();
+        assert!(told.len() <= 5, "told {} times in one second", told.len());
+        assert_eq!(told.first(), Some(&(1000, Some(1_000_000))), "the first chunk shows at once");
+        assert_eq!(told.last(), Some(&(1_000_000, Some(1_000_000))), "the bar ends full");
+        assert!(told.windows(2).all(|w| w[0].0 < w[1].0), "the count only grows");
+
+        // An unknown total: at most one event per 250 ms, and no end of its own.
+        let rig = Rig::new();
+        let mut on_chunk = rig.throttled();
+        let mut at = Vec::new();
+        for i in 0..1000u64 {
+            let before = rig.told.borrow().len();
+            on_chunk(1000, None);
+            if rig.told.borrow().len() > before {
+                at.push(i);
+            }
+            rig.advance(Duration::from_millis(1));
+        }
+        let told = rig.told.borrow().clone();
+        assert!(told.len() <= 4, "told {} times in one second", told.len());
+        assert!(at.windows(2).all(|w| w[1] - w[0] >= 250), "events {at:?} closer than 250 ms");
+        assert!(told.iter().all(|&(_, total)| total.is_none()));
+        assert!(told.last().is_some_and(|&(d, _)| d < 1_000_000), "nothing pretends the end is known");
+
+        // Nothing before the first byte: a count of 0 with no total is the
+        // "installing" sentinel, which only the finish callback tells.
+        let rig = Rig::new();
+        let mut on_chunk = rig.throttled();
+        on_chunk(0, None);
+        assert!(rig.told.borrow().is_empty());
+
+        // The end is told even right after a throttled event, and only once.
+        let rig = Rig::new();
+        let mut on_chunk = rig.throttled();
+        on_chunk(10, Some(20));
+        on_chunk(10, Some(20));
+        on_chunk(0, Some(20));
+        assert_eq!(*rig.told.borrow(), vec![(10, Some(20)), (20, Some(20))]);
+
+        // The sentinel is never throttled away: told at once, even 1 ms after
+        // a chunk was told, for a download of unknown size.
+        let rig = Rig::new();
+        let (mut on_chunk, on_finish) = rig.callbacks();
+        on_chunk(500, None);
+        rig.advance(Duration::from_millis(1));
+        on_chunk(500, None);
+        on_finish();
+        assert_eq!(*rig.told.borrow(), vec![(500, None), (0, None)]);
     }
 }

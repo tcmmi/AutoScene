@@ -14,14 +14,14 @@ use as_api::{
 };
 use as_core::{CancelToken, ExportId, MediaId, ProjectId};
 use as_engine::{Devices, EngineError, FacesEvent, FacesInput, ShotsEvent};
-use as_jobs::{Class, JobCtx, JobError, JobResult, JobSpec};
+use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_models::ModelError;
-use as_project::{Pass, Portrait, Project, ProjectError};
+use as_project::{Pass, Portrait, Project, ProjectError, StoppedStage};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 use crate::events::{AnalysisChanged, CastChanged, ExportChanged, LibraryChanged, PortraitsChanged};
-use crate::state::AppState;
+use crate::state::{AnalysisRuns, AppState};
 
 pub(crate) fn job_error(e: ProjectError) -> JobError {
     match e {
@@ -408,10 +408,54 @@ fn ended_for_restart(cancel: &CancelToken) -> JobResult {
     if cancel.is_cancelled() { Err(JobError::Cancelled) } else { Ok(()) }
 }
 
+/// The user cancelled an analysis of `media_id` before it began: its media
+/// stops where it would have begun, as a cancel of a running analysis
+/// leaves it ("Stopped · Continue"), instead of waiting as pending for the
+/// next launch to queue it again (see [`Project::stop_unstarted_analysis`]).
+/// Nothing is recorded while another analysis of it is under way or still
+/// writing: that one records its own stages.
+pub fn stop_unstarted_analysis(app: &AppHandle, project_id: ProjectId, media_id: MediaId) {
+    let state = app.state::<AppState>();
+    if analysed_otherwise(&state.jobs, &state.analysis, media_id) {
+        return;
+    }
+    let project = match state.library.project(project_id) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("recording a cancelled analysis: {}", e.detail());
+            return;
+        }
+    };
+    let stopped = match project.stop_unstarted_analysis(media_id) {
+        Ok(Some(stopped)) => stopped,
+        Ok(None) => return,
+        Err(e) => {
+            log::warn!("recording a cancelled analysis: {}", e.detail());
+            return;
+        }
+    };
+    if stopped == StoppedStage::FacesForgotten {
+        // Its faces found the old way are gone: the cast is grouped without
+        // them, the user's decisions on them waiting for Continue.
+        if let Err(e) = project.recluster() {
+            log::warn!("grouping the cast without the forgotten faces: {}", e.detail());
+        }
+        library_changed(app, &project);
+        cast_changed(app, &project);
+    }
+    let _ = AnalysisChanged { project_id, media_id }.emit(app);
+    media_changed(app, &project, Some(media_id));
+}
+
+/// Is an analysis of `media` running and still writing (also one cancelled,
+/// until it stops), or under way and not cancelled?
+fn analysed_otherwise(jobs: &JobRunner, runs: &parking_lot::Mutex<AnalysisRuns>, media: MediaId) -> bool {
+    runs.lock().running.contains(&media)
+        || jobs.is_under_way(|j| j.kind == JobKind::Analyze && j.media_id == Some(media))
+}
+
 /// Clear a media's results from `stage` on and analyse it again. Only call
 /// it when no analysis of the media runs (see [`AnalysisRuns`]).
-///
-/// [`AnalysisRuns`]: crate::state::AnalysisRuns
 pub fn restart_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, stage: AnalysisStage) {
     let reset = match stage {
         AnalysisStage::Shots => project.reset_shots(media_id),
@@ -1192,10 +1236,11 @@ mod tests {
     use std::time::Duration;
 
     use as_api::{JobInfo, JobKind, JobState, StageState};
-    use as_core::{CancelToken, JobId};
+    use as_core::{CancelToken, JobId, MediaId};
     use as_jobs::{Class, JobError, JobEvent, JobRunner, JobSpec};
 
-    use super::{StageError, Unstarted, ended_for_restart, failed_message, guarded};
+    use super::{StageError, Unstarted, analysed_otherwise, ended_for_restart, failed_message, guarded};
+    use crate::state::AnalysisRuns;
 
     #[test]
     fn a_stage_that_panics_fails_only_while_it_runs() {
@@ -1251,6 +1296,42 @@ mod tests {
         assert_ne!(info.progress, Some(1.0));
         let whole = jobs.submit(spec(), |ctx| ended_for_restart(&ctx.cancel));
         assert_eq!(finished(whole).state, JobState::Done);
+    }
+
+    #[test]
+    fn a_cancel_before_it_began_leaves_the_stages_to_an_analysis_under_way() {
+        let jobs = JobRunner::new(&[(Class::Analysis, 1)], |_| {});
+        let runs = parking_lot::Mutex::new(AnalysisRuns::default());
+        let (media, other) = (MediaId::new(), MediaId::new());
+        let analysis = |m: MediaId| JobSpec {
+            kind: JobKind::Analyze,
+            class: Class::Analysis,
+            title: "Analysing".into(),
+            subtitle: None,
+            project_id: None,
+            media_id: Some(m),
+            export_id: None,
+        };
+        assert!(!analysed_otherwise(&jobs, &runs, media), "nothing else analyses it");
+        let (started_tx, started) = mpsc::channel();
+        let (stop_tx, stop) = mpsc::channel::<()>();
+        let running = jobs.submit(analysis(media), move |_| {
+            started_tx.send(()).unwrap();
+            stop.recv_timeout(Duration::from_secs(10)).unwrap();
+            Err(JobError::Cancelled)
+        });
+        started.recv_timeout(Duration::from_secs(5)).unwrap();
+        let waiting = jobs.submit(analysis(other), |_| Ok(()));
+        assert!(analysed_otherwise(&jobs, &runs, media), "running");
+        assert!(analysed_otherwise(&jobs, &runs, other), "waiting");
+        // Cancelled, it only stops: it counts while it still writes its stages.
+        jobs.cancel(running);
+        assert!(!analysed_otherwise(&jobs, &runs, media));
+        runs.lock().running.insert(media);
+        assert!(analysed_otherwise(&jobs, &runs, media), "still writing its stages");
+        assert!(jobs.cancel(waiting).is_some());
+        assert!(!analysed_otherwise(&jobs, &runs, other));
+        stop_tx.send(()).unwrap();
     }
 
     #[test]

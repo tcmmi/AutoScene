@@ -342,8 +342,11 @@ impl JobRunner {
 
     /// Cancel one job. Queued jobs end immediately; running ones are signalled
     /// and stop at their next cancellation check (ffmpeg is killed within ~40 ms).
-    pub fn cancel(&self, id: JobId) {
-        self.cancel_where(|i| i.id == id);
+    ///
+    /// Returns the job as it ended when it was dropped before it started:
+    /// nothing of its work ran, so nothing of it records that it stopped.
+    pub fn cancel(&self, id: JobId) -> Option<JobInfo> {
+        self.cancel_matching(|i| i.id == id).pop()
     }
 
     /// Cancel every unfinished job matching `pred` (e.g. all jobs of a project being deleted).
@@ -352,6 +355,12 @@ impl JobRunner {
     /// it owns can act on being dropped unstarted (and look at the jobs while
     /// it does).
     pub fn cancel_where(&self, pred: impl Fn(&JobInfo) -> bool) {
+        self.cancel_matching(pred);
+    }
+
+    /// [`cancel_where`](Self::cancel_where), returning the jobs it dropped
+    /// before they started.
+    fn cancel_matching(&self, pred: impl Fn(&JobInfo) -> bool) -> Vec<JobInfo> {
         let mut changed = Vec::new();
         let mut dropped = Vec::new();
         {
@@ -370,10 +379,11 @@ impl JobRunner {
             }
             st.rev = rev;
         }
-        for info in changed {
-            (self.inner.listener)(JobEvent::Changed(info));
+        for info in &changed {
+            (self.inner.listener)(JobEvent::Changed(info.clone()));
         }
         drop(dropped);
+        changed
     }
 
     /// The app is quitting: running work is being cancelled to exit, not
@@ -807,6 +817,36 @@ mod tests {
         assert!(!r.is_active(this) && !r.is_under_way(this));
         r.cancel(queued);
         assert!(!r.is_under_way(|i| i.id == queued));
+    }
+
+    #[test]
+    fn cancel_says_which_job_it_dropped_before_it_started() {
+        let (r, rx) = runner(&[(Class::Analysis, 1)]);
+        let (started_tx, started_rx) = mpsc::channel();
+        let running = r.submit(spec("analyse", Class::Analysis), move |ctx| {
+            started_tx.send(()).unwrap();
+            while !ctx.cancel.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(JobError::Cancelled)
+        });
+        let mut waiting = spec("next", Class::Analysis);
+        waiting.kind = JobKind::Analyze;
+        let queued = r.submit(waiting, |_| Ok(()));
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // Waiting: dropped, and said so as it ended.
+        let dropped = r.cancel(queued).expect("dropped before it started");
+        assert_eq!((dropped.id, dropped.kind, dropped.state), (queued, JobKind::Analyze, JobState::Cancelled));
+        assert_eq!(r.jobs().iter().find(|i| i.id == queued).map(|i| i.rev), Some(dropped.rev));
+        assert!(r.cancel(queued).is_none(), "only once");
+        // Running: it records its own stop.
+        assert!(r.cancel(running).is_none());
+        assert_eq!(finished(&rx, running).state, JobState::Cancelled);
+        // Finished: nothing to drop.
+        let done = r.submit(spec("quick", Class::Analysis), |_| Ok(()));
+        assert_eq!(finished(&rx, done).state, JobState::Done);
+        assert!(r.cancel(done).is_none());
+        assert!(r.cancel(JobId::new()).is_none(), "not there");
     }
 
     #[test]

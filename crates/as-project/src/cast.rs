@@ -114,6 +114,18 @@ impl Portrait {
     }
 }
 
+/// The stage [`Project::stop_unstarted_analysis`] recorded as stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StoppedStage {
+    Shots,
+    Faces,
+    /// Faces found another way than the project finds them now: they were
+    /// forgotten (the user's decisions on them wait), so the cast is to be
+    /// grouped again without them.
+    FacesForgotten,
+    People,
+}
+
 /// Portraits being made (one decode per file at a time; others go on
 /// meanwhile) and ones that failed this session (not tried again until the
 /// next launch).
@@ -1103,6 +1115,47 @@ impl Project {
     /// Media whose shots are found but whose faces aren't, in episode order.
     pub fn pending_faces(&self) -> ProjectResult<Vec<MediaId>> {
         Ok(self.db().pending_faces()?)
+    }
+
+    /// The user cancelled an analysis of `id` before it began: the stage it
+    /// would have begun with is recorded as stopped, as a cancel of a
+    /// running analysis leaves it, so it waits for Continue and the next
+    /// launch doesn't queue it again. That is the first stage that isn't
+    /// ready (people only when the project finds them), when it waits or was
+    /// left running by a quit; a failed or stopped one stays as it is.
+    ///
+    /// Faces found another way than the project finds them now (Fast Scan
+    /// or the footage switched: it was queued to find them again) are
+    /// forgotten as any pass of the project would forget them, the user's
+    /// decisions on them waiting in `track_edits`, and stopped: the cast
+    /// can't hold faces of both ways. The caller groups the cast again.
+    ///
+    /// Only call it when no analysis of `id` is under way. Returns what it
+    /// recorded.
+    pub fn stop_unstarted_analysis(&self, id: MediaId) -> ProjectResult<Option<StoppedStage>> {
+        let m = self.media(id)?;
+        let waits = |s: StageState| matches!(s, StageState::Pending | StageState::Running);
+        let stopped = if m.shots != StageState::Ready {
+            waits(m.shots).then_some(StoppedStage::Shots)
+        } else if m.faces != StageState::Ready {
+            waits(m.faces).then_some(StoppedStage::Faces)
+        } else if self.faces_by_other_model(self.face_embedder())?.contains(&id) {
+            self.reset_faces(id)?;
+            Some(StoppedStage::FacesForgotten)
+        } else if self.finds_bodies() && m.bodies != StageState::Ready {
+            waits(m.bodies).then_some(StoppedStage::People)
+        } else {
+            None
+        };
+        match stopped {
+            Some(StoppedStage::Shots) => self.set_shots_state(id, StageState::Stopped, None)?,
+            Some(StoppedStage::Faces | StoppedStage::FacesForgotten) => {
+                self.set_faces_state(id, StageState::Stopped, None)?
+            }
+            Some(StoppedStage::People) => self.set_bodies_state(id, StageState::Stopped, None)?,
+            None => {}
+        }
+        Ok(stopped)
     }
 
     // -- identity -----------------------------------------------------------
@@ -2458,6 +2511,149 @@ pub(crate) mod tests {
         assert!(!faces.contains(&100), "not a face again: {faces:?}");
         assert_eq!(project.cast().unwrap().unplaced, 0);
         assert!(project.db().track_edits(id).unwrap().is_empty());
+    }
+
+    /// A project whose one media's stages read as given; faces ready were
+    /// found the way the project finds them now.
+    fn staged(shots: StageState, faces: StageState, people: StageState) -> (tempfile::TempDir, Arc<Project>, MediaId) {
+        let (dir, project, id) = project_with_media(400);
+        if faces == StageState::Ready {
+            let key = project.faces_key_now(project.face_embedder()).unwrap();
+            project.db().use_faces_model(id, &key).unwrap();
+        }
+        project.set_shots_state(id, shots, None).unwrap();
+        project.set_faces_state(id, faces, None).unwrap();
+        project.set_bodies_state(id, people, None).unwrap();
+        (dir, project, id)
+    }
+
+    fn stages(project: &Project, id: MediaId) -> (StageState, StageState, StageState) {
+        let m = project.media(id).unwrap();
+        (m.shots, m.faces, m.bodies)
+    }
+
+    #[test]
+    fn an_analysis_dropped_before_it_began_stops_where_it_would_have_begun() {
+        use StageState::*;
+        // Waiting to find its shots, or left finding them by a quit.
+        for shots in [Pending, Running] {
+            let (_dir, project, id) = staged(shots, Pending, Pending);
+            assert_eq!(project.stop_unstarted_analysis(id).unwrap(), Some(StoppedStage::Shots));
+            assert_eq!(stages(&project, id), (Stopped, Pending, Pending));
+        }
+        // Its shots found: the characters.
+        for faces in [Pending, Running] {
+            let (_dir, project, id) = staged(Ready, faces, Pending);
+            assert_eq!(project.stop_unstarted_analysis(id).unwrap(), Some(StoppedStage::Faces));
+            assert_eq!(stages(&project, id), (Ready, Stopped, Pending));
+        }
+        // Its characters found: their people, when the project looks for them.
+        for people in [Pending, Running] {
+            let (_dir, project, id) = staged(Ready, Ready, people);
+            assert_eq!(project.stop_unstarted_analysis(id).unwrap(), None, "people aren't looked for");
+            assert_eq!(stages(&project, id), (Ready, Ready, people));
+            project.set_finds_bodies(true);
+            assert_eq!(project.stop_unstarted_analysis(id).unwrap(), Some(StoppedStage::People));
+            assert_eq!(stages(&project, id), (Ready, Ready, Stopped));
+        }
+        // What failed or was stopped stays as it is, and so does all found.
+        for (shots, faces, people) in [
+            (Failed, Pending, Pending),
+            (Stopped, Pending, Pending),
+            (Ready, Failed, Pending),
+            (Ready, Stopped, Pending),
+            (Ready, Ready, Failed),
+            (Ready, Ready, Stopped),
+            (Ready, Ready, Ready),
+        ] {
+            let (_dir, project, id) = staged(shots, faces, people);
+            project.set_finds_bodies(true);
+            assert_eq!(project.stop_unstarted_analysis(id).unwrap(), None, "{shots:?} {faces:?} {people:?}");
+            assert_eq!(stages(&project, id), (shots, faces, people));
+        }
+    }
+
+    #[test]
+    fn it_is_not_queued_again_on_the_next_launch() {
+        use StageState::*;
+        // What a launch queues (see `work::recover_all`).
+        let queued_on_launch = |project: &Project| {
+            let mut ids = project.pending_shots().unwrap();
+            ids.extend(project.faces_by_other_model(project.face_embedder()).unwrap());
+            ids.extend(project.pending_faces().unwrap());
+            if project.finds_bodies() {
+                ids.extend(project.pending_bodies().unwrap());
+            }
+            ids
+        };
+        for (shots, faces, people) in [
+            (Pending, Pending, Pending),
+            (Running, Pending, Pending),
+            (Ready, Pending, Pending),
+            (Ready, Running, Pending),
+            (Ready, Ready, Pending),
+            (Ready, Ready, Running),
+        ] {
+            for cancelled in [false, true] {
+                let (_dir, project, id) = staged(shots, faces, people);
+                project.set_finds_bodies(true);
+                if cancelled {
+                    assert!(project.stop_unstarted_analysis(id).unwrap().is_some());
+                }
+                let expected = if cancelled { vec![] } else { vec![id] };
+                assert_eq!(
+                    queued_on_launch(&project),
+                    expected,
+                    "{shots:?} {faces:?} {people:?}, cancelled {cancelled}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn faces_found_the_old_way_are_forgotten_when_their_re_find_is_cancelled() {
+        let frames = 400;
+        let (_dir, project, id) = project_with_media(frames);
+        let segments: Vec<Segment> = (0..frames)
+            .step_by(100)
+            .map(|s| Segment { start: s, end: s + 100, kind: SegmentKind::Shot, tiny: false })
+            .collect();
+        project.db().store_segments(id, &segments).unwrap();
+        let find = || {
+            let model = project.face_embedder();
+            project.faces_plan(id, model).unwrap();
+            let found = [seen(1, 0, 0, 90, 0.1), seen(2, 100, 100, 190, 0.5)];
+            project.store_face_chunk(id, 0, frames, &tracks::encode(&found), &[], &[]).unwrap();
+            project.finish_faces(id).unwrap();
+        };
+        assert_eq!(project.face_embedder(), as_models::ids::ARCFACE);
+        find();
+        let face = project.cast_tracks(TrackFilter::Unassigned).unwrap().into_iter().find(|t| t.start == 0).unwrap().id;
+        let walter = project
+            .cast_edit(&CastEdit::NewCharacter { tracks: vec![face], name: Some("Walter".into()) })
+            .unwrap()
+            .unwrap();
+        project.recluster().unwrap();
+
+        // Switched to Fast Scan: queued to find its faces again, then cancelled.
+        assert!(project.set_fast_scan(true).unwrap());
+        assert_eq!(project.faces_by_other_model(project.face_embedder()).unwrap(), [id]);
+        assert_eq!(project.stop_unstarted_analysis(id).unwrap(), Some(StoppedStage::FacesForgotten));
+        assert_eq!(stages(&project, id).1, StageState::Stopped);
+        assert!(project.db().media_track_dets(id).unwrap().is_empty(), "no faces of either way");
+        assert!(project.faces_by_other_model(project.face_embedder()).unwrap().is_empty());
+        assert!(project.pending_faces().unwrap().is_empty());
+        project.recluster().unwrap();
+        assert!(project.cast_tracks(TrackFilter::Character(walter)).unwrap().is_empty());
+        assert_eq!(project.stop_unstarted_analysis(id).unwrap(), None, "stopped already");
+
+        // Continue finds them the new way, and Walter's face goes back to him.
+        project.set_faces_state(id, StageState::Pending, None).unwrap();
+        find();
+        project.recluster().unwrap();
+        let theirs = project.cast_tracks(TrackFilter::Character(walter)).unwrap();
+        assert_eq!(theirs.iter().map(|t| t.start).collect::<Vec<_>>(), [0]);
+        assert!(project.faces_found_fast().unwrap());
     }
 
     #[test]

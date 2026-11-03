@@ -1,11 +1,13 @@
 //! What AutoScene answers a plugin's calls with (protocol 2): its settings
-//! and its secrets, its project, the project's exports and their files, and
-//! the state it keeps. [`AppCalls`] answers a run's calls, bound to the plugin, project
-//! and export the run is for. Each call is checked first (its params' size,
-//! then its method against the plugin's grants, then the project and the
-//! export it names; see [`as_plugin::calls`]), and only then is anything
-//! read. A call of a run that was cancelled, or whose program ended, writes
-//! nothing.
+//! and its secrets, its project, the project's exports and their files, the
+//! state it keeps, and the hosts it names on the internet. [`AppCalls`]
+//! answers a run's calls, bound to the plugin, project and export the run
+//! is for. Each call is checked first (its params' size, then its method
+//! against the plugin's grants, then the project and the export it names;
+//! see [`as_plugin::calls`]), and only then is anything read. A call of a
+//! run that was cancelled, or whose program ended, writes nothing, and
+//! sends nothing more: a request on its way stops where it is
+//! ([`as_plugin::net`]).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -13,9 +15,10 @@ use std::sync::Arc;
 use as_api::{ExportStatus, ExportSummary, MediaStatus};
 use as_core::{CancelToken, ExportId, MediaId, ProjectId};
 use as_plugin::calls::{
-    self, CallCode, CallError, Caller, ExportRef, FileRef, Grants, HostCalls, HostMethod, PageExportSummary,
-    ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, SecretsGet, StateKey, StateSet,
+    self, CallCode, CallError, Caller, ExportRef, FileRef, Grants, HostCalls, HostMethod, NetRequest,
+    PageExportSummary, ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, SecretsGet, StateKey, StateSet,
 };
+use as_plugin::net;
 use as_plugin::{Installed, PluginError, PluginId, PluginResult, page_state};
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use serde::Serialize;
@@ -176,7 +179,20 @@ impl HostCalls for AppCalls {
                 Ok(Value::Null)
             }
             HostMethod::StateKeys => Ok(answer(page_state::keys(&store.data_dir(id))?)),
-            HostMethod::NetFetch => Err(later(method)),
+            // On this call's own thread, which waits for the answer. It may
+            // post somewhere, which a run that ended does no more: fetch
+            // stops where it is once `ended` fires.
+            HostMethod::NetFetch => {
+                let req: NetRequest = calls::params(method, params)?;
+                still_running(ended)?;
+                let _fetching = Fetching::start(&self.host, id)?;
+                let agent = format!("AutoScene/{} (plugin {id})", store.app_version());
+                match net::fetch(req, &self.grants.hosts, &agent, &*self.host.net, ended) {
+                    Ok(got) => Ok(answer(got)),
+                    Err(PluginError::Cancelled) => Err(run_ended()),
+                    Err(e) => Err(e.into()),
+                }
+            }
             // A page's own: `check` refused them to a run.
             HostMethod::ServiceRequest
             | HostMethod::ActionsRun
@@ -212,6 +228,37 @@ fn unless_ended(e: PluginError) -> CallError {
     match e {
         PluginError::Cancelled => run_ended(),
         e => e.into(),
+    }
+}
+
+/// A `net.fetch` call of a plugin waiting for its answer, counted while it
+/// lives: a plugin has at most [`net::MAX_IN_FLIGHT`] at once.
+struct Fetching<'a> {
+    host: &'a PluginHost,
+    plugin: &'a PluginId,
+}
+
+impl<'a> Fetching<'a> {
+    fn start(host: &'a PluginHost, plugin: &'a PluginId) -> Result<Self, CallError> {
+        let mut fetching = host.fetching.lock();
+        let calls = fetching.entry(plugin.clone()).or_default();
+        if *calls >= net::MAX_IN_FLIGHT {
+            return Err(CallError::new(CallCode::Busy, "Too many net.fetch calls at once."));
+        }
+        *calls += 1;
+        Ok(Self { host, plugin })
+    }
+}
+
+impl Drop for Fetching<'_> {
+    fn drop(&mut self) {
+        let mut fetching = self.host.fetching.lock();
+        if let Some(calls) = fetching.get_mut(self.plugin) {
+            *calls -= 1;
+            if *calls == 0 {
+                fetching.remove(self.plugin);
+            }
+        }
     }
 }
 
@@ -281,10 +328,14 @@ fn export_summary(export: &ExportSummary) -> PageExportSummary {
 
 #[cfg(test)]
 mod tests {
-    use as_api::{ContentKind, ExportItem, MergedFile, NewProject, ProjectKind};
-    use as_plugin::{ActionKind, Permission, RuntimeKind, Trust};
+    use std::time::{Duration, Instant};
 
-    use super::super::tests::{folder, host_in, key, plugin};
+    use as_api::{ContentKind, ExportItem, MergedFile, NewProject, ProjectKind};
+    use as_plugin::net::{Incoming, Outgoing, Transport};
+    use as_plugin::{ActionKind, Permission, RuntimeKind, Trust};
+    use parking_lot::Mutex;
+
+    use super::super::tests::{folder, host_in, host_reaching, key, plugin};
     use super::super::{RunKey, calls_for};
     use super::*;
 
@@ -551,17 +602,12 @@ mod tests {
             said(call(HostMethod::SecretsGet, json!({"key": "token"}))),
             (CallCode::Denied, "secrets.get needs a secret setting, and this plugin has none.".into())
         );
-        // What comes later says so; a page's own methods aren't a run's.
-        let net = place.run(None, &[Permission::Network]);
-        assert_eq!(
-            said(net.ask(HostMethod::NetFetch, json!({"url": "https://discord.com"}))),
-            (CallCode::Invalid, "net.fetch comes in a later AutoScene.".into())
-        );
+        // A page's own methods aren't a run's.
         assert_eq!(
             said(call(HostMethod::UiToast, json!({"text": "Hi"}))),
             (CallCode::Denied, "A run can't call ui.toast.".into())
         );
-        drop((run, net, place));
+        drop((run, place));
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 
@@ -610,6 +656,122 @@ mod tests {
         host.store.secret_clear(&id, "token").unwrap();
         assert_eq!(get("token").unwrap(), json!({"value": null}));
         drop((run, host, library));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// The internet as a test sees it: each request is kept, and gets a
+    /// little JSON. One to `/moved` ends `run` and is redirected; one to
+    /// `/silent` waits until its call ends, as a host that doesn't answer.
+    #[derive(Clone, Default)]
+    struct Answering {
+        sent: Arc<Mutex<Vec<Outgoing>>>,
+        run: CancelToken,
+    }
+
+    impl Transport for Answering {
+        fn send(&self, o: &Outgoing, ended: &CancelToken) -> PluginResult<Incoming> {
+            self.sent.lock().push(o.clone());
+            if o.url.ends_with("/silent") {
+                let until = Instant::now() + Duration::from_secs(10);
+                while !ended.is_cancelled() && Instant::now() < until {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                return Err(PluginError::Failed { message: "Couldn't reach discord.com.".into(), detail: None });
+            }
+            let (status, header) = match o.url.ends_with("/moved") {
+                true => {
+                    self.run.cancel();
+                    (302, ("location".to_owned(), "https://discord.com/here".to_owned()))
+                }
+                false => (200, ("content-type".to_owned(), "application/json".to_owned())),
+            };
+            Ok(Incoming { status, headers: vec![header], body: Box::new(&br#"{"id":"1"}"#[..]) })
+        }
+    }
+
+    #[test]
+    fn a_run_fetches_from_its_hosts_a_few_at_a_time() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-calls-net-{}", std::process::id()));
+        let internet = Answering::default();
+        let (library, host) = host_reaching(&tmp, internet.clone());
+        let places: Arc<dyn Places> = Arc::new(library);
+        let plugin = PluginId::parse("dev.a.calls").unwrap();
+        let run = |permissions: Vec<Permission>| AppCalls {
+            places: places.clone(),
+            host: host.clone(),
+            plugin: plugin.clone(),
+            grants: Grants {
+                runtime: RuntimeKind::Process,
+                permissions,
+                hosts: vec!["discord.com".into()],
+                secrets: Vec::new(),
+                protocol: 2,
+            },
+            project: None,
+            export: None,
+        };
+        let online = run(vec![Permission::Network]);
+        let post = json!({
+            "url": "https://discord.com/api/webhooks/1/x",
+            "method": "POST",
+            "headers": [["content-type", "application/json"]],
+            "body": "{}"
+        });
+        let fetch = || online.ask(HostMethod::NetFetch, post.clone());
+
+        let got = fetch().unwrap();
+        assert_eq!((got["status"].clone(), got["body"].clone()), (json!(200), json!(r#"{"id":"1"}"#)));
+        // Sent as it asked, saying which plugin asks.
+        let sent = internet.sent.lock()[0].clone();
+        assert_eq!(
+            (sent.method, sent.url.as_str(), sent.body.as_slice()),
+            ("POST", "https://discord.com/api/webhooks/1/x", &b"{}"[..])
+        );
+        let agent = ("user-agent".to_owned(), "AutoScene/1.0.3-BETA (plugin dev.a.calls)".to_owned());
+        assert_eq!(sent.headers, [("content-type".to_owned(), "application/json".to_owned()), agent]);
+        // Only to the hosts it names, and only with the network permission.
+        let elsewhere = online.ask(HostMethod::NetFetch, json!({"url": "https://evil.example.org/"}));
+        assert_eq!(said(elsewhere).0, CallCode::Denied);
+        assert_eq!(
+            said(run(Vec::new()).ask(HostMethod::NetFetch, post.clone())),
+            (CallCode::Denied, "net.fetch needs the network permission.".into())
+        );
+        assert!(host.fetching.lock().is_empty());
+        // Eight wait at most; each counts until it has its answer.
+        host.fetching.lock().insert(plugin.clone(), net::MAX_IN_FLIGHT);
+        assert_eq!(said(fetch()), (CallCode::Busy, "Too many net.fetch calls at once.".into()));
+        host.fetching.lock().insert(plugin.clone(), net::MAX_IN_FLIGHT - 1);
+        fetch().unwrap();
+        assert_eq!(host.fetching.lock().get(&plugin), Some(&(net::MAX_IN_FLIGHT - 1)));
+        host.fetching.lock().clear();
+        fetch().unwrap();
+        assert!(host.fetching.lock().is_empty());
+        // Once its program ended, a run sends nothing.
+        let over = (CallCode::Cancelled, "This run has ended.".to_owned());
+        let ended = CancelToken::new();
+        ended.cancel();
+        assert_eq!(said(online.ask_ended(HostMethod::NetFetch, post.clone(), &ended)), over);
+        assert_eq!(internet.sent.lock().len(), 3);
+        // Nor where a request it sent before was redirected.
+        let moved = json!({"url": "https://discord.com/moved"});
+        assert_eq!(said(online.ask_ended(HostMethod::NetFetch, moved, &internet.run)), over);
+        let urls: Vec<String> = internet.sent.lock().iter().map(|o| o.url.clone()).collect();
+        assert_eq!(urls.last().map(String::as_str), Some("https://discord.com/moved"));
+        assert_eq!(urls.len(), 4);
+        // One still waiting stops as the run ends, said the same, and no
+        // longer counts.
+        let ended = CancelToken::new();
+        let ending = ended.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            ending.cancel();
+        });
+        let started = Instant::now();
+        let silent = json!({"url": "https://discord.com/silent"});
+        assert_eq!(said(online.ask_ended(HostMethod::NetFetch, silent, &ended)), over);
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(host.fetching.lock().is_empty());
+        drop((online, places, host));
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 

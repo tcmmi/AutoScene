@@ -24,7 +24,9 @@ pub enum PluginError {
     Busy(String),
     #[error("This plugin needs uv, which isn't installed. Install it from docs.astral.sh/uv, then try again.")]
     UvMissing,
-    /// The plugin's own error line.
+    /// The plugin's own error line; or why a `net.fetch` got no answer, with
+    /// what the connection said as `detail` (which `net` logs; never the
+    /// address).
     #[error("{message}")]
     Failed { message: String, detail: Option<String> },
     #[error("{name} stopped unexpectedly.")]

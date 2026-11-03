@@ -16,7 +16,9 @@
 //! the runtime types `service` and `none` are reserved in it for a later
 //! AutoScene. A version 1 manifest reads as it always did: its pages and
 //! secret settings are skipped with a warning that names version 2, and a
-//! runtime type only version 2 has is refused with that hint.
+//! runtime type only version 2 has is refused with that hint. In version 2,
+//! a network host that names this computer or its network, or an address,
+//! gets a warning: `net.fetch` never reaches it ([`crate::net`]).
 //!
 //! No shell reads a command: its arguments are fixed, and handed to the
 //! program as they are. The program is a file in the plugin's own folder,
@@ -44,6 +46,7 @@ use serde_json::{Map, Value};
 use specta::Type;
 
 use crate::error::{PluginError, PluginResult};
+use crate::net;
 use crate::package::{check_path, reserved};
 
 /// The newest manifest version this AutoScene reads.
@@ -574,6 +577,14 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         if !network_hosts.is_empty() && !permissions.contains(&Permission::Network) {
             w.push("Ignored network.hosts: the plugin doesn't ask for the network permission.".into());
             network_hosts.clear();
+        }
+        // A name for this computer or its network, or an address: net.fetch
+        // never connects there. A program may still, with its own sockets,
+        // so version 1 named such hosts without a word, and still does.
+        if manifest_version >= 2 {
+            for h in network_hosts.iter().filter(|h| !net::public_name(h)) {
+                w.push(format!("net.fetch can't reach {h}."));
+            }
         }
     }
 
@@ -1544,6 +1555,32 @@ mod tests {
         };
         assert_eq!(many(8).unwrap().manifest.secret_keys().count(), 8);
         assert_eq!(message(many(9)), "The plugin has more than 8 secret settings.");
+    }
+
+    #[test]
+    fn version_2_names_the_hosts_net_fetch_cant_reach() {
+        let named = |version: u32| {
+            with(|v| {
+                v["manifestVersion"] = json!(version);
+                v["permissions"] = json!(["network"]);
+                v["network"] = json!({"hosts": ["discord.com", "localhost", "127.0.0.1", "nas.local", "api.example"]});
+            })
+            .unwrap()
+        };
+        let p = named(2);
+        // Kept, so the review shows all the plugin names.
+        assert_eq!(p.manifest.network_hosts.len(), 5);
+        assert_eq!(
+            p.warnings,
+            [
+                "net.fetch can't reach localhost.",
+                "net.fetch can't reach 127.0.0.1.",
+                "net.fetch can't reach nas.local.",
+                "net.fetch can't reach api.example.",
+            ]
+        );
+        // Version 1 reads as it did.
+        assert_eq!(named(1).warnings, Vec::<String>::new());
     }
 
     /// A manifest of version 2 and protocol 2 with the settings `settings`.

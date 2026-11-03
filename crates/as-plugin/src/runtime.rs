@@ -22,18 +22,21 @@
 //! [`MAX_CALLS_IN_FLIGHT`] at once and [`CALL_QUEUE`] more in turn, so a
 //! slow answer never holds up its progress or a cancel. What the run holds
 //! for its calls (their params, kept as the text the plugin wrote until
-//! the host reads them, and the replies the plugin hasn't read yet) stays
-//! under [`MAX_CALL_BYTES`]: past it a call is answered busy, and those
-//! waiting start once the plugin reads. A plugin that leaves [`MAX_UNREAD`]
-//! replies unread is ended. A reply is written while the plugin's stdin is
-//! open: a call after its result line is dropped, and so are those still
-//! waiting then. Once the run is cancelled, the calls still waiting and
-//! each one after are answered that it was, and those being answered are
-//! told. The calls still being answered when the plugin ended are told too,
-//! and waited for ([`CALL_GRACE`]), so none of them changes anything once
-//! its run is over. The log names each call and how it was answered, never
-//! its params or its result, not even of a call too long or broken to be
-//! one.
+//! the host reads them, and the replies the plugin hasn't read yet) is
+//! held to [`MAX_CALL_BYTES`]: past it a call is answered busy, and those
+//! waiting start once the plugin reads. The calls being answered then
+//! still reply, so for a plugin that reads none it may hold the replies of
+//! [`MAX_CALLS_IN_FLIGHT`] calls more; a `net.fetch` reply is the largest,
+//! at most twice [`crate::net::MAX_RESPONSE_BODY`]. A plugin that leaves
+//! [`MAX_UNREAD`] replies unread is ended. A reply is written while the
+//! plugin's stdin is open: a call after its result line is dropped, and so
+//! are those still waiting then. Once the run is cancelled, the calls
+//! still waiting and each one after are answered that it was, and those
+//! being answered are told. The calls still being answered when the
+//! plugin ended are told too, and waited for ([`CALL_GRACE`]), so none of
+//! them changes anything once its run is over. The log names each call
+//! and how it was answered, never its params or its result, not even of a
+//! call too long or broken to be one.
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
@@ -81,7 +84,8 @@ pub const MAX_CALLS_IN_FLIGHT: usize = 4;
 pub const CALL_QUEUE: usize = 64;
 /// The most bytes a run holds for its calls: the lines of those read and
 /// not yet answered, and the replies its plugin hasn't read. Past it, a
-/// call is answered busy, and those waiting start once the plugin reads.
+/// call is answered busy, and those waiting start once the plugin reads;
+/// the replies of the calls being answered then still come.
 pub const MAX_CALL_BYTES: usize = 16 << 20;
 /// The replies a plugin may leave unread: one that makes calls and never
 /// reads their answers is ended past them.

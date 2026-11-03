@@ -23,7 +23,8 @@
 //! aren't kept anywhere: one still waiting at quit is lost.
 //!
 //! A run of a plugin that speaks protocol 2 may call AutoScene for its
-//! project, its export and its settings ([`calls`]).
+//! project, its export and its settings, and reach the hosts it names on
+//! the internet ([`calls`]).
 
 mod calls;
 
@@ -36,6 +37,7 @@ use std::time::Duration;
 use as_api::{ExportSummary, JobKind};
 use as_core::{AppPaths, ExportId, JobId, ProjectId};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
+use as_plugin::net::{Transport, UreqTransport};
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage};
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
@@ -76,6 +78,11 @@ pub struct PluginHost {
     busy: Mutex<Busy>,
     /// Told whenever a run or a change of a plugin ends.
     freed: Condvar,
+    /// Where `net.fetch` calls go: the internet ([`UreqTransport`]), or a
+    /// test's stand-in.
+    net: Box<dyn Transport>,
+    /// The `net.fetch` calls of each plugin waiting for their answer.
+    fetching: Mutex<HashMap<PluginId, usize>>,
 }
 
 /// The plugins in use: by a run, or by an install, update or uninstall.
@@ -229,7 +236,20 @@ pub fn host(state: &AppState) -> AppResult<Arc<PluginHost>> {
 
 impl PluginHost {
     pub fn new(store: Store) -> Self {
-        Self { store, tickets: Mutex::default(), runs: Mutex::default(), busy: Mutex::default(), freed: Condvar::new() }
+        Self::reaching(store, Box::new(UreqTransport::new()))
+    }
+
+    /// The host of `store`, whose plugins' `net.fetch` calls go to `net`.
+    fn reaching(store: Store, net: Box<dyn Transport>) -> Self {
+        Self {
+            store,
+            tickets: Mutex::default(),
+            runs: Mutex::default(),
+            busy: Mutex::default(),
+            freed: Condvar::new(),
+            net,
+            fetching: Mutex::default(),
+        }
     }
 
     /// Keeps `t` for [`PluginHost::take`] under its id, and drops the
@@ -917,6 +937,11 @@ mod tests {
 
     /// A plugin host of a library of its own in `tmp`.
     pub(super) fn host_in(tmp: &Path) -> (Library, Arc<PluginHost>) {
+        host_reaching(tmp, UreqTransport::new())
+    }
+
+    /// [`host_in`], with plugins' `net.fetch` calls going to `net`.
+    pub(super) fn host_reaching(tmp: &Path, net: impl Transport + 'static) -> (Library, Arc<PluginHost>) {
         let paths = AppPaths::at(tmp.join("data"));
         let lib = Library::open(&paths).unwrap();
         let root = tmp.join("library").display().to_string();
@@ -924,7 +949,7 @@ mod tests {
         let app = semver::Version::parse("1.0.3-BETA").unwrap();
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
         let store = Store::open(&paths, lib.shared_db(), Keys::new(&[]).unwrap(), app, secrets).unwrap();
-        (lib, Arc::new(PluginHost::new(store)))
+        (lib, Arc::new(PluginHost::reaching(store, Box::new(net))))
     }
 
     /// Writes the plugin of `manifest` into its folder in `tmp`, and checks

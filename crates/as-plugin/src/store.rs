@@ -802,6 +802,11 @@ impl Store {
         Ok(self.library.get_or_init(|| library))
     }
 
+    /// The version of this AutoScene.
+    pub fn app_version(&self) -> &Version {
+        &self.app
+    }
+
     /// Where `id` keeps what it needs between runs (its runs start there).
     pub fn data_dir(&self, id: &PluginId) -> PathBuf {
         self.data.join(id.as_str())

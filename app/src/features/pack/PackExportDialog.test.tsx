@@ -4,10 +4,11 @@ import { QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { type Character, type ExportPreset, FILE_PARTS, NAME_PARTS, type PackNaming } from "@/bindings"
+import { type Character, type ExportPreset, FILE_PARTS, type JobInfo, NAME_PARTS, type PackNaming, type ProjectSummary } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
+import { useActivity } from "@/state/activity"
 import { PackExportDialog } from "./PackExportDialog"
 import { DEFAULT_SPEC } from "./spec"
 import type { Pack } from "./use-pack"
@@ -42,6 +43,7 @@ vi.mock("@/lib/ipc", () => ({
     settingsUpdate: vi.fn(),
     exportDefaultDir: vi.fn(() => Promise.resolve("C:\\Library\\Exports\\Show")),
     packExport: vi.fn(() => Promise.resolve({ id: "e1" })),
+    projectGet: vi.fn(() => Promise.resolve({ id: "p", kind: "series" })),
   },
   errorMessage: (e: unknown) => String(e),
 }))
@@ -103,7 +105,34 @@ afterEach(() => {
   vi.clearAllMocks()
   vi.restoreAllMocks()
   Reflect.deleteProperty(document, "execCommand")
+  useActivity.setState({ jobs: {}, order: [] })
 })
+
+/** A job of the project "p": the analysis of the episode "m" unless told otherwise. */
+const job = (o: Partial<JobInfo>): JobInfo => ({
+  id: "j",
+  kind: "analyze",
+  title: "Analysing E01.mkv",
+  subtitle: null,
+  projectId: "p",
+  mediaId: "m",
+  exportId: null,
+  state: "running",
+  progress: 0.4,
+  stage: "Finding characters",
+  etaMs: null,
+  error: null,
+  createdAt: 1,
+  finishedAt: null,
+  rev: 1,
+  ...o,
+})
+
+/** The dialog's description, as a screen reader hears it. */
+const description = () => {
+  const id = screen.getByRole("dialog").getAttribute("aria-describedby")
+  return document.getElementById(id ?? "")?.textContent ?? ""
+}
 
 /** The field's whole box: label, field, buttons, problem and names (the field sits in its marks' box). */
 const box = (field: HTMLElement) => field.parentElement!.parentElement!
@@ -658,6 +687,72 @@ describe("PackExportDialog", () => {
     Object.defineProperty(field, "scrollLeft", { configurable: true, get: () => 72 })
     fireEvent.change(field, { target: { value: `${naming(false).template} {frame}` } })
     expect(scrolled).toHaveBeenLastCalledWith(72)
+  })
+
+  it("says episodes still being analysed aren't in it", async () => {
+    useActivity.getState().replaceAll([
+      // One episode started over: its old job still stops while the new one
+      // waits. It is one episode.
+      job({ id: "old" }),
+      job({ id: "new", state: "queued", progress: null, createdAt: 2 }),
+      job({ id: "other", mediaId: "n", createdAt: 3 }),
+      // One still being indexed: its analysis starts once that is done.
+      job({ id: "index", kind: "ingest", mediaId: "y", createdAt: 6 }),
+      // None of these: done, another project's, not an analysis.
+      job({ id: "done", mediaId: "o", state: "done", progress: 1, finishedAt: 4, createdAt: 4 }),
+      job({ id: "elsewhere", projectId: "q", mediaId: "x", createdAt: 5 }),
+      job({ id: "export", kind: "export", mediaId: null, exportId: "e", createdAt: 7 }),
+    ])
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(true))} open onOpenChange={() => {}} />, { wrapper })
+    const missing = "3 episodes are still being analysed. Shots of Walter found in them later won't be in this export."
+    await waitFor(() => expect(description()).toContain(missing))
+    expect(description()).toBe(`3 shots in one video, each cut frame-exact and checked against the source. ${missing}`)
+    // Said as it opened: an analysis ending meanwhile doesn't move the dialog.
+    act(() => useActivity.getState().upsert(job({ id: "other", mediaId: "n", createdAt: 3, state: "done", finishedAt: 8, rev: 2 })))
+    expect(description()).toContain(missing)
+    // And not a word of it while nothing is analysed.
+    cleanup()
+    useActivity.setState({ jobs: {}, order: [] })
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(false))} open onOpenChange={() => {}} />, { wrapper })
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export 3 shots" })).toBeTruthy())
+    expect(description()).toBe("3 shots, each cut frame-exact and checked against the source.")
+    // As tall as it gets, it scrolls inside: at the smallest window its
+    // buttons stay in the window.
+    expect(screen.getByRole("dialog").className).toMatch(/max-h-\[calc\(100vh-48px\)\].*overflow-y-auto/)
+  })
+
+  it("counts only the episodes the pack takes", async () => {
+    useActivity.getState().replaceAll([
+      job({ id: "a", mediaId: "n" }),
+      job({ id: "b", kind: "ingest", mediaId: "y", createdAt: 2 }),
+    ])
+    const only = (media: string[]): Pack => {
+      const p = pack(naming(false))
+      return { ...p, state: { spec: { ...DEFAULT_SPEC, media }, naming: naming(false) } }
+    }
+    // Filtered to a finished episode: the others aren't in this export anyway.
+    render(<PackExportDialog pid="p" character={walter} pack={only(["o"])} open onOpenChange={() => {}} />, { wrapper })
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export 3 shots" })).toBeTruthy())
+    expect(description()).toBe("3 shots, each cut frame-exact and checked against the source.")
+    cleanup()
+    // Filtered to one still being indexed and a finished one: that one.
+    render(<PackExportDialog pid="p" character={walter} pack={only(["o", "y"])} open onOpenChange={() => {}} />, { wrapper })
+    await waitFor(() =>
+      expect(description()).toBe(
+        "3 shots, each cut frame-exact and checked against the source. 1 episode is still being analysed. Shots of Walter found in it later won't be in this export.",
+      ),
+    )
+  })
+
+  it("says files for a movie project", async () => {
+    vi.mocked(commands.projectGet).mockResolvedValueOnce({ id: "p", kind: "movie" } as ProjectSummary)
+    useActivity.getState().replaceAll([job({ id: "film" })])
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(false))} open onOpenChange={() => {}} />, { wrapper })
+    await waitFor(() =>
+      expect(description()).toBe(
+        "3 shots, each cut frame-exact and checked against the source. 1 file is still being analysed. Shots of Walter found in it later won't be in this export.",
+      ),
+    )
   })
 
   it("names a file per shot, in the character's folder", async () => {

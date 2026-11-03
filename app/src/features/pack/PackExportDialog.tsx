@@ -25,8 +25,9 @@ import {
   reportedPart,
   type Segment,
 } from "@/lib/naming"
-import { qk, queryClient, useExportDir, usePresets, useSettings } from "@/lib/queries"
+import { qk, queryClient, useExportDir, usePresets, useProject, useSettings } from "@/lib/queries"
 import { insertText, restoreSelection, revealCaret } from "@/lib/text-edit"
+import { unfinishedJobs } from "@/state/activity"
 import { useUi } from "@/state/ui"
 import { type Pack, packExportStarted } from "./use-pack"
 
@@ -57,6 +58,15 @@ function useLastAnswer(plan: Pack["plan"]): { plan: ExportPlan | undefined; prob
   return next
 }
 
+/**
+ * What an export started now misses: `n` episodes (or files) still being
+ * analysed, whose shots of `label` aren't found yet.
+ */
+function stillAnalysed(n: number, unit: "episode" | "file", label: string): string {
+  const one = n === 1
+  return `${plural(n, unit)} ${one ? "is" : "are"} still being analysed. Shots of ${label} found in ${one ? "it" : "them"} later won't be in this export.`
+}
+
 /** Name the pack's files, choose format and place, and export exactly the shots the grid shows. */
 export function PackExportDialog({
   pid,
@@ -82,6 +92,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
   const { data: presets } = usePresets()
   const { data: settings } = useSettings()
   const { data: defaultDir } = useExportDir(pid)
+  const { data: project } = useProject(pid)
   const [chosenPreset, setPresetId] = useState<string>()
   const [dir, setDir] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -119,6 +130,25 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
   const folder = naming.folder && !oneFile ? plan?.folder : null
   const outDir = folder && base ? `${base.replace(/[\\/]+$/, "")}${sep}${folder}` : base
   const shots = plural(clips, "shot")
+  // The export takes exactly the shots the grid shows: episodes still being
+  // analysed add theirs later, and so do those still being indexed (their
+  // analysis starts once that is done). Only episodes the pack takes: one
+  // its filter leaves out isn't in this export anyway. Counted per episode
+  // (a restart's old and new job are one), once, as it opens: a job ending
+  // meanwhile never moves the dialog under the pointer.
+  const [analysing] = useState(() => {
+    const { media } = state.spec
+    const pending = unfinishedJobs(
+      (j) =>
+        (j.kind === "analyze" || j.kind === "ingest") &&
+        j.projectId === pid &&
+        j.mediaId != null &&
+        (media.length === 0 || media.includes(j.mediaId)),
+    )
+    return new Set(pending.map((j) => j.mediaId)).size
+  })
+  const missing =
+    analysing > 0 && project ? stillAnalysed(analysing, project.kind === "movie" ? "file" : "episode", character.label) : null
 
   const start = async () => {
     const stamp = pack.preview.data?.stamp
@@ -158,11 +188,22 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
     <DialogContent
       title={`Export ${character.label}'s scenepack`}
       description={
-        oneFile
-          ? `${shots} in one video, each cut frame-exact and checked against the source.`
-          : `${shots}, each cut frame-exact and checked against the source.`
+        <>
+          {oneFile
+            ? `${shots} in one video, each cut frame-exact and checked against the source.`
+            : `${shots}, each cut frame-exact and checked against the source.`}
+          {/* A line of its own, read after a space. */}
+          {missing && (
+            <>
+              {" "}
+              <span className="block pt-1">{missing}</span>
+            </>
+          )}
+        </>
       }
-      className="w-[min(600px,calc(100vw-32px))]"
+      // At the smallest window the dialog scrolls inside instead of leaving
+      // its buttons below the window.
+      className="max-h-[calc(100vh-48px)] w-[min(600px,calc(100vw-32px))] overflow-y-auto"
       // The field the dialog opens with takes the focus (Enter exports: Ctrl/⌘ E,
       // then Enter). One that shows up later doesn't take it from the switch.
       onOpenAutoFocus={(e) => {

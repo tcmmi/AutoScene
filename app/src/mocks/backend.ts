@@ -102,6 +102,19 @@ type Handler = (args: Record<string, unknown>) => unknown
 const FIXTURES = (import.meta.env.VITE_FIXTURES_URL as string | undefined) ?? ""
 const VIDEO = `${FIXTURES}cfr24_h264.mp4`
 const FRAMES = 586
+/**
+ * The frames the player is told an episode has: the fixture's, or as many
+ * as `localStorage["autoscene.mock.frames"]` says, so the layout check
+ * (`npm run check:player-layout`) can show a 2-hour film's numbers.
+ */
+function playerFrames(): number {
+  try {
+    const n = Number(localStorage.getItem("autoscene.mock.frames"))
+    return Number.isSafeInteger(n) && n > 0 ? n : FRAMES
+  } catch {
+    return FRAMES
+  }
+}
 const FPS = { num: 24, den: 1 }
 const ROOT = String.raw`C:\Users\you\Documents\AutoScene Library`
 
@@ -1017,7 +1030,7 @@ const handlers: Record<string, Handler> = {
   media_frame_map: ({ projectId, mediaId }): FrameMap => {
     const m = findMedia(find(projectId), mediaId)
     if (m.status !== "ready") throw { code: "not_ready", message: "Still indexing." }
-    return { mediaId: m.id, src: VIDEO, isProxy: m.proxy === "ready", frames: FRAMES, fps: FPS, dropFrame: false, offset: 0, step: 1 / 24, times: null }
+    return { mediaId: m.id, src: VIDEO, isProxy: m.proxy === "ready", frames: playerFrames(), fps: FPS, dropFrame: false, offset: 0, step: 1 / 24, times: null }
   },
   media_segments: ({ projectId, mediaId }): Segment[] => (findMedia(find(projectId), mediaId).shots === "ready" ? SEGMENTS : []),
   media_analyze: ({ projectId, mediaId, redo }) => {

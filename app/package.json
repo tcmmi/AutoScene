@@ -12,6 +12,7 @@
     "lint": "oxlint && node scripts/check-deps.mjs",
     "sync:contributors": "node scripts/sync-contributors.mjs",
     "test": "vitest run",
+    "check:player-layout": "node scripts/check-player-layout.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

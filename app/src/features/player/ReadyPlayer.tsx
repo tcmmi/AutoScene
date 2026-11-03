@@ -34,7 +34,6 @@ import { usePlayback } from "@/state/playback"
 import { useUi } from "@/state/ui"
 import { Ambilight } from "./Ambilight"
 import { CharactersPanel } from "./panels/CharactersPanel"
-import { ClipCard } from "./panels/ClipCard"
 import { KeysCard } from "./panels/KeysCard"
 import { ShotsPanel } from "./panels/ShotsPanel"
 import { SourceCard } from "./panels/SourceCard"
@@ -334,8 +333,8 @@ export function ReadyPlayer({
           </div>
         </ContextArea>
 
-        {/* Secondary readouts fold away as the player column narrows. */}
-        <div className="@container relative shrink-0 px-6 pb-5">
+        {/* The transport shows less as the player column narrows (its tier). */}
+        <div className="relative shrink-0 px-6 pb-4">
           <ContextArea menu={playerMenu}>
             <div>
               <Transport
@@ -354,9 +353,10 @@ export function ReadyPlayer({
                 onToggle={toggle}
                 inFrame={inFrame}
                 outFrame={outFrame}
+                length={length}
                 onMarkIn={() => markIn()}
                 onMarkOut={() => markOut()}
-                showExport={!inspector}
+                onClear={clear}
                 canExport={canExport}
                 onExport={openExport}
                 volume={volume}
@@ -390,19 +390,6 @@ export function ReadyPlayer({
 
       {inspector && (
         <aside className="flex w-[340px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-white/[0.06] bg-canvas p-3">
-          <ClipCard
-            inFrame={inFrame}
-            outFrame={outFrame}
-            length={length}
-            tc={tc}
-            canExport={canExport}
-            onMarkIn={() => markIn()}
-            onMarkOut={() => markOut()}
-            onGo={seek}
-            onClear={clear}
-            onExport={openExport}
-            onCopy={copyTimecodes}
-          />
           <ShotsPanel pid={pid} media={m} segments={shots} store={store} tc={tc} onMark={() => markShot()} onGo={seek} />
           <CharactersPanel
             pid={pid}

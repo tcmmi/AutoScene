@@ -100,7 +100,7 @@ export function CommandPalette() {
     icon: <PluginIcon src={c.icon} />,
     hint: c.hint,
     keywords: c.keywords,
-    run: () => void runPlugin({ ...c, title: c.label }, "command", pid ?? null, null),
+    run: () => void runPlugin({ ...c, pluginName: c.hint, title: c.label }, "command", pid ?? null, null),
   }))
   const actions: Item[] = [
     { id: "new-project", label: "New project…", icon: <Plus />, run: a.newProject, keys: keys("global.newProject") },

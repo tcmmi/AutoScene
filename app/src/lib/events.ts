@@ -1,5 +1,6 @@
 import { toast } from "sonner"
 import type { JobInfo } from "@/bindings"
+import { pluginToast } from "@/features/plugins/plugin-toast"
 import { isFinished, useActivity } from "@/state/activity"
 import { commands, events } from "./ipc"
 import { reveal } from "./os"
@@ -101,9 +102,9 @@ export function startEventBridge(): () => void {
  */
 function notifyFinished(job: JobInfo) {
   if (job.kind === "plugin") {
-    const from = job.subtitle != null ? `Plugin “${job.subtitle}”` : "A plugin"
-    if (job.state === "failed") toast.error(`${from}: ${job.title} failed`, { description: job.error ?? undefined })
-    else if (job.state === "done" && job.message) toast(`${from}: ${job.title}`, { description: job.message })
+    if (job.state === "failed")
+      pluginToast(job.subtitle, { text: `${job.title} failed`, description: job.error ?? undefined, tone: "error" })
+    else if (job.state === "done" && job.message) pluginToast(job.subtitle, { text: job.title, description: job.message })
     return
   }
   if (job.kind !== "export") {

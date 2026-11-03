@@ -2,23 +2,26 @@ import { toast } from "sonner"
 import type { ActionKind, PluginInfo } from "@/bindings"
 import { commands, errorMessage } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
+import { pluginToast } from "./plugin-toast"
 
 /**
  * Run a plugin's export action on an export, or its command (in the open
  * project, if any). The run shows in Activity; a toast says when it can't
- * start, or the same run waits or runs already.
+ * start, or the same run waits or runs already. The title is the plugin's,
+ * so the toast names its plugin first.
  */
 export async function runPlugin(
-  run: { pluginId: string; actionId: string; title: string },
+  run: { pluginId: string; pluginName: string; actionId: string; title: string },
   kind: ActionKind,
   projectId: string | null,
   exportId: string | null,
 ) {
   try {
     const job = await commands.pluginRun(run.pluginId, run.actionId, kind, projectId, exportId)
-    if (job == null) toast(`${run.title} is already waiting or running`, { description: "It's in Activity." })
+    if (job == null)
+      pluginToast(run.pluginName, { text: `${run.title} is already waiting or running`, description: "It's in Activity." })
   } catch (e) {
-    toast.error(`Couldn't run ${run.title}`, { description: errorMessage(e) })
+    pluginToast(run.pluginName, { text: `${run.title} couldn't start`, description: errorMessage(e), tone: "error" })
   }
 }
 

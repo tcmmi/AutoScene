@@ -26,3 +26,9 @@ serde_json.workspace = true
 as-testkit.workspace = true
 as-models.workspace = true
 tempfile.workspace = true
+
+# Its tests check the shots bench (`bench/shots`), so `cargo test` runs them;
+# the other examples keep the default and are only built.
+[[example]]
+name = "fuse_signals"
+test = true

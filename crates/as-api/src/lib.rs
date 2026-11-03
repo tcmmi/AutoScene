@@ -567,6 +567,15 @@ pub struct CharacterShot {
     pub bodies: Vec<u32>,
 }
 
+/// Shots of a character close together in time, in time order: each
+/// starts at most 6 s after the one before it ends, with no fade or black
+/// between. A shot far from the others is a group of one.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotGroup {
+    pub shots: Vec<CharacterShot>,
+}
+
 /// Which tracks of the cast to list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]

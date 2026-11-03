@@ -361,7 +361,7 @@ function Shots({
   onBody: (bodies: number[], verdict: BodyVerdict) => void
 }) {
   const shots = useCharacterShots(pid, character.id)
-  const list = shots.data ?? NO_SHOTS
+  const list = useMemo(() => shots.data?.flatMap((g) => g.shots) ?? NO_SHOTS, [shots.data])
   const seconds = useMemo(
     () =>
       list.reduce((sum, s) => {

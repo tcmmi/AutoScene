@@ -73,7 +73,8 @@ export function packPreview(pid: string, cid: string, spec: PackSpec, media: Med
   const manual = picks.get(keyOf(pid, cid)) ?? new Map<string, boolean>()
   const order = new Map(media.map((m, i) => [m.id, i]))
   type Cand = { clip: PackClip; rule: PackReason | null; seconds: number; tenths: number }
-  const cands: Cand[] = characterShots(pid, cid, media, segments).map((shot) => {
+  const shots = characterShots(pid, cid, media, segments).flatMap((g) => g.shots)
+  const cands: Cand[] = shots.map((shot) => {
     const m = media.find((x) => x.id === shot.mediaId)!
     const fps = m.fps ? m.fps.num / m.fps.den : 24
     const seconds = (shot.end - shot.start) / fps

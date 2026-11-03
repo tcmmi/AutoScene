@@ -192,9 +192,10 @@ export const commands = {
 	mediaPresence: (projectId: ProjectId, mediaId: MediaId) => __TAURI_INVOKE<Presence[]>("media_presence", { projectId, mediaId }),
 	/**
 	 *  Every shot a character is seen in, with its sprite and the character's
-	 *  clearest face there.
+	 *  clearest face there: in episode order, in groups of shots close together
+	 *  in time (a shot far from the others is a group of one).
 	 */
-	characterShots: (projectId: ProjectId, characterId: CharacterId) => __TAURI_INVOKE<CharacterShot[]>("character_shots", { projectId, characterId }),
+	characterShots: (projectId: ProjectId, characterId: CharacterId) => __TAURI_INVOKE<ShotGroup[]>("character_shots", { projectId, characterId }),
 	exportPresets: () => __TAURI_INVOKE<ExportPreset[]>("export_presets"),
 	/**  Folder exports of this project go to unless the user picks another. */
 	exportDefaultDir: (projectId: ProjectId) => __TAURI_INVOKE<string>("export_default_dir", { projectId }),
@@ -1802,6 +1803,15 @@ export type Shortcuts = {
 	 *  (`player.frame.1` is the next frame); an empty list leaves it without a key.
 	 */
 	keys?: { [key in string]: KeyBinding[] },
+};
+
+/**
+ *  Shots of a character close together in time, in time order: each
+ *  starts at most 6 s after the one before it ends, with no fade or black
+ *  between. A shot far from the others is a group of one.
+ */
+export type ShotGroup = {
+	shots: CharacterShot[],
 };
 
 /**  How big a face is in a shot, from its height in the frame. */

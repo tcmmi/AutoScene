@@ -1,7 +1,7 @@
 //! The cast: characters found across a project's media, their face tracks,
 //! and the user's decisions about them.
 
-use as_api::{Cast, CastEdit, CharacterShot, FaceTrackItem, Presence, TrackFilter};
+use as_api::{Cast, CastEdit, FaceTrackItem, Presence, ShotGroup, TrackFilter};
 use as_core::{CancelToken, CharacterId, MediaId, ProjectId};
 use tauri::{AppHandle, State};
 
@@ -95,7 +95,8 @@ pub async fn media_presence(
 }
 
 /// Every shot a character is seen in, with its sprite and the character's
-/// clearest face there.
+/// clearest face there: in episode order, in groups of shots close together
+/// in time (a shot far from the others is a group of one).
 #[tauri::command]
 #[specta::specta]
 pub async fn character_shots(
@@ -103,11 +104,11 @@ pub async fn character_shots(
     state: State<'_, AppState>,
     project_id: ProjectId,
     character_id: CharacterId,
-) -> AppResult<Vec<CharacterShot>> {
+) -> AppResult<Vec<ShotGroup>> {
     let lib = state.library.clone();
     let (shots, faces) = blocking(move || {
         let p = lib.project(project_id)?;
-        Ok((p.character_shots(character_id)?, p.faces_dir()))
+        Ok((p.character_shot_groups(character_id)?, p.faces_dir()))
     })
     .await?;
     allow_asset_tree(&app, &faces);

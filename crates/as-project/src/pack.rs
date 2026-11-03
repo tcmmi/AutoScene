@@ -20,7 +20,7 @@ use as_analysis::bodies::{dets_from_bytes, face_height_of};
 use as_api::{
     CharacterShot, ClipRequest, ExportPlan, ExportRequest, MediaItem, MediaStatus, PackChoice, PackChoices, PackClip,
     PackExportRequest, PackKey, PackNaming, PackOrder, PackPreview, PackReason, PackSpec, PackState, PackTotals,
-    PresetSize, ShotSize,
+    PresetSize, ShotGroup, ShotSize,
 };
 use as_core::{CharacterId, FrameIdx, FrameIndex, FrameRange, MediaId, Rational};
 use as_db::{PackBodyRow, PackRow};
@@ -328,17 +328,96 @@ impl Project {
     /// Every shot a character is seen in, in episode order: by a face of
     /// theirs, or by a body of theirs that makes a clip.
     pub fn character_shots(&self, c: CharacterId) -> ProjectResult<Vec<CharacterShot>> {
+        Ok(self.shots_and_media(c)?.0)
+    }
+
+    /// A character's shots as the cast shows them: in episode order, in
+    /// groups of shots close together in time (see `group_lengths`).
+    /// Nothing is kept: a new analysis or an edit in the cast groups them
+    /// again.
+    pub fn character_shot_groups(&self, c: CharacterId) -> ProjectResult<Vec<ShotGroup>> {
+        let (shots, media) = self.shots_and_media(c)?;
+        let fps = media.into_iter().filter_map(|m| Some((m.id, m.fps?))).collect();
+        Ok(groups_of(shots, &fps, &self.db().fades()?))
+    }
+
+    /// [`Self::character_shots`], and the project's media, which put them
+    /// in episode order.
+    fn shots_and_media(&self, c: CharacterId) -> ProjectResult<(Vec<CharacterShot>, Vec<MediaItem>)> {
         let shots = shots_of(c, &self.db().pack_rows(c)?, &self.shown_bodies(|db| db.pack_bodies(c))?);
-        let order: HashMap<MediaId, usize> =
-            self.media_list_uncounted()?.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
+        let media = self.media_list_uncounted()?;
+        let order: HashMap<MediaId, usize> = media.iter().enumerate().map(|(i, m)| (m.id, i)).collect();
         let cover = self.cover_thumb(c)?;
         let mut out: Vec<(usize, CharacterShot)> = shots
             .iter()
             .filter_map(|s| Some((*order.get(&s.media)?, self.character_shot(s, cover.as_deref()))))
             .collect();
         out.sort_by_key(|(i, s)| (*i, s.start));
-        Ok(out.into_iter().map(|(_, s)| s).collect())
+        Ok((out.into_iter().map(|(_, s)| s).collect(), media))
     }
+}
+
+/// How far apart, in seconds, two shots of a character may be and still
+/// share a group: from the end of one to the start of the next. 6 s
+/// bridges someone else's reverse shot of normal length, as dialogue cuts
+/// back and forth. Measured on a Breaking Bad episode whose scenes were
+/// labelled by eye (#59): with 6 s, 9 % of its four main characters' shots
+/// sit in a group made mostly of another scene; with 10 s, 14 %.
+const GROUP_GAP: i64 = 6;
+
+/// The sizes of the groups one episode's shots of a character make, in
+/// order. `shots` are in time order, `fades` (the episode's fades and
+/// black, see [`as_db::ProjectDb::fades`]) in frame order. A shot joins
+/// the group before it when it starts at most [`GROUP_GAP`] (rounded up to
+/// whole frames) after the shot before it ends, and no fade or black lies
+/// in that gap or touches it: a dissolve or a flash doesn't part them.
+/// Without a frame rate every shot is a group of its own.
+fn group_lengths(shots: &[(FrameIdx, FrameIdx)], fades: &[FrameRange], fps: Option<Rational>) -> Vec<usize> {
+    let gap = fps
+        .filter(|f| f.num > 0 && f.den > 0)
+        .map(|f| GROUP_GAP.saturating_mul(f.num).saturating_add(f.den - 1) / f.den);
+    let mut out: Vec<usize> = Vec::new();
+    for (i, &(start, _)) in shots.iter().enumerate() {
+        let joins = i > 0
+            && gap.is_some_and(|gap| {
+                let end = shots[i - 1].1;
+                i64::from(start.saturating_sub(end)) <= gap && !fade_between(fades, end, start)
+            });
+        match out.last_mut() {
+            Some(n) if joins => *n += 1,
+            _ => out.push(1),
+        }
+    }
+    out
+}
+
+/// A fade or black (`fades`, in frame order, apart from each other) in the
+/// gap `[end, start)` between two shots, or touching it at either end.
+fn fade_between(fades: &[FrameRange], end: FrameIdx, start: FrameIdx) -> bool {
+    // Apart and in order, they end in order too: of those that end where
+    // the gap starts or later, the first starts earliest.
+    let first = fades.partition_point(|f| f.end < end);
+    fades.get(first).is_some_and(|f| f.start <= start)
+}
+
+/// `shots` (in episode order, as [`Project::character_shots`] lists them)
+/// in groups: [`group_lengths`] per episode, with its frame rate (`fps`)
+/// and its fades. Shots of two episodes never share a group.
+fn groups_of(
+    shots: Vec<CharacterShot>,
+    fps: &HashMap<MediaId, Rational>,
+    fades: &HashMap<MediaId, Vec<FrameRange>>,
+) -> Vec<ShotGroup> {
+    let lengths: Vec<usize> = shots
+        .chunk_by(|a, b| a.media_id == b.media_id)
+        .flat_map(|run| {
+            let media = run[0].media_id;
+            let spans: Vec<(FrameIdx, FrameIdx)> = run.iter().map(|s| (s.start, s.end)).collect();
+            group_lengths(&spans, fades.get(&media).map_or(&[], Vec::as_slice), fps.get(&media).copied())
+        })
+        .collect();
+    let mut shots = shots.into_iter();
+    lengths.into_iter().map(|n| ShotGroup { shots: shots.by_ref().take(n).collect() }).collect()
 }
 
 /// Settings saved by another version: what is there, the defaults for the rest.
@@ -1072,5 +1151,189 @@ mod tests {
         assert_eq!(plan.names, ["Walter_001", "Walter_002", "Walter_003"]);
         assert_eq!((plan.file, plan.folder.as_deref()), (None, Some("Walter")));
         assert!(plan.sizes.iter().all(|s| s.bytes > 0.0));
+    }
+
+    const FPS_24: Option<Rational> = Some(Rational { num: 24, den: 1 });
+
+    /// The first frame of each group.
+    fn group_starts(groups: &[ShotGroup]) -> Vec<FrameIdx> {
+        groups.iter().map(|g| g.shots[0].start).collect()
+    }
+
+    /// One 24 fps episode cut into `segments`, with Walter's face (0.3 tall)
+    /// in the shots starting at `walter` and Jesse's (0.2 tall) in the
+    /// shots starting at `jesse`; each face spans its shot.
+    fn cast_in(
+        segments: &[Segment],
+        walter: &[FrameIdx],
+        jesse: &[FrameIdx],
+    ) -> (tempfile::TempDir, Arc<Project>, CharacterId) {
+        let (dir, project, media) = project_with_media(FRAMES);
+        project.db().store_segments(media, segments).unwrap();
+        let shot = |start: FrameIdx| segments.iter().find(|s| s.start == start && s.kind == SegmentKind::Shot).unwrap();
+        let face = |who, start: FrameIdx, height| {
+            let s = shot(start);
+            sized(seen(who, s.start, s.start, s.end, 0.1), height)
+        };
+        let mut faces: Vec<FaceTrack> = walter.iter().map(|&s| face(1, s, 0.3)).collect();
+        faces.extend(jesse.iter().map(|&s| face(2, s, 0.2)));
+        faces.sort_by_key(|t| t.start);
+        project.store_face_chunk(media, 0, FRAMES, &tracks::encode(&faces), &[], &[]).unwrap();
+        project.finish_faces(media).unwrap();
+        let tracks = project.cast_tracks(TrackFilter::Unassigned).unwrap();
+        let pick =
+            |h: f32| -> Vec<u32> { tracks.iter().filter(|t| (t.face_height - h).abs() < 0.01).map(|t| t.id).collect() };
+        let new = |tracks: Vec<u32>, name: &str| {
+            project.cast_edit(&CastEdit::NewCharacter { tracks, name: Some(name.into()) }).unwrap().unwrap()
+        };
+        let walter = new(pick(0.3), "Walter");
+        if !jesse.is_empty() {
+            new(pick(0.2), "Jesse");
+        }
+        (dir, project, walter)
+    }
+
+    fn segment(start: FrameIdx, end: FrameIdx, kind: SegmentKind) -> Segment {
+        Segment { start, end, kind, tiny: false }
+    }
+
+    #[test]
+    fn shots_with_someone_else_between_share_a_group() {
+        // A 0–48, B 48–100 (Jesse's), A 100–150: shot and reverse shot.
+        let segments = [
+            segment(0, 48, SegmentKind::Shot),
+            segment(48, 100, SegmentKind::Shot),
+            segment(100, 150, SegmentKind::Shot),
+        ];
+        let (_dir, project, walter) = cast_in(&segments, &[0, 100], &[48]);
+        let groups = project.character_shot_groups(walter).unwrap();
+        assert_eq!(groups.len(), 1);
+        let shots: Vec<_> = groups[0].shots.iter().map(|s| (s.start, s.end)).collect();
+        assert_eq!(shots, [(0, 48), (100, 150)]);
+    }
+
+    #[test]
+    fn a_gap_over_six_seconds_starts_a_group() {
+        // 6 s at 24 fps: 144 frames.
+        assert_eq!(group_lengths(&[(0, 48), (192, 240)], &[], FPS_24), [2]);
+        assert_eq!(group_lengths(&[(0, 48), (193, 240)], &[], FPS_24), [1, 1]);
+        // At 23.976 fps 6 s is 143.86 frames, rounded up: 144 still joins.
+        let ntsc = Some(Rational::new(24000, 1001));
+        assert_eq!(group_lengths(&[(0, 48), (192, 240)], &[], ntsc), [2]);
+        assert_eq!(group_lengths(&[(0, 48), (193, 240)], &[], ntsc), [1, 1]);
+        // Each gap counts on its own: a chain can be longer than 6 s.
+        assert_eq!(group_lengths(&[(0, 48), (100, 148), (200, 248), (500, 548)], &[], FPS_24), [3, 1]);
+    }
+
+    #[test]
+    fn black_or_a_fade_between_starts_a_group_however_close() {
+        let shots = [(0, 48), (60, 100)];
+        let r = FrameRange::new;
+        // In the gap.
+        assert_eq!(group_lengths(&shots, &[r(50, 55)], FPS_24), [1, 1]);
+        // Filling it, or touching either end of it.
+        assert_eq!(group_lengths(&shots, &[r(48, 60)], FPS_24), [1, 1]);
+        assert_eq!(group_lengths(&shots, &[r(44, 48)], FPS_24), [1, 1]);
+        assert_eq!(group_lengths(&shots, &[r(60, 64)], FPS_24), [1, 1]);
+        // However short the gap.
+        assert_eq!(group_lengths(&[(0, 48), (49, 100)], &[r(48, 49)], FPS_24), [1, 1]);
+        // Fades elsewhere in the episode don't part them.
+        assert_eq!(group_lengths(&shots, &[r(10, 20), r(30, 47), r(61, 70), r(200, 210)], FPS_24), [2]);
+    }
+
+    #[test]
+    fn a_dissolve_between_keeps_the_group() {
+        // Walter at 0, 60 and 136; a dissolve, a flash, then a fade through black.
+        let segments = [
+            segment(0, 48, SegmentKind::Shot),
+            segment(48, 60, SegmentKind::Dissolve),
+            segment(60, 100, SegmentKind::Shot),
+            segment(100, 101, SegmentKind::Flash),
+            segment(101, 120, SegmentKind::Shot),
+            segment(120, 124, SegmentKind::FadeOut),
+            segment(124, 130, SegmentKind::Black),
+            segment(130, 136, SegmentKind::FadeIn),
+            segment(136, 200, SegmentKind::Shot),
+        ];
+        let (_dir, project, walter) = cast_in(&segments, &[0, 60, 101, 136], &[]);
+        let groups = project.character_shot_groups(walter).unwrap();
+        assert_eq!(group_starts(&groups), [0, 136]);
+        assert_eq!(groups[0].shots.len(), 3);
+    }
+
+    /// A shot of the character, as [`groups_of`] takes it.
+    fn shot_in(media: MediaId, start: FrameIdx, end: FrameIdx) -> CharacterShot {
+        CharacterShot {
+            media_id: media,
+            start,
+            end,
+            sprite: None,
+            cells: 0,
+            track_id: 0,
+            face: String::new(),
+            face_height: 0.0,
+            faceless: false,
+            bodies: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn another_episode_starts_a_group() {
+        let (e1, e2) = (MediaId::new(), MediaId::new());
+        let fps = HashMap::from([(e1, FPS_24.unwrap()), (e2, FPS_24.unwrap())]);
+        // The last shot of one episode and the first of the next, frames apart.
+        let shots = vec![shot_in(e1, 0, 48), shot_in(e1, 50, 100), shot_in(e2, 0, 48), shot_in(e2, 60, 90)];
+        let groups = groups_of(shots, &fps, &HashMap::new());
+        let media: Vec<Vec<MediaId>> = groups.iter().map(|g| g.shots.iter().map(|s| s.media_id).collect()).collect();
+        assert_eq!(media, [vec![e1, e1], vec![e2, e2]]);
+    }
+
+    #[test]
+    fn without_a_frame_rate_every_shot_is_its_own_group() {
+        let shots = [(0, 48), (48, 96), (100, 150)];
+        assert_eq!(group_lengths(&shots, &[], None), [1, 1, 1]);
+        // A broken one is no frame rate either.
+        assert_eq!(group_lengths(&shots, &[], Some(Rational { num: 0, den: 1 })), [1, 1, 1]);
+        assert_eq!(group_lengths(&shots, &[], FPS_24), [3]);
+        assert!(group_lengths(&[], &[], FPS_24).is_empty());
+        // An episode without one, beside an episode with one.
+        let (known, unknown) = (MediaId::new(), MediaId::new());
+        let fps = HashMap::from([(known, FPS_24.unwrap())]);
+        let all =
+            vec![shot_in(known, 0, 48), shot_in(known, 48, 96), shot_in(unknown, 0, 48), shot_in(unknown, 48, 96)];
+        let sizes: Vec<usize> = groups_of(all, &fps, &HashMap::new()).iter().map(|g| g.shots.len()).collect();
+        assert_eq!(sizes, [2, 1, 1]);
+    }
+
+    #[test]
+    fn groups_hold_every_shot_once_in_order() {
+        let p = pack();
+        let key = |s: &CharacterShot| (s.media_id, s.start, s.end);
+        let flat = |groups: &[ShotGroup]| groups.iter().flat_map(|g| g.shots.iter().map(key)).collect::<Vec<_>>();
+        let groups = p.project.character_shot_groups(p.walter).unwrap();
+        let shots: Vec<_> = p.project.character_shots(p.walter).unwrap().iter().map(key).collect();
+        assert_eq!(flat(&groups), shots);
+        // Its four shots touch: one group.
+        assert_eq!((groups.len(), groups[0].shots.len()), (1, 4));
+
+        // Found again with black before the last shot: it starts a group.
+        let segments = [
+            segment(0, 48, SegmentKind::Shot),
+            Segment { tiny: true, ..segment(48, 50, SegmentKind::Shot) },
+            segment(50, 280, SegmentKind::Shot),
+            segment(280, 290, SegmentKind::Black),
+            segment(290, 410, SegmentKind::Shot),
+        ];
+        let mut found = faces(290);
+        found[3] = sized(seen(1, 50, 50, 280, 0.1), 0.5);
+        p.project.db().store_segments(p.media, &segments).unwrap();
+        p.project.reset_faces(p.media).unwrap();
+        p.project.store_face_chunk(p.media, 0, FRAMES, &tracks::encode(&found), &[], &[]).unwrap();
+        p.project.finish_faces(p.media).unwrap();
+        let groups = p.project.character_shot_groups(p.walter).unwrap();
+        let shots: Vec<_> = p.project.character_shots(p.walter).unwrap().iter().map(key).collect();
+        assert_eq!(flat(&groups), shots);
+        assert_eq!(group_starts(&groups), [0, 290]);
+        assert_eq!(groups.iter().map(|g| g.shots.len()).collect::<Vec<_>>(), [3, 1]);
     }
 }

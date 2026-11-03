@@ -12,6 +12,7 @@ import type {
   MediaItem,
   Presence,
   Segment,
+  ShotGroup,
   TrackFilter,
 } from "@/bindings"
 
@@ -290,7 +291,37 @@ export function mediaPresence(projectId: string, mediaId: string): Presence[] {
     })
 }
 
-export function characterShots(projectId: string, characterId: string, media: MediaItem[], segments: Segment[]): CharacterShot[] {
+/** How far apart, in seconds, two shots of a character may be and still share a group (as `as-project` makes them). */
+const GROUP_GAP = 6
+const FADES: ReadonlySet<Segment["kind"]> = new Set(["black", "fade_in", "fade_out"])
+
+/**
+ * A character's shots in groups, as the app makes them: in one episode, a
+ * shot joins the group before it when it starts at most 6 s after that
+ * shot ends (rounded up to whole frames) and no black or fade lies in the
+ * gap or touches it. Without a frame rate every shot is a group of its own.
+ */
+export function characterShots(projectId: string, characterId: string, media: MediaItem[], segments: Segment[]): ShotGroup[] {
+  const fades = segments.filter((s) => FADES.has(s.kind))
+  const groups: ShotGroup[] = []
+  for (const shot of shotsOf(projectId, characterId, media, segments)) {
+    const fps = media.find((m) => m.id === shot.mediaId)?.fps
+    const gap = fps && fps.num > 0 && fps.den > 0 ? Math.floor((GROUP_GAP * fps.num + fps.den - 1) / fps.den) : null
+    const last = groups.at(-1)?.shots.at(-1)
+    const joins =
+      last !== undefined &&
+      last.mediaId === shot.mediaId &&
+      gap !== null &&
+      shot.start - last.end <= gap &&
+      !fades.some((f) => f.start <= shot.start && f.end >= last.end)
+    if (joins) groups.at(-1)!.shots.push(shot)
+    else groups.push({ shots: [shot] })
+  }
+  return groups
+}
+
+/** Every shot of a character, in episode order. */
+function shotsOf(projectId: string, characterId: string, media: MediaItem[], segments: Segment[]): CharacterShot[] {
   const c = get(projectId)
   const hue = ((c.people.findIndex((p) => p.id === characterId) * 57 + 20) % 360 + 360) % 360
   const mine = c.tracks.filter((t) => assigned(t) && t.characterId === characterId)

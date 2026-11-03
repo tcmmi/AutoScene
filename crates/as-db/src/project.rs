@@ -1,13 +1,13 @@
 //! `project.db`: one per `<Title>.autoscene` folder.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use as_api::{
     ClipOutcome, ExportItem, ExportPreset, ExportStatus, ExportSummary, MediaInfo, MediaItem, MediaStatus, MergedFile,
-    ProxyState, Segment, StageState, now_ms,
+    ProxyState, Segment, SegmentKind, StageState, now_ms,
 };
-use as_core::{ExportId, FrameIdx, MediaId, ProjectId, Rational};
+use as_core::{ExportId, FrameIdx, FrameRange, MediaId, ProjectId, Rational};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 use rusqlite_migration::{M, Migrations};
 
@@ -880,6 +880,25 @@ impl ProjectDb {
         })
     }
 
+    /// Where each media goes to or comes from black (its `black`, `fade_in`
+    /// and `fade_out` segments), in frame order. The cast takes each as a
+    /// break in time when it groups a character's shots.
+    pub fn fades(&self) -> DbResult<HashMap<MediaId, Vec<FrameRange>>> {
+        self.0.read(|c| {
+            let mut st = c.prepare(
+                "SELECT media_id, start, end FROM segments WHERE kind IN (?1, ?2, ?3) ORDER BY media_id, start",
+            )?;
+            let kinds = [SegmentKind::Black, SegmentKind::FadeIn, SegmentKind::FadeOut].map(enum_to_sql);
+            let mut rows = st.query(params![kinds[0], kinds[1], kinds[2]])?;
+            let mut out: HashMap<MediaId, Vec<FrameRange>> = HashMap::new();
+            while let Some(r) = rows.next()? {
+                let media: MediaId = parse_id(&r.get::<_, String>(0)?)?;
+                out.entry(media).or_default().push(FrameRange::new(r.get(1)?, r.get(2)?));
+            }
+            Ok(out)
+        })
+    }
+
     /// Forget a media's shot analysis (signals and segments) and the faces
     /// found in its shots.
     pub fn reset_shots(&self, id: MediaId) -> DbResult<()> {
@@ -1363,6 +1382,43 @@ pub(crate) mod tests {
         db.record_ingest(m.id, &rec).unwrap();
         assert!(db.shot_chunks(m.id).unwrap().is_empty() && db.segments(m.id).unwrap().is_empty());
         assert_eq!(db.media(m.id).unwrap().unwrap().shots, StageState::Pending);
+    }
+
+    #[test]
+    fn fades_lists_black_and_fades_per_media() {
+        let db = ProjectDb::memory();
+        let (a, b, c) = (
+            new_media("/s/Show - 01.mkv", None, Some(1)),
+            new_media("/s/Show - 02.mkv", None, Some(2)),
+            new_media("/s/Show - 03.mkv", None, Some(3)),
+        );
+        db.add_media(&[a.clone(), b.clone(), c.clone()]).unwrap();
+        let seg = |start, end, kind| Segment { start, end, kind, tiny: false };
+        db.store_segments(
+            a.id,
+            &[
+                seg(0, 100, SegmentKind::Shot),
+                seg(100, 104, SegmentKind::FadeOut),
+                seg(104, 110, SegmentKind::Black),
+                seg(110, 116, SegmentKind::FadeIn),
+                seg(116, 200, SegmentKind::Shot),
+                seg(200, 212, SegmentKind::Dissolve),
+                seg(212, 213, SegmentKind::Flash),
+                seg(213, 300, SegmentKind::Shot),
+                seg(300, 320, SegmentKind::Black),
+            ],
+        )
+        .unwrap();
+        db.store_segments(b.id, &[seg(0, 10, SegmentKind::Black), seg(10, 90, SegmentKind::Shot)]).unwrap();
+        // Shots alone, and a blend between them: nothing to list.
+        db.store_segments(c.id, &[seg(0, 50, SegmentKind::Shot), seg(50, 60, SegmentKind::Dissolve)]).unwrap();
+
+        let fades = db.fades().unwrap();
+        let r = FrameRange::new;
+        assert_eq!(fades.len(), 2, "{fades:?}");
+        assert_eq!(fades[&a.id], [r(100, 104), r(104, 110), r(110, 116), r(300, 320)]);
+        assert_eq!(fades[&b.id], [r(0, 10)]);
+        assert!(!fades.contains_key(&c.id));
     }
 
     #[test]

@@ -675,17 +675,51 @@ function indexingTick(job: JobInfo, elapsed: number) {
   job.frames = { done: Math.round(READ_FRAMES * read), total: STATED_FRAMES, rate: 24000 / 1001, perSec }
 }
 
+/**
+ * A first analysis as the backend tells it, stage by stage, each from 0 to 1
+ * (`null`: how far isn't told): its shots, the face model's download (a
+ * moment with no value until the response comes, then a jump back to 0),
+ * its characters, then the grouping, which tells no value at all. A
+ * characters-only run starts at its characters, the model already there.
+ */
+export const ANALYSIS: { stage: string; ms: number; told: boolean }[] = [
+  { stage: "Finding shots", ms: 2000, told: true },
+  { stage: "Downloading AI model", ms: 300, told: false },
+  { stage: "Downloading AI model", ms: 700, told: true },
+  { stage: "Finding characters", ms: 2500, told: true },
+  { stage: "Grouping characters", ms: 2000, told: false },
+]
+
+/** The stages a run goes through: all of them, or from its characters on. */
+export const analysisSteps = (facesOnly: boolean) => (facesOnly ? ANALYSIS.slice(3) : ANALYSIS)
+
+/** Tells where an analysis is `elapsed` ms in: its stage, how far that stage is, and its time left once its pace is known (after 1 s). */
+export function analysisTick(steps: typeof ANALYSIS) {
+  return (job: JobInfo, elapsed: number) => {
+    let from = 0
+    const last = steps[steps.length - 1]
+    const step = steps.find((s) => (from += s.ms) > elapsed) ?? last
+    const begun = from - step.ms
+    const into = Math.max(0, elapsed - begun)
+    job.stage = step.stage
+    // A stage tells its 1 with its last sample (every 250 ms), as the backend's stages end on theirs.
+    job.progress = step.told ? Math.min(1, into / (step.ms - 250)) : null
+    job.etaMs = step.told && into >= 1000 ? Math.max(0, step.ms - into) : null
+  }
+}
+
 function analyze(p: MockProject, m: MediaItem) {
   const facesOnly = m.shots === "ready"
   if (facesOnly) m.faces = "running"
   else m.shots = "running"
-  const stage = facesOnly ? "Finding characters" : "Finding shots"
+  const steps = analysisSteps(facesOnly)
+  const ms = steps.reduce((sum, s) => sum + s.ms, 0)
   const cancelled = () => {
     if (m.shots === "running") m.shots = "stopped"
     if (m.faces === "running") m.faces = "stopped"
     void emit("media:changed", { projectId: p.id, mediaId: m.id })
   }
-  startJob("analyze", `Analysing ${m.label ? `${m.label} · ` : ""}${m.fileName}`, p, 4000, { mediaId: m.id, stage, cancelled }, () => {
+  startJob("analyze", `Analysing ${m.label ? `${m.label} · ` : ""}${m.fileName}`, p, ms, { mediaId: m.id, stage: steps[0].stage, cancelled, tick: analysisTick(steps) }, () => {
     m.shots = "ready"
     m.shotCount = SHOT_COUNT
     m.faces = "ready"

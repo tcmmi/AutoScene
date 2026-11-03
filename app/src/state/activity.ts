@@ -5,6 +5,13 @@ import type { JobId, JobInfo, JobProgress } from "@/bindings"
  * Live view of background jobs. Filled from `jobs_list` once and then kept
  * current by `job:changed` / `job:progress` events (see `lib/events.ts`).
  * Progress lives here, never in React Query, so 4 Hz updates don't refetch.
+ *
+ * A job's `progress` and `etaMs` here are what to show, not the last sample:
+ * a `null` right after a value keeps that value for `HOLD_MS` (and, when the
+ * null names a new stage, the stage it belongs to as well), and while the
+ * backend measures a phase's pace anew, the last time left it told is
+ * counted down (`ETA_BRIDGE_MS`). So the bar, its %, the time left, the
+ * Rail's ring and `aria-valuenow` agree, and a momentary gap never blinks.
  */
 type ActivityState = {
   jobs: Record<JobId, JobInfo>
@@ -13,10 +20,53 @@ type ActivityState = {
   replaceAll: (jobs: JobInfo[]) => void
   upsert: (job: JobInfo) => void
   progress: (p: JobProgress) => void
+  /** The hold that began at `since` ran out: how far the job is isn't known (UI only; `rev` stays). */
+  unhold: (id: JobId, since: number) => void
   clearFinished: () => void
 }
 
 export const isFinished = (j: JobInfo) => j.state === "done" || j.state === "failed" || j.state === "cancelled"
+
+/**
+ * A `null` after a value shows as unknown only once it has lasted this long:
+ * every measured momentary gap (a model's download starting, the next clip
+ * after a failed one) was under 1.4 s.
+ */
+export const HOLD_MS = 1500
+/** How long the last time left is counted down while the backend measures a phase anew. */
+export const ETA_BRIDGE_MS = 5000
+
+/**
+ * The running holds, by job: when each began (so a stale timer knows it is stale), its timer, and
+ * the newer stage it keeps back, if the null named one (shown once the hold runs out).
+ */
+const holds = new Map<
+  JobId,
+  { since: number; timer: ReturnType<typeof setTimeout>; next?: Pick<JobInfo, "stage" | "frames"> }
+>()
+/** The last time left the backend told, by job, and when it told it. */
+const told = new Map<JobId, { eta: number; at: number }>()
+/** A stage with its numbers left out ("Clip 2 of 3" reads as "Clip 3 of 3"), as the backend's own phase test. */
+const words = (stage: string | null) => (stage ?? "").replace(/\d/g, "")
+
+function stopHold(id: JobId) {
+  clearTimeout(holds.get(id)?.timer)
+  holds.delete(id)
+}
+
+/** A copy that waits or has ended holds nothing and borrows no time left. */
+function forgetIfIdle(j: JobInfo) {
+  if (j.state === "queued" || isFinished(j)) {
+    stopHold(j.id)
+    told.delete(j.id)
+  }
+}
+
+/** Tests: forget every hold and time left (`src/test/setup.ts` calls it after each test). */
+export function resetHolds() {
+  for (const id of [...holds.keys()]) stopHold(id)
+  told.clear()
+}
 
 /**
  * Events and the initial snapshot can arrive in any order, so every write
@@ -28,7 +78,11 @@ export const useActivity = create<ActivityState>((set) => ({
   replaceAll: (list) =>
     set((s) => {
       const jobs: Record<JobId, JobInfo> = { ...s.jobs }
-      for (const j of list) if (!jobs[j.id] || jobs[j.id].rev <= j.rev) jobs[j.id] = j
+      for (const j of list)
+        if (!jobs[j.id] || jobs[j.id].rev <= j.rev) {
+          jobs[j.id] = j
+          forgetIfIdle(j)
+        }
       const order = Object.values(jobs)
         .sort((a, b) => b.createdAt - a.createdAt)
         .map((j) => j.id)
@@ -38,14 +92,58 @@ export const useActivity = create<ActivityState>((set) => ({
     set((s) => {
       const prev = s.jobs[job.id]
       if (prev && prev.rev > job.rev) return s
+      forgetIfIdle(job)
       return { jobs: { ...s.jobs, [job.id]: job }, order: prev ? s.order : [job.id, ...s.order] }
     }),
   progress: (p) =>
     set((s) => {
       const j = s.jobs[p.id]
       if (!j || isFinished(j) || j.rev > p.rev) return s
-      const next = { ...j, progress: p.progress, stage: p.stage, etaMs: p.etaMs, frames: p.frames ?? null, rev: p.rev }
+      const now = Date.now()
+      let progress = p.progress
+      let stage = p.stage
+      let frames = p.frames ?? null
+      if (progress != null) stopHold(p.id)
+      else if (j.progress != null) {
+        // Between two values, or before a new stage's first one: hold what it showed.
+        // Nulls in a row don't stretch the hold.
+        progress = j.progress
+        let hold = holds.get(p.id)
+        if (!hold) {
+          const since = now
+          hold = { since, timer: setTimeout(() => useActivity.getState().unhold(p.id, since), HOLD_MS) }
+          holds.set(p.id, hold)
+        }
+        // A new stage's name beside the old stage's value would read wrong ("Downloading AI model ·
+        // 100 %" before it began), so its name waits with the value: for its first value or the hold's end.
+        hold.next = words(p.stage) === words(j.stage) ? undefined : { stage: p.stage, frames }
+        if (hold.next) {
+          stage = j.stage
+          frames = j.frames ?? null
+        }
+      }
+      let etaMs = p.etaMs
+      const t = told.get(p.id)
+      if (etaMs != null) told.set(p.id, { eta: etaMs, at: now })
+      else if (
+        t &&
+        now - t.at < ETA_BRIDGE_MS &&
+        words(stage) === words(j.stage) &&
+        (p.progress == null || j.progress == null || p.progress >= j.progress)
+      )
+        etaMs = Math.max(0, t.eta - (now - t.at))
+      else told.delete(p.id) // a new stage, a value that went back, or told too long ago: borrow nothing
+      const next = { ...j, progress, stage, etaMs, frames, rev: p.rev }
       return { jobs: { ...s.jobs, [p.id]: next } }
+    }),
+  unhold: (id, since) =>
+    set((s) => {
+      const hold = holds.get(id)
+      if (hold?.since !== since) return s // a value came, or a newer hold began: nothing to do
+      holds.delete(id)
+      told.delete(id)
+      const j = s.jobs[id]
+      return !j || isFinished(j) ? s : { jobs: { ...s.jobs, [id]: { ...j, ...hold.next, progress: null, etaMs: null } } }
     }),
   clearFinished: () =>
     set((s) => {

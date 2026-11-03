@@ -1,0 +1,54 @@
+name: Audit
+
+# A known hole in a dependency fails the build. Only Cargo.lock is read, so
+# nothing is compiled here. wasmtime alone ships security fixes about monthly,
+# so the weekly run catches a hole that is published after the last push.
+# Advisories we have judged not to reach AutoScene are listed, each with its
+# reason, in .cargo/audit.toml; "unmaintained" notes are shown but don't fail
+# the job (a vulnerability does), and "unsound" ones raise a warning
+# annotation on the run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # The result depends on these three files only; a pull request that
+    # touches none of them cannot change it. Push and schedule run always.
+    paths:
+      - Cargo.lock
+      - .cargo/audit.toml
+      - .github/workflows/audit.yml
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+# The event is part of the group so a push to main never cancels the weekly
+# run (a cancelled run shows as cancelled, not failed, and a hole could go
+# unseen until the next trigger).
+concurrency:
+  group: audit-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # cargo audit compiles nothing, so the nightly pinned in
+      # rust-toolchain.toml is not installed: `cargo +stable` below bypasses it.
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+      # The cache is saved on a failed run too: while the job is red, the
+      # compiled cargo-audit would otherwise be rebuilt from source every time.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      # Bump the version when `cargo search cargo-audit` shows a newer one.
+      - name: cargo-audit
+        run: cargo +stable install cargo-audit --locked --version =0.22.2
+      - run: cargo +stable audit
+      # "Unsound" notes (memory-safety bugs in a crate's API) don't fail the
+      # job; this puts them where the run page shows them, as a warning.
+      - name: Unsound notes
+        if: ${{ !cancelled() }}
+        run: cargo +stable audit --deny unsound || echo "::warning title=Unsound dependencies::cargo audit lists unsound advisories for crates in Cargo.lock; see the log of the 'Unsound notes' step."

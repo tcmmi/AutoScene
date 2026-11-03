@@ -1,0 +1,44 @@
+# What `cargo audit` (the audit.yml job) may let through. Every entry says why
+# the hole doesn't reach AutoScene. An entry is only ever added after reading
+# how the crate is used here, never to get a red job green. Only advisories of
+# type "vulnerability" fail the job; "unmaintained", "unsound" and "yanked"
+# notes are printed and don't (cargo audit's default).
+#
+# Checked on 2026-11-04, with the WebAssembly tier in the lock, against the
+# advisory database of that day. The list is checked again on the final tip:
+# drop an entry whose crate is gone or fixed, and add one only with its reason.
+#
+# An ignore is by advisory ID, not by crate: cargo audit cannot scope one to a
+# package. These four IDs hide the same hole in ANY zip older than 9, so at
+# each landing check `cargo tree -i zip@4.6.1` (the only parent must be
+# tauri-plugin-updater) and `cargo tree -i zip` for any other old copy. All
+# four entries go when the updater moves to zip >= 9.
+
+[advisories]
+ignore = [
+    # zip 4.6.1 is not ours: it is tauri-plugin-updater 3.0.0-alpha.2's
+    # dependency, compiled on Windows only (`cargo tree --target
+    # x86_64-unknown-linux-gnu` and `aarch64-apple-darwin` do not list it).
+    # The updater calls ZipArchive::extract on an update archive only after
+    # it verified the archive's minisign signature against the public key in
+    # tauri.conf.json, so a crafted archive has to be signed with AutoScene's
+    # own release key first. The fix is zip >= 9 and the updater asks for
+    # zip 4: it goes with the next updater release, not with a change here.
+    # AutoScene's own zip use is zip 9.2.2 (as-plugin), which is patched.
+
+    # Unix permission bits (SUID/SGID) kept on extraction. Windows has none,
+    # and this zip is not built on Unix.
+    "RUSTSEC-2026-0367",
+    # A symbolic link written outside the destination. This one DOES apply on
+    # Windows: zip 4.6.1 has a symlink_file/symlink_dir branch there. What stops
+    # it is the minisign check above (the archive is ours or it is never read),
+    # and a Windows symlink needs privilege or Developer Mode.
+    "RUSTSEC-2026-0368",
+    # Unix permissions applied through a symbolic link. Unix only: this zip is
+    # not built there.
+    "RUSTSEC-2026-0369",
+    # A symlink entry with a huge declared size aborts the process (applies on
+    # Windows too). The archive is the signed update, see above; the worst case
+    # is the updater stopping.
+    "RUSTSEC-2026-0429",
+]

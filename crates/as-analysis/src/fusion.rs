@@ -12,7 +12,12 @@
 //!    aren't just the echo of a hard cut, plus wipes, which TransNet hardly
 //!    sees: short bursts of motion that blend the colours of the pictures
 //!    on both sides. Their frames belong to no shot, so a clip never starts
-//!    mid-dissolve.
+//!    mid-dissolve. A false one splits a continuous shot in two and drops
+//!    its middle, so both need more than a hint: a TransNet run must be
+//!    sure or long, and a colour walk must be backed by TransNet and hold a
+//!    real jump. Checked by eye (`bench/shots`): most short, weak runs and
+//!    unbacked walks were a camera move, smoke, a change of light or
+//!    something passing the lens inside one shot.
 //! 4. **Flashes**: a "cut" whose next 1–3 frames stand out and then the
 //!    picture returns (muzzle flash, lightning, anime impact frame) is no cut.
 //! 5. **Black** runs (2+ frames) outside fades are their own segments.
@@ -101,6 +106,14 @@ impl FusionParams {
 /// A many-head run this short around a hard cut is the cut's echo, not a transition.
 const ECHO_LEN: usize = 8;
 const MIN_GRADUAL: usize = 3;
+/// A TransNet run between two pictures is a dissolve only when its `many`
+/// peaks at least this high or it lasts at least `LONG_GRADUAL` frames.
+/// Of the 71 runs checked by eye in six episodes (`bench/shots`), 45 lay
+/// inside one continuous shot, nearly all of them short and weak; with this
+/// rule 3 of them still split it. Live action, 3D and anime chose the same
+/// values when each episode was left out of the fit in turn.
+const SURE_GRADUAL: f32 = 0.85;
+const LONG_GRADUAL: usize = 10;
 const MIN_BLACK: usize = 2;
 /// A picture change (MAD) at least this big makes the edge of a black run abrupt.
 const BLACK_EDGE: f32 = 8.0;
@@ -133,6 +146,13 @@ const WIPE_EDGE: f32 = 0.05;
 const WIPE_DRIFT: f32 = 0.25;
 const WIPE_JUMP: f32 = 0.5;
 const WIPE_BACK: f32 = 0.15;
+/// A colour walk is a wipe only when TransNet backs it (`single` at least
+/// `WIPE_BACKING` from 2 frames before it to 1 after) and the picture jumps
+/// in it (a pixel change of at least `WIPE_MIN_JUMP` MAD). The colours of a
+/// shot also walk when the camera turns to a window, smoke clears or a light
+/// goes on: 116 of the 144 walks checked by eye were one shot.
+const WIPE_BACKING: f32 = 0.4;
+const WIPE_MIN_JUMP: f32 = 20.0;
 /// The pictures before and after a flash are this close (colour distance).
 const FLASH_SAME: f32 = 0.1;
 /// A cut counts as strong for tiny-shot purposes above these.
@@ -269,8 +289,6 @@ pub fn fuse(sig: &[FrameSignals], p: &FusionParams) -> Vec<Segment> {
         if near_cut && len <= ECHO_LEN {
             continue;
         }
-        // A dissolve isn't a cut: drop cuts strictly inside it.
-        cuts.retain(|&b| b <= a || b >= e);
         let kind = if a > 0 && cat[a - 1] == Cat::Black {
             TransitionKind::FadeIn
         } else if e < n && is_black(e) {
@@ -278,6 +296,16 @@ pub fn fuse(sig: &[FrameSignals], p: &FusionParams) -> Vec<Segment> {
         } else {
             TransitionKind::Dissolve
         };
+        // A short, weak run between two pictures is more often a camera move
+        // or a change of light inside one shot. Its frames stay shot frames,
+        // and a hard cut inside it stays a cut. Runs into or out of black are
+        // fades and stay.
+        let peak = sig[a..e].iter().map(|s| s.many).fold(0f32, f32::max);
+        if kind == TransitionKind::Dissolve && peak < SURE_GRADUAL && len < LONG_GRADUAL {
+            continue;
+        }
+        // A dissolve isn't a cut: drop cuts strictly inside it.
+        cuts.retain(|&b| b <= a || b >= e);
         (a..e).for_each(|x| cat[x] = Cat::Transition(kind));
     }
 
@@ -285,7 +313,13 @@ pub fn fuse(sig: &[FrameSignals], p: &FusionParams) -> Vec<Segment> {
     //     The colour signature of a blend is a mix of the two pictures', so a
     //     wipe is a steady walk from one stable palette to another, however
     //     much the pictures themselves move. Searched for in every stretch of
-    //     shot frames between cuts; a find splits the stretch.
+    //     shot frames between cuts; a find splits the stretch. A walk that
+    //     TransNet doesn't back, or without a real jump in it, stays shot
+    //     frames, and the search goes on beside it.
+    let backed = |a: usize, e: usize| {
+        (a.saturating_sub(2)..=(e + 1).min(n - 1)).any(|x| sig[x].single >= WIPE_BACKING)
+            && (a..=e.min(n - 1)).any(|x| d1(x) >= WIPE_MIN_JUMP)
+    };
     let mut stretches: Vec<(usize, usize)> = Vec::new();
     let mut f = 0;
     while f < n {
@@ -302,7 +336,9 @@ pub fn fuse(sig: &[FrameSignals], p: &FusionParams) -> Vec<Segment> {
     }
     while let Some((r0, r1)) = stretches.pop() {
         if let Some((a, e)) = find_wipe(sig, r0, r1) {
-            (a..e).for_each(|x| cat[x] = Cat::Transition(TransitionKind::Dissolve));
+            if backed(a, e) {
+                (a..e).for_each(|x| cat[x] = Cat::Transition(TransitionKind::Dissolve));
+            }
             stretches.push((r0, a));
             stretches.push((e, r1));
         }
@@ -423,9 +459,10 @@ pub fn fuse(sig: &[FrameSignals], p: &FusionParams) -> Vec<Segment> {
     segs
 }
 
-/// The blended frames `a..e` of a wipe inside the shot frames `r0..r1`, if
-/// there is one: stable palette A, then frames that walk steadily from A to
-/// B, then stable palette B, with A and B as different as across a cut.
+/// The blended frames `a..e` of a colour walk inside the shot frames
+/// `r0..r1`, if there is one: stable palette A, then frames that walk
+/// steadily from A to B, then stable palette B, with A and B as different as
+/// across a cut. Whether the walk is a wipe, the caller decides.
 fn find_wipe(sig: &[FrameSignals], r0: usize, r1: usize) -> Option<(usize, usize)> {
     if r1 - r0 < 2 * WIPE_SIDE + MIN_WIPE {
         return None;
@@ -678,10 +715,25 @@ mod tests {
         assert_eq!(kinds(&fuse(&s, &FusionParams::live())), [(0, 10, Shot), (10, 14, Black), (14, 24, Shot)]);
     }
 
-    #[test]
-    fn a_wipe_is_a_transition_but_a_pan_is_not() {
-        // A 0..10, a wipe uncovering B over frames 10..20, B from 20 on.
-        let looks: Vec<u32> = (0..30)
+    /// The colours of frames `from..to` walk steadily from the picture before
+    /// them to the one at `to`, with little motion and no TransNet: a wipe, or
+    /// a camera turning from one palette to another.
+    fn walk(s: &mut [FrameSignals], from: usize, to: usize) {
+        let (a, b) = (s[from - 1].colors, s[to].colors);
+        let steps = (to - from + 1) as f32;
+        for f in from..=to {
+            let p = (f - from + 1) as f32 / steps;
+            for i in 0..COLORS {
+                s[f].colors[i] = (a[i] as f32 * (1.0 - p) + b[i] as f32 * p).round() as u8;
+            }
+            s[f].diff[0] = 12.0;
+            s[f].hist = 0.03;
+        }
+    }
+
+    /// A 0..10, frames 10..20 on the way to B, B from 20 on.
+    fn a_to_b() -> Vec<u32> {
+        (0..30)
             .map(|f| {
                 if f < 10 {
                     1
@@ -691,26 +743,128 @@ mod tests {
                     2
                 }
             })
-            .collect();
-        let mut s = signals(&looks, &[], &[]);
-        let (a, b) = (s[0].colors, s[29].colors);
-        for f in 10..=20 {
-            let p = (f - 9) as f32 / 11.0;
-            for i in 0..COLORS {
-                s[f].colors[i] = (a[i] as f32 * (1.0 - p) + b[i] as f32 * p).round() as u8;
-            }
-            s[f].diff[0] = 12.0;
-            s[f].hist = 0.03;
-        }
+            .collect()
+    }
+
+    #[test]
+    fn a_wipe_is_a_transition_but_a_pan_is_not() {
+        // A wipe uncovering B over frames 10..20, which TransNet backs and in
+        // which the picture jumps.
+        let mut s = signals(&a_to_b(), &[(9, 0.45)], &[]);
+        walk(&mut s, 10, 20);
+        s[15].diff[0] = 25.0;
         assert_eq!(
             kinds(&fuse(&s, &FusionParams::live())),
             [(0, 10, Shot), (10, 20, Transition(Dissolve)), (20, 30, Shot)]
         );
         // The same burst of motion over the same colours: a pan, one shot.
+        let a = s[0].colors;
         for x in &mut s {
             x.colors = a;
         }
         assert_eq!(kinds(&fuse(&s, &FusionParams::live())), [(0, 30, Shot)]);
+    }
+
+    #[test]
+    fn a_palette_walk_needs_transnet_and_a_jump_to_be_a_wipe() {
+        // The walk over frames 10..20, TransNet's `single` at one frame and
+        // the pixel change at frame 15.
+        let fused = |at: usize, single: f32, jump: f32| {
+            let mut s = signals(&a_to_b(), &[(at, single)], &[]);
+            walk(&mut s, 10, 20);
+            s[15].diff[0] = jump;
+            kinds(&fuse(&s, &FusionParams::live()))
+        };
+        let wipe = [(0, 10, Shot), (10, 20, Transition(Dissolve)), (20, 30, Shot)];
+        let one_shot = [(0, 30, Shot)];
+        // The colours alone: smoke clearing or a light going on, one shot.
+        assert_eq!(fused(9, 0.01, 12.0), one_shot);
+        // TransNet without a jump, or a jump TransNet doesn't see.
+        assert_eq!(fused(9, 0.45, 12.0), one_shot);
+        assert_eq!(fused(9, 0.39, 25.0), one_shot);
+        assert_eq!(fused(9, 0.45, 19.0), one_shot);
+        // Both: a wipe. TransNet counts from 2 frames before it to 1 after.
+        assert_eq!(fused(9, 0.45, 25.0), wipe);
+        assert_eq!(fused(8, 0.4, 20.0), wipe);
+        assert_eq!(fused(21, 0.45, 25.0), wipe);
+        assert_eq!(fused(7, 0.45, 25.0), one_shot);
+        assert_eq!(fused(22, 0.45, 25.0), one_shot);
+    }
+
+    #[test]
+    fn an_unbacked_walk_does_not_hide_a_backed_wipe_beside_it() {
+        // A 0..20, a walk to B over 20..30 that nothing backs (the stronger
+        // candidate, as it comes first), B 30..70, a backed wipe to C over
+        // 70..80, C from 80 on.
+        let looks: Vec<u32> = (0..100)
+            .map(|f| match f {
+                0..20 => 1,
+                20..30 => 100 + f,
+                30..70 => 2,
+                70..80 => 200 + f,
+                _ => 3,
+            })
+            .collect();
+        let mut s = signals(&looks, &[(69, 0.45)], &[]);
+        walk(&mut s, 20, 30);
+        walk(&mut s, 70, 80);
+        s[75].diff[0] = 25.0;
+        assert_eq!(
+            kinds(&fuse(&s, &FusionParams::live())),
+            [(0, 70, Shot), (70, 80, Transition(Dissolve)), (80, 100, Shot)]
+        );
+    }
+
+    /// Picture 1 until frame 10, then `len` frames that change (TransNet's
+    /// `many` at `many`, and at `peak` on the middle one), then picture
+    /// `after`.
+    fn run(len: usize, many: f32, peak: f32, after: u32) -> Vec<FrameSignals> {
+        let looks: Vec<u32> = (0..40)
+            .map(|f| match f {
+                0..10 => 1,
+                f if f < 10 + len as u32 => 100 + f,
+                _ => after,
+            })
+            .collect();
+        let mut s = signals(&looks, &[], &[]);
+        (10..10 + len).for_each(|f| s[f].many = many);
+        s[10 + len / 2].many = peak;
+        s
+    }
+
+    #[test]
+    fn a_weak_short_transnet_run_inside_a_shot_is_no_dissolve() {
+        // The camera moves for 5 frames and TransNet half believes in a
+        // dissolve; the picture before and after is the same shot.
+        for p in [FusionParams::live(), FusionParams::anime()] {
+            assert_eq!(kinds(&fuse(&run(5, 0.6, 0.6, 1), &p)), [(0, 40, Shot)]);
+            // As weak and as long as it can be and still be skipped.
+            assert_eq!(kinds(&fuse(&run(9, 0.6, 0.84, 1), &p)), [(0, 40, Shot)]);
+        }
+    }
+
+    #[test]
+    fn a_sure_or_long_transnet_run_stays_a_dissolve() {
+        let dissolve = |len: u32| [(0, 10, Shot), (10, 10 + len, Transition(Dissolve)), (10 + len, 40, Shot)];
+        for p in [FusionParams::live(), FusionParams::anime()] {
+            // Sure: one frame at 0.85 is enough.
+            assert_eq!(kinds(&fuse(&run(5, 0.6, 0.85, 2), &p)), dissolve(5));
+            assert_eq!(kinds(&fuse(&run(5, 0.9, 0.9, 2), &p)), dissolve(5));
+            // Long: 10 frames, however weak.
+            assert_eq!(kinds(&fuse(&run(10, 0.6, 0.6, 2), &p)), dissolve(10));
+            assert_eq!(kinds(&fuse(&run(12, 0.6, 0.6, 2), &p)), dissolve(12));
+        }
+    }
+
+    #[test]
+    fn a_cut_inside_a_skipped_run_stays_a_cut() {
+        // A 0..10, B 10..20, a clear cut at 10. TransNet's `many` is weak over
+        // 6..15: longer than a cut's echo, but too weak and short for a
+        // dissolve, so the cut isn't swallowed by one.
+        let looks: Vec<u32> = (0..20).map(|f| if f < 10 { 1 } else { 2 }).collect();
+        let mut s = signals(&looks, &[(10, 0.9)], &[]);
+        (6..15).for_each(|f| s[f].many = 0.6);
+        assert_eq!(kinds(&fuse(&s, &FusionParams::live())), [(0, 10, Shot), (10, 20, Shot)]);
     }
 
     #[test]

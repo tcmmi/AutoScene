@@ -105,7 +105,13 @@ const FRAMES = 586
 const FPS = { num: 24, den: 1 }
 const ROOT = String.raw`C:\Users\you\Documents\AutoScene Library`
 
-/** What shot detection makes of the fixture (taken from a real run of the app). */
+/**
+ * What shot detection made of the fixture before the fusion of #59 (taken
+ * from a real run of the app), as a library analysed then still holds it.
+ * Its wipe at 335–346 is a dissolve here; the fusion now keeps it inside one
+ * shot (crates/as-analysis/tests/shots.rs). The rows stay as they are, so
+ * the mock characters keep the shots they are seeded with.
+ */
 const SEGMENTS: Segment[] = (
   [
     [0, 48, "shot"],

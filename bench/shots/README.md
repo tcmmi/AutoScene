@@ -110,9 +110,10 @@ rows, and one row of limits per episode.
 
 ## Results
 
-The fusion of 0cc0975 (2026-11-03). The signals of the four library
-episodes fuse to exactly the segments the app stored; Re:Zero's were
-measured with `shot_signals`.
+### Before: the fusion of 0cc0975
+
+2026-11-03. The signals of the four library episodes fuse to exactly the
+segments the app stored; Re:Zero's were measured with `shot_signals`.
 
 | Episode | Merged | Split | Known false cuts | Misplaced | One-shot spans still split | Real transitions lost | Unsure |
 |---|---|---|---|---|---|---|---|
@@ -131,3 +132,45 @@ really are split: 162 of the 216 lie inside one continuous shot, which they
 cut in two, dropping its middle frames. Most of them come from the
 palette-walk wipe finder (116 of its 144) and from short, weak TransNet
 runs (45 of 71).
+
+### After: a gradual transition needs more than a hint
+
+2026-11-03, same signals. A TransNet run between two pictures is a dissolve
+only when its `many` peaks at 0.85 or more or it lasts 10 frames or more.
+A colour walk is a wipe only when TransNet backs it (`single` of 0.4 or
+more, from 2 frames before the walk to 1 after it) and the picture jumps in
+it (a change of 20 MAD or more). Runs into or out of black stay fades, and
+hard cuts don't change. `limits.tsv` holds these numbers now: the old
+fusion fails them on all six episodes.
+
+| Episode | Merged | Split | Known false cuts | Misplaced | One-shot spans still split | Real transitions lost | Unsure |
+|---|---|---|---|---|---|---|---|
+| `bb_s01e01` | 0 | 0 | 0 | 0 | 3 / 23 | 2 / 3 | 1 |
+| `bl_s01e01` | 0 | 0 | 0 | 0 | 3 / 32 | 0 / 0 | 0 |
+| `ml_awakening` | 0 | 0 | 1 (113029) | 0 | 10 / 80 | 7 / 20 | 9 |
+| `ds_mugen_train_e01` | 0 | 0 | 0 | 1 (37277 → 37279) | 0 / 13 | 4 / 12 | 0 |
+| `rz_31` | 0 | 0 | 0 | 0 | 1 / 5 | 0 / 1 | 2 |
+| `rz_33` | 0 | 0 | 0 | 0 | 3 / 9 | 0 / 3 | 3 |
+| **All** | **0** | **0** | **1** | **1** | **20 / 162** | **13 / 39** | **15** |
+
+- 142 of the 162 shots that a false transition cut in two are whole again.
+- 4 of the 20 spans still counted have a right boundary within 3 frames:
+  - Miraculous 83132: the hard cut at 83130 (a news shot until 83129, the
+    aerial shot from 83130). The old fusion hid it in a 2-frame tiny shot;
+    now it is placed exactly.
+  - Miraculous 121342 and 121744: real dissolves start beside them (121348,
+    121753), and they stay.
+  - Re:Zero 31 34188: it lies in a fade-in from black (34171–34203), now
+    found whole.
+- The 13 real transitions lost each become one shot that holds a blend:
+  - Breaking Bad 5867 (credits) and 16111 (a hard cut TransNet doesn't see
+    at all);
+  - Miraculous 61543, 64425, 81134, 87727, 113190 and 126880 (effect wipes
+    in action scenes) and 62162 (a flare);
+  - Demon Slayer 354, 16605, 25603 and 34069 (the end card).
+- The synthetic wipe of the test fixtures (`cargo xtask fixtures`) is such
+  a walk too: nothing backs it, as TransNet's `single` stays under 0.1 on
+  every variant. So it stays in its shot, and
+  `crates/as-analysis/tests/shots.rs` says so. Taking walks like it as
+  wipes again (a walk of 10 frames or more between pictures as different
+  as across a cut) would leave 99 of the 162 spans split.

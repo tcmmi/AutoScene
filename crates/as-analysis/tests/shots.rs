@@ -115,7 +115,17 @@ fn shots_match_the_truth_on_every_variant() {
     let Some(env) = env() else { return };
     let truth = &env.truth;
     let want_cuts = truth.hard_cuts();
-    let want_spans: Vec<(u32, u32)> = truth.transitions().map(|t| (t.start, t.end)).collect();
+    // TransNet doesn't see the wipe from one test pattern to the next: its
+    // `single` stays under 0.1 on every variant. Without that backing, a
+    // walk from one palette to another is to fusion what a camera turning
+    // to a window is, and the eye check of `bench/shots` found such walks
+    // inside one shot 116 times in 144. So the wipe stays in the shot
+    // around it, the trade that bench records; the other transitions are
+    // found.
+    let (wipes, gradual): (Vec<_>, Vec<_>) =
+        truth.transitions().partition(|t| t.transition.as_deref() == Some("wipeleft"));
+    assert_eq!(wipes.len(), 1, "the fixtures hold one wipe");
+    let want_spans: Vec<(u32, u32)> = gradual.iter().map(|t| (t.start, t.end)).collect();
     let flashes: Vec<u32> = truth.shots().flat_map(|s| s.flashes.iter().copied()).collect();
     for file in
         ["master.mkv", "cfr24_h264.mp4", "transport_h264.ts", "vfr_h264.mkv", "hevc10_hdr.mkv", "interlaced_h264.ts"]
@@ -131,6 +141,14 @@ fn shots_match_the_truth_on_every_variant() {
         assert_eq!(got_spans.len(), want_spans.len(), "{file}: transitions {got_spans:?} vs {want_spans:?}");
         for (g, w) in got_spans.iter().zip(&want_spans) {
             assert!(g.0.abs_diff(w.0) <= 2 && g.1.abs_diff(w.1) <= 2, "{file}: transition {g:?} vs truth {w:?}");
+        }
+        for w in &wipes {
+            assert!(
+                segs.iter().any(|s| s.kind == SegmentKind::Shot && s.start + 3 <= w.start && s.end >= w.end + 3),
+                "{file}: the wipe {}..{} lies inside one shot (segments: {segs:?})",
+                w.start,
+                w.end
+            );
         }
         // Every frame belongs to exactly one segment.
         assert_eq!(segs.first().map(|s| s.start), Some(0));

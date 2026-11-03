@@ -8,7 +8,11 @@
 //!
 //! `load-dynamic` binds one runtime per process, which is one reason the
 //! engine is its own process: switching runtimes means restarting it.
+//!
+//! [`computer`] says which graphics the analysis runs on, and whether they are
+//! built for AI work.
 
+pub mod computer;
 pub mod onnx;
 
 use std::path::{Path, PathBuf};

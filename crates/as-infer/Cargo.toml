@@ -18,6 +18,9 @@ ort = { version = "=2.0.0-rc.14", default-features = false, features = ["std", "
 [target.'cfg(windows)'.dependencies]
 ort = { version = "=2.0.0-rc.14", default-features = false, features = ["directml"] }
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }
+# DXCore's interfaces only: dxcore.dll itself is loaded at run time (computer.rs).
+windows = { workspace = true, features = ["Win32_Foundation", "Win32_Graphics_DXCore"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 ort = { version = "=2.0.0-rc.14", default-features = false, features = ["coreml"] }
+libc.workspace = true

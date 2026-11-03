@@ -234,9 +234,11 @@ dependencies = [
 name = "as-infer"
 version = "1.0.3-BETA"
 dependencies = [
+ "libc",
  "ort",
  "thiserror 2.0.21",
  "tracing",
+ "windows 0.62.2",
  "windows-sys 0.61.2",
 ]
 

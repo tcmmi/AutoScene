@@ -61,6 +61,7 @@ fn series(dir: &Path) -> (Arc<Project>, CharacterId) {
         gpu: String::new(),
         plugin_catalog_checks: true,
         nvidia_acceleration: true,
+        discord_rpc: Default::default(),
     })
     .unwrap();
     let files: Vec<String> = (1..=EPISODES)

@@ -47,6 +47,7 @@ const KEY_GPU: &str = "gpu";
 const KEY_CATALOG_CHECKS: &str = "plugin_catalog_checks";
 /// `0` once NVIDIA's engine is switched off; it is on unless it is.
 const KEY_NVIDIA_ACCELERATION: &str = "nvidia_acceleration";
+const KEY_DISCORD_RPC: &str = "discord_rpc";
 /// Most series and films people cut are watched in their original English
 /// track; dubbed tracks are often flagged "default" too, so a language
 /// preference beats the file's flag.
@@ -202,6 +203,7 @@ impl Library {
             gpu: self.gpu(),
             plugin_catalog_checks: self.db.setting(KEY_CATALOG_CHECKS)?.as_deref() != Some("0"),
             nvidia_acceleration: self.nvidia_acceleration(),
+            discord_rpc: self.discord_rpc()?,
         })
     }
 
@@ -228,6 +230,14 @@ impl Library {
     /// Whether plugins AutoScene has not reviewed may be installed and run.
     pub fn allows_unreviewed_plugins(&self) -> ProjectResult<bool> {
         Ok(self.db.setting(KEY_ALLOW_UNREVIEWED)?.as_deref() == Some("1"))
+    }
+
+    /// Discord Rich Presence settings.
+    pub fn discord_rpc(&self) -> ProjectResult<as_api::DiscordRpcSettings> {
+        let Some(json) = self.db.setting(KEY_DISCORD_RPC)? else {
+            return Ok(as_api::DiscordRpcSettings::default());
+        };
+        Ok(serde_json::from_str(&json).unwrap_or_default())
     }
 
     /// Lets plugins AutoScene has not reviewed be installed and run, or
@@ -346,6 +356,8 @@ impl Library {
         self.set_nvidia_acceleration(s.nvidia_acceleration)?;
         self.db.set_setting(KEY_ANILIST, if s.anilist { "1" } else { "0" })?;
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
+        let discord_json = serde_json::to_string(&s.discord_rpc).unwrap_or_default();
+        self.db.set_setting(KEY_DISCORD_RPC, &discord_json)?;
         // `allow_unreviewed_plugins` stays: see `set_allows_unreviewed_plugins`.
         // Fast Scan's default too: see `set_scan_default`.
         self.db.set_setting(KEY_CATALOG_CHECKS, if s.plugin_catalog_checks { "1" } else { "0" })?;
@@ -791,6 +803,7 @@ mod tests {
             gpu: String::new(),
             plugin_catalog_checks: true,
             nvidia_acceleration: true,
+            discord_rpc: Default::default(),
         })
         .unwrap();
         assert_eq!(lib.audio_language().unwrap(), "deu", "stored as an ISO 639-2 code");
@@ -1655,6 +1668,7 @@ mod tests {
             gpu: String::new(),
             plugin_catalog_checks: true,
             nvidia_acceleration: true,
+            discord_rpc: Default::default(),
         };
         assert!(matches!(lib.update_settings(&bad), Err(ProjectError::Invalid(_))));
         assert_eq!(lib.settings().unwrap().export_preset_id, "h264-edit");

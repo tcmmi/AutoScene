@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { DownloadSimple, Info, Keyboard, SlidersHorizontal, Users } from "@/components/icons"
+import { DiscordLogo, DownloadSimple, Info, Keyboard, SlidersHorizontal, Users } from "@/components/icons"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { TopBar } from "@/components/ui/topbar"
@@ -8,6 +8,7 @@ import { SETTINGS_SECTIONS, type SettingsSection, isAppSection, useAppActions } 
 import { cn } from "@/lib/utils"
 import { AboutSection } from "./sections/AboutSection"
 import { ContributorsSection } from "./sections/ContributorsSection"
+import { DiscordSection } from "./sections/DiscordSection"
 import { GeneralSection } from "./sections/GeneralSection"
 import { ShortcutsSection } from "./sections/ShortcutsSection"
 import { UpdatesSection } from "./sections/UpdatesSection"
@@ -15,6 +16,7 @@ import { SETTINGS_LABELS } from "./sections"
 
 const META: Record<SettingsSection, { icon: React.ReactNode; render: () => React.ReactNode }> = {
   general: { icon: <SlidersHorizontal />, render: () => <GeneralSection /> },
+  discord: { icon: <DiscordLogo />, render: () => <DiscordSection /> },
   shortcuts: { icon: <Keyboard />, render: () => <ShortcutsSection /> },
   updates: { icon: <DownloadSimple />, render: () => <UpdatesSection /> },
   about: { icon: <Info />, render: () => <AboutSection /> },

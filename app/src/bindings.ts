@@ -438,6 +438,18 @@ export const commands = {
 	 *  and is asked about once it stops ([`pages::watch`]).
 	 */
 	pluginPageHeartbeat: (session: string) => __TAURI_INVOKE<null>("plugin_page_heartbeat", { session }),
+	discordRpcStart: (clientId: string | null) => __TAURI_INVOKE<null>("discord_rpc_start", { clientId }),
+	discordRpcUpdate: (activity: {
+	details: string | null,
+	state: string | null,
+	startTimestamp: number | null,
+	largeImage: string | null,
+	largeText: string | null,
+	smallImage: string | null,
+	smallText: string | null,
+	buttons: DiscordButton[],
+} | null) => __TAURI_INVOKE<null>("discord_rpc_update", { activity }),
+	discordRpcStop: () => __TAURI_INVOKE<null>("discord_rpc_stop"),
 	/**  Newest first. Live updates arrive as `job:changed` / `job:progress`. */
 	jobsList: () => __TAURI_INVOKE<JobInfo[]>("jobs_list"),
 	jobCancel: (jobId: JobId) => __TAURI_INVOKE<void>("job_cancel", { jobId }),
@@ -758,6 +770,8 @@ export type AppSettings = {
 	 *  unless switched off. Applies from the next analysis.
 	 */
 	nvidiaAcceleration?: boolean,
+	/**  Discord Rich Presence settings. */
+	discordRpc?: DiscordRpcSettings,
 };
 
 export type AudioCodec = { codec: "none" } | 
@@ -1058,6 +1072,38 @@ export type ContentKind =
 "animation" | 
 /**  Anime / 2D animation (heads, character art). */
 "anime" | "mixed";
+
+export type DiscordActivityPayload = {
+	details: string | null,
+	state: string | null,
+	startTimestamp: number | null,
+	largeImage: string | null,
+	largeText: string | null,
+	smallImage: string | null,
+	smallText: string | null,
+	buttons: DiscordButton[],
+};
+
+export type DiscordButton = {
+	label: string,
+	url: string,
+};
+
+/**  User configuration for Discord Rich Presence. */
+export type DiscordRpcSettings = {
+	enabled?: boolean,
+	clientId?: string,
+	showTimer?: boolean,
+	showButtons?: boolean,
+	showProject?: boolean,
+	showEpisode?: boolean,
+	showCharacter?: boolean,
+	showProgress?: boolean,
+	showCounts?: boolean,
+	templateProject?: string,
+	templateScenepack?: string,
+	templateExport?: string,
+};
 
 export type DnxProfile = 
 /**  8-bit 4:2:2. */

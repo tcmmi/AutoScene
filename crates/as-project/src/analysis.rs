@@ -256,6 +256,7 @@ pub(crate) mod tests {
             gpu: String::new(),
             plugin_catalog_checks: true,
             nvidia_acceleration: true,
+            discord_rpc: Default::default(),
         })
         .unwrap();
         let files: Vec<String> = names

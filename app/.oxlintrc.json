@@ -12,6 +12,7 @@
   ],
   "rules": {
     "react/rules-of-hooks": "error",
+    "react/immutability": "off",
     "react/only-export-components": [
       "warn",
       {

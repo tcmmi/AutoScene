@@ -68,6 +68,14 @@ tauri-plugin-window-state = "=3.0.0-alpha.2"
 # The plugin host's tests open a plugin store for an AutoScene version.
 semver.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# A plugin page's saved file is marked as a download (plugins/calls.rs).
+libc.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# WebKitGTK's own menu, off in release builds (window.rs).
+webkit2gtk.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 # Keep the PC awake while analysis runs.
 windows-sys = { workspace = true, features = [
@@ -76,3 +84,6 @@ windows-sys = { workspace = true, features = [
     "Wdk_System_SystemServices",
     "Win32_System_SystemInformation",
 ] }
+# WebView2's browser keys and menu, off in release builds (window.rs).
+webview2-com.workspace = true
+windows-core.workspace = true

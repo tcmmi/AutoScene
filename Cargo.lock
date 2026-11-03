@@ -534,6 +534,7 @@ dependencies = [
  "as-plugin",
  "as-project",
  "base64 0.23.1",
+ "libc",
  "log",
  "parking_lot",
  "semver",
@@ -556,6 +557,9 @@ dependencies = [
  "tauri-specta",
  "tokio",
  "tracing",
+ "webkit2gtk",
+ "webview2-com",
+ "windows-core 0.62.2",
  "windows-sys 0.61.2",
 ]
 

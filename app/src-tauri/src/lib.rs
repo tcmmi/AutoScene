@@ -309,6 +309,11 @@ The log is in {}",
             app.manage(state::AppState::new(&handle, library, &paths));
             // After the state: the page calls commands as soon as it loads.
             window::create_main(app)?;
+            if !cfg!(debug_assertions)
+                && let Some(main) = app.get_webview_window("main")
+            {
+                window::no_browser_menu(&main);
+            }
             // Resume interrupted indexing and previews; locate ffmpeg and probe
             // the hardware off the UI thread so the first job starts warm.
             std::thread::spawn(move || {

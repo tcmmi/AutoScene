@@ -694,28 +694,53 @@ fn the_example_plugins_pack_and_parse() {
     let tmp = tempfile::tempdir().unwrap();
     let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins");
     let app = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
-    for name in ["hello-export", "discord-notify", "hello-service"] {
+    // Each is checked by how it runs: an example added here is added below.
+    let runtimes = [
+        ("discord-notify", RuntimeKind::Process),
+        ("hello-export", RuntimeKind::Process),
+        ("hello-page", RuntimeKind::None),
+        ("hello-service", RuntimeKind::Service),
+    ];
+    assert_eq!(names(&examples), runtimes.map(|(name, _)| name));
+    for (name, runtime) in runtimes {
         // docs/PLUGINS.md packs them as they are: without a warning.
         let out = tmp.path().join(format!("{name}.asp"));
         assert_eq!(asp(&["pack", text(&examples.join(name)), text(&out)]).warnings(), "", "{name}");
         let into = tmp.path().join(name);
         let lock = package::unpack(&out, &into).unwrap().lock;
-        // Its lock fits the script as it is now: uv refuses every run of a
-        // script whose block changed since it was locked.
-        let script = fs::read_to_string(into.join("main.py")).unwrap();
-        let uv_lock = fs::read_to_string(into.join("main.py.lock")).unwrap();
-        assert_eq!(lock_has(&uv_lock), script_wants(&script), "{name}: lock it again");
         let parsed = manifest::parse(&fs::read(into.join("plugin.json")).unwrap(), &app).unwrap();
         assert!(parsed.warnings.is_empty(), "{name}: {:?}", parsed.warnings);
-
-        // A uv script with its lock, which starts the same way everywhere.
         let m = parsed.manifest;
-        assert_eq!(m.id.as_str(), format!("dev.autoscene.{name}"));
-        for (platform, launch) in m.launches() {
-            let launch = launch.unwrap();
-            assert_eq!(launch, Launch::UvScript { script: "main.py".into() }, "{name} on {platform}");
-            package::check_launch(&lock, &launch, platform).unwrap();
+        assert_eq!((m.id.as_str(), m.runtime.kind), (format!("dev.autoscene.{name}").as_str(), runtime));
+        // hello-export stays the version 1 sample; the others show what
+        // version 2 and its calls add.
+        let versions = if name == "hello-export" { (1, 1) } else { (2, 2) };
+        assert_eq!((m.manifest_version, m.engines.protocol), versions, "{name}");
+
+        match runtime {
+            // A uv script with its lock, which starts the same way everywhere.
+            RuntimeKind::Process | RuntimeKind::Service => {
+                // Its lock fits the script as it is now: uv refuses every
+                // run of a script whose block changed since it was locked.
+                let script = fs::read_to_string(into.join("main.py")).unwrap();
+                let uv_lock = fs::read_to_string(into.join("main.py.lock")).unwrap();
+                assert_eq!(lock_has(&uv_lock), script_wants(&script), "{name}: lock it again");
+                assert_eq!(m.launches().len(), 6, "{name}");
+                for (platform, launch) in m.launches() {
+                    let launch = launch.unwrap();
+                    assert_eq!(launch, Launch::UvScript { script: "main.py".into() }, "{name} on {platform}");
+                    package::check_launch(&lock, &launch, platform).unwrap();
+                }
+            }
+            // Its pages, and nothing that runs.
+            RuntimeKind::None => {
+                assert_eq!(m.launches().len(), 0, "{name}");
+                assert!(!into.join("main.py").exists(), "{name}");
+                assert!(!m.pages.is_empty(), "{name}");
+            }
         }
+        // Each page is a file of the package, as AutoScene checks it.
+        package::check_pages(&into, Some(&lock), &m.pages).unwrap();
         assert_eq!(asp(&["verify", text(&out)]).ok(), format!("{} {}: Unreviewed\n", m.id, m.version));
     }
 }

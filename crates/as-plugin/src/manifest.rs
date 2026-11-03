@@ -2057,9 +2057,10 @@ mod tests {
         program["network"] = json!({"hosts": ["discord.com"]});
         program["runtime"] = json!({"type": "process", "command": {"*": ["bin/tool.exe", "--fast"]}, "gpu": true});
         let mut fixtures = vec![plugin(), program];
-        // The examples of version 1 (hello-page shows a page: it is version 2).
+        // The examples of version 1: hello-export. The others show what
+        // version 2 adds.
         fixtures.extend(examples().into_iter().filter(|e| e["manifestVersion"] == json!(1)));
-        assert!(fixtures.len() >= 4, "{}", fixtures.len());
+        assert!(fixtures.len() >= 3, "{}", fixtures.len());
         for v1 in fixtures {
             assert_eq!(v1["manifestVersion"], json!(1));
             let old = read(&v1).unwrap();
@@ -2118,6 +2119,7 @@ mod tests {
             (&contributes["exportActions"]["maxItems"], MAX_ACTIONS),
             (&contributes["commands"]["maxItems"], MAX_COMMANDS),
             (&contributes["settings"]["maxItems"], MAX_SETTINGS),
+            (&contributes["settings"]["maxContains"], MAX_SECRETS),
             (&contributes["pages"]["maxItems"], MAX_PAGES),
             (&schema["properties"]["platforms"]["maxItems"], MAX_PLATFORMS),
             (&defs["network"]["properties"]["hosts"]["maxItems"], MAX_HOSTS),

@@ -1,9 +1,10 @@
 //! `templates/autoscene.py`, the helper `asp init` writes beside a plugin's
-//! Python program, and `templates/main.py`, that program: each run as
-//! AutoScene runs a program, and spoken to as AutoScene speaks to it. What
-//! they write must read as AutoScene reads a program's lines, and what
-//! AutoScene writes as protocol 2 says. They need a Python 3.10 or later on
-//! the PATH, and are skipped, with a word, without one.
+//! Python program, `templates/main.py`, that program, and the Discord
+//! example's program, which uses the helper: each run as AutoScene runs a
+//! program, and spoken to as AutoScene speaks to it. What they write must
+//! read as AutoScene reads a program's lines, and what AutoScene writes as
+//! protocol 2 says. They need a Python 3.10 or later on the PATH, and are
+//! skipped, with a word, without one.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -392,7 +393,114 @@ fn the_template_program_runs_and_serves() {
 }
 
 #[test]
-fn the_example_service_has_the_helper_asp_init_writes() {
-    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins/hello-service/autoscene.py");
-    assert_eq!(read_text(&example), read_text(&Path::new(TEMPLATES).join("autoscene.py")));
+fn the_examples_have_the_helper_asp_init_writes() {
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins");
+    for name in ["discord-notify", "hello-service"] {
+        let example = examples.join(name).join("autoscene.py");
+        assert_eq!(read_text(&example), read_text(&Path::new(TEMPLATES).join("autoscene.py")), "{name}");
+    }
+}
+
+/// A run of the Discord example (`examples/plugins/discord-notify`) for the
+/// action `id`, with the settings a person left alone.
+fn discord(kind: ActionKind, id: &str) -> RunMessage {
+    let mut message = run(kind, id, Trigger::Menu);
+    message.settings = BTreeMap::from([
+        ("listClips".into(), SettingValue::Bool(true)),
+        ("username".into(), SettingValue::Text("AutoScene".into())),
+    ]);
+    message
+}
+
+#[test]
+fn the_discord_example_reads_its_secret_and_posts_through_autoscene() {
+    let Some(python) = python() else {
+        eprintln!("skipped: the Discord example's test needs a Python 3.10 or later on the PATH");
+        return;
+    };
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins/discord-notify/main.py");
+    let dir = folder(&[("main.py", &read_text(&example))]);
+    let hook = "https://discord.com/api/webhooks/1/abc";
+    let secret = |p: &mut Program, value: Value| {
+        let (call, params) = p.call();
+        assert_eq!((call.method.as_str(), params), ("secrets.get", json!({"key": "webhookUrl"})));
+        p.reply(&call, Some(json!({ "value": value })), None);
+    };
+
+    // Its export action: the webhook from the keychain, then one post
+    // through net.fetch, with the export's clips and no mentions.
+    let mut p = Program::start(python, dir.path(), "main.py");
+    let mut message = discord(ActionKind::ExportAction, "post");
+    let clip = |name: &str| ClipContext {
+        name: name.into(),
+        path: Some(format!("/out/{name}.mp4")),
+        status: "done".into(),
+        media_id: "m1".into(),
+        source_path: "/shows/s01e01.mkv".into(),
+        episode: "S01E01".into(),
+        start: 0,
+        end: 24,
+        fps: None,
+    };
+    message.export = Some(ExportContext {
+        id: "e1".into(),
+        label: Some("Walter · scenepack".into()),
+        preset: "prores-hq".into(),
+        out_dir: "/out".into(),
+        created_at: 0,
+        merged_file: None,
+        clips: vec![clip("Walter_001"), clip("Walter_002")],
+    });
+    p.send(HostMessage::Run(Box::new(message)));
+    secret(&mut p, json!(hook));
+    assert_eq!(p.message(), PluginMessage::Progress { fraction: None, stage: Some("Posting to Discord".into()) });
+    let (call, params) = p.call();
+    assert_eq!(call.method, "net.fetch");
+    assert_eq!(
+        (&params["url"], &params["method"], &params["headers"]),
+        (&json!(hook), &json!("POST"), &json!([["content-type", "application/json"]]))
+    );
+    let body: Value = serde_json::from_str(params["body"].as_str().unwrap()).unwrap();
+    let content =
+        "**Walter · scenepack** is done: 2 clips with prores-hq.\n- Walter\\_001 · S01E01\n- Walter\\_002 · S01E01";
+    assert_eq!(body, json!({"content": content, "allowed_mentions": {"parse": []}, "username": "AutoScene"}));
+    p.reply(&call, Some(json!({"status": 204, "url": hook, "headers": [], "body": null, "bodyBase64": null})), None);
+    assert_eq!(p.message(), PluginMessage::Result { message: Some("Posted the export to Discord.".into()) });
+    assert!(p.end().success());
+
+    // Its test message, to a webhook Discord no longer knows.
+    let mut p = Program::start(python, dir.path(), "main.py");
+    p.send(HostMessage::Run(Box::new(discord(ActionKind::Command, "test"))));
+    secret(&mut p, json!(hook));
+    p.message();
+    let (call, _) = p.call();
+    p.reply(&call, Some(json!({"status": 404, "url": hook, "headers": [], "body": "{}", "bodyBase64": null})), None);
+    let unknown = "Discord doesn't know that webhook. Copy it again from the channel's settings.";
+    assert_eq!(p.message(), PluginMessage::Error { message: unknown.into(), detail: Some("HTTP 404".into()) });
+    assert_eq!(p.end().code(), Some(1));
+
+    // No webhook set, or one that isn't Discord's: nothing is posted, and
+    // the URL is in none of its words.
+    for (value, said) in [
+        (Value::Null, "Set the webhook URL in Discord Notify's settings first."),
+        (
+            json!("https://evil.example/api/webhooks/1/abc"),
+            "That webhook URL isn't a Discord webhook. Copy it again from the channel's settings.",
+        ),
+    ] {
+        let mut p = Program::start(python, dir.path(), "main.py");
+        p.send(HostMessage::Run(Box::new(discord(ActionKind::Command, "test"))));
+        secret(&mut p, value);
+        assert_eq!(p.message(), PluginMessage::Error { message: said.into(), detail: None });
+        assert_eq!(p.end().code(), Some(1));
+    }
+
+    // A keychain that can't be read: AutoScene's words, never a value.
+    let mut p = Program::start(python, dir.path(), "main.py");
+    p.send(HostMessage::Run(Box::new(discord(ActionKind::Command, "test"))));
+    let (call, _) = p.call();
+    let locked = "Your system's keychain can't be used: it is locked, or refused AutoScene.";
+    p.reply(&call, None, Some(CallError::new(CallCode::Failed, locked)));
+    assert_eq!(p.message(), PluginMessage::Error { message: locked.into(), detail: Some("failed".into()) });
+    assert_eq!(p.end().code(), Some(1));
 }

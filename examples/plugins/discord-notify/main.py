@@ -1,35 +1,30 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["truststore==0.10.5"]
+# dependencies = []
 # ///
 """Discord Notify: an example AutoScene plugin that talks to the internet.
 
 It posts an export's name and clips to a Discord channel through the
-channel's webhook. The webhook's URL is a plain text setting: secret
-settings need a newer AutoScene. The script never writes the URL to its
-log or its messages. docs/PLUGINS.md describes the protocol.
+channel's webhook. The webhook's URL is a secret setting: AutoScene keeps
+it in the system's keychain and hands it over only when the script asks
+(secrets.get). The post goes through AutoScene (net.fetch), which reaches
+only the hosts plugin.json names. The script never writes the URL to its
+log or its messages. autoscene.py, beside it, speaks the protocol;
+docs/PLUGINS.md describes it.
 """
 
-import http.client
 import json
 import re
-import ssl
 import sys
-import threading
-import urllib.error
-import urllib.request
 from urllib.parse import urlsplit
 
-import truststore
+import autoscene
 
-# Where a webhook may lead. plugin.json names the same hosts, but AutoScene
-# doesn't enforce them: this script does, so a mistyped URL posts nowhere.
+# Where a webhook may lead: the hosts plugin.json names, which net.fetch
+# keeps to as well. Checked here first, to say so in plain words.
 HOSTS = {"discord.com", "ptb.discord.com", "canary.discord.com", "discordapp.com"}
 # A post holds at most 2000 characters.
 MAX_POST = 1900
-USER_AGENT = "AutoScene-Discord-Notify/1.0 (+https://github.com/tcmmi/AutoScene)"
-
-cancelled = threading.Event()
 
 
 class Refused(Exception):
@@ -40,46 +35,32 @@ class Refused(Exception):
         self.message, self.detail = message, detail
 
 
-def send(message: dict) -> None:
-    """Writes one line to AutoScene."""
-    print(json.dumps(message), flush=True)
-
-
-def watch_for_cancel() -> None:
-    """Reads the lines after the run line: a cancel line asks the run to stop."""
-    for line in sys.stdin:
-        try:
-            if json.loads(line).get("type") == "cancel":
-                cancelled.set()
-        except (ValueError, AttributeError):
-            pass
-
-
 def main() -> int:
-    # AutoScene sets PYTHONUTF8, but a run started by hand may not have it.
-    sys.stdin.reconfigure(encoding="utf-8")
-    run = json.loads(sys.stdin.readline())
-    threading.Thread(target=watch_for_cancel, daemon=True).start()
-    action, settings = run["action"], run["settings"]
+    p = autoscene.start()
+    action, settings = p.first["action"], p.settings
     try:
-        url = webhook(settings)
         if action["kind"] == "command" and action["id"] == "test":
-            post(url, settings, "AutoScene can post here.")
-            send({"type": "result", "message": "Posted a test message to Discord."})
+            post(p, webhook(p), settings, "AutoScene can post here.")
+            p.result("Posted a test message to Discord.")
         elif action["kind"] == "exportAction" and action["id"] == "post":
-            post(url, settings, describe(run["export"], settings.get("listClips", True)))
-            send({"type": "result", "message": "Posted the export to Discord."})
+            content = describe(p.first["export"], settings.get("listClips", True))
+            post(p, webhook(p), settings, content)
+            p.result("Posted the export to Discord.")
         else:
             raise Refused(f"Discord Notify has no action {action['id']}.")
     except Refused as e:
-        send({"type": "error", "message": e.message, "detail": e.detail})
+        p.error(e.message, e.detail)
         return 1
     return 0
 
 
-def webhook(settings: dict) -> str:
-    """The webhook URL in the settings, once it is one of Discord's."""
-    url = (settings.get("webhookUrl") or "").strip()
+def webhook(p: autoscene.Plugin) -> str:
+    """The webhook URL from the keychain, once it is one of Discord's."""
+    try:
+        url = (p.call("secrets.get", {"key": "webhookUrl"})["value"] or "").strip()
+    except autoscene.CallError as e:
+        # Its message says why (a locked keychain, say), never the value.
+        raise Refused(str(e), e.code)
     if not url:
         raise Refused("Set the webhook URL in Discord Notify's settings first.")
     try:
@@ -89,8 +70,7 @@ def webhook(settings: dict) -> str:
         parts, port = None, None
     if (
         parts is None
-        # A space, a line break or a letter outside ASCII: urllib would fail
-        # on it with the URL in its error.
+        # A space, a line break or a letter outside ASCII.
         or any(not "!" <= c <= "~" for c in url)
         or parts.scheme != "https"
         or parts.hostname not in HOSTS
@@ -127,37 +107,37 @@ def plain(text: str) -> str:
     return re.sub(r"([\\*_~`|>])", r"\\\1", text)
 
 
-def post(url: str, settings: dict, content: str) -> None:
-    """Posts `content` to the webhook. Mentions in it never ping anyone."""
-    if cancelled.is_set():
+def post(p: autoscene.Plugin, url: str, settings: dict, content: str) -> None:
+    """Posts `content` to the webhook through AutoScene. Mentions in it never ping anyone."""
+    if p.cancelled.is_set():
         sys.exit(1)
-    send({"type": "progress", "stage": "Posting to Discord"})
+    p.progress(None, "Posting to Discord")
     body = {"content": content, "allowed_mentions": {"parse": []}}
     if settings.get("username"):
         body["username"] = settings["username"]
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
-        method="POST",
-    )
-    # The system's certificates, as a browser checks them.
-    context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    request = {
+        "url": url,
+        "method": "POST",
+        "headers": [["content-type", "application/json"]],
+        "body": json.dumps(body),
+        "timeoutMs": 20000,
+    }
     try:
-        with urllib.request.urlopen(request, timeout=20, context=context):
-            pass
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 404):
-            raise Refused("Discord doesn't know that webhook. Copy it again from the channel's settings.", str(e))
-        if e.code == 429:
-            wait = e.headers.get("Retry-After", "a few")
-            raise Refused(f"Discord asks to wait {wait} seconds. Try again then.", str(e))
-        raise Refused("Discord refused the post.", f"{e}: {e.read(500).decode(errors='replace')}")
-    except (urllib.error.URLError, OSError) as e:
-        raise Refused("Couldn't reach Discord. Check the internet connection.", str(e))
-    except (http.client.HTTPException, ValueError) as e:
-        # A broken answer, say. Its text may hold the URL: only its kind is logged.
-        raise Refused("Couldn't post to Discord.", type(e).__name__)
+        answer = p.call("net.fetch", request)
+    except autoscene.CallError as e:
+        if e.code == "cancelled":
+            sys.exit(1)
+        # AutoScene's words name the host at most, never the URL.
+        raise Refused(f"Couldn't post to Discord: {e}", e.code)
+    status = answer["status"]
+    if 200 <= status < 300:
+        return
+    if status in (401, 404):
+        raise Refused("Discord doesn't know that webhook. Copy it again from the channel's settings.", f"HTTP {status}")
+    if status == 429:
+        wait = dict(answer["headers"]).get("retry-after", "a few")
+        raise Refused(f"Discord asks to wait {wait} seconds. Try again then.", f"HTTP {status}")
+    raise Refused("Discord refused the post.", f"HTTP {status}: {(answer.get('body') or '')[:500]}")
 
 
 if __name__ == "__main__":

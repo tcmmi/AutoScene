@@ -1,12 +1,12 @@
 {
-  "manifestVersion": 1,
+  "manifestVersion": 2,
   "id": "dev.autoscene.discord-notify",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "name": "Discord Notify",
   "description": "Posts a finished export's clip list to a Discord channel through a webhook. An example plugin.",
   "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
   "repository": "https://github.com/tcmmi/AutoScene",
-  "engines": { "autoscene": ">=1.0.0, <2", "protocol": 1 },
+  "engines": { "autoscene": ">=1.0.0, <2", "protocol": 2 },
   "runtime": {
     "type": "process",
     "command": { "*": ["uv", "run", "--script", "--locked", "main.py"] }
@@ -23,11 +23,10 @@
     "settings": [
       {
         "key": "webhookUrl",
-        "type": "string",
+        "type": "secret",
         "title": "Webhook URL",
-        "description": "From the channel's settings: Integrations, Webhooks, Copy Webhook URL. Kept in plain text: anyone with it can post to the channel.",
-        "placeholder": "https://discord.com/api/webhooks/…",
-        "maxLength": 300
+        "description": "From the channel's settings: Integrations, Webhooks, Copy Webhook URL. Anyone with it can post to the channel.",
+        "placeholder": "https://discord.com/api/webhooks/…"
       },
       {
         "key": "username",

@@ -38,6 +38,7 @@ import { ClipCard } from "./panels/ClipCard"
 import { KeysCard } from "./panels/KeysCard"
 import { ShotsPanel } from "./panels/ShotsPanel"
 import { SourceCard } from "./panels/SourceCard"
+import { PlayerPicture } from "./Picture"
 import type { ShuttleKey } from "./shuttle"
 import { Timeline } from "./timeline/Timeline"
 import { Transport } from "./Transport"
@@ -321,20 +322,15 @@ export function ReadyPlayer({
     <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <ContextArea menu={playerMenu}>
-          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-10 pt-8 pb-5" onClick={toggle}>
+          {/* The stage is the picture's size container: it fills it at its own shape. */}
+          <div
+            className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-6 pt-4 pb-3 [container-type:size]"
+            onClick={toggle}
+          >
             <Ambilight video={videoRef} store={store} />
             {/* The glow fades out before the controls. */}
             <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-inset to-transparent" />
-            <video
-              ref={videoRef}
-              src={assetUrl(map.src)}
-              preload="auto"
-              // The asset protocol answers with CORS headers; keeps frames readable for canvas grabs.
-              crossOrigin="anonymous"
-              playsInline
-              disablePictureInPicture
-              className="relative max-h-full max-w-full rounded-2xl bg-black shadow-[0_50px_120px_-40px_rgb(0_0_0/1),0_0_0_1px_rgb(255_255_255/0.07)]"
-            />
+            <PlayerPicture videoRef={videoRef} src={assetUrl(map.src)} video={m.info?.video} />
           </div>
         </ContextArea>
 

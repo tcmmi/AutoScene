@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "stripInternal": true,
+    "rootDir": "src/plugin-kit",
+    "outDir": "../crates/as-plugin/templates/types"
+  },
+  "include": ["src/plugin-kit/sdk.ts"]
+}

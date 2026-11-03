@@ -54,11 +54,12 @@ jobs:
       - run: cargo test --workspace --features as-plugin/cli
         env:
           AUTOSCENE_REQUIRE_FIXTURES: "1"
+      # The app's bindings, and the plugin protocol's types the kit is built on.
       - name: Bindings are up to date
         shell: bash
         run: |
           cargo run -p autoscene-app --bin export-bindings --features export-bindings
-          git diff --exit-code app/src/bindings.ts
+          git diff --exit-code app/src/bindings.ts app/src/plugin-kit/protocol.ts
 
   frontend:
     name: Frontend
@@ -76,5 +77,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      # Before the tests: one of them checks what the kit build wrote.
+      - run: npm run build:kit
       - run: npm test -- --passWithNoTests
       - run: npm run build
+      # The kit's declarations that `asp init` hands out are made by the build,
+      # new files included.
+      - name: Kit types are up to date
+        run: |
+          git diff --exit-code ../crates/as-plugin/templates/types
+          test -z "$(git status --porcelain ../crates/as-plugin/templates/types)"

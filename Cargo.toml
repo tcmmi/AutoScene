@@ -42,6 +42,8 @@ zstd = "0.14.2"
 half = "=2.7.1"
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json", "uuid"] }
+specta-serde = "=0.0.12"
+specta-util = "=0.0.12"
 dirs = "7.0"
 rusqlite = { version = "0.40", features = ["bundled"] }
 rusqlite_migration = "2.6"

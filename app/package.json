@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:mock": "vite --mode mock",
-    "build": "tsc -b && vite build",
+    "dev:mock": "npm run build:kit && vite --mode mock",
+    "build": "tsc -b && vite build && npm run build:kit",
+    "build:kit": "vite build -c vite.kit.config.ts && tsc -p tsconfig.kit.json",
     "typecheck": "tsc -b",
     "lint": "oxlint && node scripts/check-deps.mjs",
     "sync:contributors": "node scripts/sync-contributors.mjs",

@@ -1,0 +1,31 @@
+/*
+ * theme.css, which AutoScene serves at /_as/theme.css: its tokens, its page
+ * rules, its fonts and the kit's classes (kit.css), so a plugin page looks
+ * like the app around it. The page sits on the app's canvas, so it stays
+ * clear, and it scrolls: the app's own body doesn't, a page's has to. Sizes
+ * take in padding and borders, as in the app.
+ */
+@import "../styles/tokens.css";
+@import "../styles/base.css";
+@import "./fonts.css";
+@import "./kit.css";
+
+:root {
+  color-scheme: dark;
+}
+
+*,
+::before,
+::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: transparent;
+  overflow: auto;
+}

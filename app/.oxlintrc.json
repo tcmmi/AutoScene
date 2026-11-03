@@ -150,6 +150,48 @@
           }
         ]
       }
+    },
+    {
+      "files": [
+        "src/plugin-kit/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "react",
+                "message": "The kit is a plugin page's script: it imports no React."
+              },
+              {
+                "name": "react-dom",
+                "message": "The kit is a plugin page's script: it imports no React."
+              },
+              {
+                "name": "radix-ui",
+                "message": "The kit is a plugin page's script: a page never gets the app's Radix."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@/**",
+                  "../**"
+                ],
+                "message": "The kit stands alone: import from src/plugin-kit only."
+              },
+              {
+                "group": [
+                  "@tauri-apps/**",
+                  "@radix-ui/**"
+                ],
+                "message": "The kit is a plugin page's script: no Tauri, no Radix."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

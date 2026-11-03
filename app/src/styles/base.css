@@ -1,0 +1,144 @@
+/*
+ * The page's own rules: type, selection, focus, scrollbars, menu sections.
+ * Plain CSS on the tokens only (no Tailwind), so plugin pages get the same
+ * through the kit's theme.css.
+ */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--line-hairline);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 22px;
+    font-optical-sizing: auto;
+    font-feature-settings: "cv11", "ss03";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg-canvas);
+    color: var(--fg-1);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Controls keep the arrow, as in native apps (the hand means "web link"). */
+  a,
+  button,
+  [role="button"],
+  [role="tab"] {
+    cursor: default;
+  }
+
+  /* Pictures and links don't drag out as the browser's ghost (a link would show its URL). */
+  img,
+  a {
+    -webkit-user-drag: none;
+  }
+
+  /* Text the user may want to copy stays selectable. */
+  input,
+  textarea,
+  [data-selectable],
+  code,
+  pre {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  ::selection {
+    background: rgb(224 180 92 / 0.35);
+    color: var(--fg-1);
+  }
+
+  input,
+  textarea {
+    caret-color: var(--accent);
+  }
+
+  /* Menu sections (an element's, the page's, the app's): a hairline between
+     sections with something in them; a separator at a section's edge, or
+     right after another, doesn't show — conditional entries need no care. */
+  [data-menu-section]:empty {
+    display: none;
+  }
+  [data-menu-section]:not(:empty) ~ [data-menu-section]:not(:empty)::before {
+    content: "";
+    display: block;
+    height: 1px;
+    margin: 6px 8px;
+    background: var(--line-hairline);
+  }
+  [data-menu-section] > [role="separator"]:first-child,
+  [data-menu-section] > [role="separator"]:last-child,
+  [data-menu-section] > [role="separator"] + [role="separator"] {
+    display: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--line-focus);
+    outline-offset: 2px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.015em;
+    font-weight: 600;
+  }
+
+  /* Thin, quiet scrollbars: a pill on a clear track. Chromium (121+) drops
+     every ::-webkit-scrollbar rule as soon as an element has scrollbar-width
+     or scrollbar-color, so those are only for engines without the pills. */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+    }
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.14);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(255 255 255 / 0.26);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 1ms !important;
+      transition-duration: 1ms !important;
+    }
+  }
+}

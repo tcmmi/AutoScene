@@ -1,0 +1,25 @@
+/*
+ * The window around the app: room for the window's own buttons, and the
+ * native material behind the rail (main.tsx sets both on the root). Apart
+ * from tokens.css, since a plugin page has neither.
+ */
+
+/* Windows: our caption buttons over the top-right corner (3 × 46px). */
+:root[data-chrome="windows"] {
+  --caption-inset: 138px;
+}
+
+/* macOS: the traffic lights over the top-left corner, above the rail. */
+:root[data-chrome="macos"] {
+  --traffic-inset: 32px;
+  --traffic-x: 72px;
+}
+
+/* A native material is behind the window (Windows 11 Mica, macOS vibrancy):
+   the page itself is transparent and only the rail lets it through. */
+:root[data-material] {
+  --bg-rail: rgb(12 12 14 / 0.42);
+}
+:root[data-material="vibrancy"] {
+  --bg-rail: rgb(12 12 14 / 0.3);
+}

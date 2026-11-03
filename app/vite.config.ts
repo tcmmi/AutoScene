@@ -34,5 +34,8 @@ export default defineConfig(({ command }) => ({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["src/test/setup.ts"],
+    // The kit's built theme.css is read as text (plugin-kit/kit.test.ts);
+    // other CSS stays out of the tests.
+    css: { include: [/\/dist\/_as\/theme\.css/] },
   },
 }))

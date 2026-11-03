@@ -46,6 +46,8 @@ parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 specta.workspace = true
+specta-serde.workspace = true
+specta-util.workspace = true
 tokio.workspace = true
 log = "0.4.34"
 # Bridge `tracing` events from library crates into tauri-plugin-log.

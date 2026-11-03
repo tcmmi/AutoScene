@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react"
+import { isEditable } from "@/plugin-kit/keys"
 import { layerOpen } from "./layers"
 import { altKey, isMac, modKey, shiftKey } from "./platform"
 
@@ -440,11 +441,6 @@ export function bindingOf(e: KeyboardEvent): Binding | null {
   if (e.shiftKey) b.shift = true
   if (e.altKey) b.alt = true
   return b
-}
-
-/** A field that takes typing: its keys are its own. */
-export function isEditable(t: EventTarget | null): boolean {
-  return t instanceof Element && t.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']") != null
 }
 
 /**

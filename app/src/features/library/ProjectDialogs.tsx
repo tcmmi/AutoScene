@@ -9,6 +9,8 @@ import { Field, Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { footageBlurb } from "@/lib/footage"
 import { commands, errorMessage } from "@/lib/ipc"
+import { stopsFirst } from "@/lib/jobs"
+import { unfinishedJobs } from "@/state/activity"
 import { FootagePicker } from "./FootagePicker"
 
 /** A project's title, what its footage is, and how its faces are found. */
@@ -145,6 +147,9 @@ export function DeleteProjectDialog({
 function DeleteForm({ project, onDone }: { project: ProjectSummary; onDone: () => void }) {
   const [deleteFiles, setDeleteFiles] = useState(true)
   const [busy, setBusy] = useState(false)
+  // Its exports and plugin runs stop too, which would otherwise go without a
+  // word. Said once, as it opens, so the dialog never moves under the pointer.
+  const [stops] = useState(() => stopsFirst(unfinishedJobs((j) => j.projectId === project.id).map((j) => j.kind)))
   const navigate = useNavigate()
   const inProject = useRouterState({ select: (s) => s.location.pathname.startsWith(`/p/${project.id}`) })
   const remove = async () => {
@@ -163,7 +168,7 @@ function DeleteForm({ project, onDone }: { project: ProjectSummary; onDone: () =
   return (
     <DialogContent
       title={`Remove “${project.title}”?`}
-      description="Your source videos and exported clips are never touched."
+      description={`Your source videos and exported clips are never touched.${stops ? ` ${stops}` : ""}`}
     >
       <label className="flex items-center justify-between gap-4 rounded-lg border border-hairline bg-inset px-3.5 py-3">
         <span>

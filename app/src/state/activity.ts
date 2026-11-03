@@ -73,6 +73,15 @@ export function useMediaJob(mediaId: string | undefined, kind?: JobInfo["kind"])
   })
 }
 
+/**
+ * The queued and running jobs `of` takes, newest first, read once: not a
+ * hook, so a dialog that says what stops keeps what it said when it opened.
+ */
+export function unfinishedJobs(of: (j: JobInfo) => boolean): JobInfo[] {
+  const s = useActivity.getState()
+  return s.order.map((id) => s.jobs[id]).filter((j) => j !== undefined && !isFinished(j) && of(j))
+}
+
 /** Count of queued + running jobs (the sidebar's Activity badge). */
 export function useActiveCount(): number {
   return useActivity((s) => s.order.reduce((n, id) => n + (isFinished(s.jobs[id]) ? 0 : 1), 0))

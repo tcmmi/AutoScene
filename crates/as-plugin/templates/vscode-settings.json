@@ -1,0 +1,3 @@
+{
+  "json.schemas": [{ "fileMatch": ["/plugin.json"], "url": "./.autoscene/plugin.schema.json" }]
+}

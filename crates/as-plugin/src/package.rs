@@ -82,8 +82,10 @@ const MAX_LISTING_BYTES: u64 = 8 << 20;
 /// that long).
 const TAIL_BYTES: u64 = 128 << 10;
 /// What `asp pack` leaves out of a plugin folder, at any depth: version
-/// control, and the files Windows and macOS leave in folders.
-const LEFT_OUT: [&str; 5] = [".git", ".hg", ".svn", ".DS_Store", "Thumbs.db"];
+/// control, the files Windows and macOS leave in folders, and the editor
+/// files `asp init` writes (`plugin.json`'s schema and the SDK's types in
+/// `.autoscene`, the editor's settings in `.vscode`).
+const LEFT_OUT: [&str; 7] = [".git", ".hg", ".svn", ".DS_Store", "Thumbs.db", ".autoscene", ".vscode"];
 
 /// `files.lock`: every file of a plugin.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -326,11 +328,12 @@ pub fn packed_too_tightly(size: u64, packed: u64) -> bool {
 /// Lists the plugin folder `dir` for its `files.lock`, as `asp pack` does:
 /// every file below it, sorted by path, but a lock, signature and author key
 /// at its top (the package's own), and version control (`.git`, `.hg`,
-/// `.svn`), `.DS_Store` and `Thumbs.db` anywhere. Links and anything else
-/// that isn't a plain file or folder are refused, and so is what [`unpack`]
-/// would refuse. A file is marked to run when its owner may run it (Linux
-/// and macOS); `asp pack` marks the programs the manifest starts too. Its
-/// zip holds no folder entries: they would count toward [`MAX_ENTRIES`].
+/// `.svn`), `.DS_Store`, `Thumbs.db` and the editor folders `.autoscene`
+/// and `.vscode` anywhere. Links and anything else that isn't a plain file
+/// or folder are refused, and so is what [`unpack`] would refuse. A file is
+/// marked to run when its owner may run it (Linux and macOS); `asp pack`
+/// marks the programs the manifest starts too. Its zip holds no folder
+/// entries: they would count toward [`MAX_ENTRIES`].
 pub fn lock_folder(dir: &Path) -> PluginResult<FilesLock> {
     let mut files = Vec::new();
     list_folder(dir, "", &mut files)?;

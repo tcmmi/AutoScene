@@ -13,7 +13,7 @@ use as_plugin::keys::REVIEW_KEYS;
 use as_plugin::manifest;
 use as_plugin::package::{self, AUTHOR_KEY, LOCK, SIG};
 use as_plugin::trust::{self, Keys, Trust};
-use as_plugin::{Launch, current_platform};
+use as_plugin::{Launch, RuntimeKind, current_platform};
 use semver::Version;
 use serde_json::{Value, json};
 use zip::write::SimpleFileOptions;
@@ -137,6 +137,31 @@ fn edit_manifest(dir: &Path, edit: impl FnOnce(&mut Value)) {
     let mut manifest: Value = serde_json::from_slice(&fs::read(dir.join("plugin.json")).unwrap()).unwrap();
     edit(&mut manifest);
     fs::write(dir.join("plugin.json"), serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+}
+
+/// Every file below `dir`, by its path there with `/`, sorted.
+fn files_in(dir: &Path) -> Vec<String> {
+    let mut files = Vec::new();
+    let mut folders = vec![dir.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for entry in fs::read_dir(folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                folders.push(path);
+            } else {
+                let parts: Vec<&str> =
+                    path.strip_prefix(dir).unwrap().components().map(|c| c.as_os_str().to_str().unwrap()).collect();
+                files.push(parts.join("/"));
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+/// A package's files, by name, without its lock.
+fn packed(path: &Path) -> Vec<String> {
+    entries(path).into_keys().filter(|name| name != LOCK).collect()
 }
 
 #[test]
@@ -508,6 +533,58 @@ fn a_plugin_that_runs_no_program_packs_with_its_pages() {
     assert_eq!(names(tmp.path()), ["page", "page.asp"]);
 }
 
+#[test]
+fn pack_leaves_out_the_editor_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = uv_plugin(&place("hello"));
+    // What asp init writes for an editor, and what an editor adds, at any
+    // depth and in any case. A file only named like them stays.
+    for path in [
+        ".autoscene/plugin.schema.json",
+        ".autoscene/types/sdk.d.ts",
+        ".vscode/settings.json",
+        "lib/.VSCode/launch.json",
+        "lib/.autoscene",
+        ".autoscene.json",
+    ] {
+        let file = src.join(path);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, b"{}").unwrap();
+    }
+    let out = place("hello.asp");
+    assert_eq!(asp(&["pack", text(&src), text(&out)]).warnings(), "");
+    assert_eq!(packed(&out), [".autoscene.json", "lib/data.txt", "main.py", "main.py.lock", "plugin.json"]);
+    asp(&["verify", text(&out)]).ok();
+}
+
+#[test]
+fn pack_warns_of_pages_in_a_version_1_manifest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = uv_plugin(&place("hello"));
+    fs::create_dir(src.join("ui")).unwrap();
+    fs::write(src.join("ui/index.html"), b"<!doctype html>").unwrap();
+    edit_manifest(&src, |v| {
+        v["contributes"] = json!({
+            "pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}],
+            "settings": [{"key": "token", "type": "secret", "title": "Token"}]
+        });
+    });
+    // A version 1 manifest can't have them: AutoScene leaves them out.
+    let warnings = "warning: Skipped contributes.pages: pages need \"manifestVersion\": 2.\n\
+         warning: Skipped the setting \"token\": secret settings need \"manifestVersion\": 2.\n";
+    let out = place("hello.asp");
+    assert_eq!(asp(&["pack", text(&src), text(&out)]).warnings(), warnings);
+    let verified = asp(&["verify", text(&out)]);
+    assert_eq!(verified.err, warnings);
+    assert_eq!(verified.ok(), "dev.autoscene.hello-export 1.2.0: Unreviewed\n");
+
+    // Version 2 has them: its page asks for the secret.
+    edit_manifest(&src, |v| v["manifestVersion"] = json!(2));
+    assert_eq!(asp(&["pack", text(&src), text(&place("v2.asp"))]).warnings(), "");
+}
+
 /// `package` with `entries` added from `from` (by name), as a zip of its own.
 fn grafted(package: &Path, from: &Path, names: &[&str], out: &Path) {
     let (mut entries, from) = (entries(package), entries(from));
@@ -641,4 +718,189 @@ fn the_example_plugins_pack_and_parse() {
         }
         assert_eq!(asp(&["verify", text(&out)]).ok(), format!("{} {}: Unreviewed\n", m.id, m.version));
     }
+}
+
+/// What asp init writes for the plugin's editor, which no package holds.
+const EDITOR_FILES: [&str; 2] = [".autoscene/plugin.schema.json", ".vscode/settings.json"];
+
+#[test]
+fn init_makes_a_plugin_that_packs_and_parses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let app = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+    // The SDK's types, as `npm run build:kit` wrote them.
+    let types: Vec<String> =
+        names(&crate_dir.join("templates/types")).iter().map(|n| format!(".autoscene/types/{n}")).collect();
+    let page = ["ui/app.js", "ui/index.html"];
+    let program = ["autoscene.py", "main.py", "main.py.lock"];
+    let forms = [
+        (None, "My Page", "a page", RuntimeKind::None, page.to_vec()),
+        (Some("--service"), "words", "a page and its service", RuntimeKind::Service, [&page[..], &program].concat()),
+        (Some("--action"), "clips", "an export action", RuntimeKind::Process, program.to_vec()),
+    ];
+    for (form, folder, made, runtime, own) in forms {
+        let dir = place(folder);
+        let id = format!("dev.example.{}", folder.to_lowercase().replace(' ', "-"));
+        let mut args = vec!["init", text(&dir)];
+        args.extend(form);
+        let said = asp(&args).ok();
+        assert_eq!(
+            said,
+            format!("Made {folder} ({id}) in {}: {made}. Its README.md says what comes next.\n", dir.display())
+        );
+
+        // Its files, and the editor's: the schema and, for a page, the
+        // SDK's types, as asp has them, and VS Code told where the schema is.
+        let mut packs: Vec<String> = ["README.md", "plugin.json"].iter().chain(&own).map(|p| p.to_string()).collect();
+        packs.sort();
+        let mut files: Vec<String> = packs.iter().cloned().chain(EDITOR_FILES.map(String::from)).collect();
+        if runtime != RuntimeKind::Process {
+            files.extend(types.iter().cloned());
+        }
+        files.sort();
+        assert_eq!(files_in(&dir), files, "{folder}");
+        let same =
+            |file: &str, original: PathBuf| assert_eq!(fs::read(dir.join(file)).unwrap(), fs::read(original).unwrap());
+        same(".autoscene/plugin.schema.json", crate_dir.join("schema/plugin.schema.json"));
+        for file in files.iter().filter(|f| f.starts_with(".autoscene/types/")) {
+            same(file, crate_dir.join("templates/types").join(file.rsplit('/').next().unwrap()));
+        }
+        let vscode: Value = serde_json::from_slice(&fs::read(dir.join(".vscode/settings.json")).unwrap()).unwrap();
+        assert_eq!(
+            vscode,
+            json!({"json.schemas": [{"fileMatch": ["/plugin.json"], "url": "./.autoscene/plugin.schema.json"}]})
+        );
+        // Each template filled in: no marker or placeholder is left.
+        for file in &packs {
+            let filled = fs::read_to_string(dir.join(file)).unwrap();
+            for left in ["{{#", "{{^", "{{/", "{{id}}", "{{name}}", "{{autoscene}}", "{{dir}}", "{{package}}"] {
+                assert!(!filled.contains(left), "{folder}/{file} has {left}:\n{filled}");
+            }
+        }
+        // Each says what its form does, and only that.
+        let read = |file: &str| fs::read_to_string(dir.join(file)).unwrap_or_default();
+        let (readme, html, js) = (read("README.md"), read("ui/index.html"), read("ui/app.js"));
+        let says = (
+            html.matches("<textarea").count(),
+            js.contains(r#"page.state.set("note""#),
+            js.contains(r#"page.service.request("count""#),
+            readme.contains("Open its page from the rail."),
+            readme.contains("`main.py` is its service."),
+            readme.contains("`main.py` is its program."),
+        );
+        let says_for = match runtime {
+            RuntimeKind::None => (1, true, false, true, false, false),
+            RuntimeKind::Service => (1, false, true, true, true, false),
+            RuntimeKind::Process => (0, false, false, false, false, true),
+        };
+        assert_eq!(says, says_for, "{folder}");
+        let pack = if folder.contains(' ') {
+            format!(r#""{folder}" "{folder}.asp""#)
+        } else {
+            format!("{folder} {folder}.asp")
+        };
+        assert!(readme.contains(&format!("`asp pack {pack}`")), "{readme}");
+
+        // AutoScene reads it as it is, without a word: a page in the rail,
+        // a service with its page, or a program with an export action.
+        let parsed = manifest::parse(&fs::read(dir.join("plugin.json")).unwrap(), &app).unwrap();
+        assert_eq!(parsed.warnings, Vec::<String>::new(), "{folder}");
+        let m = parsed.manifest;
+        assert_eq!((m.id.as_str(), m.name.as_str(), m.version.as_str()), (id.as_str(), folder, "0.1.0"));
+        assert_eq!((m.manifest_version, m.engines.protocol, m.runtime.kind), (2, 2, runtime));
+        let pages: Vec<(&str, &str, bool)> =
+            m.pages.iter().map(|p| (p.title.as_str(), p.entry.as_str(), p.rail)).collect();
+        let actions: Vec<&str> = m.export_actions.iter().map(|a| a.title.as_str()).collect();
+        if runtime == RuntimeKind::Process {
+            assert_eq!((pages, actions), (vec![], vec!["Count the clips"]));
+        } else {
+            assert_eq!((pages, actions), (vec![(folder, "ui/index.html", true)], vec![]));
+        }
+        // Its program is a uv script, and its lock fits the script.
+        for (platform, launch) in m.launches() {
+            assert_eq!(launch.unwrap(), Launch::UvScript { script: "main.py".into() }, "{folder} on {platform}");
+        }
+        if runtime != RuntimeKind::None {
+            let script = fs::read_to_string(dir.join("main.py")).unwrap();
+            assert_eq!(lock_has(&fs::read_to_string(dir.join("main.py.lock")).unwrap()), script_wants(&script));
+        }
+
+        // It packs without a warning, and leaves the editor's files out.
+        let out = place(&format!("{folder}.asp"));
+        assert_eq!(asp(&["pack", text(&dir), text(&out)]).warnings(), "", "{folder}");
+        assert_eq!(packed(&out), packs, "{folder}");
+        assert_eq!(asp(&["verify", text(&out)]).ok(), format!("{id} 0.1.0: Unreviewed\n"));
+    }
+
+    // An id and a name of its own, written as each file writes text.
+    let dir = place("mine");
+    let name = r#"Say "hi" <now> & {{id}}"#;
+    asp(&["init", text(&dir), "--service", "--id", "dev.me.words", "--name", name]).ok();
+    let m = manifest::parse(&fs::read(dir.join("plugin.json")).unwrap(), &app).unwrap().manifest;
+    assert_eq!((m.id.as_str(), m.name.as_str(), m.pages[0].title.as_str()), ("dev.me.words", name, name));
+    let html = fs::read_to_string(dir.join("ui/index.html")).unwrap();
+    assert!(html.contains(r#"<h1 class="as-display">Say &quot;hi&quot; &lt;now&gt; &amp; {{id}}</h1>"#), "{html}");
+    let readme = fs::read_to_string(dir.join("README.md")).unwrap();
+    assert!(readme.starts_with(&format!("# {name}\n\nAn AutoScene plugin, `dev.me.words`, made")), "{readme}");
+}
+
+#[test]
+fn init_never_writes_into_a_folder_that_has_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let start = "asp init makes a plugin in a new folder, or an empty one.";
+
+    // A file in it, or only a folder, and no form writes there.
+    let taken = place("taken");
+    fs::create_dir(&taken).unwrap();
+    fs::write(taken.join("notes.txt"), b"mine").unwrap();
+    let nested = place("nested");
+    fs::create_dir_all(nested.join(".vscode")).unwrap();
+    for dir in [&taken, &nested] {
+        for form in ["--page", "--service", "--action"] {
+            let err = asp(&["init", text(dir), form]).failed(1);
+            assert_eq!(err, format!("asp: {} has files in it. {start}\n", dir.display()));
+        }
+    }
+    assert_eq!(names(&taken), ["notes.txt"]);
+    assert_eq!(fs::read(taken.join("notes.txt")).unwrap(), b"mine");
+    assert_eq!(files_in(&nested), Vec::<String>::new());
+    let file = place("plugin.json");
+    fs::write(&file, b"{}").unwrap();
+    assert_eq!(asp(&["init", text(&file)]).failed(1), format!("asp: {} is a file. {start}\n", file.display()));
+    assert_eq!(fs::read(&file).unwrap(), b"{}");
+
+    // An id or a name AutoScene wouldn't take, or two forms: nothing is made.
+    let new = place("new");
+    let long = "n".repeat(41);
+    let named = "asp: Give the plugin a name of 1 to 40 characters with --name.\n";
+    let id = "asp: The plugin's id isn't valid. An id looks like dev.example.my-plugin: \
+              2 to 5 parts of lowercase letters, digits and dashes, joined by dots.\n";
+    for (args, code, err) in [
+        (vec!["--id", "Not An Id"], 1, id),
+        (vec!["--id", "nul.example"], 1, "asp: The plugin's id can't start with con, prn, aux, nul"),
+        (vec!["--name", " "], 1, named),
+        (vec!["--name", &long], 1, named),
+        (vec!["--name", "Line\nbreak"], 1, named),
+        (vec!["--page", "--action"], 2, "asp: choose one of --page, --service and --action\n"),
+    ] {
+        let mut all = vec!["init", text(&new)];
+        all.extend(&args);
+        let said = asp(&all).failed(code);
+        assert!(said.starts_with(err), "{args:?}: {said}");
+        assert!(!new.exists(), "{args:?}");
+    }
+    // A folder whose name gives no id needs one.
+    let unnamed = place("ÜÖ");
+    let err = asp(&["init", text(&unnamed)]).failed(1);
+    assert_eq!(err, "asp: Give the plugin an id with --id, such as dev.example.my-plugin.\n");
+    assert!(!unnamed.exists());
+
+    // An empty folder takes one.
+    let empty = place("empty");
+    fs::create_dir(&empty).unwrap();
+    asp(&["init", text(&empty), "--action"]).ok();
+    assert!(files_in(&empty).contains(&"main.py".to_owned()));
+    assert_eq!(names(tmp.path()), ["empty", "nested", "plugin.json", "taken"]);
 }

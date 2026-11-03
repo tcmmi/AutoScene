@@ -5,8 +5,18 @@
 //! asp pack <plugin-folder> <out.asp>
 //! asp sign <in.asp> --key <asp.key> [--out <out.asp>]
 //! asp verify <in.asp> [--review-key <RW…>]…
+//! asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
 //! ```
 //!
+//! - `init` makes a plugin to start from in `<dir>`, a new or empty folder,
+//!   from the templates in `crates/as-plugin/templates`: a page in the rail
+//!   (`--page`, the default), a page and the service it asks (`--service`),
+//!   or a program with an export action (`--action`). Each gets
+//!   `plugin.json`'s schema in `.autoscene/` and a `.vscode/settings.json`
+//!   that checks `plugin.json` against it; a page also gets the SDK's types
+//!   in `.autoscene/types/`. `pack` leaves both folders out. Its id is
+//!   `--id`, or `dev.example.` and the folder's name; its name is `--name`,
+//!   or the folder's.
 //! - `keygen` makes an author's minisign key pair in `<dir>`: `asp.key`, the
 //!   secret key, locked with a password it asks for (`--unencrypted` leaves
 //!   that out, for CI), and `author.pub`, the public key's base64 line. It
@@ -57,13 +67,26 @@ const USAGE: &str = "\
 usage: asp keygen <dir> [--force] [--unencrypted]
        asp pack <plugin-folder> <out.asp>
        asp sign <in.asp> --key <asp.key> [--out <out.asp>]
-       asp verify <in.asp> [--review-key <RW…>]…";
+       asp verify <in.asp> [--review-key <RW…>]…
+       asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]";
 
 /// The secret key `keygen` writes beside `author.pub`.
 const SECRET_KEY: &str = "asp.key";
 /// The largest file `pack` looks into for a secret key. A key file is a
 /// comment line and a line of about 210 characters.
 const MAX_KEY_FILE: u64 = 4 << 10;
+/// The schema of `plugin.json`, which `init` writes for the plugin's editor.
+const SCHEMA: &str = include_str!("../../schema/plugin.schema.json");
+/// The SDK's types (`npm run build:kit` writes them), which `init` writes
+/// beside the schema for a page: each file there, by its path in the plugin.
+const TYPES: [(&str, &str); 6] = [
+    (".autoscene/types/bridge-types.d.ts", include_str!("../../templates/types/bridge-types.d.ts")),
+    (".autoscene/types/global.d.ts", include_str!("../../templates/types/global.d.ts")),
+    (".autoscene/types/keys.d.ts", include_str!("../../templates/types/keys.d.ts")),
+    (".autoscene/types/mock.d.ts", include_str!("../../templates/types/mock.d.ts")),
+    (".autoscene/types/protocol.d.ts", include_str!("../../templates/types/protocol.d.ts")),
+    (".autoscene/types/sdk.d.ts", include_str!("../../templates/types/sdk.d.ts")),
+];
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -100,6 +123,17 @@ fn run(args: &[OsString]) -> Result<(), Failure> {
         "verify" => {
             let a = Args::read(rest, 1, &[], &["--review-key"])?;
             verify(&a.paths[0], &a.values("--review-key"))
+        }
+        "init" => {
+            let a = Args::read(rest, 1, &["--page", "--service", "--action"], &["--id", "--name"])?;
+            let forms = [("--page", Form::Page), ("--service", Form::Service), ("--action", Form::Action)];
+            let chosen: Vec<Form> = forms.into_iter().filter(|(s, _)| a.has(s)).map(|(_, form)| form).collect();
+            let form = match chosen[..] {
+                [] => Form::Page,
+                [form] => form,
+                _ => return Err(usage("choose one of --page, --service and --action")),
+            };
+            init(&a.paths[0], form, a.value("--id"), a.value("--name"))
         }
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
@@ -325,6 +359,229 @@ fn trust_text(verdict: &Verdict) -> String {
         (Trust::Pinned, Some(key)) => format!("Pinned (key {})", key.key_id),
         (Trust::Pinned, None) => "Pinned".into(),
         (Trust::Unreviewed, _) => "Unreviewed".into(),
+    }
+}
+
+/// What `init` makes.
+#[derive(Clone, Copy)]
+enum Form {
+    /// A plugin that runs no program: one page, in the rail.
+    Page,
+    /// A page, and the service it asks (protocol 2).
+    Service,
+    /// A program of protocol 2 with one export action.
+    Action,
+}
+
+impl Form {
+    fn what(self) -> &'static str {
+        match self {
+            Self::Page => "a page",
+            Self::Service => "a page and its service",
+            Self::Action => "an export action",
+        }
+    }
+
+    /// The template blocks it keeps (see [`fill`]).
+    fn blocks(self) -> &'static [&'static str] {
+        match self {
+            Self::Page => &["page"],
+            Self::Service => &["page", "program", "service"],
+            Self::Action => &["program", "action"],
+        }
+    }
+
+    /// Its files, by their path in the plugin: the templates [`fill`]
+    /// makes them of, and those it gets as they are.
+    fn files(self) -> Vec<(&'static str, Template)> {
+        let manifest = match self {
+            Self::Page => include_str!("../../templates/plugin.page.json"),
+            Self::Service => include_str!("../../templates/plugin.service.json"),
+            Self::Action => include_str!("../../templates/plugin.action.json"),
+        };
+        let mut files = vec![
+            (MANIFEST, Template::Fill(manifest)),
+            ("README.md", Template::Fill(include_str!("../../templates/README.md"))),
+            (".autoscene/plugin.schema.json", Template::Copy(SCHEMA)),
+            (".vscode/settings.json", Template::Copy(include_str!("../../templates/vscode-settings.json"))),
+        ];
+        let blocks = self.blocks();
+        if blocks.contains(&"page") {
+            files.push(("ui/index.html", Template::Fill(include_str!("../../templates/ui/index.html"))));
+            files.push(("ui/app.js", Template::Fill(include_str!("../../templates/ui/app.js"))));
+        }
+        if blocks.contains(&"program") {
+            files.push(("main.py", Template::Copy(include_str!("../../templates/main.py"))));
+            files.push(("main.py.lock", Template::Copy(include_str!("../../templates/main.py.lock"))));
+            files.push(("autoscene.py", Template::Copy(include_str!("../../templates/autoscene.py"))));
+        }
+        if blocks.contains(&"page") {
+            files.extend(TYPES.map(|(path, text)| (path, Template::Copy(text))));
+        }
+        files
+    }
+}
+
+/// A file of a plugin `init` makes.
+#[derive(Clone, Copy)]
+enum Template {
+    /// A template, which [`fill`] makes the file of.
+    Fill(&'static str),
+    /// The file as it is.
+    Copy(&'static str),
+}
+
+/// Makes a plugin of `form` in `dir`, a new or empty folder: its id is
+/// `id`, or `dev.example.` and the folder's name in lowercase with dashes,
+/// and its name is `name`, or the folder's. It needs at least the minor
+/// version of the AutoScene asp comes with. Nothing is written when one of
+/// them is wrong, and no file that is there is ever written over.
+fn init(dir: &Path, form: Form, id: Option<&OsString>, name: Option<&OsString>) -> Result<(), Failure> {
+    let start = "asp init makes a plugin in a new folder, or an empty one.";
+    if let Ok(meta) = fs::metadata(dir) {
+        if !meta.is_dir() {
+            return Err(failed(format!("{} is a file. {start}", dir.display())));
+        }
+        if fs::read_dir(dir).map_err(at(dir))?.next().is_some() {
+            return Err(failed(format!("{} has files in it. {start}", dir.display())));
+        }
+    }
+    // `.` and `..` name a folder too.
+    let full = fs::canonicalize(dir).or_else(|_| std::path::absolute(dir)).map_err(at(dir))?;
+    let folder = full.file_name().map(|n| n.to_string_lossy().into_owned());
+    let name = match name {
+        Some(name) => name.to_str().ok_or_else(|| failed("The name must be text."))?.trim().to_owned(),
+        None => folder.clone().unwrap_or_default(),
+    };
+    if name.is_empty() || name.chars().count() > 40 || name.chars().any(char::is_control) {
+        return Err(failed("Give the plugin a name of 1 to 40 characters with --name."));
+    }
+    let id = match id {
+        Some(id) => id.to_str().ok_or_else(|| failed("The id must be text."))?.to_owned(),
+        None => format!("dev.example.{}", folder.as_deref().map(id_part).unwrap_or_default()),
+    };
+    if id.ends_with('.') {
+        return Err(failed("Give the plugin an id with --id, such as dev.example.my-plugin."));
+    }
+    let id = manifest::PluginId::parse(&id)?;
+    let app = app();
+    let autoscene = format!(">={}.{}.0, <{}", app.major, app.minor, app.major + 1);
+    let dir_name = folder.as_deref().unwrap_or("<plugin-folder>");
+
+    let files: Vec<(&str, String)> = form
+        .files()
+        .into_iter()
+        .map(|(path, template)| match template {
+            Template::Copy(text) => (path, text.to_owned()),
+            Template::Fill(template) => {
+                // Each value as text of the file's kind.
+                let text = |s: &str| match path.rsplit('.').next() {
+                    Some("json") => json_text(s),
+                    Some("html") => html_text(s),
+                    _ => s.to_owned(),
+                };
+                let values = [
+                    ("id", text(id.as_str())),
+                    ("name", text(&name)),
+                    ("autoscene", text(&autoscene)),
+                    ("dir", text(&shell_word(dir_name))),
+                    ("package", text(&shell_word(&format!("{dir_name}.asp")))),
+                ];
+                let filled = fill(template, form.blocks(), &values);
+                (path, filled)
+            }
+        })
+        .collect();
+    let (_, plugin_json) = files.iter().find(|(path, _)| *path == MANIFEST).expect("every form has a plugin.json");
+    warn_all(&read_manifest(plugin_json.as_bytes())?.warnings);
+
+    for (path, text) in &files {
+        let file = file_in(dir, path);
+        let parent = folder_of(&file);
+        fs::create_dir_all(parent).map_err(at(parent))?;
+        // A file that came since the folder was looked at stays as it is.
+        let mut out = File::options().write(true).create_new(true).open(&file).map_err(at(&file))?;
+        out.write_all(text.as_bytes()).map_err(at(&file))?;
+    }
+    println!("Made {name} ({id}) in {}: {}. Its README.md says what comes next.", dir.display(), form.what());
+    Ok(())
+}
+
+/// The part of a default id a folder's name gives: lowercase letters and
+/// digits, a dash for each run of anything else, at most 39 characters.
+fn id_part(folder: &str) -> String {
+    let mut part = String::new();
+    for c in folder.chars() {
+        match c.to_ascii_lowercase() {
+            c @ ('a'..='z' | '0'..='9') => part.push(c),
+            _ if !part.is_empty() && !part.ends_with('-') => part.push('-'),
+            _ => {}
+        }
+    }
+    part.truncate(39);
+    part.trim_end_matches('-').to_owned()
+}
+
+/// A template as a plugin's file: the lines between `{{#block}}` and
+/// `{{/block}}` are kept for the `blocks` the plugin has, those between
+/// `{{^block}}` and `{{/block}}` for the others, and each `{{key}}` of
+/// `values` takes its value (once: a value is never read for keys). A
+/// marker sits on a line of its own (in a comment, so the template stays a
+/// file of its kind), which goes.
+fn fill(template: &str, blocks: &[&str], values: &[(&str, String)]) -> String {
+    let mut kept = String::new();
+    // Whether each block that is open keeps its lines.
+    let mut open: Vec<bool> = Vec::new();
+    for line in template.split_inclusive('\n') {
+        match marker(line) {
+            Some(('#', block)) => open.push(blocks.contains(&block)),
+            Some(('^', block)) => open.push(!blocks.contains(&block)),
+            Some(_) => {
+                open.pop();
+            }
+            None if open.iter().all(|&keep| keep) => kept.push_str(line),
+            None => {}
+        }
+    }
+    let mut out = String::new();
+    let mut rest = kept.as_str();
+    while let Some((before, after)) = rest.split_once("{{") {
+        let value = |(key, after)| Some((values.iter().find(|(k, _)| *k == key)?.1.as_str(), after));
+        let (text, next) = after.split_once("}}").and_then(value).unwrap_or(("{{", after));
+        out.push_str(before);
+        out.push_str(text);
+        rest = next;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The block marker `line` holds, if it holds one: `#`, `^` or `/`, and the
+/// block's name.
+fn marker(line: &str) -> Option<(char, &str)> {
+    let (_, rest) = line.split_once("{{")?;
+    let (inside, _) = rest.split_once("}}")?;
+    let kind = inside.chars().next().filter(|c| "#^/".contains(*c))?;
+    Some((kind, &inside[1..]))
+}
+
+/// `s` as it goes inside a JSON string.
+fn json_text(s: &str) -> String {
+    let quoted = serde_json::to_string(s).expect("text is JSON");
+    quoted[1..quoted.len() - 1].to_owned()
+}
+
+/// `s` as HTML text.
+fn html_text(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#39;")
+}
+
+/// `s` as one word of a command line, in quotes when a shell would split it.
+fn shell_word(s: &str) -> String {
+    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)) {
+        s.to_owned()
+    } else {
+        format!("\"{s}\"")
     }
 }
 

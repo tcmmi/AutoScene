@@ -1381,6 +1381,8 @@ impl<'a> Obj<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use serde_json::json;
 
     use super::*;
@@ -2074,6 +2076,185 @@ mod tests {
             };
             assert_eq!(as_json(&new.manifest), as_json(&old.manifest), "{}", v1["id"]);
             assert_eq!(serde_json::to_value(old.manifest.runtime.kind).unwrap(), json!("process"));
+        }
+    }
+
+    /// The names an `enum` of the schema lists.
+    fn named(list: &Value) -> BTreeSet<&str> {
+        list.as_array().unwrap().iter().map(|name| name.as_str().unwrap()).collect()
+    }
+
+    /// The keys a schema's `properties` names.
+    fn keys(properties: &Value) -> Vec<&str> {
+        properties.as_object().unwrap().keys().map(String::as_str).collect()
+    }
+
+    fn as_set(names: &[String]) -> BTreeSet<&str> {
+        names.iter().map(String::as_str).collect()
+    }
+
+    /// A kind's name in a manifest: the string it is, or its `type`.
+    fn kind_name(kind: Value) -> String {
+        kind.get("type").unwrap_or(&kind).as_str().unwrap().to_owned()
+    }
+
+    #[test]
+    fn the_schema_names_what_the_parser_reads() {
+        // asp init writes it beside a plugin.json, for the plugin's editor.
+        let schema: Value = serde_json::from_str(include_str!("../schema/plugin.schema.json")).unwrap();
+        let defs = &schema["$defs"];
+        assert_eq!(keys(&schema["properties"]).into_iter().collect::<BTreeSet<_>>(), TOP_KEYS.into());
+        assert_eq!(schema["properties"]["manifestVersion"]["enum"], json!((1..=MANIFEST_VERSION).collect::<Vec<_>>()));
+        assert_eq!(defs["engines"]["properties"]["protocol"]["enum"], json!((1..=PROTOCOL).collect::<Vec<_>>()));
+        assert_eq!(named(&defs["permission"]["enum"]), Permission::ALL.map(Permission::name).into());
+        assert_eq!(named(&schema["properties"]["platforms"]["items"]["enum"]), PLATFORMS.into());
+        let command = &defs["runtime"]["properties"]["command"];
+        assert_eq!(named(&command["propertyNames"]["enum"]), PLATFORMS.into_iter().chain(["*"]).collect());
+        // Its limits are the parser's.
+        let branches = defs["setting"]["allOf"].as_array().unwrap();
+        let select = branches.iter().find(|b| b["if"]["properties"]["type"]["const"] == "select").unwrap();
+        let contributes = &defs["contributes"]["properties"];
+        for (limit, max) in [
+            (&contributes["exportActions"]["maxItems"], MAX_ACTIONS),
+            (&contributes["commands"]["maxItems"], MAX_COMMANDS),
+            (&contributes["settings"]["maxItems"], MAX_SETTINGS),
+            (&contributes["pages"]["maxItems"], MAX_PAGES),
+            (&schema["properties"]["platforms"]["maxItems"], MAX_PLATFORMS),
+            (&defs["network"]["properties"]["hosts"]["maxItems"], MAX_HOSTS),
+            (&defs["commandLine"]["maxItems"], MAX_ARGS),
+            (&select["then"]["properties"]["options"]["maxItems"], MAX_OPTIONS),
+        ] {
+            assert_eq!(*limit, json!(max));
+        }
+
+        // The runtime types, setting types and page scopes it names are
+        // the parser's. A kind added to the parser fails to compile here
+        // until it is listed, and then this test until the schema names it.
+        let runtimes = [RuntimeKind::Process, RuntimeKind::Service, RuntimeKind::None];
+        for kind in runtimes {
+            match kind {
+                RuntimeKind::Process | RuntimeKind::Service | RuntimeKind::None => {}
+            }
+        }
+        let settings = [
+            SettingKind::String { default: None, placeholder: None, max_length: MAX_TEXT_SETTING as u32 },
+            SettingKind::Number { default: None, min: None, max: None, step: None, integer: false },
+            SettingKind::Boolean { default: false },
+            SettingKind::Select { options: Vec::new(), default: None },
+            SettingKind::Secret { placeholder: None },
+        ];
+        for kind in &settings {
+            match kind {
+                SettingKind::String { .. }
+                | SettingKind::Number { .. }
+                | SettingKind::Boolean { .. }
+                | SettingKind::Select { .. }
+                | SettingKind::Secret { .. } => {}
+            }
+        }
+        let scopes = [PageScope::Global, PageScope::Project];
+        for scope in scopes {
+            match scope {
+                PageScope::Global | PageScope::Project => {}
+            }
+        }
+        let runtime_names: Vec<String> = runtimes.iter().map(|k| kind_name(json!(k))).collect();
+        let setting_names: Vec<String> = settings.iter().map(|k| kind_name(json!(k))).collect();
+        let scope_names: Vec<String> = scopes.iter().map(|k| kind_name(json!(k))).collect();
+        assert_eq!(named(&defs["runtime"]["properties"]["type"]["enum"]), as_set(&runtime_names));
+        assert_eq!(named(&defs["setting"]["properties"]["type"]["enum"]), as_set(&setting_names));
+        assert_eq!(named(&defs["page"]["properties"]["scope"]["enum"]), as_set(&scope_names));
+
+        // A plugin with an object of each kind the schema describes: version
+        // 2, a program of protocol 2, the network, a select setting, a page.
+        let mut full = plugin();
+        full["manifestVersion"] = json!(2);
+        full["engines"]["protocol"] = json!(2);
+        full["permissions"] = json!(["exports:read", "network"]);
+        full["network"] = json!({"hosts": ["discord.com"]});
+        let options = json!([{"value": "a", "label": "A"}]);
+        full["contributes"]["settings"] =
+            json!([{"key": "pick", "type": "select", "title": "Pick", "options": options}]);
+        full["contributes"]["pages"] = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
+        let reads = |v: &Value, what: &str| {
+            let p = read(v).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+            assert_eq!(p.warnings, Vec::<String>::new(), "{what}");
+            p.manifest
+        };
+        reads(&full, "the plugin");
+
+        // Each key the schema names in each object is one the parser reads:
+        // given as null (which reads as left out), it is never ignored as
+        // one this AutoScene doesn't know. A key it doesn't name is.
+        let objects = [
+            ("author", "/author"),
+            ("engines", "/engines"),
+            ("runtime", "/runtime"),
+            ("network", "/network"),
+            ("contributes", "/contributes"),
+            ("exportAction", "/contributes/exportActions/0"),
+            ("command", "/contributes/commands/0"),
+            ("option", "/contributes/settings/0/options/0"),
+            ("page", "/contributes/pages/0"),
+        ];
+        // Every object the schema describes is here, but a setting, whose
+        // keys depend on its type (below).
+        let described: BTreeSet<&str> = defs
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(_, d)| d.get("properties").is_some())
+            .map(|(k, _)| k.as_str())
+            .collect();
+        assert_eq!(objects.iter().map(|(def, _)| *def).chain(["setting"]).collect::<BTreeSet<_>>(), described);
+        let objects = objects.iter().map(|(def, at)| (*at, &defs[*def]["properties"]));
+        for (at, properties) in objects.chain([("", &schema["properties"])]) {
+            for key in keys(properties) {
+                let mut v = full.clone();
+                v.pointer_mut(at).unwrap().as_object_mut().unwrap().entry(key).or_insert(Value::Null);
+                reads(&v, &format!("{at}/{key}"));
+            }
+            let mut v = full.clone();
+            v.pointer_mut(at).unwrap()["later"] = json!(1);
+            assert_eq!(read(&v).unwrap().warnings.len(), 1, "{at}/later");
+        }
+
+        // A setting of each type, with each key the schema names for it.
+        let typed: Vec<&str> =
+            branches.iter().map(|b| b["if"]["properties"]["type"]["const"].as_str().unwrap()).collect();
+        assert_eq!(typed.iter().copied().collect::<BTreeSet<_>>(), as_set(&setting_names));
+        for (kind, branch) in typed.iter().zip(branches) {
+            let mut setting = json!({"key": "pick", "type": kind, "title": "Pick"});
+            if *kind == "select" {
+                setting["options"] = options.clone();
+            }
+            for key in keys(&defs["setting"]["properties"]).into_iter().chain(keys(&branch["then"]["properties"])) {
+                let mut s = setting.clone();
+                s.as_object_mut().unwrap().entry(key).or_insert(Value::Null);
+                let mut v = full.clone();
+                v["contributes"]["settings"] = json!([s]);
+                let m = reads(&v, &format!("a {kind} setting's {key}"));
+                assert_eq!(kind_name(json!(m.settings[0].kind)), *kind);
+            }
+        }
+
+        // A plugin of each runtime type, and a page of each scope.
+        for runtime in &runtime_names {
+            let mut v = full.clone();
+            v["runtime"]["type"] = json!(runtime);
+            if runtime == "none" {
+                v["runtime"] = json!({"type": "none"});
+                let c = v["contributes"].as_object_mut().unwrap();
+                c.remove("exportActions");
+                c.remove("commands");
+            }
+            assert_eq!(kind_name(json!(reads(&v, runtime).runtime.kind)), *runtime);
+        }
+        assert_eq!(too_new(with(|v| v["runtime"]["type"] = json!("hologram"))), "runtime");
+        for scope in &scope_names {
+            let mut v = full.clone();
+            v["contributes"]["pages"][0]["scope"] = json!(scope);
+            assert_eq!(kind_name(json!(reads(&v, scope).pages[0].scope)), *scope);
         }
     }
 

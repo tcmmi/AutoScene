@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{name}}</title>
+    <!-- AutoScene's look and its SDK, which it serves to every page. -->
+    <link rel="stylesheet" href="/_as/theme.css" />
+    <script src="/_as/sdk.js"></script>
+    <script src="app.js" defer></script>
+    <style>
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 32px 40px 56px;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--fg-2);
+      }
+      textarea {
+        width: 100%;
+        resize: vertical;
+      }
+      .quiet {
+        color: var(--fg-2);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .as-card {
+        padding: 16px 20px;
+        margin-top: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1 class="as-display">{{name}}</h1>
+      <p id="state" class="quiet" aria-live="polite">Connecting to AutoScene…</p>
+
+      <section class="as-card">
+        <!-- {{^service}} -->
+        <label for="text">A note this page keeps</label>
+        <textarea id="text" class="as-input" rows="4" placeholder="Write anything. It's here when you come back." disabled></textarea>
+        <!-- {{/service}} -->
+        <!-- {{#service}} -->
+        <label for="text">Text for the service to count</label>
+        <textarea id="text" class="as-input" rows="4" placeholder="Write anything." disabled></textarea>
+        <!-- {{/service}} -->
+        <div class="row">
+          <!-- {{^service}} -->
+          <button id="go" class="as-btn" data-variant="primary" disabled>Keep it</button>
+          <!-- {{/service}} -->
+          <!-- {{#service}} -->
+          <button id="go" class="as-btn" data-variant="primary" disabled>Count the words</button>
+          <!-- {{/service}} -->
+          <span id="said" class="quiet" aria-live="polite"></span>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

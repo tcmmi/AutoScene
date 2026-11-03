@@ -1,0 +1,20 @@
+{
+  "$schema": "./.autoscene/plugin.schema.json",
+  "manifestVersion": 2,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "name": "{{name}}",
+  "description": "An export action that says how many clips an export wrote.",
+  "author": { "name": "Your name" },
+  "engines": { "autoscene": "{{autoscene}}", "protocol": 2 },
+  "runtime": {
+    "type": "process",
+    "command": { "*": ["uv", "run", "--script", "--locked", "main.py"] }
+  },
+  "permissions": ["exports:read"],
+  "contributes": {
+    "exportActions": [
+      { "id": "count-clips", "title": "Count the clips", "description": "Says how many clips the export wrote." }
+    ]
+  }
+}

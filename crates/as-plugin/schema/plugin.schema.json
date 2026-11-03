@@ -1,0 +1,395 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/tcmmi/AutoScene/main/crates/as-plugin/schema/plugin.schema.json",
+  "title": "AutoScene plugin",
+  "description": "plugin.json: what an AutoScene plugin is, what it says it does, and what it adds to AutoScene. docs/PLUGINS.md describes each key.",
+  "type": "object",
+  "required": ["manifestVersion", "id", "version", "name", "description", "author", "engines", "runtime"],
+  "properties": {
+    "$schema": {
+      "description": "Where an editor finds this schema. AutoScene doesn't read it.",
+      "type": "string"
+    },
+    "manifestVersion": {
+      "description": "The version of plugin.json this file is written for. Version 2 adds pages, secret settings, and the runtime types service and none.",
+      "enum": [1, 2]
+    },
+    "id": {
+      "description": "A reverse domain name such as dev.example.my-plugin: 2 to 5 parts of lowercase letters, digits and dashes, joined by dots. It never changes.",
+      "type": "string",
+      "pattern": "^(?!(con|prn|aux|nul|com[0-9]|lpt[0-9])\\.)[a-z0-9]([a-z0-9-]{0,37}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,37}[a-z0-9])?){1,4}$"
+    },
+    "version": {
+      "description": "A version number such as 1.2.0. An update needs a higher one.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "name": {
+      "description": "The plugin's name, as AutoScene shows it.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "description": {
+      "description": "What the plugin does, in a sentence or two.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "author": { "$ref": "#/$defs/author" },
+    "license": {
+      "description": "Its license, such as MIT.",
+      "type": "string",
+      "maxLength": 60
+    },
+    "repository": {
+      "description": "Where its source is: an https:// link.",
+      "$ref": "#/$defs/link"
+    },
+    "engines": { "$ref": "#/$defs/engines" },
+    "platforms": {
+      "description": "Where it runs. Left out, it runs everywhere its command does.",
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["windows-x86_64", "windows-aarch64", "macos-aarch64", "macos-x86_64", "linux-x86_64", "linux-aarch64"]
+      }
+    },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "permissions": {
+      "description": "What it says it does. AutoScene shows them before install, and holds its calls into AutoScene to them.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/permission" }
+    },
+    "network": { "$ref": "#/$defs/network" },
+    "contributes": { "$ref": "#/$defs/contributes" },
+    "icon": {
+      "description": "A .png or .svg file in the plugin, such as icon.svg.",
+      "type": "string",
+      "pattern": "\\.([pP][nN][gG]|[sS][vV][gG])$"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "required": ["manifestVersion"], "properties": { "manifestVersion": { "const": 1 } } },
+      "then": {
+        "properties": {
+          "runtime": { "properties": { "type": { "const": "process" } } },
+          "contributes": {
+            "properties": {
+              "pages": false,
+              "settings": { "items": { "properties": { "type": { "not": { "const": "secret" } } } } }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["runtime"],
+        "properties": { "runtime": { "required": ["type"], "properties": { "type": { "const": "none" } } } }
+      },
+      "then": {
+        "required": ["contributes"],
+        "properties": {
+          "platforms": false,
+          "runtime": { "properties": { "command": false, "gpu": false } },
+          "contributes": {
+            "required": ["pages"],
+            "properties": { "exportActions": false, "commands": false, "pages": { "minItems": 1 } }
+          }
+        }
+      },
+      "else": {
+        "properties": { "runtime": { "required": ["command"] } }
+      }
+    },
+    {
+      "if": {
+        "required": ["runtime"],
+        "properties": { "runtime": { "required": ["type"], "properties": { "type": { "const": "service" } } } }
+      },
+      "then": {
+        "properties": { "engines": { "properties": { "protocol": { "const": 2 } } } }
+      }
+    },
+    {
+      "if": {
+        "required": ["network"],
+        "properties": { "network": { "required": ["hosts"], "properties": { "hosts": { "minItems": 1 } } } }
+      },
+      "then": {
+        "required": ["permissions"],
+        "properties": { "permissions": { "contains": { "const": "network" } } }
+      }
+    }
+  ],
+  "$defs": {
+    "link": {
+      "type": "string",
+      "maxLength": 2000,
+      "pattern": "^https://[^\\s@/\\\\?#]+([/?#][^\\s\\\\]*)?$"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contributionId": {
+      "description": "Lowercase letters, digits and dashes (at most 32). Unique in its list.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "author": {
+      "description": "Who made it.",
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/label", "maxLength": 60 },
+        "url": { "description": "An https:// link.", "$ref": "#/$defs/link" }
+      },
+      "additionalProperties": false
+    },
+    "engines": {
+      "description": "The AutoScene it works with, and the protocol its program speaks.",
+      "type": "object",
+      "required": ["autoscene", "protocol"],
+      "properties": {
+        "autoscene": {
+          "description": "The AutoScene versions it works with, as Cargo writes them, with commas between the parts: \">=1.1.0, <2\".",
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "[0-9A-Za-z*]\\s+[<>=~^]" }
+        },
+        "protocol": {
+          "description": "The protocol its program and pages speak. 2 adds calls into AutoScene, services and page runs.",
+          "enum": [1, 2]
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtime": {
+      "description": "How it runs.",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "description": "process: its program starts for each run. service: it also runs while one of its pages is open (protocol 2). none: it runs no program, and has only pages.",
+          "enum": ["process", "service", "none"]
+        },
+        "command": {
+          "description": "The command per platform, or \"*\" for every other one. A program in the plugin's folder, or a Python script as [\"uv\", \"run\", \"--script\", \"--locked\", \"main.py\"].",
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "enum": ["*", "windows-x86_64", "windows-aarch64", "macos-aarch64", "macos-x86_64", "linux-x86_64", "linux-aarch64"]
+          },
+          "additionalProperties": { "$ref": "#/$defs/commandLine" }
+        },
+        "gpu": {
+          "description": "It uses the GPU, so its runs wait for the analysis to leave it free.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "commandLine": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "type": "string", "maxLength": 256 }
+    },
+    "permission": {
+      "enum": ["exports:read", "exports:write", "project:read", "network"]
+    },
+    "network": {
+      "description": "Where it connects. Needs the network permission.",
+      "type": "object",
+      "properties": {
+        "hosts": {
+          "description": "Lowercase host names such as discord.com, without a scheme or a port.",
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "contributes": {
+      "description": "What it adds to AutoScene.",
+      "type": "object",
+      "properties": {
+        "exportActions": {
+          "description": "Entries of an export's menu.",
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/exportAction" }
+        },
+        "commands": {
+          "description": "Entries of the command palette.",
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/command" }
+        },
+        "settings": {
+          "description": "Settings AutoScene shows in the plugin's settings and hands to each run. At most 8 of them are secrets.",
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/setting" },
+          "contains": { "required": ["type"], "properties": { "type": { "const": "secret" } } },
+          "minContains": 0,
+          "maxContains": 8
+        },
+        "pages": {
+          "description": "Pages AutoScene shows full screen, in a sandboxed frame (manifest version 2).",
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/page" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "exportAction": {
+      "type": "object",
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "title": { "$ref": "#/$defs/label", "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 200 }
+      },
+      "additionalProperties": false
+    },
+    "command": {
+      "type": "object",
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "title": { "$ref": "#/$defs/label", "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 200 },
+        "needsProject": {
+          "description": "Offered only while a project is open, and run with it.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "setting": {
+      "type": "object",
+      "required": ["key", "type", "title"],
+      "properties": {
+        "key": {
+          "description": "A lowercase letter, then letters, digits and _ (at most 40). No two keys differ only in capitals.",
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_]{0,39}$"
+        },
+        "type": {
+          "description": "What it holds. A secret (manifest version 2) is kept in the system's keychain, and has no default.",
+          "enum": ["string", "number", "boolean", "select", "secret"]
+        },
+        "title": { "$ref": "#/$defs/label", "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 200 }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "string" } } },
+          "then": {
+            "properties": {
+              "default": { "type": "string" },
+              "placeholder": { "type": "string", "maxLength": 200 },
+              "maxLength": { "type": "integer", "minimum": 1, "maximum": 2000 }
+            }
+          }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "number" } } },
+          "then": {
+            "properties": {
+              "default": { "type": "number" },
+              "min": { "type": "number" },
+              "max": { "type": "number" },
+              "step": { "type": "number", "exclusiveMinimum": 0 },
+              "integer": { "type": "boolean" }
+            },
+            "if": { "required": ["integer"], "properties": { "integer": { "const": true } } },
+            "then": { "properties": { "default": { "type": "integer" } } }
+          }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "boolean" } } },
+          "then": {
+            "properties": {
+              "default": { "type": "boolean" }
+            }
+          }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "select" } } },
+          "then": {
+            "required": ["options"],
+            "properties": {
+              "options": {
+                "description": "Its choices, each with a value of its own.",
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": { "$ref": "#/$defs/option" }
+              },
+              "default": { "description": "One of its options' values.", "type": "string" }
+            }
+          }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "secret" } } },
+          "then": {
+            "properties": {
+              "placeholder": { "type": "string", "maxLength": 200 }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "option": {
+      "type": "object",
+      "required": ["value", "label"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "label": { "$ref": "#/$defs/label", "maxLength": 60 }
+      },
+      "additionalProperties": false
+    },
+    "page": {
+      "type": "object",
+      "required": ["id", "title", "entry"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "title": { "$ref": "#/$defs/label", "maxLength": 40 },
+        "description": { "type": "string", "maxLength": 200 },
+        "entry": {
+          "description": "Its file: an .html file under ui/, such as ui/index.html.",
+          "type": "string",
+          "pattern": "^ui/[A-Za-z0-9._@+/-]+\\.html$"
+        },
+        "scope": {
+          "description": "global: it opens on its own, from the rail or the palette. project: it opens in a project, from the project's bar, and may read that project.",
+          "enum": ["global", "project"]
+        },
+        "rail": {
+          "description": "It has a tile in AutoScene's rail (global pages only).",
+          "type": "boolean"
+        }
+      },
+      "if": { "required": ["scope"], "properties": { "scope": { "const": "project" } } },
+      "then": { "properties": { "rail": { "const": false } } },
+      "additionalProperties": false
+    }
+  }
+}

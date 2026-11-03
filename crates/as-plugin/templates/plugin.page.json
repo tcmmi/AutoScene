@@ -1,0 +1,14 @@
+{
+  "$schema": "./.autoscene/plugin.schema.json",
+  "manifestVersion": 2,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "name": "{{name}}",
+  "description": "A page in AutoScene's rail that keeps a note.",
+  "author": { "name": "Your name" },
+  "engines": { "autoscene": "{{autoscene}}", "protocol": 2 },
+  "runtime": { "type": "none" },
+  "contributes": {
+    "pages": [{ "id": "main", "title": "{{name}}", "entry": "ui/index.html", "rail": true }]
+  }
+}

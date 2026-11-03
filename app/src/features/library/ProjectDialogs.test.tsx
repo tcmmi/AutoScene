@@ -1,14 +1,28 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { JobInfo, ProjectSummary } from "@/bindings"
+import type { GraphicsClass, JobInfo, ProjectSummary, ScanDefaults } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
 import { DeleteProjectDialog, ProjectDetailsDialog } from "./ProjectDialogs"
 
+const { machine } = vi.hoisted(() => ({ machine: { cls: "forAi" as GraphicsClass } }))
+
+/** What the library answers on Automatic, like `as_project::scan::defaults`. */
+function defaults(): ScanDefaults {
+  const here = machine.cls === "notForAi" || machine.cls === "integrated" || machine.cls === "processor"
+  return {
+    computer: { class: machine.cls, name: "Intel Iris Xe Graphics" },
+    choice: "auto",
+    footage: (["live", "mixed", "animation", "anime"] as const).map((content) => ({ content, fast: here && content !== "animation" })),
+  }
+}
+
 vi.mock("@/lib/ipc", () => ({
   commands: {
+    scanDefaultsGet: vi.fn(() => Promise.resolve(defaults())),
     projectSetContent: vi.fn((_id: string, content: string) => Promise.resolve({ content })),
     projectSetFastScan: vi.fn((_id: string, fastScan: boolean) => Promise.resolve({ fastScan })),
     projectRename: vi.fn(() => Promise.resolve({})),
@@ -26,6 +40,7 @@ afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   useActivity.setState({ jobs: {}, order: [] })
+  machine.cls = "forAi"
 })
 
 const film = {
@@ -38,9 +53,11 @@ const film = {
 
 function open(project: ProjectSummary, onOpenChange = vi.fn()) {
   render(
-    <TooltipProvider>
-      <ProjectDetailsDialog project={project} onOpenChange={onOpenChange} />
-    </TooltipProvider>,
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <ProjectDetailsDialog project={project} onOpenChange={onOpenChange} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   )
   return onOpenChange
 }
@@ -69,6 +86,27 @@ describe("ProjectDetailsDialog", () => {
     await user.click(screen.getByRole("button", { name: "Save" }))
     await waitFor(() => expect(commands.projectRename).toHaveBeenCalledWith("p", "Film 2"))
     expect(commands.projectSetFastScan).not.toHaveBeenCalled()
+  })
+
+  it("a full-scan project on built-in graphics says Fast Scan suits them", async () => {
+    machine.cls = "integrated"
+    const user = userEvent.setup()
+    open(film)
+    expect(await screen.findByText(/found in full.* Fast Scan suits this computer's built-in graphics\.$/)).toBeTruthy()
+    // Switched, it says what happens instead; so does a project on Fast Scan.
+    await user.click(screen.getByRole("switch", { name: "Fast Scan" }))
+    expect(screen.queryByText(/suits/)).toBeNull()
+    cleanup()
+    open({ ...film, fastScan: true })
+    await screen.findByText(/the way the Scener app does/)
+    expect(screen.queryByText(/suits/)).toBeNull()
+    // 3D animation keeps the full scan on Automatic: Fast Scan isn't said to suit it.
+    cleanup()
+    open({ ...film, content: "animation" })
+    await user.click(screen.getByRole("radio", { name: "Live action" }))
+    expect(await screen.findByText(/Fast Scan suits/)).toBeTruthy()
+    await user.click(screen.getByRole("radio", { name: "Animation" }))
+    expect(screen.getByText(/found in full/).textContent).not.toMatch(/suits/)
   })
 
   it("switches anime to Fast Scan too, which keeps its character models", async () => {

@@ -130,6 +130,9 @@ Rules:
 ## Views
 
 - **Library:** the project touched last as a hero ("Continue"), then every project as a 16:9 picture card.
+- **New project:** title and type, then footage and Fast Scan side by side (the switch's line says what Fast Scan
+  costs and, where it is on because of this computer's graphics, why), then the videos. The list shrinks on short
+  windows so Create project stays on screen.
 - **Project overview:** the hero, then shelves (`Section` + `Shelf`) of the cast as portraits and the episodes as
   stills. Files that can't be found show as a gold banner with Locate folder… here and on Episodes.
 - **Cast:** portrait cards (3:4), Everyone else, hidden characters folded away; Review as the white pill. From six

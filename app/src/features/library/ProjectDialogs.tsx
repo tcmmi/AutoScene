@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
+import { fastScanHint } from "@/lib/fast-scan"
 import { footageBlurb } from "@/lib/footage"
 import { commands, errorMessage } from "@/lib/ipc"
 import { stopsFirst } from "@/lib/jobs"
+import { useScanDefaults } from "@/lib/queries"
 import { unfinishedJobs } from "@/state/activity"
 import { FootagePicker } from "./FootagePicker"
 
@@ -31,26 +33,14 @@ export function ProjectDetailsDialog({
 /** Anime is analysed differently from the start (see `Project::set_content`). */
 const ANIME_APART = "Anime is analysed differently from the start. Add the videos as a new anime project instead."
 
-/** What Fast Scan does to a project's footage: anime keeps its character models (see `Project::faces_plan`). */
-function fastScanHint(anime: boolean, rescanned: boolean, fast: boolean) {
-  if (anime) {
-    if (rescanned) return "Characters are found again this way, then regrouped. Your names and decisions stay."
-    return fast
-      ? "Characters are found with the anime models in only a few frames of each shot: much faster, less sure who is who."
-      : "Characters are found with the anime models every few frames."
-  }
-  if (rescanned) return "Faces are found again this way, then the characters regrouped. Your names and decisions stay."
-  return fast
-    ? "Faces are found the way the Scener app does: much faster, less sure who is who."
-    : "Faces are found in full: every few frames, with the larger face models (for non-commercial use only)."
-}
-
 function DetailsForm({ project, onDone }: { project: ProjectSummary; onDone: () => void }) {
   const [title, setTitle] = useState(project.title)
   const [content, setContent] = useState<ContentKind>(project.content)
   const wasFast = project.fastScan ?? false
   const [fast, setFast] = useState(wasFast)
   const [busy, setBusy] = useState(false)
+  // Says when Fast Scan would suit this computer's graphics.
+  const { data: scanDefaults } = useScanDefaults()
   const retitled = title.trim() !== project.title
   const refilmed = content !== project.content
   // Fast Scan finds faces with other models: they are all found again.
@@ -111,7 +101,7 @@ function DetailsForm({ project, onDone }: { project: ProjectSummary; onDone: () 
         <Field
           label="Fast Scan"
           htmlFor="details-fast-scan"
-          hint={fastScanHint(content === "anime", rescanned, fast)}
+          hint={fastScanHint(content, rescanned, fast, scanDefaults)}
           className="mt-4 items-start"
         >
           <Switch id="details-fast-scan" checked={fast} onCheckedChange={setFast} />

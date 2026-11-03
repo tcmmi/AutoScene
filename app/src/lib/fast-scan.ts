@@ -1,4 +1,4 @@
-import type { Platform, ScanDefaults } from "@/bindings"
+import type { ContentKind, GraphicsClass, Platform, ScanDefaults } from "@/bindings"
 
 /*
  * Every sentence about Fast Scan's default for new projects (design-i52 §5.5),
@@ -6,8 +6,11 @@ import type { Platform, ScanDefaults } from "@/bindings"
  * engine names, no numbers, no "Recommended".
  */
 
+/** Whether a new project of this footage starts with Fast Scan here. */
+export const startsFast = (d: ScanDefaults, content: ContentKind) => d.footage.find((f) => f.content === content)?.fast ?? false
+
 /** Whether a new live-action project starts with Fast Scan. */
-const liveFast = (d: ScanDefaults) => d.footage.find((f) => f.content === "live")?.fast ?? false
+const liveFast = (d: ScanDefaults) => startsFast(d, "live")
 
 /**
  * Settings → General → Fast Scan: what the chosen default means on this
@@ -34,3 +37,78 @@ export function settingsLine(d: ScanDefaults, platform: Platform): string {
       return "Here, Automatic means the full scan: AutoScene couldn't recognise this computer's graphics."
   }
 }
+
+/**
+ * The New Project dialog's Fast Scan line: what it costs this footage. While
+ * people without a visible face are found, it misses them too (it finds
+ * faces only); anime is found by its own character models, faces or not.
+ */
+export function what(content: ContentKind, findBodies: boolean): string {
+  switch (content) {
+    case "anime":
+      return "Much faster, finds fewer characters."
+    case "animation":
+      return findBodies
+        ? "Much faster, but misses many animated faces and anyone without a visible face."
+        : "Much faster, but misses many animated faces."
+    default:
+      return findBodies ? "Much faster, finds fewer faces and no one without a visible face." : "Much faster, finds fewer faces."
+  }
+}
+
+/** What Fast Scan suits, for the classes that get it on Automatic. */
+const SUITED: Partial<Record<GraphicsClass, string>> = {
+  integrated: "this computer's built-in graphics",
+  notForAi: "this computer's graphics card",
+  processor: "analysis on the processor",
+}
+
+/** Why Fast Scan is on for a new project: what it suits. Empty where Automatic keeps the full scan. */
+export function suits(c: GraphicsClass): string {
+  const suited = SUITED[c]
+  return suited ? `Suits ${suited}.` : ""
+}
+
+/**
+ * Whether this footage starts with Fast Scan because of this computer's
+ * graphics: on Automatic, where the person chose nothing.
+ */
+export function showsSuits(content: ContentKind, d: ScanDefaults): boolean {
+  return d.choice === "auto" && startsFast(d, content) && SUITED[d.computer.class] != null
+}
+
+/**
+ * The New Project dialog's Fast Scan line: what it costs and, where it is on
+ * because of this computer's graphics, why. Without the defaults (they
+ * failed), only what it costs.
+ */
+export function newProjectHint(content: ContentKind, findBodies: boolean, d: ScanDefaults | undefined): string {
+  const cost = what(content, findBodies)
+  return d && showsSuits(content, d) ? `${cost} ${suits(d.computer.class)}` : cost
+}
+
+/**
+ * Edit details: what Fast Scan does to a project's footage (anime keeps its
+ * character models, see `Project::faces_plan`). A project on the full scan
+ * that a new one of its footage wouldn't be, because of this computer's
+ * graphics, hears that Fast Scan suits them; said with its name, since the
+ * sentence before it is about the full scan.
+ */
+export function fastScanHint(
+  content: ContentKind,
+  rescanned: boolean,
+  fast: boolean,
+  d: ScanDefaults | undefined,
+): string {
+  if (content === "anime") {
+    if (rescanned) return "Characters are found again this way, then regrouped. Your names and decisions stay."
+    if (fast) return "Characters are found with the anime models in only a few frames of each shot: much faster, less sure who is who."
+    return withSuits("Characters are found with the anime models every few frames.", content, d)
+  }
+  if (rescanned) return "Faces are found again this way, then the characters regrouped. Your names and decisions stay."
+  if (fast) return "Faces are found the way the Scener app does: much faster, less sure who is who."
+  return withSuits("Faces are found in full: every few frames, with the larger face models (for non-commercial use only).", content, d)
+}
+
+const withSuits = (full: string, content: ContentKind, d: ScanDefaults | undefined) =>
+  d && showsSuits(content, d) ? `${full} Fast Scan suits ${SUITED[d.computer.class]}.` : full

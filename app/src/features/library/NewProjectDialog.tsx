@@ -8,10 +8,13 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
 import { Segmented } from "@/components/ui/segmented"
+import { Switch } from "@/components/ui/switch"
+import { newProjectHint, startsFast } from "@/lib/fast-scan"
 import { footageBlurb } from "@/lib/footage"
 import { formatBytes } from "@/lib/format"
 import { commands, errorMessage } from "@/lib/ipc"
 import { fileStem, pickFolder, pickVideoFiles } from "@/lib/media"
+import { useScanDefaults, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { useNewProject } from "@/state/new-project"
 import { FootagePicker } from "./FootagePicker"
@@ -35,6 +38,16 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
   const [kind, setKind] = useState<ProjectKind>("series")
   const kindTouched = useRef(false)
   const [content, setContent] = useState<ContentKind>("live")
+  // Fast Scan follows the footage until the person flips it.
+  const [touched, setTouched] = useState<boolean | null>(null)
+  const { data: scanDefaults, isError: scanUnknown } = useScanDefaults()
+  const { data: settings } = useSettings()
+  const findBodies = settings?.findBodies ?? false
+  // Without the defaults (they failed), the library's own rule as far as the
+  // settings tell it: 3D animation keeps the full scan.
+  const fastScan =
+    touched ?? (scanDefaults ? startsFast(scanDefaults, content) : content !== "animation" && (settings?.fastScan ?? false))
+  const scanKnown = scanDefaults != null || scanUnknown
   // Dropped files (`seed`, which grows when more are dropped on the open
   // dialog) plus picked ones; nothing typed is lost when more arrive.
   const [picked, setPicked] = useState<string[]>([])
@@ -87,9 +100,9 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
   const create = async () => {
     setCreating(true)
     try {
-      // `null`: the scan this footage starts with on this computer.
       const req = { title: title.trim(), kind, content, files: chosen.map((c) => c.path) }
-      const p = await commands.projectCreate(req, null)
+      // What the switch shows; `null` (the library's own default) only while it waits for it.
+      const p = await commands.projectCreate(req, scanKnown ? fastScan : null)
       onDone()
       void navigate({ to: "/p/$pid/episodes", params: { pid: p.id } })
     } catch (e) {
@@ -105,7 +118,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
       description="A project is one series or movie. Episodes are recognised and ordered from their file names."
       className="w-[min(760px,calc(100vw-32px))]"
     >
-      <div className="grid grid-cols-[1fr_auto] items-end gap-4">
+      <div className="grid grid-cols-[1fr_15rem] items-start gap-4">
         <Field label="Title" htmlFor="np-title">
           <Input
             id="np-title"
@@ -118,7 +131,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
             }}
           />
         </Field>
-        <Field label="Type">
+        <Field label="Type" className="items-start">
           <Segmented<ProjectKind>
             aria-label="Project type"
             value={kind}
@@ -132,10 +145,21 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
             ]}
           />
         </Field>
+        <Field label="Footage" hint={footageBlurb(content)} className="items-start">
+          <FootagePicker value={content} onChange={setContent} />
+        </Field>
+        <Field
+          label="Fast Scan"
+          htmlFor="np-fast-scan"
+          hint={scanKnown ? newProjectHint(content, findBodies, scanDefaults) : undefined}
+          className="items-start"
+        >
+          {/* As tall as the footage picker beside it, so their lines start level. */}
+          <div className="flex h-9 items-center">
+            <Switch id="np-fast-scan" checked={fastScan} disabled={!scanKnown} onCheckedChange={setTouched} />
+          </div>
+        </Field>
       </div>
-      <Field label="Footage" hint={footageBlurb(content)} className="mt-4 items-start">
-        <FootagePicker value={content} onChange={setContent} />
-      </Field>
 
       <div
         className={cn(
@@ -153,7 +177,8 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
           </div>
         )}
         {candidates.length === 0 ? (
-          <div className="flex flex-col items-center border-2 border-dashed border-white/[0.08] m-2 rounded-xl px-6 py-12 text-center">
+          // Lower on short windows, so the dialog keeps a margin round it.
+          <div className="m-2 flex flex-col items-center rounded-xl border-2 border-dashed border-white/[0.08] px-6 py-12 text-center [@media(max-height:720px)]:py-8">
             {scanning ? (
               <CircleNotch className="size-6 animate-spin text-accent" />
             ) : (
@@ -176,7 +201,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
           </div>
         ) : (
           <>
-            <div className="max-h-[320px] overflow-y-auto p-1.5">
+            <div className="max-h-[clamp(112px,calc(100dvh-456px),320px)] overflow-y-auto p-1.5">
               <table className="w-full text-md">
                 <tbody>
                   {candidates.map((c, i) => {

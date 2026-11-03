@@ -47,6 +47,7 @@ export {
   FilmStrip,
   FolderOpen,
   FolderPlus,
+  FunnelSimple,
   GearSix,
   GithubLogo,
   GraphicsCard,

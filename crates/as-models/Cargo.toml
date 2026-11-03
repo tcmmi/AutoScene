@@ -15,10 +15,10 @@ thiserror.workspace = true
 tracing.workspace = true
 sha2.workspace = true
 toml.workspace = true
-ureq = "=3.4.2"
+ureq.workspace = true
 # Where a redirect leads: requests follow theirs themselves (see `get`).
-url = "=2.5.8"
-flate2 = "=1.1.10"
+url.workspace = true
+flate2.workspace = true
 
 # The free space on the models folder's drive, before a download.
 [target.'cfg(windows)'.dependencies]

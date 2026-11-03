@@ -32,7 +32,8 @@ as-api.workspace = true
 as-db.workspace = true
 as-media.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+# A call's params stay the text the plugin wrote until the call is answered.
+serde_json = { workspace = true, features = ["raw_value"] }
 specta.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

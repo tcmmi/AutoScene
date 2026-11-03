@@ -1,11 +1,12 @@
 //! Plugin runs, with the stand-in plugin (`src/bin/asp_test_plugin.rs`):
-//! what reaches it, what it says, and how a run ends when it misbehaves.
-//! Each run works in a folder of its own.
+//! what reaches it, what it says, how a run ends when it misbehaves, and
+//! how its calls are answered. Each run works in a folder of its own.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, fs};
@@ -14,12 +15,16 @@ use as_core::{AppPaths, CancelToken};
 use as_db::LibraryDb;
 use as_plugin::log::MAX_LOG_BYTES;
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext};
-use as_plugin::runtime::{self, CANCEL_GRACE, EXIT_GRACE, MAX_LINE_BYTES, RunSpec, TERM_GRACE};
+use as_plugin::runtime::{
+    self, CALL_QUEUE, CANCEL_GRACE, EXIT_GRACE, MAX_CALL_BYTES, MAX_CALLS_IN_FLIGHT, MAX_LINE_BYTES, MAX_UNREAD,
+    RunSpec, TERM_GRACE,
+};
 use as_plugin::{
-    ActionContext, ActionKind, AppContext, Keys, Launch, PluginContext, PluginError, PluginId, PluginResult,
-    RunMessage, SettingValue, Store, ToolPaths, Trigger, current_platform,
+    ActionContext, ActionKind, AppContext, CallCode, CallError, HostCalls, HostMethod, Keys, Launch, PluginContext,
+    PluginError, PluginId, PluginResult, RunMessage, SettingValue, Store, ToolPaths, Trigger, current_platform,
 };
 use semver::Version;
+use serde_json::value::RawValue;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -30,12 +35,25 @@ const ID: &str = "dev.autoscene.test-plugin";
 struct Plugin {
     dir: TempDir,
     mode: &'static str,
+    args: Vec<String>,
     message: RunMessage,
+    protocol: u32,
+    calls: Option<Arc<dyn HostCalls>>,
 }
 
 impl Plugin {
     fn new(mode: &'static str) -> Self {
-        Self { dir: tempfile::tempdir().unwrap(), mode, message: message() }
+        let dir = tempfile::tempdir().unwrap();
+        Self { dir, mode, args: Vec::new(), message: message(), protocol: 1, calls: None }
+    }
+
+    /// A plugin of protocol 2 in `mode`, whose calls `answers` answers.
+    fn calling<H: HostCalls + 'static>(mode: &'static str, answers: &Arc<H>) -> Self {
+        Self { protocol: 2, calls: Some(answers.clone()), ..Self::new(mode) }
+    }
+
+    fn text(&self, name: &str) -> String {
+        fs::read_to_string(self.data().join(name)).unwrap()
     }
 
     fn data(&self) -> PathBuf {
@@ -57,12 +75,14 @@ impl Plugin {
             dir: exe.parent().unwrap().to_path_buf(),
             launch: Launch::Exe {
                 program: exe.file_name().unwrap().to_str().unwrap().into(),
-                args: vec![self.mode.into()],
+                args: [vec![self.mode.into()], self.args.clone()].concat(),
             },
             data_dir: self.data(),
             log_path: self.log(),
             ffmpeg: self.dir.path().join("tools").join("ffmpeg"),
             ffprobe: self.dir.path().join("tools").join("ffprobe"),
+            protocol: self.protocol,
+            calls: self.calls.clone(),
             message: self.message.clone(),
         }
     }
@@ -107,6 +127,89 @@ fn message() -> RunMessage {
         action: ActionContext { kind: ActionKind::ExportAction, id: "post".into(), trigger: Trigger::Menu },
         project: None,
         export: None,
+        input: None,
+    }
+}
+
+/// AutoScene's side of a run's calls: each is answered with its method's
+/// name (and `pad` bytes more), once the answers are open, and counted.
+#[derive(Default)]
+struct Answers {
+    open: Mutex<bool>,
+    opened: Condvar,
+    /// Whether a call stops waiting once its plugin ended.
+    heeds_end: bool,
+    pad: usize,
+    seen: Mutex<Vec<HostMethod>>,
+    running: AtomicUsize,
+    most: AtomicUsize,
+    done: AtomicUsize,
+    /// Whether the last call answered saw its plugin's end.
+    saw_end: AtomicBool,
+}
+
+impl Answers {
+    fn open() -> Arc<Self> {
+        let answers = Self::closed();
+        answers.let_through();
+        answers
+    }
+
+    fn closed() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    /// Closed, but a call waits only while its plugin runs.
+    fn heeding() -> Arc<Self> {
+        Arc::new(Self { heeds_end: true, ..Self::default() })
+    }
+
+    /// Open, each answer `pad` bytes longer.
+    fn padded(pad: usize) -> Arc<Self> {
+        let answers = Arc::new(Self { pad, ..Self::default() });
+        answers.let_through();
+        answers
+    }
+
+    fn let_through(&self) {
+        *self.open.lock().unwrap() = true;
+        self.opened.notify_all();
+    }
+
+    fn seen(&self) -> usize {
+        self.seen.lock().unwrap().len()
+    }
+}
+
+impl HostCalls for Answers {
+    fn call(&self, method: HostMethod, _: &RawValue, ended: &CancelToken) -> Result<Value, CallError> {
+        self.seen.lock().unwrap().push(method);
+        let now = self.running.fetch_add(1, Ordering::SeqCst) + 1;
+        self.most.fetch_max(now, Ordering::SeqCst);
+        let until = Instant::now() + Duration::from_secs(20);
+        let mut open = self.open.lock().unwrap();
+        while !*open && !(self.heeds_end && ended.is_cancelled()) && Instant::now() < until {
+            open = self.opened.wait_timeout(open, Duration::from_millis(20)).unwrap().0;
+        }
+        let open = *open;
+        self.saw_end.store(ended.is_cancelled(), Ordering::SeqCst);
+        self.running.fetch_sub(1, Ordering::SeqCst);
+        self.done.fetch_add(1, Ordering::SeqCst);
+        match (open, ended.is_cancelled()) {
+            (true, _) if self.pad > 0 => Ok(json!({"method": method.name(), "pad": "x".repeat(self.pad)})),
+            (true, _) => Ok(json!({"method": method.name()})),
+            (false, true) => Err(CallError::new(CallCode::Cancelled, "The run ended.")),
+            (false, false) => Err(CallError::new(CallCode::Failed, "Never let through.")),
+        }
+    }
+}
+
+/// A host that breaks on every call.
+struct Panics;
+
+impl HostCalls for Panics {
+    fn call(&self, method: HostMethod, _: &RawValue, _: &CancelToken) -> Result<Value, CallError> {
+        panic!("a host that breaks on {}", method.name());
     }
 }
 
@@ -525,4 +628,298 @@ fn a_missing_program_says_so() {
     assert_eq!(e.to_string(), format!("{NAME} can't start: one of its files is missing."));
     // Nothing started, so nothing was made.
     assert!(!p.data().exists() && !p.log().exists());
+}
+
+#[test]
+fn a_call_gets_its_reply_on_stdin() {
+    let answers = Answers::open();
+    let p = Plugin::calling("call", &answers);
+    assert_eq!(p.run().unwrap().as_deref(), Some("Called."));
+    assert_eq!(p.text("reply.json"), "{\"type\":\"reply\",\"id\":7,\"result\":{\"method\":\"settings.get\"}}\n");
+    assert_eq!(*answers.seen.lock().unwrap(), [HostMethod::SettingsGet]);
+    // The run speaks the protocol its plugin declared.
+    assert!(p.text("run.json").starts_with(r#"{"type":"run","protocol":2,"#));
+    // The log names the call and its answer, never what it carried.
+    let log = p.log_text();
+    assert!(log.contains("[call] settings.get\n[reply] settings.get ok\n"), "{log}");
+    assert!(!log.contains("method\":"), "{log}");
+}
+
+#[test]
+fn calls_past_four_at_a_time_wait() {
+    let answers = Answers::closed();
+    let mut p = Plugin::calling("call-many", &answers);
+    let n = MAX_CALLS_IN_FLIGHT + CALL_QUEUE + 2;
+    p.args = vec![n.to_string()];
+    let busy = "[reply] settings.get busy\n";
+    // Four are answered at once and 64 wait: the two past them are busy.
+    let full = || {
+        answers.running.load(Ordering::SeqCst) == MAX_CALLS_IN_FLIGHT
+            && fs::read_to_string(p.log()).is_ok_and(|log| log.matches(busy).count() == 2)
+    };
+    let (result, was_full) = thread::scope(|s| {
+        let run = s.spawn(|| p.run());
+        let until = Instant::now() + Duration::from_secs(20);
+        while !full() && Instant::now() < until {
+            thread::sleep(Duration::from_millis(20));
+        }
+        // Let through before anything is asserted: the run waits for it.
+        let was_full = full();
+        answers.let_through();
+        (run.join().unwrap(), was_full)
+    });
+    assert!(was_full, "the calls never filled up");
+    assert_eq!(result.unwrap().as_deref(), Some("Called."));
+    assert_eq!(answers.most.load(Ordering::SeqCst), MAX_CALLS_IN_FLIGHT);
+    assert_eq!(answers.seen(), n - 2);
+    let replies: Vec<Value> = p.text("replies.json").lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    assert_eq!(replies.len(), n);
+    // The busy ones come back first, before any that waited.
+    for (reply, id) in replies[..2].iter().zip([n - 1, n]) {
+        assert_eq!(
+            *reply,
+            json!({"type": "reply", "id": id, "error": {"code": "busy", "message": "Too many calls at once."}})
+        );
+    }
+    // Then every other one, answered.
+    let ids: BTreeSet<u64> = replies[2..].iter().map(|r| r["id"].as_u64().unwrap()).collect();
+    assert_eq!(ids, (1..=n as u64 - 2).collect());
+    assert!(replies[2..].iter().all(|r| r["result"] == json!({"method": "settings.get"})));
+}
+
+#[test]
+fn a_call_after_the_result_is_dropped() {
+    let answers = Answers::open();
+    let p = Plugin::calling("call-late", &answers);
+    assert_eq!(p.run().unwrap().as_deref(), Some("Done."));
+    assert_eq!(answers.seen(), 0);
+    // Its stdin closed with its result: nothing came after.
+    assert_eq!(p.text("stdin-closed"), "");
+    let log = p.log_text();
+    assert!(log.contains("[call] settings.get after the result: dropped\n"), "{log}");
+    assert!(!log.contains("[reply]"), "{log}");
+}
+
+#[test]
+fn an_unknown_method_gets_an_error_reply() {
+    let answers = Answers::open();
+    let p = Plugin::calling("call-unknown", &answers);
+    assert_eq!(p.run().unwrap().as_deref(), Some("Called."));
+    assert_eq!(
+        p.text("reply.json"),
+        concat!(
+            r#"{"type":"reply","id":"a","error":{"code":"invalid","#,
+            r#""message":"AutoScene doesn't know the method \"files.delete\"."}}"#,
+            "\n"
+        )
+    );
+    assert_eq!(answers.seen(), 0);
+    assert!(p.log_text().contains("[call] files.delete\n[reply] files.delete invalid\n"));
+}
+
+#[test]
+fn a_protocol_1_plugin_s_call_line_goes_to_the_log() {
+    let answers = Answers::open();
+    // As on M1, even if the host had answers for it.
+    let p = Plugin { calls: Some(answers.clone() as Arc<dyn HostCalls>), ..Plugin::new("protocol1-call") };
+    assert_eq!(p.run().unwrap().as_deref(), Some("Done."));
+    assert_eq!(answers.seen(), 0);
+    assert_eq!(p.text("stdin-closed"), "");
+    let log = p.log_text();
+    assert!(log.contains("[stdout] {\"type\":\"call\",\"id\":1,\"method\":\"settings.get\",\"params\":{}}\n"), "{log}");
+    assert!(!log.contains("[call]") && !log.contains("[reply]"), "{log}");
+}
+
+#[test]
+fn a_slow_call_never_blocks_progress_lines() {
+    // The answer waits for the progress line the plugin sends after its call.
+    let answers = Answers::closed();
+    let p = Plugin::calling("call", &answers);
+    let stages = Mutex::new(Vec::new());
+    let result = runtime::run(p.spec(), &CancelToken::new(), &|stage, _| {
+        stages.lock().unwrap().push(stage.to_owned());
+        if stage == "Waiting for AutoScene" {
+            answers.let_through();
+        }
+    });
+    assert_eq!(result.unwrap().as_deref(), Some("Called."));
+    assert_eq!(stages.into_inner().unwrap(), ["Waiting for AutoScene"]);
+    assert_eq!(p.text("reply.json"), "{\"type\":\"reply\",\"id\":7,\"result\":{\"method\":\"settings.get\"}}\n");
+}
+
+/// The replies a run of `p` wrote to `replies.json`, by their id.
+fn replies(p: &Plugin) -> BTreeMap<u64, Value> {
+    let lines = p.text("replies.json");
+    lines.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).map(|r| (r["id"].as_u64().unwrap(), r)).collect()
+}
+
+#[test]
+fn long_and_broken_calls_never_reach_the_log() {
+    let answers = Answers::open();
+    let p = Plugin::calling("call-long", &answers);
+    assert_eq!(p.run().unwrap().as_deref(), Some("Called."));
+    // A long call within its cap reached AutoScene; nothing else did.
+    assert_eq!(*answers.seen.lock().unwrap(), [HostMethod::StateSet]);
+    let invalid =
+        |id: u64, message: &str| json!({"type": "reply", "id": id, "error": {"code": "invalid", "message": message}});
+    assert_eq!(
+        replies(&p),
+        BTreeMap::from([
+            (1, json!({"type": "reply", "id": 1, "result": {"method": "state.set"}})),
+            (2, invalid(2, "A call is at most 5 MB.")),
+            (4, invalid(4, "AutoScene couldn't read this call.")),
+        ])
+    );
+    let log = p.log_text();
+    for line in [
+        "[call] state.set\n",
+        "[reply] state.set ok\n",
+        "[call] state.set too long\n[reply] state.set invalid\n",
+        "[call] net.fetch too long, without an id to answer: dropped\n",
+        "[call] state.get unreadable, without an id to answer: dropped\n",
+        "[call] (unnamed) unreadable\n[reply] (unnamed) invalid\n",
+    ] {
+        assert!(log.contains(line), "{line}: {}", &log[..log.len().min(4000)]);
+    }
+    // Not a byte of their params.
+    assert!(!log.contains("SECRET") && !log.contains("vvvv") && !log.contains("xxxx"), "{}", log.len());
+    assert!(!log.contains("[stdout]"), "{}", &log[..log.len().min(4000)]);
+}
+
+#[test]
+fn a_run_without_answers_refuses_its_calls() {
+    let p = Plugin { protocol: 2, ..Plugin::new("call") };
+    assert_eq!(p.run().unwrap().as_deref(), Some("Called."));
+    assert_eq!(
+        p.text("reply.json"),
+        concat!(
+            r#"{"type":"reply","id":7,"error":{"code":"invalid","#,
+            r#""message":"AutoScene can't answer calls here."}}"#,
+            "\n"
+        )
+    );
+    assert!(p.log_text().contains("[call] settings.get\n[reply] settings.get invalid\n"));
+}
+
+#[test]
+fn a_plugin_that_never_reads_its_replies_is_ended() {
+    let answers = Answers::open();
+    let mut p = Plugin::calling("call-deaf", &answers);
+    // Far more than a pipe holds, and than it may leave unread.
+    p.args = vec![(MAX_UNREAD * 5).to_string(), "60000".into()];
+    let started = Instant::now();
+    let e = p.run().unwrap_err();
+    assert!(started.elapsed() < Duration::from_secs(30), "{:?}", started.elapsed());
+    assert!(matches!(&e, PluginError::Crashed { detail, .. } if detail.contains("unread")), "{e:?}");
+    assert_eq!(e.to_string(), format!("{NAME} stopped unexpectedly."));
+    assert!(p.log_text().contains("[host] its replies went unread; ended\n"));
+}
+
+#[test]
+fn unread_replies_hold_its_calls_back() {
+    // Each reply is 2 MB, and the plugin reads none of them.
+    let reply = 2 << 20;
+    let answers = Answers::padded(reply);
+    let mut p = Plugin::calling("call-deaf", &answers);
+    let n = 60;
+    p.args = vec![n.to_string(), "2000".into()];
+    assert_eq!(p.run().unwrap().as_deref(), Some("Deaf."));
+    // Calls started only while the replies it hadn't read stayed under the cap.
+    let seen = answers.seen();
+    assert!((MAX_CALLS_IN_FLIGHT..=MAX_CALL_BYTES / reply + MAX_CALLS_IN_FLIGHT).contains(&seen), "{seen}");
+    // The others were answered busy, or still waited at its result.
+    let log = p.log_text();
+    let ok = log.matches("[reply] settings.get ok\n").count();
+    let busy = log.matches("[reply] settings.get busy\n").count();
+    let dropped = log.matches("[call] settings.get still waiting at the result: dropped\n").count();
+    assert_eq!((ok, ok + busy + dropped), (seen, n), "{ok} {busy} {dropped}");
+}
+
+#[test]
+fn a_run_ends_only_after_its_calls() {
+    // The call is still being answered when the plugin has gone.
+    let answers = Answers::heeding();
+    let p = Plugin::calling("call-exit", &answers);
+    assert_eq!(p.run().unwrap(), None);
+    assert_eq!((answers.done.load(Ordering::SeqCst), answers.running.load(Ordering::SeqCst)), (1, 0));
+    // It was told the plugin had ended, and its answer went to the log.
+    assert!(answers.saw_end.load(Ordering::SeqCst));
+    let log = p.log_text();
+    let end: Vec<_> = log.lines().rev().take(2).collect();
+    assert_eq!(end[1], "[reply] settings.get cancelled", "{log}");
+    assert!(end[0].starts_with("[host] exit "), "{log}");
+}
+
+#[test]
+fn a_call_that_panics_is_answered_failed() {
+    let mut p = Plugin::calling("call-many", &Arc::new(Panics));
+    // More than may run at once: each panic still gives its place back.
+    let n = MAX_CALLS_IN_FLIGHT + 2;
+    p.args = vec![n.to_string()];
+    assert_eq!(p.run().unwrap().as_deref(), Some("Called."));
+    let failed = json!({"code": "failed", "message": "AutoScene couldn't answer this call."});
+    let replies = replies(&p);
+    assert_eq!(replies.len(), n);
+    assert!(replies.values().all(|r| r["error"] == failed), "{replies:?}");
+}
+
+#[test]
+fn a_cancel_ends_the_run_while_a_call_waits() {
+    let answers = Answers::heeding();
+    let p = Plugin::calling("call", &answers);
+    let (result, took) = p.run_cancelled_once(|| answers.seen() == 1);
+    assert!(matches!(result, Err(PluginError::Cancelled)), "{result:?}");
+    assert!(took < CANCEL_GRACE, "{took:?}");
+    // The cancel line reached it while its call waited.
+    assert_eq!(p.text("reply.json"), "{\"type\":\"cancel\"}\n");
+    assert!(answers.saw_end.load(Ordering::SeqCst));
+    assert!(p.log_text().contains("[reply] settings.get cancelled\n"));
+}
+
+#[test]
+fn a_call_after_the_cancel_is_refused() {
+    let answers = Answers::heeding();
+    let mut p = Plugin::calling("call-cancelled", &answers);
+    let n = MAX_CALLS_IN_FLIGHT + 2;
+    p.args = vec![n.to_string()];
+    // Four being answered and two waiting their turn when the cancel comes.
+    let (result, took) = p.run_cancelled_once(|| {
+        answers.seen() == MAX_CALLS_IN_FLIGHT
+            && fs::read_to_string(p.log()).is_ok_and(|log| log.matches("[call] settings.get\n").count() == n)
+    });
+    assert!(matches!(result, Err(PluginError::Cancelled)), "{result:?}");
+    assert!(took < CANCEL_GRACE, "{took:?}");
+    // Those being answered were told; nothing else reached AutoScene.
+    assert_eq!(*answers.seen.lock().unwrap(), [HostMethod::SettingsGet; MAX_CALLS_IN_FLIGHT]);
+    assert!(answers.saw_end.load(Ordering::SeqCst));
+    // The cancel line came first; the two waiting and the one after it were
+    // answered that the run was cancelled.
+    let read = p.text("replies.json");
+    assert_eq!(read.lines().next(), Some(r#"{"type":"cancel"}"#));
+    let replies: BTreeMap<u64, Value> = read
+        .lines()
+        .skip(1)
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .map(|r| (r["id"].as_u64().unwrap(), r["error"].clone()))
+        .collect();
+    let cancelled = json!({"code": "cancelled", "message": "This run was cancelled."});
+    for id in [n as u64 - 1, n as u64, 99] {
+        assert_eq!(replies.get(&id), Some(&cancelled), "{id}: {read}");
+    }
+    let log = p.log_text();
+    assert!(log.contains("[host] asked to cancel\n"), "{log}");
+    assert!(log.contains("[call] state.set\n[reply] state.set cancelled\n"), "{log}");
+}
+
+#[test]
+fn calls_still_waiting_at_the_result_are_never_answered() {
+    let answers = Answers::heeding();
+    let mut p = Plugin::calling("call-and-go", &answers);
+    p.args = vec![(MAX_CALLS_IN_FLIGHT + 2).to_string()];
+    assert_eq!(p.run().unwrap().as_deref(), Some("Gone."));
+    // Four were being answered; the two waiting never started, and say so.
+    assert_eq!(answers.seen(), MAX_CALLS_IN_FLIGHT);
+    let log = p.log_text();
+    assert_eq!(log.matches("[call] settings.get still waiting at the result: dropped\n").count(), 2, "{log}");
+    assert_eq!(log.matches("[reply] settings.get cancelled\n").count(), MAX_CALLS_IN_FLIGHT, "{log}");
 }

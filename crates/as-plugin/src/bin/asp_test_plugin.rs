@@ -1,5 +1,5 @@
 //! A stand-in plugin for the runtime tests (`tests/runtime.rs`), never
-//! shipped. It speaks protocol v1 as a plugin would, and misbehaves as one
+//! shipped. It speaks the protocol as a plugin would, and misbehaves as one
 //! might; its first argument says how. Files it writes go in its current
 //! folder, the run's data folder.
 
@@ -143,6 +143,126 @@ fn main() {
             read_run();
             grandchild();
             forever();
+        }
+        // Protocol 2: a call, a progress line while it waits, then its reply.
+        "call" => {
+            read_run();
+            fs::write("run.json", &first).expect("run.json");
+            send(json!({"type": "call", "id": 7, "method": "settings.get", "params": {}}));
+            send(json!({"type": "progress", "stage": "Waiting for AutoScene"}));
+            let mut reply = String::new();
+            stdin.read_line(&mut reply).expect("stdin");
+            fs::write("reply.json", reply).expect("reply.json");
+            send(json!({"type": "result", "message": "Called."}));
+        }
+        // As many calls as its second argument says at once, then their replies.
+        "call-many" => {
+            read_run();
+            let n: u64 = args[1].parse().expect("a count");
+            for id in 1..=n {
+                send(json!({"type": "call", "id": id, "method": "settings.get"}));
+            }
+            let mut replies = String::new();
+            for _ in 0..n {
+                stdin.read_line(&mut replies).expect("stdin");
+            }
+            fs::write("replies.json", replies).expect("replies.json");
+            send(json!({"type": "result", "message": "Called."}));
+        }
+        // A call after its result, then it reads its stdin to the end.
+        "call-late" => {
+            read_run();
+            send(json!({"type": "result", "message": "Done."}));
+            send(json!({"type": "call", "id": 1, "method": "settings.get"}));
+            let mut rest = String::new();
+            stdin.read_to_string(&mut rest).expect("stdin");
+            fs::write("stdin-closed", rest).expect("stdin-closed");
+        }
+        "call-unknown" => {
+            read_run();
+            send(json!({"type": "call", "id": "a", "method": "files.delete", "params": {"path": "/"}}));
+            let mut reply = String::new();
+            stdin.read_line(&mut reply).expect("stdin");
+            fs::write("reply.json", reply).expect("reply.json");
+            send(json!({"type": "result", "message": "Called."}));
+        }
+        // A call, then it exits at once: its answer comes after it.
+        "call-exit" => {
+            read_run();
+            send(json!({"type": "call", "id": 1, "method": "settings.get"}));
+            // Long enough for the call to start.
+            thread::sleep(Duration::from_millis(300));
+        }
+        // As many calls as its second argument says, then its result before any reply.
+        "call-and-go" => {
+            read_run();
+            let n: u64 = args[1].parse().expect("a count");
+            for id in 1..=n {
+                send(json!({"type": "call", "id": id, "method": "settings.get"}));
+            }
+            thread::sleep(Duration::from_millis(500));
+            send(json!({"type": "result", "message": "Gone."}));
+        }
+        // As many calls as its second argument says, and it never reads a
+        // reply: its result comes the third argument's ms later.
+        "call-deaf" => {
+            read_run();
+            let n: u64 = args[1].parse().expect("a count");
+            for id in 1..=n {
+                send(json!({"type": "call", "id": id, "method": "settings.get"}));
+            }
+            thread::sleep(Duration::from_millis(args[2].parse().expect("ms")));
+            send(json!({"type": "result", "message": "Deaf."}));
+        }
+        // Calls long, too long and broken, each with a secret in its params.
+        "call-long" => {
+            read_run();
+            let secret = "SECRET-MARKER";
+            // Long, within its cap: answered.
+            let value = "v".repeat(200_000);
+            send(json!({"type": "call", "id": 1, "method": "state.set", "params": {"key": "k", "value": value}}));
+            // Past the longest call line: refused by its id, which comes first.
+            let long = format!("{secret}{}", "x".repeat(6 << 20));
+            send(json!({"type": "call", "id": 2, "method": "state.set", "params": {"key": "k", "value": long}}));
+            // Its id after its params, which the cut takes: dropped.
+            raw(&format!(r#"{{"type":"call","method":"net.fetch","params":{{"body":"{long}"}},"id":3}}"#));
+            // An id no reply can carry: dropped.
+            send(json!({"type": "call", "id": -1, "method": "state.get", "params": {"key": secret}}));
+            // No method: refused by its id.
+            send(json!({"type": "call", "id": 4, "params": {"key": secret}}));
+            let mut replies = String::new();
+            for _ in 0..3 {
+                stdin.read_line(&mut replies).expect("stdin");
+            }
+            fs::write("replies.json", replies).expect("replies.json");
+            send(json!({"type": "result", "message": "Called."}));
+        }
+        // As many calls as its second argument says; once asked to cancel,
+        // one more, and every line it reads until that one's reply.
+        "call-cancelled" => {
+            read_run();
+            let n: u64 = args[1].parse().expect("a count");
+            for id in 1..=n {
+                send(json!({"type": "call", "id": id, "method": "settings.get"}));
+            }
+            let mut read = String::new();
+            while !read.contains(r#""cancel""#) {
+                stdin.read_line(&mut read).expect("stdin");
+            }
+            send(json!({"type": "call", "id": 99, "method": "state.set", "params": {"key": "k", "value": 1}}));
+            while !read.contains(r#""id":99"#) {
+                stdin.read_line(&mut read).expect("stdin");
+            }
+            fs::write("replies.json", read).expect("replies.json");
+        }
+        // A plugin of protocol 1 that prints a line like a call: never answered.
+        "protocol1-call" => {
+            read_run();
+            raw(r#"{"type":"call","id":1,"method":"settings.get","params":{}}"#);
+            send(json!({"type": "result", "message": "Done."}));
+            let mut rest = String::new();
+            stdin.read_to_string(&mut rest).expect("stdin");
+            fs::write("stdin-closed", rest).expect("stdin-closed");
         }
         other => panic!("no such mode: {other}"),
     }

@@ -1,6 +1,5 @@
-//! The host–plugin protocol, version 1 ([`crate::manifest::PROTOCOL`]): JSON
-//! lines in UTF-8, one object per line, tagged by `"type"`, with camelCase
-//! fields.
+//! The host–plugin protocol ([`crate::manifest::PROTOCOL`]): JSON lines in
+//! UTF-8, one object per line, tagged by `"type"`, with camelCase fields.
 //!
 //! A run starts with one [`HostMessage::Run`] on the plugin's stdin: what to
 //! do, with the context it needs (the export, the project, the plugin's
@@ -12,15 +11,34 @@
 //! plugin's log and is never an error, so a plugin may print what it likes;
 //! stderr goes to the log too.
 //!
-//! Fields added later are `#[serde(default)]`, so an older plugin's lines
-//! still read.
+//! Version 2 adds calls: a plugin that declares it may ask AutoScene for
+//! what it needs with a [`Call`] (its project, an export, its settings;
+//! [`crate::calls`]), and gets a [`HostMessage::Reply`] with the same id on
+//! its stdin. A plugin of version 1 gets the run line it always got, byte
+//! for byte, and its call lines are output for its log.
+//!
+//! Fields added later are `#[serde(default)]` when read and left out while
+//! empty when written, so an older plugin's lines still read and an older
+//! plugin's run line stays as it was.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
-use serde::{Deserialize, Serialize};
+use serde::de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+use serde_json::value::RawValue;
 use specta::Type;
 
-use crate::manifest::{PluginId, SettingValue};
+use crate::calls::CallError;
+use crate::manifest::{PluginId, SettingValue, cut};
+
+/// The longest id a call may give as a text; a call with a longer one is no
+/// message.
+pub const MAX_CALL_ID_CHARS: usize = 64;
+/// The most of a call's method that is kept: a longer one is no method
+/// AutoScene knows, and the log shows only its start anyway.
+const MAX_METHOD_CHARS: usize = 64;
 
 /// Host → plugin, on its stdin.
 #[derive(Clone, Debug, Serialize)]
@@ -32,6 +50,8 @@ pub enum HostMessage {
     /// Stop soon. A plugin that is still running [`crate::runtime::CANCEL_GRACE`]
     /// later is ended, with everything it started.
     Cancel,
+    /// The answer to a call (protocol 2).
+    Reply(Reply),
 }
 
 impl HostMessage {
@@ -43,11 +63,91 @@ impl HostMessage {
     }
 }
 
+/// The id of a call, which its reply carries: a number, or a text of at
+/// most [`MAX_CALL_ID_CHARS`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum CallId {
+    Number(u64),
+    Text(String),
+}
+
+impl<'de> Deserialize<'de> for CallId {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        MaybeId::deserialize(d)?.0.ok_or_else(|| de::Error::custom("a call id is a number or a short text"))
+    }
+}
+
+/// What stands where a call's id goes: the id, when a reply may carry it.
+/// Anything else is skipped as it is read, never kept, however much of the
+/// line it takes.
+struct MaybeId(Option<CallId>);
+
+impl<'de> Deserialize<'de> for MaybeId {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(IdVisitor).map(MaybeId)
+    }
+}
+
+struct IdVisitor;
+
+impl<'de> Visitor<'de> for IdVisitor {
+    type Value = Option<CallId>;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a call id")
+    }
+
+    fn visit_u64<E: de::Error>(self, id: u64) -> Result<Self::Value, E> {
+        Ok(Some(CallId::Number(id)))
+    }
+
+    fn visit_str<E: de::Error>(self, id: &str) -> Result<Self::Value, E> {
+        Ok((id.chars().count() <= MAX_CALL_ID_CHARS).then(|| CallId::Text(id.to_owned())))
+    }
+
+    fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        while seq.next_element::<IgnoredAny>()?.is_some() {}
+        Ok(None)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+        Ok(None)
+    }
+}
+
+/// What a call got: its result (`null` for an empty answer), or its error.
+#[derive(Clone, Debug, Serialize)]
+pub struct Reply {
+    pub id: CallId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<CallError>,
+}
+
 /// A run's task and its context.
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunMessage {
-    /// The protocol version the app speaks.
+    /// The protocol version its plugin declared, which the run speaks.
     pub protocol: u32,
     /// Unique per run; it heads the run's part of the log.
     pub run_id: String,
@@ -61,6 +161,9 @@ pub struct RunMessage {
     pub project: Option<ProjectContext>,
     /// The export an export action runs on.
     pub export: Option<ExportContext>,
+    /// What a page handed its run (protocol 2, `trigger: "page"` only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<Value>,
 }
 
 /// The plugin as installed.
@@ -118,6 +221,8 @@ pub enum Trigger {
     AfterExport,
     /// The command palette.
     Palette,
+    /// A page of the plugin (protocol 2). Reserved: no run starts so yet.
+    Page,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -200,13 +305,129 @@ impl PluginMessage {
     /// The message a line of the plugin's stdout holds, if it holds one.
     /// Only an object is: serde would also read `["result"]` as one. A
     /// byte order mark before it is skipped, since some programs (.NET
-    /// ones told to write UTF-8) write one first.
+    /// ones told to write UTF-8) write one first. A call is no message:
+    /// it reads as a [`Call`].
     pub fn read(line: &str) -> Option<Self> {
+        serde_json::from_str(object(line)?).ok()
+    }
+}
+
+/// `line` without a byte order mark, if it may hold an object.
+fn object(line: &str) -> Option<&str> {
+    let line = line.strip_prefix('\u{FEFF}').unwrap_or(line);
+    line.trim_start().starts_with('{').then_some(line)
+}
+
+/// Asks AutoScene for something (protocol 2), plugin to host: `method`
+/// names a [`crate::calls::HostMethod`], and its reply carries the same id.
+/// Its params stay the text the plugin wrote until the host reads them as
+/// its method's own, once their size is checked: a call holds no more than
+/// its line, whatever JSON it holds.
+#[derive(Debug)]
+pub struct Call {
+    pub id: CallId,
+    /// At most 64 characters: a longer one is no method AutoScene knows.
+    pub method: String,
+    /// `null` when it gave none.
+    pub params: Box<RawValue>,
+}
+
+/// A call line as it is read. Not a [`PluginMessage`]: serde reads the line
+/// of a tagged enum into a copy of its own first, which for 5 MB of small
+/// numbers takes many times that.
+#[derive(Deserialize)]
+struct CallLine {
+    #[serde(rename = "type")]
+    kind: CallKind,
+    id: CallId,
+    method: String,
+    #[serde(default)]
+    params: Box<RawValue>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum CallKind {
+    Call,
+}
+
+impl Call {
+    /// The call a line of the plugin's stdout holds, if it holds one: an
+    /// object, as [`PluginMessage::read`] reads one, of type `call`, with
+    /// an id a reply may carry and a method.
+    pub fn read(line: &str) -> Option<Self> {
+        let CallLine { kind: CallKind::Call, id, method, params } = serde_json::from_str(object(line)?).ok()?;
+        Some(Self { id, method: kept(method), params })
+    }
+}
+
+/// `method` cut to the most of it that is kept.
+fn kept(method: String) -> String {
+    match method.len() > MAX_METHOD_CHARS {
+        true => cut(&method, MAX_METHOD_CHARS),
+        false => method,
+    }
+}
+
+/// What a line that is no message shows of a call: one cut at its limit, or
+/// one whose id, method or JSON doesn't fit. Its keys are read in turn until
+/// the line breaks off, so its id and its method count when they came
+/// first. A line starts a call when its type says so or, before any type,
+/// it names a method or params.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct CallHead {
+    /// Its id, when it came before the break and a reply may carry it.
+    pub id: Option<CallId>,
+    pub method: Option<String>,
+}
+
+impl CallHead {
+    pub(crate) fn read(line: &str) -> Option<Self> {
         let line = line.strip_prefix('\u{FEFF}').unwrap_or(line);
-        if !line.trim_start().starts_with('{') {
-            return None;
+        let mut head = Head::default();
+        // An error is where the line breaks off: what came before it counts.
+        let _ = serde_json::Deserializer::from_str(line).deserialize_map(HeadVisitor(&mut head));
+        let call = match &head.kind {
+            Some(kind) => kind == "call",
+            None => head.method.is_some() || head.params,
+        };
+        call.then_some(Self { id: head.id, method: head.method })
+    }
+}
+
+#[derive(Default)]
+struct Head {
+    kind: Option<String>,
+    id: Option<CallId>,
+    method: Option<String>,
+    params: bool,
+}
+
+struct HeadVisitor<'a>(&'a mut Head);
+
+impl<'de> Visitor<'de> for HeadVisitor<'_> {
+    type Value = ();
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("a message")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "type" => self.0.kind = Some(map.next_value()?),
+                "id" => self.0.id = map.next_value::<MaybeId>()?.0,
+                "method" => self.0.method = Some(kept(map.next_value()?)),
+                "params" => {
+                    self.0.params = true;
+                    map.next_value::<IgnoredAny>()?;
+                }
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                }
+            }
         }
-        serde_json::from_str(line).ok()
+        Ok(())
     }
 }
 
@@ -237,7 +458,10 @@ impl LogLevel {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+    use crate::calls::CallCode;
 
     fn run() -> RunMessage {
         RunMessage {
@@ -254,6 +478,118 @@ mod tests {
             action: ActionContext { kind: ActionKind::Command, id: "hello".into(), trigger: Trigger::Palette },
             project: None,
             export: None,
+            input: None,
+        }
+    }
+
+    #[test]
+    fn a_protocol_1_run_line_is_the_one_it_always_was() {
+        assert_eq!(
+            HostMessage::Run(Box::new(run())).line(),
+            [
+                r#"{"type":"run","protocol":1,"runId":"run-1","#,
+                r#""plugin":{"id":"dev.autoscene.hello","version":"1.2.0","dataDir":"/data"},"#,
+                r#""app":{"version":"1.0.3-BETA","platform":"linux-x86_64"},"#,
+                r#""tools":{"ffmpeg":"/ffmpeg","ffprobe":"/ffprobe","ffmpegVersion":"9.0"},"settings":{},"#,
+                r#""action":{"kind":"command","id":"hello","trigger":"palette"},"project":null,"export":null}"#,
+            ]
+            .concat()
+        );
+        // What a page hands a run of protocol 2 comes last.
+        let mut message = run();
+        (message.protocol, message.action.trigger) = (2, Trigger::Page);
+        message.input = Some(json!({"words": 3}));
+        let line = HostMessage::Run(Box::new(message)).line();
+        assert!(line.ends_with(r#""trigger":"page"},"project":null,"export":null,"input":{"words":3}}"#), "{line}");
+    }
+
+    #[test]
+    fn a_reply_says_its_result_or_its_error() {
+        let reply = |id, result, error| HostMessage::Reply(Reply { id, result, error }).line();
+        assert_eq!(
+            reply(CallId::Number(7), Some(json!({"projectId": "p1"})), None),
+            r#"{"type":"reply","id":7,"result":{"projectId":"p1"}}"#
+        );
+        let denied = CallError::new(CallCode::Denied, "project.get needs the project:read permission.");
+        assert_eq!(
+            reply(CallId::Text("a".into()), None, Some(denied)),
+            r#"{"type":"reply","id":"a","error":{"code":"denied","message":"project.get needs the project:read permission."}}"#
+        );
+        // An empty answer is still a result.
+        assert_eq!(reply(CallId::Number(0), Some(Value::Null), None), r#"{"type":"reply","id":0,"result":null}"#);
+    }
+
+    /// What a call line reads as: its id, its method and its params' text.
+    fn call(line: &str) -> Option<(CallId, String, String)> {
+        Call::read(line).map(|c| (c.id, c.method, c.params.get().to_owned()))
+    }
+
+    #[test]
+    fn call_ids_are_numbers_or_short_texts() {
+        let with = |id: Value| call(&json!({"type": "call", "id": id, "method": "project.get"}).to_string());
+        let id = |id| Some((id, "project.get".to_owned(), "null".to_owned()));
+        assert_eq!(with(json!(7)), id(CallId::Number(7)));
+        assert_eq!(with(json!("a")), id(CallId::Text("a".into())));
+        assert_eq!(with(json!("x".repeat(MAX_CALL_ID_CHARS))), id(CallId::Text("x".repeat(MAX_CALL_ID_CHARS))));
+        for other in
+            [json!("x".repeat(MAX_CALL_ID_CHARS + 1)), json!(-1), json!(1.5), json!(null), json!([1]), json!({})]
+        {
+            assert_eq!(with(other.clone()), None, "{other}");
+        }
+        // Its params come as the plugin wrote them, a byte order mark before it skipped.
+        assert_eq!(
+            call(
+                "\u{FEFF}{\"type\":\"call\",\"params\": {\"key\" : \"k\"} ,\"id\":1,\"method\":\"state.get\",\"later\":[1]}"
+            ),
+            Some((CallId::Number(1), "state.get".into(), r#"{"key" : "k"}"#.into()))
+        );
+        // A method longer than any keeps only its start.
+        let long = call(&json!({"type": "call", "id": 1, "method": "m".repeat(5000)}).to_string()).unwrap();
+        assert_eq!(long.1.chars().count(), 64);
+        for line in [
+            r#"{"type":"call","id":1}"#,
+            r#"{"type":"call","id":1,"method":2}"#,
+            r#"{"type":"result","id":1,"method":"state.get"}"#,
+            r#"{"id":1,"method":"state.get"}"#,
+            r#"[{"type":"call","id":1,"method":"state.get"}]"#,
+            r#"{"type":"call","id":1,"method":"state.get","params":{"#,
+        ] {
+            assert_eq!(call(line), None, "{line}");
+        }
+    }
+
+    #[test]
+    fn a_broken_call_shows_its_id_and_method_and_nothing_else() {
+        let head = CallHead::read;
+        let call = |id: Option<CallId>, method: Option<&str>| Some(CallHead { id, method: method.map(str::to_owned) });
+        // Cut inside its params: what came before them counts.
+        let cut = r#"{"type":"call","id":1,"method":"state.set","params":{"key":"k","value":"SECRET"#;
+        assert_eq!(head(cut), call(Some(CallId::Number(1)), Some("state.set")));
+        let untyped = r#"{"method":"net.fetch","id":"a","params":{"body":"SECRET"#;
+        assert_eq!(head(untyped), call(Some(CallId::Text("a".into())), Some("net.fetch")));
+        // An id after the break, or one a reply can't carry, is none.
+        let late_id = r#"{"type":"call","method":"net.fetch","params":{"body":"SECRET"#;
+        assert_eq!(head(late_id), call(None, Some("net.fetch")));
+        for id in [
+            json!(-1),
+            json!(1.5),
+            json!("x".repeat(MAX_CALL_ID_CHARS + 1)),
+            json!(null),
+            json!(true),
+            json!([1, [2]]),
+            json!({"a": {"b": 1}}),
+        ] {
+            let line = json!({"type": "call", "id": id, "method": "state.get", "params": {}}).to_string();
+            assert_eq!(head(&line), call(None, Some("state.get")), "{line}");
+        }
+        assert_eq!(head(r#"{"params":{"x":"#), call(None, None));
+        // Of a method longer than any, only its start is kept.
+        let long = head(&format!(r#"{{"type":"call","method":"{}","params":{{"#, "m".repeat(5000))).unwrap();
+        assert_eq!(long.method.unwrap().chars().count(), 64);
+        assert_eq!(head("\u{FEFF}{\"type\":\"call\",\"id\":3}"), call(Some(CallId::Number(3)), None));
+        // Other lines aren't calls.
+        for line in [r#"{"type":"result","message":"SECRET"#, r#"{"message":"x"}"#, "[1]", "call", ""] {
+            assert_eq!(head(line), None, "{line}");
         }
     }
 
@@ -285,6 +621,7 @@ mod tests {
     fn actions_and_triggers_are_camel_case() {
         assert_eq!(serde_json::to_string(&ActionKind::ExportAction).unwrap(), r#""exportAction""#);
         assert_eq!(serde_json::to_string(&Trigger::AfterExport).unwrap(), r#""afterExport""#);
+        assert_eq!(serde_json::to_string(&Trigger::Page).unwrap(), r#""page""#);
         assert_eq!(serde_json::from_str::<Trigger>(r#""menu""#).unwrap(), Trigger::Menu);
         assert_eq!(serde_json::from_str::<ActionKind>(r#""command""#).unwrap(), ActionKind::Command);
     }
@@ -334,6 +671,8 @@ mod tests {
             r#"["result"]"#,
             r#"["error","Something broke."]"#,
             "null",
+            // A call reads as one, never as a message.
+            r#"{"type":"call","id":1,"method":"settings.get"}"#,
         ] {
             assert_eq!(PluginMessage::read(line), None, "{line}");
         }

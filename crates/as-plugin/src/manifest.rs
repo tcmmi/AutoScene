@@ -41,8 +41,9 @@ use crate::package::{check_path, reserved};
 
 /// The manifest version this AutoScene reads.
 pub const MANIFEST_VERSION: u32 = 1;
-/// The version of the host–plugin protocol this AutoScene speaks.
-pub const PROTOCOL: u32 = 1;
+/// The newest version of the host–plugin protocol this AutoScene speaks. A
+/// plugin is spoken to in the one it declares (`engines.protocol`).
+pub const PROTOCOL: u32 = 2;
 pub const MAX_MANIFEST_BYTES: u64 = 256 << 10;
 pub const MAX_ACTIONS: usize = 8;
 pub const MAX_COMMANDS: usize = 16;
@@ -218,6 +219,19 @@ pub struct Engines {
     /// The AutoScene versions it works with, as Cargo writes them (`">=1.0.0, <2"`).
     pub autoscene: String,
     pub protocol: u32,
+}
+
+/// How a plugin runs. Every plugin this AutoScene installs is a `process`
+/// one; the others are reserved for a later manifest version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum RuntimeKind {
+    /// Starts for each run and ends with it.
+    Process,
+    /// Also starts in service mode while one of its pages is open (protocol 2).
+    Service,
+    /// Runs no program: pages only.
+    None,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
@@ -422,7 +436,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     let protocol = match engines.get("protocol").and_then(Value::as_u64) {
         Some(p) if p > u64::from(PROTOCOL) => return Err(PluginError::TooNew("protocol".into())),
         Some(p @ 1..) => p as u32,
-        _ => return Err(invalid(r#"The plugin's engines need "protocol": 1."#)),
+        _ => return Err(invalid(r#"The plugin's engines need "protocol": 1 or 2."#)),
     };
     let runtime = root.required_object("runtime")?;
     match runtime.get("type") {
@@ -1263,13 +1277,18 @@ mod tests {
 
     #[test]
     fn a_newer_protocol_needs_a_newer_autoscene() {
-        assert_eq!(too_new(with(|v| v["engines"]["protocol"] = json!(2))), "protocol");
-        assert!(message(with(|v| v["engines"]["protocol"] = json!(0))).contains("protocol"));
+        assert_eq!(too_new(with(|v| v["engines"]["protocol"] = json!(PROTOCOL + 1))), "protocol");
+        // It names the protocols this AutoScene speaks.
+        let speaks = r#"The plugin's engines need "protocol": 1 or 2."#;
+        assert_eq!(PROTOCOL, 2, "{speaks}");
+        assert_eq!(message(with(|v| v["engines"]["protocol"] = json!(0))), speaks);
         let left_out = with(|v| {
             v["engines"].as_object_mut().unwrap().remove("protocol");
         });
-        assert!(message(left_out).contains("protocol"));
-        assert_eq!(read(&plugin()).unwrap().manifest.engines.protocol, PROTOCOL);
+        assert_eq!(message(left_out), speaks);
+        // A plugin keeps the protocol it declares, also an older one.
+        assert_eq!(read(&plugin()).unwrap().manifest.engines.protocol, 1);
+        assert_eq!(with(|v| v["engines"]["protocol"] = json!(2)).unwrap().manifest.engines.protocol, 2);
     }
 
     #[test]

@@ -10,30 +10,37 @@
 //!
 //! A run ([`runtime`]) starts the plugin's program and speaks the protocol
 //! ([`protocol`]) with it over its stdin and stdout; what else it writes
-//! goes to its log ([`log`]).
+//! goes to its log ([`log`]). From protocol 2 a plugin may call AutoScene
+//! for its project, its exports and its settings, and keep a little state
+//! ([`page_state`]); each call is checked against what the plugin may use
+//! ([`calls`]).
 //!
-//! What a plugin says it does (its permissions) is shown before install, and
-//! is not enforced: a process plugin runs with the person's user rights.
+//! What a plugin says it does (its permissions) is shown before install.
+//! Its calls into AutoScene are held to it; what its program does itself is
+//! not: a process plugin runs with the person's user rights.
 
+pub mod calls;
 pub mod error;
 pub mod keys;
 pub mod log;
 pub mod manifest;
 pub mod package;
+pub mod page_state;
 pub mod protocol;
 pub mod runtime;
 pub mod store;
 pub mod trust;
 
+pub use calls::{CallCode, CallError, Caller, Grants, HostCalls, HostMethod};
 pub use error::{PluginError, PluginResult};
 pub use manifest::{
-    ActionSpec, Author, CommandSpec, Engines, Launch, Manifest, Parsed, Permission, PluginId, Runtime, SelectOption,
-    SettingKind, SettingSpec, SettingValue, current_platform,
+    ActionSpec, Author, CommandSpec, Engines, Launch, Manifest, Parsed, Permission, PluginId, Runtime, RuntimeKind,
+    SelectOption, SettingKind, SettingSpec, SettingValue, current_platform,
 };
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{
-    ActionContext, ActionKind, AppContext, ClipContext, ExportContext, PluginContext, ProjectContext, RunMessage,
-    ToolPaths, Trigger,
+    ActionContext, ActionKind, AppContext, CallId, ClipContext, ExportContext, PluginContext, ProjectContext,
+    RunMessage, ToolPaths, Trigger,
 };
 pub use runtime::RunSpec;
 pub use store::{Installed, Record, Source, Store, Ticket};

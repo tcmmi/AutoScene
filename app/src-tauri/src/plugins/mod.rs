@@ -21,6 +21,11 @@
 //! plugins turned on for after every export ([`queue_after_export`]), off
 //! the export's job: a plugin never fails or holds up an export. Queued runs
 //! aren't kept anywhere: one still waiting at quit is lost.
+//!
+//! A run of a plugin that speaks protocol 2 may call AutoScene for its
+//! project, its export and its settings ([`calls`]).
+
+mod calls;
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -34,8 +39,8 @@ use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage};
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
-    ActionContext, ActionKind, CommandSpec, Installed, Keys, Launch, Manifest, Permission, PluginError, PluginId,
-    PluginResult, Record, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
+    ActionContext, ActionKind, CommandSpec, HostCalls, Installed, Keys, Launch, Manifest, Permission, PluginError,
+    PluginId, PluginResult, Record, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -632,8 +637,9 @@ fn job_spec(m: &Manifest, title: &str, project_id: Option<ProjectId>, export_id:
 }
 
 /// The queued run `key`, started by `trigger`, now it starts; `gpu` is
-/// whether it waited as analysis.
-fn run(app: &AppHandle, host: &PluginHost, ctx: &JobCtx, key: &RunKey, trigger: Trigger, gpu: bool) -> JobResult {
+/// whether it waited as analysis. A plugin of protocol 2 gets its calls
+/// answered.
+fn run(app: &AppHandle, host: &Arc<PluginHost>, ctx: &JobCtx, key: &RunKey, trigger: Trigger, gpu: bool) -> JobResult {
     // Held before it looks whether it may run: a change to the plugin or
     // the setting from here on finds it and stops it.
     let _running = host.hold(ctx, &key.plugin)?;
@@ -644,6 +650,8 @@ fn run(app: &AppHandle, host: &PluginHost, ctx: &JobCtx, key: &RunKey, trigger: 
     let mut spec =
         host.store.run_spec(&p, action, &tools.ffmpeg, &tools.ffprobe, &tools.version).map_err(plugin_job_error)?;
     add_place(&mut spec.message, &state.library, key).map_err(job_error)?;
+    let calls = calls_for(&state.library, host, &p, key, spec.protocol).map_err(plugin_job_error)?;
+    spec.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
     ctx.stage(&format!("Starting {}", spec.name));
     if let Some(message) =
         runtime::run(spec, &ctx.cancel, &|stage, f| ctx.report(stage, f)).map_err(plugin_job_error)?
@@ -651,6 +659,22 @@ fn run(app: &AppHandle, host: &PluginHost, ctx: &JobCtx, key: &RunKey, trigger: 
         ctx.message(&message);
     }
     Ok(())
+}
+
+/// The answers to the calls of the run `key` of `p`, whose plugin speaks
+/// `protocol`: one of protocol 2 calls AutoScene, one of protocol 1 never
+/// does.
+fn calls_for(
+    lib: &Arc<Library>,
+    host: &Arc<PluginHost>,
+    p: &Installed,
+    key: &RunKey,
+    protocol: u32,
+) -> PluginResult<Option<calls::AppCalls>> {
+    match protocol {
+        2.. => calls::AppCalls::run(lib.clone(), host.clone(), p, key).map(Some),
+        _ => Ok(None),
+    }
 }
 
 /// The plugin of the queued run `key` now it starts, unless it may no
@@ -847,7 +871,7 @@ mod tests {
     }
 
     /// An installed plugin `id` of `trust` (see [`manifest`]).
-    fn plugin(id: &str, trust: Trust, gpu: bool) -> Installed {
+    pub(super) fn plugin(id: &str, trust: Trust, gpu: bool) -> Installed {
         let m = as_plugin::manifest::parse_for_any_app(manifest(id, gpu).to_string().as_bytes()).unwrap().manifest;
         Installed {
             record: Record {
@@ -884,7 +908,7 @@ mod tests {
     }
 
     /// A plugin host of a library of its own in `tmp`.
-    fn host_in(tmp: &Path) -> (Library, Arc<PluginHost>) {
+    pub(super) fn host_in(tmp: &Path) -> (Library, Arc<PluginHost>) {
         let paths = AppPaths::at(tmp.join("data"));
         let lib = Library::open(&paths).unwrap();
         let root = tmp.join("library").display().to_string();
@@ -908,7 +932,7 @@ mod tests {
 
     /// The run of `action` of `kind` of the plugin `id`, in `project` and on
     /// `export`.
-    fn key(
+    pub(super) fn key(
         id: &PluginId,
         kind: ActionKind,
         action: &str,

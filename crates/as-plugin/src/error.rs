@@ -31,6 +31,9 @@ pub enum PluginError {
     Crashed { name: String, detail: String },
     #[error("Cancelled.")]
     Cancelled,
+    /// A host method the plugin has no grant for; the sentence says which.
+    #[error("{0}")]
+    Denied(String),
     #[error("{}", .0.user_message())]
     Db(#[from] as_db::DbError),
     #[error("{}", as_core::io_message(.0))]

@@ -581,8 +581,9 @@ impl Store {
     /// [`Store::log_path`], and a run line with a new run id that names the
     /// plugin, this AutoScene, the app's FFmpeg (`ffmpeg` and `ffprobe`, of
     /// `ffmpeg_version`) and each of its settings, as [`Store::values`] gives
-    /// them. The project and the export it runs on are the host's to add. A
-    /// broken plugin can't run.
+    /// them. The run speaks the protocol the plugin declared. The project and
+    /// the export it runs on are the host's to add, and so are the answers to
+    /// its calls. A broken plugin can't run.
     pub fn run_spec(
         &self,
         p: &Installed,
@@ -595,7 +596,7 @@ impl Store {
         let id = &p.record.id;
         let data_dir = self.data_dir(id);
         let message = RunMessage {
-            protocol: manifest::PROTOCOL,
+            protocol: m.engines.protocol,
             run_id: Uuid::now_v7().to_string(),
             plugin: PluginContext {
                 id: id.clone(),
@@ -612,6 +613,7 @@ impl Store {
             action,
             project: None,
             export: None,
+            input: None,
         };
         Ok(RunSpec {
             name: m.name.clone(),
@@ -621,6 +623,8 @@ impl Store {
             log_path: self.log_path(id),
             ffmpeg: ffmpeg.into(),
             ffprobe: ffprobe.into(),
+            protocol: m.engines.protocol,
+            calls: None,
             message,
         })
     }
@@ -904,7 +908,7 @@ fn check_update(previous: &Record, m: &Manifest, trust: Trust, lock_sha256: Opti
 }
 
 /// The manifest of `p`, or why it has none.
-fn manifest_of(p: &Installed) -> PluginResult<&Manifest> {
+pub(crate) fn manifest_of(p: &Installed) -> PluginResult<&Manifest> {
     p.manifest.as_ref().ok_or_else(|| invalid(p.broken.clone().unwrap_or_else(|| MISSING.into())))
 }
 

@@ -8,31 +8,55 @@
 //! stdin is written and its stdout and stderr are read on threads of their
 //! own from the start, so a plugin that floods a pipe or never reads its
 //! stdin blocks only itself; lines are read no longer than
-//! [`MAX_LINE_BYTES`]. What isn't a message goes to the plugin's log
-//! ([`crate::log`]).
+//! [`MAX_LINE_BYTES`], a call line no longer than [`MAX_CALL_LINE_BYTES`].
+//! What isn't a message goes to the plugin's log ([`crate::log`]).
 //!
 //! A cancelled run is asked to stop with a cancel line, and ended with its
 //! tree [`CANCEL_GRACE`] later. A plugin that is still running
 //! [`EXIT_GRACE`] after its result or error line is ended too, and its line
 //! counts. A run is never retried: what a plugin did (a post to a webhook,
 //! say) would happen twice.
+//!
+//! A plugin of protocol 2 may call AutoScene while it runs. Each call is
+//! answered on a thread of its own ([`HostCalls`]), at most
+//! [`MAX_CALLS_IN_FLIGHT`] at once and [`CALL_QUEUE`] more in turn, so a
+//! slow answer never holds up its progress or a cancel. What the run holds
+//! for its calls (their params, kept as the text the plugin wrote until
+//! the host reads them, and the replies the plugin hasn't read yet) stays
+//! under [`MAX_CALL_BYTES`]: past it a call is answered busy, and those
+//! waiting start once the plugin reads. A plugin that leaves [`MAX_UNREAD`]
+//! replies unread is ended. A reply is written while the plugin's stdin is
+//! open: a call after its result line is dropped, and so are those still
+//! waiting then. Once the run is cancelled, the calls still waiting and
+//! each one after are answered that it was, and those being answered are
+//! told. The calls still being answered when the plugin ended are told too,
+//! and waited for ([`CALL_GRACE`]), so none of them changes anything once
+//! its run is over. The log names each call and how it was answered, never
+//! its params or its result, not even of a call too long or broken to be
+//! one.
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
 use std::io::{self, BufRead, BufReader, Read, Write};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command, ExitStatus, Stdio};
-use std::sync::mpsc::{self, RecvTimeoutError, SyncSender};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::time::{Duration, Instant};
 use std::{env, fs, thread};
 
 use as_core::CancelToken;
 use as_media::proc;
+use serde_json::Value;
+use serde_json::value::RawValue;
 
+use crate::calls::{CallCode, CallError, HostCalls, HostMethod};
 use crate::error::{PluginError, PluginResult};
 use crate::log::PluginLog;
-use crate::manifest::{Launch, PROTOCOL, clean, cut};
-use crate::protocol::{HostMessage, PluginMessage, RunMessage};
+use crate::manifest::{Launch, clean, cut, shown};
+use crate::protocol::{Call, CallHead, CallId, HostMessage, PluginMessage, Reply, RunMessage};
 
 /// How long a plugin may take to stop after the cancel line.
 pub const CANCEL_GRACE: Duration = Duration::from_secs(5);
@@ -44,10 +68,27 @@ pub const EXIT_GRACE: Duration = Duration::from_secs(10);
 /// How often a run looks at its plugin while it hears nothing.
 pub const TICK: Duration = Duration::from_millis(100);
 pub const MAX_LINE_BYTES: usize = 64 << 10;
+/// The longest call line of a plugin of protocol 2: the params of the
+/// largest call a run may make (`net.fetch`), and room for the rest of it.
+pub const MAX_CALL_LINE_BYTES: usize = (5 << 20) + (4 << 10);
 pub const MAX_STAGE_CHARS: usize = 80;
 pub const MAX_MESSAGE_CHARS: usize = 300;
 /// stderr lines kept for the message of a crash.
 pub const STDERR_TAIL: usize = 20;
+/// Calls of a run AutoScene answers at once; the others wait their turn.
+pub const MAX_CALLS_IN_FLIGHT: usize = 4;
+/// Calls of a run that may wait their turn; one more is answered busy.
+pub const CALL_QUEUE: usize = 64;
+/// The most bytes a run holds for its calls: the lines of those read and
+/// not yet answered, and the replies its plugin hasn't read. Past it, a
+/// call is answered busy, and those waiting start once the plugin reads.
+pub const MAX_CALL_BYTES: usize = 16 << 20;
+/// The replies a plugin may leave unread: one that makes calls and never
+/// reads their answers is ended past them.
+pub const MAX_UNREAD: usize = 1024;
+/// How long a run waits for the calls still being answered once its
+/// plugin ended.
+pub const CALL_GRACE: Duration = Duration::from_secs(5);
 
 /// The longest error detail a plugin's line hands to the app's log.
 const MAX_DETAIL_CHARS: usize = 2000;
@@ -73,6 +114,13 @@ pub struct RunSpec {
     pub log_path: PathBuf,
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
+    /// The protocol its plugin declared (`engines.protocol`), which the run
+    /// speaks: an older plugin gets the run it always got.
+    pub protocol: u32,
+    /// The host's answers to its calls (protocol 2); without them, each is
+    /// refused. A plugin of protocol 1 makes none: a line like a call is
+    /// output for its log, as it always was.
+    pub calls: Option<Arc<dyn HostCalls>>,
     pub message: RunMessage,
 }
 
@@ -88,16 +136,17 @@ pub struct RunSpec {
 /// after that only stops the wait for it to exit.
 ///
 /// The run line's protocol, data folder and FFmpeg paths are the run's own,
-/// whatever `message` held, so they match the environment's.
+/// whatever `message` held, so they match the environment's. It returns
+/// once its calls did too, or [`CALL_GRACE`] after its plugin ended.
 pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64>)) -> PluginResult<Option<String>> {
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
     }
-    let RunSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, mut message } = spec;
+    let RunSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, protocol, calls, mut message } = spec;
     let mut cmd = command(&name, &dir, &launch, find_uv)?;
     fs::create_dir_all(&data_dir)?;
     let data_dir = std::path::absolute(data_dir)?;
-    message.protocol = PROTOCOL;
+    message.protocol = protocol;
     message.plugin.data_dir = data_dir.to_string_lossy().into_owned();
     message.tools.ffmpeg = ffmpeg.to_string_lossy().into_owned();
     message.tools.ffprobe = ffprobe.to_string_lossy().into_owned();
@@ -109,7 +158,7 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
         .env("AUTOSCENE_FFPROBE", &ffprobe)
         .env("AUTOSCENE_PLUGIN_DATA", &data_dir)
         .env("AUTOSCENE_PLUGIN_ID", message.plugin.id.as_str())
-        .env("AUTOSCENE_PROTOCOL", PROTOCOL.to_string())
+        .env("AUTOSCENE_PROTOCOL", protocol.to_string())
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONUTF8", "1")
         .env("PYTHONIOENCODING", "utf-8")
@@ -122,32 +171,46 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
     })?;
 
     let (tx, rx) = mpsc::sync_channel(QUEUE);
-    read_stdout(tree.take_stdout().expect("piped stdout"), tx.clone());
+    let load = Arc::new(Load::default());
+    // A plugin of protocol 1 makes no calls: a line that reads as one is its output.
+    let calls = (protocol >= 2).then(|| Calls::new(calls.unwrap_or_else(|| Arc::new(NoCalls)), tx.clone()));
+    read_stdout(tree.take_stdout().expect("piped stdout"), tx.clone(), calls.is_some().then(|| load.clone()));
     read_stderr(tree.take_stderr().expect("piped stderr"), tx);
-    let mut to_plugin = Some(writer(tree.take_stdin().expect("piped stdin")));
-    if let Some(tx) = &to_plugin {
-        tx.send(HostMessage::Run(Box::new(message)).line()).ok();
-    }
+    let to_plugin = writer(tree.take_stdin().expect("piped stdin"), load.clone());
 
     let shown = sanitize(&name, MAX_STAGE_CHARS);
-    let mut heard = Heard { name: &shown, report, log, outcome: None, tail: VecDeque::new(), open: 2 };
+    let mut heard = Heard {
+        name: &shown,
+        report,
+        log,
+        outcome: None,
+        tail: VecDeque::new(),
+        open: 2,
+        to_plugin: Some(to_plugin),
+        load,
+        calls,
+    };
+    heard.send(HostMessage::Run(Box::new(message)).line());
     let mut cancel_at: Option<Instant> = None;
     // The tree's status when the run had to end it, else None once it ended.
     let ended = loop {
         if cancel_at.is_none() && cancel.is_cancelled() {
             cancel_at = Some(Instant::now());
-            if heard.outcome.is_none()
-                && let Some(tx) = &to_plugin
-            {
-                tx.send(HostMessage::Cancel.line()).ok();
+            if heard.outcome.is_none() && heard.to_plugin.is_some() {
+                heard.send(HostMessage::Cancel.line());
                 heard.log.note("host", "asked to cancel");
             }
+            heard.cancel_calls();
         }
-        let overdue = match (cancel_at, heard.outcome.as_ref().map(|o| o.at)) {
+        if heard.outcome.is_none() && heard.load.lines.load(Ordering::Relaxed) > MAX_UNREAD {
+            heard.said(Said::Unread);
+        }
+        let overdue = match (cancel_at, heard.outcome.as_ref()) {
+            (_, Some(Outcome { said: Said::Unread, .. })) => Some("its replies went unread"),
             // Asked to stop once it had said its last word: nothing to wait for.
-            (Some(c), Some(o)) if c >= o => Some("cancelled after its result"),
+            (Some(c), Some(o)) if c >= o.at => Some("cancelled after its result"),
             (Some(c), _) if c.elapsed() >= CANCEL_GRACE => Some("still running after cancel"),
-            (None, Some(o)) if o.elapsed() >= EXIT_GRACE => Some("still running after its result"),
+            (None, Some(o)) if o.at.elapsed() >= EXIT_GRACE => Some("still running after its result"),
             _ => None,
         };
         if let Some(why) = overdue {
@@ -160,10 +223,8 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
             // Both pipes are closed; the process may still run.
             Err(RecvTimeoutError::Disconnected) => thread::sleep(TICK),
         }
-        if heard.outcome.is_some() {
-            // Its stdin closes: the run has nothing more to say.
-            to_plugin = None;
-        }
+        // Calls held back while their replies waited unread start once it reads.
+        heard.next_call();
         if tree.has_exited()? {
             break None;
         }
@@ -172,6 +233,7 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
         Some(status) => status,
         None => tree.finish()?,
     };
+    heard.end_calls();
     // The reader threads are left to end on their own: the tree's end
     // closed their pipes, unless a process that left the tree holds one.
     // That reader ends when the process closes its pipe or writes to it
@@ -183,6 +245,7 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
             Err(_) => break,
         }
     }
+    heard.wait_calls(&rx);
     heard.log.note("host", &status.to_string());
     decide(name, status, cancel_at, heard)
 }
@@ -201,6 +264,9 @@ fn decide(
     match heard.outcome.map(|o| o.said) {
         Some(Said::Done(message)) => Ok(message),
         Some(Said::Failed { message, detail }) => Err(PluginError::Failed { message, detail }),
+        Some(Said::Unread) => {
+            Err(PluginError::Crashed { name, detail: format!("it left {MAX_UNREAD} of AutoScene's replies unread") })
+        }
         None if status.success() => Ok(None),
         None => {
             let tail = Vec::from(heard.tail).join("\n");
@@ -369,20 +435,46 @@ fn command(name: &str, dir: &Path, launch: &Launch, uv: impl FnOnce() -> Option<
     }
 }
 
-/// What a reader thread hands the run.
+/// What a reader thread, or a call's, hands the run.
 enum Msg {
+    /// A message other than a call.
     Plugin(PluginMessage),
+    /// A call (protocol 2), with its share of what the run holds: none when
+    /// it would hold too much, and then without its params.
+    Call {
+        id: CallId,
+        method: String,
+        params: Box<RawValue>,
+        share: Option<Share>,
+    },
+    /// A line that starts a call but is none: cut at its limit (`too_long`),
+    /// or with an id, a method or JSON that doesn't fit.
+    BadCall {
+        head: CallHead,
+        too_long: bool,
+    },
     /// A stdout line that isn't a message.
     Stdout(String),
     Stderr(String),
     /// A pipe reached its end.
     Closed,
+    /// The host's answer to a call.
+    Answered {
+        id: CallId,
+        method: HostMethod,
+        answer: Result<Value, CallError>,
+    },
 }
 
-/// The plugin's last word.
+/// The plugin's last word, or how the run had it end.
 enum Said {
     Done(Option<String>),
-    Failed { message: String, detail: Option<String> },
+    Failed {
+        message: String,
+        detail: Option<String>,
+    },
+    /// It left [`MAX_UNREAD`] replies unread, and was ended.
+    Unread,
 }
 
 struct Outcome {
@@ -402,6 +494,12 @@ struct Heard<'a> {
     tail: VecDeque<String>,
     /// Pipes not yet at their end.
     open: usize,
+    /// The plugin's stdin, until its result or error line is in.
+    to_plugin: Option<mpsc::Sender<String>>,
+    /// What the run holds for it.
+    load: Arc<Load>,
+    /// Its calls, when it may make them.
+    calls: Option<Calls>,
 }
 
 impl Heard<'_> {
@@ -441,6 +539,160 @@ impl Heard<'_> {
                 self.tail.push_back(sanitize(&line, TAIL_LINE_CHARS));
             }
             Msg::Closed => self.open = self.open.saturating_sub(1),
+            Msg::Call { id, method, params, share } => self.call(id, &method, params, share),
+            Msg::BadCall { head, too_long } => self.bad_call(head, too_long),
+            Msg::Answered { id, method, answer } => {
+                if let Some(calls) = &mut self.calls {
+                    calls.running -= 1;
+                }
+                self.reply(id, method.name(), answer);
+                self.next_call();
+            }
+        }
+    }
+
+    /// Why a call that comes now is dropped: its stdin is closed.
+    fn too_late(&self) -> Option<&'static str> {
+        if self.outcome.is_some() {
+            Some("after the result")
+        } else if self.to_plugin.is_none() {
+            Some("after its end")
+        } else {
+            None
+        }
+    }
+
+    /// A call line: answered at once while fewer than
+    /// [`MAX_CALLS_IN_FLIGHT`] are, else in turn, and busy without its
+    /// `share`. One after the result is dropped, and one after a cancel is
+    /// answered that the run was cancelled.
+    fn call(&mut self, id: CallId, method: &str, params: Box<RawValue>, share: Option<Share>) {
+        if let Some(when) = self.too_late() {
+            return self.log.line("call", &format!("{} {when}: dropped", shown(method)));
+        }
+        let Some(calls) = &mut self.calls else { return };
+        let Some(m) = HostMethod::parse(method) else {
+            let method = shown(method);
+            self.log.line("call", &method);
+            let message = format!("AutoScene doesn't know the method \"{method}\".");
+            return self.reply(id, &method, Err(CallError::new(CallCode::Invalid, message)));
+        };
+        self.log.line("call", m.name());
+        if calls.cancelled {
+            return self.reply(id, m.name(), Err(cancelled()));
+        }
+        match share {
+            Some(share) if calls.waiting.len() < CALL_QUEUE => {
+                calls.waiting.push_back(Waiting { id, method: m, params, share });
+                self.next_call();
+            }
+            _ => self.reply(id, m.name(), Err(CallError::new(CallCode::Busy, "Too many calls at once."))),
+        }
+    }
+
+    /// A line that starts a call but is none: answered invalid when its id
+    /// reads, else dropped. Neither it nor its params reach the log.
+    fn bad_call(&mut self, head: CallHead, too_long: bool) {
+        let method = head.method.as_deref().map_or_else(|| "(unnamed)".to_owned(), shown);
+        if let Some(when) = self.too_late() {
+            return self.log.line("call", &format!("{method} {when}: dropped"));
+        }
+        let what = if too_long { "too long" } else { "unreadable" };
+        let Some(id) = head.id else {
+            return self.log.line("call", &format!("{method} {what}, without an id to answer: dropped"));
+        };
+        self.log.line("call", &format!("{method} {what}"));
+        let message = match too_long {
+            true => format!("A call is at most {} MB.", MAX_CALL_LINE_BYTES >> 20),
+            false => "AutoScene couldn't read this call.".to_owned(),
+        };
+        self.reply(id, &method, Err(CallError::new(CallCode::Invalid, message)));
+    }
+
+    /// Starts the calls waiting their turn while there is room, and while
+    /// the replies its plugin hasn't read stay under [`MAX_CALL_BYTES`].
+    fn next_call(&mut self) {
+        let Some(calls) = &mut self.calls else { return };
+        while calls.running < MAX_CALLS_IN_FLIGHT
+            && self.load.bytes.load(Ordering::Relaxed) <= MAX_CALL_BYTES
+            && let Some(waiting) = calls.waiting.pop_front()
+        {
+            let method = waiting.method;
+            if let Err(id) = calls.start(waiting) {
+                let failed = CallError::new(CallCode::Failed, "AutoScene couldn't answer this call.");
+                return self.reply(id, method.name(), Err(failed));
+            }
+        }
+    }
+
+    /// Once the run is cancelled: the calls being answered change nothing
+    /// more, and those still waiting are answered that it was, as is each
+    /// one after.
+    fn cancel_calls(&mut self) {
+        let Some(calls) = &mut self.calls else { return };
+        calls.cancelled = true;
+        calls.ended.cancel();
+        let waiting: Vec<_> = calls.waiting.drain(..).collect();
+        for w in waiting {
+            self.reply(w.id, w.method.name(), Err(cancelled()));
+        }
+    }
+
+    /// Ends its calls once its plugin ended: those still waiting never
+    /// start, and one still being answered changes nothing more.
+    fn end_calls(&mut self) {
+        self.to_plugin = None;
+        if let Some(calls) = &mut self.calls {
+            calls.ended.cancel();
+        }
+        self.drop_waiting("at its end");
+    }
+
+    /// Drops the calls still waiting their turn, each with a line in the log.
+    fn drop_waiting(&mut self, when: &str) {
+        let Some(calls) = &mut self.calls else { return };
+        for waiting in calls.waiting.drain(..) {
+            self.log.line("call", &format!("{} still waiting {when}: dropped", waiting.method.name()));
+        }
+    }
+
+    /// Waits for the calls still being answered, at most [`CALL_GRACE`]:
+    /// a change of the plugin waits for its run, so it waits for them too.
+    fn wait_calls(&mut self, rx: &Receiver<Msg>) {
+        let until = Instant::now() + CALL_GRACE;
+        let running = |heard: &Self| heard.calls.as_ref().map_or(0, |c| c.running);
+        while running(self) > 0 {
+            match rx.recv_timeout(until.saturating_duration_since(Instant::now())) {
+                Ok(m) => self.take(m),
+                Err(_) => break,
+            }
+        }
+        match running(self) {
+            0 => {}
+            1 => self.log.note("host", "a call still being answered; left"),
+            n => self.log.note("host", &format!("{n} calls still being answered; left")),
+        }
+    }
+
+    /// Logs how a call of `method` was answered, and sends the reply while
+    /// the plugin's stdin is open.
+    fn reply(&mut self, id: CallId, method: &str, answer: Result<Value, CallError>) {
+        let (said, reply) = match answer {
+            Ok(result) => ("ok", Reply { id, result: Some(result), error: None }),
+            Err(e) => (e.code.name(), Reply { id, result: None, error: Some(e) }),
+        };
+        self.log.line("reply", &format!("{method} {said}"));
+        self.send(HostMessage::Reply(reply).line());
+    }
+
+    /// Sends `line` to the plugin while its stdin is open.
+    fn send(&mut self, line: String) {
+        if let Some(tx) = &self.to_plugin {
+            let bytes = line.len();
+            self.load.queued(bytes);
+            if tx.send(line).is_err() {
+                self.load.written(bytes);
+            }
         }
     }
 
@@ -456,42 +708,216 @@ impl Heard<'_> {
 
     fn said(&mut self, said: Said) {
         if self.outcome.is_none() {
+            let when = if matches!(said, Said::Unread) { "at its end" } else { "at the result" };
             self.outcome = Some(Outcome { said, at: Instant::now() });
+            // Its stdin closes: the run has nothing more to say, and answers
+            // no call that still waits.
+            self.to_plugin = None;
+            self.drop_waiting(when);
         }
+    }
+}
+
+/// The answer of a call that came, or still waited, once its run was
+/// cancelled.
+fn cancelled() -> CallError {
+    CallError::new(CallCode::Cancelled, "This run was cancelled.")
+}
+
+/// What a run holds for its plugin, as the threads that read its lines,
+/// answer its calls and write to it count it.
+#[derive(Default)]
+struct Load {
+    /// The bytes of the call lines read and not yet answered or dropped:
+    /// their params, kept as the plugin wrote them, are no longer.
+    calls: AtomicUsize,
+    /// The lines given to the writer and not yet written to its stdin, and
+    /// their bytes: replies, mostly, which it hasn't read.
+    lines: AtomicUsize,
+    bytes: AtomicUsize,
+}
+
+impl Load {
+    /// A share for a call line of `bytes`, unless the run would hold more
+    /// than [`MAX_CALL_BYTES`]. Only the stdout reader takes them.
+    fn share(self: &Arc<Self>, bytes: usize) -> Option<Share> {
+        let held = self.calls.load(Ordering::Relaxed) + self.bytes.load(Ordering::Relaxed);
+        if held + bytes > MAX_CALL_BYTES {
+            return None;
+        }
+        self.calls.fetch_add(bytes, Ordering::Relaxed);
+        Some(Share { load: self.clone(), bytes })
+    }
+
+    fn queued(&self, bytes: usize) {
+        self.lines.fetch_add(1, Ordering::Relaxed);
+        self.bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn written(&self, bytes: usize) {
+        self.lines.fetch_sub(1, Ordering::Relaxed);
+        self.bytes.fetch_sub(bytes, Ordering::Relaxed);
+    }
+}
+
+/// A call's part of [`Load::calls`], given back when it drops: once the call
+/// was answered, refused or dropped, wherever that happened.
+struct Share {
+    load: Arc<Load>,
+    bytes: usize,
+}
+
+impl Drop for Share {
+    fn drop(&mut self) {
+        self.load.calls.fetch_sub(self.bytes, Ordering::Relaxed);
+    }
+}
+
+/// A call waiting its turn.
+struct Waiting {
+    id: CallId,
+    method: HostMethod,
+    params: Box<RawValue>,
+    share: Share,
+}
+
+/// A run's calls to the host.
+struct Calls {
+    host: Arc<dyn HostCalls>,
+    /// The run's queue, which each answer comes back through.
+    answers: SyncSender<Msg>,
+    /// Fires once the run is cancelled or its plugin ended, and once the
+    /// run stops for any other reason: a call being answered then changes
+    /// nothing more.
+    ended: CancelToken,
+    /// Whether the run was cancelled: no call starts any more.
+    cancelled: bool,
+    running: usize,
+    waiting: VecDeque<Waiting>,
+}
+
+impl Calls {
+    fn new(host: Arc<dyn HostCalls>, answers: SyncSender<Msg>) -> Self {
+        Self { host, answers, ended: CancelToken::new(), cancelled: false, running: 0, waiting: VecDeque::new() }
+    }
+
+    /// Has the host answer a call on a thread of its own; gives the call's
+    /// id back when no thread starts. A host that panics answers that it
+    /// failed.
+    fn start(&mut self, waiting: Waiting) -> Result<(), CallId> {
+        let Waiting { id, method, params, share } = waiting;
+        let (host, answers, ended, reply_to) =
+            (self.host.clone(), self.answers.clone(), self.ended.clone(), id.clone());
+        let started = thread::Builder::new().name("plugin-call".into()).spawn(move || {
+            let answer = panic::catch_unwind(AssertUnwindSafe(|| host.call(method, &params, &ended)))
+                .unwrap_or_else(|_| Err(CallError::new(CallCode::Failed, "AutoScene couldn't answer this call.")));
+            // A run that ended takes no answer.
+            answers.send(Msg::Answered { id, method, answer }).ok();
+            drop(share);
+        });
+        match started {
+            Ok(_) => {
+                self.running += 1;
+                Ok(())
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "a plugin's call couldn't start");
+                Err(reply_to)
+            }
+        }
+    }
+}
+
+/// However the run ends (an error of its own too), the calls still being
+/// answered are told.
+impl Drop for Calls {
+    fn drop(&mut self) {
+        self.ended.cancel();
+    }
+}
+
+/// The answers of a run that has none: each call is refused.
+struct NoCalls;
+
+impl HostCalls for NoCalls {
+    fn call(&self, _: HostMethod, _: &RawValue, _: &CancelToken) -> Result<Value, CallError> {
+        Err(CallError::new(CallCode::Invalid, "AutoScene can't answer calls here."))
     }
 }
 
 /// Writes each line it's sent to the plugin's stdin, on a thread of its own:
 /// a plugin that doesn't read its stdin blocks that thread, never the run.
-/// Dropping the sender closes the pipe; a failed write ends the thread.
-fn writer(mut stdin: ChildStdin) -> mpsc::Sender<String> {
+/// `load` counts what waits. Dropping the sender closes the pipe once what
+/// it holds is written; after a failed write, the rest is dropped.
+fn writer(stdin: ChildStdin, load: Arc<Load>) -> mpsc::Sender<String> {
     let (tx, rx) = mpsc::channel::<String>();
     thread::spawn(move || {
+        let mut stdin = Some(stdin);
         for mut line in rx {
+            let bytes = line.len();
             line.push('\n');
-            if stdin.write_all(line.as_bytes()).and_then(|()| stdin.flush()).is_err() {
-                return;
+            if let Some(pipe) = &mut stdin
+                && pipe.write_all(line.as_bytes()).and_then(|()| pipe.flush()).is_err()
+            {
+                stdin = None;
             }
+            load.written(bytes);
         }
     });
     tx
 }
 
-fn read_stdout(stdout: impl Read + Send + 'static, tx: SyncSender<Msg>) {
+/// Reads the plugin's stdout. With `calls` (what the run holds, for a plugin
+/// that may make calls) a call line counts up to [`MAX_CALL_LINE_BYTES`];
+/// every other line up to [`MAX_LINE_BYTES`].
+fn read_stdout(stdout: impl Read + Send + 'static, tx: SyncSender<Msg>, calls: Option<Arc<Load>>) {
     thread::spawn(move || {
-        for (line, was_cut) in capped_lines(stdout, MAX_LINE_BYTES) {
-            // A cut line is no message: its end is gone.
-            let m = if !was_cut && let Some(m) = PluginMessage::read(&line) {
-                Msg::Plugin(m)
-            } else {
-                Msg::Stdout(marked(line, was_cut))
-            };
-            if tx.send(m).is_err() {
+        let max = if calls.is_some() { MAX_CALL_LINE_BYTES } else { MAX_LINE_BYTES };
+        for (line, was_cut) in capped_lines(stdout, max) {
+            if tx.send(stdout_line(line, was_cut, calls.as_ref())).is_err() {
                 return;
             }
         }
         tx.send(Msg::Closed).ok();
     });
+}
+
+/// What a stdout line is. Only a call is read past [`MAX_LINE_BYTES`]. A
+/// line that starts a call but is none never goes to the log as it is: its
+/// params may hold a secret.
+fn stdout_line(mut line: String, mut was_cut: bool, calls: Option<&Arc<Load>>) -> Msg {
+    // A cut line is no message: its end is gone.
+    if let Some(load) = calls
+        && !was_cut
+        && let Some(Call { id, method, params }) = Call::read(&line)
+    {
+        return match load.share(line.len()) {
+            Some(share) => Msg::Call { id, method, params, share: Some(share) },
+            None => Msg::Call { id, method, params: RawValue::NULL.to_owned(), share: None },
+        };
+    }
+    if !was_cut
+        && line.len() <= MAX_LINE_BYTES
+        && let Some(m) = PluginMessage::read(&line)
+    {
+        return Msg::Plugin(m);
+    }
+    if calls.is_some()
+        && let Some(head) = CallHead::read(&line)
+    {
+        return Msg::BadCall { head, too_long: was_cut };
+    }
+    if line.len() > MAX_LINE_BYTES {
+        let mut end = MAX_LINE_BYTES;
+        while !line.is_char_boundary(end) {
+            end -= 1;
+        }
+        // A copy: what was read past it isn't held either.
+        let mut kept = String::with_capacity(end + CUT.len());
+        kept.push_str(&line[..end]);
+        (line, was_cut) = (kept, true);
+    }
+    Msg::Stdout(marked(line, was_cut))
 }
 
 fn read_stderr(stderr: impl Read + Send + 'static, tx: SyncSender<Msg>) {
@@ -505,9 +931,12 @@ fn read_stderr(stderr: impl Read + Send + 'static, tx: SyncSender<Msg>) {
     });
 }
 
+/// How a line cut at its limit ends in the log.
+const CUT: &str = " [cut]";
+
 fn marked(mut line: String, was_cut: bool) -> String {
     if was_cut {
-        line.push_str(" [cut]");
+        line.push_str(CUT);
     }
     line
 }
@@ -734,6 +1163,103 @@ mod tests {
         let endless = vec![b'y'; 100_000];
         let lines: Vec<_> = capped_lines(endless.as_slice(), 16).collect();
         assert_eq!(lines, [("y".repeat(16), true)]);
+    }
+
+    #[test]
+    fn only_a_call_may_be_longer_than_a_line() {
+        // Room for the params of every call a run may make, and the rest.
+        for m in HostMethod::ALL.into_iter().filter(|m| m.callers().run) {
+            assert!(m.max_params() + (4 << 10) <= MAX_CALL_LINE_BYTES, "{}", m.name());
+        }
+        let load = Arc::new(Load::default());
+        let value = "v".repeat(MAX_LINE_BYTES);
+        let call = serde_json::json!({"type": "call", "id": 1, "method": "state.set", "params": {"value": value}});
+        let call = call.to_string();
+        // A call holds its share of what the run holds while it lives, and
+        // its params as they were written, no more than its line.
+        let m = stdout_line(call.clone(), false, Some(&load));
+        let params = serde_json::json!({"value": value}).to_string();
+        assert!(
+            matches!(&m, Msg::Call { share: Some(s), params: p, .. } if s.bytes == call.len() && p.get() == params)
+        );
+        assert_eq!(load.calls.load(Ordering::Relaxed), call.len());
+        drop(m);
+        assert_eq!(load.calls.load(Ordering::Relaxed), 0);
+        // Past what a run holds, it comes without its params.
+        load.bytes.store(MAX_CALL_BYTES - call.len() + 1, Ordering::Relaxed);
+        let m = stdout_line(call.clone(), false, Some(&load));
+        assert!(matches!(&m, Msg::Call { share: None, params, .. } if params.get() == "null"));
+        load.bytes.store(0, Ordering::Relaxed);
+        // Cut, it is a broken call, which still has its id.
+        let m = stdout_line(call[..call.len() - 5].to_owned(), true, Some(&load));
+        assert!(matches!(&m, Msg::BadCall { head: CallHead { id: Some(CallId::Number(1)), .. }, too_long: true }));
+        // Any other line as long is cut where every line is, a message too,
+        // and holds no more than it shows.
+        let result = serde_json::json!({"type": "result", "message": value}).to_string();
+        for line in [result, value.clone() + "w", "é".repeat(MAX_LINE_BYTES)] {
+            let Msg::Stdout(shown) = stdout_line(line.clone(), false, Some(&load)) else { panic!("{}", &line[..20]) };
+            assert!(shown.ends_with(CUT) && shown.capacity() <= MAX_LINE_BYTES + CUT.len(), "{}", shown.capacity());
+            assert!(line.starts_with(shown.trim_end_matches(CUT)));
+        }
+        // A plugin of protocol 1 makes no calls: its call line is output.
+        assert!(matches!(stdout_line(call, false, None), Msg::Stdout(s) if s.ends_with(CUT)));
+    }
+
+    /// A host that counts the calls it is asked.
+    #[derive(Default)]
+    struct Counted(AtomicUsize);
+
+    impl HostCalls for Counted {
+        fn call(&self, _: HostMethod, _: &RawValue, _: &CancelToken) -> Result<Value, CallError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Value::Null)
+        }
+    }
+
+    #[test]
+    fn a_call_read_once_its_plugin_ended_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("plugin.log");
+        let (tx, _rx) = mpsc::sync_channel(QUEUE);
+        let (to_plugin, written) = mpsc::channel();
+        let (host, load) = (Arc::new(Counted::default()), Arc::new(Load::default()));
+        let report = |_: &str, _: Option<f64>| {};
+        let mut heard = Heard {
+            name: "Test Plugin",
+            report: &report,
+            log: PluginLog::open(&log_path, "run-1", "post").unwrap(),
+            outcome: None,
+            tail: VecDeque::new(),
+            open: 2,
+            to_plugin: Some(to_plugin),
+            load: load.clone(),
+            calls: Some(Calls::new(host.clone(), tx)),
+        };
+        let ended = heard.calls.as_ref().unwrap().ended.clone();
+        // Its program ended; a process it left holds its stdout and writes a call.
+        heard.end_calls();
+        assert!(ended.is_cancelled());
+        let call = r#"{"type":"call","id":1,"method":"settings.get","params":{"k":"SECRET"}}"#;
+        heard.take(stdout_line(call.into(), false, Some(&load)));
+        heard.next_call();
+        // Never asked, never answered, and nothing of it is held.
+        assert_eq!(host.0.load(Ordering::SeqCst), 0);
+        assert!(matches!(written.try_recv(), Err(mpsc::TryRecvError::Disconnected)));
+        assert_eq!(load.calls.load(Ordering::Relaxed), 0);
+        drop(heard);
+        let log = fs::read_to_string(&log_path).unwrap();
+        assert!(log.contains("[call] settings.get after its end: dropped\n"), "{log}");
+        assert!(!log.contains("[reply]") && !log.contains("SECRET"), "{log}");
+    }
+
+    #[test]
+    fn calls_are_told_their_run_ended_however_it_ends() {
+        let (tx, _rx) = mpsc::sync_channel(QUEUE);
+        let calls = Calls::new(Arc::new(Counted::default()), tx);
+        let ended = calls.ended.clone();
+        // As when the run stops on an error of its own, before its end.
+        drop(calls);
+        assert!(ended.is_cancelled());
     }
 
     #[test]

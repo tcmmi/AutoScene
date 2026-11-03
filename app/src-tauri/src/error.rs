@@ -93,7 +93,8 @@ impl From<PluginError> for AppError {
             | PluginError::BadSignature(_)
             | PluginError::KeyChanged { .. }
             | PluginError::NotAllowed
-            | PluginError::UvMissing => ErrorCode::Invalid,
+            | PluginError::UvMissing
+            | PluginError::Denied(_) => ErrorCode::Invalid,
         };
         match (&e, code) {
             (PluginError::BadSignature(_) | PluginError::KeyChanged { .. }, _) => log::warn!("{}", e.detail()),
@@ -128,6 +129,7 @@ mod tests {
             PluginError::KeyChanged { pinned: "A".into(), got: "B".into() },
             PluginError::NotAllowed,
             PluginError::UvMissing,
+            PluginError::Denied("A run reads only the project it runs in.".into()),
         ];
         for e in invalid {
             let words = e.to_string();

@@ -68,6 +68,9 @@ Rules:
 - 120ms hovers, 200ms layers, 320ms drawers and page arrivals (`animate-rise-in`). Ease `cubic-bezier(.2,.8,.2,1)`;
   switches spring.
 - Animate opacity and transform only; pictures fade in when loaded. Respect `prefers-reduced-motion`.
+- Progress glides linearly at the pace of its updates and never runs backwards (a new stage starts its bar at once).
+  A gap under a second and a half doesn't turn it into a sweep. Under reduced motion, busy things fade instead of
+  moving.
 
 ## Window & navigation
 

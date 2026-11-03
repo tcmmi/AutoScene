@@ -7,7 +7,6 @@ import {
   CaretRight,
   Copy,
   FilmStrip,
-  Scissors,
   SkipForward,
   User,
   UserFocus,
@@ -32,6 +31,51 @@ import { useMediaJob } from "@/state/activity"
 import { type FrameStore, useFrameSelector } from "../frame-store"
 import { ShotHeader } from "./ShotHeader"
 import { TabBody } from "./TabBody"
+
+/** What the Cast tab says, and offers, while shots or characters aren't found and no analysis runs. */
+type Step = {
+  /** Where it stands, in a sentence. */
+  text: string
+  /** A failure: the sentence is in the danger colour. */
+  failed: boolean
+  /** The error the stage left, under the sentence. */
+  detail: string | null
+  /** The one button: it goes on with the first stage that isn't ready. */
+  action: "Find shots and characters" | "Find characters" | "Try again" | "Continue"
+  /** The same in the tab's menu, where no sentence says what it goes on with. */
+  entry: string
+}
+
+/**
+ * The analysis block's state, from the episode's two stages. Shots come
+ * first: the one analysis job finds them, then the characters, so a missing
+ * shot detection is the only thing said even when the characters are missing
+ * too. `null` once both are found.
+ */
+function analysisStep(m: MediaItem): Step | null {
+  if (m.shots !== "ready") {
+    if (m.shots === "failed")
+      return { text: "Shot detection failed.", failed: true, detail: m.shotsError, action: "Try again", entry: "Find shots again" }
+    if (m.shots === "stopped")
+      return { text: "Finding shots was stopped.", failed: false, detail: null, action: "Continue", entry: "Continue finding shots" }
+    const find = "Find shots and characters"
+    return { text: "Shots haven't been detected yet.", failed: false, detail: null, action: find, entry: find }
+  }
+  if (m.faces === "ready") return null
+  if (m.faces === "failed") {
+    const text = m.facesError ?? "Finding characters failed."
+    return { text, failed: true, detail: null, action: "Try again", entry: "Find characters again" }
+  }
+  if (m.faces === "stopped")
+    return { text: "Finding characters was stopped.", failed: false, detail: null, action: "Continue", entry: "Continue finding characters" }
+  const find = "Find characters"
+  return { text: "Characters haven't been found in this episode yet.", failed: false, detail: null, action: find, entry: find }
+}
+
+/** The block's button and menu entry: Try again turns back, the others find. */
+function StepIcon({ step }: { step: Step }) {
+  return step.action === "Try again" ? <ArrowCounterClockwise /> : <UserFocus />
+}
 
 /**
  * The Cast tab: the shot under the playhead, where the analysis stands while
@@ -113,16 +157,18 @@ export function CastTab({
   const next = (lane: Lane) => nextAppearance(lane, store.get())
   const openCast = () => void navigate({ to: "/p/$pid/cast", params: { pid } })
 
-  // Shots come first: the one analysis job finds them, then the characters.
+  // One command for every state: it goes on with the first stage that isn't
+  // ready, and the one analysis job then finds the shots and the characters.
+  // Nothing to press while that job is queued or running.
   const analyze = () =>
     void commands
       .mediaAnalyze(pid, m.id, null)
       .catch((e) => toast.error("Couldn't start the analysis", { description: errorMessage(e) }))
-  const findShots = !shotsReady && !job
+  const step = job ? null : analysisStep(m)
 
   const menu = (
     <>
-      {seg ? (
+      {seg && (
         <>
           {seg.kind === "shot" && (
             <ContextMenuItem onSelect={onMarkShot} shortcut={keys("player.markShot")}>
@@ -140,16 +186,14 @@ export function CastTab({
           </ContextMenuItem>
           <ContextMenuSeparator />
         </>
-      ) : (
-        findShots && (
-          <>
-            <ContextMenuItem onSelect={analyze}>
-              {m.shots === "failed" ? <ArrowCounterClockwise /> : <Scissors />}{" "}
-              {m.shots === "failed" ? "Find shots again" : "Find shots"}
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-          </>
-        )
+      )}
+      {step && (
+        <>
+          <ContextMenuItem onSelect={analyze}>
+            <StepIcon step={step} /> {step.entry}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
       )}
       <ContextMenuItem onSelect={openCast}>
         <Users /> Open the cast
@@ -174,26 +218,15 @@ export function CastTab({
         </div>
         <Progress className="mt-1.5" value={job.state === "running" ? job.progress : null} />
       </div>
-    ) : m.shots === "failed" ? (
+    ) : step ? (
       <div>
-        <p className="text-sm text-danger">Shot detection failed.</p>
-        {m.shotsError && <p className="mt-0.5 text-xs break-words text-fg-3">{m.shotsError}</p>}
+        <p className={cn("text-sm break-words", step.failed ? "text-danger" : "text-fg-3")}>{step.text}</p>
+        {step.detail && <p className="mt-0.5 text-xs break-words text-fg-3">{step.detail}</p>}
         <Button size="sm" variant="ghost" className="mt-2 -ml-2" onClick={analyze}>
-          <ArrowCounterClockwise /> Try again
+          <StepIcon step={step} /> {step.action}
         </Button>
       </div>
-    ) : !shotsReady ? (
-      <div>
-        <p className="text-sm text-fg-3">Shots haven't been detected yet.</p>
-        <Button size="sm" variant="ghost" className="mt-2 -ml-2" onClick={analyze}>
-          <Scissors /> Find shots
-        </Button>
-      </div>
-    ) : (
-      <p className="text-sm text-fg-3">
-        {m.faces === "failed" ? (m.facesError ?? "Finding characters failed.") : "Characters haven't been found in this episode yet."}
-      </p>
-    )
+    ) : null
 
   return (
     <TabBody label="Cast" menu={menu}>

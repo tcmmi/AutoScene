@@ -1,11 +1,13 @@
 import type * as React from "react"
 import { useState } from "react"
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { AudioStream, Character, MediaInfo, MediaItem, Segment } from "@/bindings"
+import type { AudioStream, Character, JobInfo, MediaInfo, MediaItem, Segment } from "@/bindings"
+import { AppMenu } from "@/components/shell/AppMenu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import type { Lane } from "@/lib/presence"
 import { timecode } from "@/lib/timecode"
+import { useActivity } from "@/state/activity"
 import { useUi } from "@/state/ui"
 import { FrameStore } from "../frame-store"
 import { DetailsPanel } from "./DetailsPanel"
@@ -133,6 +135,7 @@ afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   localStorage.clear()
+  useActivity.setState({ jobs: {}, order: [] })
 })
 
 describe("the details panel's tab", () => {
@@ -239,16 +242,129 @@ describe("the Cast tab", () => {
     expect(screen.getByText("Nobody the cast knows appears here.")).toBeTruthy()
     expect(within(panel()).getAllByRole("link")).toHaveLength(1)
   })
+})
 
-  it("offers to find the shots once, where the shot would be", async () => {
+/** The episode's analysis job, as the activity store holds it. */
+const analysis = (o: Partial<JobInfo>) =>
+  ({
+    id: "j1",
+    kind: "analyze",
+    title: "Analysing S01E01",
+    subtitle: null,
+    projectId: "p",
+    mediaId: "m",
+    state: "running",
+    progress: 0.42,
+    stage: "Finding characters",
+    etaMs: null,
+    error: null,
+    createdAt: 1,
+    finishedAt: null,
+    rev: 1,
+    ...o,
+  }) as JobInfo
+
+describe("the Cast tab's analysis block", () => {
+  const cast = () => screen.getByRole("region", { name: "Cast" })
+
+  /** Shows the block for `media` and presses its one button, which goes on with the analysis. */
+  async function press(media: Partial<MediaItem>, button: string) {
     const { commands } = await import("@/lib/ipc")
-    show(props({ media: episode({ shots: "pending", faces: "pending" }), segments: [] }))
-    const cast = screen.getByRole("region", { name: "Cast" })
-    expect(within(cast).getByText("Shots haven't been detected yet.")).toBeTruthy()
-    // One place says where the analysis stands, not one per stage.
-    expect(within(cast).queryByText("Characters haven't been found in this episode yet.")).toBeNull()
-    fireEvent.click(within(cast).getByRole("button", { name: "Find shots" }))
+    show(props({ media: episode(media), segments: media.shots === "ready" || !media.shots ? SEGMENTS : [] }))
+    // Every button but the shot's own (Mark shot, Previous shot, Next shot).
+    const buttons = within(cast()).getAllByRole("button").filter((b) => !/shot$|^Mark shot/.test(b.getAttribute("aria-label") ?? b.textContent ?? ""))
+    expect(buttons.map((b) => b.textContent?.trim())).toEqual([button])
+    fireEvent.click(buttons[0])
     expect(commands.mediaAnalyze).toHaveBeenCalledExactlyOnceWith("p", "m", null)
+  }
+
+  it("offers to find shots and characters at once when the shots aren't detected yet", async () => {
+    await press({ shots: "pending", faces: "pending" }, "Find shots and characters")
+    expect(within(cast()).getByText("Shots haven't been detected yet.")).toBeTruthy()
+    // One place says where the analysis stands, not one per stage.
+    expect(within(cast()).queryByText("Characters haven't been found in this episode yet.")).toBeNull()
+  })
+
+  it("says shot detection failed, with its error, and offers to try again", async () => {
+    await press({ shots: "failed", shotsError: "The file ends early.", faces: "pending" }, "Try again")
+    expect(within(cast()).getByText("Shot detection failed.").className).toContain("text-danger")
+    expect(within(cast()).getByText("The file ends early.")).toBeTruthy()
+  })
+
+  it("offers to continue finding shots that were stopped", async () => {
+    await press({ shots: "stopped", faces: "pending" }, "Continue")
+    expect(within(cast()).getByText("Finding shots was stopped.")).toBeTruthy()
+  })
+
+  it("offers to find the characters once the shots are found, below the shot", async () => {
+    await press({ faces: "pending" }, "Find characters")
+    expect(within(cast()).getByText("Characters haven't been found in this episode yet.")).toBeTruthy()
+    expect(within(cast()).getByText("Shot 2 of 3")).toBeTruthy()
+    // Nobody is listed, and nobody is said to be missing, before they are looked for.
+    expect(within(cast()).queryByRole("list")).toBeNull()
+    expect(within(cast()).queryByText("Nobody the cast knows appears here.")).toBeNull()
+  })
+
+  it("says why finding characters failed and offers to try again", async () => {
+    await press({ faces: "failed", facesError: "The face model couldn't be loaded." }, "Try again")
+    expect(within(cast()).getByText("The face model couldn't be loaded.").className).toContain("text-danger")
+  })
+
+  it("says finding characters failed when it left no error", async () => {
+    await press({ faces: "failed", facesError: null }, "Try again")
+    expect(within(cast()).getByText("Finding characters failed.")).toBeTruthy()
+  })
+
+  it("offers to continue finding characters that were stopped", async () => {
+    await press({ faces: "stopped" }, "Continue")
+    expect(within(cast()).getByText("Finding characters was stopped.")).toBeTruthy()
+  })
+
+  it("shows the job's progress and no button while the analysis runs or waits", () => {
+    useActivity.setState({ jobs: { j1: analysis({}) }, order: ["j1"] })
+    show(props({ media: episode({ faces: "running" }) }))
+    expect(within(cast()).getByText("Finding characters")).toBeTruthy()
+    expect(within(cast()).getByText("42%")).toBeTruthy()
+    expect(within(cast()).getByRole("progressbar")).toBeTruthy()
+    for (const name of [/Find/, /Try again/, /Continue/]) expect(within(cast()).queryByRole("button", { name })).toBeNull()
+    cleanup()
+
+    useActivity.setState({ jobs: { j1: analysis({ state: "queued", progress: null, stage: null }) }, order: ["j1"] })
+    show(props({ media: episode({ shots: "pending", faces: "pending" }), segments: [] }))
+    expect(within(cast()).getByText("Waiting…")).toBeTruthy()
+    for (const name of [/Find/, /Try again/, /Continue/]) expect(within(cast()).queryByRole("button", { name })).toBeNull()
+  })
+
+  it("puts its action in the tab's menu, after the shot's entries, saying what it goes on with", async () => {
+    const { commands } = await import("@/lib/ipc")
+    render(
+      <TooltipProvider delayDuration={0}>
+        <AppMenu>
+          <div>
+            <DetailsPanel {...props({ media: episode({ faces: "stopped" }) })} />
+          </div>
+        </AppMenu>
+      </TooltipProvider>,
+    )
+    fireEvent.contextMenu(within(cast()).getByText("Finding characters was stopped."), { clientX: 40, clientY: 40 })
+    const menu = await screen.findByRole("menu")
+    const entries = within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => {
+        const label = item.cloneNode(true) as HTMLElement
+        for (const keys of label.querySelectorAll(".timecode, kbd")) keys.remove()
+        return label.textContent?.trim()
+      })
+    expect(entries.slice(0, 5)).toEqual(["Mark the shot as the clip", "Previous shot", "Next shot", "Copy its timecodes", "Continue finding characters"])
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Continue finding characters" }))
+    // An entry runs once its menu has closed.
+    await waitFor(() => expect(commands.mediaAnalyze).toHaveBeenCalledExactlyOnceWith("p", "m", null))
+  })
+
+  it("is gone once shots and characters are found", () => {
+    show(props())
+    for (const name of [/Find/, /Try again/, /Continue/]) expect(within(cast()).queryByRole("button", { name })).toBeNull()
+    expect(within(cast()).queryByText(/haven't been|failed|stopped/)).toBeNull()
   })
 })
 

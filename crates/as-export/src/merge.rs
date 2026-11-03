@@ -654,63 +654,16 @@ pub fn join_parts(
     std::fs::write(&chapters, chapters_meta(parts, t, job.title.as_deref()))?;
 
     let ext = keep.map_or(preset.container.ext(), |k| k.codec.ext());
-    let mov = keep.map_or(preset.container == Container::Mov, |k| k.codec == LosslessCodec::Hevc);
     if keep.is_some_and(|k| k.codec == LosslessCodec::Ffv1) && !same_headers {
         // FFV1 can't carry another part's stream header along.
         return Err(ExportError::Join("the parts' FFV1 stream headers differ".into()));
     }
-    let joined = work_dir.join(format!("joined.{ext}"));
-    // Full paths in the list (see `concat_script`).
-    let mut a: Vec<String> = ["-v", "error", "-y", "-f", "concat", "-safe", "0"].map(String::from).to_vec();
-    // With the same stream headers the parts join as they are; parts whose
-    // headers differ (hardware encoders write the frame rate into them)
-    // carry their own in the stream.
-    if same_headers {
-        a.extend(["-auto_convert".into(), "0".into()]);
-    } else {
+    if !same_headers {
         tracing::info!(encoder = %shape.encoding.encoder, "the parts' stream headers differ; joining with each part's own");
     }
-    a.extend(["-i".into(), list.display().to_string(), "-f".into(), "ffmetadata".into()]);
-    a.extend(["-i".into(), chapters.display().to_string(), "-map".into(), "0:v:0".into()]);
+    let joined = work_dir.join(format!("joined.{ext}"));
     let audio = shape.audio.is_some() && preset.audio != AudioCodec::None;
-    if audio {
-        a.extend(["-map".into(), "0:a:0".into()]);
-    }
-    a.extend(["-map_metadata", "1", "-map_chapters", "1", "-c:v", "copy"].map(String::from));
-    if matches!(preset.video, VideoCodec::Hevc { .. }) || keep.is_some_and(|k| k.codec == LosslessCodec::Hevc) {
-        a.extend(["-tag:v".into(), "hvc1".into()]);
-    }
-    match preset.audio {
-        AudioCodec::Pcm24 | AudioCodec::Lossless if audio => a.extend(["-c:a", "copy"].map(String::from)),
-        // Encoded once over the whole file: no encoder delay between parts.
-        AudioCodec::Aac { kbps } if audio => a.extend([
-            "-filter:a".into(),
-            "asetpts=N/SR/TB".into(),
-            "-c:a".into(),
-            "aac".into(),
-            "-b:a".into(),
-            format!("{kbps}k"),
-        ]),
-        _ => {}
-    }
-    if let Some(lang) = shape.language.as_ref().filter(|_| audio) {
-        a.extend(["-metadata:s:a:0".into(), format!("language={lang}")]);
-    }
-    match keep {
-        // An MKV times frames in milliseconds of its own.
-        Some(k) if k.codec == LosslessCodec::Ffv1 => {}
-        _ => {
-            a.extend(["-video_track_timescale".into(), t.to_string(), "-movflags".into()]);
-            a.push(if mov { "+write_colr" } else { "+faststart" }.into());
-        }
-    }
-    let format = match keep {
-        Some(k) => k.codec.format(),
-        None if mov => "mov",
-        None => "mp4",
-    };
-    a.extend(["-f".into(), format.into()]);
-    a.push(joined.display().to_string());
+    let a = join_args(job, same_headers, audio, &list, &chapters, &joined);
 
     let total: u64 = parts.iter().map(|p| p.timing.ticks).sum();
     let seconds = (total as f64 / f64::from(t)).max(1e-3);
@@ -759,6 +712,75 @@ pub fn join_parts(
         encoder: shape.encoding.encoder.clone(),
         bytes,
     })
+}
+
+/// What ffmpeg is told to join the parts in `list` into `joined`: the
+/// picture copied, the sound (when `audio`) copied or encoded once, and a
+/// chapter for each part from `chapters`.
+fn join_args(
+    job: &JoinJob,
+    same_headers: bool,
+    audio: bool,
+    list: &Path,
+    chapters: &Path,
+    joined: &Path,
+) -> Vec<String> {
+    let JoinJob { shape, preset, .. } = *job;
+    let keep = shape.lossless.as_ref();
+    let mov = keep.map_or(preset.container == Container::Mov, |k| k.codec == LosslessCodec::Hevc);
+    // Full paths in the list (see `concat_script`).
+    let mut a: Vec<String> = ["-v", "error", "-y", "-f", "concat", "-safe", "0"].map(String::from).to_vec();
+    // With the same stream headers the parts join as they are; parts whose
+    // headers differ (hardware encoders write the frame rate into them)
+    // carry their own in the stream.
+    if same_headers {
+        a.extend(["-auto_convert".into(), "0".into()]);
+    }
+    a.extend(["-i".into(), list.display().to_string(), "-f".into(), "ffmetadata".into()]);
+    a.extend(["-i".into(), chapters.display().to_string(), "-map".into(), "0:v:0".into()]);
+    if audio {
+        a.extend(["-map".into(), "0:a:0".into()]);
+    }
+    a.extend(["-map_metadata", "1", "-map_chapters", "1", "-c:v", "copy"].map(String::from));
+    if matches!(preset.video, VideoCodec::Hevc { .. }) || keep.is_some_and(|k| k.codec == LosslessCodec::Hevc) {
+        a.extend(["-tag:v".into(), "hvc1".into()]);
+    }
+    match preset.audio {
+        AudioCodec::Pcm24 | AudioCodec::Lossless if audio => a.extend(["-c:a", "copy"].map(String::from)),
+        // Encoded once over the whole file: no encoder delay between parts.
+        AudioCodec::Aac { kbps } if audio => a.extend([
+            "-filter:a".into(),
+            "asetpts=N/SR/TB".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-b:a".into(),
+            format!("{kbps}k"),
+        ]),
+        _ => {}
+    }
+    if let Some(lang) = shape.language.as_ref().filter(|_| audio) {
+        a.extend(["-metadata:s:a:0".into(), format!("language={lang}")]);
+    }
+    match keep {
+        // An MKV times frames in milliseconds of its own.
+        Some(k) if k.codec == LosslessCodec::Ffv1 => {}
+        // The chapters are timed in the movie's ticks, which FFmpeg 7 and 8
+        // count in milliseconds (9 picks its own): in the video's ticks,
+        // each starts on its frame.
+        _ => {
+            let t = shape.timescale.to_string();
+            a.extend(["-video_track_timescale".into(), t.clone(), "-movie_timescale".into(), t]);
+            a.extend(["-movflags".into(), if mov { "+write_colr" } else { "+faststart" }.into()]);
+        }
+    }
+    let format = match keep {
+        Some(k) => k.codec.format(),
+        None if mov => "mov",
+        None => "mp4",
+    };
+    a.extend(["-f".into(), format.into()]);
+    a.push(joined.display().to_string());
+    a
 }
 
 /// `stem.ext`, or `stem_2.ext`… when that is taken (a rename would replace it).
@@ -1201,6 +1223,45 @@ mod tests {
             meta,
             ";FFMETADATA1\ntitle=Walter · scenepack\n[CHAPTER]\nTIMEBASE=1/24000\nSTART=0\nEND=1001\ntitle=S01E01 \\= 1\n[CHAPTER]\nTIMEBASE=1/24000\nSTART=1001\nEND=2002\ntitle=S01E01 \\= 1\n"
         );
+    }
+
+    #[test]
+    fn the_joined_file_times_its_chapters_like_its_frames() {
+        let (hd, odd) = (info(1920, 1080, r(1, 1), 0), info(1920, 803, r(1, 1), 0));
+        let index = FrameIndex::cfr(r(1, 24000), r(24000, 1001), 0, 100);
+        let clip = |info| [MergeSource { info, index: &index, range: FrameRange::new(0, 10), audio_ordinal: None }];
+        let encoders = ["libx264", "prores_ks", "libx265", "ffv1"].map(String::from).to_vec();
+        let caps = Caps { sw_encoders: encoders, ..Caps::default() };
+        let exact = [ExactFormat { pix_fmt: "yuv420p".into(), ..ExactFormat::default() }];
+        let preset = |id: &str| crate::builtin_presets().into_iter().find(|p| p.id == id).unwrap();
+        let (h264, prores, bit_perfect) = (preset("h264-edit"), preset("prores-hq"), preset("bit-perfect"));
+        let args = |shape: &MergeShape, preset: &ExportPreset| {
+            let job =
+                JoinJob { parts: &[], shape, preset, out_stem: PathBuf::new(), work_dir: Path::new(""), title: None };
+            join_args(&job, true, true, Path::new("parts"), Path::new("chapters"), Path::new("joined"))
+        };
+        let hevc = plan_lossless_merge(&caps, &clip(&hd), &exact).unwrap().shape;
+        assert_eq!(hevc.lossless.as_ref().map(|k| k.codec), Some(LosslessCodec::Hevc));
+        let files = [
+            (plan_merge(&caps, &h264, &clip(&hd)).unwrap().shape, &h264, "mp4"),
+            (plan_merge(&caps, &prores, &clip(&hd)).unwrap().shape, &prores, "mov"),
+            (hevc, &bit_perfect, "mov"),
+        ];
+        for (shape, preset, format) in &files {
+            // 23.976: 1001 ticks a frame.
+            assert_eq!(shape.timescale, 24_000);
+            let a = args(shape, preset);
+            let at = a.iter().position(|x| x == "-video_track_timescale").expect("the video's ticks");
+            assert_eq!(a[at..at + 4], ["-video_track_timescale", "24000", "-movie_timescale", "24000"], "{a:?}");
+            assert_eq!(a.iter().filter(|x| *x == "-movie_timescale").count(), 1, "{a:?}");
+            assert!(a.ends_with(&["-f".into(), format.to_string(), "joined".into()]), "{a:?}");
+        }
+        // An MKV takes neither: it times its frames in milliseconds of its own.
+        let ffv1 = plan_lossless_merge(&caps, &clip(&odd), &exact).unwrap().shape;
+        assert_eq!(ffv1.lossless.as_ref().map(|k| k.codec), Some(LosslessCodec::Ffv1));
+        let a = args(&ffv1, &bit_perfect);
+        assert!(!a.iter().any(|x| x.ends_with("timescale")), "{a:?}");
+        assert!(a.ends_with(&["-f".into(), "matroska".into(), "joined".into()]), "{a:?}");
     }
 
     #[test]

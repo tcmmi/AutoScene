@@ -18,6 +18,21 @@ export const FILE_PARTS: readonly NamePart[] = BACKEND_FILE_PARTS
 export const PART_LABELS = Object.fromEntries(NAME_PARTS) as Record<NamePart, string>
 
 /**
+ * What each part gives, with an example of its form: the line under the part's
+ * spelling in its button's tooltip. The real names are in the dialog's preview,
+ * so these stay fixed. A part the backend adds fails the type check until it
+ * has one.
+ */
+export const PART_HINTS: Record<NamePart, string> = {
+  series: "The project's title",
+  character: "The character's name",
+  episode: "The episode, as S01E03, or its file's name",
+  index: "The shot's place in the pack: 001, 002, …",
+  tc: "Where the shot starts, as 00-12-03-05",
+  frame: "The frame the shot starts on, as 17357",
+}
+
+/**
  * What a piece of a template is: plain `text`; a `part` the field may use; a
  * part that names a `shot`, in the one file's name; an `unknown` part; or an
  * `unclosed` one, a `{` with no `}` after it.

@@ -1,4 +1,5 @@
 import type * as React from "react"
+import { useState } from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
@@ -100,6 +101,17 @@ afterEach(() => {
 const chip = (field: string, label: string) =>
   within(screen.getByLabelText(field).parentElement!).getByRole("button", { name: label })
 
+/** The dialog over a pack that takes what the dialog sets, as `usePack` does. */
+function LiveDialog({ initial }: { initial: PackNaming }) {
+  const [current, setCurrent] = useState(initial)
+  const p = { ...pack(current), setNaming: setCurrent }
+  return <PackExportDialog pid="p" character={walter} pack={p} open onOpenChange={() => {}} />
+}
+
+/** The name-part toolbar under the field labelled `field`. */
+const toolbar = (field: string) =>
+  within(screen.getByLabelText(field).parentElement!).getByRole("toolbar", { name: "Name parts" })
+
 /** The engine's own typing command, stubbed: jsdom has none. */
 function stubExec() {
   const exec = vi.fn<(...args: unknown[]) => boolean>(() => true)
@@ -199,6 +211,9 @@ describe("PackExportDialog", () => {
     field.addEventListener("blur", blurred)
     await user.click(chip("File names", "Frame"))
     expect(document.activeElement).toBe(field)
+    // Nor between the buttons.
+    await user.click(toolbar("File names"))
+    expect(document.activeElement).toBe(field)
     // Not even for a moment: the button never took the focus.
     expect(blurred).not.toHaveBeenCalled()
   })
@@ -250,6 +265,102 @@ describe("PackExportDialog", () => {
     inserts.forEach((at, i) => {
       expect(selects.filter((s) => s < at && (i === 0 || s > inserts[i - 1]))).toHaveLength(1)
     })
+  })
+
+  it("the name parts are a toolbar", async () => {
+    const user = userEvent.setup()
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(false))} open onOpenChange={() => {}} />, { wrapper })
+    const field = await screen.findByLabelText("File names")
+    const bar = screen.getByRole("toolbar", { name: "Name parts" })
+    // It says which field its parts go into.
+    expect(bar.getAttribute("aria-controls")).toBe(field.id)
+    const buttons = within(bar).getAllByRole("button")
+    const stops = () => buttons.map((b) => b.tabIndex)
+    const focused = (label: string) => waitFor(() => expect(document.activeElement).toBe(within(bar).getByRole("button", { name: label })))
+    field.focus()
+    await user.tab()
+    await focused("Series")
+    expect(stops()).toEqual([0, -1, -1, -1, -1, -1])
+    // The arrows move the focus, and the one stop goes with it.
+    await user.keyboard("{ArrowRight}")
+    await focused("Character")
+    expect(stops()).toEqual([-1, 0, -1, -1, -1, -1])
+    await user.keyboard("{End}")
+    await focused("Frame")
+    // Past the last, the first.
+    await user.keyboard("{ArrowRight}")
+    await focused("Series")
+    await user.keyboard("{ArrowLeft}")
+    await focused("Frame")
+    await user.keyboard("{Home}")
+    await focused("Series")
+    expect(stops()).toEqual([0, -1, -1, -1, -1, -1])
+  })
+
+  it("a focused button says its part and what it gives", async () => {
+    const user = userEvent.setup()
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(false))} open onOpenChange={() => {}} />, { wrapper })
+    const field = await screen.findByLabelText("File names")
+    field.focus()
+    await user.tab()
+    await user.keyboard("{End}")
+    await waitFor(() => expect(document.activeElement).toBe(chip("File names", "Frame")))
+    await user.keyboard("{ArrowLeft}")
+    const timecode = chip("File names", "Timecode")
+    await waitFor(() => expect(document.activeElement).toBe(timecode))
+    // The spelling to type by hand, in mono, and what it gives; read out with the button.
+    const tip = await screen.findByRole("tooltip")
+    expect(tip.textContent).toBe("{tc}Where the shot starts, as 00-12-03-05")
+    expect(within(tip).getByText("{tc}").className).toContain("font-mono")
+    expect(timecode.getAttribute("aria-describedby")).toBe(tip.id)
+    // Every part has its own.
+    await user.keyboard("{Home}")
+    await waitFor(() => expect(screen.getByRole("tooltip").textContent).toBe("{series}The project's title"))
+  })
+
+  it("Enter on a button puts the part in and returns to the field", async () => {
+    const user = userEvent.setup()
+    render(<LiveDialog initial={naming(false)} />, { wrapper })
+    const field = (await screen.findByLabelText("File names")) as HTMLInputElement
+    await user.click(field)
+    // The caret after "{series}"; then over to Episode by keyboard.
+    field.setSelectionRange(8, 8)
+    await user.tab()
+    await user.keyboard("{ArrowRight}{ArrowRight}")
+    await waitFor(() => expect(document.activeElement).toBe(chip("File names", "Episode")))
+    expect(screen.getByRole("tooltip").textContent).toContain("{episode}")
+    await user.keyboard("{Enter}")
+    expect(field.value).toBe("{series} {episode} {character} {episode} {tc}")
+    expect(document.activeElement).toBe(field)
+    expect([field.selectionStart, field.selectionEnd]).toEqual([18, 18])
+    // The tooltip closes, so the names below show again.
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull())
+    // Tab goes back to the button last used; Space works like Enter.
+    await user.tab()
+    expect(document.activeElement).toBe(chip("File names", "Episode"))
+    await user.keyboard(" ")
+    expect(field.value).toBe("{series} {episode} {episode} {character} {episode} {tc}")
+    expect(document.activeElement).toBe(field)
+  })
+
+  it("the buttons are one Tab stop", async () => {
+    const user = userEvent.setup()
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(true))} open onOpenChange={() => {}} />, { wrapper })
+    const file = await screen.findByLabelText("File name")
+    const chapters = screen.getByLabelText("Chapter names")
+    const format = screen.getByRole("combobox", { name: "Export format" })
+    file.focus()
+    // Field, its parts, the next field, its parts, Format: five stops for two fields and eight buttons.
+    const order: Element[] = [file, chip("File name", "Series"), chapters, chip("Chapter names", "Series"), format]
+    for (const expected of order.slice(1)) {
+      await user.tab()
+      expect(document.activeElement).toBe(expected)
+    }
+    // And back the same way: the parts are one stop that way too.
+    for (const expected of order.slice(0, -1).reverse()) {
+      await user.tab({ shift: true })
+      expect(document.activeElement).toBe(expected)
+    }
   })
 
   it("names a file per shot, in the character's folder", async () => {

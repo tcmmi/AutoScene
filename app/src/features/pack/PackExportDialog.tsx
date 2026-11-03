@@ -1,9 +1,10 @@
 import { type ReactNode, useRef, useState } from "react"
 import { CircleNotch, FolderOpen } from "@/components/icons"
+import { Toolbar } from "radix-ui"
 import { toast } from "sonner"
 import type { Character } from "@/bindings"
 import { Button } from "@/components/ui/button"
-import { TruncatedText } from "@/components/ui/tooltip"
+import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
@@ -13,7 +14,7 @@ import { rememberPreset } from "@/features/export/export"
 import { formatBytes, shortFormatName } from "@/lib/format"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder } from "@/lib/media"
-import { ALL_PARTS, FILE_PARTS, insertion, type NamePart, PART_LABELS } from "@/lib/naming"
+import { ALL_PARTS, FILE_PARTS, insertion, type NamePart, PART_HINTS, PART_LABELS } from "@/lib/naming"
 import { qk, queryClient, useExportDir, usePresets, useSettings } from "@/lib/queries"
 import { insertText, restoreSelection, revealCaret } from "@/lib/text-edit"
 import { useUi } from "@/state/ui"
@@ -296,20 +297,29 @@ function TemplateField({
         className="font-mono text-sm"
         aria-invalid={invalid}
       />
-      <div className="mt-2 flex flex-wrap gap-1.5">
+      {/* One Tab stop: the arrows, Home and End go from button to button. */}
+      <Toolbar.Root
+        aria-label="Name parts"
+        aria-controls={id}
+        loop
+        // The pointer never takes the focus from a field, on a button or
+        // between them: its caret and selection stay put.
+        onMouseDown={(e) => e.preventDefault()}
+        className="mt-2 flex flex-wrap gap-1.5"
+      >
         {parts.map((part) => (
-          <button
-            key={part}
-            type="button"
-            // The pointer never takes the focus from a field: its caret and selection stay put.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => insert(part)}
-            className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-xs leading-6 text-fg-2 hover:border-white/20 hover:text-fg-1"
-          >
-            {PART_LABELS[part]}
-          </button>
+          // The spelling to type by hand, and what it gives. Below the button:
+          // above, it would cover the caret, where the part goes.
+          <Tooltip key={part} label={<span className="font-mono">{`{${part}}`}</span>} hint={PART_HINTS[part]}>
+            <Toolbar.Button
+              onClick={() => insert(part)}
+              className="select-none rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-xs leading-6 text-fg-2 transition-[border-color,color,scale] duration-[var(--dur-fast)] ease-out hover:border-white/20 hover:text-fg-1 active:scale-[0.97]"
+            >
+              {PART_LABELS[part]}
+            </Toolbar.Button>
+          </Tooltip>
         ))}
-      </div>
+      </Toolbar.Root>
     </Field>
   )
 }

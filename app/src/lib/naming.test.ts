@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { FILE_PARTS, insertion, parseTemplate } from "./naming"
+import { FILE_PARTS, insertion, parseTemplate, reportedPart } from "./naming"
 
 /** The pieces as [kind, text], easier to read than indices. */
 const pieces = (template: string, allowed?: Parameters<typeof parseTemplate>[1]) =>
@@ -55,6 +55,34 @@ describe("parseTemplate", () => {
         .map((s) => s.text)
         .join(""),
     ).toBe(template)
+  })
+})
+
+describe("reportedPart", () => {
+  /** What the backend names in `template`, for the one file's name or not: [kind, text], or null. */
+  const reported = (template: string, forFile = false) => {
+    const s = reportedPart(parseTemplate(template, forFile ? FILE_PARTS : undefined), forFile)
+    return s && [s.kind, s.text, s.start, s.end]
+  }
+
+  it("names the first unknown or unclosed part of a shot's name", () => {
+    expect(reported("{ep} {x")).toEqual(["unknown", "{ep}", 0, 4])
+    expect(reported("{series} {x {ep}")).toEqual(["unknown", "{x {ep}", 9, 16])
+    expect(reported("E{index} {tc")).toEqual(["unclosed", "{tc", 9, 12])
+    expect(reported("{series} {tc}")).toBeNull()
+    // Empty: refused, but no part says why.
+    expect(reported("  ")).toBeNull()
+  })
+
+  it("looks at the one file's name twice, as the backend does", () => {
+    // First an unclosed part or one that names a shot, wherever an unknown one is.
+    expect(reported("{nme} {tc}", true)).toEqual(["shot", "{tc}", 6, 10])
+    expect(reported("{nme} {series", true)).toEqual(["unclosed", "{series", 6, 13])
+    expect(reported("{index} {tc}", true)).toEqual(["shot", "{index}", 0, 7])
+    // Then an unknown one. A "{" runs to the first "}": no shot's part in it.
+    expect(reported("{ser {tc}", true)).toEqual(["unknown", "{ser {tc}", 0, 9])
+    expect(reported("{series} {nme}", true)).toEqual(["unknown", "{nme}", 9, 14])
+    expect(reported("{series} {character}", true)).toBeNull()
   })
 })
 

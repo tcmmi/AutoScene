@@ -1154,7 +1154,8 @@ const handlers: Record<string, Handler> = {
   },
   pack_plan: ({ projectId, characterId, spec, naming }) => {
     const n = naming as PackNaming
-    const problem = templateProblem(n.template) ?? (n.merge ? fileProblem(n.file) : null)
+    // The one file's name first, as the backend checks them.
+    const problem = (n.merge ? fileProblem(n.file) : null) ?? templateProblem(n.template)
     if (problem) throw { code: "invalid", message: problem }
     const p = find(projectId)
     const cid = String(characterId)
@@ -1168,12 +1169,15 @@ const handlers: Record<string, Handler> = {
     const p = find(projectId)
     const r = req as PackExportRequest
     const cid = String(characterId)
+    // In the backend's order: the names' template, the pack as shown, then the one file's name.
+    const template = templateProblem(r.naming.template)
+    if (template) throw { code: "invalid", message: template }
     const preview = packPreview(p.id, cid, r.spec, p.media, SEGMENTS)
     if (preview.stamp !== r.stamp) throw { code: "invalid", message: "The pack changed meanwhile. Check it and export again." }
     const taken = preview.clips.filter((c) => c.included)
     if (taken.length === 0) throw { code: "invalid", message: "There's nothing in the pack to export." }
-    const problem = templateProblem(r.naming.template) ?? (r.naming.merge ? fileProblem(r.naming.file) : null)
-    if (problem) throw { code: "invalid", message: problem }
+    const file = r.naming.merge ? fileProblem(r.naming.file) : null
+    if (file) throw { code: "invalid", message: file }
     const names = packNames(p.id, cid, p.title, preview, r.naming, p.media, tcName)
     const label = characterLabel(p.id, cid)
     packSave(p.id, cid, { spec: r.spec, naming: r.naming })

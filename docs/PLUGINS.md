@@ -990,7 +990,7 @@ classes:
 | Class | What |
 |---|---|
 | `as-btn` | A button. `data-variant`: `primary` (the one main action of a screen), `secondary` (the default), `ghost`, `accent` (selected or running), `danger`; `data-size="sm"` for the smaller one. |
-| `as-input` | A text field or text area. |
+| `as-input` | A text field or text area. `aria-invalid="true"` turns it red, for a value that won't do. |
 | `as-card` | A group of settings or facts. |
 | `as-badge` | A chip for a short fact. `data-tone`: `neutral` (the default), `accent`, `danger`, `outline`. |
 | `as-display`, `as-eyebrow` | A big title, and a small label over it. |

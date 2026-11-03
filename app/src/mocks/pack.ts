@@ -17,7 +17,7 @@ import type {
   Segment,
   ShotSize,
 } from "@/bindings"
-import { ALL_PARTS, FILE_PARTS } from "@/lib/naming"
+import { ALL_PARTS, FILE_PARTS, parseTemplate, reportedPart } from "@/lib/naming"
 import { characterLabel, characterShots, othersInShot } from "./cast"
 
 const states = new Map<string, PackState>()
@@ -170,32 +170,31 @@ function listed(parts: readonly string[], last: "or" | "and"): string {
   return spelled.length < 2 ? spelled.join("") : `${spelled.slice(0, -1).join(", ")} ${last} ${spelled[spelled.length - 1]}`
 }
 
-/** A part that names a shot but not the one file holding them all. */
-const shotPart = new RegExp(String.raw`\{(${ALL_PARTS.filter((part) => !FILE_PARTS.includes(part)).join("|")})\}`)
-
-/** What the backend says about a template that doesn't work (as_project::naming), or null. */
-export function templateProblem(template: string): string | null {
-  let rest = template
-  for (let open = rest.indexOf("{"); open >= 0; open = rest.indexOf("{")) {
-    const close = rest.indexOf("}", open)
-    if (close < 0) return "A “{” isn't closed with “}”."
-    const token = rest.slice(open + 1, close)
-    if (!(ALL_PARTS as readonly string[]).includes(token)) {
-      return `“{${token}}” isn't a name part. Use ${listed(ALL_PARTS, "or")}.`
-    }
-    rest = rest.slice(close + 1)
+/**
+ * What the backend says about a name template that won't do
+ * (as_project::naming), or null: about the part it finds first, in its order
+ * (the one file's name looks twice, see `reportedPart`), else about an empty
+ * name.
+ */
+function problem(template: string, forFile: boolean): string | null {
+  const part = reportedPart(parseTemplate(template, forFile ? FILE_PARTS : ALL_PARTS), forFile)
+  const name = part?.text.slice(1, -1)
+  switch (part?.kind) {
+    case "unclosed":
+      return "A “{” isn't closed with “}”."
+    case "unknown":
+      return `“{${name}}” isn't a name part. Use ${listed(ALL_PARTS, "or")}.`
+    case "shot":
+      return `“{${name}}” names a shot, not the file. The file's name can use ${listed(FILE_PARTS, "and")}.`
   }
   return template.trim() === "" ? "The name would be empty." : null
 }
 
-/** Why a name for one file holding the whole pack won't do (as_project::naming::render_file_name). */
-export function fileProblem(template: string): string | null {
-  const shot = shotPart.exec(template)
-  if (shot) {
-    return `“{${shot[1]}}” names a shot, not the file. The file's name can use ${listed(FILE_PARTS, "and")}.`
-  }
-  return templateProblem(template)
-}
+/** Why a shot's or a chapter's name template won't do (as_project::naming::render_name), or null. */
+export const templateProblem = (template: string) => problem(template, false)
+
+/** Why the name of one file holding the whole pack won't do (as_project::naming::render_file_name), or null. */
+export const fileProblem = (template: string) => problem(template, true)
 
 /** The one file's name, simply. */
 export function packFileName(pid: string, cid: string, title: string, naming: PackNaming): string {

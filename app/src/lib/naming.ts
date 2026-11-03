@@ -71,6 +71,20 @@ export function parseTemplate(template: string, allowed: readonly NamePart[] = A
 }
 
 /**
+ * The piece of a template the backend names when it refuses it, or null when
+ * it has nothing to say about the parts. A chapter's or a shot's name
+ * (render_name) stops at the first unknown or unclosed part. The one file's
+ * name (render_file_name) looks twice: first for an unclosed part or one that
+ * names a shot, then for an unknown one. `segments` are the template's, read
+ * with the parts its field may use. An empty name has no such piece, but is
+ * refused too.
+ */
+export function reportedPart(segments: readonly Segment[], forFile: boolean): Segment | null {
+  const first = (...kinds: SegmentKind[]) => segments.find((s) => kinds.includes(s.kind)) ?? null
+  return forFile ? (first("unclosed", "shot") ?? first("unknown")) : first("unknown", "unclosed")
+}
+
+/**
  * What a name-part button puts in, and where: `text` replaces `start`..`end`
  * of `value`, which was the selection. A caret inside a part moves past it,
  * so a part is never split (inside an unclosed one it stays: that part is

@@ -1,8 +1,8 @@
-import { type ReactNode, useRef, useState } from "react"
-import { CircleNotch, FolderOpen } from "@/components/icons"
+import { type ReactNode, useEffect, useRef, useState } from "react"
+import { CircleNotch, FolderOpen, Warning } from "@/components/icons"
 import { Toolbar } from "radix-ui"
 import { toast } from "sonner"
-import type { Character } from "@/bindings"
+import type { Character, ExportPlan } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
@@ -14,17 +14,48 @@ import { rememberPreset } from "@/features/export/export"
 import { formatBytes, shortFormatName } from "@/lib/format"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder } from "@/lib/media"
-import { ALL_PARTS, FILE_PARTS, insertion, type NamePart, PART_HINTS, PART_LABELS } from "@/lib/naming"
+import {
+  ALL_PARTS,
+  FILE_PARTS,
+  insertion,
+  type NamePart,
+  PART_HINTS,
+  PART_LABELS,
+  parseTemplate,
+  reportedPart,
+  type Segment,
+} from "@/lib/naming"
 import { qk, queryClient, useExportDir, usePresets, useSettings } from "@/lib/queries"
 import { insertText, restoreSelection, revealCaret } from "@/lib/text-edit"
 import { useUi } from "@/state/ui"
 import { type Pack, packExportStarted } from "./use-pack"
 
-/** A "{" that doesn't open one of the parts the one file's name may use. */
-const notAFilePart = new RegExp(String.raw`\{(?!(?:${FILE_PARTS.join("|")})\})`)
+/** The part of `template` the backend names when it refuses it, for the one file's name or not. */
+const reported = (template: string, forFile: boolean): Segment | null =>
+  reportedPart(parseTemplate(template, forFile ? FILE_PARTS : ALL_PARTS), forFile)
 
-/** Does the one file's name use a part that only names a shot (or no name at all)? */
-const fileNameIsWrong = (template: string) => template.trim() === "" || notAFilePart.test(template)
+/** Is the backend's refusal about this template? An empty one has no part to name, but is refused too. */
+const refuses = (template: string, forFile: boolean) => template.trim() === "" || reported(template, forFile) != null
+
+/** How long a part being typed isn't called wrong yet, after the last key. */
+const TYPING_MS = 1000
+
+/**
+ * The pack's plan as it last answered: the last one that worked, and the
+ * problem of the last one that didn't until one works again. While the next
+ * answer is on its way, both stay: a template that doesn't work keeps the
+ * dialog as the last one that did, and nothing blinks while you type on.
+ */
+function useLastAnswer(plan: Pack["plan"]): { plan: ExportPlan | undefined; problem: string | null } {
+  const [last, setLast] = useState(() => ({ plan: plan.data, problem: plan.isError ? errorMessage(plan.error) : null }))
+  const next = plan.isError
+    ? { plan: last.plan, problem: errorMessage(plan.error) }
+    : plan.data && !plan.isPlaceholderData
+      ? { plan: plan.data, problem: null }
+      : last
+  if (next.plan !== last.plan || next.problem !== last.problem) setLast(next)
+  return next
+}
 
 /** Name the pack's files, choose format and place, and export exactly the shots the grid shows. */
 export function PackExportDialog({
@@ -60,21 +91,32 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
   const presetId = chosenPreset ?? settings?.exportPresetId
   const preset = presets?.find((p) => p.id === presetId)
   const clips = pack.preview.data?.totals.clips ?? 0
-  const names = pack.plan.data?.names ?? []
-  const size = pack.plan.data?.sizes.find((s) => s.presetId === presetId)
+  const { plan, problem } = useLastAnswer(pack.plan)
+  const names = plan?.names ?? []
+  const size = plan?.sizes.find((s) => s.presetId === presetId)
   const bytes = size?.bytes
   // Bit-Perfect joins only episodes alike: otherwise a file per shot, and why.
   const apart = merge ? (size?.apart ?? null) : null
   const oneFile = merge && apart == null
-  const file = oneFile ? pack.plan.data?.file : null
-  // A template that doesn't work: the backend says why, under the field it's about.
-  const problem = pack.plan.isError ? errorMessage(pack.plan.error) : null
-  const fileProblem = merge && fileNameIsWrong(naming.file) ? problem : null
-  const namesProblem = fileProblem ? null : problem
+  const file = oneFile ? plan?.file : null
+  // A template that doesn't work: the backend says why, under the field it is
+  // about. It checks the one file's name first, then the names' template.
+  const fileRefused = merge && refuses(naming.file, true)
+  // The backend checks the one file's name even when Bit-Perfect makes a file
+  // per shot: while it refuses it, its field stays, to mend it where it is.
+  // Mended there, it stays while the dialog is open: it never goes from under
+  // the keys or moves what is below it under the pointer.
+  const [mending, setMending] = useState(false)
+  const showFile = oneFile || fileRefused || (merge && mending)
+  const fileProblem = problem && fileRefused && showFile ? problem : null
+  const namesProblem = problem && !fileRefused && refuses(naming.template, false) ? problem : null
+  // About neither (a character gone, the database): above the buttons, once
+  // the backend says so (not while a name just mended is on its way).
+  const dialogProblem = problem && !fileProblem && !namesProblem && pack.plan.isError ? problem : null
   const base = dir ?? defaultDir ?? ""
   const sep = base.includes("\\") ? "\\" : "/"
   // The character's folder as the backend names it (a file per shot only).
-  const folder = naming.folder && !oneFile ? pack.plan.data?.folder : null
+  const folder = naming.folder && !oneFile ? plan?.folder : null
   const outDir = folder && base ? `${base.replace(/[\\/]+$/, "")}${sep}${folder}` : base
   const shots = plural(clips, "shot")
 
@@ -121,6 +163,12 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
           : `${shots}, each cut frame-exact and checked against the source.`
       }
       className="w-[min(600px,calc(100vw-32px))]"
+      // The field the dialog opens with takes the focus (Enter exports: Ctrl/⌘ E,
+      // then Enter). One that shows up later doesn't take it from the switch.
+      onOpenAutoFocus={(e) => {
+        e.preventDefault()
+        document.getElementById(oneFile ? "pack-file" : "pack-template")?.focus()
+      }}
     >
       <form
         className="flex flex-col gap-5"
@@ -134,41 +182,42 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
             <span className="block text-sm text-fg-1">All shots in one file</span>
             <span className="block text-xs text-fg-3">One video with a chapter for each shot, in the pack's order.</span>
           </span>
-          <Switch checked={merge} onCheckedChange={(merge) => pack.setNaming({ ...naming, merge })} />
+          <Switch
+            checked={merge}
+            onCheckedChange={(merge) => {
+              setMending(false)
+              pack.setNaming({ ...naming, merge })
+            }}
+          />
         </label>
-        {oneFile && (
+        {showFile && (
           <TemplateField
             id="pack-file"
             label="File name"
             hint={
-              fileProblem ? (
-                <span className="text-danger">{fileProblem}</span>
-              ) : (
-                file &&
-                preset && (
-                  <span className="block truncate pt-0.5 font-mono text-xs text-fg-2" data-selectable>
-                    {file}.{size?.ext ?? preset.container}
-                  </span>
-                )
+              file &&
+              preset && (
+                <span className="block truncate pt-0.5 font-mono text-xs text-fg-2" data-selectable>
+                  {file}.{size?.ext ?? preset.container}
+                </span>
               )
             }
+            problem={fileProblem}
             value={naming.file}
-            onChange={(f) => pack.setNaming({ ...naming, file: f })}
-            parts={FILE_PARTS}
-            invalid={fileProblem != null}
-            // Enter exports: Ctrl/⌘ E, then Enter.
-            autoFocus
+            onChange={(f) => {
+              if (!oneFile) setMending(true)
+              pack.setNaming({ ...naming, file: f })
+            }}
+            forFile
           />
         )}
         <TemplateField
           id="pack-template"
           label={oneFile ? "Chapter names" : "File names"}
-          hint={namesProblem ? <span className="text-danger">{namesProblem}</span> : nameList}
+          hint={nameList}
+          problem={namesProblem}
           value={naming.template}
           onChange={(template) => pack.setNaming({ ...naming, template })}
-          parts={ALL_PARTS}
-          invalid={namesProblem != null}
-          autoFocus={!oneFile}
         />
         <Field
           label="Format"
@@ -216,6 +265,14 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
             </label>
           )}
         </Field>
+        <p aria-live="polite" className={dialogProblem ? "flex items-start gap-1.5 text-sm text-danger" : "sr-only"}>
+          {dialogProblem && (
+            <>
+              <Warning className="mt-0.5 size-3.5 shrink-0" />
+              <span>{dialogProblem}</span>
+            </>
+          )}
+        </p>
         <DialogFooter className="mt-1">
           <Button variant="ghost" onClick={onDone}>
             Cancel
@@ -249,29 +306,49 @@ function insertionRange(field: HTMLInputElement): { start: number; end: number }
   return tabbedIn ? { start: length, end: length } : { start, end }
 }
 
-/** A name template: its label, the field, buttons that put a name part where the cursor is, and what it gives. */
+/**
+ * A name template: its label, the field, buttons that put a name part where
+ * the cursor is, and what it gives, or why it won't do.
+ */
 function TemplateField({
   id,
   label,
   hint,
+  problem,
   value,
   onChange,
-  parts,
-  invalid,
-  autoFocus,
+  forFile = false,
 }: {
   id: string
   label: string
-  /** The names it gives, or why it won't do. */
+  /** What it gives. */
   hint: ReactNode
+  /** Why the backend refuses the template, when it is about this one. */
+  problem: string | null
   value: string
   onChange: (value: string) => void
-  /** The name parts this field may use, one button each. */
-  parts: readonly NamePart[]
-  invalid: boolean
-  autoFocus?: boolean
+  /** The one file's name: only the parts that name the whole pack, one button each. */
+  forFile?: boolean
 }) {
+  const parts = forFile ? FILE_PARTS : ALL_PARTS
   const input = useRef<HTMLInputElement>(null)
+  // A part still being typed isn't wrong yet: while the caret is in the part
+  // the backend names and a key went in less than a second ago, the field
+  // waits. A second later, on leaving the part or the field, it says so.
+  const [typing, setTyping] = useState(false)
+  const [caret, setCaret] = useState<number | null>(null)
+  const pause = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(pause.current), [])
+  const typed = (field: HTMLInputElement) => {
+    setCaret(field.selectionStart)
+    setTyping(true)
+    window.clearTimeout(pause.current)
+    pause.current = window.setTimeout(() => setTyping(false), TYPING_MS)
+  }
+  const part = problem && typing && caret != null ? reported(value, forFile) : null
+  const waiting = part != null && caret != null && part.start < caret && (part.kind === "unclosed" || caret < part.end)
+  const error = waiting ? null : problem
+  const errorId = `${id}-problem`
   // A button types its part as a key would: Ctrl+Z takes it back, React hears
   // it, and the focus ends in this field with the caret after the part.
   const insert = (part: NamePart) => {
@@ -287,15 +364,24 @@ function TemplateField({
     revealCaret(field)
   }
   return (
-    <Field label={label} htmlFor={id} hint={hint}>
+    <Field label={label} htmlFor={id} hint={hint} error={error} errorId={errorId}>
       <Input
         id={id}
         ref={input}
-        autoFocus={autoFocus}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          typed(e.target)
+          onChange(e.target.value)
+        }}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+        onBlur={() => {
+          window.clearTimeout(pause.current)
+          setTyping(false)
+        }}
         className="font-mono text-sm"
-        aria-invalid={invalid}
+        // Only while its problem shows: the names under it never describe it.
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
       />
       {/* One Tab stop: the arrows, Home and End go from button to button. */}
       <Toolbar.Root

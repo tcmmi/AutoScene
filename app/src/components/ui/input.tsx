@@ -17,6 +17,8 @@ export function Input({ className, ...props }: Omit<React.ComponentProps<"input"
         "h-10 w-full min-w-0 rounded-lg border border-soft bg-white/[0.05] px-3 text-md text-fg-1",
         "transition-[border-color,box-shadow,background-color] duration-[var(--dur-fast)] outline-none placeholder:text-fg-3",
         "hover:border-strong focus-visible:border-accent-line focus-visible:bg-white/[0.07] focus-visible:ring-4 focus-visible:ring-accent-subtle focus-visible:outline-none",
+        // A value that won't do stays red under the pointer and in focus too.
+        "aria-invalid:border-danger/60 aria-invalid:hover:border-danger/70 aria-invalid:focus-visible:border-danger/70 aria-invalid:focus-visible:ring-danger-subtle",
         "disabled:opacity-40",
         className,
       )}
@@ -25,16 +27,25 @@ export function Input({ className, ...props }: Omit<React.ComponentProps<"input"
   )
 }
 
-/** Label + control + optional hint, stacked. */
+/**
+ * Label + control + optional hint, stacked. An `error` takes the hint's place,
+ * in red. With `errorId` its line is always there (empty and out of sight
+ * without an error), so a screen reader reads an error that comes later; the
+ * control names it with `aria-describedby` while it shows.
+ */
 export function Field({
   label,
   hint,
+  error,
+  errorId,
   htmlFor,
   className,
   children,
 }: {
   label: React.ReactNode
   hint?: React.ReactNode
+  error?: React.ReactNode
+  errorId?: string
   htmlFor?: string
   className?: string
   children: React.ReactNode
@@ -45,7 +56,12 @@ export function Field({
         {label}
       </label>
       {children}
-      {hint && <p className="text-xs text-fg-3">{hint}</p>}
+      {(errorId != null || error) && (
+        <p id={errorId} aria-live="polite" className={error ? "text-xs text-danger" : "sr-only"}>
+          {error}
+        </p>
+      )}
+      {!error && hint && <p className="text-xs text-fg-3">{hint}</p>}
     </div>
   )
 }

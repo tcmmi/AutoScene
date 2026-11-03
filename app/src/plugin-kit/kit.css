@@ -153,6 +153,18 @@ textarea.as-input {
   box-shadow: 0 0 0 4px var(--accent-subtle);
   outline: none;
 }
+/* A value that won't do (aria-invalid="true") stays red under the pointer
+   and in focus too, as the app's Input. */
+.as-input[aria-invalid="true"] {
+  border-color: color-mix(in oklab, var(--danger) 60%, transparent);
+}
+.as-input[aria-invalid="true"]:hover {
+  border-color: color-mix(in oklab, var(--danger) 70%, transparent);
+}
+.as-input[aria-invalid="true"]:focus-visible {
+  border-color: color-mix(in oklab, var(--danger) 70%, transparent);
+  box-shadow: 0 0 0 4px var(--danger-subtle);
+}
 .as-input:disabled {
   opacity: 0.4;
 }

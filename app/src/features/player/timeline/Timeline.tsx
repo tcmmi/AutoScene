@@ -27,11 +27,10 @@ import { cn } from "@/lib/utils"
 import { type FrameStore, useFrame, useFrameSelector } from "../frame-store"
 import { SEGMENT_LABEL } from "../labels"
 import { drawSegments, drawSpans, prepare } from "./draw"
+import { visibleLanes } from "./lanes"
 import { type Counting, ticks } from "./ticks"
 import { type View, centerOn, fit, follow, panBy, tAt, xOf, zoomAt } from "./viewport"
 
-/** Lanes shown under the shots; everyone else is listed in the details panel. */
-const MAX_LANES = 5
 const ZOOM_STEP = 2
 
 type Axis = {
@@ -271,7 +270,7 @@ export function Timeline({
         )}
         {lanes.length > 0 && (
           <div className="mt-1 flex flex-col gap-1" role="group" aria-label="Characters on screen">
-            {lanes.slice(0, MAX_LANES).map((lane) => (
+            {visibleLanes(lanes, focus).map((lane) => (
               <LaneRow
                 key={lane.character.id}
                 axis={axis}

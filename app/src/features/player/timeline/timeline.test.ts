@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
+import type { Character } from "@/bindings"
+import type { Lane } from "@/lib/presence"
 import { frameAtCount, timecode, timecodeCount } from "@/lib/timecode"
+import { MAX_LANES, visibleLanes } from "./lanes"
 import { ticks } from "./ticks"
 import { centerOn, clampView, fit, follow, panBy, tAt, xOf, zoomAt } from "./viewport"
 
@@ -94,5 +97,37 @@ describe("the ruler", () => {
     // The whole hour, by minutes: the tenth reads ;00, the others ;02.
     const hour = ticks({ t0: 0, span: 3600 }, 1000, r, frameAt, rel, counting)
     expect(hour.frames.map(label).slice(0, 3)).toEqual(["00:00:00;00", "00:10:00;00", "00:20:00;00"])
+  })
+})
+
+describe("the character lanes", () => {
+  // Seven characters, most on screen first, as `lanesOf` sorts them.
+  const lanes: Lane[] = Array.from({ length: 7 }, (_, i) => ({
+    character: { id: `c${i + 1}` } as Character,
+    spans: [],
+    frames: 700 - i * 100,
+  }))
+  const ids = (shown: Lane[]) => shown.map((l) => l.character.id)
+
+  it("shows the five most on screen when nobody is highlighted", () => {
+    expect(MAX_LANES).toBe(5)
+    expect(ids(visibleLanes(lanes, null))).toEqual(["c1", "c2", "c3", "c4", "c5"])
+  })
+
+  it("gives a highlighted character further down the last lane, keeping five", () => {
+    expect(ids(visibleLanes(lanes, "c7"))).toEqual(["c1", "c2", "c3", "c4", "c7"])
+  })
+
+  it("changes nothing when the highlighted character already has a lane", () => {
+    expect(ids(visibleLanes(lanes, "c2"))).toEqual(["c1", "c2", "c3", "c4", "c5"])
+  })
+
+  it("shows every lane when there are fewer than five", () => {
+    expect(ids(visibleLanes(lanes.slice(0, 3), "c2"))).toEqual(["c1", "c2", "c3"])
+    expect(ids(visibleLanes(lanes.slice(0, 3), null))).toEqual(["c1", "c2", "c3"])
+  })
+
+  it("keeps the top five for a highlight with no lane in this episode", () => {
+    expect(ids(visibleLanes(lanes, "elsewhere"))).toEqual(["c1", "c2", "c3", "c4", "c5"])
   })
 })

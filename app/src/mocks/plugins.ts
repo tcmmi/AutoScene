@@ -1,6 +1,7 @@
 /**
- * Mock plugins for the browser backend, shaped like `plugins.rs`: two
- * reviewed plugins installed (Hello Export, and Hello page with its pages),
+ * Mock plugins for the browser backend, shaped like `plugins.rs`: three
+ * reviewed plugins installed (Hello Export, Hello page with its pages, and
+ * Hello service, whose page's service counts words),
  * packages to install (each .asp picked offers the next: one AutoScene
  * hasn't reviewed and one its author signed, as every real package is for
  * now, then a reviewed one and an update of the installed one), a
@@ -14,6 +15,7 @@
 import type {
   ActionKind,
   CallCode,
+  PageEvent,
   PageMount,
   PageReply,
   Permission,
@@ -58,6 +60,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     secretsSet: [],
     icon: null,
     logPath: `${DATA}\\logs\\plugins\\${o.id}.log`,
+    serviceLogPath: o.runtime === "service" ? `${DATA}\\logs\\plugins\\${o.id}.service.log` : null,
     warnings: [],
     ...o,
   }
@@ -243,9 +246,24 @@ const helloPage = plugin({
   ],
 })
 
+/** The example service plugin (examples/plugins/hello-service), which the mock serves: its service counts words. */
+const helloService = plugin({
+  id: "dev.autoscene.hello-service",
+  name: "Hello service",
+  version: "1.0.0",
+  trust: "reviewed",
+  description: "A page in the rail whose service counts the words you give it, and says so. An example plugin.",
+  repository: "https://github.com/tcmmi/AutoScene",
+  icon: icon("#c5905f"),
+  runtime: "service",
+  protocol: 2,
+  pages: [{ id: "main", title: "Word count", description: "Counts words in its service.", entry: "ui/index.html", scope: "global", rail: true }],
+})
+
 const installed = new Map<string, MockPlugin>([
   [hello("1.0.0").id, hello("1.0.0")],
   [helloPage.id, helloPage],
+  [helloService.id, helloService],
 ])
 const tickets = new Map<string, MockPlugin>()
 /** The settings the person changed, by plugin. */
@@ -305,6 +323,7 @@ function review(p: MockPlugin, allow: boolean): PluginReview {
         addedHosts: p.networkHosts.filter((h) => !previous.networkHosts.includes(h)),
         addedPages: p.pages.filter((x) => !previous.pages.some((y) => y.id === x.id)).map((x) => x.title),
         startsProgram: previous.runtime === "none" && p.runtime !== "none",
+        becomesService: previous.runtime !== "service" && p.runtime === "service",
       }
     : null
   const needsUnreviewed = !reviewed(next)
@@ -507,6 +526,24 @@ export type PagePlaces = {
   }[]
   /** The fixture every file a page is given plays (its name in fixtures/out). */
   fixture: string
+  /** Tells the open page `session` what became of it, as `plugin-page:event` does. */
+  tell(session: string, event: PageEvent): void
+}
+
+/** How many words Hello service counted since the mock started, as its service counts them since it started. */
+let counted = 0
+
+/** Hello service's service: `count` answers how many words its text has, and tells each of its open pages. */
+function helloServiceRequest(s: PageSession, params: Record<string, unknown>, places: PagePlaces): PageReply {
+  if (s.pluginId !== helloService.id) return refused("failed", `${s.plugin.name}'s service isn't in the mock.`)
+  if (params.method !== "count") return refused("failed", `Hello service has no method ${String(params.method)}.`)
+  const text = (params.params as { text?: unknown } | null)?.text
+  const words = typeof text === "string" ? text.split(/\s+/).filter(Boolean).length : 0
+  counted += words
+  for (const [session, open] of sessions) {
+    if (open.pluginId === s.pluginId) places.tell(session, { type: "service", name: "counted", data: { words, total: counted } })
+  }
+  return ok({ words })
 }
 
 /** What each plugin's pages keep (`state.*`). */
@@ -651,7 +688,7 @@ export const pluginPageCall: Record<HostMethod, PageHandler> = {
     return ok()
   },
   "state.keys": (s) => ok([...(pageState.get(s.pluginId)?.keys() ?? [])].sort()),
-  "service.request": () => later("service.request"),
+  "service.request": helloServiceRequest,
   "actions.run": () => later("actions.run"),
   "ui.toast": (s, params) => {
     const text = String(params.text ?? "").trim()

@@ -200,6 +200,24 @@ describe("the SDK", () => {
     ])
   })
 
+  it("a page that listens for its service late hears its state as it is", async () => {
+    const { page, host } = await connected()
+    const said: unknown[] = []
+    const events: unknown[] = []
+    page.service.on("counted", (data) => events.push(data))
+    host.postMessage({ t: "service", state: "starting", message: "Getting Python" } satisfies HostToFrame)
+    host.postMessage({ t: "service", state: "ready" } satisfies HostToFrame)
+    host.postMessage({ t: "event", name: "counted", data: { words: 3 } } satisfies HostToFrame)
+    await vi.waitFor(() => expect(events).toEqual([{ words: 3 }]))
+    // The last state at once, then each change.
+    const stop = page.service.onState((s) => said.push(s))
+    expect(said).toEqual([{ state: "ready", message: undefined }])
+    host.postMessage({ t: "service", state: "stopped", message: "Example stopped." } satisfies HostToFrame)
+    await vi.waitFor(() => expect(said).toHaveLength(2))
+    expect(said[1]).toEqual({ state: "stopped", message: "Example stopped." })
+    stop()
+  })
+
   it("the mock answers like the host when there is no parent", async () => {
     await expect(connect()).rejects.toThrow("Open this page in AutoScene, or pass { mock } to connect().")
     const info = vi.spyOn(console, "info").mockImplementation(() => {})

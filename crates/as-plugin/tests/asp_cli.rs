@@ -617,7 +617,7 @@ fn the_example_plugins_pack_and_parse() {
     let tmp = tempfile::tempdir().unwrap();
     let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins");
     let app = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
-    for name in ["hello-export", "discord-notify"] {
+    for name in ["hello-export", "discord-notify", "hello-service"] {
         // docs/PLUGINS.md packs them as they are: without a warning.
         let out = tmp.path().join(format!("{name}.asp"));
         assert_eq!(asp(&["pack", text(&examples.join(name)), text(&out)]).warnings(), "", "{name}");

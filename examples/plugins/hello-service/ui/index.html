@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- AutoScene's look and its SDK, which it serves to every page. -->
+    <link rel="stylesheet" href="/_as/theme.css" />
+    <link rel="stylesheet" href="page.css" />
+    <script src="/_as/sdk.js"></script>
+    <script src="count.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <p class="as-eyebrow">An example plugin</p>
+      <h1 class="as-display">Word count</h1>
+      <p id="state" class="quiet" aria-live="polite">Connecting to AutoScene…</p>
+
+      <section class="as-card">
+        <label for="text">Text for the service to count</label>
+        <textarea id="text" class="as-input" rows="4" placeholder="Write anything." disabled></textarea>
+        <div class="row">
+          <button id="count" class="as-btn" data-variant="primary" disabled>Count the words</button>
+          <span id="words" class="quiet" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="as-card">
+        <h2>What the service said</h2>
+        <ul id="said" class="list"></ul>
+      </section>
+    </main>
+  </body>
+</html>

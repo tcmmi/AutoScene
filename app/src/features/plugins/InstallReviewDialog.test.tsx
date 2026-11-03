@@ -144,6 +144,7 @@ describe("the install review", () => {
       addedHosts: [],
       addedPages: [],
       startsProgram: false,
+      becomesService: false,
     }
     show(review({ update }))
     expect(screen.getByText("The installed version: Reviewed by AutoScene.")).toBeTruthy()
@@ -192,6 +193,7 @@ describe("the install review", () => {
           addedHosts: ["cdn.example.com"],
           addedPages: [],
           startsProgram: false,
+          becomesService: false,
         },
       }),
     )
@@ -260,12 +262,15 @@ describe("the install review", () => {
       sourceBefore: "package",
       addedPermissions: [],
       addedHosts: [],
-      addedPages: ["Clips"],
+      addedPages: ["clips"],
       startsProgram: false,
+      becomesService: false,
     }
-    show(review({ plugin: { ...pages, pages: [page("main", "Main"), page("clips", "Clips")] }, update }))
-    expect(within(screen.getByText("Clips").closest("li")!).getByText("New")).toBeTruthy()
-    expect(within(screen.getByText("Main").closest("li")!).queryByText("New")).toBeNull()
+    // By its id: another page may have the same title.
+    show(review({ plugin: { ...pages, pages: [page("main", "Clips"), page("clips", "Clips")] }, update }))
+    const [kept, added] = screen.getAllByText("Clips").map((e) => e.closest("li")!)
+    expect(within(added).getByText("New")).toBeTruthy()
+    expect(within(kept).queryByText("New")).toBeNull()
     cleanup()
 
     // One the person agreed to as pages only, which now runs a program, says so.
@@ -274,6 +279,37 @@ describe("the install review", () => {
     expect(within(runs).getByText("New")).toBeTruthy()
     expect(screen.getByText("The installed version runs no program.")).toBeTruthy()
     expect(screen.getByText("It runs with your user rights: it can read, change and send anything you can.")).toBeTruthy()
+  })
+
+  it("says a service keeps its program running while its page is open, and when an update makes it one", () => {
+    const counter = { ...discord, runtime: "service" as const, protocol: 2 }
+    show(review({ plugin: counter }))
+    expect(screen.getByText(/A Python script that uv runs/)).toBeTruthy()
+    const keeps = screen.getByText("Keeps its program running while its page is open.")
+    expect(within(keeps).queryByText("New")).toBeNull()
+    // Still a program with the person's rights.
+    expect(screen.getByText("It runs with your user rights: it can read, change and send anything you can.")).toBeTruthy()
+    cleanup()
+
+    // A plugin of a process, now a service: marked as new.
+    const update: PluginUpdate = {
+      fromVersion: "0.2.0",
+      trustBefore: "unreviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: [],
+      addedPages: [],
+      startsProgram: false,
+      becomesService: true,
+    }
+    show(review({ plugin: counter, update }))
+    const now = screen.getByText("Now keeps its program running while its page is open.")
+    expect(within(now).getByText("New")).toBeTruthy()
+    cleanup()
+
+    // A process plugin says nothing of it.
+    show(review())
+    expect(screen.queryByText(/keeps its program running/i)).toBeNull()
   })
 
   it("names each secret it keeps in the keychain", () => {
@@ -307,6 +343,7 @@ describe("the install review", () => {
       addedHosts: [],
       addedPages: [],
       startsProgram: false,
+      becomesService: false,
     }
     show(review({ plugin: signed, update }))
     expect(

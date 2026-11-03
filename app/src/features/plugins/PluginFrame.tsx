@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import type { PageMount } from "@/bindings"
+import type { PageMount, PluginPageEvent } from "@/bindings"
 import { AppWindow, Warning } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { ContextArea, type MenuContent } from "@/components/ui/context-area"
@@ -9,7 +9,7 @@ import { commands, errorMessage, events } from "@/lib/ipc"
 import { isMac, isTauri, isWindows } from "@/lib/platform"
 import { useAppInfo } from "@/lib/queries"
 import type { PageInit } from "@/plugin-kit/bridge-types"
-import { FRAME, createConnector, pageCaller, replayKey, replayMenu, showToast } from "./bridge"
+import { FRAME, createConnector, inputElsewhere, pageCaller, pageMessage, replayKey, replayMenu, showToast } from "./bridge"
 
 /** What covers the frame: the page hangs, it was closed, it sent too much, or it couldn't open. */
 type Cover = { kind: "quiet" } | { kind: "closed"; reason: string } | { kind: "overflow" } | { kind: "failed"; message: string }
@@ -20,7 +20,11 @@ type Cover = { kind: "quiet" } | { kind: "closed"; reason: string } | { kind: "o
  * page reaches AutoScene only through the bridge (`bridge.ts`), whose calls
  * name the session the app holds. `path` is the route's part after the
  * page, as the page set it: a change the page didn't make (Back, Forward)
- * is told to it. The frame takes the focus once, as its page first loads,
+ * is told to it. What Rust tells the page (its settings changed, its
+ * plugin's service's events and state, its close) reaches it on its port,
+ * also what it told before the frame was there: it is listened to before
+ * the page opens.
+ * The frame takes the focus once, as its page first loads,
  * unless the person is in a field or a dialog by then. On
  * macOS and Linux the app's page says every 2 s that it is still there, so
  * AutoScene can ask the person about a page that hung it. Mounted once per
@@ -51,6 +55,9 @@ export function PluginFrame({
   const [mount, setMount] = useState<PageMount | null>(null)
   const [cover, setCover] = useState<Cover | null>(null)
   const connector = useRef<ReturnType<typeof createConnector> | null>(null)
+  // What Rust told before the page's connector was there (its service's state as it opened), and who hears it after.
+  const early = useRef<PluginPageEvent[]>([])
+  const tell = useRef<((e: PluginPageEvent) => void) | null>(null)
   // The path as the page last knew it: its own moves aren't told back to it.
   const known = useRef(path)
   // Its page loaded once already: loading itself again never takes the focus.
@@ -60,20 +67,33 @@ export function PluginFrame({
     version.current = app?.version ?? ""
   }, [app?.version])
 
-  // One session while mounted; one that opens after the frame went is closed at once.
+  // One session while mounted; one that opens after the frame went is closed
+  // at once. Rust's events are heard before it opens: Rust tells the page its
+  // service's state as it opens, before the open's answer is back.
   useEffect(() => {
     let live = true
     let session: string | null = null
-    commands.pluginPageOpen(pluginId, pageId, projectId).then(
-      (m) => {
-        if (!live) return void commands.pluginPageClose(m.session).catch(() => undefined)
-        session = m.session
-        setMount(m)
-      },
-      (e: unknown) => live && setCover({ kind: "failed", message: errorMessage(e) }),
-    )
+    const listening = events.pluginPageEvent.listen(({ payload }) => {
+      if (tell.current) tell.current(payload)
+      else early.current = [...early.current.slice(1 - EARLY), payload]
+    })
+    void listening
+      .catch(() => undefined)
+      .then(() => {
+        if (!live) return
+        commands.pluginPageOpen(pluginId, pageId, projectId).then(
+          (m) => {
+            if (!live) return void commands.pluginPageClose(m.session).catch(() => undefined)
+            session = m.session
+            setMount(m)
+          },
+          (e: unknown) => live && setCover({ kind: "failed", message: errorMessage(e) }),
+        )
+      })
     return () => {
       live = false
+      early.current = []
+      void listening.then((un) => un()).catch(() => undefined)
       if (session) void commands.pluginPageClose(session).catch(() => undefined)
     }
   }, [pluginId, pageId, projectId])
@@ -96,25 +116,33 @@ export function PluginFrame({
         menu: (x, y) => ref.current && replayMenu(ref.current, x, y),
         unresponsive: (on) => setCover((c) => (on ? { kind: "quiet" } : c?.kind === "quiet" ? null : c)),
         overflow: () => setCover({ kind: "overflow" }),
-        focused: () => ref.current != null && document.activeElement === ref.current,
+        // A page can move the focus into its frame itself, and keeps it while
+        // the person works in another app: the window must be in front too.
+        focused: () => ref.current != null && document.activeElement === ref.current && document.hasFocus(),
+        // A click or a key in the frame counts for the app's page too: so
+        // Chromium (WebView2) has it. So does one in the app's page itself,
+        // like the click that opened the page: none may have come just
+        // before. WebKit's frames are only held to the focus.
+        elsewhere: () => isWindows && clickedElsewhere(),
+        activated: () => !isWindows || !navigator.userActivation || navigator.userActivation.isActive,
       },
     })
     connector.current = c
     const onMessage = (e: MessageEvent) => void c.message(e)
     window.addEventListener("message", onMessage)
-    const unlisten = events.pluginPageEvent.listen(({ payload }) => {
-      if (payload.session !== mount.session) return
-      if (payload.event.type === "settings") return c.send({ t: "settings" })
-      c.send({ t: "closed", reason: payload.event.reason })
-      setCover({ kind: "closed", reason: payload.event.reason })
-    })
+    tell.current = (p) => {
+      if (p.session !== mount.session) return
+      c.send(pageMessage(p.event))
+      if (p.event.type === "closed") setCover({ kind: "closed", reason: p.event.reason })
+    }
+    for (const p of early.current.splice(0)) tell.current(p)
     const beats =
       isTauri && !isWindows
         ? window.setInterval(() => void commands.pluginPageHeartbeat(mount.session).catch(() => undefined), 2000)
         : undefined
     return () => {
       window.removeEventListener("message", onMessage)
-      void unlisten.then((un) => un())
+      tell.current = null
       window.clearInterval(beats)
       c.close()
       connector.current = null
@@ -139,6 +167,8 @@ export function PluginFrame({
             allow={FRAME.allow}
             referrerPolicy={FRAME.referrerPolicy}
             aria-label={mount.page.title}
+            // Covered, it is out of reach: the keyboard goes to the cover's buttons.
+            inert={cover != null}
             className="block size-full border-0 bg-transparent"
             onLoad={() => {
               connector.current?.load()
@@ -153,6 +183,12 @@ export function PluginFrame({
     </ContextArea>
   )
 }
+
+/** Whether the person just clicked or typed in AutoScene, outside a frame: heard from the start, so the click that opens a page counts. */
+const clickedElsewhere = inputElsewhere(window)
+
+/** How many of Rust's events are kept for a page whose connector isn't there yet. */
+const EARLY = 64
 
 /**
  * Whether a page that opened may take the focus from `at`: not from a field
@@ -179,16 +215,26 @@ function pageInit(m: PageMount, path: string, version: string): PageInit {
   }
 }
 
-/** Over the frame (never over AutoScene's bar): why the page can't be used, and what to do. */
+/**
+ * Over the frame (never over AutoScene's bar): why the page can't be used,
+ * and what to do. Said aloud as it comes, with the keyboard on its first
+ * button: the frame under it is out of reach.
+ */
 function Covered({ cover, onReload, onClose }: { cover: Cover; onReload: () => void; onClose: () => void }) {
   const said = {
     quiet: { title: "This page isn't responding.", description: undefined },
     closed: { title: "This page was closed.", description: cover.kind === "closed" ? cover.reason : undefined },
-    overflow: { title: "This page sent AutoScene too much it couldn't read.", description: undefined },
-    failed: { title: "Couldn't open this page", description: cover.kind === "failed" ? cover.message : undefined },
+    overflow: { title: "This page sent AutoScene messages it couldn't read.", description: undefined },
+    failed: { title: "Couldn't open this page.", description: cover.kind === "failed" ? cover.message : undefined },
   }[cover.kind]
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // Not from where the person went meanwhile: only from the frame, or from nowhere.
+    const at = document.activeElement
+    if (at == null || at === document.body || at.tagName === "IFRAME") ref.current?.querySelector("button")?.focus()
+  }, [cover.kind])
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-canvas/85 backdrop-blur-sm">
+    <div ref={ref} role="alert" className="absolute inset-0 flex items-center justify-center bg-canvas/85 backdrop-blur-sm">
       <EmptyState
         icon={cover.kind === "failed" ? <Warning /> : <AppWindow />}
         tone={cover.kind === "failed" ? "danger" : "accent"}

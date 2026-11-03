@@ -20,7 +20,7 @@ import { isMac } from "@/lib/platform"
 import { qk, queryClient, usePluginSettings, usePlugins } from "@/lib/queries"
 import { pageLink } from "./page-items"
 import { keepPlugin } from "./plugin-actions"
-import { permissionLabel } from "./plugin-items"
+import { checkedWhen, permissionLabel } from "./plugin-items"
 
 type Values = Partial<Record<string, SettingValue>>
 type NumberKind = Extract<SettingKind, { type: "number" }>
@@ -154,6 +154,13 @@ function PluginSettings({ p }: { p: PluginInfo }) {
             <FolderOpen /> Reveal
           </Button>
         </SettingRow>
+        {p.serviceLogPath && (
+          <SettingRow label="Its service log" description={<PathText path={p.serviceLogPath} />}>
+            <Button size="sm" variant="ghost" onClick={() => reveal(p.serviceLogPath!)}>
+              <FolderOpen /> Reveal
+            </Button>
+          </SettingRow>
+        )}
       </SettingsGroup>
 
       {p.warnings.length > 0 && (
@@ -204,10 +211,11 @@ function Pages({ p }: { p: PluginInfo }) {
  */
 function MayUse({ p }: { p: PluginInfo }) {
   const secrets = p.settings.filter((s) => s.kind.type === "secret" && p.secretsSet.includes(s.key))
+  const when = checkedWhen(p)
   const checked =
     p.runtime === "none"
-      ? "AutoScene checks these each time its pages ask."
-      : "Its program runs with your user rights. AutoScene checks these only when its pages ask."
+      ? (when ?? undefined)
+      : `Its program runs with your user rights. ${when ?? "AutoScene doesn't check these: they are what it says it does."}`
   return (
     <SettingsGroup title="What it may use" description={checked}>
       {p.permissions.map((perm) => (

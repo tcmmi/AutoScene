@@ -19,6 +19,11 @@
 //! toasts, copies and dialogs are counted ([`PageLimits`]): a page can't
 //! fill the screen or the clipboard, nor keep the person in its dialogs. A
 //! page that closes ends what it still waits for ([`Mount::closed`]).
+//!
+//! A page's request goes to its plugin's service, started for it when none
+//! runs ([`super::services`]). The service's own calls are answered as a
+//! run's, and it names the project it reads: its program runs with the
+//! person's rights anyway.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
@@ -32,12 +37,13 @@ use as_core::{CancelToken, ExportId, MediaId, ProjectId};
 use as_plugin::calls::{
     self, CallCode, CallError, Caller, CopyText, ExportRef, FileFilter, FileRef, Grants, HostCalls, HostMethod,
     Navigate, NetRequest, OpenExternal, OpenFile, OpenedFile, PageClip, PageEpisode, PageExport, PageExportSummary,
-    PageProject, ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, SaveFile, SecretsGet, StateKey, StateSet,
-    Toast, ToastTone,
+    PageProject, ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, SaveFile, SecretsGet, ServiceRequestParams,
+    StateKey, StateSet, Toast, ToastTone,
 };
 use as_plugin::manifest::plain_link;
 use as_plugin::pages::{self, Mount};
-use as_plugin::{Installed, PluginError, PluginId, PluginResult, net, package, page_state, runtime};
+use as_plugin::service::{MAX_REQUEST_TIMEOUT, REQUEST_TIMEOUT};
+use as_plugin::{Installed, PluginError, PluginId, PluginResult, RequestContext, net, package, page_state, runtime};
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -64,6 +70,8 @@ pub struct AppCalls {
     export: Option<String>,
     /// The open page that calls, when a page does.
     page: Option<Arc<Mount>>,
+    /// Its plugin's service calls: it names the project it reads.
+    service: bool,
 }
 
 /// Where calls find a project and its exports: the library (a test's
@@ -99,6 +107,21 @@ impl AppCalls {
             project: key.project_id.map(|id| id.to_string()),
             export: key.export_id.map(|id| id.to_string()),
             page: None,
+            service: false,
+        })
+    }
+
+    /// The calls of the service of `p`, in no project of its own.
+    pub(super) fn service(library: Arc<Library>, host: Arc<PluginHost>, p: &Installed) -> PluginResult<Self> {
+        Ok(Self {
+            places: library,
+            host,
+            plugin: p.record.id.clone(),
+            grants: Grants::of(p)?,
+            project: None,
+            export: None,
+            page: None,
+            service: true,
         })
     }
 
@@ -112,13 +135,42 @@ impl AppCalls {
             project: m.project.clone(),
             export: None,
             page: Some(m),
+            service: false,
         }
     }
 
     fn caller(&self) -> Caller<'_> {
-        match self.page {
-            Some(_) => Caller::Page { project: self.project.as_deref() },
-            None => Caller::Run { project: self.project.as_deref(), export: self.export.as_deref() },
+        match (&self.page, self.service) {
+            (Some(_), _) => Caller::Page { project: self.project.as_deref() },
+            (None, true) => Caller::Service,
+            (None, false) => Caller::Run { project: self.project.as_deref(), export: self.export.as_deref() },
+        }
+    }
+
+    /// Whether a call may still change something: not once its run was
+    /// cancelled, its program ended or its service stopped. A change of the
+    /// plugin (an uninstall that deletes its data, say) stops them and waits
+    /// for them, and they for what their calls write.
+    fn still_running(&self, ended: &CancelToken) -> Result<(), CallError> {
+        match ended.is_cancelled() {
+            true => Err(self.ended()),
+            false => Ok(()),
+        }
+    }
+
+    /// The answer of a call that came, or still waited, as its run ended or
+    /// its service stopped.
+    fn ended(&self) -> CallError {
+        let said = if self.service { "This service has stopped." } else { "This run has ended." };
+        CallError::new(CallCode::Cancelled, said)
+    }
+
+    /// `e` as a call gets it, said as [`AppCalls::still_running`] says it
+    /// when its run ended while the call waited its turn.
+    fn unless_ended(&self, e: PluginError) -> CallError {
+        match e {
+            PluginError::Cancelled => self.ended(),
+            e => e.into(),
         }
     }
 
@@ -246,14 +298,14 @@ impl AppCalls {
             }
             HostMethod::StateSet => {
                 let StateSet { key, value } = calls::params(method, params)?;
-                still_running(ended)?;
-                page_state::set(&store.data_dir(id), &key, value, ended).map_err(unless_ended)?;
+                self.still_running(ended)?;
+                page_state::set(&store.data_dir(id), &key, value, ended).map_err(|e| self.unless_ended(e))?;
                 Ok(Value::Null)
             }
             HostMethod::StateDelete => {
                 let StateKey { key } = calls::params(method, params)?;
-                still_running(ended)?;
-                page_state::delete(&store.data_dir(id), &key, ended).map_err(unless_ended)?;
+                self.still_running(ended)?;
+                page_state::delete(&store.data_dir(id), &key, ended).map_err(|e| self.unless_ended(e))?;
                 Ok(Value::Null)
             }
             HostMethod::StateKeys => Ok(answer(page_state::keys(&store.data_dir(id))?)),
@@ -262,12 +314,12 @@ impl AppCalls {
             // stops where it is once `ended` fires.
             HostMethod::NetFetch => {
                 let req: NetRequest = calls::params(method, params)?;
-                still_running(ended)?;
+                self.still_running(ended)?;
                 let _fetching = Fetching::start(&self.host, id)?;
                 let agent = format!("AutoScene/{} (plugin {id})", store.app_version());
                 match net::fetch(req, &self.grants.hosts, &agent, &*self.host.net, ended) {
                     Ok(got) => Ok(answer(got)),
-                    Err(PluginError::Cancelled) => Err(run_ended()),
+                    Err(PluginError::Cancelled) => Err(self.ended()),
                     Err(e) => Err(e.into()),
                 }
             }
@@ -390,6 +442,25 @@ impl AppCalls {
                 let Some(path) = path else { return Ok(PageAnswer::value(Value::Null)) };
                 paths::check(&path).map_err(|e| invalid(e.message))?;
                 Ok(PageAnswer::value(answer(read_opened(&path, most)?)))
+            }
+            // Its plugin's service, started for it when none runs. Its answer
+            // is the page's only while the page is open.
+            HostMethod::ServiceRequest => {
+                let ServiceRequestParams { method: asked, params, timeout_ms } = calls::params(method, params)?;
+                if !(1..=MAX_SERVICE_METHOD).contains(&asked.chars().count()) {
+                    return Err(invalid("service.request names a method of 1 to 64 characters."));
+                }
+                let timeout = timeout_ms.map_or(REQUEST_TIMEOUT, |ms| Duration::from_millis(ms.into()));
+                // Its start counts too: the page gives up once its time is
+                // over, and the start goes on for its plugin's other pages.
+                let until = Instant::now() + timeout.min(MAX_REQUEST_TIMEOUT);
+                let service = self.host.service(m, Some(until))?;
+                let context = RequestContext { page: m.page.id.clone(), project_id: m.project.clone() };
+                let left = until.saturating_duration_since(Instant::now());
+                match service.request(&asked, params, context, left, &m.closed) {
+                    Err(_) if m.closed.is_cancelled() => Err(PluginError::Closed.into()),
+                    answered => Ok(PageAnswer::value(answered?)),
+                }
             }
             // As a run's call, which its page's close ends as a run's end does.
             _ => match self.answer(method, params, &m.closed) {
@@ -573,6 +644,8 @@ const MAX_SAVE_NAME: usize = 100;
 const MAX_SAVED: usize = 32 << 20;
 /// The most of a picked file a page reads.
 const MAX_OPENED: u64 = 16 << 20;
+/// The longest name of a method of a service that a page asks for.
+const MAX_SERVICE_METHOD: usize = 64;
 /// The most calls of one page AutoScene answers at once.
 pub const MAX_PAGE_CALLS: usize = 16;
 
@@ -828,31 +901,6 @@ impl Drop for Dialog<'_> {
 fn within(times: &mut VecDeque<Instant>, now: Instant, window: Duration) {
     while times.front().is_some_and(|&t| now.saturating_duration_since(t) >= window) {
         times.pop_front();
-    }
-}
-
-/// Whether a call may still change something: not once its run was
-/// cancelled or the program that made it ended. A change of the plugin (an
-/// uninstall that deletes its data, say) cancels its run and waits for it,
-/// and its run for what its calls write.
-fn still_running(ended: &CancelToken) -> Result<(), CallError> {
-    match ended.is_cancelled() {
-        true => Err(run_ended()),
-        false => Ok(()),
-    }
-}
-
-/// The answer of a call that came, or still waited, as its run ended.
-fn run_ended() -> CallError {
-    CallError::new(CallCode::Cancelled, "This run has ended.")
-}
-
-/// `e` as a call gets it, said as [`still_running`] says it when its run
-/// ended while the call waited its turn.
-fn unless_ended(e: PluginError) -> CallError {
-    match e {
-        PluginError::Cancelled => run_ended(),
-        e => e.into(),
     }
 }
 
@@ -1133,6 +1181,7 @@ mod tests {
                 project: Some(self.project.to_string()),
                 export: export.map(|e| e.to_string()),
                 page: None,
+                service: false,
             }
         }
     }
@@ -1383,6 +1432,7 @@ mod tests {
             project: None,
             export: None,
             page: None,
+            service: false,
         };
         let online = run(vec![Permission::Network]);
         let post = json!({

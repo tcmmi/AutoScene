@@ -17,6 +17,13 @@
 //! its stdin. A plugin of version 1 gets the run line it always got, byte
 //! for byte, and its call lines are output for its log.
 //!
+//! Version 2 also adds service mode ([`crate::service`]): a plugin whose
+//! runtime is a service starts with a [`HostMessage::Serve`] line in place
+//! of a run's, says it is ready ([`ServiceMessage::Ready`]), and from then
+//! on answers each [`HostMessage::Request`] of its pages with a response of
+//! the same id, until a [`HostMessage::Stop`]. It may emit events for its
+//! open pages, and call AutoScene as a run does.
+//!
 //! Fields added later are `#[serde(default)]` when read and left out while
 //! empty when written, so an older plugin's lines still read and an older
 //! plugin's run line stays as it was.
@@ -52,6 +59,16 @@ pub enum HostMessage {
     Cancel,
     /// The answer to a call (protocol 2).
     Reply(Reply),
+    /// Service mode's first line, and its only one but those below.
+    Serve(Box<ServeMessage>),
+    /// A page's request to the service.
+    Request(Request),
+    /// The plugin's settings changed: each of them, as they are now.
+    Settings { settings: BTreeMap<String, SettingValue> },
+    /// End soon. A service that is still running
+    /// [`crate::service::STOP_GRACE`] later is ended, with everything it
+    /// started.
+    Stop,
 }
 
 impl HostMessage {
@@ -164,6 +181,42 @@ pub struct RunMessage {
     /// What a page handed its run (protocol 2, `trigger: "page"` only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<Value>,
+}
+
+/// A service's start: its context, as a run's line has it, without a task.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ServeMessage {
+    /// The protocol its plugin declared: 2, which a service speaks.
+    pub protocol: u32,
+    /// Unique per start; it heads the service's part of its log.
+    pub service_id: String,
+    pub plugin: PluginContext,
+    pub app: AppContext,
+    pub tools: ToolPaths,
+    /// The plugin's settings, each of them, set or default.
+    pub settings: BTreeMap<String, SettingValue>,
+}
+
+/// A page's request to its plugin's service: `method` is the service's own
+/// name for what it does, and its response carries the same id.
+#[derive(Clone, Debug, Serialize)]
+pub struct Request {
+    /// `r1`, `r2`, … in the order the service is asked.
+    pub id: String,
+    pub method: String,
+    /// `null` when the page gave none.
+    pub params: Value,
+    pub context: RequestContext,
+}
+
+/// Where a request comes from: the page, and the project it is open in.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestContext {
+    /// The page's id in the plugin's `plugin.json`.
+    pub page: String,
+    pub project_id: Option<String>,
 }
 
 /// The plugin as installed.
@@ -383,10 +436,7 @@ pub(crate) struct CallHead {
 
 impl CallHead {
     pub(crate) fn read(line: &str) -> Option<Self> {
-        let line = line.strip_prefix('\u{FEFF}').unwrap_or(line);
-        let mut head = Head::default();
-        // An error is where the line breaks off: what came before it counts.
-        let _ = serde_json::Deserializer::from_str(line).deserialize_map(HeadVisitor(&mut head));
+        let head = Head::read(line);
         let call = match &head.kind {
             Some(kind) => kind == "call",
             None => head.method.is_some() || head.params,
@@ -395,12 +445,39 @@ impl CallHead {
     }
 }
 
+/// The id of the request a service's line that is no message answers: a
+/// response cut at its limit, whose id came before the break. Its type
+/// may come after it (serde_json writes its keys in order): then a line
+/// that names a method or params is a call's.
+pub(crate) fn response_id(line: &str) -> Option<String> {
+    let head = Head::read(line);
+    let response = match &head.kind {
+        Some(kind) => kind == "response",
+        None => head.method.is_none() && !head.params,
+    };
+    match head.id {
+        Some(CallId::Text(id)) if response => Some(id),
+        _ => None,
+    }
+}
+
+/// The keys of a line that is no message, read in turn until it breaks off.
 #[derive(Default)]
 struct Head {
     kind: Option<String>,
     id: Option<CallId>,
     method: Option<String>,
     params: bool,
+}
+
+impl Head {
+    fn read(line: &str) -> Self {
+        let line = line.strip_prefix('\u{FEFF}').unwrap_or(line);
+        let mut head = Self::default();
+        // An error is where the line breaks off: what came before it counts.
+        let _ = serde_json::Deserializer::from_str(line).deserialize_map(HeadVisitor(&mut head));
+        head
+    }
 }
 
 struct HeadVisitor<'a>(&'a mut Head);
@@ -428,6 +505,69 @@ impl<'de> Visitor<'de> for HeadVisitor<'_> {
             }
         }
         Ok(())
+    }
+}
+
+/// What a service says beside the messages a run says (service mode). A run
+/// reads none of them: in a run's output they are lines for its log.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ServiceMessage {
+    /// It is ready for requests.
+    Ready,
+    /// Its answer to the request `id`: its result (`null` for an empty
+    /// one), or why it couldn't do what was asked.
+    Response { id: String, result: Value, error: Option<ServiceFault> },
+    /// An event for the plugin's open pages.
+    Emit { event: String, data: Value },
+}
+
+/// Why a service couldn't do what a page asked: a sentence for the page,
+/// and what else it knows, for the log.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct ServiceFault {
+    pub message: String,
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+
+/// A service's line as it is read: one object for each kind, so a
+/// response's result is read once, into its value (a tagged enum reads it
+/// into a copy of its own first).
+#[derive(Deserialize)]
+struct ServiceLine {
+    #[serde(rename = "type")]
+    kind: ServiceKind,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    result: Value,
+    #[serde(default)]
+    error: Option<ServiceFault>,
+    #[serde(default)]
+    event: Option<String>,
+    #[serde(default)]
+    data: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum ServiceKind {
+    Ready,
+    Response,
+    Emit,
+}
+
+impl ServiceMessage {
+    /// The message a line of a service's stdout holds, if it holds one: an
+    /// object, as [`PluginMessage::read`] reads one, whose response names
+    /// its request and whose event its name.
+    pub fn read(line: &str) -> Option<Self> {
+        let ServiceLine { kind, id, result, error, event, data } = serde_json::from_str(object(line)?).ok()?;
+        Some(match kind {
+            ServiceKind::Ready => Self::Ready,
+            ServiceKind::Response => Self::Response { id: id?, result, error },
+            ServiceKind::Emit => Self::Emit { event: event?, data },
+        })
     }
 }
 
@@ -590,6 +730,94 @@ mod tests {
         // Other lines aren't calls.
         for line in [r#"{"type":"result","message":"SECRET"#, r#"{"message":"x"}"#, "[1]", "call", ""] {
             assert_eq!(head(line), None, "{line}");
+        }
+    }
+
+    #[test]
+    fn a_service_hears_its_start_its_requests_and_its_stop() {
+        let r = run();
+        let serve = ServeMessage {
+            protocol: 2,
+            service_id: "service-1".into(),
+            plugin: r.plugin,
+            app: r.app,
+            tools: r.tools,
+            settings: BTreeMap::from([("loud".into(), SettingValue::Bool(true))]),
+        };
+        assert_eq!(
+            HostMessage::Serve(Box::new(serve)).line(),
+            [
+                r#"{"type":"serve","protocol":2,"serviceId":"service-1","#,
+                r#""plugin":{"id":"dev.autoscene.hello","version":"1.2.0","dataDir":"/data"},"#,
+                r#""app":{"version":"1.0.3-BETA","platform":"linux-x86_64"},"#,
+                r#""tools":{"ffmpeg":"/ffmpeg","ffprobe":"/ffprobe","ffmpegVersion":"9.0"},"settings":{"loud":true}}"#,
+            ]
+            .concat()
+        );
+        let context = RequestContext { page: "main".into(), project_id: None };
+        let request = Request { id: "r1".into(), method: "count".into(), params: json!({}), context };
+        assert_eq!(
+            HostMessage::Request(request).line(),
+            r#"{"type":"request","id":"r1","method":"count","params":{},"context":{"page":"main","projectId":null}}"#
+        );
+        let settings = BTreeMap::from([("count".into(), SettingValue::Number(3.0))]);
+        assert_eq!(HostMessage::Settings { settings }.line(), r#"{"type":"settings","settings":{"count":3.0}}"#);
+        assert_eq!(HostMessage::Stop.line(), r#"{"type":"stop"}"#);
+    }
+
+    #[test]
+    fn a_service_says_it_is_ready_answers_and_emits() {
+        let read = ServiceMessage::read;
+        assert_eq!(read(r#"{"type":"ready"}"#), Some(ServiceMessage::Ready));
+        assert_eq!(
+            read(r#"{"type":"response","id":"r1","result":{"words":3},"later":1}"#),
+            Some(ServiceMessage::Response { id: "r1".into(), result: json!({"words": 3}), error: None })
+        );
+        // An empty answer is still one.
+        assert_eq!(
+            read("\u{FEFF}{\"type\":\"response\",\"id\":\"r2\"}"),
+            Some(ServiceMessage::Response { id: "r2".into(), result: Value::Null, error: None })
+        );
+        let fault = ServiceFault { message: "No text.".into(), detail: Some("KeyError".into()) };
+        assert_eq!(
+            read(r#"{"type":"response","id":"r3","error":{"message":"No text.","detail":"KeyError"}}"#),
+            Some(ServiceMessage::Response { id: "r3".into(), result: Value::Null, error: Some(fault) })
+        );
+        assert_eq!(
+            read(r#"{"type":"emit","event":"counted","data":[1]}"#),
+            Some(ServiceMessage::Emit { event: "counted".into(), data: json!([1]) })
+        );
+        for line in [
+            r#"{"type":"response","result":1}"#,
+            r#"{"type":"response","id":1}"#,
+            r#"{"type":"response","id":"r1","error":"No."}"#,
+            r#"{"type":"emit","data":1}"#,
+            r#"{"type":"result"}"#,
+            r#"{"type":"call","id":1,"method":"settings.get"}"#,
+            r#"["ready"]"#,
+            "ready",
+        ] {
+            assert_eq!(read(line), None, "{line}");
+        }
+        // A run reads none of them as its own.
+        assert_eq!(PluginMessage::read(r#"{"type":"ready"}"#), None);
+    }
+
+    #[test]
+    fn a_cut_response_names_its_request() {
+        let cut = format!(r#"{{"type":"response","id":"r12","result":"{}"#, "x".repeat(100));
+        assert_eq!(response_id(&cut).as_deref(), Some("r12"));
+        // Its keys in serde_json's order: its type after the break.
+        assert_eq!(response_id(r#"{"id":"r12","result":"xxx"#).as_deref(), Some("r12"));
+        // Its id after the break, a call's, or not a response: none.
+        for line in [
+            r#"{"type":"response","result":"xxx"#.to_owned(),
+            r#"{"type":"response","id":12,"result":"#.to_owned(),
+            r#"{"type":"emit","id":"r12","data":"#.to_owned(),
+            r#"{"id":"c1","method":"net.fetch","params":{"body":"#.to_owned(),
+            r#"{"id":"c1","params":{"body":"#.to_owned(),
+        ] {
+            assert_eq!(response_id(&line), None, "{line}");
         }
     }
 

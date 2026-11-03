@@ -19,7 +19,8 @@
 //!
 //! A plugin's pages are its files under `ui/`, which AutoScene shows in a
 //! sandboxed frame and serves itself, each as its package lists it
-//! ([`pages`]).
+//! ([`pages`]). A plugin whose runtime is a service keeps its program running
+//! while one of its pages is open, and answers their requests ([`service`]).
 //!
 //! What a plugin says it does (its permissions) is shown before install.
 //! Its calls into AutoScene are held to it; what its program does itself is
@@ -37,6 +38,7 @@ pub mod pages;
 pub mod protocol;
 pub mod runtime;
 pub mod secrets;
+pub mod service;
 pub mod store;
 pub mod trust;
 
@@ -49,9 +51,10 @@ pub use manifest::{
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{
     ActionContext, ActionKind, AppContext, CallId, ClipContext, ExportContext, PluginContext, ProjectContext,
-    RunMessage, ToolPaths, Trigger,
+    RequestContext, RunMessage, ServeMessage, ServiceMessage, ToolPaths, Trigger,
 };
 pub use runtime::RunSpec;
 pub use secrets::{MemorySecrets, OsKeyring, SecretStore};
+pub use service::{OnEvent, ProcessService, Service, ServiceEvent, ServiceSpec};
 pub use store::{Extra, Installed, Record, Source, Store, Ticket};
 pub use trust::{AuthorKey, Keys, Trust, Verdict};

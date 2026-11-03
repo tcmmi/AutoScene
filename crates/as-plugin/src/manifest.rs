@@ -15,9 +15,10 @@
 //! process plugin of protocol 1 without a page has nothing that could, so
 //! they are skipped with a warning there), pages ([`PageSpec`]: an `.html`
 //! file under `ui/` that AutoScene shows in a sandboxed frame,
-//! [`crate::pages`]), and the runtime type `none`, of a plugin that runs no
-//! program and has only pages. The runtime type `service` is reserved in it
-//! for a later AutoScene. A version 1 manifest reads as it always did: its
+//! [`crate::pages`]), the runtime type `none`, of a plugin that runs no
+//! program and has only pages, and `service`, of a plugin whose program
+//! speaks protocol 2 and also keeps running while one of its pages is open
+//! ([`crate::service`]). A version 1 manifest reads as it always did: its
 //! pages and secret settings are skipped with a warning that names version
 //! 2, and a runtime type only version 2 has is refused with that hint. In
 //! version 2, a network host that names this computer or its network, or an
@@ -244,8 +245,8 @@ pub struct Engines {
 }
 
 /// How a plugin runs. This AutoScene installs `process` plugins and, from
-/// manifest version 2, `none` ones; a `service` is reserved for a later
-/// AutoScene. Also what the person agreed to at install
+/// manifest version 2, `service` and `none` ones. Also what the person
+/// agreed to at install
 /// ([`crate::store::Extra`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -523,6 +524,11 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         }
         // Pages only.
         Some(Value::String(t)) if t == "none" => RuntimeKind::None,
+        // A program that also serves its pages, in the protocol it then speaks.
+        Some(Value::String(t)) if t == "service" && protocol < 2 => {
+            return Err(invalid(r#"A service speaks protocol 2: set "engines": {"protocol": 2}."#));
+        }
+        Some(Value::String(t)) if t == "service" => RuntimeKind::Service,
         Some(Value::String(_)) => return Err(PluginError::TooNew("runtime".into())),
         _ => return Err(invalid(r#"The plugin's runtime needs "type": "process"."#)),
     };
@@ -744,6 +750,9 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         if pages.is_empty() {
             return Err(invalid("A plugin that runs no program needs a page."));
         }
+    }
+    if kind == RuntimeKind::Service && pages.is_empty() {
+        w.push("Its service never starts: a service runs while one of its pages is open, and it has none.".into());
     }
 
     let icon = match root.text("icon")? {
@@ -1480,13 +1489,7 @@ mod tests {
             });
             assert_eq!(too_new(wasm), "runtime");
         }
-        // A service waits for a later AutoScene. In version 1, version 2's
-        // runtime types are a mistake this one can name.
-        let service = with(|v| {
-            v["manifestVersion"] = json!(2);
-            v["runtime"]["type"] = json!("service");
-        });
-        assert_eq!(too_new(service), "runtime");
+        // In version 1, version 2's runtime types are a mistake this one can name.
         for kind in ["service", "none"] {
             let v1 = message(with(|v| v["runtime"]["type"] = json!(kind)));
             assert_eq!(v1, format!(r#"The plugin's runtime.type "{kind}" needs "manifestVersion": 2."#));
@@ -1856,6 +1859,33 @@ mod tests {
         .unwrap();
         assert_eq!(p.manifest.platforms, Vec::<String>::new());
         assert_eq!(p.warnings, ["Ignored platforms: a plugin that runs no program works on every platform."]);
+    }
+
+    #[test]
+    fn a_service_speaks_protocol_2_and_serves_a_page() {
+        let main = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
+        let service = |protocol: u32, pages: &serde_json::Value| {
+            with(|v| {
+                v["manifestVersion"] = json!(2);
+                v["engines"]["protocol"] = json!(protocol);
+                v["runtime"]["type"] = json!("service");
+                v["contributes"]["pages"] = pages.clone();
+            })
+        };
+        let p = service(2, &main).unwrap();
+        // A program as a process plugin's, which also serves its pages.
+        assert_eq!(p.manifest.runtime.kind, RuntimeKind::Service);
+        assert_eq!(serde_json::to_value(p.manifest.runtime.kind).unwrap(), json!("service"));
+        assert!(p.manifest.runs_program());
+        assert_eq!(p.manifest.launch().unwrap(), Launch::UvScript { script: "main.py".into() });
+        assert_eq!((p.manifest.export_actions.len(), p.warnings.len()), (1, 0));
+        assert_eq!(message(service(1, &main)), r#"A service speaks protocol 2: set "engines": {"protocol": 2}."#);
+        // Without a page, nothing ever starts it.
+        let pageless = service(2, &json!([])).unwrap();
+        assert_eq!(
+            pageless.warnings,
+            ["Its service never starts: a service runs while one of its pages is open, and it has none."]
+        );
     }
 
     #[test]

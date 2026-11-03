@@ -1,0 +1,50 @@
+/* What this page adds to AutoScene's theme.css. */
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 40px 56px;
+}
+
+h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg-1);
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--fg-2);
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.quiet {
+  color: var(--fg-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.as-card {
+  padding: 16px 20px;
+  margin-top: 24px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fg-2);
+}

@@ -5,6 +5,7 @@ use as_api::{JobInfo, JobProgress};
 use as_core::{CharacterId, ExportId, MediaId, ProjectId};
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use specta_typescript::Unknown;
 use tauri_specta::Event;
 
 /// A native menu item was chosen (macOS). Payload is the item id, e.g. `view:cast`.
@@ -114,16 +115,34 @@ pub struct PluginPageEvent {
     pub event: PageEvent,
 }
 
-/// What became of an open plugin page.
+/// What became of an open plugin page, or of its plugin's service.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PageEvent {
+    /// An event its plugin's service emitted.
+    Service {
+        name: String,
+        #[specta(type = Unknown)]
+        data: serde_json::Value,
+    },
+    /// What its plugin's service is doing: starting (`message` is how far),
+    /// ready, or stopped (`message` says why).
+    ServiceState { state: ServiceStatus, message: Option<String> },
     /// Its plugin's settings or secrets changed: it may read them again.
     Settings,
     /// It was closed (its plugin was turned off, is being updated or
     /// uninstalled, may no longer run unreviewed, or too many pages were
     /// open): `reason` says so, for the person.
     Closed { reason: String },
+}
+
+/// What a plugin's service is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ServiceStatus {
+    Starting,
+    Ready,
+    Stopped,
 }
 
 pub fn emit_media_changed(app: &tauri::AppHandle, project_id: ProjectId, media_id: Option<MediaId>) {

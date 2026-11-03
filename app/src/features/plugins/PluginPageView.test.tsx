@@ -253,6 +253,23 @@ describe("a plugin's page", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/x/dev.a.page/main"))
   })
 
+  it("close on the second of two pages, then on the first, ends where the first was opened from", async () => {
+    pluginPageOpen.mockRejectedValue({ code: "not_ready", message: "Hello page is being updated." })
+    const router = show("/")
+    await screen.findByText("Library")
+    await act(() => router.history.push("/x/dev.a.page/main"))
+    await act(() => router.history.push("/x/dev.a.page/other"))
+    await screen.findByText("Hello page is being updated.")
+    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    await waitFor(() => expect(router.state.location.pathname).toBe("/x/dev.a.page/main"))
+    // The first page again, opened anew: its Close never goes back to the second.
+    await waitFor(() => expect(pluginPageOpen).toHaveBeenCalledTimes(3))
+    await screen.findByText("Hello page is being updated.")
+    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"))
+    await screen.findByText("Library")
+  })
+
   it("close leaves for where the page was opened from, however the person moved in it", async () => {
     pluginPageOpen.mockRejectedValue({ code: "not_ready", message: "Hello page is being updated." })
     const router = show("/")

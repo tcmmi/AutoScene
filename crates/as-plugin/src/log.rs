@@ -7,7 +7,9 @@
 //! one line saying the rest was dropped (its pipes are still read to the
 //! end), and in what is left the host's own lines on how the run went. A
 //! file larger than that when a run opens it is moved to `<file>.1` first,
-//! so a plugin's logs stay at a few MB.
+//! so a plugin's logs stay at a few MB. A service runs for hours, so its log
+//! drops nothing: once its share is used up, the file is moved to
+//! `<file>.1` and it goes on in a new one ([`PluginLog::open_rolling`]).
 //!
 //! Only the host starts a line with `---` or `[`: a line break in what a
 //! plugin wrote starts an indented line. One plugin's runs never overlap
@@ -16,7 +18,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::manifest::cut;
@@ -37,6 +39,9 @@ pub struct PluginLog {
     written: u64,
     /// Whether the plugin's output used up its part of the share.
     dropped: bool,
+    /// A service's log, which moves aside once full: its path, and whose
+    /// it is as its header says (`run <id> <action>`).
+    rolls: Option<(PathBuf, String)>,
 }
 
 impl PluginLog {
@@ -47,28 +52,36 @@ impl PluginLog {
             fs::create_dir_all(dir)?;
         }
         if fs::metadata(path).is_ok_and(|m| m.len() > MAX_LOG_BYTES) {
-            let mut old = path.as_os_str().to_owned();
-            old.push(".1");
             // Appending to it is no worse than losing it.
-            if let Err(e) = fs::rename(path, &old) {
+            if let Err(e) = move_aside(path) {
                 tracing::debug!(error = %e, "couldn't move a full plugin log aside");
             }
         }
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
         file.write_all(format!("--- {} run {run_id} {action}\n", utc(SystemTime::now())).as_bytes())?;
-        Ok(Self { file: Some(file), written: 0, dropped: false })
+        Ok(Self { file: Some(file), written: 0, dropped: false, rolls: None })
+    }
+
+    /// [`PluginLog::open`] for a service, which may run for hours: once its
+    /// share is used up, the file is moved to `<file>.1` and the log goes on
+    /// in a new one, under a header that says so. It drops output only when
+    /// the file can't be moved, as a run's log does.
+    pub fn open_rolling(path: &Path, run_id: &str, action: &str) -> io::Result<Self> {
+        let log = Self::open(path, run_id, action)?;
+        Ok(Self { rolls: Some((path.to_owned(), format!("run {run_id} {action}"))), ..log })
     }
 
     /// Writes `[tag] text`, for what the plugin wrote or said. Once only
     /// [`RESERVE`] is left it writes that more output was dropped, once,
-    /// and none of the plugin's lines after. A failed write ends the log
-    /// quietly: it never fails the run.
+    /// and none of the plugin's lines after (a rolling log moves aside
+    /// instead). A failed write ends the log quietly: it never fails the
+    /// run.
     pub fn line(&mut self, tag: &str, text: &str) {
         if self.dropped {
             return;
         }
         let line = format!("[{tag}] {}\n", indented(text));
-        if self.written + line.len() as u64 > MAX_LOG_BYTES - RESERVE {
+        if self.written + line.len() as u64 > MAX_LOG_BYTES - RESERVE && !self.roll() {
             self.dropped = true;
             self.write("[host] more output dropped\n");
         } else {
@@ -79,16 +92,37 @@ impl PluginLog {
     /// Writes `[tag] text`, for the host's own word on the run: why it
     /// ended, its exit status, the line that counted. In the reserve it is
     /// cut to `MAX_RESERVED_CHARS`; once the share is used up it is left
-    /// out.
+    /// out. A rolling log moves aside first, and keeps it whole.
     pub fn note(&mut self, tag: &str, text: &str) {
         let text = indented(text);
         let mut line = format!("[{tag}] {text}\n");
-        if self.written + line.len() as u64 > MAX_LOG_BYTES - RESERVE {
+        if self.written + line.len() as u64 > MAX_LOG_BYTES - RESERVE && !self.roll() {
             line = format!("[{tag}] {}\n", cut(&text, MAX_RESERVED_CHARS));
         }
         if self.written + line.len() as u64 <= MAX_LOG_BYTES {
             self.write(&line);
         }
+    }
+
+    /// Moves a full rolling log to `<file>.1` and goes on in a new file:
+    /// whether it did. One that can't be moved stops rolling.
+    fn roll(&mut self) -> bool {
+        let Some((path, whose)) = self.rolls.take() else { return false };
+        // Closed first: a file still open may not move.
+        self.file = None;
+        let moved = move_aside(&path);
+        match OpenOptions::new().create(true).append(true).open(&path) {
+            Ok(file) => self.file = Some(file),
+            Err(e) => tracing::debug!(error = %e, "couldn't open a plugin log again"),
+        }
+        if let Err(e) = moved {
+            tracing::debug!(error = %e, "couldn't move a full plugin log aside");
+            return false;
+        }
+        self.written = 0;
+        self.write(&format!("--- {} {whose}, continued\n", utc(SystemTime::now())));
+        self.rolls = Some((path, whose));
+        true
     }
 
     fn write(&mut self, line: &str) {
@@ -100,6 +134,13 @@ impl PluginLog {
         }
         self.written += line.len() as u64;
     }
+}
+
+/// Moves the log at `path` to `<path>.1`, in place of the one there.
+fn move_aside(path: &Path) -> io::Result<()> {
+    let mut old = path.as_os_str().to_owned();
+    old.push(".1");
+    fs::rename(path, old)
 }
 
 /// `text` as lines of the log: each line break in it (`\n`, `\r\n`, a lone
@@ -188,6 +229,34 @@ mod tests {
         let written = fs::read_to_string(&path).unwrap();
         assert!(written.len() as u64 <= MAX_LOG_BYTES + 100, "{}", written.len());
         assert!(written.len() > plugin_part.len());
+    }
+
+    #[test]
+    fn a_full_service_log_moves_aside_and_goes_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.service.log");
+        let old = dir.path().join("p.service.log.1");
+        let mut log = PluginLog::open_rolling(&path, "service-1", "serve").unwrap();
+        let text = "x".repeat(1000);
+        for i in 0..1500 {
+            log.line("stderr", &format!("{i} {text}"));
+        }
+        // The host's word goes in whole.
+        log.note("host", &format!("exit code: 3; {}", "t".repeat(5000)));
+        drop(log);
+        let before = fs::read_to_string(&old).unwrap();
+        let now = fs::read_to_string(&path).unwrap();
+        assert!(before.len() as u64 <= MAX_LOG_BYTES && now.len() as u64 <= MAX_LOG_BYTES);
+        assert!(before.starts_with("--- ") && before.lines().next().unwrap().ends_with("Z run service-1 serve"));
+        let header = now.lines().next().unwrap();
+        assert!(header.starts_with("--- ") && header.ends_with("Z run service-1 serve, continued"), "{header}");
+        // Nothing is dropped: each line is in one file or the other, in order.
+        assert!(!before.contains("dropped") && !now.contains("dropped"));
+        let first_after = now.lines().nth(1).unwrap();
+        let n: usize = first_after.strip_prefix("[stderr] ").unwrap().split(' ').next().unwrap().parse().unwrap();
+        assert!(before.contains(&format!("[stderr] {} x", n - 1)), "{n}");
+        assert!(now.contains("[stderr] 1499 x"));
+        assert!(now.ends_with(&format!("[host] exit code: 3; {}\n", "t".repeat(5000))));
     }
 
     #[test]

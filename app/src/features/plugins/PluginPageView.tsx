@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useParams, useRouter } from "@tanstack/react-router"
 import type { PageSpec, PluginInfo } from "@/bindings"
 import { AppWindow, ArrowCounterClockwise, DotsThree, FileText, SlidersHorizontal, X } from "@/components/icons"
@@ -11,7 +11,9 @@ import { TopBar } from "@/components/ui/topbar"
 import { NotFound } from "@/features/not-found"
 import { ProjectNav } from "@/features/project/ProjectNav"
 import { useAppActions } from "@/lib/actions"
+import { errorMessage } from "@/lib/ipc"
 import { reveal } from "@/lib/os"
+import { goBackTo, placesBefore, whileOpen } from "@/lib/places"
 import { usePlugins, useProject } from "@/lib/queries"
 import { PluginFrame } from "./PluginFrame"
 import { PluginIcon } from "./PluginIcon"
@@ -25,13 +27,15 @@ type PageParams = { plugin?: string; page?: string; _splat?: string; pid?: strin
  * The bar is AutoScene's (its title says "Plugin" in a badge the plugin
  * can't word); everything in the frame under it is the plugin's. A bad
  * link, a page that isn't there, or a project page outside a project isn't
- * found; a page of a plugin that can't run now says why.
+ * found; a page of a plugin that can't run now says why, and so does one
+ * whose plugins couldn't be read.
  */
 export function PluginPageView() {
   const { plugin, page, _splat, pid } = useParams({ strict: false }) as PageParams
-  const { data: plugins, isPending } = usePlugins()
+  const { data: plugins, isPending, error } = usePlugins()
   if (!isPluginId(plugin) || !isPageId(page)) return <NotFound />
   if (isPending) return null
+  if (error) return <Unread error={error} />
   const p = plugins?.find((x) => x.id === plugin)
   const pg = p?.pages.find((x) => x.id === page)
   if (!p || !pg || (pg.scope === "project") !== (pid != null)) return <NotFound />
@@ -126,11 +130,31 @@ function PageItems({ kit, p, onReload, onClose }: { kit: MenuKit; p: PluginInfo;
       <Item onSelect={() => reveal(p.logPath)}>
         <FileText /> Show its log
       </Item>
+      {p.serviceLogPath && (
+        <Item onSelect={() => reveal(p.serviceLogPath!)}>
+          <FileText /> Show its service log
+        </Item>
+      )}
       <Separator />
       <Item onSelect={onClose}>
         <X /> Close
       </Item>
     </>
+  )
+}
+
+/** A page whose plugins couldn't be read: why, and where to look. */
+function Unread({ error }: { error: unknown }) {
+  const { goSettings } = useAppActions()
+  return (
+    <EmptyState
+      icon={<AppWindow />}
+      tone="danger"
+      title="Couldn't read the plugins"
+      description={errorMessage(error)}
+      actions={<Button onClick={() => goSettings("plugins")}>Go to Plugins</Button>}
+      className="h-full"
+    />
   )
 }
 
@@ -151,16 +175,17 @@ function Unavailable({ p }: { p: PluginInfo }) {
 /**
  * Leaves the page for where the person was before it opened (its own moves
  * inside it and Back and Forward there don't count), else for the library
- * or its project.
+ * or its project: in place of the page's entry, never through the window's
+ * history, where the page's frame adds entries of its own. Where it goes
+ * back to, a page too, is left in turn for where the person was before
+ * that. The window menu's Back leaves it so too.
  */
 function useLeave(pid?: string): () => void {
   const router = useRouter()
-  const opened = useRef(router.history.location.state.__TSR_index)
-  return () => {
-    const now = router.history.location.state.__TSR_index
-    if (opened.current > 0) router.history.go(opened.current - now - 1)
-    else void router.navigate({ to: pid != null ? `/p/${pid}` : "/" })
-  }
+  const [before] = useState(() => placesBefore(router.history))
+  const leave = useCallback(() => goBackTo(router.history, before, pid != null ? `/p/${pid}` : "/"), [router, before, pid])
+  useEffect(() => whileOpen(leave), [leave])
+  return leave
 }
 
 /** A plugin page's name in the window's title: `Plugin “<name>” · <title>`. */

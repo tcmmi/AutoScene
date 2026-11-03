@@ -7,26 +7,49 @@
  */
 import type { RouterHistory } from "@tanstack/react-router"
 
-type Places = { at: string; before: string | null }
+/**
+ * The places the person came through, oldest first, the one they are at
+ * last; and, while a page is left, the places before the one it goes back to.
+ */
+type Places = { trail: string[]; returning: string[] | null }
+
+/** How many places are kept. */
+const KEPT = 50
 
 const followed = new WeakMap<RouterHistory, Places>()
 
-/** Keeps, for `history`, the place before the current one as the person moves. */
+/** Keeps, for `history`, the places before the current one as the person moves. */
 export function followPlaces(history: RouterHistory) {
   if (followed.has(history)) return
-  const places: Places = { at: history.location.href, before: null }
+  const places: Places = { trail: [history.location.href], returning: null }
   followed.set(history, places)
   history.subscribe(() => {
     const at = history.location.href
-    if (at === places.at) return
-    places.before = places.at
-    places.at = at
+    if (places.returning) places.trail = [...places.returning, at]
+    else if (at !== places.trail.at(-1)) places.trail = [...places.trail, at].slice(-KEPT)
   })
 }
 
-/** The place before the current one, while `history` is followed; none at the start. */
-export function placeBefore(history: RouterHistory): string | null {
-  return followed.get(history)?.before ?? null
+/** The places before the current one, the one just before it last, while `history` is followed; none at the start. */
+export function placesBefore(history: RouterHistory): string[] {
+  return followed.get(history)?.trail.slice(0, -1) ?? []
+}
+
+/**
+ * Goes to the last of `before`, else to `fallback`, in place of the current
+ * entry; the places before that one are again the ones before it. So a
+ * place left so is never one to go back to, and two pages never send the
+ * person to each other.
+ */
+export function goBackTo(history: RouterHistory, before: string[], fallback: string) {
+  const places = followed.get(history)
+  if (places) places.returning = before.slice(0, -1)
+  // The history tells its subscribers of a replace before it returns, unless a blocker holds it back: AutoScene has none.
+  try {
+    history.replace(before.at(-1) ?? fallback)
+  } finally {
+    if (places) places.returning = null
+  }
 }
 
 let leaving: (() => void) | null = null

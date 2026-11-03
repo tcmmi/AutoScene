@@ -461,6 +461,7 @@ fn only_allowlisted_variables_reach_the_plugin() {
         "PYTHONUNBUFFERED",
         "PYTHONUTF8",
         "PYTHONIOENCODING",
+        "PYTHONDONTWRITEBYTECODE",
     ];
     let passed = env::vars_os().map(|(k, _)| k).filter(|k| runtime::allowed_env(k));
     let expected: BTreeSet<OsString> = passed.chain(ours.iter().map(OsString::from)).collect();
@@ -475,6 +476,8 @@ fn only_allowlisted_variables_reach_the_plugin() {
     assert_eq!(text("AUTOSCENE_PLUGIN_ID"), ID);
     assert_eq!(text("AUTOSCENE_PROTOCOL"), "1");
     assert_eq!(text("PYTHONUTF8"), "1");
+    // The plugin's folder gets no bytecode of the modules it imports.
+    assert_eq!(text("PYTHONDONTWRITEBYTECODE"), "1");
     assert_eq!(PathBuf::from(text("AUTOSCENE_PLUGIN_DATA")), data);
     assert_eq!(PathBuf::from(text("AUTOSCENE_FFMPEG")), p.dir.path().join("tools").join("ffmpeg"));
     // It runs in its data folder.

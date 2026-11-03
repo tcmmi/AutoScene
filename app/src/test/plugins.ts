@@ -29,6 +29,7 @@ export function pluginInfo(o: Partial<PluginInfo> & Pick<PluginInfo, "id" | "nam
     secretsSet: [],
     icon: null,
     logPath: `C:\\AutoScene\\logs\\plugins\\${o.id}.log`,
+    serviceLogPath: null,
     warnings: [],
     ...o,
   }

@@ -1,0 +1,20 @@
+{
+  "manifestVersion": 2,
+  "id": "dev.autoscene.hello-service",
+  "version": "1.0.0",
+  "name": "Hello service",
+  "description": "A page in the rail whose service counts the words you give it, and says so. An example plugin.",
+  "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
+  "repository": "https://github.com/tcmmi/AutoScene",
+  "engines": { "autoscene": ">=1.0.0, <2", "protocol": 2 },
+  "runtime": {
+    "type": "service",
+    "command": { "*": ["uv", "run", "--script", "--locked", "main.py"] }
+  },
+  "contributes": {
+    "pages": [
+      { "id": "main", "title": "Word count", "description": "Counts words in its service.", "entry": "ui/index.html", "rail": true }
+    ]
+  },
+  "icon": "icon.svg"
+}

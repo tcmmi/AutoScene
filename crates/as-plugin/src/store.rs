@@ -58,15 +58,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::calls::HostCalls;
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{
     self, Manifest, Parsed, Permission, PluginId, RuntimeKind, SettingKind, SettingSpec, SettingValue,
     current_platform, invalid, shown,
 };
 use crate::package::{self, FilesLock, LOCK, LOCK_VERSION, LockedFile, MANIFEST, MAX_LOCK_BYTES, Unpacked, file_in};
-use crate::protocol::{ActionContext, AppContext, PluginContext, RunMessage, ToolPaths};
+use crate::protocol::{ActionContext, AppContext, PluginContext, RunMessage, ServeMessage, ToolPaths};
 use crate::runtime::RunSpec;
 use crate::secrets::{self, SecretStore};
+use crate::service::{READY_WAIT, ServiceSpec};
 use crate::trust::{self, AuthorKey, Keys, Trust, Verdict};
 
 /// The [`Record`] version this AutoScene reads and writes. A row of another
@@ -822,6 +824,12 @@ impl Store {
         self.logs.join(format!("{id}.log"))
     }
 
+    /// Where the service of `id` writes its log: beside its runs', since a
+    /// run and the service may write at once.
+    pub fn service_log_path(&self, id: &PluginId) -> PathBuf {
+        self.logs.join(format!("{id}.service.log"))
+    }
+
     /// A run of `action` of `p`, as [`crate::runtime::run`] takes it: its
     /// command from its folder, started in [`Store::data_dir`] and logged to
     /// [`Store::log_path`], and a run line with a new run id that names the
@@ -872,6 +880,57 @@ impl Store {
             protocol: m.engines.protocol,
             calls: None,
             message,
+        })
+    }
+
+    /// The service of `p`, as [`crate::service::ProcessService::start`]
+    /// takes it: its command from its folder, started in
+    /// [`Store::data_dir`] and logged to [`Store::service_log_path`], with
+    /// `calls` answering its calls, and a serve line with a new id that
+    /// names what a run line does but a task. Only a plugin whose runtime is
+    /// a service has one, and it speaks protocol 2; a broken plugin has
+    /// none.
+    pub fn serve_spec(
+        &self,
+        p: &Installed,
+        ffmpeg: &Path,
+        ffprobe: &Path,
+        ffmpeg_version: &str,
+        calls: Arc<dyn HostCalls>,
+    ) -> PluginResult<ServiceSpec> {
+        let m = manifest_of(p)?;
+        if m.runtime.kind != RuntimeKind::Service {
+            return Err(invalid(format!("{} runs no service.", m.name)));
+        }
+        let id = &p.record.id;
+        let data_dir = self.data_dir(id);
+        let message = ServeMessage {
+            protocol: m.engines.protocol,
+            service_id: Uuid::now_v7().to_string(),
+            plugin: PluginContext {
+                id: id.clone(),
+                version: p.record.version.clone(),
+                data_dir: data_dir.to_string_lossy().into_owned(),
+            },
+            app: AppContext { version: self.app.to_string(), platform: current_platform().into() },
+            tools: ToolPaths {
+                ffmpeg: ffmpeg.to_string_lossy().into_owned(),
+                ffprobe: ffprobe.to_string_lossy().into_owned(),
+                ffmpeg_version: ffmpeg_version.into(),
+            },
+            settings: merged(&m.settings, &self.stored_values(id)?.unwrap_or_default()),
+        };
+        Ok(ServiceSpec {
+            name: m.name.clone(),
+            dir: p.dir.clone(),
+            launch: m.launch()?,
+            data_dir,
+            log_path: self.service_log_path(id),
+            ffmpeg: ffmpeg.into(),
+            ffprobe: ffprobe.into(),
+            ready_wait: READY_WAIT,
+            message,
+            calls,
         })
     }
 

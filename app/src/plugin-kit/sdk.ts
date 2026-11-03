@@ -150,6 +150,7 @@ export interface Page {
   service: {
     request(method: string, params?: unknown, o?: { timeoutMs?: number }): Promise<unknown>
     on(event: string, cb: (data: unknown) => void): () => void
+    /** Its service's state as the page knows it now, if it knows one, then each change. */
     onState(cb: (s: ServiceState) => void): () => void
   }
   actions: { run(action: string, o?: { exportId?: string; input?: unknown }): Promise<string | null> }
@@ -316,7 +317,9 @@ function watchInput(win: Window, { guards, forward }: { guards: boolean; forward
   }
   const onMenu = (e: MouseEvent) =>
     last(e, () => {
-      // A field keeps the browser's edit menu; a page may draw its own.
+      // A field keeps the browser's edit menu where there is one (AutoScene
+      // turns WebView2's off on Windows: there a field has its keys only);
+      // a page may draw its own.
       if (e.defaultPrevented || isEditable(e.target)) return
       if (guards) e.preventDefault()
       if (forward) send({ t: "menu", x: e.clientX, y: e.clientY })
@@ -356,6 +359,8 @@ function pageOver(link: HostLink, win: Window): Page {
   const closes = new Set<(reason: string) => void>()
   const settings = new Set<() => void>()
   const states = new Set<(s: ServiceState) => void>()
+  // The last state the host told: a page that listens late hears it too.
+  let service: ServiceState | null = null
   const events = new Map<string, Set<(data: unknown) => void>>()
   const theme = (scheme: string) => {
     win.document.documentElement.dataset.scheme = scheme
@@ -370,8 +375,11 @@ function pageOver(link: HostLink, win: Window): Page {
         return settings.forEach((cb) => cb())
       case "event":
         return events.get(m.name)?.forEach((cb) => cb(m.data))
-      case "service":
-        return states.forEach((cb) => cb({ state: m.state, message: m.message }))
+      case "service": {
+        const now: ServiceState = { state: m.state, message: m.message }
+        service = now
+        return states.forEach((cb) => cb(now))
+      }
       case "closed":
         return closes.forEach((cb) => cb(m.reason))
       case "theme":
@@ -417,7 +425,10 @@ function pageOver(link: HostLink, win: Window): Page {
         events.set(event, set)
         return listen(set, cb)
       },
-      onState: (cb) => listen(states, cb),
+      onState: (cb) => {
+        if (service) cb(service)
+        return listen(states, cb)
+      },
     },
     actions: {
       run: async (action, o) =>

@@ -581,6 +581,7 @@ const pagePlaces: PagePlaces = {
     }))
   },
   fixture: "cfr24_h264.mp4",
+  tell: (session, event) => void emit("plugin-page:event", { session, event }),
 }
 
 /**
@@ -1215,10 +1216,16 @@ const handlers: Record<string, Handler> = {
     void emit("plugins:changed", { pluginId: p.id })
     return p
   },
-  // Its frame loads from the mock's page server, which hears of it first.
+  // Its frame loads from the mock's page server, which hears of it first. Its
+  // plugin's service starts, and is ready 300 ms later.
   plugin_page_open: async ({ pluginId, pageId, projectId }) => {
     const mount = openPage(String(pluginId), String(pageId), (projectId as string | null) ?? null, allows())
     await tellPageServer({ session: mount.session, pluginId: mount.plugin.id })
+    if (mount.service) {
+      const state = (state: "starting" | "ready") => pagePlaces.tell(mount.session, { type: "serviceState", state, message: null })
+      window.setTimeout(() => state("starting"), 0)
+      window.setTimeout(() => state("ready"), 300)
+    }
     return mount
   },
   plugin_page_close: ({ session }) => {

@@ -85,9 +85,10 @@ pub struct PageMountPlugin {
 /// plugin may run. Refused while the plugin is being installed, updated or
 /// uninstalled; a change that starts once it is open closes it, and so does
 /// turning it off or the setting going off. Past the most pages open at
-/// once, the one opened first closes, and hears why.
+/// once, the one opened first closes, and hears why. A page of a plugin that
+/// runs a service starts it, if it doesn't run, however often it crashed.
 pub fn open(
-    host: &PluginHost,
+    host: &Arc<PluginHost>,
     lib: &Library,
     id: &PluginId,
     page_id: &str,
@@ -125,6 +126,10 @@ pub fn open(
     host.beats.beat(&mount.token, Instant::now());
     drop(busy);
     host.tell_closed(closed, "Too many plugin pages were open.");
+    if mount.grants.service() {
+        host.services.forgive(id);
+        host.warm_service(mount.clone());
+    }
     let grants = &mount.grants;
     Ok(PageMount {
         session: mount.token.clone(),
@@ -669,6 +674,10 @@ mod tests {
         open(&host, &lib, &id, "main", None).unwrap();
         assert_eq!(closed(&heard), [(mount.session.clone(), "Too many plugin pages were open.".to_owned())]);
         assert!(host.pages.get(&mount.session).is_none());
+        // The app's page loads again: its frames went, and their pages close.
+        host.close_all_pages();
+        assert_eq!(host.pages.open_count(&id), 0);
+        assert_eq!(closed(&heard).len(), 1 + pages::MAX_SESSIONS);
 
         // Not while it changes; turned off, not at all.
         let changing = host.change(&id, "Page", "It is being updated.").unwrap();

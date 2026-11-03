@@ -190,8 +190,14 @@ fn found<T, E>(cell: &OnceLock<T>, find: impl FnOnce() -> Result<T, E>) -> Resul
 /// update install), so no ffmpeg or plugin is left running or writing a file.
 pub fn shutdown_work(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
-        end_jobs(&state.jobs, SHUTDOWN_GRACE, PLUGIN_SHUTDOWN_GRACE);
-        state.engine.shutdown();
+        std::thread::scope(|s| {
+            // Plugins' services stop beside the jobs, each in its own grace.
+            if let Some(plugins) = &state.plugins {
+                s.spawn(|| plugins.shutdown());
+            }
+            end_jobs(&state.jobs, SHUTDOWN_GRACE, PLUGIN_SHUTDOWN_GRACE);
+            state.engine.shutdown();
+        });
     }
 }
 
@@ -227,9 +233,11 @@ const RESUME_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
 pub fn resume_work(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
-        if let Some(state) = app.try_state::<AppState>()
-            && state.jobs.resume(RESUME_GRACE)
-        {
+        let Some(state) = app.try_state::<AppState>() else { return };
+        if let Some(plugins) = &state.plugins {
+            plugins.resume();
+        }
+        if state.jobs.resume(RESUME_GRACE) {
             crate::work::recover_all(&app);
         }
     });

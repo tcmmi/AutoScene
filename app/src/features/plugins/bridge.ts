@@ -9,12 +9,17 @@
  * (`createConnector`): the host answers it with `init` and one port of a
  * new channel, and drops the port of the load before. After that the page
  * speaks only over its port (`createHost`): its calls go to Rust with the
- * session the host holds, never one the page names, and its keys, its
- * right-clicks, what it copies and the dialogs it opens count only while its
- * frame has the focus.
+ * session the host holds, never one the page names, each method's params
+ * only up to its cap, and its keys, its right-clicks, what it copies and the
+ * dialogs it opens count only while its frame has the focus in a window in
+ * front (and what it copies and the dialogs it opens only right after the
+ * person clicked or typed, never just after they did elsewhere in
+ * AutoScene). What Rust tells an open page (`plugin-page:event`)
+ * reaches it as a message of its own (`pageMessage`); its service's last
+ * state reaches a document that connects later too.
  */
 import { toast } from "sonner"
-import type { PageEffect, PageReply } from "@/bindings"
+import type { PageEffect, PageEvent, PageReply } from "@/bindings"
 import { commands, errorMessage } from "@/lib/ipc"
 import {
   BRIDGE_VERSION,
@@ -26,7 +31,7 @@ import {
   type PageInit,
 } from "@/plugin-kit/bridge-types"
 import frame from "@/plugin-kit/frame.json"
-import type { CallCode, HostMethod } from "@/plugin-kit/protocol"
+import { type CallCode, type HostMethod, MAX_PARAMS } from "@/plugin-kit/protocol"
 
 /** The frame's attributes: scripts and forms, never its own origin (Rust checks the file, `pages.rs`). */
 export const FRAME = frame as { sandbox: "allow-scripts allow-forms"; allow: ""; referrerPolicy: "no-referrer" }
@@ -36,8 +41,8 @@ export type PortLike = Pick<MessagePort, "postMessage" | "close" | "start" | "ad
 
 /** What the host does for a page: its calls, and what the page hands over. */
 export type HostDeps = {
-  /** A call, to Rust. */
-  call(method: HostMethod, params: unknown): Promise<PageReply>
+  /** A call, to Rust, with its params as their JSON. */
+  call(method: HostMethod, params: string): Promise<PageReply>
   /** What a call's answer asks the app's page to do first. */
   effect(e: PageEffect): void
   /** A key the page didn't take, for AutoScene's shortcuts. */
@@ -48,8 +53,12 @@ export type HostDeps = {
   unresponsive(on: boolean): void
   /** The page sent too much the host couldn't read: its port is closed. */
   overflow(): void
-  /** Whether the frame has the focus now. */
+  /** Whether the frame has the focus now, in a window in front. */
   focused(): boolean
+  /** Whether the person clicked or typed in AutoScene's own page in the last 5 s, outside the frame. */
+  elsewhere(): boolean
+  /** Whether the person just clicked or typed in AutoScene's window (in the frame too). */
+  activated(): boolean
 }
 
 /** What a host holds to: the page's own limits, and how often it is pinged and how long it may stay quiet. */
@@ -59,6 +68,9 @@ const HOST_LIMITS: Limits = { ...LIMITS, pingMs: 2000, quietMs: 10_000 }
 
 /** A page's port, as the host holds it. */
 export type Host = { send(m: HostToFrame): void; close(): void }
+
+/** A call as the host holds it: with its params as their JSON. */
+type Call = { id: number; method: HostMethod; params: string }
 
 /** Whether `e` is the `ready` of the frame whose window is `frame`, and of no other window. */
 export function isReady(e: { source: unknown; data: unknown }, frame: Window | null | undefined): boolean {
@@ -101,25 +113,32 @@ export function parseFrameMessage(data: unknown): FrameToHost | null {
 }
 
 /**
- * The calls a page makes only while the person is in it, and why one from a
- * page they aren't in is denied: what it copies, they meant to; a dialog of
- * the system's opens over AutoScene, where they may be working.
+ * The calls a page makes only while the person is in it, right after they
+ * clicked or typed, and what the page does with them: what it copies, they
+ * meant to; a dialog of the system's opens over AutoScene, where they may
+ * be working. A page can take the focus itself; it can't click for them.
  */
 const FOCUSED: Partial<Record<HostMethod, string>> = {
-  "ui.copyText": "A page copies only while it has the focus.",
-  "ui.openExternal": "A page opens a dialog only while it has the focus.",
-  "files.save": "A page opens a dialog only while it has the focus.",
-  "files.open": "A page opens a dialog only while it has the focus.",
+  "ui.copyText": "copies",
+  "ui.openExternal": "opens a dialog",
+  "files.save": "opens a dialog",
+  "files.open": "opens a dialog",
 }
 
-/** Whether `params` fit in a message of `most` characters of JSON (a value JSON can't hold doesn't). */
-function fits(params: unknown, most: number): boolean {
+/** Whether `method` is one AutoScene has (never a name of an object's own, like `constructor`). */
+const isMethod = (method: string): method is HostMethod => Object.hasOwn(MAX_PARAMS, method)
+
+/** The JSON of `params`, none for a value JSON can't hold. */
+function json(params: unknown): string | null {
   try {
-    return (JSON.stringify(params ?? null)?.length ?? 0) <= most
+    return JSON.stringify(params ?? null) ?? null
   } catch {
-    return false
+    return null
   }
 }
+
+/** `n` bytes as Rust says them: 2 KB, 48 MB. */
+const sizeWords = (n: number) => (n >= 1 << 20 ? `${n / (1 << 20)} MB` : `${n / (1 << 10)} KB`)
 
 /**
  * Speak with a page over `port`: answer its calls through `deps.call`, at
@@ -133,13 +152,15 @@ export function createHost(port: PortLike, deps: HostDeps, limits: Partial<Limit
   let drops = 0
   let waiting = 0
   let inflight = 0
-  const queue: Extract<FrameToHost, { t: "call" }>[] = []
+  // The JSON of the calls it has waiting and in flight.
+  let held = 0
+  const queue: Call[] = []
   const send = (m: HostToFrame) => {
     if (!closed) port.postMessage(m)
   }
   const fail = (id: number, code: CallCode, message: string) => send({ t: "reply", id, ok: false, error: { code, message } })
 
-  const run = (c: Extract<FrameToHost, { t: "call" }>) => {
+  const run = (c: Call) => {
     inflight++
     deps
       .call(c.method, c.params)
@@ -155,6 +176,7 @@ export function createHost(port: PortLike, deps: HostDeps, limits: Partial<Limit
       .finally(() => {
         inflight--
         waiting--
+        held -= c.params.length
         next()
       })
   }
@@ -162,12 +184,21 @@ export function createHost(port: PortLike, deps: HostDeps, limits: Partial<Limit
     while (!closed && inflight < l.inflight && queue.length > 0) run(queue.shift()!)
   }
   const call = (c: Extract<FrameToHost, { t: "call" }>) => {
+    if (!isMethod(c.method)) return fail(c.id, "invalid", "AutoScene has no such method.")
     if (waiting >= l.waiting) return fail(c.id, "busy", `This page has ${l.waiting} calls waiting already.`)
-    if (!fits(c.params, l.messageBytes)) return fail(c.id, "invalid", `The params of ${c.method} are larger than AutoScene takes.`)
-    const unfocused = FOCUSED[c.method]
-    if (unfocused && !deps.focused()) return fail(c.id, "denied", unfocused)
+    const params = json(c.params)
+    if (params == null) return fail(c.id, "invalid", `The params of ${c.method} aren't JSON.`)
+    const most = MAX_PARAMS[c.method]
+    if (params.length > most) return fail(c.id, "invalid", `The params of ${c.method} are larger than ${sizeWords(most)}.`)
+    const does = FOCUSED[c.method]
+    if (does && !deps.focused()) return fail(c.id, "denied", `A page ${does} only while it has the focus.`)
+    if (does && deps.elsewhere())
+      return fail(c.id, "denied", `A page ${does} only 5 seconds after the person clicks or types elsewhere in AutoScene.`)
+    if (does && !deps.activated()) return fail(c.id, "denied", `A page ${does} only right after the person clicks or types in it.`)
+    if (held + params.length > l.heldBytes) return fail(c.id, "busy", "This page has too much waiting already.")
     waiting++
-    queue.push(c)
+    held += params.length
+    queue.push({ id: c.id, method: c.method, params })
     next()
   }
 
@@ -246,6 +277,8 @@ export function createConnector(o: {
   // The readys it takes: one per load, and one ahead of its load. Never more
   // than two waiting, however often a frame without the SDK loads.
   let readys = 1
+  // Its service's last state, which a document that connects later hears first.
+  let service: Extract<HostToFrame, { t: "service" }> | null = null
   return {
     load() {
       readys = Math.min(readys + 1, 2)
@@ -260,9 +293,11 @@ export function createConnector(o: {
       // An opaque origin can't be named: the window itself is what counts.
       const init: Init = { type: "autoscene:init", v: BRIDGE_VERSION, init: o.init() }
       frame!.postMessage(init, "*", [port2])
+      if (service) host.send(service)
       return true
     },
     send(m) {
+      if (m.t === "service") service = m
       host?.send(m)
     },
     close() {
@@ -273,9 +308,23 @@ export function createConnector(o: {
   }
 }
 
+/** What Rust told an open page, as the page hears it on its port. */
+export function pageMessage(e: PageEvent): HostToFrame {
+  switch (e.type) {
+    case "service":
+      return { t: "event", name: e.name, data: e.data }
+    case "serviceState":
+      return e.message == null ? { t: "service", state: e.state } : { t: "service", state: e.state, message: e.message }
+    case "settings":
+      return { t: "settings" }
+    case "closed":
+      return { t: "closed", reason: e.reason }
+  }
+}
+
 /** The calls of the page `session`: Rust knows the plugin by the session alone, whatever the page's message says. */
-export function pageCaller(session: string, send: (session: string, method: string, params: unknown) => Promise<PageReply> = commands.pluginPageCall) {
-  return (method: HostMethod, params: unknown) => send(session, method, params)
+export function pageCaller(session: string, send: (session: string, method: string, params: string) => Promise<PageReply> = commands.pluginPageCall) {
+  return (method: HostMethod, params: string) => send(session, method, params)
 }
 
 /** A toast a page's call asked for, with Rust's title as it is: it starts with `Plugin “<name>”:`. No action button. */
@@ -283,6 +332,31 @@ export function showToast(e: Extract<PageEffect, { type: "toast" }>) {
   const options = { description: e.description ?? undefined }
   if (e.tone === "error") toast.error(e.title, options)
   else toast(e.title, options)
+}
+
+/**
+ * How long Chromium holds a click or a key as the person's activation: 5 s.
+ * A little longer here, so its clock and this one never meet.
+ */
+const ACTIVE_MS = 5_250
+
+/** The person's clicks and keys, as Chromium counts them. */
+const INPUT = ["keydown", "mousedown", "pointerdown", "pointerup", "touchend"] as const
+
+/**
+ * Whether the person clicked or typed in `w`'s own page in the last 5 s, as
+ * it hears them from now on: never in a frame, whose clicks and keys don't
+ * reach it, nor the keys the host presses again for a page (`replayKey`).
+ * The page's activation (`navigator.userActivation`) comes from both, so
+ * while one of these still counts there, it is no sign of a click in the frame.
+ */
+export function inputElsewhere(w: Pick<Window, "addEventListener" | "performance">): () => boolean {
+  let at = Number.NEGATIVE_INFINITY
+  const heard = (e: Event) => {
+    if (e.isTrusted) at = w.performance.now()
+  }
+  for (const type of INPUT) w.addEventListener(type, heard, { capture: true, passive: true })
+  return () => w.performance.now() - at < ACTIVE_MS
 }
 
 /** A key a page handed over, pressed again on `target` for AutoScene's shortcuts. */

@@ -269,6 +269,18 @@ fn main() {
             eprintln!("a reply of {} bytes", reply.len());
             process::exit(1);
         }
+        // Service mode: see `serve`.
+        mode @ ("serve"
+        | "serve-slow-start"
+        | "serve-progress-flood"
+        | "serve-crash"
+        | "serve-ignore-stop"
+        | "serve-emit-flood"
+        | "serve-call"
+        | "serve-deaf") => {
+            read_run();
+            serve(mode, &mut stdin, &first);
+        }
         // A plugin of protocol 1 that prints a line like a call: never answered.
         "protocol1-call" => {
             read_run();
@@ -279,6 +291,126 @@ fn main() {
             fs::write("stdin-closed", rest).expect("stdin-closed");
         }
         other => panic!("no such mode: {other}"),
+    }
+}
+
+/// A service in `mode`, whose serve line was `first`: it writes that line
+/// and its mode's variable, says it is ready (after its progress, with
+/// `serve-slow-start`, and after 5000 lines of it with
+/// `serve-progress-flood`), then answers each request by its method until
+/// its stop or its stdin's end. `serve-slow-start` says one more progress
+/// once ready; `serve-crash` answers none, and crashes at the third;
+/// `serve-ignore-stop` leaves a grandchild and stays after its stop;
+/// `serve-emit-flood` emits 200 events at once first, then one more a
+/// second later; `serve-call` calls AutoScene for its `call` method;
+/// `serve-deaf` never reads its stdin again, for a minute at most.
+fn serve(mode: &str, stdin: &mut impl BufRead, first: &str) {
+    fs::write("serve.json", first).expect("serve.json");
+    fs::write("mode", env::var("AUTOSCENE_MODE").unwrap_or_default()).expect("mode");
+    if mode == "serve-slow-start" {
+        send(json!({"type": "progress", "fraction": 0.5, "stage": "Getting Python"}));
+        thread::sleep(Duration::from_millis(300));
+        send(json!({"type": "progress", "stage": "Installing packages"}));
+    }
+    if mode == "serve-progress-flood" {
+        for i in 0..5000 {
+            send(json!({"type": "progress", "fraction": f64::from(i) / 5000.0, "stage": format!("Step {i}")}));
+        }
+    }
+    if mode == "serve-ignore-stop" {
+        grandchild();
+    }
+    send(json!({"type": "ready"}));
+    if mode == "serve-slow-start" {
+        send(json!({"type": "progress", "stage": "Warming up"}));
+    }
+    if mode == "serve-deaf" {
+        thread::sleep(Duration::from_secs(60));
+        return;
+    }
+    if mode == "serve-emit-flood" {
+        for i in 0..200 {
+            send(json!({"type": "emit", "event": "tick", "data": i}));
+        }
+        thread::sleep(Duration::from_millis(1100));
+        send(json!({"type": "emit", "event": "tock"}));
+    }
+    let mut asked = 0;
+    loop {
+        let mut line = String::new();
+        if stdin.read_line(&mut line).expect("stdin") == 0 {
+            return;
+        }
+        let Ok(m) = serde_json::from_str::<Value>(&line) else { continue };
+        match m["type"].as_str() {
+            Some("stop") => {
+                fs::write("stop-seen", &line).expect("stop-seen");
+                if mode != "serve-ignore-stop" {
+                    return;
+                }
+            }
+            Some("settings") => fs::write("settings.json", &line).expect("settings.json"),
+            Some("request") if mode == "serve-crash" => {
+                asked += 1;
+                if asked == 3 {
+                    eprintln!("problem with request {}", m["id"]);
+                    process::exit(3);
+                }
+            }
+            Some("request") => answer(&m, stdin),
+            _ => {}
+        }
+    }
+}
+
+/// Answers the request `m` by its method.
+fn answer(m: &Value, stdin: &mut impl BufRead) {
+    let id = &m["id"];
+    let respond = |result: Value| send(json!({"type": "response", "id": id, "result": result}));
+    match m["method"].as_str().unwrap_or("") {
+        "count" => {
+            let words = m["params"]["text"].as_str().unwrap_or("").split_whitespace().count();
+            send(json!({"type": "emit", "event": "counted", "data": {"words": words}}));
+            respond(json!({"words": words}));
+        }
+        "echo" => respond(json!({"params": m["params"], "context": m["context"]})),
+        // Events AutoScene drops (a bad name, a long one, too much data),
+        // then one it passes on.
+        "emits" => {
+            send(json!({"type": "emit", "event": "Bad Name", "data": 1}));
+            send(json!({"type": "emit", "event": "e".repeat(65), "data": 2}));
+            send(json!({"type": "emit", "event": "big", "data": "x".repeat(300 << 10)}));
+            send(json!({"type": "emit", "event": "fine", "data": 3}));
+            respond(Value::Null);
+        }
+        "fail" => send(json!({
+            "type": "response",
+            "id": id,
+            "error": {"message": "No text.\nGive it some.", "detail": "KeyError: 'text'"},
+        })),
+        // Its answer comes the params' ms later.
+        "slow" => {
+            thread::sleep(Duration::from_millis(m["params"]["ms"].as_u64().unwrap_or(0)));
+            respond(json!({"slept": m["params"]["ms"]}));
+        }
+        // Never answered.
+        "wait" => {}
+        // A line far past the limit first, then its answer.
+        "long" => {
+            raw(&"x".repeat(3 << 20));
+            respond(json!({"after": "long"}));
+        }
+        // An answer past the limit.
+        "huge" => respond(json!("h".repeat(1 << 20))),
+        // Its settings, as AutoScene gives them to a call.
+        "call" => {
+            send(json!({"type": "call", "id": "c1", "method": "settings.get", "params": {}}));
+            let mut reply = String::new();
+            stdin.read_line(&mut reply).expect("stdin");
+            let reply: Value = serde_json::from_str(&reply).expect("a reply");
+            respond(reply["result"].clone());
+        }
+        other => send(json!({"type": "response", "id": id, "error": {"message": format!("No method {other}.")}})),
     }
 }
 

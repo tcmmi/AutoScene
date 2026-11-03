@@ -196,6 +196,7 @@ export interface Page {
             timeoutMs?: number;
         }): Promise<unknown>;
         on(event: string, cb: (data: unknown) => void): () => void;
+        /** Its service's state as the page knows it now, if it knows one, then each change. */
         onState(cb: (s: ServiceState) => void): () => void;
     };
     actions: {

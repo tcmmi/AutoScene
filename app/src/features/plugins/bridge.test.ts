@@ -4,7 +4,18 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { PageReply } from "@/bindings"
 import { GLOBAL_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
 import { LIMITS, type PageInit } from "@/plugin-kit/bridge-types"
-import { type HostDeps, type Limits, type PortLike, createConnector, createHost, pageCaller, replayKey, showToast } from "./bridge"
+import {
+  type HostDeps,
+  type Limits,
+  type PortLike,
+  createConnector,
+  createHost,
+  inputElsewhere,
+  pageCaller,
+  pageMessage,
+  replayKey,
+  showToast,
+} from "./bridge"
 
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
 
@@ -53,6 +64,8 @@ function deps(o: Partial<HostDeps> = {}): HostDeps {
     unresponsive: vi.fn(),
     overflow: vi.fn(),
     focused: () => true,
+    elsewhere: () => false,
+    activated: () => true,
     ...o,
   }
 }
@@ -131,6 +144,40 @@ describe("the bridge to a plugin page", () => {
     c.close()
   })
 
+  it("what Rust tells a page reaches it as a message of its own", () => {
+    expect(pageMessage({ type: "service", name: "counted", data: { words: 3 } })).toEqual({
+      t: "event",
+      name: "counted",
+      data: { words: 3 },
+    })
+    expect(pageMessage({ type: "serviceState", state: "ready", message: null })).toEqual({ t: "service", state: "ready" })
+    expect(pageMessage({ type: "serviceState", state: "stopped", message: "Count stopped unexpectedly." })).toEqual({
+      t: "service",
+      state: "stopped",
+      message: "Count stopped unexpectedly.",
+    })
+    expect(pageMessage({ type: "settings" })).toEqual({ t: "settings" })
+    expect(pageMessage({ type: "closed", reason: "It was turned off." })).toEqual({ t: "closed", reason: "It was turned off." })
+  })
+
+  it("a document that connects after its service changed hears its last state first", async () => {
+    const frame = frameWindow()
+    const c = createConnector({ frame: () => frame, init: () => INIT, deps: deps(), limits: QUIET, channel })
+    // Told before any document is there, and an event that only counts as it happens.
+    c.send({ t: "service", state: "starting", message: "Getting Python" })
+    c.send({ t: "service", state: "ready" })
+    c.send({ t: "event", name: "counted", data: 1 })
+    c.message({ source: frame, data: READY })
+    const first = hearing(channels[0].port2)
+    await vi.waitFor(() => expect(first).toEqual([{ t: "service", state: "ready" }]))
+    // A document of a later load hears it too.
+    c.load()
+    c.message({ source: frame, data: READY })
+    const later = hearing(channels[1].port2)
+    await vi.waitFor(() => expect(later).toEqual([{ t: "service", state: "ready" }]))
+    c.close()
+  })
+
   it("a ready ahead of its load is taken, for the first document and a later one", () => {
     const frame = frameWindow()
     const connect = () => createConnector({ frame: () => frame, init: () => INIT, deps: deps(), limits: QUIET, channel })
@@ -177,7 +224,7 @@ describe("the bridge to a plugin page", () => {
       pluginId: "dev.evil.page",
     })
     expect(await reply).toEqual({ t: "reply", id: 7, ok: true, result: { value: 1 } })
-    expect(send).toHaveBeenCalledWith("session-mine", "state.get", { key: "a", session: "session-other" })
+    expect(send).toHaveBeenCalledWith("session-mine", "state.get", JSON.stringify({ key: "a", session: "session-other" }))
 
     // A refusal reaches the page as Rust said it.
     send.mockResolvedValueOnce({ kind: "err", error: { code: "denied", message: "project.get needs the project:read permission." } })
@@ -270,7 +317,7 @@ describe("the bridge to a plugin page", () => {
       reply = heard(page)
       page.postMessage({ t: "call", id: i, method, params })
       expect(await reply).toEqual({ t: "reply", id: i, ok: true, result: null })
-      expect(call).toHaveBeenLastCalledWith(method, params)
+      expect(call).toHaveBeenLastCalledWith(method, JSON.stringify(params))
     }
     page.postMessage({ t: "menu", x: 12, y: 34 })
     reply = heard(page)
@@ -280,7 +327,7 @@ describe("the bridge to a plugin page", () => {
   })
 
   it("16 calls go to Rust at once, 64 wait, and the next is busy", async () => {
-    expect(LIMITS).toEqual({ waiting: 64, inflight: 16, messageBytes: 48 * 1024 * 1024, drops: 1000 })
+    expect(LIMITS).toEqual({ waiting: 64, inflight: 16, heldBytes: 64 * 1024 * 1024, drops: 1000 })
     const answers: (() => void)[] = []
     const call = vi.fn(() => new Promise<PageReply>((resolve) => answers.push(() => resolve({ kind: "ok", result: null }))))
     const page = hosted(deps({ call }))
@@ -303,22 +350,44 @@ describe("the bridge to a plugin page", () => {
     for (const answer of answers) answer()
   })
 
-  it("a message larger than the host takes never reaches Rust", async () => {
+  it("params past their method's cap, and a method AutoScene doesn't have, never reach Rust", async () => {
     const call = vi.fn(async (): Promise<PageReply> => ({ kind: "ok", result: null }))
-    const page = hosted(deps({ call }), { messageBytes: 100 })
-    const reply = heard(page)
-    page.postMessage({ t: "call", id: 1, method: "state.set", params: { key: "note", value: "x".repeat(100) } })
-    expect(await reply).toEqual({
-      t: "reply",
-      id: 1,
-      ok: false,
-      error: { code: "invalid", message: "The params of state.set are larger than AutoScene takes." },
-    })
+    const page = hosted(deps({ call, focused: () => false }))
+    const inbox = hearing(page)
+    const refused = (id: number, code: string, message: string) => ({ t: "reply", id, ok: false, error: { code, message } })
+    // A toast's 2 KB, whatever the page's whole message may be.
+    page.postMessage({ t: "call", id: 1, method: "ui.toast", params: { text: "x".repeat(3000) } })
     // Nor one JSON can't hold.
-    const big = heard(page)
     page.postMessage({ t: "call", id: 2, method: "state.set", params: { key: "note", value: 10n } })
-    expect(await big).toMatchObject({ id: 2, ok: false, error: { code: "invalid" } })
+    // A name of an object's own, from a page that isn't focused either.
+    page.postMessage({ t: "call", id: 3, method: "constructor", params: {} })
+    page.postMessage({ t: "call", id: 4, method: "ui.nope", params: {} })
+    await vi.waitFor(() => expect(inbox).toHaveLength(4))
+    expect(inbox).toEqual([
+      refused(1, "invalid", "The params of ui.toast are larger than 2 KB."),
+      refused(2, "invalid", "The params of state.set aren't JSON."),
+      refused(3, "invalid", "AutoScene has no such method."),
+      refused(4, "invalid", "AutoScene has no such method."),
+    ])
     expect(call).not.toHaveBeenCalled()
+  })
+
+  it("the params a page has waiting count together", async () => {
+    const answers: (() => void)[] = []
+    const call = vi.fn(() => new Promise<PageReply>((resolve) => answers.push(() => resolve({ kind: "ok", result: null }))))
+    const page = hosted(deps({ call }), { heldBytes: 100 })
+    const inbox = hearing(page)
+    const note = { key: "note", value: "x".repeat(50) }
+    page.postMessage({ t: "call", id: 1, method: "state.set", params: note })
+    page.postMessage({ t: "call", id: 2, method: "state.set", params: note })
+    await vi.waitFor(() => expect(inbox).toHaveLength(1))
+    expect(inbox[0]).toEqual({ t: "reply", id: 2, ok: false, error: { code: "busy", message: "This page has too much waiting already." } })
+    // Once the first is answered, there is room again.
+    answers[0]()
+    await vi.waitFor(() => expect(inbox).toHaveLength(2))
+    page.postMessage({ t: "call", id: 3, method: "state.set", params: note })
+    await vi.waitFor(() => expect(call).toHaveBeenCalledTimes(2))
+    for (const answer of answers) answer()
   })
 
   it("a page that sends what the host can't read too often is cut off", async () => {
@@ -362,10 +431,12 @@ describe("the bridge to a plugin page", () => {
     expect(unresponsive).toHaveBeenCalledTimes(2)
   })
 
-  it("copyText from an unfocused frame is denied", async () => {
+  it("copyText from an unfocused frame, or without the person's click in it, is denied", async () => {
     let focused = false
+    let elsewhere = true
+    let activated = false
     const call = vi.fn(async (): Promise<PageReply> => ({ kind: "ok", result: null }))
-    const page = hosted(deps({ call, focused: () => focused }))
+    const page = hosted(deps({ call, focused: () => focused, elsewhere: () => elsewhere, activated: () => activated }))
     const copy = { t: "call", id: 4, method: "ui.copyText", params: { text: "S01E03 00:01:02:03" } }
     let reply = heard(page)
     page.postMessage(copy)
@@ -376,10 +447,60 @@ describe("the bridge to a plugin page", () => {
       error: { code: "denied", message: "A page copies only while it has the focus." },
     })
     expect(call).not.toHaveBeenCalled()
+    // The page took the focus itself as it opened, right after the person's click that opened it.
     focused = true
+    activated = true
+    reply = heard(page)
+    page.postMessage(copy)
+    expect(await reply).toEqual({
+      t: "reply",
+      id: 4,
+      ok: false,
+      error: { code: "denied", message: "A page copies only 5 seconds after the person clicks or types elsewhere in AutoScene." },
+    })
+    expect(call).not.toHaveBeenCalled()
+    // Then nobody clicked.
+    elsewhere = false
+    activated = false
+    reply = heard(page)
+    page.postMessage(copy)
+    expect(await reply).toEqual({
+      t: "reply",
+      id: 4,
+      ok: false,
+      error: { code: "denied", message: "A page copies only right after the person clicks or types in it." },
+    })
+    expect(call).not.toHaveBeenCalled()
+    activated = true
     reply = heard(page)
     page.postMessage(copy)
     expect(await reply).toEqual({ t: "reply", id: 4, ok: true, result: null })
-    expect(call).toHaveBeenCalledWith("ui.copyText", { text: "S01E03 00:01:02:03" })
+    expect(call).toHaveBeenCalledWith("ui.copyText", JSON.stringify({ text: "S01E03 00:01:02:03" }))
+  })
+
+  it("a click or a key in AutoScene counts as one elsewhere for 5 s, never one the host pressed again", () => {
+    let now = 1_000
+    const heard = new Map<string, (e: Pick<Event, "isTrusted">) => void>()
+    const w = {
+      addEventListener: (type: string, fn: (e: Pick<Event, "isTrusted">) => void) => void heard.set(type, fn),
+      performance: { now: () => now },
+    } as unknown as Window
+    const elsewhere = inputElsewhere(w)
+    expect(elsewhere()).toBe(false)
+    expect([...heard.keys()]).toEqual(["keydown", "mousedown", "pointerdown", "pointerup", "touchend"])
+    for (const type of heard.keys()) {
+      heard.get(type)!({ isTrusted: true })
+      now += 5_000
+      expect(elsewhere(), type).toBe(true)
+      now += 300
+      expect(elsewhere(), type).toBe(false)
+    }
+    heard.get("keydown")!({ isTrusted: false })
+    expect(elsewhere()).toBe(false)
+    // What the window hears that nobody pressed, like a page's key pressed again.
+    const inWindow = inputElsewhere(window)
+    replayKey({ key: "k", code: "KeyK", ctrl: true, meta: false, shift: false, alt: false, repeat: false }, window)
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))
+    expect(inWindow()).toBe(false)
   })
 })

@@ -314,10 +314,11 @@ export const commands = {
 	/**
 	 *  A plugin page's call of `method` with `params`, which the app's page
 	 *  hands on with the page's `session`: Rust knows the plugin from it, never
-	 *  from the page. Its answer, an effect for the app's page to carry out
-	 *  first, or the page's error; a closed page's call gets `closed`.
+	 *  from the page. The params come as their JSON, so nothing reads params
+	 *  past their method's cap. Its answer, an effect for the app's page to
+	 *  carry out first, or the page's error; a closed page's call gets `closed`.
 	 */
-	pluginPageCall: (session: string, method: string, params: unknown) => __TAURI_INVOKE<PageReply>("plugin_page_call", { session, method, params }),
+	pluginPageCall: (session: string, method: string, params: string) => __TAURI_INVOKE<PageReply>("plugin_page_call", { session, method, params }),
 	/**
 	 *  The app's page is there for the open plugin page `session`: it says so
 	 *  every 2 s on macOS and Linux, where a page that hangs would hang it too,
@@ -1344,8 +1345,15 @@ export type PageEffect =
 /**  The path inside the page becomes `path` (the route's splat). */
 { type: "navigate"; path: string; replace: boolean };
 
-/**  What became of an open plugin page. */
+/**  What became of an open plugin page, or of its plugin's service. */
 export type PageEvent = 
+/**  An event its plugin's service emitted. */
+{ type: "service"; name: string; data: unknown } | 
+/**
+ *  What its plugin's service is doing: starting (`message` is how far),
+ *  ready, or stopped (`message` says why).
+ */
+{ type: "serviceState"; state: ServiceStatus; message: string | null } | 
 /**  Its plugin's settings or secrets changed: it may read them again. */
 { type: "settings" } | 
 /**
@@ -1497,6 +1505,8 @@ export type PluginInfo = {
 	icon: string | null,
 	/**  Where its runs write their log. */
 	logPath: string,
+	/**  Where its service writes its log, when it runs one. */
+	serviceLogPath: string | null,
 	/**  What was skipped or changed in its `plugin.json`. */
 	warnings: string[],
 };
@@ -1550,13 +1560,18 @@ export type PluginUpdate = {
 	/**  Permissions it says it needs that the installed version didn't. */
 	addedPermissions: Permission[],
 	addedHosts: string[],
-	/**  The titles of the pages it adds. */
+	/**  The ids of the pages it adds. */
 	addedPages: string[],
 	/**
 	 *  It runs a program, and the installed version, as the person agreed
 	 *  to it, runs none: from now on it runs with their user rights.
 	 */
 	startsProgram: boolean,
+	/**
+	 *  It keeps its program running while its page is open, and the
+	 *  installed version, as the person agreed to it, doesn't.
+	 */
+	becomesService: boolean,
 };
 
 /**
@@ -1672,8 +1687,8 @@ export type RelinkSummary = {
 
 /**
  *  How a plugin runs. This AutoScene installs `process` plugins and, from
- *  manifest version 2, `none` ones; a `service` is reserved for a later
- *  AutoScene. Also what the person agreed to at install
+ *  manifest version 2, `service` and `none` ones. Also what the person
+ *  agreed to at install
  *  ([`crate::store::Extra`]).
  */
 export type RuntimeKind = 
@@ -1720,6 +1735,9 @@ export type SelectOption = {
 	value: string,
 	label: string,
 };
+
+/**  What a plugin's service is doing. */
+export type ServiceStatus = "starting" | "ready" | "stopped";
 
 /**
  *  What a setting holds. A `secret` (manifest version 2) is kept in the

@@ -11,7 +11,8 @@ import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { PluginIcon } from "./PluginIcon"
 import { allowUnreviewed } from "./plugin-actions"
-import { permissionLabel, reviewedPackage, trustLabel, trustLine } from "./plugin-items"
+import { MAX_RAIL_PAGES } from "./page-items"
+import { checkedWhen, permissionLabel, reviewedPackage, trustLabel, trustLine } from "./plugin-items"
 
 /**
  * A plugin package (or folder) checked for install, before the person says
@@ -222,8 +223,9 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 
 /**
  * What the plugin says it does, with what an update adds marked: a
- * program's claim, or what AutoScene checks for a plugin that runs none,
- * which is its pages.
+ * program's claim, which AutoScene checks only when its pages or its
+ * program ask it for something; or what AutoScene checks for a plugin that
+ * runs none, which is its pages.
  */
 function Permissions({ review }: { review: PluginReview }) {
   const p = review.plugin
@@ -231,10 +233,12 @@ function Permissions({ review }: { review: PluginReview }) {
   const newHosts = review.update?.addedHosts ?? []
   const hosts = p.networkHosts.filter((h) => !newHosts.includes(h))
   const program = p.runtime !== "none"
+  const checked = checkedWhen(p)
+  const heading = !program ? "What its pages may use" : checked ? "What it says it does" : "What it says it does (not enforced)"
   return (
     <section>
       {program && <p className="mb-3 text-md text-fg-1">It runs with your user rights: it can read, change and send anything you can.</p>}
-      <h3 className="text-sm font-medium text-fg-2">{program ? "What it says it does (not enforced)" : "What its pages may use"}</h3>
+      <h3 className="text-sm font-medium text-fg-2">{heading}</h3>
       <ul className="mt-1.5 flex flex-col gap-1.5 text-md text-fg-1">
         {p.permissions.map((perm) => (
           <li key={perm} className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -249,18 +253,21 @@ function Permissions({ review }: { review: PluginReview }) {
         {p.permissions.length === 0 && <li className="text-fg-2">It names no permissions.</li>}
         {p.gpu && <li>Uses the graphics card: its runs wait while an analysis runs</li>}
       </ul>
-      {!program && <p className="mt-1.5 text-sm text-fg-2">AutoScene checks these each time its pages ask.</p>}
+      {checked && <p className="mt-1.5 text-sm text-fg-2">{checked}</p>}
     </section>
   )
 }
 
 /**
  * What AutoScene starts to run it, and what that fetches on its own: marked
- * new when the installed version runs no program.
+ * new when the installed version runs no program. A service keeps its
+ * program running while its page is open, marked new when the installed
+ * version didn't.
  */
 function Runs({ review }: { review: PluginReview }) {
   const p = review.plugin
   const startsProgram = review.update?.startsProgram ?? false
+  const becomesService = review.update?.becomesService ?? false
   return (
     <section>
       <h3 className="text-sm font-medium text-fg-2">How it runs</h3>
@@ -273,6 +280,12 @@ function Runs({ review }: { review: PluginReview }) {
         {startsProgram && <Badge tone="accent">New</Badge>}
       </p>
       {startsProgram && <p className="mt-1.5 text-sm text-fg-2">The installed version runs no program.</p>}
+      {p.runtime === "service" && (
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-md text-fg-1">
+          {becomesService ? "Now keeps its program running while its page is open." : "Keeps its program running while its page is open."}
+          {becomesService && <Badge tone="accent">New</Badge>}
+        </p>
+      )}
       {review.uvMissing && (
         <p className="mt-1.5 text-sm text-danger">uv isn't installed, so it can't run yet. Install it from docs.astral.sh/uv.</p>
       )}
@@ -280,10 +293,15 @@ function Runs({ review }: { review: PluginReview }) {
   )
 }
 
-/** Where AutoScene offers a page: in the rail, in each project's More menu, else in the palette. */
+/**
+ * Where AutoScene offers a page: in the rail while it has room for it, in
+ * each project's More menu, else in the palette.
+ */
 function pagePlace(page: PageSpec): string {
   if (page.scope === "project") return ", in each project's More menu"
-  return page.rail ? ", in the rail" : ", in the command palette"
+  return page.rail
+    ? `, in the rail (it holds ${MAX_RAIL_PAGES} plugin pages; others are in the command palette)`
+    : ", in the command palette"
 }
 
 /**
@@ -298,7 +316,7 @@ function Adds({ p, addedPages }: { p: PluginInfo; addedPages: string[] }) {
       where: "A page",
       what: page.title,
       after: pagePlace(page),
-      added: addedPages.includes(page.title),
+      added: addedPages.includes(page.id),
     })),
     ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title, after: "", added: false })),
     ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title, after: "", added: false })),

@@ -33,9 +33,16 @@
 //! A page opens under the busy lock, and pages close under it: one that
 //! was opening as its plugin or the setting went off is refused or closed.
 //! A page calls AutoScene through its session ([`calls::page_call`]).
+//!
+//! A plugin whose runtime is a service keeps its program running while one
+//! of its pages is open, which answers the pages' requests ([`services`]).
+//! A change of the plugin stops it before its files change, and so do
+//! turning it off, the setting going off for one AutoScene hasn't reviewed,
+//! and quitting ([`PluginHost::shutdown`]).
 
 pub mod calls;
 pub mod pages;
+pub mod services;
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -49,6 +56,7 @@ use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::net::{Transport, UreqTransport};
 use as_plugin::pages::{Mount, Pages};
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage};
+use as_plugin::service::STOP_GRACE;
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
     ActionContext, ActionKind, CommandSpec, Extra, HostCalls, Installed, Keys, Launch, Manifest, OsKeyring, PageSpec,
@@ -66,6 +74,7 @@ use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::{PageEvent, PluginPageEvent};
 use crate::state::AppState;
 use crate::work::job_error;
+use services::{Services, StartService};
 
 /// How long a checked package waits for the person's yes. Its unpacked
 /// files go once it has waited longer, at the next package checked.
@@ -108,6 +117,8 @@ pub struct PluginHost {
     /// When the app's page last said it is there for each open page (macOS
     /// and Linux, see [`pages::watch`]).
     pub beats: pages::Heartbeats,
+    /// The plugins' services, which run while their pages are open.
+    pub services: Services,
 }
 
 /// The plugins in use: by a run, or by an install, update or uninstall.
@@ -185,6 +196,8 @@ pub struct PluginInfo {
     pub icon: Option<String>,
     /// Where its runs write their log.
     pub log_path: String,
+    /// Where its service writes its log, when it runs one.
+    pub service_log_path: Option<String>,
     /// What was skipped or changed in its `plugin.json`.
     pub warnings: Vec<String>,
 }
@@ -246,11 +259,15 @@ pub struct PluginUpdate {
     /// It runs a program, and the installed version, as the person agreed
     /// to it, runs none: from now on it runs with their user rights.
     pub starts_program: bool,
+    /// It keeps its program running while its page is open, and the
+    /// installed version, as the person agreed to it, doesn't.
+    pub becomes_service: bool,
 }
 
 /// The plugin host of this app's data folder, with plugins' secrets in the
-/// system's keychain and their pages framed by the app's page, or none when
-/// its store can't open (the plugin commands then say so).
+/// system's keychain, their pages framed by the app's page and their
+/// services run as their programs, or none when its store can't open (the
+/// plugin commands then say so).
 pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<PluginHost>> {
     let version = app.package_info().version.clone();
     let pages = Pages::new(pages::app_kit(app.clone()), pages::ancestors());
@@ -261,8 +278,10 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
     });
     match Store::open(paths, library.shared_db(), Keys::builtin(), version, Arc::new(OsKeyring)) {
         Ok(store) => {
-            let host = Arc::new(PluginHost::new(store, pages, page_events));
+            let start = Box::new(services::ProgramStart(app.clone()));
+            let host = Arc::new(PluginHost::new(store, pages, page_events, start));
             pages::watch(app.clone(), Arc::downgrade(&host));
+            services::reap(Arc::downgrade(&host));
             Some(host)
         }
         Err(e) => {
@@ -282,13 +301,20 @@ pub fn host(state: &AppState) -> AppResult<Arc<PluginHost>> {
 
 impl PluginHost {
     /// The host of `store`, with no page open yet in `pages`, whose open
-    /// pages hear what becomes of them through `page_events`.
-    pub fn new(store: Store, pages: Pages, page_events: PageEvents) -> Self {
-        Self::reaching(store, pages, page_events, Box::new(UreqTransport::new()))
+    /// pages hear what becomes of them through `page_events`, and whose
+    /// services start through `start`.
+    pub fn new(store: Store, pages: Pages, page_events: PageEvents, start: Box<dyn StartService>) -> Self {
+        Self::reaching(store, pages, page_events, Box::new(UreqTransport::new()), start)
     }
 
     /// [`PluginHost::new`], whose plugins' `net.fetch` calls go to `net`.
-    fn reaching(store: Store, pages: Pages, page_events: PageEvents, net: Box<dyn Transport>) -> Self {
+    fn reaching(
+        store: Store,
+        pages: Pages,
+        page_events: PageEvents,
+        net: Box<dyn Transport>,
+        start: Box<dyn StartService>,
+    ) -> Self {
         Self {
             store,
             pages,
@@ -301,6 +327,7 @@ impl PluginHost {
             fetching: Mutex::default(),
             page_limits: calls::PageLimits::default(),
             beats: pages::Heartbeats::default(),
+            services: Services::new(start),
         }
     }
 
@@ -355,8 +382,9 @@ impl PluginHost {
     /// then finds the plugin as the change left it, and a page of it isn't
     /// opened. Refused while a run of it runs, from the folder the change
     /// would throw away. Looking and marking are one step, so no run starts
-    /// between them. Another change of it goes first. Its open pages close,
-    /// and hear `reason` (it is being updated, or it was uninstalled).
+    /// between them. Another change of it goes first. Its service stops, so
+    /// its program no longer holds its folder, and its open pages close and
+    /// hear `reason` (it is being updated, or it was uninstalled).
     pub fn change(&self, id: &PluginId, name: &str, reason: &str) -> PluginResult<Changing<'_>> {
         let mut busy = self.busy.lock();
         while busy.changing.contains(id) {
@@ -367,23 +395,28 @@ impl PluginHost {
         }
         busy.changing.insert(id.clone());
         drop(busy);
+        let changing = Changing { host: self, id: id.clone() };
+        // A start of it that comes now is refused: it is marked.
+        self.services.stop(id, STOP_GRACE);
         self.close_pages(|m| m.plugin == *id, reason);
-        Ok(Changing { host: self, id: id.clone() })
+        Ok(changing)
     }
 
-    /// Stops the runs of `id`, running or still waiting, and closes its
-    /// pages (it was turned off, or uninstalled).
+    /// Stops the runs of `id`, running or still waiting, closes its pages
+    /// and stops its service (it was turned off, or uninstalled).
     pub fn stop(&self, jobs: &JobRunner, id: &PluginId) {
         let stop: Vec<JobId> = self.runs().into_iter().filter(|(_, p)| p == id).map(|(job, _)| job).collect();
         if !stop.is_empty() {
             jobs.cancel_where(|j| stop.contains(&j.id));
         }
+        // Its pages first: a service starts only for a page still open.
         self.close_pages(|m| m.plugin == *id, "It was turned off.");
+        self.services.stop(id, STOP_GRACE);
     }
 
     /// The setting that lets plugins AutoScene hasn't reviewed run went
     /// from `before` to `after`: when it went off, their runs stop, running
-    /// or still waiting, and their pages close.
+    /// or still waiting, their pages close, and their services stop.
     pub fn allow_changed(&self, jobs: &JobRunner, before: bool, after: bool) {
         if !before || after {
             return;
@@ -392,8 +425,17 @@ impl PluginHost {
         if !stop.is_empty() {
             jobs.cancel_where(|j| stop.contains(&j.id));
         }
-        // A page keeps the trust it opened with: a change of it closes it.
+        // A page keeps the trust it opened with, and its service the trust of
+        // the page it started for: a change of the plugin closes and stops them.
         self.close_pages(|m| m.trust != Trust::Reviewed, &PluginError::NotAllowed.to_string());
+        self.services.stop_where(|trust| trust != Trust::Reviewed, STOP_GRACE);
+    }
+
+    /// AutoScene quits: every service stops, all at once, each within
+    /// [`services::QUIT_GRACE`] and the system's grace after it, and none
+    /// starts any more (a page still open asks in vain).
+    pub fn shutdown(&self) {
+        self.services.stop_all(services::QUIT_GRACE);
     }
 
     /// Closes the open pages `close` picks, and tells each why (`reason`).
@@ -429,10 +471,17 @@ impl PluginHost {
         self.beats.forget(session);
     }
 
-    /// Tells the open pages of `id` that its settings changed.
+    /// Tells the open pages of `id` that its settings changed, and its
+    /// service what they are now (one on its way once it runs).
     pub fn settings_changed(&self, id: &PluginId) {
         for session in self.pages.tokens_of(id) {
             (self.page_events)(PluginPageEvent { session, event: PageEvent::Settings });
+        }
+        if let Some(service) = self.services.settings_changed(id) {
+            match self.store.values(id) {
+                Ok(values) => service.settings_changed(values),
+                Err(e) => log::warn!("{id}'s settings for its service: {}", e.detail()),
+            }
         }
     }
 
@@ -620,6 +669,9 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
         secrets_set: p.secrets_stored(),
         icon: store.icon_data_url(p),
         log_path: store.log_path(id).to_string_lossy().into_owned(),
+        service_log_path: m
+            .filter(|m| m.runtime.kind == RuntimeKind::Service)
+            .map(|_| store.service_log_path(id).to_string_lossy().into_owned()),
         warnings: p.warnings.clone(),
     }
 }
@@ -700,6 +752,9 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
             .map(|p| p.title.clone())
             .collect(),
         starts_program: agreed == RuntimeKind::None && m.runs_program(),
+        // Only by what the person agreed to: one whose row is gone isn't
+        // said to change how it runs.
+        becomes_service: before.is_some() && agreed != RuntimeKind::Service && m.runtime.kind == RuntimeKind::Service,
     }
 }
 
@@ -1077,6 +1132,24 @@ mod tests {
     }
 
     fn host_with(tmp: &Path, net: impl Transport + 'static, page_events: PageEvents) -> (Library, Arc<PluginHost>) {
+        host_of(tmp, net, page_events, Box::new(NoStart))
+    }
+
+    /// [`host_hearing`], whose services start through `start`.
+    pub(super) fn host_starting(tmp: &Path, start: impl StartService + 'static) -> (Library, Arc<PluginHost>, Heard) {
+        let heard = Heard::default();
+        let keep = heard.clone();
+        let page_events = Box::new(move |e: PluginPageEvent| keep.lock().push(e));
+        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, Box::new(start));
+        (lib, host, heard)
+    }
+
+    fn host_of(
+        tmp: &Path,
+        net: impl Transport + 'static,
+        page_events: PageEvents,
+        start: Box<dyn StartService>,
+    ) -> (Library, Arc<PluginHost>) {
         let paths = AppPaths::at(tmp.join("data"));
         let lib = Library::open(&paths).unwrap();
         let root = tmp.join("library").display().to_string();
@@ -1085,7 +1158,22 @@ mod tests {
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
         let store = Store::open(&paths, lib.shared_db(), Keys::new(&[]).unwrap(), app, secrets).unwrap();
         let pages = Pages::new(Arc::new(MemoryKit::default()), Vec::new());
-        (lib, Arc::new(PluginHost::reaching(store, pages, page_events, Box::new(net))))
+        (lib, Arc::new(PluginHost::reaching(store, pages, page_events, Box::new(net), start)))
+    }
+
+    /// No service starts in the tests that don't start one.
+    struct NoStart;
+
+    impl StartService for NoStart {
+        fn start(
+            &self,
+            _: &Arc<PluginHost>,
+            _: &Installed,
+            _: as_plugin::OnEvent,
+            _: &as_core::CancelToken,
+        ) -> PluginResult<Arc<dyn as_plugin::Service>> {
+            Err(PluginError::Invalid("No service starts here.".into()))
+        }
     }
 
     /// The `plugin.json` of a plugin `id` that runs no program and has `pages`.
@@ -1140,7 +1228,7 @@ mod tests {
             .iter()
             .filter_map(|e| match &e.event {
                 PageEvent::Closed { reason } => Some((e.session.clone(), reason.clone())),
-                PageEvent::Settings => None,
+                _ => None,
             })
             .collect();
         closed.sort();
@@ -1396,6 +1484,21 @@ mod tests {
             assert!(!update(&previous, Some(&before), &m).starts_program, "it ran one already");
         }
         assert!(!update(&previous, None, &m).starts_program, "its row gone: nothing said that may not be new");
+
+        // One that keeps its program running while its page is open: said
+        // when the person agreed to anything else.
+        let mut service =
+            page_only("dev.a.post", serde_json::json!([{"id": "main", "title": "Main", "entry": "ui/main.html"}]));
+        service["runtime"] = serde_json::json!({"type": "service", "command": {"*": UV}});
+        let service = as_plugin::manifest::parse_for_any_app(service.to_string().as_bytes()).unwrap().manifest;
+        for agreed in [Extra::default(), Extra::agreed(RuntimeKind::Process), Extra::agreed(RuntimeKind::None)] {
+            before.extra = agreed;
+            assert!(update(&previous, Some(&before), &service).becomes_service);
+            assert!(!update(&previous, Some(&before), &m).becomes_service);
+        }
+        before.extra = Extra::agreed(RuntimeKind::Service);
+        assert!(!update(&previous, Some(&before), &service).becomes_service, "it served already");
+        assert!(!update(&previous, None, &service).becomes_service, "its row gone");
     }
 
     #[test]
@@ -1409,6 +1512,8 @@ mod tests {
             assert!(shown.needs_unreviewed && !shown.allowed && shown.update.is_none());
             // A uv script: the review says what uv fetches, and whether uv is there.
             assert!(shown.plugin.uv_script);
+            // A process plugin's runs have a log; it runs no service to have one.
+            assert_eq!(shown.plugin.service_log_path, None);
             assert_eq!(shown.uv_missing, runtime::find_uv().is_none());
             assert_eq!(
                 (shown.plugin.source, shown.plugin.folder.as_str()),

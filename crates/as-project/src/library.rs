@@ -1,17 +1,22 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
-use as_api::{AppSettings, ContentKind, ImportCandidate, NewProject, ProjectKind, ProjectSummary, Shortcuts, now_ms};
+use as_api::{
+    AppSettings, ContentKind, ImportCandidate, NewProject, ProjectKind, ProjectSummary, ScanChoice, ScanDefaults,
+    Shortcuts, now_ms,
+};
 use as_core::{AppPaths, CancelToken, MediaId, ProjectId};
 use as_db::{LibraryDb, NewMedia, ProjectDb};
+use as_infer::computer::{self, Choice, Computer, Machine};
 use parking_lot::Mutex;
 
 use crate::anilist::{AniList, Names, PictureKey};
 use crate::fandom::Fandom;
 use crate::naming::{episode_cmp, is_video, parse_episode, safe_component};
 use crate::project::{PROJECT_DB, Project};
+use crate::scan;
 use crate::tvmaze::TvMaze;
 use crate::{ProjectError, ProjectResult};
 
@@ -20,7 +25,12 @@ const KEY_EXPORT_PRESET: &str = "export_preset_id";
 const DEFAULT_EXPORT_PRESET: &str = "prores-hq";
 const KEY_AUDIO_LANGUAGE: &str = "audio_language";
 const KEY_FIND_BODIES: &str = "find_bodies";
-const KEY_FAST_SCAN: &str = "fast_scan";
+/// The scan new projects start with, as the person chose it: `fast` (On) or
+/// `full` (Off); unset is Automatic, which follows this computer.
+const KEY_SCAN_DEFAULT: &str = "scan_default";
+/// Fast Scan's default before it followed the computer: "1" or "0", written
+/// by every save of the settings. Read once, into [`KEY_SCAN_DEFAULT`].
+const KEY_LEGACY_FAST_SCAN: &str = "fast_scan";
 const KEY_ANILIST: &str = "anilist";
 /// The keyboard shortcuts the person changed, as JSON.
 const KEY_SHORTCUTS: &str = "shortcuts";
@@ -55,12 +65,30 @@ pub struct Library {
     /// Pictures of projects' characters embedded this session, by file
     /// (see [`Project::look_pictures`]).
     look_pictures: Mutex<HashMap<PictureKey, Vec<f32>>>,
+    /// What this computer analyses on: `probe`'s answer, read once, when it
+    /// is first needed.
+    machine: OnceLock<Machine>,
+    probe: fn() -> Machine,
 }
 
 impl Library {
+    /// The library at `paths`, knowing no computer: its graphics are of
+    /// unknown kind, so new projects start with the full scan unless the
+    /// person chose Fast Scan. For tests, examples and tools; the app opens
+    /// it with [`Library::open_with`].
     pub fn open(paths: &AppPaths) -> ProjectResult<Self> {
+        fn no_computer() -> Machine {
+            Machine::Windows(None)
+        }
+        Self::open_with(paths, no_computer)
+    }
+
+    /// The library at `paths`, whose new projects follow the computer
+    /// `probe` reads (`as_infer::computer::probe`), once, when first needed.
+    pub fn open_with(paths: &AppPaths, probe: fn() -> Machine) -> ProjectResult<Self> {
         std::fs::create_dir_all(&paths.data)?;
         let db = Arc::new(LibraryDb::open(&paths.library_db())?);
+        migrate_fast_scan(&db)?;
         let find_bodies = Arc::new(AtomicBool::new(db.setting(KEY_FIND_BODIES)?.as_deref() == Some("1")));
         let anilist_on = AtomicBool::new(db.setting(KEY_ANILIST)?.as_deref() == Some("1"));
         let anilist = AniList::new(paths.anilist());
@@ -77,6 +105,8 @@ impl Library {
             tvmaze,
             fandom,
             look_pictures: Mutex::default(),
+            machine: OnceLock::new(),
+            probe,
         })
     }
 
@@ -174,9 +204,51 @@ impl Library {
         }))
     }
 
-    /// Whether new projects find their faces with Fast Scan.
+    // -- Fast Scan's default for new projects ---------------------------------
+
+    fn machine(&self) -> &Machine {
+        self.machine.get_or_init(self.probe)
+    }
+
+    /// What the analysis runs on here, and whether those graphics are built
+    /// for AI work. The adapters are read once; the device is chosen on every
+    /// call (Automatic, until the graphics card can be chosen).
+    pub fn computer(&self) -> Computer {
+        computer::choose(self.machine(), &Choice::Auto)
+    }
+
+    /// What the person chose for new projects: Automatic unless they chose
+    /// On or Off (a value a newer app stored reads as Automatic).
+    fn scan_choice(&self) -> ProjectResult<ScanChoice> {
+        Ok(match self.db.setting(KEY_SCAN_DEFAULT)?.as_deref() {
+            Some("fast") => ScanChoice::Fast,
+            Some("full") => ScanChoice::Full,
+            _ => ScanChoice::Auto,
+        })
+    }
+
+    /// The scan new projects of each footage start with, and why.
+    pub fn scan_defaults(&self) -> ProjectResult<ScanDefaults> {
+        Ok(scan::defaults(&self.computer(), self.scan_choice()?, self.finds_bodies()))
+    }
+
+    /// Chooses the scan new projects start with: On or Off for every footage,
+    /// or Automatic, which follows this computer (the choice is deleted).
+    /// Only here: [`Library::update_settings`] keeps it as it is, so a page
+    /// saving a copy of the settings made before can't change it.
+    pub fn set_scan_default(&self, choice: ScanChoice) -> ProjectResult<ScanDefaults> {
+        let value = match choice {
+            ScanChoice::Auto => None,
+            ScanChoice::Fast => Some("fast"),
+            ScanChoice::Full => Some("full"),
+        };
+        self.db.write_settings(&[(KEY_SCAN_DEFAULT, value)])?;
+        self.scan_defaults()
+    }
+
+    /// Whether new live-action projects find their faces with Fast Scan.
     pub fn fast_scan(&self) -> ProjectResult<bool> {
-        Ok(self.db.setting(KEY_FAST_SCAN)?.as_deref() == Some("1"))
+        Ok(scan::advice(&self.scan_defaults()?, ContentKind::Live))
     }
 
     pub fn update_settings(&self, s: &AppSettings) -> ProjectResult<AppSettings> {
@@ -200,10 +272,10 @@ impl Library {
         self.db.set_setting(KEY_AUDIO_LANGUAGE, &language)?;
         self.db.set_setting(KEY_FIND_BODIES, if s.find_bodies { "1" } else { "0" })?;
         self.find_bodies.store(s.find_bodies, Ordering::Relaxed);
-        self.db.set_setting(KEY_FAST_SCAN, if s.fast_scan { "1" } else { "0" })?;
         self.db.set_setting(KEY_ANILIST, if s.anilist { "1" } else { "0" })?;
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
         // `allow_unreviewed_plugins` stays: see `set_allows_unreviewed_plugins`.
+        // Fast Scan's default too: see `set_scan_default`.
         // Keys a newer app stored, that this one can't read, stay unless
         // they were changed here.
         let unreadable =
@@ -250,14 +322,29 @@ impl Library {
     }
 
     /// Create the project folder and database and add `req.files` (status
-    /// `queued`). Returns the new project and the media to ingest.
+    /// `queued`), with the scan its footage starts with here. Returns the new
+    /// project and the media to ingest.
     pub fn create_project(&self, req: &NewProject) -> ProjectResult<(ProjectSummary, Arc<Project>, Vec<MediaId>)> {
+        self.create_project_with(req, None)
+    }
+
+    /// [`Library::create_project`] with Fast Scan on or off, as the New
+    /// Project dialog's switch shows it; `None` takes the footage's default.
+    pub fn create_project_with(
+        &self,
+        req: &NewProject,
+        fast: Option<bool>,
+    ) -> ProjectResult<(ProjectSummary, Arc<Project>, Vec<MediaId>)> {
         let title = req.title.trim();
         if title.is_empty() {
             return Err(ProjectError::Invalid("Give the project a name.".into()));
         }
         // Before anything is made: a file that can't be imported stops it.
         let found = importable(&req.files, req.kind)?;
+        let fast = match fast {
+            Some(fast) => fast,
+            None => scan::advice(&self.scan_defaults()?, req.content),
+        };
         let root = self.library_root()?;
         std::fs::create_dir_all(&root)?;
         let dir = unique_dir(&root, &safe_component(title, " ", 80));
@@ -277,7 +364,7 @@ impl Library {
             duration_sec: 0.0,
             poster: None,
             poster_small: None,
-            fast_scan: self.fast_scan()?,
+            fast_scan: fast,
         };
         let project = Arc::new(Project::create(&summary, self.find_bodies.clone())?);
         self.db.insert_project(&summary)?;
@@ -467,6 +554,19 @@ impl Library {
     pub fn open_projects(&self) -> Vec<Arc<Project>> {
         self.open.lock().values().cloned().collect()
     }
+}
+
+/// Fast Scan's default from before it followed the computer, read once: "1"
+/// was the person's doing (it was off by default), so it stays On unless they
+/// chose since; "0" was written by every save of the settings, so it says
+/// nothing and goes.
+fn migrate_fast_scan(db: &LibraryDb) -> ProjectResult<()> {
+    let Some(legacy) = db.setting(KEY_LEGACY_FAST_SCAN)? else { return Ok(()) };
+    let mut rows = vec![(KEY_LEGACY_FAST_SCAN, None)];
+    if legacy == "1" && db.setting(KEY_SCAN_DEFAULT)?.is_none() {
+        rows.push((KEY_SCAN_DEFAULT, Some("fast")));
+    }
+    Ok(db.write_settings(&rows)?)
 }
 
 fn unique_dir(root: &Path, name: &str) -> PathBuf {
@@ -901,8 +1001,7 @@ mod tests {
         let (before, ..) = lib.create_project(&new("Before", ContentKind::Live)).unwrap();
         assert!(!before.fast_scan && !lib.project(before.id).unwrap().fast_scan());
 
-        let on = AppSettings { fast_scan: true, ..lib.settings().unwrap() };
-        assert!(lib.update_settings(&on).unwrap().fast_scan);
+        assert!(lib.set_scan_default(ScanChoice::Fast).unwrap().footage.iter().all(|a| a.fast));
         let (after, ..) = lib.create_project(&new("After", ContentKind::Animation)).unwrap();
         assert!(after.fast_scan && lib.project(after.id).unwrap().fast_scan());
         // Projects made before keep how they were made.
@@ -926,6 +1025,196 @@ mod tests {
         assert!(reopened.summary(before.id).unwrap().fast_scan && !reopened.summary(after.id).unwrap().fast_scan);
     }
 
+    // -- Fast Scan's default for new projects ---------------------------------
+
+    fn built_in_graphics() -> Machine {
+        Machine::Windows(Some(vec![computer::Adapter {
+            vendor: 0x8086,
+            device: 0x9A49,
+            name: "Intel Iris Xe Graphics".into(),
+            integrated: true,
+            luid: 0x1_0828,
+        }]))
+    }
+
+    fn rtx() -> Machine {
+        Machine::Windows(Some(vec![computer::Adapter {
+            vendor: 0x10DE,
+            device: 0x24C9,
+            name: "NVIDIA GeForce RTX 3060 Ti".into(),
+            integrated: false,
+            luid: 0x1_0828,
+        }]))
+    }
+
+    /// `lib()`'s library, opened on the computer `probe` reads.
+    fn lib_on(probe: fn() -> Machine) -> (tempfile::TempDir, Library) {
+        let (dir, lib) = lib();
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), probe).unwrap();
+        (dir, lib)
+    }
+
+    fn new_project(content: ContentKind) -> NewProject {
+        NewProject { title: format!("{content:?}"), kind: ProjectKind::Movie, content, files: vec![] }
+    }
+
+    fn stored(lib: &Library, key: &str) -> Option<String> {
+        lib.db.setting(key).unwrap()
+    }
+
+    #[test]
+    fn new_projects_follow_this_computer_on_automatic() {
+        let (_dir, lib) = lib_on(built_in_graphics);
+        assert_eq!(lib.computer().class, computer::Class::Integrated);
+        assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Auto);
+        assert!(lib.settings().unwrap().fast_scan, "live action starts with Fast Scan here");
+        let made = |content| lib.create_project(&new_project(content)).unwrap().0.fast_scan;
+        assert!(made(ContentKind::Live) && made(ContentKind::Mixed) && made(ContentKind::Anime));
+        assert!(!made(ContentKind::Animation), "3D animation keeps the full scan");
+        // Finding people without a visible face keeps live action on the full scan.
+        lib.update_settings(&AppSettings { find_bodies: true, ..lib.settings().unwrap() }).unwrap();
+        assert!(!lib.settings().unwrap().fast_scan);
+        assert!(!made(ContentKind::Live) && !made(ContentKind::Mixed) && made(ContentKind::Anime));
+
+        // Graphics built for AI work keep the full scan for every footage.
+        let (_dir, lib) = lib_on(rtx);
+        assert_eq!(lib.computer().name, "NVIDIA GeForce RTX 3060 Ti");
+        assert!(!lib.settings().unwrap().fast_scan);
+        for content in [ContentKind::Live, ContentKind::Mixed, ContentKind::Animation, ContentKind::Anime] {
+            assert!(!lib.create_project(&new_project(content)).unwrap().0.fast_scan, "{content:?}");
+        }
+    }
+
+    #[test]
+    fn automatic_on_and_off_are_stored_and_automatic_deletes_the_key() {
+        let (dir, lib) = lib_on(built_in_graphics);
+        assert_eq!(stored(&lib, KEY_SCAN_DEFAULT), None);
+        let off = lib.set_scan_default(ScanChoice::Full).unwrap();
+        assert_eq!((off.choice, off.footage.iter().any(|a| a.fast)), (ScanChoice::Full, false));
+        assert_eq!(stored(&lib, KEY_SCAN_DEFAULT).as_deref(), Some("full"));
+        assert!(!lib.settings().unwrap().fast_scan);
+        let on = lib.set_scan_default(ScanChoice::Fast).unwrap();
+        assert_eq!((on.choice, on.footage.iter().all(|a| a.fast)), (ScanChoice::Fast, true));
+        assert_eq!(stored(&lib, KEY_SCAN_DEFAULT).as_deref(), Some("fast"));
+        // Kept across starts.
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), built_in_graphics).unwrap();
+        assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Fast);
+        let auto = lib.set_scan_default(ScanChoice::Auto).unwrap();
+        assert_eq!(auto, scan::defaults(&lib.computer(), ScanChoice::Auto, false));
+        assert_eq!(stored(&lib, KEY_SCAN_DEFAULT), None, "Automatic stores nothing");
+        // A choice a newer app stored, that this one can't read, is Automatic.
+        lib.db.set_setting(KEY_SCAN_DEFAULT, "balanced").unwrap();
+        assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Auto);
+    }
+
+    #[test]
+    fn a_settings_copy_never_changes_the_scan_default() {
+        let (_dir, lib) = lib_on(built_in_graphics);
+        // A copy made before (as the export page and the shortcuts save them)
+        // says Fast Scan is off: Automatic stays, and so does Fast Scan here.
+        let stale = AppSettings { fast_scan: false, ..lib.settings().unwrap() };
+        assert!(lib.update_settings(&stale).unwrap().fast_scan);
+        assert_eq!(stored(&lib, KEY_SCAN_DEFAULT), None);
+        assert_eq!(stored(&lib, KEY_LEGACY_FAST_SCAN), None, "the old key isn't written again");
+        // Nor the other way round.
+        lib.set_scan_default(ScanChoice::Full).unwrap();
+        let stale = AppSettings { fast_scan: true, ..lib.settings().unwrap() };
+        assert!(!lib.update_settings(&stale).unwrap().fast_scan);
+        assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Full);
+    }
+
+    #[test]
+    fn fast_scan_chosen_before_stays_and_the_old_default_doesnt() {
+        let (dir, lib) = lib_on(built_in_graphics);
+        let reopen = |lib: Library| {
+            drop(lib);
+            Library::open_with(&AppPaths::at(dir.path().join("data")), rtx).unwrap()
+        };
+        // "1" was the person's own doing: On, even where the full scan is the default.
+        lib.db.set_setting(KEY_LEGACY_FAST_SCAN, "1").unwrap();
+        let lib = reopen(lib);
+        assert_eq!(stored(&lib, KEY_SCAN_DEFAULT).as_deref(), Some("fast"));
+        assert_eq!(stored(&lib, KEY_LEGACY_FAST_SCAN), None);
+        assert!(lib.settings().unwrap().fast_scan);
+        let lib = reopen(lib);
+        assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Fast, "read once, and kept");
+        // "0" was written by every save, so it says nothing.
+        lib.set_scan_default(ScanChoice::Auto).unwrap();
+        lib.db.set_setting(KEY_LEGACY_FAST_SCAN, "0").unwrap();
+        let lib = reopen(lib);
+        assert_eq!((stored(&lib, KEY_SCAN_DEFAULT), stored(&lib, KEY_LEGACY_FAST_SCAN)), (None, None));
+        // A choice made since wins over an old "1" (an older app saved after this one).
+        lib.set_scan_default(ScanChoice::Full).unwrap();
+        lib.db.set_setting(KEY_LEGACY_FAST_SCAN, "1").unwrap();
+        let lib = reopen(lib);
+        assert_eq!(stored(&lib, KEY_SCAN_DEFAULT).as_deref(), Some("full"));
+        assert_eq!(stored(&lib, KEY_LEGACY_FAST_SCAN), None);
+    }
+
+    #[test]
+    fn a_project_is_made_with_the_scan_the_dialog_sent() {
+        let (_dir, lib) = lib_on(built_in_graphics);
+        for content in [ContentKind::Live, ContentKind::Mixed, ContentKind::Animation, ContentKind::Anime] {
+            let req = new_project(content);
+            let (on, project, _) = lib.create_project_with(&req, Some(true)).unwrap();
+            assert!(on.fast_scan && project.fast_scan(), "{content:?} on");
+            assert!(lib.summary(on.id).unwrap().fast_scan);
+            let (off, project, _) = lib.create_project_with(&req, Some(false)).unwrap();
+            assert!(!off.fast_scan && !project.fast_scan(), "{content:?} off");
+            // Nothing sent: the footage's default here.
+            let (default, ..) = lib.create_project_with(&req, None).unwrap();
+            assert_eq!(default.fast_scan, content != ContentKind::Animation, "{content:?} default");
+        }
+        // What the dialog sent wins over the person's default too.
+        lib.set_scan_default(ScanChoice::Full).unwrap();
+        assert!(lib.create_project_with(&new_project(ContentKind::Live), Some(true)).unwrap().0.fast_scan);
+        assert!(!lib.create_project_with(&new_project(ContentKind::Live), None).unwrap().0.fast_scan);
+    }
+
+    #[test]
+    fn a_library_opened_for_tests_knows_no_computer() {
+        let (_dir, lib) = lib();
+        assert_eq!(lib.computer().class, computer::Class::Unknown);
+        let d = lib.scan_defaults().unwrap();
+        assert_eq!(d.computer, as_api::ThisComputer { class: as_api::GraphicsClass::Unknown, name: String::new() });
+        assert!(d.footage.iter().all(|a| !a.fast), "the full scan, as before");
+        assert!(!lib.settings().unwrap().fast_scan);
+    }
+
+    /// The runtime AutoScene ships for Linux computes on the processor only.
+    #[cfg(not(any(windows, target_os = "macos")))]
+    #[test]
+    fn on_linux_new_live_action_projects_start_with_fast_scan() {
+        let (_dir, lib) = lib_on(computer::probe);
+        assert_eq!(lib.computer().class, computer::Class::Processor);
+        assert!(lib.settings().unwrap().fast_scan);
+        assert!(lib.create_project(&new_project(ContentKind::Live)).unwrap().0.fast_scan);
+        assert!(!lib.create_project(&new_project(ContentKind::Animation)).unwrap().0.fast_scan);
+    }
+
+    #[test]
+    fn the_machine_is_probed_once_and_chosen_on_every_call() {
+        static PROBES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        fn counted() -> Machine {
+            PROBES.fetch_add(1, Ordering::SeqCst);
+            built_in_graphics()
+        }
+        let (dir, lib) = lib();
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), counted).unwrap();
+        assert_eq!(PROBES.load(Ordering::SeqCst), 0, "not read before it is needed");
+        assert_eq!(lib.computer().class, computer::Class::Integrated);
+        // Each answer is made afresh from what is chosen now; the adapters are read once.
+        assert!(lib.scan_defaults().unwrap().footage[0].fast);
+        lib.update_settings(&AppSettings { find_bodies: true, ..lib.settings().unwrap() }).unwrap();
+        assert!(!lib.scan_defaults().unwrap().footage[0].fast);
+        assert!(lib.set_scan_default(ScanChoice::Fast).unwrap().footage[0].fast);
+        lib.create_project(&new_project(ContentKind::Live)).unwrap();
+        assert_eq!(PROBES.load(Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn keeps_the_keys_the_person_chose() {
         let (dir, lib) = lib();
@@ -947,7 +1236,7 @@ mod tests {
         // stays while other settings change.
         reopened.db.set_setting(KEY_SHORTCUTS, "{not json").unwrap();
         assert_eq!(reopened.settings().unwrap().shortcuts, Shortcuts::default());
-        reopened.update_settings(&AppSettings { fast_scan: true, ..reopened.settings().unwrap() }).unwrap();
+        reopened.update_settings(&AppSettings { find_bodies: true, ..reopened.settings().unwrap() }).unwrap();
         assert_eq!(reopened.db.setting(KEY_SHORTCUTS).unwrap().as_deref(), Some("{not json"));
         // Keys chosen here replace it.
         reopened.update_settings(&AppSettings { shortcuts: chosen.clone(), ..reopened.settings().unwrap() }).unwrap();
@@ -995,8 +1284,8 @@ mod tests {
         let root = PathBuf::from(lib.settings().unwrap().library_root);
         std::fs::remove_dir_all(&root).unwrap();
         std::fs::write(&root, b"").unwrap();
-        let saved = lib.update_settings(&AppSettings { fast_scan: true, ..lib.settings().unwrap() }).unwrap();
-        assert!(saved.fast_scan);
+        let saved = lib.update_settings(&AppSettings { find_bodies: true, ..lib.settings().unwrap() }).unwrap();
+        assert!(saved.find_bodies);
         // A new folder that can't be made is still refused.
         let blocked = dir.path().join("blocked");
         std::fs::write(&blocked, b"").unwrap();

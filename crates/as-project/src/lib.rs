@@ -15,9 +15,12 @@ mod library;
 pub mod naming;
 mod pack;
 mod project;
+pub mod scan;
 pub mod tvmaze;
 
 pub use analysis::{Pass, ShotsPlan};
+/// What this computer analyses on: [`Library::open_with`] takes its probe.
+pub use as_infer::computer;
 pub use bodies::BodiesPlan;
 pub use cast::{FACE_CHUNK, FacesPlan, PORTRAIT, Portrait, StoppedStage, face_models};
 pub use error::{ProjectError, ProjectResult};

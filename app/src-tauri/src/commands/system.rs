@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use as_api::{AppInfo, MediaToolsStatus, ModelInfo, Platform};
+use as_api::{AppInfo, MediaToolsStatus, ModelInfo, Platform, ScanChoice, ScanDefaults};
 use as_core::AppPaths;
 use as_project::Library;
 use tauri::{AppHandle, State};
@@ -59,6 +59,24 @@ pub async fn models(state: State<'_, AppState>) -> AppResult<Vec<ModelInfo>> {
             .collect())
     })
     .await
+}
+
+/// The scan new projects start with, and why: this computer's graphics and
+/// the person's choice (New project, Settings → General, Edit details).
+#[tauri::command]
+#[specta::specta]
+pub async fn scan_defaults_get(state: State<'_, AppState>) -> AppResult<ScanDefaults> {
+    let lib = state.library.clone();
+    blocking(move || Ok(lib.scan_defaults()?)).await
+}
+
+/// Choose the scan new projects start with: Automatic follows this computer,
+/// On and Off apply to every footage. Only here: `settings_update` keeps it.
+#[tauri::command]
+#[specta::specta]
+pub async fn scan_default_set(state: State<'_, AppState>, choice: ScanChoice) -> AppResult<ScanDefaults> {
+    let lib = state.library.clone();
+    blocking(move || Ok(lib.set_scan_default(choice)?)).await
 }
 
 /// Show a file or folder in Explorer / Finder: one AutoScene knows (its

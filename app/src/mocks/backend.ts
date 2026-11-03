@@ -91,8 +91,11 @@ import type {
   NewProject,
   ProjectKind,
   ProjectSummary,
+  ScanChoice,
+  ScanDefaults,
   Segment,
   SettingValue,
+  ThisComputer,
   TrackFilter,
   CastEdit,
   UpdateStatus,
@@ -163,7 +166,44 @@ const appInfo: AppInfo = {
 }
 
 let mockClipboard: string | null = null
+
+// -- this computer: Fast Scan's default for new projects ----------------------
+// `?mockMachine=rtx|gtx|integrated|processor|linux|apple-base|apple-pro|unknown`
+// (before the `#`) is the computer the mock analyses on; `rtx`, the default,
+// keeps the full scan as the dev machine does. The platform follows it.
+const MACHINES: Record<string, ThisComputer & { platform: AppInfo["platform"] }> = {
+  rtx: { class: "forAi", name: "NVIDIA GeForce RTX 3060 Ti", platform: "windows" },
+  gtx: { class: "notForAi", name: "NVIDIA GeForce GTX 1060 6GB", platform: "windows" },
+  integrated: { class: "integrated", name: "Intel Iris Xe Graphics", platform: "windows" },
+  processor: { class: "processor", name: "", platform: "windows" },
+  linux: { class: "processor", name: "", platform: "linux" },
+  "apple-base": { class: "integrated", name: "Apple M2", platform: "macos" },
+  "apple-pro": { class: "integrated", name: "Apple M3 Max", platform: "macos" },
+  unknown: { class: "unknown", name: "", platform: "windows" },
+}
+const machineName = new URLSearchParams(window.location.search).get("mockMachine")
+const machine = MACHINES[machineName ?? "rtx"] ?? MACHINES.rtx
+if (machineName) appInfo.platform = machine.platform
+/** The person's choice: only `scan_default_set` changes it, as in the library. */
+let scanChoice: ScanChoice = "auto"
+
+/** Like `as_project::scan::defaults`: what a new project of `content` starts with. */
+function startsFast(content: ContentKind): boolean {
+  if (scanChoice !== "auto") return scanChoice === "fast"
+  if (!["notForAi", "integrated", "processor"].includes(machine.class)) return false
+  if (content === "animation") return false
+  return content === "anime" || !(settings.findBodies ?? false)
+}
+
+function scanDefaults(): ScanDefaults {
+  const footage = (["live", "mixed", "animation", "anime"] as const).map((content) => ({ content, fast: startsFast(content) }))
+  return { computer: { class: machine.class, name: machine.name }, choice: scanChoice, footage }
+}
+
 let settings: AppSettings = { libraryRoot: ROOT, exportPresetId: "prores-hq", audioLanguage: "eng", allowUnreviewedPlugins: false }
+/** As the library answers it, `fastScan` says what live action starts with here. */
+const followFastScan = () => void (settings = { ...settings, fastScan: startsFast("live") })
+followFastScan()
 
 /** Whether plugins AutoScene hasn't reviewed may run (changed only by `plugins_allow_unreviewed`). */
 const allows = () => settings.allowUnreviewedPlugins ?? false
@@ -956,19 +996,27 @@ const handlers: Record<string, Handler> = {
   models: () => MODELS,
   settings_get: () => settings,
   settings_update: ({ settings: s }) => {
-    // Like the backend: only plugins_allow_unreviewed changes this one.
+    // Like the backend: only plugins_allow_unreviewed changes this one, and
+    // only scan_default_set Fast Scan's default (`fastScan` is read only).
     settings = { ...(s as AppSettings), allowUnreviewedPlugins: allows() }
+    followFastScan()
     setMockBodies(settings.findBodies ?? false)
     return settings
   },
+  scan_defaults_get: () => scanDefaults(),
+  scan_default_set: ({ choice }) => {
+    scanChoice = choice as ScanChoice
+    followFastScan()
+    return scanDefaults()
+  },
   projects_list: () => [...projects].sort((a, b) => b.updatedAt - a.updatedAt).map(summary),
   project_get: ({ projectId }) => summary(find(projectId)),
-  project_create: ({ req }) => {
+  project_create: ({ req, fastScan }) => {
     const r = req as NewProject
     const items = scan(r.files, r.kind).map((c) => media(c.fileName, [c.season, c.episode], { status: "queued", path: c.path }))
     const p = project(r.title, r.kind, r.content, items, 0)
-    // Like the library: projects made while Fast Scan is on keep it.
-    p.fastScan = settings.fastScan ?? false
+    // Like the library: what the dialog sent, else the footage's default here.
+    p.fastScan = (fastScan as boolean | null | undefined) ?? startsFast(r.content)
     projects.unshift(p)
     items.forEach((m) => ingest(p, m))
     void emit("library:changed", { projectId: p.id })

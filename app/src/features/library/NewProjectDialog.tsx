@@ -87,7 +87,9 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
   const create = async () => {
     setCreating(true)
     try {
-      const p = await commands.projectCreate({ title: title.trim(), kind, content, files: chosen.map((c) => c.path) })
+      // `null`: the scan this footage starts with on this computer.
+      const req = { title: title.trim(), kind, content, files: chosen.map((c) => c.path) }
+      const p = await commands.projectCreate(req, null)
       onDone()
       void navigate({ to: "/p/$pid/episodes", params: { pid: p.id } })
     } catch (e) {

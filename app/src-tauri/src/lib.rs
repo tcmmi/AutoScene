@@ -20,7 +20,7 @@ mod window;
 mod work;
 
 use as_core::AppPaths;
-use as_project::Library;
+use as_project::{Library, ProjectResult};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
@@ -42,6 +42,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::system::menu_set_keys,
             commands::system::media_tools,
             commands::system::models,
+            commands::system::scan_defaults_get,
+            commands::system::scan_default_set,
             commands::library::projects_list,
             commands::library::project_get,
             commands::library::project_create,
@@ -290,7 +292,7 @@ pub fn run() {
             // info and up.
             log::info!("AutoScene {} starting", app.package_info().version);
             log::debug!("data dir {}", paths.data.display());
-            let library = match Library::open(&paths) {
+            let library = match open_library(&paths) {
                 Ok(l) => l,
                 Err(e) => {
                     log::error!("opening the library failed: {}", e.detail());
@@ -321,6 +323,9 @@ The log is in {}",
             // Resume interrupted indexing and previews; locate ffmpeg and probe
             // the hardware off the UI thread so the first job starts warm.
             std::thread::spawn(move || {
+                // What this computer analyses on (its log line names it), so
+                // the probe never meets the first click.
+                handle.state::<state::AppState>().library.computer();
                 // Models a better one replaced (their media are found again below).
                 if let Err(e) = handle.state::<state::AppState>().models.prune() {
                     log::warn!("removing unused models: {}", e.detail());
@@ -346,8 +351,50 @@ The log is in {}",
         });
 }
 
+/// The library, knowing what this computer analyses on: new projects start
+/// with Fast Scan where those graphics aren't built for AI work. Debug builds
+/// take `AUTOSCENE_COMPUTER` (`for-ai`, `not-for-ai`, `integrated`,
+/// `processor`, `unknown`) in its place, so the dev machine can be seen as
+/// another computer.
+fn open_library(paths: &AppPaths) -> ProjectResult<Library> {
+    #[cfg(debug_assertions)]
+    if let Ok(name) = std::env::var("AUTOSCENE_COMPUTER") {
+        match stand_in(&name) {
+            Some(probe) => {
+                let taken = as_project::computer::choose(&probe(), &as_project::computer::Choice::Auto);
+                log::warn!("AUTOSCENE_COMPUTER={name}: this computer is taken as {taken}");
+                return Library::open_with(paths, probe);
+            }
+            None => log::warn!("AUTOSCENE_COMPUTER={name} names no computer; reading this one"),
+        }
+    }
+    Library::open_with(paths, as_project::computer::probe)
+}
+
+/// A computer the debug override names: one of each class, as DirectML would
+/// list it.
+#[cfg(debug_assertions)]
+fn stand_in(name: &str) -> Option<fn() -> as_project::computer::Machine> {
+    use as_project::computer::{Adapter, Machine};
+    fn one(vendor: u32, device: u32, name: &str, integrated: bool) -> Machine {
+        Machine::Windows(Some(vec![Adapter { vendor, device, name: name.into(), integrated, luid: 0x1_0828 }]))
+    }
+    Some(match name {
+        "for-ai" => || one(0x10DE, 0x24C9, "NVIDIA GeForce RTX 3060 Ti", false),
+        "not-for-ai" => || one(0x10DE, 0x1C03, "NVIDIA GeForce GTX 1060 6GB", false),
+        "integrated" => || one(0x8086, 0x9A49, "Intel Iris Xe Graphics", true),
+        "processor" => || Machine::Windows(Some(Vec::new())),
+        "unknown" => || Machine::Windows(None),
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use as_project::computer::{self, Choice};
+
+    use super::*;
+
     #[test]
     fn the_protocol_types_name_every_host_method_and_import_nothing() {
         let ts = super::protocol_ts();
@@ -358,5 +405,36 @@ mod tests {
         }
         // A page loads the kit alone: no Tauri, nothing else.
         assert!(!ts.lines().any(|l| l.starts_with("import ")), "{ts}");
+    }
+
+    #[test]
+    fn the_app_library_reads_this_computer() {
+        if std::env::var_os("AUTOSCENE_COMPUTER").is_some() {
+            return; // a debug override names another computer
+        }
+        let dir = std::env::temp_dir().join(format!("as-app-computer-{}", std::process::id()));
+        let lib = open_library(&AppPaths::at(&dir)).unwrap();
+        // The computer the probe reads, not the unknown one a library opened
+        // for tests knows (unless DXCore really can't be read).
+        assert_eq!(lib.computer(), computer::choose(&computer::probe(), &Choice::Auto));
+        if !cfg!(any(windows, target_os = "macos")) {
+            assert_eq!(lib.computer().class, computer::Class::Processor);
+        }
+        drop(lib);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_debug_override_names_the_computer() {
+        let class = |name| stand_in(name).map(|probe| computer::choose(&probe(), &Choice::Auto).class);
+        assert_eq!(class("for-ai"), Some(computer::Class::ForAi));
+        assert_eq!(class("not-for-ai"), Some(computer::Class::NotForAi));
+        assert_eq!(class("integrated"), Some(computer::Class::Integrated));
+        assert_eq!(class("processor"), Some(computer::Class::Processor));
+        assert_eq!(class("unknown"), Some(computer::Class::Unknown));
+        assert_eq!(class("laptop"), None);
+        let probe = stand_in("integrated").unwrap();
+        assert_eq!(computer::choose(&probe(), &Choice::Auto).name, "Intel Iris Xe Graphics");
     }
 }

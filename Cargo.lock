@@ -326,6 +326,7 @@ dependencies = [
  "as-db",
  "as-export",
  "as-identity",
+ "as-infer",
  "as-media",
  "as-models",
  "as-testkit",

@@ -43,10 +43,24 @@ export const commands = {
 	 *  what each is for, its licence, and whether it is here — Settings → About.
 	 */
 	models: () => __TAURI_INVOKE<ModelInfo[]>("models"),
+	/**
+	 *  The scan new projects start with, and why: this computer's graphics and
+	 *  the person's choice (New project, Settings → General, Edit details).
+	 */
+	scanDefaultsGet: () => __TAURI_INVOKE<ScanDefaults>("scan_defaults_get"),
+	/**
+	 *  Choose the scan new projects start with: Automatic follows this computer,
+	 *  On and Off apply to every footage. Only here: `settings_update` keeps it.
+	 */
+	scanDefaultSet: (choice: ScanChoice) => __TAURI_INVOKE<ScanDefaults>("scan_default_set", { choice }),
 	projectsList: () => __TAURI_INVOKE<ProjectSummary[]>("projects_list"),
 	projectGet: (projectId: ProjectId) => __TAURI_INVOKE<ProjectSummary>("project_get", { projectId }),
-	/**  Create a project from video files and start indexing them. */
-	projectCreate: (req: NewProject) => __TAURI_INVOKE<ProjectSummary>("project_create", { req }),
+	/**
+	 *  Create a project from video files and start indexing them. `fast_scan`
+	 *  is what the New Project dialog's switch shows; `None` (while the dialog
+	 *  hasn't read the defaults yet) takes its footage's default here.
+	 */
+	projectCreate: (req: NewProject, fastScan: boolean | null) => __TAURI_INVOKE<ProjectSummary>("project_create", { req, fastScan }),
 	projectRename: (projectId: ProjectId, title: string) => __TAURI_INVOKE<ProjectSummary>("project_rename", { projectId, title }),
 	/**
 	 *  Say what a project's footage is (live action, 3D animation, mixed; a
@@ -75,7 +89,8 @@ export const commands = {
 	settingsGet: () => __TAURI_INVOKE<AppSettings>("settings_get"),
 	/**
 	 *  Save the settings. Whether plugins AutoScene hasn't reviewed may run
-	 *  stays as it is: `plugins_allow_unreviewed` changes it.
+	 *  stays as it is: `plugins_allow_unreviewed` changes it. So does Fast Scan's
+	 *  default for new projects: `scan_default_set` changes it.
 	 */
 	settingsUpdate: (settings: AppSettings) => __TAURI_INVOKE<AppSettings>("settings_update", { settings }),
 	mediaList: (projectId: ProjectId) => __TAURI_INVOKE<MediaItem[]>("media_list", { projectId }),
@@ -519,11 +534,12 @@ export type AppSettings = {
 	 */
 	findBodies?: boolean,
 	/**
-	 *  Projects created while this is on find their faces the way the
-	 *  Scener app does (smaller models, a few frames per shot; anime keeps
-	 *  its character models): much faster, less sure who is who. Each
-	 *  project keeps what it was created with (see
-	 *  [`ProjectSummary::fast_scan`]); off by default.
+	 *  Whether new live-action projects start with Fast Scan (smaller face
+	 *  models, a few frames per shot; anime keeps its character models):
+	 *  much faster, less sure who is who. Each project keeps what it was
+	 *  created with (see [`ProjectSummary::fast_scan`]). **Read only**:
+	 *  `settings_update` ignores it; `scan_default_set` chooses, and
+	 *  [`ScanDefaults`] says why.
 	 */
 	fastScan?: boolean,
 	/**
@@ -922,6 +938,22 @@ export type Gop =
 "all_intra" | 
 /**  Encoder defaults (smallest files). */
 "delivery";
+
+/**  What this computer's analysis runs on, as Fast Scan's default sees it. */
+export type GraphicsClass = 
+/**
+ *  A separate graphics card built for AI work (matrix units the runtimes
+ *  use): on Automatic, new projects keep the full scan.
+ */
+"forAi" | 
+/**  A separate graphics card without them, or a virtual adapter. */
+"notForAi" | 
+/**  Built-in graphics, every Mac's included. */
+"integrated" | 
+/**  No graphics the analysis can use: it runs on the processor. */
+"processor" | 
+/**  AutoScene couldn't tell: on Automatic, new projects keep the full scan. */
+"unknown";
 
 export type HdrKind = "none" | "pq" | "hlg" | "dolby_vision";
 
@@ -1750,6 +1782,36 @@ export type SavedList = {
 	leftOut: number,
 };
 
+/**  What a new project of one footage starts with. */
+export type ScanAdvice = {
+	content: ContentKind,
+	/**  Fast Scan, else the full scan. */
+	fast: boolean,
+};
+
+/**
+ *  The person's default for new projects: follow this computer, or always
+ *  one scan.
+ */
+export type ScanChoice = 
+/**  Automatic: Fast Scan where the graphics aren't built for AI work. */
+"auto" | 
+/**  Every new project starts with Fast Scan, 3D animation too. */
+"fast" | 
+/**  Every new project starts with the full scan. */
+"full";
+
+/**
+ *  The scan new projects start with, and why: what the New Project dialog,
+ *  Settings and Edit details say about Fast Scan.
+ */
+export type ScanDefaults = {
+	computer: ThisComputer,
+	choice: ScanChoice,
+	/**  One entry per footage: live action, mixed, 3D animation, anime. */
+	footage: ScanAdvice[],
+};
+
 /**
  *  Frames `[start, end)` of a media. Segments cover it without gaps; clips
  *  come from `shot` segments, so they never start mid-transition.
@@ -1842,6 +1904,19 @@ export type SubtitleStream = {
 	forced: boolean,
 	/**  Text subtitles (SRT/ASS/…) can feed dialogue search; bitmap ones can't. */
 	textBased: boolean,
+};
+
+/**
+ *  This computer, as Settings and the New Project dialog speak of it. The
+ *  system it runs is [`AppInfo::platform`].
+ */
+export type ThisComputer = {
+	class: GraphicsClass,
+	/**
+	 *  The graphics as their driver names them ("Intel Iris Xe Graphics",
+	 *  "Apple M2"); empty for the processor and when nothing names them.
+	 */
+	name: string,
 };
 
 export type ToastTone = "neutral" | "error";

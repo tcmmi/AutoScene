@@ -16,6 +16,7 @@ export const queryClient = new QueryClient({
 export const qk = {
   appInfo: ["appInfo"] as const,
   settings: ["settings"] as const,
+  scanDefaults: ["scanDefaults"] as const,
   mediaTools: ["mediaTools"] as const,
   presets: ["exportPresets"] as const,
   projects: ["projects"] as const,
@@ -53,6 +54,14 @@ export function useAppInfo() {
 
 export function useSettings() {
   return useQuery({ queryKey: qk.settings, queryFn: () => commands.settingsGet() })
+}
+
+/**
+ * The scan new projects start with, and why. Read afresh wherever it is shown:
+ * a choice in Settings or the faceless-people switch changes it.
+ */
+export function useScanDefaults() {
+  return useQuery({ queryKey: qk.scanDefaults, queryFn: () => commands.scanDefaultsGet(), staleTime: 0 })
 }
 
 export function useMediaTools() {

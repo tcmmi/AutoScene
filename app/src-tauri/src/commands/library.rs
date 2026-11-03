@@ -32,13 +32,20 @@ pub async fn project_get(state: State<'_, AppState>, project_id: ProjectId) -> A
     blocking(move || Ok(lib.summary(project_id)?)).await
 }
 
-/// Create a project from video files and start indexing them.
+/// Create a project from video files and start indexing them. `fast_scan`
+/// is what the New Project dialog's switch shows; `None` (while the dialog
+/// hasn't read the defaults yet) takes its footage's default here.
 #[tauri::command]
 #[specta::specta]
-pub async fn project_create(app: AppHandle, state: State<'_, AppState>, req: NewProject) -> AppResult<ProjectSummary> {
+pub async fn project_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: NewProject,
+    fast_scan: Option<bool>,
+) -> AppResult<ProjectSummary> {
     paths::check_all(&req.files)?;
     let lib = state.library.clone();
-    let (summary, project, added) = blocking(move || Ok(lib.create_project(&req)?)).await?;
+    let (summary, project, added) = blocking(move || Ok(lib.create_project_with(&req, fast_scan)?)).await?;
     allow_asset_dir(&app, &project.thumbs_dir());
     for id in added {
         work::queue_ingest(&app, &project, id);
@@ -165,7 +172,8 @@ pub async fn settings_get(state: State<'_, AppState>) -> AppResult<AppSettings> 
 }
 
 /// Save the settings. Whether plugins AutoScene hasn't reviewed may run
-/// stays as it is: `plugins_allow_unreviewed` changes it.
+/// stays as it is: `plugins_allow_unreviewed` changes it. So does Fast Scan's
+/// default for new projects: `scan_default_set` changes it.
 #[tauri::command]
 #[specta::specta]
 pub async fn settings_update(

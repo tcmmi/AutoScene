@@ -1,13 +1,15 @@
 import { FolderOpen } from "@/components/icons"
 import { toast } from "sonner"
-import type { AppSettings } from "@/bindings"
+import type { AppSettings, ScanChoice } from "@/bindings"
 import { Button } from "@/components/ui/button"
+import { Segmented } from "@/components/ui/segmented"
 import { Select } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { settingsLine } from "@/lib/fast-scan"
 import { commands, errorMessage } from "@/lib/ipc"
 import { PREFERRED_AUDIO_LANGUAGES, pickFolder } from "@/lib/media"
 import { reveal } from "@/lib/os"
-import { qk, queryClient, useAppInfo, usePresets, useSettings } from "@/lib/queries"
+import { qk, queryClient, useAppInfo, usePresets, useScanDefaults, useSettings } from "@/lib/queries"
 import { PathText, SettingRow, SettingsGroup } from "../primitives"
 
 async function save(next: AppSettings) {
@@ -21,10 +23,27 @@ async function save(next: AppSettings) {
   }
 }
 
+/** Fast Scan's default for new projects: only `scanDefaultSet` changes it, never a copy of the settings. */
+async function chooseScan(choice: ScanChoice) {
+  try {
+    queryClient.setQueryData(qk.scanDefaults, await commands.scanDefaultSet(choice))
+    void queryClient.invalidateQueries({ queryKey: qk.settings })
+  } catch (e) {
+    toast.error("Couldn't save the setting", { description: errorMessage(e) })
+  }
+}
+
+const SCAN_CHOICES: { value: ScanChoice; label: string }[] = [
+  { value: "auto", label: "Automatic" },
+  { value: "fast", label: "On" },
+  { value: "full", label: "Off" },
+]
+
 export function GeneralSection() {
   const { data: info } = useAppInfo()
   const { data: settings } = useSettings()
   const { data: presets } = usePresets()
+  const { data: scan } = useScanDefaults()
 
   const changeLibrary = async () => {
     if (!settings) return
@@ -69,18 +88,35 @@ export function GeneralSection() {
             aria-label="Find characters without a visible face"
             checked={settings?.findBodies ?? false}
             disabled={!settings}
-            onCheckedChange={(on) => settings && void save({ ...settings, findBodies: on })}
+            onCheckedChange={(on) => {
+              if (!settings) return
+              // On Automatic, live action keeps the full scan while it is on.
+              const scanChanged = () => queryClient.invalidateQueries({ queryKey: qk.scanDefaults })
+              void save({ ...settings, findBodies: on }).then(scanChanged)
+            }}
           />
         </SettingRow>
         <SettingRow
           label="Fast Scan"
-          description="Finds faces the way the Scener app does: smaller face models, and only a few frames of each shot. Much faster, but characters are told apart less surely, and no one is found without a visible face. Anime keeps its own character models and only looks at those few frames. Applies to projects you create while it is on; switch an existing project in Edit details… Fast Scan's face models (MIT, Apache-2.0) may be used for any work; the full scan's face models come from InsightFace and may only be used for non-commercial work."
+          description={
+            <span className="block text-pretty">
+              Looks at only a few frames of each shot: much faster, but it finds fewer faces and no one without a visible face.
+              Applies to new projects; Edit details… changes one. Its face models may be used for any work, the full scan's only
+              for non-commercial work.
+              {scan && info && (
+                <span aria-live="polite" className="mt-2 block text-fg-1">
+                  {settingsLine(scan, info.platform)}
+                </span>
+              )}
+            </span>
+          }
         >
-          <Switch
-            aria-label="Fast Scan"
-            checked={settings?.fastScan ?? false}
-            disabled={!settings}
-            onCheckedChange={(on) => settings && void save({ ...settings, fastScan: on })}
+          <Segmented<ScanChoice | "">
+            aria-label="Fast Scan for new projects"
+            value={scan?.choice ?? ""}
+            disabled={!scan}
+            onChange={(choice) => choice && void chooseScan(choice)}
+            options={SCAN_CHOICES}
           />
         </SettingRow>
         <SettingRow

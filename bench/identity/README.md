@@ -179,3 +179,32 @@ Time on the film's last 22,319 frames (warm file cache, idle RTX 3060 Ti,
 pace. Whole: the film 371 s with Fast Scan, the BB proxy 40–50 s. (Whole
 runs of the full pass shared the GPU with another app and aren't
 comparable.)
+
+### Where it pays off
+
+The work each pass is, counted from its ONNX graphs at the engine's input
+sizes, in multiply-adds per minute of 24 fps video:
+
+| Pass | Multiply-adds per minute of video |
+|---|---|
+| Full scan, live action or mixed | 10.0–10.6 T (SCRFD 3.3–3.9, ArcFace R100 6.7) |
+| Fast Scan, live action | 0.09 T (about 110× less) |
+| Full scan, anime | 25–34 T |
+| Fast Scan, anime | about 7.8 T |
+| Shots pass (both) | 1.2 T |
+
+On graphics built for AI work (matrix units the runtimes use: NVIDIA's
+tensor cores, AMD's RDNA 3 and newer, Intel Arc) the full scan waits for
+the decoder, like Fast Scan: on the RTX 3060 Ti its models take about 2.6 s
+per minute of video. Without them the work shows. On this desktop's
+processor the full scan's models alone take 0.62–0.87× the video's length,
+on a 4-core laptop processor an estimated 1.3–2.6×; built-in graphics sit
+between, with 1/40 (UHD 620) to 1/2 (Apple M Pro class) of the RTX card's
+FP32. (Those timings were taken while the machine was shared: read them as
+orders of magnitude.)
+
+So on Automatic, new projects start with Fast Scan where the graphics
+aren't built for AI work (`as_project::scan`). Two kinds of footage keep
+the full scan, where Fast Scan costs most: 3D animation (0.586 of the main
+cast on their character instead of 0.937, above), and live action while
+people without a visible face are found, whom Fast Scan can't find.

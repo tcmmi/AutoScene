@@ -49,6 +49,8 @@ describe("NewProjectDialog", () => {
     await user.click(screen.getByRole("button", { name: "Create project" }))
     await waitFor(() => expect(commands.projectCreate).toHaveBeenCalled())
     expect(vi.mocked(commands.projectCreate).mock.calls[0][0].files).toEqual(["D:\\Show\\Show - 01.mkv"])
+    // No scan sent: the project starts with its footage's default on this computer.
+    expect(vi.mocked(commands.projectCreate).mock.calls[0][1]).toBeNull()
   })
 
   it("shows its file list as where dragged files go", () => {

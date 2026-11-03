@@ -90,11 +90,12 @@ pub struct AppSettings {
     /// scenepack. Analysis takes longer; off by default.
     #[serde(default)]
     pub find_bodies: bool,
-    /// Projects created while this is on find their faces the way the
-    /// Scener app does (smaller models, a few frames per shot; anime keeps
-    /// its character models): much faster, less sure who is who. Each
-    /// project keeps what it was created with (see
-    /// [`ProjectSummary::fast_scan`]); off by default.
+    /// Whether new live-action projects start with Fast Scan (smaller face
+    /// models, a few frames per shot; anime keeps its character models):
+    /// much faster, less sure who is who. Each project keeps what it was
+    /// created with (see [`ProjectSummary::fast_scan`]). **Read only**:
+    /// `settings_update` ignores it; `scan_default_set` chooses, and
+    /// [`ScanDefaults`] says why.
     #[serde(default)]
     pub fast_scan: bool,
     /// Anime projects may ask AniList, animated series TVmaze, animated films
@@ -141,6 +142,72 @@ pub struct KeyBinding {
     pub shift: bool,
     #[serde(default)]
     pub alt: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Fast Scan's default for new projects
+// ---------------------------------------------------------------------------
+
+/// What this computer's analysis runs on, as Fast Scan's default sees it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum GraphicsClass {
+    /// A separate graphics card built for AI work (matrix units the runtimes
+    /// use): on Automatic, new projects keep the full scan.
+    ForAi,
+    /// A separate graphics card without them, or a virtual adapter.
+    NotForAi,
+    /// Built-in graphics, every Mac's included.
+    Integrated,
+    /// No graphics the analysis can use: it runs on the processor.
+    Processor,
+    /// AutoScene couldn't tell: on Automatic, new projects keep the full scan.
+    Unknown,
+}
+
+/// The person's default for new projects: follow this computer, or always
+/// one scan.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ScanChoice {
+    /// Automatic: Fast Scan where the graphics aren't built for AI work.
+    #[default]
+    Auto,
+    /// Every new project starts with Fast Scan, 3D animation too.
+    Fast,
+    /// Every new project starts with the full scan.
+    Full,
+}
+
+/// This computer, as Settings and the New Project dialog speak of it. The
+/// system it runs is [`AppInfo::platform`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ThisComputer {
+    pub class: GraphicsClass,
+    /// The graphics as their driver names them ("Intel Iris Xe Graphics",
+    /// "Apple M2"); empty for the processor and when nothing names them.
+    pub name: String,
+}
+
+/// What a new project of one footage starts with.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanAdvice {
+    pub content: ContentKind,
+    /// Fast Scan, else the full scan.
+    pub fast: bool,
+}
+
+/// The scan new projects start with, and why: what the New Project dialog,
+/// Settings and Edit details say about Fast Scan.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanDefaults {
+    pub computer: ThisComputer,
+    pub choice: ScanChoice,
+    /// One entry per footage: live action, mixed, 3D animation, anime.
+    pub footage: Vec<ScanAdvice>,
 }
 
 // ---------------------------------------------------------------------------

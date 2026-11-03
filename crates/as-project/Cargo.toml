@@ -16,6 +16,8 @@ as-media.workspace = true
 as-export.workspace = true
 as-analysis.workspace = true
 as-identity.workspace = true
+# What this computer analyses on: Fast Scan's default for new projects.
+as-infer.workspace = true
 as-models.workspace = true
 parking_lot.workspace = true
 regex = "1.13"

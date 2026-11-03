@@ -93,6 +93,9 @@ export function drawSegments(
   }
 }
 
+/** A span's bar is this tall (CSS pixels), centred in its lane. */
+export const SPAN_BAR = 8
+
 /**
  * A character's time on screen: rounded bars, gold when they are the focus;
  * fainter where only their body shows (turned away, too small for a face).
@@ -108,8 +111,7 @@ export function drawSpans(
 ) {
   const p = palette(ctx)
   const end = view.t0 + view.span
-  const bar = 10
-  const y = (height - bar) / 2
+  const y = (height - SPAN_BAR) / 2
   // Bodies first, faces over them; spans of different faces may overlap:
   // all of them, those in view drawn.
   for (const body of [true, false]) {
@@ -126,7 +128,7 @@ export function drawSpans(
       const x0 = xOf(view, a, width)
       const w = Math.max(2, xOf(view, rel(s.end), width) - x0)
       ctx.beginPath()
-      ctx.roundRect(x0, y, w, bar, Math.min(bar / 2, w / 2))
+      ctx.roundRect(x0, y, w, SPAN_BAR, Math.min(SPAN_BAR / 2, w / 2))
       ctx.fill()
     }
     ctx.shadowBlur = 0

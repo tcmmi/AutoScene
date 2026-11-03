@@ -327,6 +327,19 @@ impl JobRunner {
         self.inner.state.lock().jobs.iter().any(|e| !e.info.state.is_finished() && pred(&e.info))
     }
 
+    /// Is a queued or running job matching `pred` there that nobody has
+    /// cancelled? One that was cancelled is only stopping: what it would
+    /// have done won't be done, so a request for that work right after the
+    /// cancel must go through (`is_active` still counts it until it ends).
+    pub fn is_under_way(&self, pred: impl Fn(&JobInfo) -> bool) -> bool {
+        self.inner
+            .state
+            .lock()
+            .jobs
+            .iter()
+            .any(|e| !e.info.state.is_finished() && !e.cancel.is_cancelled() && pred(&e.info))
+    }
+
     /// Cancel one job. Queued jobs end immediately; running ones are signalled
     /// and stop at their next cancellation check (ffmpeg is killed within ~40 ms).
     pub fn cancel(&self, id: JobId) {
@@ -765,6 +778,35 @@ mod tests {
         assert_eq!(finished(&rx, queued).state, JobState::Cancelled);
         r.cancel(running);
         assert_eq!(finished(&rx, running).state, JobState::Cancelled, "cancel wins over the error it causes");
+    }
+
+    #[test]
+    fn a_cancelled_job_is_no_longer_under_way_while_it_stops() {
+        let (r, rx) = runner(&[(Class::Analysis, 1)]);
+        let (started_tx, started_rx) = mpsc::channel();
+        let (stopped_tx, stopped_rx) = mpsc::channel::<()>();
+        // It takes its time to let go once cancelled, as the engine does.
+        let job = r.submit(spec("analyse", Class::Analysis), move |ctx| {
+            started_tx.send(()).unwrap();
+            while !ctx.cancel.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            stopped_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            Err(JobError::Cancelled)
+        });
+        let queued = r.submit(spec("next", Class::Analysis), |_| Ok(()));
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let this = |i: &JobInfo| i.id == job;
+        assert!(r.is_active(this) && r.is_under_way(this));
+        assert!(r.is_under_way(|i| i.id == queued), "a queued job is under way");
+        r.cancel(job);
+        assert!(r.is_active(this), "still active while it stops");
+        assert!(!r.is_under_way(this), "but no longer under way");
+        stopped_tx.send(()).unwrap();
+        assert_eq!(finished(&rx, job).state, JobState::Cancelled);
+        assert!(!r.is_active(this) && !r.is_under_way(this));
+        r.cancel(queued);
+        assert!(!r.is_under_way(|i| i.id == queued));
     }
 
     #[test]

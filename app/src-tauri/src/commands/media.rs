@@ -7,6 +7,7 @@ use as_api::{
     Segment, StageState,
 };
 use as_core::{MediaId, ProjectId};
+use as_jobs::JobRunner;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use tauri::{AppHandle, State};
@@ -105,6 +106,11 @@ pub async fn media_retry(
     project_id: ProjectId,
     media_id: MediaId,
 ) -> AppResult<()> {
+    // An indexing under way does it already, and the episode must not read
+    // "queued" under it.
+    if under_way(&state.jobs, JobKind::Ingest, media_id) {
+        return Ok(());
+    }
     let lib = state.library.clone();
     let project = blocking(move || {
         let p = lib.project(project_id)?;
@@ -328,7 +334,8 @@ pub async fn media_prepare_preview(
     if m.status != MediaStatus::Ready || m.proxy == ProxyState::NotNeeded {
         return Err(AppError::new(ErrorCode::Invalid, "This file doesn't need a separate preview."));
     }
-    if !state.jobs.is_active(|j| j.kind == JobKind::Proxy && j.media_id == Some(media_id)) {
+    // One cancelled is only stopping: a new build replaces it.
+    if !under_way(&state.jobs, JobKind::Proxy, media_id) {
         work::queue_proxy(&app, &project, media_id);
     }
     Ok(())
@@ -425,9 +432,44 @@ pub async fn media_segments(
     blocking(move || Ok(lib.project(project_id)?.segments(media_id)?)).await
 }
 
+/// Is a job of `kind` for `media` queued or running that nobody cancelled?
+/// One that was cancelled is only stopping, so a request right after the
+/// cancel goes through.
+fn under_way(jobs: &JobRunner, kind: JobKind, media: MediaId) -> bool {
+    jobs.is_under_way(|j| j.kind == kind && j.media_id == Some(media))
+}
+
+/// Does an analysis under way do by itself what `redo` asks? It finds every
+/// stage that isn't ready yet, from that stage's checkpoints, so finding one
+/// of those again would only start it over at the back of the queue; and
+/// going on (`None`) is what it does. Shots found can start over while it
+/// finds the characters, and characters found while it finds the people.
+fn under_way_does(shots: StageState, faces: StageState, redo: Option<AnalysisStage>) -> bool {
+    match redo {
+        None => true,
+        Some(AnalysisStage::Shots) => shots != StageState::Ready,
+        Some(AnalysisStage::Faces) => faces != StageState::Ready,
+    }
+}
+
+/// Is an analysis of `media` under way (waiting or running, not cancelled)
+/// that does what `redo` asks by itself? Then asking for it starts nothing:
+/// a menu opened just before the analysis began, a double click, a stage
+/// that ended just before the list caught up.
+fn analysis_does_already(
+    jobs: &JobRunner,
+    media: MediaId,
+    shots: StageState,
+    faces: StageState,
+    redo: Option<AnalysisStage>,
+) -> bool {
+    under_way_does(shots, faces, redo) && under_way(jobs, JobKind::Analyze, media)
+}
+
 /// Run the analysis of a media again. `redo` clears results from that stage
 /// on first (a running analysis of the media is stopped and restarted once
-/// it has stopped); `None` continues a stopped or failed run.
+/// it has stopped); `None` continues a stopped or failed run. Nothing starts
+/// over when an analysis under way does it anyway.
 #[tauri::command]
 #[specta::specta]
 pub async fn media_analyze(
@@ -438,15 +480,18 @@ pub async fn media_analyze(
     redo: Option<AnalysisStage>,
 ) -> AppResult<()> {
     let lib = state.library.clone();
-    let project = blocking(move || {
+    let (project, m) = blocking(move || {
         let p = lib.project(project_id)?;
         let m = p.media(media_id)?;
         if m.status != MediaStatus::Ready {
             return Err(AppError::new(ErrorCode::NotReady, format!("{} isn't indexed yet.", m.file_name)));
         }
-        Ok(p)
+        Ok((p, m))
     })
     .await?;
+    if analysis_does_already(&state.jobs, media_id, m.shots, m.faces, redo) {
+        return Ok(());
+    }
     let analysis = |j: &JobInfo| j.kind == JobKind::Analyze && j.media_id == Some(media_id);
     match redo {
         Some(stage) => {
@@ -495,4 +540,109 @@ pub async fn media_analyze(
     crate::events::emit_media_changed(&app, project_id, Some(media_id));
     let _ = crate::events::AnalysisChanged { project_id, media_id }.emit(&app);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    use as_api::{AnalysisStage, JobKind, StageState};
+    use as_core::MediaId;
+    use as_jobs::{Class, JobError, JobRunner, JobSpec};
+
+    use super::{analysis_does_already, under_way, under_way_does};
+
+    #[test]
+    fn what_an_analysis_under_way_finds_itself_is_not_started_over() {
+        use AnalysisStage::{Faces, Shots};
+        use StageState::*;
+        // Finding shots (or waiting to): it finds them; characters can't be asked for yet.
+        assert!(under_way_does(Running, Pending, Some(Shots)));
+        assert!(under_way_does(Pending, Pending, Some(Shots)), "waiting to find them");
+        assert!(under_way_does(Failed, Pending, Some(Shots)), "a failed stage is tried again by it");
+        assert!(under_way_does(Stopped, Pending, Some(Shots)), "a stopped stage goes on in it");
+        // Finding characters: shots found can start over, characters not.
+        assert!(!under_way_does(Ready, Running, Some(Shots)));
+        assert!(under_way_does(Ready, Running, Some(Faces)));
+        assert!(under_way_does(Ready, Pending, Some(Faces)), "waiting to find them");
+        assert!(under_way_does(Ready, Stopped, Some(Faces)), "a stopped stage goes on in it");
+        // Finding people: shots and characters found can both start over.
+        assert!(!under_way_does(Ready, Ready, Some(Shots)));
+        assert!(!under_way_does(Ready, Ready, Some(Faces)));
+        // Going on is what any analysis under way does.
+        assert!(under_way_does(Pending, Pending, None));
+        assert!(under_way_does(Ready, Ready, None));
+    }
+
+    fn job(kind: JobKind, class: Class, media: MediaId) -> JobSpec {
+        JobSpec {
+            kind,
+            class,
+            title: "Work".into(),
+            subtitle: None,
+            project_id: None,
+            media_id: Some(media),
+            export_id: None,
+        }
+    }
+
+    #[test]
+    fn a_request_right_after_cancel_still_goes_through() {
+        use AnalysisStage::{Faces, Shots};
+        use StageState::*;
+        let jobs = JobRunner::new(&[(Class::Analysis, 1), (Class::Media, 2)], |_| {});
+        let (started_tx, started) = mpsc::channel();
+        let mut stops = Vec::new();
+        // Work that, once cancelled, takes its time to let go, as the engine
+        // and ffmpeg do.
+        let mut slow = |kind, class, media| {
+            let (stop_tx, stop) = mpsc::channel::<()>();
+            stops.push(stop_tx);
+            let started_tx = started_tx.clone();
+            jobs.submit(job(kind, class, media), move |ctx| {
+                started_tx.send(()).unwrap();
+                while !ctx.cancel.is_cancelled() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                let _ = stop.recv_timeout(Duration::from_secs(10));
+                Err(JobError::Cancelled)
+            })
+        };
+        let (m, waiting, other) = (MediaId::new(), MediaId::new(), MediaId::new());
+        let analysing = slow(JobKind::Analyze, Class::Analysis, m);
+        let queued = slow(JobKind::Analyze, Class::Analysis, waiting);
+        let indexing = slow(JobKind::Ingest, Class::Media, m);
+        let previewing = slow(JobKind::Proxy, Class::Media, m);
+        for _ in 0..3 {
+            started.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
+
+        // Running: what it finds itself starts nothing; shots found start over.
+        assert!(analysis_does_already(&jobs, m, Running, Pending, Some(Shots)));
+        assert!(analysis_does_already(&jobs, m, Ready, Running, Some(Faces)));
+        assert!(analysis_does_already(&jobs, m, Running, Pending, None));
+        assert!(!analysis_does_already(&jobs, m, Ready, Running, Some(Shots)), "a stage that is ready");
+        assert!(!analysis_does_already(&jobs, other, Pending, Pending, Some(Shots)), "nothing analyses it");
+        // Waiting: it will find them at its place in the queue.
+        assert!(analysis_does_already(&jobs, waiting, Pending, Pending, Some(Shots)));
+        assert!(under_way(&jobs, JobKind::Ingest, m) && under_way(&jobs, JobKind::Proxy, m));
+        assert!(!under_way(&jobs, JobKind::Ingest, other));
+
+        // Cancelled, and still letting go: it won't do it any more.
+        jobs.cancel(analysing);
+        jobs.cancel(queued);
+        jobs.cancel(indexing);
+        jobs.cancel(previewing);
+        let stopping = |id| jobs.is_active(|j| j.id == id);
+        assert!(stopping(analysing) && stopping(indexing) && stopping(previewing));
+        assert!(!analysis_does_already(&jobs, m, Running, Pending, Some(Shots)));
+        assert!(!analysis_does_already(&jobs, m, Running, Pending, None));
+        assert!(!analysis_does_already(&jobs, waiting, Pending, Pending, Some(Shots)));
+        assert!(!under_way(&jobs, JobKind::Ingest, m), "Retry goes through");
+        assert!(!under_way(&jobs, JobKind::Proxy, m), "Prepare preview goes through");
+        for stop in stops {
+            let _ = stop.send(());
+        }
+    }
 }

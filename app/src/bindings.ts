@@ -116,7 +116,8 @@ export const commands = {
 	/**
 	 *  Run the analysis of a media again. `redo` clears results from that stage
 	 *  on first (a running analysis of the media is stopped and restarted once
-	 *  it has stopped); `None` continues a stopped or failed run.
+	 *  it has stopped); `None` continues a stopped or failed run. Nothing starts
+	 *  over when an analysis under way does it anyway.
 	 */
 	mediaAnalyze: (projectId: ProjectId, mediaId: MediaId, redo: 
 /**  Shots (and everything built on them: faces). */

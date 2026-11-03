@@ -617,6 +617,14 @@ function cancelJobs(of: (j: JobInfo) => boolean, record = true) {
   }
 }
 
+/**
+ * Is a job of `kind` for the media queued or running? A mock cancel ends a
+ * job at once, so none is still stopping, as a backend one may be.
+ */
+function underWay(kind: JobKind, mediaId: string) {
+  return jobs.some((j) => j.kind === kind && j.mediaId === mediaId && (j.state === "queued" || j.state === "running"))
+}
+
 function ingest(p: MockProject, m: MediaItem) {
   m.status = "indexing"
   const cancelled = () => {
@@ -930,6 +938,8 @@ const handlers: Record<string, Handler> = {
   },
   media_retry: ({ projectId, mediaId }) => {
     const p = find(projectId)
+    // An indexing under way does it already, as in the backend.
+    if (underWay("ingest", String(mediaId))) return null
     ingest(p, findMedia(p, mediaId))
     void emit("media:changed", { projectId: p.id, mediaId })
     return null
@@ -979,6 +989,10 @@ const handlers: Record<string, Handler> = {
   media_analyze: ({ projectId, mediaId, redo }) => {
     const p = find(projectId)
     const m = findMedia(p, mediaId)
+    // As in the backend: what an analysis under way finds itself (every
+    // stage that isn't ready) isn't started over, and going on is what it does.
+    const stage = redo === "shots" ? m.shots : redo === "faces" ? m.faces : null
+    if (underWay("analyze", m.id) && stage !== "ready") return null
     // A running analysis restarts from the stage asked for, as in the backend.
     if (redo) cancelJobs((j) => j.kind === "analyze" && j.mediaId === mediaId, false)
     if (redo === "shots") Object.assign(m, { shots: "pending", shotCount: null })

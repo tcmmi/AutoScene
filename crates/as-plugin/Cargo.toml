@@ -44,6 +44,7 @@ sha2.workspace = true
 zip.workspace = true
 minisign-verify.workspace = true
 base64.workspace = true
+keyring.workspace = true
 minisign = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 

@@ -224,6 +224,17 @@ describe("the install review", () => {
     expect(screen.getByText("A program in its folder.")).toBeTruthy()
   })
 
+  it("names each secret it keeps in the keychain", () => {
+    const settings = [
+      { key: "webhook", title: "Webhook address", description: null, kind: { type: "secret" as const, placeholder: null } },
+      { key: "loud", title: "Loud", description: null, kind: { type: "boolean" as const, default: false } },
+    ]
+    show(review({ plugin: { ...discord, settings } }))
+    expect(screen.getByText("Keeps Webhook address in your system's keychain")).toBeTruthy()
+    // A secret isn't counted with the settings.
+    expect(screen.getByText("1 setting")).toBeTruthy()
+  })
+
   it("never says a first signature shows who made it", () => {
     const signed = { ...discord, trust: "pinned" as const, author: "AutoScene", authorKeyId: "4B2D9C1E0F3A7E51" }
     show(review({ plugin: signed }))

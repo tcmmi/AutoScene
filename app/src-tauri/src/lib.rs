@@ -105,6 +105,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::plugins::plugin_settings_get,
             commands::plugins::plugin_settings_set,
             commands::plugins::plugin_run,
+            commands::plugins::plugin_secret_set,
+            commands::plugins::plugin_secret_clear,
             commands::jobs::jobs_list,
             commands::jobs::job_cancel,
             commands::jobs::jobs_clear_finished,

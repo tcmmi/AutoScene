@@ -35,6 +35,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     exportActions: [],
     commands: [],
     settings: [],
+    secretsSet: [],
     icon: null,
     logPath: `${DATA}\\logs\\plugins\\${o.id}.log`,
     warnings: [],
@@ -115,7 +116,7 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
           key: "webhook",
           title: "Webhook address",
           description: "From the channel's settings in Discord: Integrations, then Webhooks.",
-          kind: { type: "string", default: null, placeholder: "https://discord.com/api/webhooks/…", maxLength: 2000 },
+          kind: { type: "secret", placeholder: "https://discord.com/api/webhooks/…" },
         },
         {
           key: "mention",
@@ -312,7 +313,7 @@ export function setAfterExport(id: string, action: string, on: boolean, allow: b
 }
 
 function defaultOf(s: SettingSpec): SettingValue | undefined {
-  return s.kind.default ?? undefined
+  return s.kind.type === "secret" ? undefined : (s.kind.default ?? undefined)
 }
 
 /** Each setting's value: the person's, else its default (none without one). */
@@ -342,6 +343,8 @@ function problem(s: SettingSpec, v: SettingValue): string | null {
       if (k.min != null && v < k.min) return `must be at least ${k.min}`
       if (k.max != null && v > k.max) return `must be at most ${k.max}`
       return null
+    case "secret":
+      return "is kept in your system's keychain, never as a value"
   }
 }
 
@@ -351,6 +354,7 @@ export function setPluginValues(id: string, values: Record<string, SettingValue>
   for (const [key, v] of Object.entries(values)) {
     const s = specs.find((x) => x.key === key)
     if (!s) continue
+    if (s.kind.type === "secret") throw { code: "invalid", message: "A secret is set with its own button, never as a value." }
     const why = problem(s, v)
     if (why) throw { code: "invalid", message: `${s.title} ${why}.` }
     if (v === defaultOf(s)) own.delete(key)
@@ -358,6 +362,26 @@ export function setPluginValues(id: string, values: Record<string, SettingValue>
   }
   changed.set(id, own)
   return pluginValues(id)
+}
+
+/** The secret setting `key` of `id`, as `secret_set` checks it. The mock keeps no value, only that one is set. */
+export function setPluginSecret(id: string, key: string, value: string, allow: boolean): PluginInfo {
+  const old = get(id)
+  if (!old.settings.some((s) => s.key === key && s.kind.type === "secret")) {
+    throw { code: "invalid", message: `The plugin has no secret setting ${key}.` }
+  }
+  if (value === "") throw { code: "invalid", message: "A secret can't be empty. Remove it instead." }
+  if (value.length > 1024) throw { code: "invalid", message: "A secret can be at most 1024 characters." }
+  const p = { ...old, secretsSet: old.secretsSet.includes(key) ? old.secretsSet : [...old.secretsSet, key] }
+  installed.set(id, p)
+  return info(p, allow)
+}
+
+export function clearPluginSecret(id: string, key: string, allow: boolean): PluginInfo {
+  const old = get(id)
+  const p = { ...old, secretsSet: old.secretsSet.filter((k) => k !== key) }
+  installed.set(id, p)
+  return info(p, allow)
 }
 
 /**

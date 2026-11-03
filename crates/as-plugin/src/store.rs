@@ -2,9 +2,19 @@
 //! each in `library.db`'s settings, `plugin.<id>`, which holds its
 //! [`Record`]: the version, where its files are, its trust and pinned author
 //! key, and whether it is on. The values the person changed in its settings
-//! sit beside it in `plugin_settings.<id>`. Rows, not a table: a new library
-//! schema would make every older AutoScene refuse the library, also for
-//! people who never install a plugin.
+//! sit beside it in `plugin_settings.<id>`, and what else the person agreed
+//! to in `plugin_extra.<id>` ([`Extra`]): the runtime it was installed with,
+//! and which of its secret settings have a value in the keychain
+//! ([`crate::secrets`]; the values never come into a row). The keychain
+//! keeps them under the library's own id (`plugins_keychain`, made with its
+//! first secret), so another library on the computer never touches them.
+//! Rows, not a table: a new library schema would make every older
+//! AutoScene refuse the library, also for people who never install a
+//! plugin. An AutoScene of version 1.0 knows only the first two: it writes
+//! a record back without the fields it doesn't know, so nothing new goes
+//! into the record, and an extra row it leaves behind when it uninstalls
+//! the plugin, or installs it again, counts as none from the next open, and
+//! goes after it with its secrets.
 //!
 //! A package installs in two steps. [`Store::stage`] unpacks it into
 //! `plugins/.staging/<uuid>` and checks it there, which gives a [`Ticket`]:
@@ -35,7 +45,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, ErrorKind, Read};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use as_core::AppPaths;
@@ -50,26 +60,37 @@ use uuid::Uuid;
 
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{
-    self, Manifest, Parsed, Permission, PluginId, SettingKind, SettingSpec, SettingValue, current_platform, invalid,
-    shown,
+    self, Manifest, Parsed, Permission, PluginId, RuntimeKind, SettingKind, SettingSpec, SettingValue,
+    current_platform, invalid, shown,
 };
 use crate::package::{self, FilesLock, LOCK, LOCK_VERSION, LockedFile, MANIFEST, MAX_LOCK_BYTES, Unpacked, file_in};
 use crate::protocol::{ActionContext, AppContext, PluginContext, RunMessage, ToolPaths};
 use crate::runtime::RunSpec;
+use crate::secrets::{self, SecretStore};
 use crate::trust::{self, AuthorKey, Keys, Trust, Verdict};
 
 /// The [`Record`] version this AutoScene reads and writes. A row of another
 /// is a later AutoScene's: listed as needing it, and never written over.
 pub const RECORD_VERSION: u32 = 1;
+/// The [`Extra`] version this AutoScene reads and writes; as for a record.
+pub const EXTRA_VERSION: u32 = 1;
 
 const ROW: &str = "plugin.";
 const SETTINGS_ROW: &str = "plugin_settings.";
+/// It sorts after `plugin/`, so the registry's rows (`plugin.` up to
+/// `plugin/`) never take it for a plugin's, and outside `plugin_settings.`.
+pub const EXTRA_ROW: &str = "plugin_extra.";
+/// The id the keychain keeps this library's secrets under. Outside each
+/// plugin's rows, and never removed: an entry under it may outlive its
+/// plugin, when the keychain refused to remove it.
+const KEYCHAIN_ROW: &str = "plugins_keychain";
 const STAGING: &str = ".staging";
 const TRASH: &str = ".trash";
 /// Why a plugin whose folder is gone can't run.
 pub const MISSING: &str = "Its files are missing. Install it again.";
 const CHANGED: &str = "Its files were changed. Install it again.";
 const NEWER: &str = "Needs a newer AutoScene.";
+const RUNTIME_CHANGED: &str = "Its runtime changed. Load it again to agree to that.";
 /// How long a rename waits for Windows: a virus scanner may still hold a
 /// file it just unpacked.
 const RENAME_WAIT: Duration = Duration::from_secs(1);
@@ -98,6 +119,46 @@ pub struct Record {
     pub installed_at: i64,
 }
 
+/// What the person agreed to beside the [`Record`] (`plugin_extra.<id>`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Extra {
+    /// [`EXTRA_VERSION`].
+    pub v: u32,
+    /// The [`Record::installed_at`] of the install it was written with. A
+    /// row of another is left from before AutoScene 1.0 installed the plugin
+    /// again, which writes only the record: it counts as none.
+    #[serde(default)]
+    pub installed_at: i64,
+    /// The runtime it was installed with: a loaded folder that changes it
+    /// waits to be loaded again. None for a plugin installed without the row
+    /// (by AutoScene 1.0), which runs as a process.
+    #[serde(default)]
+    pub runtime: Option<RuntimeKind>,
+    /// The keys of its secret settings that have a value in the keychain;
+    /// never the values.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+}
+
+impl Default for Extra {
+    fn default() -> Self {
+        Self { v: EXTRA_VERSION, installed_at: 0, runtime: None, secrets: Vec::new() }
+    }
+}
+
+impl Extra {
+    /// Of a plugin installed to run as `runtime`, with no secret set yet.
+    pub fn agreed(runtime: RuntimeKind) -> Self {
+        Self { runtime: Some(runtime), ..Self::default() }
+    }
+
+    /// The runtime the person agreed to.
+    pub fn agreed_runtime(&self) -> RuntimeKind {
+        self.runtime.unwrap_or(RuntimeKind::Process)
+    }
+}
+
 /// Where a plugin's files are.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -119,9 +180,20 @@ pub struct Installed {
     /// Its folder: the package's under `plugins/<id>/`, or the loaded one.
     pub dir: PathBuf,
     /// Why it can't run, as a sentence: its files are missing or were
-    /// changed, a later AutoScene wrote its row, or it doesn't work with
-    /// this AutoScene.
+    /// changed, a later AutoScene wrote its rows, it doesn't work with this
+    /// AutoScene, or a loaded folder's runtime is not the one agreed to.
     pub broken: Option<String>,
+    /// What the person agreed to beside its record.
+    pub extra: Extra,
+}
+
+impl Installed {
+    /// The keys of its secret settings that have a value in the keychain:
+    /// those its row lists that its manifest still has.
+    pub fn secrets_stored(&self) -> Vec<String> {
+        let Some(m) = &self.manifest else { return Vec::new() };
+        m.secret_keys().filter(|k| self.extra.secrets.iter().any(|s| s == k)).map(str::to_owned).collect()
+    }
 }
 
 /// A package (or a folder) checked and waiting for the person's yes: what
@@ -156,23 +228,39 @@ pub struct Store {
     keys: Keys,
     /// The version of this AutoScene, which each plugin must work with.
     app: Version,
+    /// Where the values of secret settings are kept.
+    secrets: Arc<dyn SecretStore>,
+    /// The id they are kept under there ([`KEYCHAIN_ROW`]), once read.
+    library: OnceLock<String>,
     /// Held while a plugin's rows change, so each change starts from the
     /// rows the one before wrote.
     changing: Mutex<()>,
     /// What the open moved into `.trash`, for [`Store::remove_leftovers`].
     leftovers: Mutex<Vec<PathBuf>>,
+    /// The plugins whose extra row the open found left from before
+    /// ([`orphaned`]), for [`Store::remove_leftovers`].
+    orphans: Mutex<Vec<PluginId>>,
 }
 
 impl Store {
-    /// Opens the plugins of `paths` (registered in `db`, judged by `keys`)
-    /// for the AutoScene of version `app`, and moves into `.trash` what an
-    /// install or uninstall that never finished left: staged folders,
-    /// versions a row no longer names, and folders of plugins without a
-    /// row. A plugin whose row a later AutoScene wrote keeps its folder as
-    /// it is. Moving is quick; removing them, and what `.trash` held, is
-    /// [`Store::remove_leftovers`]'s, which a package's 4096 files can keep
-    /// busy for a second.
-    pub fn open(paths: &AppPaths, db: Arc<LibraryDb>, keys: Keys, app: Version) -> PluginResult<Self> {
+    /// Opens the plugins of `paths` (registered in `db`, judged by `keys`,
+    /// with their secrets in `secrets`) for the AutoScene of version `app`,
+    /// and moves into `.trash` what an install or uninstall that never
+    /// finished left: staged folders, versions a row no longer names, and
+    /// folders of plugins without a row. A plugin whose row a later
+    /// AutoScene wrote keeps its folder as it is. Moving is quick; removing
+    /// them, and what `.trash` held, is [`Store::remove_leftovers`]'s, which
+    /// a package's 4096 files can keep busy for a second. So is an extra row
+    /// left from before (AutoScene 1.0 uninstalled its plugin, or installed
+    /// it again), after its secrets, as the keychain may ask the person or
+    /// take its time; it counts as none meanwhile.
+    pub fn open(
+        paths: &AppPaths,
+        db: Arc<LibraryDb>,
+        keys: Keys,
+        app: Version,
+        secrets: Arc<dyn SecretStore>,
+    ) -> PluginResult<Self> {
         let store = Self {
             root: paths.plugins(),
             data: paths.plugin_data(),
@@ -180,9 +268,13 @@ impl Store {
             db,
             keys,
             app,
+            secrets,
+            library: OnceLock::new(),
             changing: Mutex::default(),
             leftovers: Mutex::default(),
+            orphans: Mutex::default(),
         };
+        *store.orphans.lock() = store.orphaned_extras()?;
         let (staging, trash) = (store.root.join(STAGING), store.root.join(TRASH));
         for dir in [&staging, &trash] {
             // The store's own folders: a file in their place goes.
@@ -203,11 +295,18 @@ impl Store {
     /// Removes what [`Store::open`] moved out of the way. Each lies in
     /// `.trash` under a name of its own, so what is staged, installed or
     /// thrown away meanwhile is never touched: this may run beside them.
+    /// Then the extra rows it found left from before, after their secrets.
     pub fn remove_leftovers(&self) {
         let leftovers = std::mem::take(&mut *self.leftovers.lock());
         for path in leftovers {
             if let Err(e) = remove_all(&path) {
                 tracing::warn!(path = %as_core::paths::name(&path), error = %e, "a plugin's old files stay");
+            }
+        }
+        let orphans = std::mem::take(&mut *self.orphans.lock());
+        for id in orphans {
+            if let Err(e) = self.forget_orphan(&id) {
+                tracing::warn!(plugin = %id, error = %e.detail(), "a plugin's old extra row stays");
             }
         }
     }
@@ -245,6 +344,33 @@ impl Store {
             }
         }
         Ok(moved)
+    }
+
+    /// The plugins whose extra row is left from before ([`orphaned`]).
+    fn orphaned_extras(&self) -> PluginResult<Vec<PluginId>> {
+        let rows: BTreeMap<PluginId, String> = self.rows()?.into_iter().collect();
+        let mut orphans = Vec::new();
+        for (key, value) in self.db.settings_in(EXTRA_ROW)? {
+            let Ok(id) = PluginId::parse(&key[EXTRA_ROW.len()..]) else { continue };
+            if orphaned(&id, rows.get(&id).map(String::as_str), &value) {
+                orphans.push(id);
+            }
+        }
+        Ok(orphans)
+    }
+
+    /// Removes the extra row of `id` while it is left from before
+    /// ([`orphaned`]), after the secrets it lists. Those go best-effort:
+    /// what the keychain refuses stays there, unlisted, so no plugin reads
+    /// it.
+    fn forget_orphan(&self, id: &PluginId) -> PluginResult<()> {
+        let _changing = self.changing.lock();
+        let Some(value) = self.db.setting(&extra_key(id))? else { return Ok(()) };
+        if orphaned(id, self.db.setting(&row_key(id))?.as_deref(), &value) {
+            self.forget_secrets(id, &secret_names(&value));
+            self.db.write_settings(&[(&extra_key(id), None)])?;
+        }
+        Ok(())
     }
 
     /// Every installed plugin, by id.
@@ -394,6 +520,16 @@ impl Store {
         if let Some(p) = &previous {
             check_update(p, m, verdict.trust, lock_sha256.as_deref())?;
         }
+        // The secrets it has keep their values; it runs as its manifest says
+        // from now, which the person agreed to. A value kept under the key of
+        // a secret setting, from before it was a secret, goes.
+        let kept = match &previous {
+            Some(p) => self.extra(p)?.secrets,
+            None => Vec::new(),
+        };
+        let installed_at = as_api::now_ms();
+        let extra = Extra { installed_at, secrets: kept, ..Extra::agreed(m.runtime.kind) };
+        let settings = self.settings_without_secrets(&m.id, m)?;
 
         let plugin_dir = self.root.join(m.id.as_str());
         let dir = match package {
@@ -425,9 +561,9 @@ impl Store {
                 .map(|p| p.after_export.iter().filter(|a| actions.contains(&a.as_str())).cloned().collect())
                 .unwrap_or_default(),
             lock_sha256,
-            installed_at: as_api::now_ms(),
+            installed_at,
         };
-        if let Err(e) = self.write_record(&record) {
+        if let Err(e) = self.write_installed(&record, &extra, settings.as_ref().map(Option::as_deref)) {
             if let Some(dir) = &dir {
                 self.throw_away(dir);
                 // Empty unless the version before lies in it.
@@ -476,15 +612,24 @@ impl Store {
 
     /// Uninstalls `id` (also one whose row a later AutoScene wrote): its
     /// rows go in one transaction (its pinned author key with them, so
-    /// installing it again is a first install), then its installed files. A
-    /// loaded folder is the developer's and stays where it is. `delete_data`
-    /// also removes what it kept ([`Store::data_dir`]).
+    /// installing it again is a first install), then its secrets,
+    /// best-effort, and its installed files. A loaded folder is the
+    /// developer's and stays where it is. `delete_data` also removes what it
+    /// kept ([`Store::data_dir`]).
     pub fn uninstall(&self, id: &PluginId, delete_data: bool) -> PluginResult<()> {
         let _changing = self.changing.lock();
-        if self.db.setting(&row_key(id))?.is_none() {
-            return Err(not_found(id));
+        let Some(row) = self.db.setting(&row_key(id))? else { return Err(not_found(id)) };
+        // Those its row lists, and each of its secret settings, listed or
+        // not: AutoScene may have stopped before the row named one, or a
+        // keychain refused to remove one at an uninstall before.
+        let mut secrets = self.db.setting(&extra_key(id))?.map(|value| secret_names(&value)).unwrap_or_default();
+        if let Some(m) = self.installed(id.clone(), &row).manifest {
+            let unlisted: Vec<String> =
+                m.secret_keys().filter(|k| !secrets.iter().any(|s| s == k)).map(str::to_owned).collect();
+            secrets.extend(unlisted);
         }
-        self.db.write_settings(&[(&row_key(id), None), (&settings_key(id), None)])?;
+        self.db.write_settings(&[(&row_key(id), None), (&settings_key(id), None), (&extra_key(id), None)])?;
+        self.forget_secrets(id, &secrets);
         self.throw_away(&self.root.join(id.as_str()));
         if delete_data {
             self.throw_away(&self.data_dir(id));
@@ -536,8 +681,9 @@ impl Store {
     /// default are kept, so a setting left alone follows the plugin's
     /// default. Gives every value, as [`Store::values`] does. Values a later
     /// AutoScene saved are never written over: a row this one can't read
-    /// refuses the change, and the value of a setting it skipped (a secret, a
-    /// type it doesn't know) stays as it is.
+    /// refuses the change, and the value of a setting it skipped (a type it
+    /// doesn't know) stays as it is. A secret setting is refused: its value
+    /// goes to the keychain ([`Store::secret_set`]), never into a row.
     pub fn set_values(
         &self,
         id: &PluginId,
@@ -552,6 +698,9 @@ impl Store {
         })?;
         for (key, value) in values {
             if let Some(spec) = spec(&key) {
+                if matches!(spec.kind, SettingKind::Secret { .. }) {
+                    return Err(invalid("A secret is set with its own button, never as a value."));
+                }
                 check_value(spec, &value)?;
                 stored.insert(key, serde_json::to_value(value).expect("a setting value serializes"));
             }
@@ -564,6 +713,93 @@ impl Store {
         let json = serde_json::to_string(&stored).expect("setting values serialize");
         self.db.write_settings(&[(&settings_key(id), (!stored.is_empty()).then_some(json.as_str()))])?;
         Ok(merged(specs, &typed(stored)))
+    }
+
+    /// Keeps `value` in the keychain as the secret setting `key` of `id`,
+    /// in place of the one before; gives the plugin as it is now. Its row
+    /// lists the key once the keychain holds it.
+    pub fn secret_set(&self, id: &PluginId, key: &str, value: &str) -> PluginResult<Installed> {
+        secrets::check(value)?;
+        let _changing = self.changing.lock();
+        let record = self.record(id)?.ok_or_else(|| not_found(id))?;
+        let p = self.load(record);
+        let m = manifest_of(&p)?;
+        if !m.secret_keys().any(|k| k == key) {
+            return Err(invalid(format!("The plugin has no secret setting {}.", shown(key))));
+        }
+        // A plain value kept under its key goes too: a loaded folder's
+        // plugin.json may have made it a secret since.
+        let settings = self.settings_without_secrets(id, m)?;
+        let mut extra = self.extra(&p.record)?;
+        self.secrets.set(self.library_or_new()?, id, key, value)?;
+        let listed = extra.secrets.iter().any(|k| k == key);
+        if !listed {
+            extra.secrets.push(key.to_owned());
+        }
+        if !listed || settings.is_some() {
+            self.write_extra(id, &extra, settings.as_ref().map(Option::as_deref))?;
+        }
+        Ok(self.load(p.record))
+    }
+
+    /// Removes the secret setting `key` of `id` from the keychain; gives the
+    /// plugin as it is now. Also one its row lists that the plugin no longer
+    /// has, or a broken plugin's, though the Settings page offers only its
+    /// secret settings now: such a secret goes with its uninstall.
+    pub fn secret_clear(&self, id: &PluginId, key: &str) -> PluginResult<Installed> {
+        let _changing = self.changing.lock();
+        let record = self.record(id)?.ok_or_else(|| not_found(id))?;
+        let p = self.load(record);
+        let mut extra = self.extra(&p.record)?;
+        let listed = extra.secrets.iter().any(|k| k == key);
+        if !listed && !p.manifest.as_ref().is_some_and(|m| m.secret_keys().any(|k| k == key)) {
+            return Err(invalid(format!("The plugin has no secret setting {}.", shown(key))));
+        }
+        if let Some(library) = self.library()? {
+            self.secrets.delete(library, id, key)?;
+        }
+        if listed {
+            extra.secrets.retain(|k| k != key);
+            self.write_extra(id, &extra, None)?;
+        }
+        Ok(self.load(p.record))
+    }
+
+    /// The value of the secret setting `key` of `id`, for the plugin alone:
+    /// never for a row, a log, a run's environment or its run line. None
+    /// while the person hasn't set it; the keychain is asked only once they
+    /// have. A key that isn't one of its secret settings now is refused.
+    pub fn secret(&self, id: &PluginId, key: &str) -> PluginResult<Option<String>> {
+        let p = self.get(id)?;
+        if !manifest_of(&p)?.secret_keys().any(|k| k == key) {
+            return Err(PluginError::Denied(format!("{} isn't one of the plugin's secret settings.", shown(key))));
+        }
+        match (p.extra.secrets.iter().any(|k| k == key), self.library()?) {
+            (true, Some(library)) => self.secrets.get(library, id, key),
+            _ => Ok(None),
+        }
+    }
+
+    /// The id the keychain keeps the secrets of this library under; none
+    /// while it has never kept one.
+    fn library(&self) -> PluginResult<Option<&str>> {
+        if self.library.get().is_none()
+            && let Some(library) = self.db.setting(KEYCHAIN_ROW)?
+        {
+            let _ = self.library.set(library);
+        }
+        Ok(self.library.get().map(String::as_str))
+    }
+
+    /// [`Store::library`], made and written for the first secret. Made
+    /// under `changing`, so only once.
+    fn library_or_new(&self) -> PluginResult<&str> {
+        if let Some(library) = self.library()? {
+            return Ok(library);
+        }
+        let library = Uuid::new_v4().simple().to_string();
+        self.db.write_settings(&[(KEYCHAIN_ROW, Some(&library))])?;
+        Ok(self.library.get_or_init(|| library))
     }
 
     /// Where `id` keeps what it needs between runs (its runs start there).
@@ -668,14 +904,96 @@ impl Store {
     /// installed, and an error when a later AutoScene wrote its row.
     fn record(&self, id: &PluginId) -> PluginResult<Option<Record>> {
         let Some(value) = self.db.setting(&row_key(id))? else { return Ok(None) };
-        read_row(id, &value).map(Some).ok_or_else(|| {
-            invalid("A newer AutoScene installed this plugin, so this one can't change it. Update AutoScene, or uninstall the plugin.")
-        })
+        read_row(id, &value).map(Some).ok_or_else(installed_by_a_newer_autoscene)
     }
 
     fn write_record(&self, record: &Record) -> PluginResult<()> {
         let json = serde_json::to_string(record).expect("a plugin record serializes");
         Ok(self.db.write_settings(&[(&row_key(&record.id), Some(&json))])?)
+    }
+
+    /// Writes the record of a plugin just installed and its extra row, and
+    /// its settings row `settings` when given (none removes it), in one
+    /// transaction.
+    fn write_installed(&self, record: &Record, extra: &Extra, settings: Option<Option<&str>>) -> PluginResult<()> {
+        let json = serde_json::to_string(record).expect("a plugin record serializes");
+        self.write_rows(&record.id, Some(&json), extra, settings)
+    }
+
+    /// Writes the extra row of `id`, and its settings row `settings` when
+    /// given (none removes it), in one transaction.
+    fn write_extra(&self, id: &PluginId, extra: &Extra, settings: Option<Option<&str>>) -> PluginResult<()> {
+        self.write_rows(id, None, extra, settings)
+    }
+
+    /// Writes the rows of `id` in one transaction: its record when given,
+    /// its extra row, and its settings row when given (none removes it).
+    fn write_rows(
+        &self,
+        id: &PluginId,
+        record: Option<&str>,
+        extra: &Extra,
+        settings: Option<Option<&str>>,
+    ) -> PluginResult<()> {
+        let extra_json = serde_json::to_string(extra).expect("a plugin's extra row serializes");
+        let (row, extra_row, settings_row) = (row_key(id), extra_key(id), settings_key(id));
+        let mut rows: Vec<(&str, Option<&str>)> = record.map(|json| (row.as_str(), Some(json))).into_iter().collect();
+        rows.push((&extra_row, Some(&extra_json)));
+        rows.extend(settings.map(|value| (settings_row.as_str(), value)));
+        Ok(self.db.write_settings(&rows)?)
+    }
+
+    /// The extra row of the plugin of `record` as this AutoScene reads it:
+    /// none when a later AutoScene wrote it, else the one of its install,
+    /// empty when there is none (AutoScene 1.0 installed it) or the row is
+    /// left from before ([`orphaned`]).
+    fn stored_extra(&self, record: &Record) -> PluginResult<Option<Extra>> {
+        let empty = Extra { installed_at: record.installed_at, ..Extra::default() };
+        let Some(value) = self.db.setting(&extra_key(&record.id))? else { return Ok(Some(empty)) };
+        Ok(read_extra(&record.id, &value)
+            .map(|extra| if extra.installed_at == record.installed_at { extra } else { empty }))
+    }
+
+    /// The extra row of the plugin of `record`, to change: an error when a
+    /// later AutoScene wrote it.
+    fn extra(&self, record: &Record) -> PluginResult<Extra> {
+        self.stored_extra(record)?.ok_or_else(installed_by_a_newer_autoscene)
+    }
+
+    /// The settings row of `id` without the values kept under the keys of
+    /// the secret settings of `m`, from before they were secrets: its text,
+    /// or none when nothing else is left in it. None when it holds no such
+    /// value, or doesn't read (a later AutoScene's, which stays as it is).
+    fn settings_without_secrets(&self, id: &PluginId, m: &Manifest) -> PluginResult<Option<Option<String>>> {
+        let Some(mut row) = self.stored_row(id)? else { return Ok(None) };
+        let before = row.len();
+        row.retain(|key, _| !m.secret_keys().any(|k| k == key));
+        if row.len() == before {
+            return Ok(None);
+        }
+        Ok(Some((!row.is_empty()).then(|| serde_json::to_string(&row).expect("setting values serialize"))))
+    }
+
+    /// Removes the secrets of `id` named `keys` from the keychain,
+    /// best-effort: one it refuses is logged by its key, and stays. A
+    /// library that never kept a secret has none there.
+    fn forget_secrets(&self, id: &PluginId, keys: &[String]) {
+        if keys.is_empty() {
+            return;
+        }
+        let library = match self.library() {
+            Ok(Some(library)) => library,
+            Ok(None) => return,
+            Err(e) => {
+                tracing::warn!(plugin = %id, error = %e.detail(), "a plugin's secrets stay in the keychain");
+                return;
+            }
+        };
+        for key in keys {
+            if let Err(e) = self.secrets.delete(library, id, key) {
+                tracing::warn!(plugin = %id, key = %key, error = %e.detail(), "a plugin's secret stays in the keychain");
+            }
+        }
     }
 
     /// The plugin of the row `value`.
@@ -688,28 +1006,42 @@ impl Store {
                 manifest: None,
                 warnings: Vec::new(),
                 broken: Some(NEWER.into()),
+                extra: Extra::default(),
             },
         }
     }
 
     /// The plugin of `record`, with the manifest in its folder, while it
-    /// works with this AutoScene.
+    /// works with this AutoScene and runs as the person agreed to.
     fn load(&self, record: Record) -> Installed {
         let dir = match &record.source {
             Source::Package { folder } => self.root.join(record.id.as_str()).join(folder),
             Source::Folder { path } => PathBuf::from(path),
         };
-        // Checked again here: AutoScene may have been put back to an older version.
-        let read = read_manifest(&record, &dir).and_then(|parsed| match parsed.manifest.requirement_met(&self.app) {
-            Ok(()) => Ok(parsed),
-            Err(PluginError::TooNew(_)) => Err(NEWER.into()),
-            Err(e) => Err(e.to_string()),
-        });
+        let (extra, read) = match self.stored_extra(&record) {
+            Ok(Some(extra)) => {
+                // Checked again here: AutoScene may have been put back to an older version.
+                let read =
+                    read_manifest(&record, &dir).and_then(|parsed| match parsed.manifest.requirement_met(&self.app) {
+                        Ok(()) => Ok(parsed),
+                        Err(PluginError::TooNew(_)) => Err(NEWER.into()),
+                        Err(e) => Err(e.to_string()),
+                    });
+                // A package's plugin.json is its lock's; a loaded folder's may say another now.
+                let read = read.and_then(|parsed| match parsed.manifest.runtime.kind == extra.agreed_runtime() {
+                    true => Ok(parsed),
+                    false => Err(RUNTIME_CHANGED.to_owned()),
+                });
+                (extra, read)
+            }
+            Ok(None) => (Extra::default(), Err(NEWER.into())),
+            Err(e) => (Extra::default(), Err(e.to_string())),
+        };
         let (manifest, warnings, broken) = match read {
             Ok(Parsed { manifest, warnings }) => (Some(manifest), warnings, None),
             Err(broken) => (None, Vec::new(), Some(broken)),
         };
-        Installed { record, manifest, warnings, dir, broken }
+        Installed { record, manifest, warnings, dir, broken, extra }
     }
 
     /// Removes `path` (a file or folder), best-effort. It is moved into
@@ -779,8 +1111,52 @@ fn settings_key(id: &PluginId) -> String {
     format!("{SETTINGS_ROW}{id}")
 }
 
+fn extra_key(id: &PluginId) -> String {
+    format!("{EXTRA_ROW}{id}")
+}
+
 fn not_found(id: &PluginId) -> PluginError {
     PluginError::NotFound(id.to_string())
+}
+
+fn installed_by_a_newer_autoscene() -> PluginError {
+    invalid(
+        "A newer AutoScene installed this plugin, so this one can't change it. Update AutoScene, or uninstall the plugin.",
+    )
+}
+
+/// The extra row `value` of `id`, when this AutoScene can read it: of
+/// [`EXTRA_VERSION`], naming a runtime it knows.
+fn read_extra(id: &PluginId, value: &str) -> Option<Extra> {
+    match serde_json::from_str::<Extra>(value) {
+        Ok(extra) if extra.v == EXTRA_VERSION => Some(extra),
+        Ok(_) => None,
+        Err(e) => {
+            tracing::debug!(plugin = %id, error = %e, "a plugin's extra row doesn't read");
+            None
+        }
+    }
+}
+
+/// The keys of the secrets an extra row `value` lists, also of one a later
+/// AutoScene wrote, as far as they read: what to remove from the keychain
+/// with it.
+fn secret_names(value: &str) -> Vec<String> {
+    let row: Value = serde_json::from_str(value).unwrap_or_default();
+    let listed = row["secrets"].as_array().map_or(&[][..], Vec::as_slice);
+    listed.iter().filter_map(|k| k.as_str().map(str::to_owned)).collect()
+}
+
+/// Whether the extra row `value` of `id` is left from before the plugin's
+/// row `row` (none when it has none): AutoScene 1.0 uninstalled the plugin,
+/// or installed it again since and wrote only its record. Rows a later
+/// AutoScene wrote are as they are.
+fn orphaned(id: &PluginId, row: Option<&str>, value: &str) -> bool {
+    let Some(row) = row else { return true };
+    match (read_row(id, row), read_extra(id, value)) {
+        (Some(record), Some(extra)) => extra.installed_at != record.installed_at,
+        _ => false,
+    }
 }
 
 fn changed_while_waiting() -> PluginError {
@@ -928,12 +1304,14 @@ fn default_of(kind: &SettingKind) -> Option<SettingValue> {
         }
         SettingKind::Number { default, .. } => default.map(SettingValue::Number),
         SettingKind::Boolean { default } => Some(SettingValue::Bool(*default)),
+        SettingKind::Secret { .. } => None,
     }
 }
 
 /// Checks `value` against its setting `spec`: text of at most its length
 /// without NUL, a finite number within its bounds (whole when it must be),
-/// on or off, or one of a select's values.
+/// on or off, or one of a select's values. A secret has no value here: so
+/// one kept under its key before it was a secret is never handed on.
 fn check_value(spec: &SettingSpec, value: &SettingValue) -> PluginResult<()> {
     let refuse = |why: String| Err(invalid(format!("{} {why}.", shown(&spec.title))));
     match (&spec.kind, value) {
@@ -966,6 +1344,7 @@ fn check_value(spec: &SettingSpec, value: &SettingValue) -> PluginResult<()> {
         (SettingKind::Select { options, .. }, SettingValue::Text(text)) if options.iter().any(|o| o.value == *text) => {
         }
         (SettingKind::Select { .. }, _) => return refuse("must be one of its choices".into()),
+        (SettingKind::Secret { .. }, _) => return refuse("is kept in your system's keychain, never as a value".into()),
     }
     Ok(())
 }
@@ -1000,6 +1379,8 @@ mod tests {
 
     use super::*;
     use crate::package::{AUTHOR_KEY, SIG};
+    use crate::protocol::{ActionKind, Trigger};
+    use crate::secrets::MemorySecrets;
 
     const ID: &str = "dev.autoscene.hello-export";
 
@@ -1019,6 +1400,8 @@ mod tests {
         tmp: tempfile::TempDir,
         paths: AppPaths,
         db: Arc<LibraryDb>,
+        /// The keychain of its stores.
+        secrets: Arc<MemorySecrets>,
     }
 
     impl Place {
@@ -1026,7 +1409,7 @@ mod tests {
             let tmp = tempfile::tempdir().unwrap();
             let paths = AppPaths::at(tmp.path().join("data"));
             let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
-            Self { tmp, paths, db }
+            Self { tmp, paths, db, secrets: Arc::default() }
         }
 
         fn store(&self) -> Store {
@@ -1034,7 +1417,17 @@ mod tests {
         }
 
         fn store_with(&self, keys: Keys) -> Store {
-            Store::open(&self.paths, Arc::clone(&self.db), keys, app()).unwrap()
+            Store::open(&self.paths, Arc::clone(&self.db), keys, app(), self.secrets.clone()).unwrap()
+        }
+
+        /// The id the keychain keeps its secrets under.
+        fn library(&self) -> String {
+            self.db.setting(KEYCHAIN_ROW).unwrap().expect("a secret was set")
+        }
+
+        /// What the library's rows hold, all of them.
+        fn rows(&self) -> String {
+            self.db.settings_in("").unwrap().into_iter().map(|(key, value)| format!("{key}={value}\n")).collect()
         }
 
         /// What `plugins/` holds, two levels deep: paths with `/`, sorted.
@@ -1160,6 +1553,31 @@ mod tests {
 
     fn hello(version: &str) -> Files {
         files(&manifest(ID, version))
+    }
+
+    /// [`hello`] in manifest version 2 and protocol 2, with a secret setting
+    /// of each of `keys`.
+    fn with_secrets(version: &str, keys: &[&str]) -> Files {
+        let mut m = manifest(ID, version);
+        m["manifestVersion"] = json!(2);
+        m["engines"]["protocol"] = json!(2);
+        let settings = m["contributes"]["settings"].as_array_mut().unwrap();
+        settings.extend(keys.iter().map(|k| json!({"key": k, "type": "secret", "title": format!("The {k}")})));
+        files(&m)
+    }
+
+    fn extra_row(place: &Place) -> Option<String> {
+        place.db.setting(&format!("plugin_extra.{ID}")).unwrap()
+    }
+
+    /// The extra row of the process plugin `p` that lists `secrets`.
+    fn extra_of(p: &Installed, secrets: &[&str]) -> Option<String> {
+        let secrets = serde_json::to_string(secrets).unwrap();
+        Some(format!(r#"{{"v":1,"installedAt":{},"runtime":"process","secrets":{secrets}}}"#, p.record.installed_at))
+    }
+
+    fn settings_row(place: &Place) -> Option<String> {
+        place.db.setting(&format!("plugin_settings.{ID}")).unwrap()
     }
 
     /// Installs the package at `path`, with the setting on and the person's yes.
@@ -1327,8 +1745,8 @@ mod tests {
         let p = install(&place.store(), &place.unsigned("1.0.0")).unwrap();
         // It works with ">=1.0.0, <2".
         let broken_on = |app: &str| {
-            let keys = Keys::new(&[]).unwrap();
-            let store = Store::open(&place.paths, Arc::clone(&place.db), keys, Version::parse(app).unwrap()).unwrap();
+            let (keys, app) = (Keys::new(&[]).unwrap(), Version::parse(app).unwrap());
+            let store = Store::open(&place.paths, Arc::clone(&place.db), keys, app, place.secrets.clone()).unwrap();
             store.get(&id()).unwrap().broken
         };
         assert_eq!(broken_on("0.9.0").as_deref(), Some(NEWER));
@@ -1550,14 +1968,21 @@ mod tests {
         // Rows beside the registry's, which a `LIKE 'plugin%'` would find.
         place.db.set_setting("plugin_settings.dev.autoscene.other", "{}").unwrap();
         place.db.set_setting("plugins.dev.autoscene.other", "{}").unwrap();
+        // An extra row of a plugin that is installed is no plugin either.
+        place.db.set_setting("plugin_extra.dev.autoscene.another", r#"{"v":1}"#).unwrap();
+        place.db.set_setting("plugin.dev.autoscene.another", "not json").unwrap();
+        assert!(extra_row(&place).is_some());
         let listed = store.list().unwrap();
-        assert_eq!(listed.iter().map(|p| p.record.id.as_str()).collect::<Vec<_>>(), [ID]);
-        assert!(listed[0].broken.is_none());
+        let ids = ["dev.autoscene.another", ID];
+        assert_eq!(listed.iter().map(|p| p.record.id.as_str()).collect::<Vec<_>>(), ids);
+        assert!(listed[1].broken.is_none());
 
         store.uninstall(&id(), false).unwrap();
         assert_eq!(place.db.setting(&format!("plugin_settings.{ID}")).unwrap(), None);
-        assert!(store.list().unwrap().is_empty());
+        assert_eq!(extra_row(&place), None);
+        assert_eq!(store.list().unwrap().len(), 1);
         assert_eq!(place.db.setting("plugin_settings.dev.autoscene.other").unwrap().as_deref(), Some("{}"));
+        assert!(place.db.setting("plugin_extra.dev.autoscene.another").unwrap().is_some());
     }
 
     #[test]
@@ -1811,5 +2236,358 @@ mod tests {
         assert_eq!(store.icon_data_url(&p).as_deref(), Some("data:image/svg+xml;base64,PHN2Zy8+"));
         fs::write(dev.join("icon.svg"), b"not a picture").unwrap();
         assert_eq!(store.icon_data_url(&p), None);
+    }
+
+    #[test]
+    fn secret_values_never_reach_the_settings_row() {
+        let place = Place::new();
+        let store = place.store();
+        let p = install(&store, &place.package(&with_secrets("1.0.0", &["token"]), None, false)).unwrap();
+        assert_eq!((p.secrets_stored(), p.extra.secrets.len()), (Vec::<String>::new(), 0));
+        assert_eq!(store.secret(&id(), "token").unwrap(), None);
+        let p = store.secret_set(&id(), "token", "hunter2").unwrap();
+        assert_eq!(p.secrets_stored(), ["token"]);
+        assert_eq!(store.secret(&id(), "token").unwrap().as_deref(), Some("hunter2"));
+        // Its row names it, and no row holds its value.
+        assert_eq!(extra_row(&place), extra_of(&p, &["token"]));
+        assert!(!place.rows().contains("hunter2"), "{}", place.rows());
+
+        // Never set as a value, and never handed on as one: also not one kept
+        // under its key before it was a secret.
+        let e = store.set_values(&id(), values(&[("token", SettingValue::Text("hunter2".into()))])).unwrap_err();
+        assert_eq!(e.to_string(), "A secret is set with its own button, never as a value.");
+        place.db.set_setting(&format!("plugin_settings.{ID}"), r#"{"token":"plain","count":4}"#).unwrap();
+        assert!(!store.values(&id()).unwrap().contains_key("token"));
+        let action = ActionContext { kind: ActionKind::ExportAction, id: "hello".into(), trigger: Trigger::Menu };
+        let spec = store.run_spec(&p, action, Path::new("ffmpeg"), Path::new("ffprobe"), "9.0").unwrap();
+        let line = serde_json::to_string(&spec.message).unwrap();
+        assert!(line.contains(r#""count":4.0"#) && !line.contains("token") && !line.contains("hunter2"), "{line}");
+        // Set again, it is replaced, and the plain value goes from the row.
+        store.secret_set(&id(), "token", "swordfish").unwrap();
+        assert_eq!(store.secret(&id(), "token").unwrap().as_deref(), Some("swordfish"));
+        assert_eq!(extra_row(&place), extra_of(&p, &["token"]));
+        assert_eq!(settings_row(&place).as_deref(), Some(r#"{"count":4}"#));
+        assert!(!place.rows().contains("plain"), "{}", place.rows());
+        // A plain setting isn't a secret.
+        for (key, value, why) in [
+            ("greeting", "x", "The plugin has no secret setting greeting."),
+            ("token", "", "A secret can't be empty. Remove it instead."),
+            ("token", "a\0b", "A secret can't hold a NUL character."),
+        ] {
+            assert_eq!(store.secret_set(&id(), key, value).unwrap_err().to_string(), why);
+        }
+        let e = store.secret(&id(), "greeting").unwrap_err();
+        assert!(matches!(&e, PluginError::Denied(_)), "{e:?}");
+        assert_eq!(place.secrets.len(), 1);
+    }
+
+    #[test]
+    fn uninstalling_forgets_its_secrets() {
+        let place = Place::new();
+        let store = place.store();
+        install(&store, &place.package(&with_secrets("1.0.0", &["token", "webhook"]), None, false)).unwrap();
+        store.secret_set(&id(), "token", "hunter2").unwrap();
+        store.secret_set(&id(), "webhook", "https://example.org/hook").unwrap();
+        // One removed by its button.
+        let p = store.secret_clear(&id(), "webhook").unwrap();
+        assert_eq!((p.secrets_stored(), place.secrets.len()), (vec!["token".to_owned()], 1));
+        assert!(store.secret_clear(&id(), "greeting").is_err());
+        // An update keeps them.
+        let p = install(&store, &place.package(&with_secrets("1.1.0", &["token", "webhook"]), None, false)).unwrap();
+        assert_eq!((p.record.version.as_str(), p.secrets_stored()), ("1.1.0", vec!["token".to_owned()]));
+
+        store.uninstall(&id(), false).unwrap();
+        assert!(place.secrets.is_empty());
+        assert_eq!(extra_row(&place), None);
+        // Installed again, it starts without them.
+        let p = install(&store, &place.package(&with_secrets("1.1.0", &["token"]), None, false)).unwrap();
+        assert_eq!(p.secrets_stored(), Vec::<String>::new());
+        assert_eq!(store.secret(&id(), "token").unwrap(), None);
+    }
+
+    #[test]
+    fn a_secret_of_a_setting_the_plugin_dropped_is_not_listed() {
+        let place = Place::new();
+        let store = place.store();
+        let dev = place.folder("hello-export", &with_secrets("1.0.0", &["token", "webhook"]));
+        store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        store.secret_set(&id(), "token", "hunter2").unwrap();
+        store.secret_set(&id(), "webhook", "https://example.org/hook").unwrap();
+        // Its plugin.json no longer has the webhook.
+        fs::write(dev.join("plugin.json"), &with_secrets("1.0.0", &["token"])[0].1).unwrap();
+        let p = store.get(&id()).unwrap();
+        assert_eq!(p.secrets_stored(), ["token"]);
+        assert_eq!(p.extra.secrets, ["token", "webhook"], "listed, so an uninstall removes it");
+        assert!(matches!(store.secret(&id(), "webhook"), Err(PluginError::Denied(_))));
+        // It may still be removed.
+        store.secret_clear(&id(), "webhook").unwrap();
+        assert_eq!(place.secrets.len(), 1);
+        // A version 1 plugin.json has no secrets at all.
+        fs::write(dev.join("plugin.json"), &hello("1.0.0")[0].1).unwrap();
+        assert_eq!(store.get(&id()).unwrap().secrets_stored(), Vec::<String>::new());
+        assert!(store.secret(&id(), "token").is_err());
+    }
+
+    /// A keychain that refuses everything.
+    struct Locked;
+
+    impl SecretStore for Locked {
+        fn get(&self, _: &str, _: &PluginId, _: &str) -> PluginResult<Option<String>> {
+            Err(locked())
+        }
+
+        fn set(&self, _: &str, _: &PluginId, _: &str, _: &str) -> PluginResult<()> {
+            Err(locked())
+        }
+
+        fn delete(&self, _: &str, _: &PluginId, _: &str) -> PluginResult<()> {
+            Err(locked())
+        }
+    }
+
+    fn locked() -> PluginError {
+        PluginError::Keychain { reason: "it is locked.".into(), detail: None }
+    }
+
+    #[test]
+    fn a_keychain_that_fails_says_so() {
+        let place = Place::new();
+        install(&place.store(), &place.package(&with_secrets("1.0.0", &["token"]), None, false)).unwrap();
+        place.store().secret_set(&id(), "token", "hunter2").unwrap();
+        let locked = Store::open(&place.paths, Arc::clone(&place.db), Keys::new(&[]).unwrap(), app(), Arc::new(Locked));
+        let store = locked.unwrap();
+        let said = "Your system's keychain can't be used: it is locked.";
+        assert_eq!(store.secret(&id(), "token").unwrap_err().to_string(), said);
+        assert_eq!(store.secret_set(&id(), "token", "swordfish").unwrap_err().to_string(), said);
+        assert_eq!(store.secret_clear(&id(), "token").unwrap_err().to_string(), said);
+        // Nothing changed: still listed, and kept.
+        assert_eq!(store.get(&id()).unwrap().secrets_stored(), ["token"]);
+        assert_eq!(place.store().secret(&id(), "token").unwrap().as_deref(), Some("hunter2"));
+        // A plugin without secrets never asks it; an uninstall goes on without it.
+        assert!(store.values(&id()).is_ok());
+        store.uninstall(&id(), false).unwrap();
+        assert!(store.list().unwrap().is_empty());
+        assert_eq!(extra_row(&place), None);
+    }
+
+    #[test]
+    fn a_secret_the_keychain_kept_is_not_the_next_installs() {
+        let place = Place::new();
+        let token = with_secrets("1.0.0", &["token"]);
+        install(&place.store(), &place.package(&token, None, false)).unwrap();
+        place.store().secret_set(&id(), "token", "owner-token").unwrap();
+        // The keychain refuses to remove it: the plugin goes, its secret stays.
+        let locked = Store::open(&place.paths, Arc::clone(&place.db), Keys::new(&[]).unwrap(), app(), Arc::new(Locked));
+        locked.unwrap().uninstall(&id(), false).unwrap();
+        assert_eq!(place.secrets.len(), 1);
+        // A plugin of that id installed next (by anyone: the pin went) never reads it.
+        let store = place.store();
+        let p = install(&store, &place.package(&token, None, false)).unwrap();
+        assert_eq!((p.secrets_stored(), store.secret(&id(), "token").unwrap()), (Vec::<String>::new(), None));
+        // Its uninstall removes each of its secret settings, listed or not.
+        store.uninstall(&id(), false).unwrap();
+        assert!(place.secrets.is_empty());
+    }
+
+    #[test]
+    fn a_setting_that_becomes_a_secret_leaves_no_plain_value() {
+        let place = Place::new();
+        let store = place.store();
+        // Version 1.0.0 keeps the webhook as text.
+        let mut m = manifest(ID, "1.0.0");
+        let webhook = json!({"key": "webhook", "type": "string", "title": "Webhook"});
+        m["contributes"]["settings"].as_array_mut().unwrap().push(webhook);
+        install(&store, &place.package(&files(&m), None, false)).unwrap();
+        let hook = SettingValue::Text("https://example.org/hooks/SECRET".into());
+        store.set_values(&id(), values(&[("webhook", hook), ("count", SettingValue::Number(4.0))])).unwrap();
+        // 1.1.0 keeps it in the keychain: its update drops the plain value and keeps the others.
+        install(&store, &place.package(&with_secrets("1.1.0", &["webhook"]), None, false)).unwrap();
+        assert_eq!(settings_row(&place).as_deref(), Some(r#"{"count":4.0}"#));
+        assert!(!place.rows().contains("SECRET"), "{}", place.rows());
+        store.uninstall(&id(), false).unwrap();
+
+        // A loaded folder's plugin.json makes it a secret without an install:
+        // the value is never handed on, and goes once the secret is set.
+        let dev = place.folder("hello-export", &files(&m));
+        store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        store
+            .set_values(&id(), values(&[("webhook", SettingValue::Text("https://example.org/hooks/SECRET".into()))]))
+            .unwrap();
+        fs::write(dev.join("plugin.json"), &with_secrets("1.0.0", &["webhook"])[0].1).unwrap();
+        assert!(!store.values(&id()).unwrap().contains_key("webhook"));
+        store.secret_set(&id(), "webhook", "https://example.org/hooks/NEW").unwrap();
+        assert_eq!(settings_row(&place), None);
+        assert!(!place.rows().contains("SECRET"), "{}", place.rows());
+    }
+
+    #[test]
+    fn a_folder_whose_runtime_changed_is_broken_until_loaded_again() {
+        let place = Place::new();
+        let store = place.store();
+        let dev = place.folder("hello-export", &with_secrets("1.0.0", &["token"]));
+        let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        assert_eq!((p.extra.runtime, p.broken.as_deref()), (Some(RuntimeKind::Process), None));
+        store.secret_set(&id(), "token", "hunter2").unwrap();
+        // Agreed to as a service, it runs as a process now (or the other way).
+        let row = format!("plugin_extra.{ID}");
+        let service =
+            format!(r#"{{"v":1,"installedAt":{},"runtime":"service","secrets":["token"]}}"#, p.record.installed_at);
+        place.db.set_setting(&row, &service).unwrap();
+        let p = store.get(&id()).unwrap();
+        assert_eq!(p.broken.as_deref(), Some("Its runtime changed. Load it again to agree to that."));
+        assert!(p.manifest.is_none());
+        assert!(crate::calls::Grants::of(&p).is_err());
+        assert!(store.secret(&id(), "token").is_err());
+        // Loaded again, it is what the person agreed to now, and keeps its secrets.
+        let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        assert_eq!((p.extra.runtime, p.broken.as_deref()), (Some(RuntimeKind::Process), None));
+        assert_eq!(store.secret(&id(), "token").unwrap().as_deref(), Some("hunter2"));
+    }
+
+    #[test]
+    fn an_m1_install_counts_as_a_process_plugin() {
+        let place = Place::new();
+        let store = place.store();
+        let p = install(&store, &place.unsigned("1.0.0")).unwrap();
+        assert_eq!(extra_row(&place), extra_of(&p, &[]));
+        // AutoScene 1.0 writes no extra row.
+        place.db.write_settings(&[(&format!("plugin_extra.{ID}"), None)]).unwrap();
+        let p = place.store().get(&id()).unwrap();
+        assert_eq!((p.broken.as_deref(), p.extra.runtime, p.extra.secrets.len()), (None, None, 0));
+        assert_eq!(p.extra.agreed_runtime(), RuntimeKind::Process);
+        assert_eq!(crate::calls::Grants::of(&p).unwrap().runtime, RuntimeKind::Process);
+        // Turning it on or off writes no extra row either; an update does.
+        store.set_enabled(&id(), false).unwrap();
+        assert_eq!(extra_row(&place), None);
+        install(&store, &place.unsigned("1.1.0")).unwrap();
+        assert!(extra_row(&place).is_some());
+
+        // One a later AutoScene wrote is kept, and stops this one changing the plugin.
+        for later in [r#"{"v":2,"runtime":"process"}"#, r#"{"v":1,"runtime":"hologram"}"#, "not json"] {
+            place.db.set_setting(&format!("plugin_extra.{ID}"), later).unwrap();
+            let p = store.get(&id()).unwrap();
+            assert_eq!(p.broken.as_deref(), Some(NEWER), "{later}");
+            assert!(store.secret_set(&id(), "token", "x").is_err());
+            assert!(store.stage(&place.unsigned("1.2.0")).is_ok_and(|t| store.commit(t, true, true).is_err()));
+            assert_eq!(extra_row(&place).as_deref(), Some(later));
+        }
+    }
+
+    #[test]
+    fn an_extra_row_without_its_plugin_is_swept_with_its_secrets() {
+        let place = Place::new();
+        let store = place.store();
+        install(&store, &place.package(&with_secrets("1.0.0", &["token", "webhook"]), None, false)).unwrap();
+        store.secret_set(&id(), "token", "hunter2").unwrap();
+        store.secret_set(&id(), "webhook", "https://example.org/hook").unwrap();
+        // AutoScene 1.0 uninstalls it: its two rows go, the extra row stays.
+        place.db.write_settings(&[(&format!("plugin.{ID}"), None), (&format!("plugin_settings.{ID}"), None)]).unwrap();
+        // A later AutoScene's row of a plugin gone the same way.
+        let later = PluginId::parse("dev.autoscene.later").unwrap();
+        place.secrets.set(&place.library(), &later, "key", "value").unwrap();
+        place.db.set_setting("plugin_extra.dev.autoscene.later", r#"{"v":2,"secrets":["key"],"more":1}"#).unwrap();
+        // One of an installed plugin stays.
+        let kept = PluginId::parse("dev.autoscene.kept").unwrap();
+        place.secrets.set(&place.library(), &kept, "key", "value").unwrap();
+        place.db.set_setting("plugin_extra.dev.autoscene.kept", r#"{"v":1,"secrets":["key"]}"#).unwrap();
+        place.db.set_setting("plugin.dev.autoscene.kept", r#"{"v":2}"#).unwrap();
+        assert_eq!(place.secrets.len(), 4);
+
+        // The open leaves the keychain alone; what it left goes after it.
+        let store = place.store();
+        assert_eq!(place.secrets.len(), 4);
+        store.remove_leftovers();
+        assert_eq!(place.secrets.len(), 1);
+        assert_eq!(place.secrets.get(&place.library(), &kept, "key").unwrap().as_deref(), Some("value"));
+        let extras: Vec<String> = place.db.settings_in("plugin_extra.").unwrap().into_iter().map(|(k, _)| k).collect();
+        assert_eq!(extras, ["plugin_extra.dev.autoscene.kept"]);
+        // Installed again, it is a first install, with no secrets.
+        let p = install(&store, &place.package(&with_secrets("1.0.0", &["token"]), None, false)).unwrap();
+        assert_eq!(p.secrets_stored(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_extra_row_from_an_install_before_is_swept_with_its_secrets() {
+        let place = Place::new();
+        let store = place.store();
+        install(&store, &place.package(&with_secrets("1.0.0", &["token"]), None, false)).unwrap();
+        store.secret_set(&id(), "token", "owner-token").unwrap();
+        // AutoScene 1.0 uninstalls it and installs a plugin of that id again:
+        // it writes only the record, with the time of its install.
+        let row = format!("plugin.{ID}");
+        let mut record: Value = serde_json::from_str(&place.db.setting(&row).unwrap().unwrap()).unwrap();
+        record["installedAt"] = json!(record["installedAt"].as_i64().unwrap() + 1);
+        place
+            .db
+            .write_settings(&[(&row, Some(&record.to_string())), (&format!("plugin_settings.{ID}"), None)])
+            .unwrap();
+
+        // The extra row isn't that plugin's: it inherits neither its secrets nor its runtime.
+        let store = place.store();
+        let p = store.get(&id()).unwrap();
+        assert_eq!((p.broken.as_deref(), p.extra.runtime, p.secrets_stored()), (None, None, Vec::<String>::new()));
+        assert_eq!(store.secret(&id(), "token").unwrap(), None);
+        assert_eq!(place.secrets.len(), 1);
+        // It goes after the open, with its secrets.
+        store.remove_leftovers();
+        assert!(place.secrets.is_empty());
+        assert_eq!(extra_row(&place), None);
+        // An update gives it a row of its own.
+        let p = install(&store, &place.package(&with_secrets("1.1.0", &["token"]), None, false)).unwrap();
+        assert_eq!(extra_row(&place), extra_of(&p, &[]));
+        store.secret_set(&id(), "token", "new-token").unwrap();
+        place.store().remove_leftovers();
+        assert_eq!(store.secret(&id(), "token").unwrap().as_deref(), Some("new-token"));
+    }
+
+    #[test]
+    fn a_plugin_installed_after_the_open_keeps_its_extra_row_and_secrets() {
+        let place = Place::new();
+        let token = with_secrets("1.0.0", &["token"]);
+        let store = place.store();
+        install(&store, &place.package(&token, None, false)).unwrap();
+        store.secret_set(&id(), "token", "owner-token").unwrap();
+        // AutoScene 1.0 uninstalls it: the open finds its extra row left from before.
+        place.db.write_settings(&[(&format!("plugin.{ID}"), None), (&format!("plugin_settings.{ID}"), None)]).unwrap();
+        let store = place.store();
+        // Installed again, and its secret set, before the sweep gets to it.
+        let p = install(&store, &place.package(&token, None, false)).unwrap();
+        store.secret_set(&id(), "token", "new-token").unwrap();
+        store.remove_leftovers();
+        assert_eq!(extra_row(&place), extra_of(&p, &["token"]));
+        assert_eq!(store.secret(&id(), "token").unwrap().as_deref(), Some("new-token"));
+    }
+
+    #[test]
+    fn two_libraries_never_share_a_secret() {
+        // Two data folders on one computer: the person's and a test build's.
+        let ours = Place::new();
+        let theirs = Place { secrets: Arc::clone(&ours.secrets), ..Place::new() };
+        let token = with_secrets("1.0.0", &["token"]);
+        let (store, other) = (ours.store(), theirs.store());
+        install(&store, &ours.package(&token, None, false)).unwrap();
+        install(&other, &theirs.package(&token, None, false)).unwrap();
+        // A library gets its keychain id with its first secret.
+        assert_eq!(ours.db.setting(KEYCHAIN_ROW).unwrap(), None);
+        store.secret_set(&id(), "token", "ours").unwrap();
+        assert_eq!(other.secret(&id(), "token").unwrap(), None);
+        other.secret_set(&id(), "token", "theirs").unwrap();
+        assert_ne!(ours.library(), theirs.library());
+        assert_eq!(store.secret(&id(), "token").unwrap().as_deref(), Some("ours"));
+        assert_eq!(other.secret(&id(), "token").unwrap().as_deref(), Some("theirs"));
+        // Their uninstall removes theirs alone, and so does their sweep.
+        other.uninstall(&id(), false).unwrap();
+        theirs.db.set_setting(&format!("plugin_extra.{ID}"), r#"{"v":1,"secrets":["token"]}"#).unwrap();
+        theirs.store().remove_leftovers();
+        assert_eq!(store.secret(&id(), "token").unwrap().as_deref(), Some("ours"));
+        assert_eq!(ours.secrets.len(), 1);
+        // A library that never kept a secret writes no id, and asks no keychain.
+        let none = Place::new();
+        let locked = Store::open(&none.paths, Arc::clone(&none.db), Keys::new(&[]).unwrap(), app(), Arc::new(Locked));
+        let locked = locked.unwrap();
+        install(&locked, &none.package(&token, None, false)).unwrap();
+        assert_eq!(locked.secret(&id(), "token").unwrap(), None);
+        locked.uninstall(&id(), false).unwrap();
+        assert_eq!(none.db.setting(KEYCHAIN_ROW).unwrap(), None);
     }
 }

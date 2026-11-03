@@ -58,6 +58,7 @@ windows-sys = "=0.61.2"
 ureq = "=3.5.1"
 url = "=2.5.8"
 flate2 = "=1.1.10"
+keyring = "=4.2.0"
 
 [profile.dev]
 # Media/vision code is unusable unoptimised; keep debug info but optimise deps.

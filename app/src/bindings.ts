@@ -292,6 +292,14 @@ export const commands = {
 	 *  when that run waits or runs already. It reports as a job.
 	 */
 	pluginRun: (pluginId: string, actionId: string, kind: ActionKind, projectId: string | null, exportId: string | null) => __TAURI_INVOKE<string | null>("plugin_run", { pluginId, actionId, kind, projectId, exportId }),
+	/**
+	 *  Keep `value` in the system's keychain as a plugin's secret setting
+	 *  `key`, in place of the one before. The value never comes back: the
+	 *  plugin's info says only which are set.
+	 */
+	pluginSecretSet: (pluginId: string, key: string, value: string) => __TAURI_INVOKE<PluginInfo>("plugin_secret_set", { pluginId, key, value }),
+	/**  Remove a plugin's secret setting `key` from the system's keychain. */
+	pluginSecretClear: (pluginId: string, key: string) => __TAURI_INVOKE<PluginInfo>("plugin_secret_clear", { pluginId, key }),
 	/**  Newest first. Live updates arrive as `job:changed` / `job:progress`. */
 	jobsList: () => __TAURI_INVOKE<JobInfo[]>("jobs_list"),
 	jobCancel: (jobId: JobId) => __TAURI_INVOKE<void>("job_cancel", { jobId }),
@@ -1348,6 +1356,11 @@ export type PluginInfo = {
 	exportActions: PluginExportAction[],
 	commands: CommandSpec[],
 	settings: SettingSpec[],
+	/**
+	 *  The keys of its secret settings that have a value in the system's
+	 *  keychain. Never the values.
+	 */
+	secretsSet: string[],
 	/**  A `data:` URL of its icon (PNG or SVG), when it has a sound one. */
 	icon: string | null,
 	/**  Where its runs write their log. */
@@ -1546,7 +1559,11 @@ export type SelectOption = {
 	label: string,
 };
 
-export type SettingKind = { type: "string"; default: string | null; placeholder: string | null; maxLength: number } | { type: "number"; default: number | null; min: number | null; max: number | null; step: number | null; integer: boolean } | { type: "boolean"; default: boolean } | { type: "select"; options: SelectOption[]; default: string | null };
+/**
+ *  What a setting holds. A `secret` (manifest version 2) is kept in the
+ *  system's keychain, never as a value, and has no default.
+ */
+export type SettingKind = { type: "string"; default: string | null; placeholder: string | null; maxLength: number } | { type: "number"; default: number | null; min: number | null; max: number | null; step: number | null; integer: boolean } | { type: "boolean"; default: boolean } | { type: "select"; options: SelectOption[]; default: string | null } | { type: "secret"; placeholder: string | null };
 
 /**  A setting AutoScene shows in the plugin's settings and hands to each run. */
 export type SettingSpec = {

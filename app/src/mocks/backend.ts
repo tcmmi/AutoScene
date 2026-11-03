@@ -36,6 +36,7 @@ import {
 import {
   MOCK_PLUGIN_FOLDER,
   afterExportRuns,
+  clearPluginSecret,
   discardTicket,
   inspectFolder,
   inspectPackage,
@@ -48,6 +49,7 @@ import {
   reviewed,
   setAfterExport,
   setPluginEnabled,
+  setPluginSecret,
   setPluginValues,
   uninstallPlugin,
 } from "./plugins"
@@ -1163,6 +1165,16 @@ const handlers: Record<string, Handler> = {
     const v = setPluginValues(String(pluginId), values as Record<string, SettingValue>)
     void emit("plugins:changed", { pluginId })
     return v
+  },
+  plugin_secret_set: ({ pluginId, key, value }) => {
+    const p = setPluginSecret(String(pluginId), String(key), String(value), allows())
+    void emit("plugins:changed", { pluginId: p.id })
+    return p
+  },
+  plugin_secret_clear: ({ pluginId, key }) => {
+    const p = clearPluginSecret(String(pluginId), String(key), allows())
+    void emit("plugins:changed", { pluginId: p.id })
+    return p
   },
   plugin_run: ({ pluginId, actionId, kind, projectId, exportId }) =>
     startPluginJob(String(pluginId), String(actionId), kind as ActionKind, (projectId as string | null) ?? null, (exportId as string | null) ?? null),

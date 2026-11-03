@@ -266,12 +266,14 @@ function Runs({ review }: { review: PluginReview }) {
   )
 }
 
-/** The menu entries, palette commands and settings it adds. */
+/** The menu entries, palette commands and settings it adds, and the secrets it keeps. */
 function Adds({ p }: { p: PluginInfo }) {
   const adds = [
     ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title })),
     ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title })),
   ]
+  const secrets = p.settings.filter((s) => s.kind.type === "secret")
+  const settings = p.settings.length - secrets.length
   return (
     <section>
       <h3 className="text-sm font-medium text-fg-2">What it adds</h3>
@@ -281,11 +283,14 @@ function Adds({ p }: { p: PluginInfo }) {
             <span className="text-fg-2">{a.where}:</span> {a.what}
           </li>
         ))}
-        {p.settings.length > 0 && (
+        {settings > 0 && (
           <li>
-            <span className="text-fg-2">Settings:</span> {p.settings.length === 1 ? "1 setting" : `${p.settings.length} settings`}
+            <span className="text-fg-2">Settings:</span> {settings === 1 ? "1 setting" : `${settings} settings`}
           </li>
         )}
+        {secrets.map((s) => (
+          <li key={`secret-${s.key}`}>Keeps {s.title} in your system's keychain</li>
+        ))}
         {adds.length === 0 && p.settings.length === 0 && <li className="text-fg-2">No menu entries, commands or settings.</li>}
       </ul>
     </section>

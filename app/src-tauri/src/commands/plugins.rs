@@ -1,7 +1,7 @@
 //! Plugins (Settings → Plugins): what is installed, installing it after a
 //! review, uninstalling, turning plugins and their after-export actions on
-//! or off, their settings, whether plugins AutoScene hasn't reviewed may
-//! run, and running their actions. Each change emits `plugins:changed`;
+//! or off, their settings and secrets, whether plugins AutoScene hasn't
+//! reviewed may run, and running their actions. Each change emits `plugins:changed`;
 //! runs report as jobs.
 //!
 //! The page can't say yes alone to code AutoScene hasn't reviewed: turning
@@ -309,6 +309,49 @@ pub async fn plugin_settings_set(
     let values = blocking(move || Ok(host.store.set_values(&id, values)?)).await?;
     changed(&app, Some(plugin_id));
     Ok(values)
+}
+
+/// Keep `value` in the system's keychain as a plugin's secret setting
+/// `key`, in place of the one before. The value never comes back: the
+/// plugin's info says only which are set.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_secret_set(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    plugin_id: String,
+    key: String,
+    value: String,
+) -> AppResult<PluginInfo> {
+    let id = PluginId::parse(&plugin_id)?;
+    let (host, lib) = (host(&state)?, state.library.clone());
+    let p = blocking(move || {
+        let p = host.store.secret_set(&id, &key, &value)?;
+        Ok(info(&p, &host.store, lib.allows_unreviewed_plugins()?))
+    })
+    .await?;
+    changed(&app, Some(p.id.clone()));
+    Ok(p)
+}
+
+/// Remove a plugin's secret setting `key` from the system's keychain.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_secret_clear(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    plugin_id: String,
+    key: String,
+) -> AppResult<PluginInfo> {
+    let id = PluginId::parse(&plugin_id)?;
+    let (host, lib) = (host(&state)?, state.library.clone());
+    let p = blocking(move || {
+        let p = host.store.secret_clear(&id, &key)?;
+        Ok(info(&p, &host.store, lib.allows_unreviewed_plugins()?))
+    })
+    .await?;
+    changed(&app, Some(p.id.clone()));
+    Ok(p)
 }
 
 /// Run a plugin's export action on an export (from its menu), or its

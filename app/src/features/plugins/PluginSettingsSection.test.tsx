@@ -22,12 +22,21 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     pluginSettingsGet: vi.fn(() => Promise.resolve(state.values)),
     pluginSettingsSet: vi.fn(async (_: string, v: Record<string, SettingValue>) => ({ ...(await state.values), ...v })),
     pluginSetAfterExport: vi.fn(),
+    pluginSecretSet: vi.fn(),
+    pluginSecretClear: vi.fn(),
   },
 }))
 vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn() }) }))
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
 const { reveal } = vi.hoisted(() => ({ reveal: vi.fn() }))
 vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal }))
+const { platform } = vi.hoisted(() => ({ platform: { mac: false } }))
+vi.mock("@/lib/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/platform")>()),
+  get isMac() {
+    return platform.mac
+  },
+}))
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <QueryClientProvider client={queryClient}>
@@ -60,6 +69,7 @@ const saved = () => vi.mocked(commands.pluginSettingsSet).mock.calls.map((c) => 
 beforeEach(() => {
   queryClient.clear()
   vi.clearAllMocks()
+  platform.mac = false
 })
 afterEach(cleanup)
 
@@ -208,6 +218,102 @@ describe("a plugin's settings", () => {
       expect(screen.getByRole("switch", { name: "Run Say hello after every export" }).getAttribute("aria-checked")).toBe("true"),
     )
     expect(commands.pluginSetAfterExport).toHaveBeenCalledExactlyOnceWith("dev.a.hello", "hello", true)
+  })
+
+  const secret = (key: string, title: string): SettingSpec => ({
+    key,
+    title,
+    description: null,
+    kind: { type: "secret", placeholder: "https://…" },
+  })
+
+  it("sets a secret without ever showing it", async () => {
+    const user = userEvent.setup()
+    show({ settings: [secret("token", "Token")] })
+    expect(await screen.findByText("Not set")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Remove Token" })).toBeNull()
+    vi.mocked(commands.pluginSecretSet).mockImplementation(async () => ({ ...state.plugin!, secretsSet: ["token"] }))
+    await user.click(screen.getByRole("button", { name: "Set Token" }))
+    const field = (await screen.findByLabelText("Token", { selector: "input" })) as HTMLInputElement
+    expect([field.type, field.value]).toEqual(["password", ""])
+    // Nothing to save until something is typed.
+    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true)
+    await user.type(field, "hunter2")
+    await user.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(commands.pluginSecretSet).toHaveBeenCalledExactlyOnceWith("dev.a.hello", "token", "hunter2"))
+    expect(await screen.findByText("Saved in your system's keychain")).toBeTruthy()
+    // The dialog went, and what was typed with it; it never goes in as a setting's value.
+    expect(screen.queryByLabelText("Token", { selector: "input" })).toBeNull()
+    expect(document.body.innerHTML).not.toContain("hunter2")
+    expect(commands.pluginSettingsSet).not.toHaveBeenCalled()
+    // Set again, the field starts empty.
+    await user.click(screen.getByRole("button", { name: "Set Token" }))
+    expect(((await screen.findByLabelText("Token", { selector: "input" })) as HTMLInputElement).value).toBe("")
+  })
+
+  it("refuses a secret too long for the keychain, never cutting it short", async () => {
+    const user = userEvent.setup()
+    show({ settings: [secret("token", "Token")] })
+    await user.click(await screen.findByRole("button", { name: "Set Token" }))
+    const field = (await screen.findByLabelText("Token", { selector: "input" })) as HTMLInputElement
+    await user.click(field)
+    await user.paste("x".repeat(1025))
+    // All of it stays in the field, and it says why it can't be saved.
+    expect(field.value).toHaveLength(1025)
+    expect(screen.getByText("A secret can be at most 1024 characters.")).toBeTruthy()
+    const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    fireEvent.submit(field.form!)
+    expect(commands.pluginSecretSet).not.toHaveBeenCalled()
+    // One shorter goes.
+    await user.keyboard("{Backspace}")
+    expect(screen.queryByText("A secret can be at most 1024 characters.")).toBeNull()
+    expect(save.disabled).toBe(false)
+  })
+
+  it("says when a secret is read, and on macOS that the Keychain may ask again", async () => {
+    show({ settings: [secret("token", "Token"), { ...secret("hook", "Hook"), description: "From Discord." }] })
+    expect(await screen.findByText("Each run gets them as they are when it starts, and a secret each time it asks for it.")).toBeTruthy()
+    expect(screen.queryByText(/macOS may ask/)).toBeNull()
+    cleanup()
+    platform.mac = true
+    show({ settings: [secret("token", "Token"), { ...secret("hook", "Hook"), description: "From Discord." }] })
+    expect(await screen.findAllByText("macOS may ask you to allow it again after AutoScene updates.")).toHaveLength(2)
+    expect(screen.getByText("From Discord.")).toBeTruthy()
+  })
+
+  it("removes a secret once asked, and only once", async () => {
+    const user = userEvent.setup()
+    show({ settings: [secret("token", "Token"), secret("webhook", "Webhook")], secretsSet: ["token", "webhook"] })
+    expect(await screen.findAllByText("Saved in your system's keychain")).toHaveLength(2)
+    // Asked first; Cancel keeps it.
+    await user.click(screen.getByRole("button", { name: "Remove Token" }))
+    expect(await screen.findByText("Remove Token?")).toBeTruthy()
+    await user.click(screen.getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByText("Remove Token?")).toBeNull())
+    expect(commands.pluginSecretClear).not.toHaveBeenCalled()
+    // While it goes, Remove waits: a second click sends nothing.
+    let done!: (p: PluginInfo) => void
+    vi.mocked(commands.pluginSecretClear).mockReturnValueOnce(new Promise((resolve) => (done = resolve)))
+    await user.click(screen.getByRole("button", { name: "Remove Token" }))
+    const confirm = await screen.findByRole("button", { name: "Remove" })
+    await user.click(confirm)
+    expect((confirm as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(confirm)
+    done({ ...state.plugin!, secretsSet: ["webhook"] })
+    await waitFor(() => expect(screen.queryByText("Remove Token?")).toBeNull())
+    expect(commands.pluginSecretClear).toHaveBeenCalledExactlyOnceWith("dev.a.hello", "token")
+    expect(screen.queryByRole("button", { name: "Remove Token" })).toBeNull()
+    expect(screen.getByText("Not set")).toBeTruthy()
+    // One the keychain won't remove stays, and says why.
+    const locked = "Your system's keychain can't be used: it is locked, or refused AutoScene."
+    vi.mocked(commands.pluginSecretClear).mockRejectedValueOnce({ code: "not_ready", message: locked })
+    await user.click(screen.getByRole("button", { name: "Remove Webhook" }))
+    await user.click(await screen.findByRole("button", { name: "Remove" }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Couldn't remove the secret", { description: locked }))
+    expect((screen.getByRole("button", { name: "Remove" }) as HTMLButtonElement).disabled).toBe(false)
+    await user.click(screen.getByRole("button", { name: "Cancel" }))
+    expect(await screen.findByRole("button", { name: "Remove Webhook" })).toBeTruthy()
   })
 
   it("says so for a plugin that isn't installed", async () => {

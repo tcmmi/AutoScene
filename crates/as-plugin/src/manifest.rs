@@ -9,7 +9,14 @@
 //! know is judged by what it could cost: an unknown permission refuses the
 //! plugin, since it may stand for more than the person agreed to, while an
 //! unknown key, contribution or setting type is skipped with a warning.
-//! Pages and secret settings are reserved for a later AutoScene.
+//!
+//! Manifest version 2 adds secret settings, kept in the system's keychain
+//! ([`crate::secrets`]) for the plugin to ask for (a program of protocol 1
+//! can't, so they are skipped with a warning there); pages and
+//! the runtime types `service` and `none` are reserved in it for a later
+//! AutoScene. A version 1 manifest reads as it always did: its pages and
+//! secret settings are skipped with a warning that names version 2, and a
+//! runtime type only version 2 has is refused with that hint.
 //!
 //! No shell reads a command: its arguments are fixed, and handed to the
 //! program as they are. The program is a file in the plugin's own folder,
@@ -39,8 +46,8 @@ use specta::Type;
 use crate::error::{PluginError, PluginResult};
 use crate::package::{check_path, reserved};
 
-/// The manifest version this AutoScene reads.
-pub const MANIFEST_VERSION: u32 = 1;
+/// The newest manifest version this AutoScene reads.
+pub const MANIFEST_VERSION: u32 = 2;
 /// The newest version of the host–plugin protocol this AutoScene speaks. A
 /// plugin is spoken to in the one it declares (`engines.protocol`).
 pub const PROTOCOL: u32 = 2;
@@ -48,6 +55,8 @@ pub const MAX_MANIFEST_BYTES: u64 = 256 << 10;
 pub const MAX_ACTIONS: usize = 8;
 pub const MAX_COMMANDS: usize = 16;
 pub const MAX_SETTINGS: usize = 32;
+/// The most secret settings a plugin may have.
+pub const MAX_SECRETS: usize = 8;
 
 /// The platforms a manifest can name, as `<os>-<arch>`.
 pub const PLATFORMS: [&str; 6] =
@@ -182,6 +191,8 @@ impl Permission {
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
+    /// 1 or 2 (see [`MANIFEST_VERSION`]).
+    pub manifest_version: u32,
     pub id: PluginId,
     /// A semver version (`1.2.0`).
     pub version: String,
@@ -222,8 +233,10 @@ pub struct Engines {
 }
 
 /// How a plugin runs. Every plugin this AutoScene installs is a `process`
-/// one; the others are reserved for a later manifest version.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+/// one; the others are manifest version 2's, reserved for a later
+/// AutoScene. Also what the person agreed to at install
+/// ([`crate::store::Extra`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum RuntimeKind {
     /// Starts for each run and ends with it.
@@ -237,6 +250,8 @@ pub enum RuntimeKind {
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Runtime {
+    /// Its `type`.
+    pub kind: RuntimeKind,
     /// The command per platform this AutoScene knows, or `*` for every
     /// other platform.
     pub command: BTreeMap<String, Vec<String>>,
@@ -274,6 +289,8 @@ pub struct SettingSpec {
     pub kind: SettingKind,
 }
 
+/// What a setting holds. A `secret` (manifest version 2) is kept in the
+/// system's keychain, never as a value, and has no default.
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SettingKind {
@@ -281,6 +298,7 @@ pub enum SettingKind {
     Number { default: Option<f64>, min: Option<f64>, max: Option<f64>, step: Option<f64>, integer: bool },
     Boolean { default: bool },
     Select { options: Vec<SelectOption>, default: Option<String> },
+    Secret { placeholder: Option<String> },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
@@ -382,6 +400,11 @@ impl Manifest {
     pub fn requirement_met(&self, app: &Version) -> PluginResult<()> {
         check_requirement(&requirement(&self.engines.autoscene)?, app)
     }
+
+    /// The keys of its secret settings.
+    pub fn secret_keys(&self) -> impl Iterator<Item = &str> {
+        self.settings.iter().filter(|s| matches!(s.kind, SettingKind::Secret { .. })).map(|s| s.key.as_str())
+    }
 }
 
 /// Reads a `plugin.json`. What makes the plugin unusable is an error: a
@@ -427,11 +450,11 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     let mut w = Vec::new();
 
     // What says which AutoScene can read the rest comes first.
-    match root.get("manifestVersion").and_then(Value::as_u64) {
+    let manifest_version = match root.get("manifestVersion").and_then(Value::as_u64) {
         Some(v) if v > u64::from(MANIFEST_VERSION) => return Err(PluginError::TooNew("manifestVersion".into())),
-        Some(1..) => {}
-        _ => return Err(invalid(r#"The plugin's plugin.json needs "manifestVersion": 1."#)),
-    }
+        Some(v @ 1..) => v as u32,
+        _ => return Err(invalid(r#"The plugin's plugin.json needs "manifestVersion": 1 or 2."#)),
+    };
     let engines = root.required_object("engines")?;
     let protocol = match engines.get("protocol").and_then(Value::as_u64) {
         Some(p) if p > u64::from(PROTOCOL) => return Err(PluginError::TooNew("protocol".into())),
@@ -439,11 +462,16 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         _ => return Err(invalid(r#"The plugin's engines need "protocol": 1 or 2."#)),
     };
     let runtime = root.required_object("runtime")?;
-    match runtime.get("type") {
-        Some(Value::String(t)) if t == "process" => {}
+    let kind = match runtime.get("type") {
+        Some(Value::String(t)) if t == "process" => RuntimeKind::Process,
+        // Version 2's, which a later AutoScene runs. A version 1 manifest
+        // can't name them, and this AutoScene knows that much.
+        Some(Value::String(t)) if (t == "service" || t == "none") && manifest_version < 2 => {
+            return Err(invalid(format!(r#"The plugin's runtime.type "{t}" needs "manifestVersion": 2."#)));
+        }
         Some(Value::String(_)) => return Err(PluginError::TooNew("runtime".into())),
         _ => return Err(invalid(r#"The plugin's runtime needs "type": "process"."#)),
-    }
+    };
     let autoscene = engines.required_text("autoscene")?;
     let req = requirement(autoscene)?;
     if let Some(app) = app {
@@ -554,6 +582,9 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         for kind in c.map.keys() {
             match kind.as_str() {
                 "exportActions" | "commands" | "settings" => {}
+                "pages" if manifest_version < 2 => {
+                    w.push(r#"Skipped contributes.pages: pages need "manifestVersion": 2."#.into());
+                }
                 "pages" => w.push("Pages need a newer AutoScene.".into()),
                 kind => w.push(format!("Skipped contributes.{}, which this AutoScene doesn't know.", shown(kind))),
             }
@@ -589,12 +620,31 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             });
         }
         unique(commands_out.iter().map(|c| c.id.as_str()), "contributes.commands", "id")?;
+        // A secret is read with a call, which a program of protocol 1 never
+        // has answered. The rule is that program's: a runtime that starts
+        // none asks AutoScene its own way.
+        let asks = kind != RuntimeKind::Process || protocol >= 2;
         for (i, s) in specs.iter().enumerate() {
-            if let Some(spec) = setting(&object(s, format!("contributes.settings[{i}]"))?, &mut w)? {
+            let s = object(s, format!("contributes.settings[{i}]"))?;
+            if let Some(spec) = setting(&s, manifest_version, asks, &mut w)? {
                 settings.push(spec);
             }
         }
         unique(settings.iter().map(|s| s.key.as_str()), "contributes.settings", "key")?;
+        let secrets: Vec<&str> =
+            settings.iter().filter(|s| matches!(s.kind, SettingKind::Secret { .. })).map(|s| s.key.as_str()).collect();
+        if secrets.len() > MAX_SECRETS {
+            return Err(invalid(format!("The plugin has more than {MAX_SECRETS} secret settings.")));
+        }
+        // Windows' keychain takes apiKey and apikey for one name.
+        let mut seen = BTreeMap::new();
+        for key in secrets {
+            if let Some(first) = seen.insert(key.to_ascii_lowercase(), key) {
+                return Err(invalid(format!(
+                    r#"The plugin's secret settings "{first}" and "{key}" differ only in capitals, which a keychain doesn't tell apart."#
+                )));
+            }
+        }
     }
 
     let icon = match root.text("icon")? {
@@ -615,6 +665,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         w.push(format!("And {more} more warnings."));
     }
     let manifest = Manifest {
+        manifest_version,
         id,
         version: version.to_owned(),
         name,
@@ -624,7 +675,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         repository,
         engines: Engines { autoscene: autoscene.to_owned(), protocol },
         platforms,
-        runtime: Runtime { command, gpu },
+        runtime: Runtime { kind, command, gpu },
         permissions,
         network_hosts,
         export_actions,
@@ -736,9 +787,10 @@ fn computer_program(name: &str) -> bool {
     python || NOT_PROGRAMS.split_whitespace().any(|p| p == name)
 }
 
-/// One entry of `contributes.settings`, or `None` for a type this AutoScene
-/// skips.
-fn setting(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<SettingSpec>> {
+/// One entry of `contributes.settings` of a manifest of `version`, or
+/// `None` for a type this AutoScene skips. A secret is skipped too unless
+/// the plugin `asks` for one: nothing of it could ever read it.
+fn setting(o: &Obj, version: u32, asks: bool, w: &mut Vec<String>) -> PluginResult<Option<SettingSpec>> {
     let key = o.required_text("key")?;
     let mut chars = key.chars();
     let first = chars.next().is_some_and(|c| c.is_ascii_lowercase());
@@ -827,9 +879,21 @@ fn setting(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<SettingSpec>> {
             }
             (SettingKind::Select { options, default }, &["options", "default"])
         }
-        "secret" => {
-            w.push(format!("Skipped the setting \"{key}\": secret settings need a newer AutoScene."));
+        "secret" if version < 2 => {
+            w.push(format!(r#"Skipped the setting "{key}": secret settings need "manifestVersion": 2."#));
             return Ok(None);
+        }
+        "secret" if !asks => {
+            w.push(format!(r#"Skipped the setting "{key}": secret settings need "engines": {{"protocol": 2}}."#));
+            return Ok(None);
+        }
+        "secret" => {
+            // A default would sit in the plugin's files, for anyone to read.
+            if o.get("default").is_some() {
+                return Err(invalid("A secret setting has no default."));
+            }
+            // A null default counts as left out, as for any key.
+            (SettingKind::Secret { placeholder: o.label("placeholder", 200, w)? }, &["placeholder", "default"])
         }
         kind => {
             w.push(format!(
@@ -1261,9 +1325,25 @@ mod tests {
     #[test]
     fn a_newer_manifest_needs_a_newer_autoscene() {
         // Read before anything else, so a later field never reads as a mistake.
-        assert_eq!(too_new(read(&json!({"manifestVersion": 2, "id": "?"}))), "manifestVersion");
-        assert_eq!(too_new(with(|v| v["runtime"] = json!({"type": "wasm", "component": "x.wasm"}))), "runtime");
-        assert_eq!(too_new(with(|v| v["runtime"]["type"] = json!("service"))), "runtime");
+        assert_eq!(too_new(read(&json!({"manifestVersion": 3, "id": "?"}))), "manifestVersion");
+        for version in [1, 2] {
+            let wasm = with(|v| {
+                v["manifestVersion"] = json!(version);
+                v["runtime"] = json!({"type": "wasm", "component": "x.wasm"});
+            });
+            assert_eq!(too_new(wasm), "runtime");
+        }
+        // Version 2's runtime types wait for a later AutoScene; in version 1
+        // they are a mistake this one can name.
+        for kind in ["service", "none"] {
+            let v2 = with(|v| {
+                v["manifestVersion"] = json!(2);
+                v["runtime"]["type"] = json!(kind);
+            });
+            assert_eq!(too_new(v2), "runtime");
+            let v1 = message(with(|v| v["runtime"]["type"] = json!(kind)));
+            assert_eq!(v1, format!(r#"The plugin's runtime.type "{kind}" needs "manifestVersion": 2."#));
+        }
         let later = with(|v| {
             v["engines"]["autoscene"] = json!(">=1.1.0");
             v["permissions"] = json!(["secrets"]);
@@ -1399,26 +1479,159 @@ mod tests {
         assert_eq!(default(n(json!({"min": 0.2, "max": 0.7, "integer": true}))), None);
     }
 
-    #[test]
-    fn secret_settings_wait_for_a_newer_autoscene() {
-        let p = with(|v| {
+    /// A secret setting `key` and a plain one, with the pages a later
+    /// AutoScene shows, in a manifest of `version` (of protocol 2).
+    fn with_secret_and_pages(version: u32) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(version);
+            v["engines"]["protocol"] = json!(2);
             v["contributes"]["settings"] = json!([
-                {"key": "webhook", "type": "secret", "title": "Discord webhook URL"},
+                {"key": "webhook", "type": "secret", "title": "Discord webhook URL", "placeholder": "https://…"},
                 {"key": "loud", "type": "boolean", "title": "Loud"},
             ]);
+            v["contributes"]["pages"] = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
         })
-        .unwrap();
-        assert_eq!(p.manifest.settings.len(), 1);
-        assert_eq!(p.manifest.settings[0].kind, SettingKind::Boolean { default: false });
-        assert_eq!(p.warnings, [r#"Skipped the setting "webhook": secret settings need a newer AutoScene."#]);
     }
 
     #[test]
-    fn pages_are_reserved() {
-        let pages = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
-        let p = with(|v| v["contributes"]["pages"] = pages).unwrap();
-        assert_eq!(p.warnings, ["Pages need a newer AutoScene."]);
+    fn pages_and_secrets_in_a_version_1_manifest_are_skipped_as_before() {
+        let p = with_secret_and_pages(1).unwrap();
+        assert_eq!(p.manifest.settings.len(), 1);
+        assert_eq!(p.manifest.settings[0].kind, SettingKind::Boolean { default: false });
+        assert_eq!(p.manifest.secret_keys().count(), 0);
         assert_eq!(p.manifest.export_actions.len(), 1);
+        // The warnings name the version that has them.
+        assert_eq!(
+            p.warnings,
+            [
+                r#"Skipped contributes.pages: pages need "manifestVersion": 2."#,
+                r#"Skipped the setting "webhook": secret settings need "manifestVersion": 2."#,
+            ]
+        );
+
+        // Version 2 reads its secrets; its pages wait for a later AutoScene.
+        let p = with_secret_and_pages(2).unwrap();
+        assert_eq!(p.warnings, ["Pages need a newer AutoScene."]);
+        let secret = SettingKind::Secret { placeholder: Some("https://…".into()) };
+        assert_eq!((&p.manifest.settings[0].key, &p.manifest.settings[0].kind), (&"webhook".to_owned(), &secret));
+        assert_eq!(p.manifest.secret_keys().collect::<Vec<_>>(), ["webhook"]);
+        assert_eq!(p.manifest.manifest_version, 2);
+        assert_eq!(
+            serde_json::to_value(&secret).unwrap(),
+            json!({"type": "secret", "placeholder": "https://…"}),
+            "as the settings page reads it"
+        );
+    }
+
+    #[test]
+    fn a_secret_has_no_default() {
+        let secret = |extra: Value| {
+            let mut s = json!({"key": "token", "type": "secret", "title": "Token"});
+            s.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            with_secrets(json!([s]))
+        };
+        assert_eq!(message(secret(json!({"default": "hunter2"}))), "A secret setting has no default.");
+        assert_eq!(message(secret(json!({"default": ""}))), "A secret setting has no default.");
+        // What it doesn't know is skipped as for any setting; a maxLength is the keychain's.
+        let p = secret(json!({"maxLength": 20, "default": null})).unwrap();
+        assert_eq!(p.manifest.settings[0].kind, SettingKind::Secret { placeholder: None });
+        assert_eq!(p.warnings, ["Ignored contributes.settings[0].maxLength, which this AutoScene doesn't know."]);
+        // At most 8.
+        let many = |n: usize| {
+            let settings: Vec<Value> =
+                (0..n).map(|i| json!({"key": format!("token{i}"), "type": "secret", "title": "Token"})).collect();
+            with_secrets(json!(settings))
+        };
+        assert_eq!(many(8).unwrap().manifest.secret_keys().count(), 8);
+        assert_eq!(message(many(9)), "The plugin has more than 8 secret settings.");
+    }
+
+    /// A manifest of version 2 and protocol 2 with the settings `settings`.
+    fn with_secrets(settings: Value) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["engines"]["protocol"] = json!(2);
+            v["contributes"]["settings"] = settings;
+        })
+    }
+
+    #[test]
+    fn a_secret_needs_a_program_of_protocol_2() {
+        // A run of protocol 1 never has its calls answered, so it could never read one.
+        let token = json!([{"key": "token", "type": "secret", "title": "Token"}]);
+        let p = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["contributes"]["settings"] = token.clone();
+        })
+        .unwrap();
+        assert_eq!(p.manifest.secret_keys().count(), 0);
+        assert_eq!(p.warnings, [r#"Skipped the setting "token": secret settings need "engines": {"protocol": 2}."#]);
+        assert_eq!(with_secrets(token).unwrap().manifest.secret_keys().collect::<Vec<_>>(), ["token"]);
+    }
+
+    #[test]
+    fn secret_keys_differ_in_more_than_capitals() {
+        let secret = |key: &str| json!({"key": key, "type": "secret", "title": "Key"});
+        // Windows' keychain takes them for one: the plugin would read the other's value.
+        assert_eq!(
+            message(with_secrets(json!([secret("apiKey"), secret("token"), secret("apikey")]))),
+            r#"The plugin's secret settings "apiKey" and "apikey" differ only in capitals, which a keychain doesn't tell apart."#
+        );
+        let p = with_secrets(json!([secret("apiKey"), secret("api_key")])).unwrap();
+        assert_eq!(p.manifest.secret_keys().collect::<Vec<_>>(), ["apiKey", "api_key"]);
+        // A plain setting is in no keychain.
+        let plain = json!({"key": "apikey", "type": "string", "title": "Key"});
+        assert_eq!(with_secrets(json!([secret("apiKey"), plain])).unwrap().manifest.settings.len(), 2);
+    }
+
+    #[test]
+    fn a_version_2_manifest_reads_as_too_new_to_version_1_rules() {
+        // A version past this AutoScene's is refused before anything else
+        // is read, as an AutoScene of version 1 refuses version 2.
+        assert_eq!(MANIFEST_VERSION, 2);
+        let later = json!({"manifestVersion": MANIFEST_VERSION + 1, "runtime": {"type": "hologram"}});
+        assert_eq!(too_new(read(&later)), "manifestVersion");
+        assert_eq!(PluginError::TooNew("manifestVersion".into()).to_string(), "This plugin needs a newer AutoScene.");
+        // Version 2 reads, and says it is version 2.
+        let p = with(|v| v["manifestVersion"] = json!(2)).unwrap();
+        assert_eq!((p.manifest.manifest_version, p.warnings.len()), (2, 0));
+    }
+
+    /// The `plugin.json` of each example plugin.
+    fn examples() -> Vec<Value> {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins");
+        let mut found: Vec<PathBuf> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).collect();
+        found.sort();
+        found.iter().map(|d| serde_json::from_slice(&std::fs::read(d.join("plugin.json")).unwrap()).unwrap()).collect()
+    }
+
+    #[test]
+    fn a_version_1_manifest_reads_as_it_did() {
+        // What the M1 tests read, and the example plugins.
+        let mut program = plugin();
+        program["permissions"] = json!(["network", "project:read"]);
+        program["network"] = json!({"hosts": ["discord.com"]});
+        program["runtime"] = json!({"type": "process", "command": {"*": ["bin/tool.exe", "--fast"]}, "gpu": true});
+        let mut fixtures = vec![plugin(), program];
+        fixtures.extend(examples());
+        assert!(fixtures.len() >= 4, "{}", fixtures.len());
+        for v1 in fixtures {
+            assert_eq!(v1["manifestVersion"], json!(1));
+            let old = read(&v1).unwrap();
+            assert_eq!((old.manifest.manifest_version, old.manifest.runtime.kind), (1, RuntimeKind::Process));
+            // Read as version 2, nothing else changes: version 2 only adds.
+            let mut v2 = v1.clone();
+            v2["manifestVersion"] = json!(2);
+            let new = read(&v2).unwrap();
+            assert_eq!(new.warnings, old.warnings, "{}", v1["id"]);
+            let as_json = |m: &Manifest| {
+                let mut j = serde_json::to_value(m).unwrap();
+                j.as_object_mut().unwrap().remove("manifestVersion");
+                j
+            };
+            assert_eq!(as_json(&new.manifest), as_json(&old.manifest), "{}", v1["id"]);
+            assert_eq!(serde_json::to_value(old.manifest.runtime.kind).unwrap(), json!("process"));
+        }
     }
 
     #[test]

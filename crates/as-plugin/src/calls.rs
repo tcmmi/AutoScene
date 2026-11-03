@@ -29,7 +29,7 @@ use serde_json::value::RawValue;
 use specta::Type;
 
 use crate::error::{PluginError, PluginResult};
-use crate::manifest::{Permission, RuntimeKind};
+use crate::manifest::{Permission, RuntimeKind, shown};
 use crate::store::{Installed, manifest_of};
 
 const KIB: usize = 1 << 10;
@@ -239,14 +239,13 @@ pub struct Callers {
 /// start; every change of the plugin ends those, so it never goes stale.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Grants {
-    /// The runtime the person agreed to. Every plugin is a process one
-    /// before manifest version 2.
+    /// The runtime the person agreed to.
     pub runtime: RuntimeKind,
     pub permissions: Vec<Permission>,
     /// Where `net.fetch` may connect; empty without the network permission.
     pub hosts: Vec<String>,
-    /// The keys of its secret settings, which a manifest of version 1 has
-    /// none of.
+    /// The keys of its secret settings, which `secrets.get` reads; a
+    /// manifest of version 1 has none.
     pub secrets: Vec<String>,
     /// The protocol it declared (`engines.protocol`).
     pub protocol: u32,
@@ -255,7 +254,9 @@ pub struct Grants {
 impl Grants {
     /// The grants of `p`: its record's permissions and hosts that its
     /// manifest still asks for, so a loaded folder whose `plugin.json` asks
-    /// for more later gets nothing more. A broken plugin gets none.
+    /// for more later gets nothing more, the runtime the person agreed to
+    /// (a loaded folder that changed it is broken until loaded again), and
+    /// its secret settings. A broken plugin gets none.
     pub fn of(p: &Installed) -> PluginResult<Self> {
         let m = manifest_of(p)?;
         let r = &p.record;
@@ -266,10 +267,10 @@ impl Grants {
             false => Vec::new(),
         };
         Ok(Self {
-            runtime: RuntimeKind::Process,
+            runtime: p.extra.agreed_runtime(),
             permissions,
             hosts,
-            secrets: Vec::new(),
+            secrets: m.secret_keys().map(str::to_owned).collect(),
             protocol: m.engines.protocol,
         })
     }
@@ -402,6 +403,17 @@ pub fn check_file(file: &FileRef, grants: &Grants) -> PluginResult<()> {
     match grants.has(need) {
         true => Ok(()),
         false => Err(denied(format!("files.resolve needs the {} permission for that file.", need.name()))),
+    }
+}
+
+/// Whether `grants` let a plugin read the secret setting `key`: one of its
+/// own.
+pub fn check_secret(key: &str, grants: &Grants) -> PluginResult<()> {
+    match grants.secrets.iter().any(|k| k == key) {
+        true => Ok(()),
+        false => {
+            Err(denied(format!("secrets.get reads only the plugin's secret settings, and {} isn't one.", shown(key))))
+        }
     }
 }
 
@@ -871,7 +883,7 @@ mod tests {
 
     use super::*;
     use crate::manifest::parse_for_any_app;
-    use crate::store::{RECORD_VERSION, Record, Source};
+    use crate::store::{Extra, RECORD_VERSION, Record, Source};
     use crate::trust::Trust;
 
     fn grants(permissions: &[Permission]) -> Grants {
@@ -1071,6 +1083,7 @@ mod tests {
             warnings: Vec::new(),
             dir: PathBuf::from("/plugins/poster"),
             broken: None,
+            extra: Extra::default(),
         }
     }
 
@@ -1090,14 +1103,51 @@ mod tests {
         assert_eq!((g.permissions, g.hosts), (vec![Permission::Network], vec!["discord.com".to_owned()]));
         let p = installed((&["exports:read"], &["discord.com"]), (&["exports:read"], &["discord.com"]));
         assert_eq!(Grants::of(&p).unwrap().hosts, Vec::<String>::new());
-        // Every plugin is a process one for now, with no secrets.
+        // One installed without an extra row runs as a process, with no secrets in version 1.
         let g = Grants::of(&p).unwrap();
         assert_eq!((g.runtime, g.secrets.len()), (RuntimeKind::Process, 0));
+        // The runtime is the one agreed to.
+        let mut service = installed((&[], &[]), (&[], &[]));
+        service.extra = Extra::agreed(RuntimeKind::Service);
+        assert!(Grants::of(&service).unwrap().service());
         // A broken plugin gets none.
         let mut broken = p;
         broken.broken = Some("Its files were changed. Install it again.".into());
         broken.manifest = None;
         assert_eq!(Grants::of(&broken).unwrap_err().to_string(), "Its files were changed. Install it again.");
+    }
+
+    #[test]
+    fn a_plugin_reads_only_its_own_secrets() {
+        let mut p = installed((&[], &[]), (&[], &[]));
+        let v2 = json!({
+            "manifestVersion": 2,
+            "id": "dev.autoscene.poster",
+            "version": "1.0.0",
+            "name": "Poster",
+            "description": "Posts clips.",
+            "author": {"name": "Someone"},
+            "engines": {"autoscene": ">=1.0.0", "protocol": 2},
+            "runtime": {"type": "process", "command": {"*": ["uv", "run", "--script", "--locked", "main.py"]}},
+            "contributes": {"settings": [
+                {"key": "token", "type": "secret", "title": "Token"},
+                {"key": "channel", "type": "string", "title": "Channel"}
+            ]}
+        });
+        p.manifest = Some(parse_for_any_app(v2.to_string().as_bytes()).unwrap().manifest);
+        let g = Grants::of(&p).unwrap();
+        assert_eq!(g.secrets, ["token"]);
+        assert!(check(HostMethod::SecretsGet, &PAGE, &g).is_ok());
+        assert!(check_secret("token", &g).is_ok());
+        // A plain setting is no secret, and another's key is none of its own.
+        for key in ["channel", "webhook"] {
+            let e = check_secret(key, &g).unwrap_err();
+            assert!(matches!(&e, PluginError::Denied(_)), "{e:?}");
+            assert_eq!(
+                e.to_string(),
+                format!("secrets.get reads only the plugin's secret settings, and {key} isn't one.")
+            );
+        }
     }
 
     #[test]

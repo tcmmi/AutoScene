@@ -1,8 +1,10 @@
+import type * as React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import type { PluginInfo, SettingKind, SettingSpec, SettingValue } from "@/bindings"
-import { FolderOpen, PuzzlePiece } from "@/components/icons"
+import { CircleNotch, FolderOpen, PuzzlePiece } from "@/components/icons"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Segmented } from "@/components/ui/segmented"
@@ -13,6 +15,7 @@ import { PathText, SettingRow, SettingsGroup } from "@/features/settings/primiti
 import { useAppActions } from "@/lib/actions"
 import { commands, errorMessage } from "@/lib/ipc"
 import { reveal } from "@/lib/os"
+import { isMac } from "@/lib/platform"
 import { qk, queryClient, usePluginSettings, usePlugins } from "@/lib/queries"
 import { keepPlugin } from "./plugin-actions"
 
@@ -21,6 +24,13 @@ type NumberKind = Extract<SettingKind, { type: "number" }>
 
 /** How long a slider rests before what it shows is saved. */
 const SETTLE_MS = 400
+
+/**
+ * The longest secret the keychain keeps (`MAX_SECRET_CHARS`), in UTF-16 units
+ * as `length` counts them. Not a `maxLength`: a pasted token would be cut
+ * short without a word, in a field that hides it.
+ */
+const MAX_SECRET = 1024
 
 /** The window title's name of a plugin's settings. */
 export function PluginCrumb({ id }: { id: string }) {
@@ -34,8 +44,9 @@ export function PluginName({ id }: { id: string }) {
 }
 
 /**
- * A plugin's settings: what it lets the person set, the export actions to
- * run after every export, and where its files and log are.
+ * A plugin's settings: what it lets the person set (a secret only into the
+ * system's keychain), the export actions to run after every export, and
+ * where its files and log are.
  */
 export function PluginSettingsSection({ id }: { id: string }) {
   const { data: plugins, isPending, error } = usePlugins()
@@ -89,13 +100,24 @@ function PluginSettings({ p }: { p: PluginInfo }) {
       )}
 
       {p.settings.length > 0 && (
-        <SettingsGroup title="Settings" description="Each run gets them as they are when it starts.">
+        <SettingsGroup
+          title="Settings"
+          description={
+            p.settings.some((s) => s.kind.type === "secret")
+              ? "Each run gets them as they are when it starts, and a secret each time it asks for it."
+              : "Each run gets them as they are when it starts."
+          }
+        >
           {unread && values === undefined && (
             <p className="px-5 py-3.5 text-sm text-danger">Couldn't read its settings: {errorMessage(unread)}</p>
           )}
           {p.settings.map((s) => (
-            <SettingRow key={`${s.key}:${s.kind.type}`} label={s.title} description={s.description ?? undefined}>
-              <SettingControl spec={s} value={valueOf(s, values)} ready={values !== undefined} onSave={(v) => void save(s.key, v)} />
+            <SettingRow key={`${s.key}:${s.kind.type}`} label={s.title} description={about(s)}>
+              {s.kind.type === "secret" ? (
+                <SecretSetting p={p} spec={s} placeholder={s.kind.placeholder} />
+              ) : (
+                <SettingControl spec={s} value={valueOf(s, values)} ready={values !== undefined} onSave={(v) => void save(s.key, v)} />
+              )}
             </SettingRow>
           ))}
         </SettingsGroup>
@@ -142,6 +164,22 @@ function PluginSettings({ p }: { p: PluginInfo }) {
 }
 
 /**
+ * What the row of `s` says under its title. On macOS a secret also says that
+ * the Keychain may ask again: each update of AutoScene is signed anew.
+ */
+function about(s: SettingSpec): React.ReactNode {
+  const again = s.kind.type === "secret" && isMac ? "macOS may ask you to allow it again after AutoScene updates." : null
+  if (!again) return s.description ?? undefined
+  if (!s.description) return again
+  return (
+    <>
+      <span className="block">{s.description}</span>
+      <span className="block">{again}</span>
+    </>
+  )
+}
+
+/**
  * The value of `s` in `values`, else its default; one of another type (its
  * plugin.json changed) counts as none. Only the object's own keys count: a
  * setting may be called `constructor`.
@@ -158,6 +196,8 @@ function valueOf(s: SettingSpec, values: Values | undefined): SettingValue {
       return typeof v === "string" ? v : (k.default ?? "")
     case "select":
       return typeof v === "string" && k.options.some((o) => o.value === v) ? v : k.default
+    case "secret":
+      return null
   }
 }
 
@@ -210,7 +250,133 @@ function SettingControl({
     }
     case "string":
       return <TextSetting spec={spec} kind={k} value={value} ready={ready} onSave={onSave} />
+    case "secret":
+      // Never a value here: see SecretSetting.
+      return null
   }
+}
+
+/**
+ * A secret setting: whether the keychain holds one, set in a dialog of its
+ * own and never shown again, and removed once the person says so.
+ */
+function SecretSetting({ p, spec, placeholder }: { p: PluginInfo; spec: SettingSpec; placeholder: string | null }) {
+  const [setting, setSetting] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const stored = p.secretsSet.includes(spec.key)
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-sm text-fg-2">{stored ? "Saved in your system's keychain" : "Not set"}</span>
+      <Button size="sm" variant="ghost" aria-label={`Set ${spec.title}`} onClick={() => setSetting(true)}>
+        Set…
+      </Button>
+      {stored && (
+        <Button size="sm" variant="ghost" aria-label={`Remove ${spec.title}`} onClick={() => setRemoving(true)}>
+          Remove…
+        </Button>
+      )}
+      {setting && <SecretDialog p={p} spec={spec} placeholder={placeholder} onDone={() => setSetting(false)} />}
+      {removing && <RemoveSecretDialog p={p} spec={spec} onDone={() => setRemoving(false)} />}
+    </div>
+  )
+}
+
+/**
+ * Asks before a secret leaves the keychain: many services show a token only
+ * once. While it goes the dialog stays, and Remove waits.
+ */
+function RemoveSecretDialog({ p, spec, onDone }: { p: PluginInfo; spec: SettingSpec; onDone: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const remove = async () => {
+    setBusy(true)
+    try {
+      keepPlugin(await commands.pluginSecretClear(p.id, spec.key))
+      onDone()
+    } catch (e) {
+      toast.error("Couldn't remove the secret", { description: errorMessage(e) })
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(open) => !open && !busy && onDone()}>
+      <DialogContent
+        title={`Remove ${spec.title}?`}
+        description="It goes from your system's keychain, and the plugin can't use it until you enter it again."
+      >
+        <DialogFooter>
+          <Button variant="ghost" disabled={busy} onClick={onDone}>
+            Cancel
+          </Button>
+          <Button variant="danger" disabled={busy} onClick={() => void remove()}>
+            {busy && <CircleNotch className="animate-spin" />}
+            Remove
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Asks for a secret, hidden as it is typed. It goes to the keychain and leaves with the dialog. */
+function SecretDialog({
+  p,
+  spec,
+  placeholder,
+  onDone,
+}: {
+  p: PluginInfo
+  spec: SettingSpec
+  placeholder: string | null
+  onDone: () => void
+}) {
+  const [value, setValue] = useState("")
+  const [busy, setBusy] = useState(false)
+  const tooLong = value.length > MAX_SECRET
+  const save = async () => {
+    if (value === "" || tooLong) return
+    setBusy(true)
+    try {
+      keepPlugin(await commands.pluginSecretSet(p.id, spec.key, value))
+      onDone()
+    } catch (e) {
+      toast.error("Couldn't save the secret", { description: errorMessage(e) })
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(open) => !open && onDone()}>
+      <DialogContent title={spec.title} description="Kept in your system's keychain. AutoScene never shows it again.">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void save()
+          }}
+        >
+          <Input
+            type="password"
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={spec.title}
+            aria-invalid={tooLong}
+            value={value}
+            placeholder={placeholder ?? undefined}
+            disabled={busy}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          {tooLong && <p className="mt-2 text-sm text-danger">A secret can be at most {MAX_SECRET} characters.</p>}
+          <DialogFooter>
+            <Button variant="ghost" onClick={onDone} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={busy || value === "" || tooLong}>
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 /** A text field that saves once it is left (Enter leaves it). */

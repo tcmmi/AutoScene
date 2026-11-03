@@ -13,6 +13,7 @@ use std::{env, fs};
 
 use as_core::{AppPaths, CancelToken};
 use as_db::LibraryDb;
+use as_plugin::calls::{self, SecretsGet};
 use as_plugin::log::MAX_LOG_BYTES;
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext};
 use as_plugin::runtime::{
@@ -20,8 +21,9 @@ use as_plugin::runtime::{
     RunSpec, TERM_GRACE,
 };
 use as_plugin::{
-    ActionContext, ActionKind, AppContext, CallCode, CallError, HostCalls, HostMethod, Keys, Launch, PluginContext,
-    PluginError, PluginId, PluginResult, RunMessage, SettingValue, Store, ToolPaths, Trigger, current_platform,
+    ActionContext, ActionKind, AppContext, CallCode, CallError, Caller, Grants, HostCalls, HostMethod, Keys, Launch,
+    MemorySecrets, PluginContext, PluginError, PluginId, PluginResult, RunMessage, SettingValue, Store, ToolPaths,
+    Trigger, current_platform,
 };
 use semver::Version;
 use serde_json::value::RawValue;
@@ -309,7 +311,7 @@ fn an_installed_plugin_runs_in_its_own_folders_with_its_settings() {
     let paths = AppPaths::at(tmp.path().join("data"));
     let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
     let app = Version::parse("1.0.3-BETA").unwrap();
-    let store = Store::open(&paths, db, Keys::new(&[]).unwrap(), app).unwrap();
+    let store = Store::open(&paths, db, Keys::new(&[]).unwrap(), app, Arc::new(MemorySecrets::default())).unwrap();
     // The stand-in plugin in a developer's folder, loaded from there.
     let work = tmp.path().join("work");
     fs::create_dir(&work).unwrap();
@@ -359,6 +361,80 @@ fn an_installed_plugin_runs_in_its_own_folders_with_its_settings() {
     // Each run has an id of its own.
     let again = store.run_spec(&p, action(), &ffmpeg, &ffprobe, "9.0.2").unwrap();
     assert_ne!(again.message.run_id, run_id);
+}
+
+/// AutoScene's answer to `secrets.get`, as the app gives it: from the
+/// store, for a key of the plugin's own.
+struct SecretAnswers {
+    store: Arc<Store>,
+    plugin: PluginId,
+    grants: Grants,
+}
+
+impl HostCalls for SecretAnswers {
+    fn call(&self, method: HostMethod, params: &RawValue, _: &CancelToken) -> Result<Value, CallError> {
+        calls::check(method, &Caller::Run { project: None, export: None }, &self.grants)?;
+        let SecretsGet { key } = calls::params(method, params)?;
+        calls::check_secret(&key, &self.grants)?;
+        Ok(json!({ "value": self.store.secret(&self.plugin, &key)? }))
+    }
+}
+
+#[test]
+fn a_secret_from_a_call_never_reaches_the_log_or_env() {
+    let marker = "SECRET-MARKER-7f3a9c";
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = AppPaths::at(tmp.path().join("data"));
+    let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
+    let app = Version::parse("1.0.3-BETA").unwrap();
+    let secrets = Arc::new(MemorySecrets::default());
+    let store = Arc::new(Store::open(&paths, db, Keys::new(&[]).unwrap(), app, secrets).unwrap());
+    // The stand-in plugin, of protocol 2 with a secret setting, loaded from its folder.
+    let work = tmp.path().join("work");
+    fs::create_dir(&work).unwrap();
+    let exe = Path::new(env!("CARGO_BIN_EXE_asp_test_plugin"));
+    let program = exe.file_name().unwrap().to_str().unwrap();
+    fs::copy(exe, work.join(program)).unwrap();
+    let manifest = json!({
+        "manifestVersion": 2,
+        "id": ID,
+        "version": "1.2.0",
+        "name": NAME,
+        "description": "Stands in for a plugin.",
+        "author": {"name": "AutoScene"},
+        "engines": {"autoscene": ">=1.0.0", "protocol": 2},
+        "runtime": {"type": "process", "command": {"*": [program, "call-secret"]}},
+        "contributes": {
+            "commands": [{"id": "post", "title": "Post"}],
+            "settings": [{"key": "token", "type": "secret", "title": "Token"}]
+        }
+    });
+    fs::write(work.join("plugin.json"), manifest.to_string()).unwrap();
+    store.commit(store.stage_folder(&work).unwrap(), true, true).unwrap();
+    let id = PluginId::parse(ID).unwrap();
+    let p = store.secret_set(&id, "token", marker).unwrap();
+
+    let action = ActionContext { kind: ActionKind::Command, id: "post".into(), trigger: Trigger::Palette };
+    let tools = tmp.path().join("tools");
+    let mut spec = store.run_spec(&p, action, &tools.join("ffmpeg"), &tools.join("ffprobe"), "9.0.2").unwrap();
+    let grants = Grants::of(&p).unwrap();
+    spec.calls = Some(Arc::new(SecretAnswers { store: store.clone(), plugin: id, grants }));
+    let e = runtime::run(spec, &CancelToken::new(), &|_, _| {}).unwrap_err();
+    let PluginError::Crashed { detail, .. } = &e else { panic!("{e:?}") };
+
+    let log = fs::read_to_string(paths.plugin_logs().join(format!("{ID}.log"))).unwrap();
+    let run_line = fs::read_to_string(paths.plugin_data().join(ID).join("run.json")).unwrap();
+    // It got the secret: its reply was as long as the line that holds it.
+    let reply = format!("{{\"type\":\"reply\",\"id\":1,\"result\":{{\"value\":\"{marker}\"}}}}\n");
+    assert!(log.contains(&format!("[stderr] a reply of {} bytes\n", reply.len())), "{log}");
+    assert!(log.contains("[call] secrets.get\n[reply] secrets.get ok\n"), "{log}");
+    // Its environment went to stderr, so to the log, and the end of it to the error.
+    assert!(log.contains(&format!("[stderr] AUTOSCENE_PLUGIN_ID={ID}\n")), "{log}");
+    assert!(detail.contains("a reply of"), "{detail}");
+    for (what, text) in [("log", &log), ("stderr tail", detail), ("run line", &run_line), ("error", &e.to_string())] {
+        assert!(!text.contains(marker), "the secret is in the {what}: {text}");
+    }
+    assert!(!run_line.contains("token"), "{run_line}");
 }
 
 #[test]

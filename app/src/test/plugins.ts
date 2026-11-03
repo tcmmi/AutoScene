@@ -23,6 +23,7 @@ export function pluginInfo(o: Partial<PluginInfo> & Pick<PluginInfo, "id" | "nam
     exportActions: [],
     commands: [],
     settings: [],
+    secretsSet: [],
     icon: null,
     logPath: `C:\\AutoScene\\logs\\plugins\\${o.id}.log`,
     warnings: [],

@@ -255,6 +255,20 @@ fn main() {
             }
             fs::write("replies.json", read).expect("replies.json");
         }
+        // Reads its secret, then fails with what it has on stderr: its
+        // environment and how long the reply was, never what it said.
+        "call-secret" => {
+            read_run();
+            fs::write("run.json", &first).expect("run.json");
+            send(json!({"type": "call", "id": 1, "method": "secrets.get", "params": {"key": "token"}}));
+            let mut reply = String::new();
+            stdin.read_line(&mut reply).expect("stdin");
+            for (key, value) in env::vars_os() {
+                eprintln!("{}={}", key.to_string_lossy(), value.to_string_lossy());
+            }
+            eprintln!("a reply of {} bytes", reply.len());
+            process::exit(1);
+        }
         // A plugin of protocol 1 that prints a line like a call: never answered.
         "protocol1-call" => {
             read_run();

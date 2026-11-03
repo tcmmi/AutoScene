@@ -39,8 +39,8 @@ use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage};
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
-    ActionContext, ActionKind, CommandSpec, HostCalls, Installed, Keys, Launch, Manifest, Permission, PluginError,
-    PluginId, PluginResult, Record, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
+    ActionContext, ActionKind, CommandSpec, Extra, HostCalls, Installed, Keys, Launch, Manifest, OsKeyring, Permission,
+    PluginError, PluginId, PluginResult, Record, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -140,6 +140,9 @@ pub struct PluginInfo {
     pub export_actions: Vec<PluginExportAction>,
     pub commands: Vec<CommandSpec>,
     pub settings: Vec<SettingSpec>,
+    /// The keys of its secret settings that have a value in the system's
+    /// keychain. Never the values.
+    pub secrets_set: Vec<String>,
     /// A `data:` URL of its icon (PNG or SVG), when it has a sound one.
     pub icon: Option<String>,
     /// Where its runs write their log.
@@ -202,11 +205,12 @@ pub struct PluginUpdate {
     pub added_hosts: Vec<String>,
 }
 
-/// The plugin host of this app's data folder, or none when its store
-/// can't open (the plugin commands then say so).
+/// The plugin host of this app's data folder, with plugins' secrets in the
+/// system's keychain, or none when its store can't open (the plugin
+/// commands then say so).
 pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<PluginHost>> {
     let version = app.package_info().version.clone();
-    match Store::open(paths, library.shared_db(), Keys::builtin(), version) {
+    match Store::open(paths, library.shared_db(), Keys::builtin(), version, Arc::new(OsKeyring)) {
         Ok(store) => Some(Arc::new(PluginHost::new(store))),
         Err(e) => {
             log::warn!("plugins couldn't start: {}", e.detail());
@@ -492,6 +496,7 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
             .collect(),
         commands: m.map(|m| m.commands.clone()).unwrap_or_default(),
         settings: m.map(|m| m.settings.clone()).unwrap_or_default(),
+        secrets_set: p.secrets_stored(),
         icon: store.icon_data_url(p),
         log_path: store.log_path(id).to_string_lossy().into_owned(),
         warnings: p.warnings.clone(),
@@ -513,7 +518,8 @@ pub fn review(t: &Ticket, store: &Store, allow_unreviewed: bool) -> PluginReview
 }
 
 /// The plugin of `t` as it would be once installed, in the folder it was
-/// checked in (as [`Store::commit`] keeps what the version before had).
+/// checked in (as [`Store::commit`] keeps what the version before had; its
+/// secrets aren't shown before it is).
 fn as_installed(t: &Ticket) -> Installed {
     let m = &t.manifest;
     let previous = t.previous.as_ref();
@@ -544,6 +550,7 @@ fn as_installed(t: &Ticket) -> Installed {
         warnings: t.warnings.clone(),
         dir,
         broken: None,
+        extra: Extra::agreed(m.runtime.kind),
     }
 }
 
@@ -892,6 +899,7 @@ mod tests {
             warnings: Vec::new(),
             dir: PathBuf::new(),
             broken: None,
+            extra: Extra::default(),
         }
     }
 
@@ -914,13 +922,14 @@ mod tests {
         let root = tmp.join("library").display().to_string();
         lib.update_settings(&AppSettings { library_root: root, ..lib.settings().unwrap() }).unwrap();
         let app = semver::Version::parse("1.0.3-BETA").unwrap();
-        let store = Store::open(&paths, lib.shared_db(), Keys::new(&[]).unwrap(), app).unwrap();
+        let secrets = Arc::new(as_plugin::MemorySecrets::default());
+        let store = Store::open(&paths, lib.shared_db(), Keys::new(&[]).unwrap(), app, secrets).unwrap();
         (lib, Arc::new(PluginHost::new(store)))
     }
 
     /// Writes the plugin of `manifest` into its folder in `tmp`, and checks
     /// it for loading.
-    fn folder(host: &PluginHost, tmp: &Path, manifest: &serde_json::Value) -> Ticket {
+    pub(super) fn folder(host: &PluginHost, tmp: &Path, manifest: &serde_json::Value) -> Ticket {
         let dir = tmp.join(manifest["id"].as_str().unwrap());
         std::fs::create_dir_all(&dir).unwrap();
         for file in ["main.py", "main.py.lock"] {

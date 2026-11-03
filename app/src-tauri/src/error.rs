@@ -82,7 +82,8 @@ impl From<PluginError> for AppError {
     fn from(e: PluginError) -> Self {
         let code = match &e {
             PluginError::NotFound(_) => ErrorCode::NotFound,
-            PluginError::Busy(_) => ErrorCode::NotReady,
+            // The keychain may be locked, or start later (Linux's Secret Service).
+            PluginError::Busy(_) | PluginError::Keychain { .. } => ErrorCode::NotReady,
             PluginError::Cancelled => ErrorCode::Cancelled,
             PluginError::Io(io) if io.kind() == std::io::ErrorKind::NotFound => ErrorCode::NotFound,
             PluginError::Io(_) => ErrorCode::Io,
@@ -97,7 +98,9 @@ impl From<PluginError> for AppError {
             | PluginError::Denied(_) => ErrorCode::Invalid,
         };
         match (&e, code) {
-            (PluginError::BadSignature(_) | PluginError::KeyChanged { .. }, _) => log::warn!("{}", e.detail()),
+            (PluginError::BadSignature(_) | PluginError::KeyChanged { .. } | PluginError::Keychain { .. }, _) => {
+                log::warn!("{}", e.detail());
+            }
             (_, ErrorCode::NotFound | ErrorCode::Invalid | ErrorCode::NotReady | ErrorCode::Cancelled) => {
                 log::debug!("{}", e.detail());
             }
@@ -141,6 +144,10 @@ mod tests {
             (ErrorCode::NotReady, "Poster is running. Wait for it to finish, or stop it in Activity.".into())
         );
         assert_eq!(said(PluginError::Cancelled).0, ErrorCode::Cancelled);
+        assert_eq!(
+            said(PluginError::Keychain { reason: "it is locked.".into(), detail: Some("Locked".into()) }),
+            (ErrorCode::NotReady, "Your system's keychain can't be used: it is locked.".into())
+        );
         // A file: missing, else any other trouble.
         assert_eq!(said(PluginError::Io(Error::from(ErrorKind::NotFound))).0, ErrorCode::NotFound);
         assert_eq!(said(PluginError::Io(Error::from(ErrorKind::PermissionDenied))).0, ErrorCode::Io);

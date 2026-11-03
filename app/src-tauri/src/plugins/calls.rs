@@ -1,6 +1,6 @@
-//! What AutoScene answers a plugin's calls with (protocol 2): its settings,
-//! its project, the project's exports and their files, and the state it
-//! keeps. [`AppCalls`] answers a run's calls, bound to the plugin, project
+//! What AutoScene answers a plugin's calls with (protocol 2): its settings
+//! and its secrets, its project, the project's exports and their files, and
+//! the state it keeps. [`AppCalls`] answers a run's calls, bound to the plugin, project
 //! and export the run is for. Each call is checked first (its params' size,
 //! then its method against the plugin's grants, then the project and the
 //! export it names; see [`as_plugin::calls`]), and only then is anything
@@ -14,7 +14,7 @@ use as_api::{ExportStatus, ExportSummary, MediaStatus};
 use as_core::{CancelToken, ExportId, MediaId, ProjectId};
 use as_plugin::calls::{
     self, CallCode, CallError, Caller, ExportRef, FileRef, Grants, HostCalls, HostMethod, PageExportSummary,
-    ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, StateKey, StateSet,
+    ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, SecretsGet, StateKey, StateSet,
 };
 use as_plugin::{Installed, PluginError, PluginId, PluginResult, page_state};
 use as_project::{Library, Project, ProjectError, ProjectResult};
@@ -123,6 +123,13 @@ impl HostCalls for AppCalls {
         let (store, id) = (&self.host.store, &self.plugin);
         match method {
             HostMethod::SettingsGet => Ok(answer(store.values(id)?)),
+            // Read from the keychain at each call, never kept: the value goes
+            // only into this reply.
+            HostMethod::SecretsGet => {
+                let SecretsGet { key } = calls::params(method, params)?;
+                calls::check_secret(&key, &self.grants)?;
+                Ok(json!({ "value": store.secret(id, &key)? }))
+            }
             HostMethod::ProjectGet => {
                 let asked: ProjectRef = calls::params(method, params)?;
                 let project = self.project(asked.project_id.as_deref())?;
@@ -169,7 +176,7 @@ impl HostCalls for AppCalls {
                 Ok(Value::Null)
             }
             HostMethod::StateKeys => Ok(answer(page_state::keys(&store.data_dir(id))?)),
-            HostMethod::SecretsGet | HostMethod::NetFetch => Err(later(method)),
+            HostMethod::NetFetch => Err(later(method)),
             // A page's own: `check` refused them to a run.
             HostMethod::ServiceRequest
             | HostMethod::ActionsRun
@@ -277,7 +284,7 @@ mod tests {
     use as_api::{ContentKind, ExportItem, MergedFile, NewProject, ProjectKind};
     use as_plugin::{ActionKind, Permission, RuntimeKind, Trust};
 
-    use super::super::tests::{host_in, key, plugin};
+    use super::super::tests::{folder, host_in, key, plugin};
     use super::super::{RunKey, calls_for};
     use super::*;
 
@@ -539,11 +546,12 @@ mod tests {
         assert!(!data.exists());
         // A plugin that isn't installed has no settings.
         assert_eq!(said(call(HostMethod::SettingsGet, Value::Null)).0, CallCode::NotFound);
-        // What comes later says so; a page's own methods aren't a run's.
+        // A plugin without secret settings has none to read.
         assert_eq!(
             said(call(HostMethod::SecretsGet, json!({"key": "token"}))),
             (CallCode::Denied, "secrets.get needs a secret setting, and this plugin has none.".into())
         );
+        // What comes later says so; a page's own methods aren't a run's.
         let net = place.run(None, &[Permission::Network]);
         assert_eq!(
             said(net.ask(HostMethod::NetFetch, json!({"url": "https://discord.com"}))),
@@ -554,6 +562,54 @@ mod tests {
             (CallCode::Denied, "A run can't call ui.toast.".into())
         );
         drop((run, net, place));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_run_reads_only_its_own_secrets() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-calls-secrets-{}", std::process::id()));
+        let (library, host) = host_in(&tmp);
+        let library = Arc::new(library);
+        let manifest = json!({
+            "manifestVersion": 2,
+            "id": "dev.a.secrets",
+            "version": "1.0.0",
+            "name": "Poster",
+            "description": "Posts clips.",
+            "author": {"name": "Someone"},
+            "engines": {"autoscene": ">=1.0.0", "protocol": 2},
+            "runtime": {"type": "process", "command": {"*": ["uv", "run", "--script", "--locked", "main.py"]}},
+            "contributes": {
+                "commands": [{"id": "post", "title": "Post"}],
+                "settings": [
+                    {"key": "token", "type": "secret", "title": "Token"},
+                    {"key": "webhook", "type": "secret", "title": "Webhook"},
+                    {"key": "channel", "type": "string", "title": "Channel", "default": "clips"}
+                ]
+            }
+        });
+        let p = host.store.commit(folder(&host, &tmp, &manifest), true, true).unwrap();
+        let id = p.record.id.clone();
+        host.store.secret_set(&id, "token", "hunter2").unwrap();
+        let post = key(&id, ActionKind::Command, "post", None, None);
+        let run = calls_for(&library, &host, &p, &post, 2).unwrap().unwrap();
+        let get = |key: &str| run.ask(HostMethod::SecretsGet, json!({ "key": key }));
+
+        assert_eq!(get("token").unwrap(), json!({"value": "hunter2"}));
+        // One the person hasn't set is none; it is read at each call.
+        assert_eq!(get("webhook").unwrap(), json!({"value": null}));
+        host.store.secret_set(&id, "webhook", "https://example.org/hook").unwrap();
+        assert_eq!(get("webhook").unwrap(), json!({"value": "https://example.org/hook"}));
+        // A plain setting is no secret, and settings.get gives none.
+        assert_eq!(
+            said(get("channel")),
+            (CallCode::Denied, "secrets.get reads only the plugin's secret settings, and channel isn't one.".into())
+        );
+        assert_eq!(run.ask(HostMethod::SettingsGet, Value::Null).unwrap(), json!({"channel": "clips"}));
+        // Removed, it is none again.
+        host.store.secret_clear(&id, "token").unwrap();
+        assert_eq!(get("token").unwrap(), json!({"value": null}));
+        drop((run, host, library));
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 

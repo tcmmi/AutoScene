@@ -6,7 +6,8 @@
 //! its files. Who signed that list decides the plugin's trust ([`trust`]):
 //! AutoScene's review, its author's pinned key, or nobody AutoScene knows.
 //! The installed plugins, and what the person set for them, are kept by
-//! [`store`].
+//! [`store`]; the values of secret settings by the system's keychain
+//! ([`secrets`]).
 //!
 //! A run ([`runtime`]) starts the plugin's program and speaks the protocol
 //! ([`protocol`]) with it over its stdin and stdout; what else it writes
@@ -28,6 +29,7 @@ pub mod package;
 pub mod page_state;
 pub mod protocol;
 pub mod runtime;
+pub mod secrets;
 pub mod store;
 pub mod trust;
 
@@ -43,5 +45,6 @@ pub use protocol::{
     RunMessage, ToolPaths, Trigger,
 };
 pub use runtime::RunSpec;
-pub use store::{Installed, Record, Source, Store, Ticket};
+pub use secrets::{MemorySecrets, OsKeyring, SecretStore};
+pub use store::{Extra, Installed, Record, Source, Store, Ticket};
 pub use trust::{AuthorKey, Keys, Trust, Verdict};

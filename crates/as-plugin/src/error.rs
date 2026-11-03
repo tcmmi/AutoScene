@@ -34,6 +34,11 @@ pub enum PluginError {
     /// A host method the plugin has no grant for; the sentence says which.
     #[error("{0}")]
     Denied(String),
+    /// The system's keychain (where secret settings are kept) refused, or
+    /// isn't there: why, in plain words, and what it said as `detail`
+    /// (logged). Never a secret's value.
+    #[error("Your system's keychain can't be used: {reason}")]
+    Keychain { reason: String, detail: Option<String> },
     #[error("{}", .0.user_message())]
     Db(#[from] as_db::DbError),
     #[error("{}", as_core::io_message(.0))]
@@ -49,6 +54,7 @@ impl PluginError {
             Self::KeyChanged { pinned, got } => format!("plugin author key changed: pinned {pinned}, got {got}"),
             Self::Failed { message, detail: Some(detail) } => format!("{message}: {detail}"),
             Self::Crashed { name, detail } => format!("{name} crashed: {detail}"),
+            Self::Keychain { detail: Some(detail), .. } => format!("keychain: {detail}"),
             Self::Db(e) => format!("plugin registry: {e}"),
             Self::Io(e) => format!("plugin files: {e}"),
             e => e.to_string(),

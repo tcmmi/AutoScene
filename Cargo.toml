@@ -40,6 +40,7 @@ tracing = "0.1.44"
 parking_lot = "0.12.5"
 zstd = "0.14.2"
 half = "=2.7.1"
+ort = { version = "=2.0.0-rc.15", default-features = false }
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }
 specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json", "uuid"] }
 specta-serde = "=0.0.12"

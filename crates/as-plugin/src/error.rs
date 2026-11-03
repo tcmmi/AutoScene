@@ -41,6 +41,9 @@ pub enum PluginError {
     /// (logged). Never a secret's value.
     #[error("Your system's keychain can't be used: {reason}")]
     Keychain { reason: String, detail: Option<String> },
+    /// The page that asked was closed, or never opened.
+    #[error("This page was closed.")]
+    Closed,
     #[error("{}", .0.user_message())]
     Db(#[from] as_db::DbError),
     #[error("{}", as_core::io_message(.0))]

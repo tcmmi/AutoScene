@@ -478,6 +478,36 @@ fn pack_and_verify_warn_as_autoscene_would() {
     );
 }
 
+#[test]
+fn a_plugin_that_runs_no_program_packs_with_its_pages() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let files: [(&str, &[u8]); 2] = [("ui/index.html", b"<!doctype html>"), ("ui/app.js", b"go()")];
+    let src = folder(&place("page"), json!({"*": ["bin/tool"]}), &files);
+    edit_manifest(&src, |v| {
+        v["manifestVersion"] = json!(2);
+        v["runtime"] = json!({"type": "none"});
+        v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]});
+    });
+    // It runs on every platform: it has no program to mark or to check.
+    let out = place("page.asp");
+    assert_eq!(asp(&["pack", text(&src), text(&out)]).warnings(), "");
+    assert_eq!(asp(&["verify", text(&out)]).ok(), "dev.autoscene.hello-export 1.2.0: Unreviewed\n");
+    let lock: Value = serde_json::from_slice(&entries(&out)[LOCK]).unwrap();
+    let listed: Vec<(&str, &Value)> =
+        lock["files"].as_array().unwrap().iter().map(|f| (f["path"].as_str().unwrap(), &f["exec"])).collect();
+    assert_eq!(
+        listed,
+        [("plugin.json", &json!(false)), ("ui/app.js", &json!(false)), ("ui/index.html", &json!(false))]
+    );
+
+    // Its page must be in it.
+    edit_manifest(&src, |v| v["contributes"]["pages"][0]["entry"] = json!("ui/gone.html"));
+    let err = asp(&["pack", text(&src), text(&place("gone.asp"))]).failed(1);
+    assert_eq!(err, "asp: The plugin package is missing its page ui/gone.html.\n");
+    assert_eq!(names(tmp.path()), ["page", "page.asp"]);
+}
+
 /// `package` with `entries` added from `from` (by name), as a zip of its own.
 fn grafted(package: &Path, from: &Path, names: &[&str], out: &Path) {
     let (mut entries, from) = (entries(package), entries(from));

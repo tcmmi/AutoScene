@@ -107,6 +107,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::plugins::plugin_run,
             commands::plugins::plugin_secret_set,
             commands::plugins::plugin_secret_clear,
+            commands::plugins::plugin_page_open,
+            commands::plugins::plugin_page_close,
             commands::jobs::jobs_list,
             commands::jobs::job_cancel,
             commands::jobs::jobs_clear_finished,
@@ -127,6 +129,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             events::PortraitsChanged,
             events::PackChanged,
             events::PluginsChanged,
+            events::PluginPageEvent,
             updater::UpdateProgress,
         ])
 }
@@ -184,6 +187,9 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Plugin pages, in frames of the main webview only. Registered here,
+        // before setup: a page may be asked for before the state is there.
+        .register_asynchronous_uri_scheme_protocol("asp", plugins::pages::protocol)
         .invoke_handler(specta.invoke_handler());
 
     #[cfg(target_os = "macos")]

@@ -385,9 +385,9 @@ impl Store {
     }
 
     /// Unpacks the package `archive` and checks it for this AutoScene: its
-    /// manifest, the files its command starts on this computer, its icon and
-    /// its signature, and that it may replace the installed version. A
-    /// package that fails leaves no folder.
+    /// manifest, the files its command starts on this computer, its pages,
+    /// its icon and its signature, and that it may replace the installed
+    /// version. A package that fails leaves no folder.
     pub fn stage(&self, archive: &Path) -> PluginResult<Ticket> {
         let id = Uuid::now_v7();
         let staged = self.root.join(STAGING).join(id.simple().to_string());
@@ -402,7 +402,10 @@ impl Store {
     fn check_package(&self, id: Uuid, staged: &Path, unpacked: Unpacked) -> PluginResult<Ticket> {
         let bytes = manifest::read_file(&staged.join(MANIFEST))?;
         let Parsed { manifest: m, warnings } = manifest::parse(&bytes, &self.app)?;
-        package::check_launch(&unpacked.lock, &m.launch()?, current_platform())?;
+        if m.runs_program() {
+            package::check_launch(&unpacked.lock, &m.launch()?, current_platform())?;
+        }
+        package::check_pages(staged, Some(&unpacked.lock), &m.pages)?;
         if let Some(icon) = &m.icon {
             package::check_icon(staged, &unpacked.lock, icon)?;
         }
@@ -449,7 +452,8 @@ impl Store {
             _ => e.into(),
         })?;
         let Parsed { manifest: m, warnings } = manifest::parse(&bytes, &self.app)?;
-        for file in m.launch()?.files() {
+        let starts = if m.runs_program() { m.launch()?.files() } else { Vec::new() };
+        for file in starts {
             if !fs::metadata(file_in(&dir, &file)).is_ok_and(|f| f.is_file()) {
                 return Err(invalid(format!(
                     "The plugin folder is missing {}, which its command needs.",
@@ -457,6 +461,7 @@ impl Store {
                 )));
             }
         }
+        package::check_pages(&dir, None, &m.pages)?;
         let previous = self.record(&m.id)?;
         let pin = previous.as_ref().and_then(|p| p.author_key.as_ref());
         let verdict = trust::judge(&self.keys, &[], None, None, &m, pin).map_err(|e| match e {
@@ -1240,8 +1245,8 @@ fn read_manifest(record: &Record, dir: &Path) -> Result<Parsed, String> {
 }
 
 /// The lock in an installed package's folder `dir`, when it is the one its
-/// install recorded (of SHA-256 `sha256`).
-fn installed_lock(dir: &Path, sha256: &str) -> Result<FilesLock, String> {
+/// install recorded (of SHA-256 `sha256`); else why it can't be used.
+pub(crate) fn installed_lock(dir: &Path, sha256: &str) -> Result<FilesLock, String> {
     let mut bytes = Vec::new();
     let read = File::open(dir.join(LOCK)).and_then(|file| file.take(MAX_LOCK_BYTES + 1).read_to_end(&mut bytes));
     if read.is_err() || package::sha256_hex(&bytes) != sha256 {
@@ -2152,6 +2157,40 @@ mod tests {
             assert_eq!(e.to_string(), why);
             assert_eq!(place.plugins(), [".staging", ".trash"]);
         }
+    }
+
+    #[test]
+    fn a_plugin_that_runs_no_program_installs_with_its_pages() {
+        let place = Place::new();
+        let store = place.store();
+        let mut m = manifest(ID, "1.0.0");
+        m["manifestVersion"] = json!(2);
+        m["runtime"] = json!({"type": "none"});
+        m["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]});
+        let manifest = ("plugin.json".to_owned(), serde_json::to_vec_pretty(&m).unwrap());
+        let page = ("ui/index.html".to_owned(), b"<!doctype html>".to_vec());
+
+        // A loaded folder holds its page as a file of its own.
+        let dir = place.tmp.path().join("pages");
+        fs::create_dir_all(dir.join("ui")).unwrap();
+        fs::write(dir.join("plugin.json"), &manifest.1).unwrap();
+        let e = store.stage_folder(&dir).unwrap_err();
+        assert_eq!(e.to_string(), "The plugin folder is missing its page ui/index.html, or it is a link.");
+        fs::write(dir.join("ui/index.html"), &page.1).unwrap();
+        store.discard(store.stage_folder(&dir).unwrap());
+
+        // A package lists it.
+        let e = store.stage(&place.package(&vec![manifest.clone()], None, false)).unwrap_err();
+        assert_eq!(e.to_string(), "The plugin package is missing its page ui/index.html.");
+        assert_eq!(place.plugins(), [".staging", ".trash"]);
+        let t = store.stage(&place.package(&vec![manifest, page], None, false)).unwrap();
+        let p = store.commit(t, true, true).unwrap();
+        assert_eq!((p.extra.runtime, p.broken.as_deref()), (Some(RuntimeKind::None), None));
+        assert_eq!(store.get(&id()).unwrap().manifest.unwrap().pages[0].entry, "ui/index.html");
+        // It has nothing to run.
+        let action = ActionContext { kind: ActionKind::Command, id: "main".into(), trigger: Trigger::Palette };
+        let e = store.run_spec(&p, action, Path::new("ffmpeg"), Path::new("ffprobe"), "9.0").err().unwrap();
+        assert_eq!(e.to_string(), "Hello Export runs no program.");
     }
 
     #[test]

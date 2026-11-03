@@ -300,6 +300,17 @@ export const commands = {
 	pluginSecretSet: (pluginId: string, key: string, value: string) => __TAURI_INVOKE<PluginInfo>("plugin_secret_set", { pluginId, key, value }),
 	/**  Remove a plugin's secret setting `key` from the system's keychain. */
 	pluginSecretClear: (pluginId: string, key: string) => __TAURI_INVOKE<PluginInfo>("plugin_secret_clear", { pluginId, key }),
+	/**
+	 *  Open a plugin's page `page_id` for its frame, in the project
+	 *  `project_id` when it is a project page: the session the frame loads it
+	 *  from, and what the page may use. Only while the plugin may run.
+	 */
+	pluginPageOpen: (pluginId: string, pageId: string, projectId: string | null) => __TAURI_INVOKE<PageMount>("plugin_page_open", { pluginId, pageId, projectId }),
+	/**
+	 *  Close a plugin page's session: its frame went away. One that is closed
+	 *  already is no error.
+	 */
+	pluginPageClose: (session: string) => __TAURI_INVOKE<null>("plugin_page_close", { session }),
 	/**  Newest first. Live updates arrive as `job:changed` / `job:progress`. */
 	jobsList: () => __TAURI_INVOKE<JobInfo[]>("jobs_list"),
 	jobCancel: (jobId: JobId) => __TAURI_INVOKE<void>("job_cancel", { jobId }),
@@ -337,6 +348,7 @@ export const events = {
 	mediaChanged: makeEvent<MediaChanged>("media:changed"),
 	menuAction: makeEvent<MenuAction>("menu:action"),
 	packChanged: makeEvent<PackChanged>("pack:changed"),
+	pluginPageEvent: makeEvent<PluginPageEvent>("plugin-page:event"),
 	pluginsChanged: makeEvent<PluginsChanged>("plugins:changed"),
 	portraitsChanged: makeEvent<PortraitsChanged>("portraits:changed"),
 	updateProgress: makeEvent<UpdateProgress>("update:progress"),
@@ -1287,6 +1299,65 @@ export type PackTotals = {
 	seconds: number | null,
 };
 
+/**  What became of an open plugin page. */
+export type PageEvent = 
+/**  Its plugin's settings or secrets changed: it may read them again. */
+{ type: "settings" } | 
+/**
+ *  It was closed (its plugin was turned off, is being updated or
+ *  uninstalled, may no longer run unreviewed, or too many pages were
+ *  open): `reason` says so, for the person.
+ */
+{ type: "closed"; reason: string };
+
+/**  An open page, for its frame: where it loads from, and what it may use. */
+export type PageMount = {
+	/**  Its session, which the page's calls name. */
+	session: string,
+	/**  The frame's address: `B/<session>/<entry>`. */
+	src: string,
+	plugin: PageMountPlugin,
+	page: PageSpec,
+	/**  The project it is open in (a project page's). */
+	projectId: string | null,
+	/**  What it may use, for its start. */
+	permissions: Permission[],
+	hosts: string[],
+	/**  Its plugin runs a service. */
+	service: boolean,
+	/**  The protocol its plugin declared. */
+	protocol: number,
+};
+
+/**  The plugin of an open page, as its frame's bar shows it. */
+export type PageMountPlugin = {
+	id: string,
+	name: string,
+	version: string,
+	trust: Trust,
+	source: PluginSource,
+	/**  A `data:` URL of its icon, when it has a sound one. */
+	icon: string | null,
+};
+
+/**  Where a page opens: on its own, or in a project, which it may then read. */
+export type PageScope = "global" | "project";
+
+/**
+ *  A page a plugin adds: one of its files, which AutoScene shows full screen
+ *  in a sandboxed frame, from the rail (a global page) or a project's bar.
+ */
+export type PageSpec = {
+	id: string,
+	title: string,
+	description: string | null,
+	/**  Its file: the package path of an `.html` file under `ui/`. */
+	entry: string,
+	scope: PageScope,
+	/**  It has a tile in the rail (global pages only). */
+	rail: boolean,
+};
+
 /**
  *  What a plugin says it does. Shown before install and declared by the
  *  author, not enforced: a process plugin runs with the person's user rights.
@@ -1356,6 +1427,14 @@ export type PluginInfo = {
 	exportActions: PluginExportAction[],
 	commands: CommandSpec[],
 	settings: SettingSpec[],
+	/**  How it runs: a program for each run, or none (it has only pages). */
+	runtime: RuntimeKind,
+	/**
+	 *  The protocol its program speaks (`engines.protocol`), which its
+	 *  pages see too.
+	 */
+	protocol: number,
+	pages: PageSpec[],
 	/**
 	 *  The keys of its secret settings that have a value in the system's
 	 *  keychain. Never the values.
@@ -1367,6 +1446,15 @@ export type PluginInfo = {
 	logPath: string,
 	/**  What was skipped or changed in its `plugin.json`. */
 	warnings: string[],
+};
+
+/**
+ *  Something for one open plugin page (its session): that its plugin's
+ *  settings changed, or that it was closed. Sent to the main webview only.
+ */
+export type PluginPageEvent = {
+	session: string,
+	event: PageEvent,
 };
 
 /**
@@ -1409,6 +1497,13 @@ export type PluginUpdate = {
 	/**  Permissions it says it needs that the installed version didn't. */
 	addedPermissions: Permission[],
 	addedHosts: string[],
+	/**  The titles of the pages it adds. */
+	addedPages: string[],
+	/**
+	 *  It runs a program, and the installed version, as the person agreed
+	 *  to it, runs none: from now on it runs with their user rights.
+	 */
+	startsProgram: boolean,
 };
 
 /**
@@ -1521,6 +1616,20 @@ export type RelinkSummary = {
 	/**  Still missing. */
 	missing: number,
 };
+
+/**
+ *  How a plugin runs. This AutoScene installs `process` plugins and, from
+ *  manifest version 2, `none` ones; a `service` is reserved for a later
+ *  AutoScene. Also what the person agreed to at install
+ *  ([`crate::store::Extra`]).
+ */
+export type RuntimeKind = 
+/**  Starts for each run and ends with it. */
+"process" | 
+/**  Also starts in service mode while one of its pages is open (protocol 2). */
+"service" | 
+/**  Runs no program: pages only. */
+"none";
 
 /**  An export's clips saved as a list (see [`ListFormat`]). */
 export type SavedList = {

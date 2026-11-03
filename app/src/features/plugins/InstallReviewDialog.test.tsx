@@ -136,7 +136,15 @@ describe("the install review", () => {
   })
 
   it("says what the installed version was when that changes", () => {
-    const update: PluginUpdate = { fromVersion: "0.2.0", trustBefore: "reviewed", sourceBefore: "package", addedPermissions: [], addedHosts: [] }
+    const update: PluginUpdate = {
+      fromVersion: "0.2.0",
+      trustBefore: "reviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: [],
+      addedPages: [],
+      startsProgram: false,
+    }
     show(review({ update }))
     expect(screen.getByText("The installed version: Reviewed by AutoScene.")).toBeTruthy()
     cleanup()
@@ -182,6 +190,8 @@ describe("the install review", () => {
           sourceBefore: "package",
           addedPermissions: ["network"],
           addedHosts: ["cdn.example.com"],
+          addedPages: [],
+          startsProgram: false,
         },
       }),
     )
@@ -224,6 +234,48 @@ describe("the install review", () => {
     expect(screen.getByText("A program in its folder.")).toBeTruthy()
   })
 
+  it("says a plugin that runs no program is its pages, and when an update starts one", () => {
+    const page = (id: string, title: string) => ({
+      id,
+      title,
+      description: null,
+      entry: `ui/${id}.html`,
+      scope: "global" as const,
+      rail: false,
+    })
+    const pages = { ...discord, runtime: "none" as const, uvScript: false, exportActions: [], pages: [page("main", "Main")] }
+    show(review({ plugin: { ...pages, permissions: ["project:read"], networkHosts: [] } }))
+    expect(screen.getByText("Runs no program. Its pages run in a sandbox.")).toBeTruthy()
+    expect(screen.queryByText(/user rights/)).toBeNull()
+    expect(screen.getByRole("heading", { name: "What its pages may use" })).toBeTruthy()
+    expect(screen.getByText("AutoScene checks these each time its pages ask.")).toBeTruthy()
+    expect(screen.getByText("Main")).toBeTruthy()
+    expect(screen.queryByText("New")).toBeNull()
+    cleanup()
+
+    // The pages an update adds are marked.
+    const update: PluginUpdate = {
+      fromVersion: "0.2.0",
+      trustBefore: "unreviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: [],
+      addedPages: ["Clips"],
+      startsProgram: false,
+    }
+    show(review({ plugin: { ...pages, pages: [page("main", "Main"), page("clips", "Clips")] }, update }))
+    expect(within(screen.getByText("Clips").closest("li")!).getByText("New")).toBeTruthy()
+    expect(within(screen.getByText("Main").closest("li")!).queryByText("New")).toBeNull()
+    cleanup()
+
+    // One the person agreed to as pages only, which now runs a program, says so.
+    show(review({ plugin: discord, update: { ...update, addedPages: [], startsProgram: true } }))
+    const runs = screen.getByText(/A Python script that uv runs/)
+    expect(within(runs).getByText("New")).toBeTruthy()
+    expect(screen.getByText("The installed version runs no program.")).toBeTruthy()
+    expect(screen.getByText("It runs with your user rights: it can read, change and send anything you can.")).toBeTruthy()
+  })
+
   it("names each secret it keeps in the keychain", () => {
     const settings = [
       { key: "webhook", title: "Webhook address", description: null, kind: { type: "secret" as const, placeholder: null } },
@@ -247,7 +299,15 @@ describe("the install review", () => {
     cleanup()
 
     // An unsigned plugin's signed update pins whatever key it brings: said plainly.
-    const update: PluginUpdate = { fromVersion: "0.2.0", trustBefore: "unreviewed", sourceBefore: "package", addedPermissions: [], addedHosts: [] }
+    const update: PluginUpdate = {
+      fromVersion: "0.2.0",
+      trustBefore: "unreviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: [],
+      addedPages: [],
+      startsProgram: false,
+    }
     show(review({ plugin: signed, update }))
     expect(
       screen.getByText("The installed version wasn't signed. This one pins its key: from now on, only updates signed with it install."),

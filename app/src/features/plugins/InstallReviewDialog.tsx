@@ -139,7 +139,7 @@ function ReviewForm({
 
         <Permissions review={review} />
         <Runs review={review} />
-        <Adds p={p} />
+        <Adds p={p} addedPages={review.update?.addedPages ?? []} />
 
         {p.warnings.length > 0 && (
           <section>
@@ -220,16 +220,21 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   )
 }
 
-/** What the plugin says it does, with what an update adds marked. */
+/**
+ * What the plugin says it does, with what an update adds marked: a
+ * program's claim, or what AutoScene checks for a plugin that runs none,
+ * which is its pages.
+ */
 function Permissions({ review }: { review: PluginReview }) {
   const p = review.plugin
   const added = review.update?.addedPermissions ?? []
   const newHosts = review.update?.addedHosts ?? []
   const hosts = p.networkHosts.filter((h) => !newHosts.includes(h))
+  const program = p.runtime !== "none"
   return (
     <section>
-      <p className="text-md text-fg-1">It runs with your user rights: it can read, change and send anything you can.</p>
-      <h3 className="mt-3 text-sm font-medium text-fg-2">What it says it does (not enforced)</h3>
+      {program && <p className="mb-3 text-md text-fg-1">It runs with your user rights: it can read, change and send anything you can.</p>}
+      <h3 className="text-sm font-medium text-fg-2">{program ? "What it says it does (not enforced)" : "What its pages may use"}</h3>
       <ul className="mt-1.5 flex flex-col gap-1.5 text-md text-fg-1">
         {p.permissions.map((perm) => (
           <li key={perm} className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -244,21 +249,30 @@ function Permissions({ review }: { review: PluginReview }) {
         {p.permissions.length === 0 && <li className="text-fg-2">It names no permissions.</li>}
         {p.gpu && <li>Uses the graphics card: its runs wait while an analysis runs</li>}
       </ul>
+      {!program && <p className="mt-1.5 text-sm text-fg-2">AutoScene checks these each time its pages ask.</p>}
     </section>
   )
 }
 
-/** What AutoScene starts to run it, and what that fetches on its own. */
+/**
+ * What AutoScene starts to run it, and what that fetches on its own: marked
+ * new when the installed version runs no program.
+ */
 function Runs({ review }: { review: PluginReview }) {
   const p = review.plugin
+  const startsProgram = review.update?.startsProgram ?? false
   return (
     <section>
       <h3 className="text-sm font-medium text-fg-2">How it runs</h3>
-      <p className="mt-1.5 text-md text-fg-1">
-        {p.uvScript
-          ? "A Python script that uv runs. On its first run, uv downloads Python (if this computer has none) and the packages the script names."
-          : "A program in its folder."}
+      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-md text-fg-1">
+        {p.runtime === "none"
+          ? "Runs no program. Its pages run in a sandbox."
+          : p.uvScript
+            ? "A Python script that uv runs. On its first run, uv downloads Python (if this computer has none) and the packages the script names."
+            : "A program in its folder."}
+        {startsProgram && <Badge tone="accent">New</Badge>}
       </p>
+      {startsProgram && <p className="mt-1.5 text-sm text-fg-2">The installed version runs no program.</p>}
       {review.uvMissing && (
         <p className="mt-1.5 text-sm text-danger">uv isn't installed, so it can't run yet. Install it from docs.astral.sh/uv.</p>
       )}
@@ -266,11 +280,15 @@ function Runs({ review }: { review: PluginReview }) {
   )
 }
 
-/** The menu entries, palette commands and settings it adds, and the secrets it keeps. */
-function Adds({ p }: { p: PluginInfo }) {
+/**
+ * The pages, menu entries, palette commands and settings it adds, with the
+ * pages an update adds marked, and the secrets it keeps.
+ */
+function Adds({ p, addedPages }: { p: PluginInfo; addedPages: string[] }) {
   const adds = [
-    ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title })),
-    ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title })),
+    ...p.pages.map((page) => ({ key: `page-${page.id}`, where: "A page", what: page.title, added: addedPages.includes(page.title) })),
+    ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title, added: false })),
+    ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title, added: false })),
   ]
   const secrets = p.settings.filter((s) => s.kind.type === "secret")
   const settings = p.settings.length - secrets.length
@@ -279,8 +297,11 @@ function Adds({ p }: { p: PluginInfo }) {
       <h3 className="text-sm font-medium text-fg-2">What it adds</h3>
       <ul className="mt-1.5 flex flex-col gap-1 text-md text-fg-1">
         {adds.map((a) => (
-          <li key={a.key}>
-            <span className="text-fg-2">{a.where}:</span> {a.what}
+          <li key={a.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
+              <span className="text-fg-2">{a.where}:</span> {a.what}
+            </span>
+            {a.added && <Badge tone="accent">New</Badge>}
           </li>
         ))}
         {settings > 0 && (

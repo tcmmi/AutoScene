@@ -1,8 +1,9 @@
 //! Plugins (Settings → Plugins): what is installed, installing it after a
 //! review, uninstalling, turning plugins and their after-export actions on
 //! or off, their settings and secrets, whether plugins AutoScene hasn't
-//! reviewed may run, and running their actions. Each change emits `plugins:changed`;
-//! runs report as jobs.
+//! reviewed may run, running their actions, and opening and closing their
+//! pages. Each change emits `plugins:changed`; runs report as jobs, and an
+//! open page hears of its plugin's changes through `plugin-page:event`.
 //!
 //! The page can't say yes alone to code AutoScene hasn't reviewed: turning
 //! the setting on, and installing such a plugin, each ask the person in a
@@ -23,6 +24,7 @@ use tauri_specta::Event;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::PluginsChanged;
 use crate::paths;
+use crate::plugins::pages::{self, PageMount};
 use crate::plugins::{self, PluginInfo, PluginReview, host, info, review};
 use crate::state::{AppState, blocking};
 
@@ -182,7 +184,7 @@ pub async fn plugin_install(
             }
         }
         // Its runs wait from here until the row names the new version.
-        let changing = match host.change(&ticket.manifest.id, &ticket.manifest.name) {
+        let changing = match host.change(&ticket.manifest.id, &ticket.manifest.name, "It is being updated.") {
             Ok(changing) => changing,
             Err(busy) => {
                 host.keep(ticket);
@@ -228,7 +230,7 @@ pub async fn plugin_uninstall(
     blocking(move || {
         let name = host.store.get(&id).ok().and_then(|p| p.manifest.map(|m| m.name));
         // A run that starts meanwhile waits, then finds it gone.
-        let _changing = host.change(&id, name.as_deref().unwrap_or(id.as_str()))?;
+        let _changing = host.change(&id, name.as_deref().unwrap_or(id.as_str()), "It is being uninstalled.")?;
         host.store.uninstall(&id, delete_data)?;
         host.stop(&jobs, &id);
         Ok(())
@@ -306,7 +308,12 @@ pub async fn plugin_settings_set(
 ) -> AppResult<BTreeMap<String, SettingValue>> {
     let id = PluginId::parse(&plugin_id)?;
     let host = host(&state)?;
-    let values = blocking(move || Ok(host.store.set_values(&id, values)?)).await?;
+    let values = blocking(move || {
+        let values = host.store.set_values(&id, values)?;
+        host.settings_changed(&id);
+        Ok(values)
+    })
+    .await?;
     changed(&app, Some(plugin_id));
     Ok(values)
 }
@@ -327,6 +334,7 @@ pub async fn plugin_secret_set(
     let (host, lib) = (host(&state)?, state.library.clone());
     let p = blocking(move || {
         let p = host.store.secret_set(&id, &key, &value)?;
+        host.settings_changed(&id);
         Ok(info(&p, &host.store, lib.allows_unreviewed_plugins()?))
     })
     .await?;
@@ -347,6 +355,7 @@ pub async fn plugin_secret_clear(
     let (host, lib) = (host(&state)?, state.library.clone());
     let p = blocking(move || {
         let p = host.store.secret_clear(&id, &key)?;
+        host.settings_changed(&id);
         Ok(info(&p, &host.store, lib.allows_unreviewed_plugins()?))
     })
     .await?;
@@ -373,6 +382,35 @@ pub async fn plugin_run(
         ActionKind::Command => Trigger::Palette,
     };
     blocking(move || plugins::queue_run(&app, &id, kind, &action_id, trigger, project_id, export_id)).await
+}
+
+/// Open a plugin's page `page_id` for its frame, in the project
+/// `project_id` when it is a project page: the session the frame loads it
+/// from, and what the page may use. Only while the plugin may run.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_page_open(
+    state: State<'_, AppState>,
+    plugin_id: String,
+    page_id: String,
+    project_id: Option<ProjectId>,
+) -> AppResult<PageMount> {
+    let id = PluginId::parse(&plugin_id)?;
+    let (host, lib) = (host(&state)?, state.library.clone());
+    blocking(move || pages::open(&host, &lib, &id, &page_id, project_id)).await
+}
+
+/// Close a plugin page's session: its frame went away. One that is closed
+/// already is no error.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_page_close(state: State<'_, AppState>, session: String) -> AppResult<()> {
+    let host = host(&state)?;
+    blocking(move || {
+        host.pages.close(&session);
+        Ok(())
+    })
+    .await
 }
 
 fn changed(app: &AppHandle, plugin_id: Option<String>) {

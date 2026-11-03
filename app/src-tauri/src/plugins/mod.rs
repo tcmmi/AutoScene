@@ -25,8 +25,16 @@
 //! A run of a plugin that speaks protocol 2 may call AutoScene for its
 //! project, its export and its settings, and reach the hosts it names on
 //! the internet ([`calls`]).
+//!
+//! A plugin's pages open in a frame of the app's page, each as a session
+//! the `asp` scheme serves ([`pages`]). A page opens only while its plugin
+//! is active, and closes, saying why, when the plugin is turned off or
+//! changes, and when the setting goes off for one AutoScene hasn't reviewed.
+//! A page opens under the busy lock, and pages close under it: one that
+//! was opening as its plugin or the setting went off is refused or closed.
 
 mod calls;
+pub mod pages;
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -38,19 +46,23 @@ use as_api::{ExportSummary, JobKind};
 use as_core::{AppPaths, ExportId, JobId, ProjectId};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::net::{Transport, UreqTransport};
+use as_plugin::pages::{Mount, Pages};
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage};
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
-    ActionContext, ActionKind, CommandSpec, Extra, HostCalls, Installed, Keys, Launch, Manifest, OsKeyring, Permission,
-    PluginError, PluginId, PluginResult, Record, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
+    ActionContext, ActionKind, CommandSpec, Extra, HostCalls, Installed, Keys, Launch, Manifest, OsKeyring, PageSpec,
+    Permission, PluginError, PluginId, PluginResult, Record, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger,
+    Trust, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
 use serde::Serialize;
 use specta::Type;
 use tauri::{AppHandle, Manager};
+use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::events::{PageEvent, PluginPageEvent};
 use crate::state::AppState;
 use crate::work::job_error;
 
@@ -62,9 +74,16 @@ pub const TICKET_TTL: Duration = Duration::from_secs(600);
 /// whether it was cancelled.
 const WAIT_TICK: Duration = Duration::from_millis(50);
 
+/// Tells the app's page what became of one of its open plugin pages.
+pub type PageEvents = Box<dyn Fn(PluginPageEvent) + Send + Sync>;
+
 /// The plugins of this app, and what they are doing.
 pub struct PluginHost {
     pub store: Store,
+    /// The open plugin pages, which the asp scheme serves ([`pages`]).
+    pub pages: Pages,
+    /// Where an open page hears that it was closed, and why.
+    page_events: PageEvents,
     /// Packages and folders checked and waiting for the person's yes, by
     /// ticket id.
     tickets: Mutex<HashMap<String, Ticket>>,
@@ -147,6 +166,12 @@ pub struct PluginInfo {
     pub export_actions: Vec<PluginExportAction>,
     pub commands: Vec<CommandSpec>,
     pub settings: Vec<SettingSpec>,
+    /// How it runs: a program for each run, or none (it has only pages).
+    pub runtime: RuntimeKind,
+    /// The protocol its program speaks (`engines.protocol`), which its
+    /// pages see too.
+    pub protocol: u32,
+    pub pages: Vec<PageSpec>,
     /// The keys of its secret settings that have a value in the system's
     /// keychain. Never the values.
     pub secrets_set: Vec<String>,
@@ -210,15 +235,26 @@ pub struct PluginUpdate {
     /// Permissions it says it needs that the installed version didn't.
     pub added_permissions: Vec<Permission>,
     pub added_hosts: Vec<String>,
+    /// The titles of the pages it adds.
+    pub added_pages: Vec<String>,
+    /// It runs a program, and the installed version, as the person agreed
+    /// to it, runs none: from now on it runs with their user rights.
+    pub starts_program: bool,
 }
 
 /// The plugin host of this app's data folder, with plugins' secrets in the
-/// system's keychain, or none when its store can't open (the plugin
-/// commands then say so).
+/// system's keychain and their pages framed by the app's page, or none when
+/// its store can't open (the plugin commands then say so).
 pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<PluginHost>> {
     let version = app.package_info().version.clone();
+    let pages = Pages::new(pages::app_kit(app.clone()), pages::ancestors());
+    let to = app.clone();
+    // Only the main webview frames pages.
+    let page_events: PageEvents = Box::new(move |e: PluginPageEvent| {
+        let _ = e.emit_to(&to, "main");
+    });
     match Store::open(paths, library.shared_db(), Keys::builtin(), version, Arc::new(OsKeyring)) {
-        Ok(store) => Some(Arc::new(PluginHost::new(store))),
+        Ok(store) => Some(Arc::new(PluginHost::new(store, pages, page_events))),
         Err(e) => {
             log::warn!("plugins couldn't start: {}", e.detail());
             None
@@ -235,14 +271,18 @@ pub fn host(state: &AppState) -> AppResult<Arc<PluginHost>> {
 }
 
 impl PluginHost {
-    pub fn new(store: Store) -> Self {
-        Self::reaching(store, Box::new(UreqTransport::new()))
+    /// The host of `store`, with no page open yet in `pages`, whose open
+    /// pages hear what becomes of them through `page_events`.
+    pub fn new(store: Store, pages: Pages, page_events: PageEvents) -> Self {
+        Self::reaching(store, pages, page_events, Box::new(UreqTransport::new()))
     }
 
-    /// The host of `store`, whose plugins' `net.fetch` calls go to `net`.
-    fn reaching(store: Store, net: Box<dyn Transport>) -> Self {
+    /// [`PluginHost::new`], whose plugins' `net.fetch` calls go to `net`.
+    fn reaching(store: Store, pages: Pages, page_events: PageEvents, net: Box<dyn Transport>) -> Self {
         Self {
             store,
+            pages,
+            page_events,
             tickets: Mutex::default(),
             runs: Mutex::default(),
             busy: Mutex::default(),
@@ -300,11 +340,12 @@ impl PluginHost {
 
     /// Marks `id` (named `name`) as being installed, updated or uninstalled
     /// until the guard drops: a run of it that starts meanwhile waits, and
-    /// then finds the plugin as the change left it. Refused while a run of
-    /// it runs, from the folder the change would throw away. Looking and
-    /// marking are one step, so no run starts between them. Another change
-    /// of it goes first.
-    pub fn change(&self, id: &PluginId, name: &str) -> PluginResult<Changing<'_>> {
+    /// then finds the plugin as the change left it, and a page of it isn't
+    /// opened. Refused while a run of it runs, from the folder the change
+    /// would throw away. Looking and marking are one step, so no run starts
+    /// between them. Another change of it goes first. Its open pages close,
+    /// and hear `reason` (it is being updated, or it was uninstalled).
+    pub fn change(&self, id: &PluginId, name: &str, reason: &str) -> PluginResult<Changing<'_>> {
         let mut busy = self.busy.lock();
         while busy.changing.contains(id) {
             self.freed.wait(&mut busy);
@@ -313,21 +354,24 @@ impl PluginHost {
             return Err(PluginError::Busy(name.to_owned()));
         }
         busy.changing.insert(id.clone());
+        drop(busy);
+        self.close_pages(|m| m.plugin == *id, reason);
         Ok(Changing { host: self, id: id.clone() })
     }
 
-    /// Stops the runs of `id`, running or still waiting (it was turned off,
-    /// or uninstalled).
+    /// Stops the runs of `id`, running or still waiting, and closes its
+    /// pages (it was turned off, or uninstalled).
     pub fn stop(&self, jobs: &JobRunner, id: &PluginId) {
         let stop: Vec<JobId> = self.runs().into_iter().filter(|(_, p)| p == id).map(|(job, _)| job).collect();
         if !stop.is_empty() {
             jobs.cancel_where(|j| stop.contains(&j.id));
         }
+        self.close_pages(|m| m.plugin == *id, "It was turned off.");
     }
 
     /// The setting that lets plugins AutoScene hasn't reviewed run went
     /// from `before` to `after`: when it went off, their runs stop, running
-    /// or still waiting.
+    /// or still waiting, and their pages close.
     pub fn allow_changed(&self, jobs: &JobRunner, before: bool, after: bool) {
         if !before || after {
             return;
@@ -335,6 +379,34 @@ impl PluginHost {
         let stop = unreviewed_runs(&self.runs(), |id| self.store.get(id).is_ok_and(|p| reviewed(&p)));
         if !stop.is_empty() {
             jobs.cancel_where(|j| stop.contains(&j.id));
+        }
+        // A page keeps the trust it opened with: a change of it closes it.
+        self.close_pages(|m| m.trust != Trust::Reviewed, &PluginError::NotAllowed.to_string());
+    }
+
+    /// Closes the open pages `close` picks, and tells each why (`reason`).
+    /// They close under the busy lock, which a page is opened under
+    /// ([`pages::open`]): a page that was opening as what closes it was
+    /// stored is closed too. They are told after the lock is let go.
+    fn close_pages(&self, close: impl Fn(&Mount) -> bool, reason: &str) {
+        let closed = {
+            let _busy = self.busy.lock();
+            self.pages.close_where(close)
+        };
+        self.tell_closed(closed, reason);
+    }
+
+    /// Tells each page of `sessions`, which closed, why (`reason`).
+    fn tell_closed(&self, sessions: Vec<String>, reason: &str) {
+        for session in sessions {
+            (self.page_events)(PluginPageEvent { session, event: PageEvent::Closed { reason: reason.to_owned() } });
+        }
+    }
+
+    /// Tells the open pages of `id` that its settings changed.
+    pub fn settings_changed(&self, id: &PluginId) {
+        for session in self.pages.tokens_of(id) {
+            (self.page_events)(PluginPageEvent { session, event: PageEvent::Settings });
         }
     }
 
@@ -516,6 +588,9 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
             .collect(),
         commands: m.map(|m| m.commands.clone()).unwrap_or_default(),
         settings: m.map(|m| m.settings.clone()).unwrap_or_default(),
+        runtime: m.map_or_else(|| p.extra.agreed_runtime(), |m| m.runtime.kind),
+        protocol: m.map_or(1, |m| m.engines.protocol),
+        pages: m.map(|m| m.pages.clone()).unwrap_or_default(),
         secrets_set: p.secrets_stored(),
         icon: store.icon_data_url(p),
         log_path: store.log_path(id).to_string_lossy().into_owned(),
@@ -527,9 +602,13 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
 pub fn review(t: &Ticket, store: &Store, allow_unreviewed: bool) -> PluginReview {
     let needs_unreviewed = t.verdict.trust != Trust::Reviewed;
     let plugin = info(&as_installed(t), store, allow_unreviewed);
+    // The installed version as it is now: the pages a loaded folder's
+    // plugin.json may have changed since its record was written, and the
+    // runtime the person agreed to.
+    let before = t.previous.as_ref().and_then(|p| store.get(&p.id).ok());
     PluginReview {
         ticket_id: t.id.to_string(),
-        update: t.previous.as_ref().map(|previous| update(previous, &t.manifest)),
+        update: t.previous.as_ref().map(|previous| update(previous, before.as_ref(), &t.manifest)),
         needs_unreviewed,
         allowed: !needs_unreviewed || allow_unreviewed,
         uv_missing: plugin.uv_script && runtime::find_uv().is_none(),
@@ -574,14 +653,27 @@ fn as_installed(t: &Ticket) -> Installed {
     }
 }
 
-/// What the plugin of manifest `m` changes from the installed `previous`.
-fn update(previous: &Record, m: &Manifest) -> PluginUpdate {
+/// What the plugin of manifest `m` changes from the installed `previous`,
+/// which is `before` as it is now (none when its row is gone; its manifest
+/// none when it is broken).
+fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> PluginUpdate {
+    let pages_before = before.and_then(|b| b.manifest.as_ref()).map_or(&[][..], |b| &b.pages);
+    // One whose row is gone is taken to run a program, so nothing is said
+    // to be new that may not be.
+    let agreed = before.map_or(RuntimeKind::Process, |b| b.extra.agreed_runtime());
     PluginUpdate {
         from_version: previous.version.clone(),
         trust_before: trust(previous),
         source_before: source(previous),
         added_permissions: m.permissions.iter().filter(|p| !previous.permissions.contains(p)).copied().collect(),
         added_hosts: m.network_hosts.iter().filter(|h| !previous.network_hosts.contains(h)).cloned().collect(),
+        added_pages: m
+            .pages
+            .iter()
+            .filter(|p| !pages_before.iter().any(|b| b.id == p.id))
+            .map(|p| p.title.clone())
+            .collect(),
+        starts_program: agreed == RuntimeKind::None && m.runs_program(),
     }
 }
 
@@ -870,6 +962,8 @@ mod tests {
     use std::time::Instant;
 
     use as_api::{AppSettings, ContentKind, ExportItem, ExportStatus, JobState, NewProject, ProjectKind};
+    use as_plugin::Grants;
+    use as_plugin::pages::MemoryKit;
 
     use super::*;
 
@@ -942,6 +1036,21 @@ mod tests {
 
     /// [`host_in`], with plugins' `net.fetch` calls going to `net`.
     pub(super) fn host_reaching(tmp: &Path, net: impl Transport + 'static) -> (Library, Arc<PluginHost>) {
+        host_with(tmp, net, Box::new(|_: PluginPageEvent| {}))
+    }
+
+    /// What a host told the open pages.
+    pub(super) type Heard = Arc<Mutex<Vec<PluginPageEvent>>>;
+
+    /// [`host_in`], keeping what it tells the open pages.
+    pub(super) fn host_hearing(tmp: &Path) -> (Library, Arc<PluginHost>, Heard) {
+        let heard = Heard::default();
+        let keep = heard.clone();
+        let (lib, host) = host_with(tmp, UreqTransport::new(), Box::new(move |e: PluginPageEvent| keep.lock().push(e)));
+        (lib, host, heard)
+    }
+
+    fn host_with(tmp: &Path, net: impl Transport + 'static, page_events: PageEvents) -> (Library, Arc<PluginHost>) {
         let paths = AppPaths::at(tmp.join("data"));
         let lib = Library::open(&paths).unwrap();
         let root = tmp.join("library").display().to_string();
@@ -949,7 +1058,139 @@ mod tests {
         let app = semver::Version::parse("1.0.3-BETA").unwrap();
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
         let store = Store::open(&paths, lib.shared_db(), Keys::new(&[]).unwrap(), app, secrets).unwrap();
-        (lib, Arc::new(PluginHost::reaching(store, Box::new(net))))
+        let pages = Pages::new(Arc::new(MemoryKit::default()), Vec::new());
+        (lib, Arc::new(PluginHost::reaching(store, pages, page_events, Box::new(net))))
+    }
+
+    /// The `plugin.json` of a plugin `id` that runs no program and has `pages`.
+    pub(super) fn page_only(id: &str, pages: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "manifestVersion": 2,
+            "id": id,
+            "version": "1.0.0",
+            "name": format!("Page {id}"),
+            "description": "Shows a page.",
+            "author": {"name": "Someone"},
+            "engines": {"autoscene": ">=1.0.0, <2", "protocol": 2},
+            "runtime": {"type": "none"},
+            "contributes": {"pages": pages}
+        })
+    }
+
+    /// A page-only plugin `id` of `trust`, its files in `dir`: installed
+    /// from a package, or `loaded` from its folder.
+    fn paged(dir: &Path, id: &str, trust: Trust, loaded: bool) -> Installed {
+        let manifest = page_only(id, serde_json::json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]));
+        let files = [("plugin.json", manifest.to_string().into_bytes()), ("ui/index.html", b"<p>hi</p>".to_vec())];
+        for (path, bytes) in &files {
+            std::fs::create_dir_all(dir.join("ui")).unwrap();
+            std::fs::write(dir.join(path), bytes).unwrap();
+        }
+        let listed = files.iter().map(|(path, bytes)| as_plugin::LockedFile {
+            path: (*path).into(),
+            size: bytes.len() as u64,
+            sha256: package::sha256_hex(bytes),
+            exec: false,
+        });
+        let lock = serde_json::to_vec(&as_plugin::FilesLock { lock_version: 1, files: listed.collect() }).unwrap();
+        std::fs::write(dir.join(package::LOCK), &lock).unwrap();
+        let mut p = plugin(id, trust, false);
+        p.manifest = Some(as_plugin::manifest::parse_for_any_app(manifest.to_string().as_bytes()).unwrap().manifest);
+        p.record.lock_sha256 = Some(package::sha256_hex(&lock));
+        p.dir = dir.to_path_buf();
+        if loaded { self::loaded(p) } else { p }
+    }
+
+    /// Opens the page of `p` (see [`paged`]); gives its session.
+    fn open_page(host: &PluginHost, p: &Installed) -> String {
+        let page = &p.manifest.as_ref().unwrap().pages[0];
+        host.pages.open(p, Grants::of(p).unwrap(), page, None).unwrap().0.token.clone()
+    }
+
+    /// The pages `heard` was told were closed, with why, in session order.
+    pub(super) fn closed(heard: &Heard) -> Vec<(String, String)> {
+        let mut closed: Vec<(String, String)> = heard
+            .lock()
+            .iter()
+            .filter_map(|e| match &e.event {
+                PageEvent::Closed { reason } => Some((e.session.clone(), reason.clone())),
+                PageEvent::Settings => None,
+            })
+            .collect();
+        closed.sort();
+        closed
+    }
+
+    #[test]
+    fn a_change_closes_its_pages() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-change-{}", std::process::id()));
+        let (lib, host, heard) = host_hearing(&tmp);
+        let one = paged(&tmp.join("one"), "dev.a.one", Trust::Reviewed, false);
+        let two = paged(&tmp.join("two"), "dev.a.two", Trust::Reviewed, false);
+        let (first, second, other) = (open_page(&host, &one), open_page(&host, &one), open_page(&host, &two));
+
+        // An update or an uninstall: its pages close before its files go, and say why.
+        let changing = host.change(&one.record.id, "One", "It is being updated.").unwrap();
+        let mut both = [first.clone(), second.clone()];
+        both.sort();
+        let updated = |s: &String| (s.clone(), "It is being updated.".to_owned());
+        assert_eq!(closed(&heard), both.iter().map(updated).collect::<Vec<_>>());
+        assert!(host.pages.get(&first).is_none() && host.pages.get(&second).is_none());
+        assert_eq!(host.pages.open_count(&two.record.id), 1);
+        drop(changing);
+        let (again, _) =
+            host.pages.open(&one, Grants::of(&one).unwrap(), &one.manifest.as_ref().unwrap().pages[0], None).unwrap();
+        heard.lock().clear();
+        drop(host.change(&one.record.id, "One", "It is being uninstalled.").unwrap());
+        assert_eq!(closed(&heard), [(again.token.clone(), "It is being uninstalled.".to_owned())]);
+
+        // Its settings: the other plugin's page hears, and stays open.
+        host.settings_changed(&two.record.id);
+        let last = heard.lock().last().cloned().unwrap();
+        assert!(matches!(last.event, PageEvent::Settings) && last.session == other);
+        assert!(host.pages.get(&other).is_some());
+
+        // Turned off: its pages close too.
+        heard.lock().clear();
+        let jobs = JobRunner::new(&[(Class::Plugin, 1)], |_| {});
+        host.stop(&jobs, &two.record.id);
+        assert_eq!(closed(&heard), [(other.clone(), "It was turned off.".to_owned())]);
+        assert_eq!(host.pages.open_count(&two.record.id), 0);
+        // As the page hears it.
+        let event = serde_json::to_value(&heard.lock()[0]).unwrap();
+        assert_eq!(
+            event,
+            serde_json::json!({"session": other, "event": {"type": "closed", "reason": "It was turned off."}})
+        );
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn turning_the_setting_off_closes_unreviewed_pages() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-allow-{}", std::process::id()));
+        let (lib, host, heard) = host_hearing(&tmp);
+        let reviewed = paged(&tmp.join("reviewed"), "dev.a.reviewed", Trust::Reviewed, false);
+        let pinned = paged(&tmp.join("pinned"), "dev.a.pinned", Trust::Pinned, false);
+        // Its row says reviewed, but a folder never is.
+        let folder = paged(&tmp.join("folder"), "dev.a.folder", Trust::Reviewed, true);
+        let sessions = [&reviewed, &pinned, &folder].map(|p| open_page(&host, p));
+        let jobs = JobRunner::new(&[(Class::Plugin, 1)], |_| {});
+
+        // On, or staying on, closes nothing.
+        host.allow_changed(&jobs, false, true);
+        host.allow_changed(&jobs, true, true);
+        assert!(heard.lock().is_empty());
+        // Off: every page of a plugin AutoScene hasn't reviewed closes, and says why.
+        host.allow_changed(&jobs, true, false);
+        let why = PluginError::NotAllowed.to_string();
+        let mut gone = vec![(sessions[1].clone(), why.clone()), (sessions[2].clone(), why)];
+        gone.sort();
+        assert_eq!(closed(&heard), gone);
+        assert!(host.pages.get(&sessions[0]).is_some());
+        assert!(host.pages.get(&sessions[1]).is_none() && host.pages.get(&sessions[2]).is_none());
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     /// Writes the plugin of `manifest` into its folder in `tmp`, and checks
@@ -1090,17 +1331,45 @@ mod tests {
             "network": {"hosts": ["discord.com", "example.com"]}
         });
         let m = as_plugin::manifest::parse_for_any_app(manifest.to_string().as_bytes()).unwrap().manifest;
-        let u = update(&previous, &m);
+        let u = update(&previous, None, &m);
         assert_eq!(
             (u.from_version.as_str(), u.trust_before, u.source_before),
             ("1.0.0", Trust::Pinned, PluginSource::Package)
         );
         assert_eq!(u.added_permissions, [Permission::Network]);
         assert_eq!(u.added_hosts, ["example.com"]);
+        assert_eq!((u.added_pages, u.starts_program), (Vec::<String>::new(), false));
         // A package replacing a loaded folder says so: that folder was never reviewed.
         let folder = loaded(plugin("dev.a.post", Trust::Reviewed, false)).record;
-        let u = update(&folder, &m);
+        let u = update(&folder, None, &m);
         assert_eq!((u.trust_before, u.source_before), (Trust::Unreviewed, PluginSource::Folder));
+
+        // The pages it adds, by their titles: those the installed version hasn't.
+        let pages = |list: serde_json::Value| {
+            let m = page_only("dev.a.post", list).to_string();
+            as_plugin::manifest::parse_for_any_app(m.as_bytes()).unwrap().manifest
+        };
+        let mut before = plugin("dev.a.post", Trust::Pinned, false);
+        before.manifest = Some(pages(serde_json::json!([{"id": "main", "title": "Main", "entry": "ui/main.html"}])));
+        before.extra = Extra::agreed(RuntimeKind::None);
+        let after = pages(serde_json::json!([
+            {"id": "main", "title": "Home", "entry": "ui/home.html"},
+            {"id": "clips", "title": "Clips", "entry": "ui/clips.html"}
+        ]));
+        assert_eq!(update(&previous, Some(&before), &after).added_pages, ["Clips"]);
+        assert_eq!(update(&previous, None, &after).added_pages, ["Home", "Clips"]);
+
+        // A plugin the person agreed to as one that runs no program, which
+        // now runs one: said, by what they agreed to, not by its manifest.
+        assert!(update(&previous, Some(&before), &m).starts_program);
+        assert!(!update(&previous, Some(&before), &after).starts_program, "pages again");
+        before.manifest = None;
+        assert!(update(&previous, Some(&before), &m).starts_program, "broken, it was still agreed to so");
+        for agreed in [Extra::default(), Extra::agreed(RuntimeKind::Process)] {
+            before.extra = agreed;
+            assert!(!update(&previous, Some(&before), &m).starts_program, "it ran one already");
+        }
+        assert!(!update(&previous, None, &m).starts_program, "its row gone: nothing said that may not be new");
     }
 
     #[test]
@@ -1203,7 +1472,7 @@ mod tests {
         let first = run(Class::Plugin, first_done.clone());
         assert_eq!(held.recv_timeout(Duration::from_secs(10)).unwrap(), first);
         // No update or uninstall while it runs.
-        let busy = host.change(&id, "One").err().unwrap();
+        let busy = host.change(&id, "One", "It is being updated.").err().unwrap();
         assert_eq!(busy.to_string(), "One is running. Wait for it to finish, or stop it in Activity.");
         // A second run on the other class waits for the first.
         let second_done = flag();
@@ -1218,7 +1487,7 @@ mod tests {
         }
 
         // A run that starts while the plugin changes waits for the change.
-        let changing = host.change(&id, "One").unwrap();
+        let changing = host.change(&id, "One", "It is being updated.").unwrap();
         let third = run(Class::Plugin, flag());
         assert!(held.recv_timeout(wait).is_err());
         assert_eq!(job(third).stage.as_deref(), Some("Waiting while it is updated"));
@@ -1229,7 +1498,7 @@ mod tests {
         while host.is_running(&id) {
             thread::sleep(Duration::from_millis(5));
         }
-        let changing = host.change(&id, "One").unwrap();
+        let changing = host.change(&id, "One", "It is being updated.").unwrap();
         let fourth = run(Class::Analysis, flag());
         while job(fourth).stage.is_none() {
             thread::sleep(Duration::from_millis(5));

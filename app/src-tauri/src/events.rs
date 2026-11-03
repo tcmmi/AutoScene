@@ -104,6 +104,28 @@ pub struct PluginsChanged {
     pub plugin_id: Option<String>,
 }
 
+/// Something for one open plugin page (its session): that its plugin's
+/// settings changed, or that it was closed. Sent to the main webview only.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "plugin-page:event")]
+#[serde(rename_all = "camelCase")]
+pub struct PluginPageEvent {
+    pub session: String,
+    pub event: PageEvent,
+}
+
+/// What became of an open plugin page.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PageEvent {
+    /// Its plugin's settings or secrets changed: it may read them again.
+    Settings,
+    /// It was closed (its plugin was turned off, is being updated or
+    /// uninstalled, may no longer run unreviewed, or too many pages were
+    /// open): `reason` says so, for the person.
+    Closed { reason: String },
+}
+
 pub fn emit_media_changed(app: &tauri::AppHandle, project_id: ProjectId, media_id: Option<MediaId>) {
     let _ = MediaChanged { project_id, media_id }.emit(app);
 }

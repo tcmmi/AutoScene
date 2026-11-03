@@ -202,6 +202,7 @@ fn pack(dir: &Path, out: &Path) -> Result<(), Failure> {
         }
     }
     check_platforms(m, &lock)?;
+    package::check_pages(dir, Some(&lock), &m.pages).map_err(plugin_at(dir))?;
     if let Some(icon) = &m.icon {
         package::check_icon(dir, &lock, icon).map_err(plugin_at(dir))?;
     }
@@ -232,8 +233,12 @@ fn refuse_secret_keys(dir: &Path, lock: &FilesLock) -> Result<(), Failure> {
 /// Checks each platform the plugin `m` runs on ([`Manifest::launches`]) as
 /// AutoScene checks it at install there: its command, and the files that
 /// starts in `lock` ([`package::check_launch`]). Warns of each platform it
-/// can't run on, and fails when that is all of them.
+/// can't run on, and fails when that is all of them. A plugin that runs no
+/// program (only pages) runs on every platform.
 fn check_platforms(m: &Manifest, lock: &FilesLock) -> Result<(), Failure> {
+    if !m.runs_program() {
+        return Ok(());
+    }
     // Why it can't run, with the platforms that holds for.
     let mut cant: Vec<(String, Vec<String>)> = Vec::new();
     let mut runs = false;
@@ -303,6 +308,7 @@ fn verify(path: &Path, review: &[&OsString]) -> Result<(), Failure> {
     warn_all(&parsed.warnings);
     let m = &parsed.manifest;
     check_platforms(m, &unpacked.lock)?;
+    package::check_pages(&dir, Some(&unpacked.lock), &m.pages)?;
     if let Some(icon) = &m.icon {
         package::check_icon(&dir, &unpacked.lock, icon)?;
     }

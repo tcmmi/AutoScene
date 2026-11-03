@@ -81,7 +81,8 @@ impl From<ProjectError> for AppError {
 impl From<PluginError> for AppError {
     fn from(e: PluginError) -> Self {
         let code = match &e {
-            PluginError::NotFound(_) => ErrorCode::NotFound,
+            // A page that was closed meanwhile.
+            PluginError::NotFound(_) | PluginError::Closed => ErrorCode::NotFound,
             // The keychain may be locked, or start later (Linux's Secret Service).
             PluginError::Busy(_) | PluginError::Keychain { .. } => ErrorCode::NotReady,
             PluginError::Cancelled => ErrorCode::Cancelled,
@@ -139,6 +140,7 @@ mod tests {
             assert_eq!(said(e), (ErrorCode::Invalid, words));
         }
         assert_eq!(said(PluginError::NotFound("dev.a.b".into())).0, ErrorCode::NotFound);
+        assert_eq!(said(PluginError::Closed), (ErrorCode::NotFound, "This page was closed.".into()));
         assert_eq!(
             said(PluginError::Busy("Poster".into())),
             (ErrorCode::NotReady, "Poster is running. Wait for it to finish, or stop it in Activity.".into())

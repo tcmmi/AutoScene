@@ -11,14 +11,17 @@
 //! unknown key, contribution or setting type is skipped with a warning.
 //!
 //! Manifest version 2 adds secret settings, kept in the system's keychain
-//! ([`crate::secrets`]) for the plugin to ask for (a program of protocol 1
-//! can't, so they are skipped with a warning there); pages and
-//! the runtime types `service` and `none` are reserved in it for a later
-//! AutoScene. A version 1 manifest reads as it always did: its pages and
-//! secret settings are skipped with a warning that names version 2, and a
-//! runtime type only version 2 has is refused with that hint. In version 2,
-//! a network host that names this computer or its network, or an address,
-//! gets a warning: `net.fetch` never reaches it ([`crate::net`]).
+//! ([`crate::secrets`]) for the plugin's program or pages to ask for (a
+//! process plugin of protocol 1 without a page has nothing that could, so
+//! they are skipped with a warning there), pages ([`PageSpec`]: an `.html`
+//! file under `ui/` that AutoScene shows in a sandboxed frame,
+//! [`crate::pages`]), and the runtime type `none`, of a plugin that runs no
+//! program and has only pages. The runtime type `service` is reserved in it
+//! for a later AutoScene. A version 1 manifest reads as it always did: its
+//! pages and secret settings are skipped with a warning that names version
+//! 2, and a runtime type only version 2 has is refused with that hint. In
+//! version 2, a network host that names this computer or its network, or an
+//! address, gets a warning: `net.fetch` never reaches it ([`crate::net`]).
 //!
 //! No shell reads a command: its arguments are fixed, and handed to the
 //! program as they are. The program is a file in the plugin's own folder,
@@ -60,6 +63,8 @@ pub const MAX_COMMANDS: usize = 16;
 pub const MAX_SETTINGS: usize = 32;
 /// The most secret settings a plugin may have.
 pub const MAX_SECRETS: usize = 8;
+/// The most pages a plugin may add.
+pub const MAX_PAGES: usize = 4;
 
 /// The platforms a manifest can name, as `<os>-<arch>`.
 pub const PLATFORMS: [&str; 6] =
@@ -215,6 +220,9 @@ pub struct Manifest {
     pub export_actions: Vec<ActionSpec>,
     pub commands: Vec<CommandSpec>,
     pub settings: Vec<SettingSpec>,
+    /// Its pages (manifest version 2); whether their files are there is
+    /// checked at install.
+    pub pages: Vec<PageSpec>,
     /// A `.png` or `.svg` in the package (whether it's there is checked at install).
     pub icon: Option<String>,
 }
@@ -235,8 +243,8 @@ pub struct Engines {
     pub protocol: u32,
 }
 
-/// How a plugin runs. Every plugin this AutoScene installs is a `process`
-/// one; the others are manifest version 2's, reserved for a later
+/// How a plugin runs. This AutoScene installs `process` plugins and, from
+/// manifest version 2, `none` ones; a `service` is reserved for a later
 /// AutoScene. Also what the person agreed to at install
 /// ([`crate::store::Extra`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -280,6 +288,29 @@ pub struct CommandSpec {
     pub description: Option<String>,
     /// Offered only while a project is open, and run with it.
     pub needs_project: bool,
+}
+
+/// A page a plugin adds: one of its files, which AutoScene shows full screen
+/// in a sandboxed frame, from the rail (a global page) or a project's bar.
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PageSpec {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    /// Its file: the package path of an `.html` file under `ui/`.
+    pub entry: String,
+    pub scope: PageScope,
+    /// It has a tile in the rail (global pages only).
+    pub rail: bool,
+}
+
+/// Where a page opens: on its own, or in a project, which it may then read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum PageScope {
+    Global,
+    Project,
 }
 
 /// A setting AutoScene shows in the plugin's settings and hands to each run.
@@ -374,13 +405,17 @@ pub fn current_platform() -> &'static str {
 }
 
 impl Manifest {
-    /// The command for this computer: its platform's own, else `*`.
+    /// The command for this computer: its platform's own, else `*`. A plugin
+    /// of runtime `none` has none.
     pub fn launch(&self) -> PluginResult<Launch> {
         self.launch_on(current_platform())
     }
 
     /// The command for the platform `here` (a key of [`PLATFORMS`]).
     fn launch_on(&self, here: &str) -> PluginResult<Launch> {
+        if !self.runs_program() {
+            return Err(invalid(format!("{} runs no program.", self.name)));
+        }
         if !PLATFORMS.contains(&here) || (!self.platforms.is_empty() && !self.platforms.iter().any(|p| p == here)) {
             return Err(PluginError::Platform);
         }
@@ -393,8 +428,12 @@ impl Manifest {
     /// How it starts on each platform of [`PLATFORMS`] it runs on (those
     /// `platforms` names, or all), or why it can't start there, as
     /// [`Manifest::launch`] would say on that computer: `asp` marks the
-    /// programs to run, and checks a package for each platform.
+    /// programs to run, and checks a package for each platform. None for a
+    /// plugin that runs no program.
     pub fn launches(&self) -> Vec<(&'static str, PluginResult<Launch>)> {
+        if !self.runs_program() {
+            return Vec::new();
+        }
         let named = |p: &&str| self.platforms.is_empty() || self.platforms.iter().any(|named| named == p);
         PLATFORMS.into_iter().filter(named).map(|p| (p, self.launch_on(p))).collect()
     }
@@ -407,6 +446,16 @@ impl Manifest {
     /// The keys of its secret settings.
     pub fn secret_keys(&self) -> impl Iterator<Item = &str> {
         self.settings.iter().filter(|s| matches!(s.kind, SettingKind::Secret { .. })).map(|s| s.key.as_str())
+    }
+
+    /// Whether it runs a program: all but a plugin of runtime `none`.
+    pub fn runs_program(&self) -> bool {
+        self.runtime.kind != RuntimeKind::None
+    }
+
+    /// Its page `id`.
+    pub fn page(&self, id: &str) -> Option<&PageSpec> {
+        self.pages.iter().find(|p| p.id == id)
     }
 }
 
@@ -472,6 +521,8 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         Some(Value::String(t)) if (t == "service" || t == "none") && manifest_version < 2 => {
             return Err(invalid(format!(r#"The plugin's runtime.type "{t}" needs "manifestVersion": 2."#)));
         }
+        // Pages only.
+        Some(Value::String(t)) if t == "none" => RuntimeKind::None,
         Some(Value::String(_)) => return Err(PluginError::TooNew("runtime".into())),
         _ => return Err(invalid(r#"The plugin's runtime needs "type": "process"."#)),
     };
@@ -500,7 +551,12 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     // A platform this AutoScene doesn't know is kept: a plugin made only for
     // such platforms must not read as one made for all of them.
     let mut platforms = Vec::new();
-    let named = root.list("platforms")?;
+    let mut named = root.list("platforms")?;
+    // Nothing of a plugin that runs no program is made for one platform.
+    if kind == RuntimeKind::None && !named.is_empty() {
+        w.push("Ignored platforms: a plugin that runs no program works on every platform.".into());
+        named = &[];
+    }
     if named.len() > MAX_PLATFORMS {
         return Err(invalid(format!("The plugin's platforms names more than {MAX_PLATFORMS} platforms.")));
     }
@@ -518,27 +574,37 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
 
     runtime.warn_unknown(&["type", "command", "gpu"], &mut w);
     let mut command = BTreeMap::new();
-    let per_platform = runtime.required_object("command")?;
-    if per_platform.map.is_empty() {
-        return Err(invalid("The plugin's runtime.command names no command."));
-    }
-    for (key, value) in per_platform.map {
-        let path = format!("runtime.command[\"{}\"]", shown(key));
-        // It could never run here, and a later AutoScene may allow more in it.
-        if key != "*" && !PLATFORMS.contains(&key.as_str()) {
-            w.push(format!("Skipped {path}, which this AutoScene doesn't know."));
-            continue;
+    let gpu = if kind == RuntimeKind::None {
+        // Nothing starts, and nothing waits for the GPU.
+        if let Some(key) = ["command", "gpu"].into_iter().find(|k| runtime.get(k).is_some()) {
+            return Err(invalid(format!("A plugin whose runtime.type is none runs no program: remove runtime.{key}.")));
         }
-        let Value::Array(parts) = value else { return Err(invalid(format!("The plugin's {path} must be a list."))) };
-        let parts = parts
-            .iter()
-            .map(|p| p.as_str().map(str::to_owned))
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| invalid(format!("The plugin's {path} must list text only.")))?;
-        launch_of(&parts, &path, key.starts_with("windows-"))?;
-        command.insert(key.clone(), parts);
-    }
-    let gpu = runtime.flag("gpu")?.unwrap_or(false);
+        false
+    } else {
+        let per_platform = runtime.required_object("command")?;
+        if per_platform.map.is_empty() {
+            return Err(invalid("The plugin's runtime.command names no command."));
+        }
+        for (key, value) in per_platform.map {
+            let path = format!("runtime.command[\"{}\"]", shown(key));
+            // It could never run here, and a later AutoScene may allow more in it.
+            if key != "*" && !PLATFORMS.contains(&key.as_str()) {
+                w.push(format!("Skipped {path}, which this AutoScene doesn't know."));
+                continue;
+            }
+            let Value::Array(parts) = value else {
+                return Err(invalid(format!("The plugin's {path} must be a list.")));
+            };
+            let parts = parts
+                .iter()
+                .map(|p| p.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| invalid(format!("The plugin's {path} must list text only.")))?;
+            launch_of(&parts, &path, key.starts_with("windows-"))?;
+            command.insert(key.clone(), parts);
+        }
+        runtime.flag("gpu")?.unwrap_or(false)
+    };
 
     let mut permissions = Vec::new();
     for p in root.list("permissions")? {
@@ -589,6 +655,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     }
 
     let (mut export_actions, mut commands_out, mut settings) = (Vec::new(), Vec::new(), Vec::new());
+    let mut pages = Vec::new();
     if let Some(c) = root.object("contributes")? {
         for kind in c.map.keys() {
             match kind.as_str() {
@@ -596,7 +663,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
                 "pages" if manifest_version < 2 => {
                     w.push(r#"Skipped contributes.pages: pages need "manifestVersion": 2."#.into());
                 }
-                "pages" => w.push("Pages need a newer AutoScene.".into()),
+                "pages" => {}
                 kind => w.push(format!("Skipped contributes.{}, which this AutoScene doesn't know.", shown(kind))),
             }
         }
@@ -631,10 +698,21 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             });
         }
         unique(commands_out.iter().map(|c| c.id.as_str()), "contributes.commands", "id")?;
+        // A version 1 manifest's pages were skipped above, whatever they hold.
+        let listed = if manifest_version >= 2 { c.list("pages")? } else { &[] };
+        if listed.len() > MAX_PAGES {
+            return Err(invalid(format!("The plugin adds more than {MAX_PAGES} pages.")));
+        }
+        for (i, p) in listed.iter().enumerate() {
+            if let Some(spec) = page(&object(p, format!("contributes.pages[{i}]"))?, &mut w)? {
+                pages.push(spec);
+            }
+        }
+        unique(pages.iter().map(|p| p.id.as_str()), "contributes.pages", "id")?;
         // A secret is read with a call, which a program of protocol 1 never
-        // has answered. The rule is that program's: a runtime that starts
-        // none asks AutoScene its own way.
-        let asks = kind != RuntimeKind::Process || protocol >= 2;
+        // has answered. The rule is that program's: a page asks AutoScene
+        // its own way, and so does a runtime that starts none.
+        let asks = kind != RuntimeKind::Process || protocol >= 2 || !pages.is_empty();
         for (i, s) in specs.iter().enumerate() {
             let s = object(s, format!("contributes.settings[{i}]"))?;
             if let Some(spec) = setting(&s, manifest_version, asks, &mut w)? {
@@ -655,6 +733,16 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
                     r#"The plugin's secret settings "{first}" and "{key}" differ only in capitals, which a keychain doesn't tell apart."#
                 )));
             }
+        }
+    }
+
+    // A plugin that runs no program is its pages.
+    if kind == RuntimeKind::None {
+        if !export_actions.is_empty() || !commands_out.is_empty() {
+            return Err(invalid("Export actions and commands need a program, and runtime.type none runs none."));
+        }
+        if pages.is_empty() {
+            return Err(invalid("A plugin that runs no program needs a page."));
         }
     }
 
@@ -692,6 +780,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         export_actions,
         commands: commands_out,
         settings,
+        pages,
         icon,
     };
     Ok(Parsed { manifest, warnings: w })
@@ -920,6 +1009,42 @@ fn setting(o: &Obj, version: u32, asks: bool, w: &mut Vec<String>) -> PluginResu
         title: o.required_label("title", 60, w)?,
         description: o.label("description", 200, w)?,
         kind,
+    }))
+}
+
+/// One entry of `contributes.pages` (manifest version 2), or `None` for a
+/// scope this AutoScene doesn't know. Its file is checked against the
+/// package at install ([`crate::package::check_pages`]).
+fn page(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<PageSpec>> {
+    let id = o.contribution_id()?;
+    let scope = match o.text("scope")? {
+        None | Some("global") => PageScope::Global,
+        Some("project") => PageScope::Project,
+        Some(scope) => {
+            w.push(format!(r#"Skipped the page "{id}": scope "{}" needs a newer AutoScene."#, shown(scope)));
+            return Ok(None);
+        }
+    };
+    o.warn_unknown(&["id", "title", "description", "entry", "scope", "rail"], w);
+    let entry = o.required_text("entry")?;
+    check_path(entry)?;
+    if !entry.starts_with("ui/") || !entry.ends_with(".html") {
+        return Err(invalid(format!(
+            "The plugin's {} must be an .html file under ui/, such as ui/index.html.",
+            o.at("entry")
+        )));
+    }
+    let rail = o.flag("rail")?.unwrap_or(false);
+    if rail && scope == PageScope::Project {
+        w.push(format!(r#"The page "{id}" is a project page: rail is for global pages."#));
+    }
+    Ok(Some(PageSpec {
+        title: o.required_label("title", 40, w)?,
+        description: o.label("description", 200, w)?,
+        entry: entry.to_owned(),
+        rail: rail && scope == PageScope::Global,
+        id,
+        scope,
     }))
 }
 
@@ -1240,6 +1365,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::package::{FilesLock, LOCK_VERSION, LockedFile, check_pages, sha256_hex};
 
     fn app() -> Version {
         Version::parse("1.0.3-BETA").unwrap()
@@ -1344,14 +1470,14 @@ mod tests {
             });
             assert_eq!(too_new(wasm), "runtime");
         }
-        // Version 2's runtime types wait for a later AutoScene; in version 1
-        // they are a mistake this one can name.
+        // A service waits for a later AutoScene. In version 1, version 2's
+        // runtime types are a mistake this one can name.
+        let service = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"]["type"] = json!("service");
+        });
+        assert_eq!(too_new(service), "runtime");
         for kind in ["service", "none"] {
-            let v2 = with(|v| {
-                v["manifestVersion"] = json!(2);
-                v["runtime"]["type"] = json!(kind);
-            });
-            assert_eq!(too_new(v2), "runtime");
             let v1 = message(with(|v| v["runtime"]["type"] = json!(kind)));
             assert_eq!(v1, format!(r#"The plugin's runtime.type "{kind}" needs "manifestVersion": 2."#));
         }
@@ -1490,8 +1616,8 @@ mod tests {
         assert_eq!(default(n(json!({"min": 0.2, "max": 0.7, "integer": true}))), None);
     }
 
-    /// A secret setting `key` and a plain one, with the pages a later
-    /// AutoScene shows, in a manifest of `version` (of protocol 2).
+    /// A secret setting `key` and a plain one, with a page, in a manifest
+    /// of `version` (of protocol 2).
     fn with_secret_and_pages(version: u32) -> PluginResult<Parsed> {
         with(|v| {
             v["manifestVersion"] = json!(version);
@@ -1520,9 +1646,10 @@ mod tests {
             ]
         );
 
-        // Version 2 reads its secrets; its pages wait for a later AutoScene.
+        // Version 2 reads its secrets and its pages.
         let p = with_secret_and_pages(2).unwrap();
-        assert_eq!(p.warnings, ["Pages need a newer AutoScene."]);
+        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(p.manifest.pages.iter().map(|p| p.entry.as_str()).collect::<Vec<_>>(), ["ui/index.html"]);
         let secret = SettingKind::Secret { placeholder: Some("https://…".into()) };
         assert_eq!((&p.manifest.settings[0].key, &p.manifest.settings[0].kind), (&"webhook".to_owned(), &secret));
         assert_eq!(p.manifest.secret_keys().collect::<Vec<_>>(), ["webhook"]);
@@ -1532,6 +1659,220 @@ mod tests {
             json!({"type": "secret", "placeholder": "https://…"}),
             "as the settings page reads it"
         );
+    }
+
+    /// A version 2 manifest of a plugin that runs no program, with `pages`.
+    fn page_only(pages: Value) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"] = json!({"type": "none"});
+            v["contributes"] = json!({ "pages": pages });
+        })
+    }
+
+    #[test]
+    fn pages_need_manifest_version_2() {
+        let main = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
+        // Version 1 skips them, whatever they hold, as AutoScene 1.0 does.
+        for pages in [main.clone(), json!("everything")] {
+            let p = with(|v| v["contributes"]["pages"] = pages.clone()).unwrap();
+            assert_eq!(p.manifest.pages, []);
+            assert_eq!(p.warnings, [r#"Skipped contributes.pages: pages need "manifestVersion": 2."#]);
+        }
+        let v1 = with(|v| {
+            v["runtime"] = json!({"type": "none"});
+            v["contributes"] = json!({ "pages": main.clone() });
+        });
+        assert_eq!(message(v1), r#"The plugin's runtime.type "none" needs "manifestVersion": 2."#);
+
+        // Version 2 reads them, beside a program too.
+        let p = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["contributes"]["pages"] = main.clone();
+        })
+        .unwrap();
+        assert_eq!(p.warnings, Vec::<String>::new());
+        let page = PageSpec {
+            id: "main".into(),
+            title: "Main".into(),
+            description: None,
+            entry: "ui/index.html".into(),
+            scope: PageScope::Global,
+            rail: false,
+        };
+        assert_eq!(p.manifest.pages, std::slice::from_ref(&page));
+        assert_eq!((p.manifest.page("main"), p.manifest.page("other")), (Some(&page), None));
+        assert_eq!(
+            serde_json::to_value(&page).unwrap(),
+            json!({"id": "main", "title": "Main", "description": null, "entry": "ui/index.html", "scope": "global", "rail": false}),
+            "as the UI reads it"
+        );
+        // At most four, each id once.
+        let pages = |n: usize| {
+            json!(
+                (0..n)
+                    .map(|i| json!({"id": format!("p{i}"), "title": "P", "entry": "ui/index.html"}))
+                    .collect::<Vec<_>>()
+            )
+        };
+        assert_eq!(page_only(pages(4)).unwrap().manifest.pages.len(), 4);
+        assert_eq!(message(page_only(pages(5))), "The plugin adds more than 4 pages.");
+        let twice =
+            json!([{"id": "a", "title": "A", "entry": "ui/a.html"}, {"id": "a", "title": "B", "entry": "ui/b.html"}]);
+        assert_eq!(message(page_only(twice)), r#"The plugin's contributes.pages has the id "a" twice."#);
+        // A scope a later AutoScene adds skips its page; a key it adds is named.
+        let p = page_only(json!([
+            {"id": "main", "title": "Main", "entry": "ui/index.html", "icon": "ui/icon.svg"},
+            {"id": "dock", "title": "Dock", "entry": "ui/dock.html", "scope": "panel"},
+        ]))
+        .unwrap();
+        assert_eq!(p.manifest.pages.len(), 1);
+        assert_eq!(
+            p.warnings,
+            [
+                "Ignored contributes.pages[0].icon, which this AutoScene doesn't know.",
+                r#"Skipped the page "dock": scope "panel" needs a newer AutoScene."#,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_page_is_a_listed_html_file_under_ui() {
+        let entry = |entry: &str| page_only(json!([{"id": "main", "title": "Main", "entry": entry}]));
+        for good in ["ui/index.html", "ui/pages/main.html"] {
+            assert_eq!(entry(good).unwrap().manifest.pages[0].entry, good);
+        }
+        let under_ui =
+            "The plugin's contributes.pages[0].entry must be an .html file under ui/, such as ui/index.html.";
+        for bad in ["index.html", "ui/index.htm", "ui/index.HTML", "ui/app.js", "UI/index.html", "pages/ui/index.html"]
+        {
+            assert_eq!(message(entry(bad)), under_ui, "{bad}");
+        }
+        for bad in
+            ["ui/../index.html", "/ui/index.html", r"ui\index.html", "ui//index.html", "ui/./a.html", "ui/INDEX~1.HTM"]
+        {
+            assert!(message(entry(bad)).contains("can't be used"), "{bad}");
+        }
+        assert!(message(page_only(json!([{"id": "main", "title": "Main"}]))).contains("entry is missing"));
+
+        // Its file is the plugin's: listed in its lock, or in its loaded
+        // folder, as it is spelled and never through a link.
+        let pages = entry("ui/index.html").unwrap().manifest.pages;
+        let dir = tempfile::tempdir().unwrap();
+        let lock = |paths: &[&str]| FilesLock {
+            lock_version: LOCK_VERSION,
+            files: paths
+                .iter()
+                .map(|p| LockedFile { path: (*p).into(), size: 0, sha256: sha256_hex(b""), exec: false })
+                .collect(),
+        };
+        let said = |r: PluginResult<()>| r.map_or_else(|e| e.to_string(), |()| "ok".into());
+        assert_eq!(said(check_pages(dir.path(), Some(&lock(&["plugin.json", "ui/index.html"])), &pages)), "ok");
+        assert_eq!(
+            said(check_pages(dir.path(), Some(&lock(&["plugin.json", "ui/Index.html"])), &pages)),
+            "The plugin package is missing its page ui/index.html."
+        );
+        let folder = "The plugin folder is missing its page ui/index.html, or it is a link.";
+        assert_eq!(said(check_pages(dir.path(), None, &pages)), folder);
+        std::fs::create_dir_all(dir.path().join("ui/index.html")).unwrap();
+        assert_eq!(said(check_pages(dir.path(), None, &pages)), folder, "a folder of its name");
+        std::fs::remove_dir(dir.path().join("ui/index.html")).unwrap();
+        std::fs::write(dir.path().join("ui/index.html"), b"<!doctype html>").unwrap();
+        assert_eq!(said(check_pages(dir.path(), None, &pages)), "ok");
+    }
+
+    #[test]
+    fn a_plugin_that_runs_no_program_has_a_page_and_no_actions() {
+        let main = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
+        let m = page_only(main.clone()).unwrap().manifest;
+        assert_eq!((m.runtime.kind, m.runtime.command.len(), m.runtime.gpu), (RuntimeKind::None, 0, false));
+        assert!(!m.runs_program());
+        assert_eq!(message(m.launch()), "Hello Export runs no program.");
+        assert!(m.launches().is_empty(), "asp has no program to mark or check");
+        assert_eq!(serde_json::to_value(m.runtime.kind).unwrap(), json!("none"));
+        assert!(read(&plugin()).unwrap().manifest.runs_program());
+
+        // Nothing starts, and nothing waits for the GPU.
+        for (key, value) in [("command", json!({"*": ["bin/tool"]})), ("gpu", json!(false))] {
+            let p = with(|v| {
+                v["manifestVersion"] = json!(2);
+                v["runtime"] = json!({"type": "none"});
+                v["runtime"][key] = value.clone();
+                v["contributes"] = json!({ "pages": main.clone() });
+            });
+            let said = format!("A plugin whose runtime.type is none runs no program: remove runtime.{key}.");
+            assert_eq!(message(p), said);
+        }
+        // An export action or a command would start one.
+        for (kind, list) in
+            [("exportActions", json!([{"id": "a", "title": "A"}])), ("commands", json!([{"id": "c", "title": "C"}]))]
+        {
+            let p = with(|v| {
+                v["manifestVersion"] = json!(2);
+                v["runtime"] = json!({"type": "none"});
+                v["contributes"] = json!({ "pages": main.clone() });
+                v["contributes"][kind] = list.clone();
+            });
+            assert_eq!(message(p), "Export actions and commands need a program, and runtime.type none runs none.");
+        }
+        // Its pages are all it is: none, or none this AutoScene shows, is no plugin.
+        let pageless = "A plugin that runs no program needs a page.";
+        assert_eq!(message(page_only(json!([]))), pageless);
+        let panel = json!([{"id": "dock", "title": "Dock", "entry": "ui/dock.html", "scope": "panel"}]);
+        assert_eq!(message(page_only(panel)), pageless);
+        let p = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"] = json!({"type": "none"});
+            v["contributes"] = json!({"settings": [{"key": "loud", "type": "boolean", "title": "Loud"}]});
+        });
+        assert_eq!(message(p), pageless);
+        // Settings it may have, for its pages.
+        let p = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"] = json!({"type": "none"});
+            v["contributes"] =
+                json!({ "pages": main.clone(), "settings": [{"key": "loud", "type": "boolean", "title": "Loud"}] });
+        })
+        .unwrap();
+        assert_eq!((p.manifest.settings.len(), p.manifest.pages.len()), (1, 1));
+        // Its pages show on every platform, whatever it names: none is
+        // kept, and none it doesn't know is named.
+        let p = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"] = json!({"type": "none"});
+            v["platforms"] = json!(["windows-x86_64", "plan9-mips"]);
+            v["contributes"] = json!({ "pages": main.clone() });
+        })
+        .unwrap();
+        assert_eq!(p.manifest.platforms, Vec::<String>::new());
+        assert_eq!(p.warnings, ["Ignored platforms: a plugin that runs no program works on every platform."]);
+    }
+
+    #[test]
+    fn rail_is_for_global_pages() {
+        let p = page_only(json!([
+            {"id": "home", "title": "Home", "entry": "ui/home.html", "rail": true},
+            {"id": "clips", "title": "Clips", "entry": "ui/clips.html", "scope": "project", "rail": true},
+            {"id": "notes", "title": "Notes", "description": "What you noted.", "entry": "ui/notes.html", "scope": "project"},
+        ]))
+        .unwrap();
+        let pages: Vec<_> = p.manifest.pages.iter().map(|p| (p.id.as_str(), p.scope, p.rail)).collect();
+        assert_eq!(
+            pages,
+            [
+                ("home", PageScope::Global, true),
+                ("clips", PageScope::Project, false),
+                ("notes", PageScope::Project, false)
+            ]
+        );
+        assert_eq!(p.warnings, [r#"The page "clips" is a project page: rail is for global pages."#]);
+        assert_eq!(p.manifest.pages[2].description.as_deref(), Some("What you noted."));
+        assert_eq!(serde_json::to_value(PageScope::Project).unwrap(), json!("project"));
+        let said = message(page_only(json!([{"id": "home", "title": "Home", "entry": "ui/home.html", "rail": "yes"}])));
+        assert_eq!(said, "The plugin's contributes.pages[0].rail must be true or false.");
+        let long = "x".repeat(41);
+        let p = page_only(json!([{"id": "home", "title": long, "entry": "ui/home.html"}])).unwrap();
+        assert_eq!((p.manifest.pages[0].title.chars().count(), p.warnings.len()), (40, 1));
     }
 
     #[test]
@@ -1604,6 +1945,30 @@ mod tests {
         assert_eq!(p.manifest.secret_keys().count(), 0);
         assert_eq!(p.warnings, [r#"Skipped the setting "token": secret settings need "engines": {"protocol": 2}."#]);
         assert_eq!(with_secrets(token).unwrap().manifest.secret_keys().collect::<Vec<_>>(), ["token"]);
+    }
+
+    #[test]
+    fn a_page_reads_a_secret_whatever_the_protocol() {
+        // A page asks through its frame, which protocol 1 doesn't touch.
+        let token = json!([{"key": "token", "type": "secret", "title": "Token"}]);
+        let main = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
+        let page_only = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"] = json!({"type": "none"});
+            v["contributes"] = json!({"pages": main, "settings": token});
+        })
+        .unwrap();
+        assert_eq!(page_only.manifest.engines.protocol, 1);
+        assert_eq!(page_only.manifest.secret_keys().collect::<Vec<_>>(), ["token"]);
+        assert_eq!(page_only.warnings, Vec::<String>::new());
+        // A program of protocol 1 keeps it for its page.
+        let paged = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["contributes"]["pages"] = main.clone();
+            v["contributes"]["settings"] = token.clone();
+        })
+        .unwrap();
+        assert_eq!(paged.manifest.secret_keys().collect::<Vec<_>>(), ["token"]);
     }
 
     #[test]

@@ -37,12 +37,14 @@ import {
   MOCK_PLUGIN_FOLDER,
   afterExportRuns,
   clearPluginSecret,
+  closePage,
   discardTicket,
   inspectFolder,
   inspectPackage,
   installPlugin,
   mockPlugin,
   nextPluginPackage,
+  openPage,
   pluginRun,
   pluginValues,
   pluginsList,
@@ -1175,6 +1177,12 @@ const handlers: Record<string, Handler> = {
     const p = clearPluginSecret(String(pluginId), String(key), allows())
     void emit("plugins:changed", { pluginId: p.id })
     return p
+  },
+  plugin_page_open: ({ pluginId, pageId, projectId }) =>
+    openPage(String(pluginId), String(pageId), (projectId as string | null) ?? null, allows()),
+  plugin_page_close: ({ session }) => {
+    closePage(String(session))
+    return null
   },
   plugin_run: ({ pluginId, actionId, kind, projectId, exportId }) =>
     startPluginJob(String(pluginId), String(actionId), kind as ActionKind, (projectId as string | null) ?? null, (exportId as string | null) ?? null),

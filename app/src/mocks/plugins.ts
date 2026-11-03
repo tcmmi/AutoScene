@@ -6,7 +6,16 @@
  * installed one), a developer's folder to load, and what each run says when
  * it ends. The jobs are the backend's to run.
  */
-import type { ActionKind, Permission, PluginInfo, PluginReview, PluginUpdate, SettingSpec, SettingValue } from "@/bindings"
+import type {
+  ActionKind,
+  PageMount,
+  Permission,
+  PluginInfo,
+  PluginReview,
+  PluginUpdate,
+  SettingSpec,
+  SettingValue,
+} from "@/bindings"
 
 /** A plugin as installed or offered: what the setting decides is worked out when it is shown. */
 type MockPlugin = Omit<PluginInfo, "active" | "blockedReason">
@@ -35,6 +44,9 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     exportActions: [],
     commands: [],
     settings: [],
+    runtime: "process",
+    protocol: 1,
+    pages: [],
     secretsSet: [],
     icon: null,
     logPath: `${DATA}\\logs\\plugins\\${o.id}.log`,
@@ -107,6 +119,7 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
       author: "Example Dev",
       license: null,
       description: "Posts each finished export's clip list to a Discord channel.",
+      protocol: 2,
       permissions: ["exports:read", "network"],
       networkHosts: ["discord.com"],
       icon: icon("#7c8cf5"),
@@ -134,7 +147,6 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
           },
         },
       ],
-      warnings: ["Pages need a newer AutoScene."],
     }),
   },
   {
@@ -261,6 +273,8 @@ function review(p: MockPlugin, allow: boolean): PluginReview {
         sourceBefore: previous.source,
         addedPermissions: p.permissions.filter((x: Permission) => !previous.permissions.includes(x)),
         addedHosts: p.networkHosts.filter((h) => !previous.networkHosts.includes(h)),
+        addedPages: p.pages.filter((x) => !previous.pages.some((y) => y.id === x.id)).map((x) => x.title),
+        startsProgram: previous.runtime === "none" && p.runtime !== "none",
       }
     : null
   const needsUnreviewed = !reviewed(next)
@@ -382,6 +396,53 @@ export function clearPluginSecret(id: string, key: string, allow: boolean): Plug
   const p = { ...old, secretsSet: old.secretsSet.filter((k) => k !== key) }
   installed.set(id, p)
   return info(p, allow)
+}
+
+/** Where the mock's pages load from: an origin of their own, as the app's asp scheme is. */
+export const MOCK_PAGE_BASE = "http://localhost:5174"
+
+/** The pages open in the mock, by session. */
+const sessions = new Map<string, { pluginId: string; pageId: string }>()
+
+/**
+ * The page `pageId` of `id`, opened as `plugin_page_open` opens it: its
+ * plugin may run now, and a project page is in a project, a global one in
+ * none. Its frame loads it from its session's path.
+ */
+export function openPage(id: string, pageId: string, projectId: string | null, allow: boolean): PageMount {
+  const p = get(id)
+  const shown = info(p, allow)
+  if (!shown.active) throw { code: "invalid", message: p.broken ?? shown.blockedReason ?? `${p.name} is turned off.` }
+  const page = p.pages.find((x) => x.id === pageId)
+  if (!page) throw { code: "invalid", message: `${p.name} has no such page.` }
+  if (page.scope === "project" && !projectId) throw { code: "invalid", message: "Open a project to see this page." }
+  if (page.scope === "global" && projectId) throw { code: "invalid", message: "This page isn't a project's." }
+  // As Rust makes one: 32 lowercase hex digits.
+  const session = crypto.randomUUID().replaceAll("-", "")
+  sessions.set(session, { pluginId: id, pageId })
+  return {
+    session,
+    src: `${MOCK_PAGE_BASE}/${session}/${page.entry}`,
+    plugin: {
+      id: p.id,
+      name: p.name,
+      version: p.version,
+      trust: p.source === "folder" ? "unreviewed" : p.trust,
+      source: p.source,
+      icon: p.icon,
+    },
+    page,
+    projectId: page.scope === "project" ? projectId : null,
+    permissions: p.permissions,
+    hosts: p.permissions.includes("network") ? p.networkHosts : [],
+    service: p.runtime === "service",
+    protocol: p.protocol,
+  }
+}
+
+/** Closes the page `session`; one closed already is no error. */
+export function closePage(session: string) {
+  sessions.delete(session)
 }
 
 /**

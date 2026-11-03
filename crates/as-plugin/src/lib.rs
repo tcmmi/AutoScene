@@ -17,6 +17,10 @@
 //! ([`net`]); each call is checked against what the plugin may use
 //! ([`calls`]).
 //!
+//! A plugin's pages are its files under `ui/`, which AutoScene shows in a
+//! sandboxed frame and serves itself, each as its package lists it
+//! ([`pages`]).
+//!
 //! What a plugin says it does (its permissions) is shown before install.
 //! Its calls into AutoScene are held to it; what its program does itself is
 //! not: a process plugin runs with the person's user rights.
@@ -29,6 +33,7 @@ pub mod manifest;
 pub mod net;
 pub mod package;
 pub mod page_state;
+pub mod pages;
 pub mod protocol;
 pub mod runtime;
 pub mod secrets;
@@ -38,8 +43,8 @@ pub mod trust;
 pub use calls::{CallCode, CallError, Caller, Grants, HostCalls, HostMethod};
 pub use error::{PluginError, PluginResult};
 pub use manifest::{
-    ActionSpec, Author, CommandSpec, Engines, Launch, Manifest, Parsed, Permission, PluginId, Runtime, RuntimeKind,
-    SelectOption, SettingKind, SettingSpec, SettingValue, current_platform,
+    ActionSpec, Author, CommandSpec, Engines, Launch, Manifest, PageScope, PageSpec, Parsed, Permission, PluginId,
+    Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue, current_platform,
 };
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{

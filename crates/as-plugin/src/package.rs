@@ -33,7 +33,7 @@ use zip::result::ZipError;
 use zip::{CompressionMethod, ExtraField, ZipArchive};
 
 use crate::error::{PluginError, PluginResult};
-use crate::manifest::{Launch, Twice, invalid, shown};
+use crate::manifest::{Launch, PageSpec, Twice, invalid, shown};
 
 /// The largest package file.
 pub const MAX_PACKAGE_BYTES: u64 = 1 << 30;
@@ -244,6 +244,49 @@ pub fn check_launch(lock: &FilesLock, launch: &Launch, platform: &str) -> Plugin
         }
     }
     Ok(())
+}
+
+/// Checks the files of the plugin's `pages` in the folder `dir`, which
+/// holds the files of `lock` (none for a loaded folder): each is an `.html`
+/// file under `ui/` that the lock lists, or a loaded folder holds as a plain
+/// file in plain folders, never through a link.
+pub fn check_pages(dir: &Path, lock: Option<&FilesLock>, pages: &[PageSpec]) -> PluginResult<()> {
+    for page in pages {
+        let entry = &page.entry;
+        check_path(entry)?;
+        if !entry.starts_with("ui/") || !entry.ends_with(".html") {
+            return Err(invalid(format!("The plugin's page {} isn't an .html file under ui/.", shown(entry))));
+        }
+        match lock {
+            Some(lock) if !lock.files.iter().any(|f| f.path == *entry) => {
+                return Err(invalid(format!("The plugin package is missing its page {}.", shown(entry))));
+            }
+            None if !plain_file(dir, entry) => {
+                return Err(invalid(format!(
+                    "The plugin folder is missing its page {}, or it is a link.",
+                    shown(entry)
+                )));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Whether the package path `path` (a [`check_path`] path) is a plain file
+/// in `dir`, in plain folders: no link on the way, nor a junction on Windows.
+pub(crate) fn plain_file(dir: &Path, path: &str) -> bool {
+    let mut at = dir.to_path_buf();
+    let mut parts = path.split('/').peekable();
+    while let Some(part) = parts.next() {
+        at.push(part);
+        let Ok(meta) = fs::symlink_metadata(&at) else { return false };
+        let plain = if parts.peek().is_some() { meta.is_dir() } else { meta.is_file() };
+        if !plain {
+            return false;
+        }
+    }
+    true
 }
 
 /// Checks the plugin's icon, the `.png` or `.svg` package path `icon`, in

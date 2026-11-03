@@ -526,6 +526,7 @@ impl From<&PluginError> for CallError {
             PluginError::NotFound(_) => CallCode::NotFound,
             PluginError::Busy(_) => CallCode::Busy,
             PluginError::Cancelled => CallCode::Cancelled,
+            PluginError::Closed => CallCode::Closed,
             _ => CallCode::Failed,
         };
         Self::new(code, e.to_string())
@@ -1205,6 +1206,7 @@ mod tests {
         assert_eq!(code(PluginError::NotFound("dev.a.b".into())), CallCode::NotFound);
         assert_eq!(code(PluginError::Busy("Poster".into())), CallCode::Busy);
         assert_eq!(code(PluginError::Cancelled), CallCode::Cancelled);
+        assert_eq!(code(PluginError::Closed), CallCode::Closed);
         assert_eq!(code(PluginError::Io(std::io::Error::other("disk"))), CallCode::Failed);
         assert_eq!(
             serde_json::to_string(&CallError::new(CallCode::NotFound, "Gone.")).unwrap(),

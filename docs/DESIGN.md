@@ -32,6 +32,8 @@ hex values or Tailwind palette colours (`amber-500`, `zinc-800`…) in component
 Rules:
 
 - One **white pill** per screen is the main action (Build a scenepack, Export, Review): `Button variant="primary"`.
+- `Button variant="cta"`, the solid warm-white pill, for the answer most people give on a surface that leads with a
+  picture (the first-start notice); elsewhere the main action stays `primary`.
 - **Gold** marks what is selected, running or in focus: the open project in the rail, progress (with a soft glow),
   in/out points, the focused character lane, toggles, focus rings. `variant="accent"` only for a confirmation
   that belongs to a selection ("All are Walter").
@@ -43,7 +45,8 @@ Rules:
 - **Inter Variable** (optical sizes) for the UI, base 14px. Scale: 11 / 12 / 13 / 14 / 16 / 20 / 26 / 34 / 48 / 64 /
   84. Section titles 20px semibold; labels in sentence case (`eyebrow`, 12px semibold) — no all-caps.
 - **Instrument Serif** (`display` utility) for the big titles only: series and movie titles, character names,
-  page titles (Cast, Episodes…), empty states. Unnamed characters are set in italic.
+  page titles (Cast, Episodes…), empty states, and the first-start notice's title, which stands in for the welcome.
+  Unnamed characters are set in italic.
 - **Geist Mono Variable** (`timecode` utility) for timecodes, frame numbers, paths, sizes.
 
 ## Shape, depth, light
@@ -126,6 +129,8 @@ Rules:
   - It never takes the focus from the field, and Escape closes only the menu.
   - Paste reads the clipboard natively, so the webview never asks for permission.
 - While developing, Shift+right-click still opens the browser's menu (for Inspect).
+- A **tick box** (`ui/checkbox.tsx`) only for an option that matters once, such as Don't show this again; settings
+  use switches.
 
 ## Views
 
@@ -133,6 +138,11 @@ Rules:
 - **New project:** title and type, then footage and Fast Scan side by side (the switch's line says what Fast Scan
   costs and, where it is on because of this computer's graphics, why), then the videos. The list shrinks on short
   windows so Create project stays on screen.
+- **First start:** where new projects start with Fast Scan because of this computer's graphics, a notice says so
+  over the library at each start until Don't show this again is ticked or a default is chosen — a still with the
+  faces Fast Scan finds (one only half sure), the graphics by name, what Fast Scan gives and costs — with Turn off
+  Fast Scan and a warm-white Continue. It never opens over another layer, steps aside for New Project, and the update
+  dialog waits for it.
 - **Project overview:** the hero, then shelves (`Section` + `Shelf`) of the cast as portraits and the episodes as
   stills. Files that can't be found show as a gold banner with Locate folder… here and on Episodes.
 - **Cast:** portrait cards (3:4), Everyone else, hidden characters folded away; Review as the white pill. From six

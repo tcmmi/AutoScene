@@ -17,6 +17,7 @@ function defaults(): ScanDefaults {
     computer: { class: machine.cls, name: "Intel Iris Xe Graphics" },
     choice: "auto",
     footage: (["live", "mixed", "animation", "anime"] as const).map((content) => ({ content, fast: here && content !== "animation" })),
+    notice: false,
   }
 }
 

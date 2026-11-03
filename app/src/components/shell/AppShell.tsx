@@ -14,6 +14,7 @@ import { ActivityDrawer } from "./ActivityDrawer"
 import { AppMenu } from "./AppMenu"
 import { CommandPalette } from "./CommandPalette"
 import { DropZone } from "./DropZone"
+import { FastScanNotice } from "./FastScanNotice"
 import { Rail } from "./Rail"
 import { TextMenu } from "./TextMenu"
 import { UpdateDialog } from "./UpdateDialog"
@@ -50,6 +51,7 @@ export function AppShell() {
         <NewProjectDialog />
         <RelinkDialog />
         <DropZone />
+        <FastScanNotice />
         <TextMenu />
       </div>
     </AppMenu>

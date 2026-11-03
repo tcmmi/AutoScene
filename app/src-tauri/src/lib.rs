@@ -44,6 +44,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::system::models,
             commands::system::scan_defaults_get,
             commands::system::scan_default_set,
+            commands::system::scan_notice_done,
             commands::library::projects_list,
             commands::library::project_get,
             commands::library::project_create,

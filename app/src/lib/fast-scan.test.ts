@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest"
 import type { GraphicsClass, ScanChoice, ScanDefaults } from "@/bindings"
-import { fastScanHint, newProjectHint, settingsLine, showsSuits, suits, what } from "./fast-scan"
+import {
+  NOTICE_FACTS,
+  deviceLabel,
+  fastScanHint,
+  newProjectHint,
+  noticeFoot,
+  noticeLead,
+  settingsLine,
+  showsSuits,
+  suits,
+  what,
+} from "./fast-scan"
 
 /** What the library answers on `cls`, like `as_project::scan::defaults`. */
 function defaults(cls: GraphicsClass, choice: ScanChoice = "auto", findBodies = false): ScanDefaults {
@@ -11,6 +22,7 @@ function defaults(cls: GraphicsClass, choice: ScanChoice = "auto", findBodies = 
     computer: { class: cls, name: cls === "processor" ? "" : "Graphics" },
     choice,
     footage: (["live", "mixed", "animation", "anime"] as const).map((content) => ({ content, fast: fast(content) })),
+    notice: choice === "auto" && fastHere,
   }
 }
 
@@ -176,5 +188,57 @@ describe("Edit details' Fast Scan line", () => {
       "Characters are found with the anime models in only a few frames of each shot: much faster, less sure who is who.",
     )
     expect(fastScanHint("anime", true, true, d)).toBe("Characters are found again this way, then regrouped. Your names and decisions stay.")
+  })
+})
+
+describe("the first-start notice's words", () => {
+  const HEAVY = "so new projects start with Fast Scan."
+  const on = (cls: GraphicsClass, name = "") => ({ class: cls, name })
+
+  it("says why Fast Scan is on, of what the analysis runs on", () => {
+    expect(noticeLead(on("integrated"), "windows")).toBe(
+      `This computer analyses video on its built-in graphics. A full scan is heavy work for them, ${HEAVY}`,
+    )
+    expect(noticeLead(on("integrated"), "macos")).toBe(`This Mac analyses video on its built-in graphics. A full scan is heavy work for them, ${HEAVY}`)
+    expect(noticeLead(on("notForAi"), "windows")).toBe(
+      `This graphics card has no hardware made for AI work. A full scan is heavy work for it, ${HEAVY}`,
+    )
+    expect(noticeLead(on("processor"), "windows")).toBe(
+      `This computer has no graphics card AutoScene can use. A full scan is heavy work for a processor, ${HEAVY}`,
+    )
+    expect(noticeLead(on("processor"), "linux")).toBe(
+      `On Linux, AutoScene analyses video on the processor. A full scan is heavy work for a processor, ${HEAVY}`,
+    )
+    expect(noticeLead(on("processor"), "macos")).toBe(`This Mac analyses video on its processor. A full scan is heavy work for a processor, ${HEAVY}`)
+    // No notice where the full scan is the default, so nothing to say.
+    expect(noticeLead(on("forAi"), "windows")).toBe("")
+    expect(noticeLead(on("unknown"), "windows")).toBe("")
+  })
+
+  it("names the device, else what it is", () => {
+    expect(deviceLabel(on("integrated", "Intel Iris Xe Graphics"), "windows")).toBe("Intel Iris Xe Graphics")
+    expect(deviceLabel(on("integrated", "Apple M2"), "macos")).toBe("Apple M2")
+    expect(deviceLabel(on("processor"), "linux")).toBe("Processor")
+    expect(deviceLabel(on("integrated"), "macos")).toBe("This Mac")
+    expect(deviceLabel(on("integrated"), "windows")).toBe("Built-in graphics")
+  })
+
+  it("says what keeps the full scan and where the default changes", () => {
+    const SETTINGS = " You can change the default any time in Settings."
+    expect(noticeFoot(defaults("integrated"))).toBe(`3D animation keeps the full scan.${SETTINGS}`)
+    expect(noticeFoot(defaults("processor", "auto", true))).toBe(
+      `3D animation keeps the full scan, and so does live action while characters without a visible face are found.${SETTINGS}`,
+    )
+  })
+
+  it("uses no engine names, numbers or exclamation marks", () => {
+    const all = [
+      ...(["integrated", "notForAi", "processor"] as const).flatMap((c) =>
+        (["windows", "macos", "linux"] as const).map((p) => noticeLead(on(c), p)),
+      ),
+      ...NOTICE_FACTS.flatMap((f) => [f.title, f.body]),
+      noticeFoot(defaults("integrated", "auto", true)),
+    ]
+    for (const line of all) expect(line.replaceAll("3D animation", "")).not.toMatch(/DirectML|YuNet|SCRFD|SFace|\d|!|Recommended/)
   })
 })

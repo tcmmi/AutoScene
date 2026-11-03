@@ -7,6 +7,9 @@
 //! footage keep the full scan on Automatic, because Fast Scan would cost
 //! them most: 3D animation, and live action while people without a visible
 //! face are found. On and Off apply to every footage.
+//!
+//! Where Automatic gives Fast Scan, the first-start notice says so until the
+//! person ticked "Don't show this again" or chose a default ([`ScanDefaults::notice`]).
 
 use as_api::{ContentKind, GraphicsClass, ScanAdvice, ScanChoice, ScanDefaults, ThisComputer};
 use as_infer::computer::{Class, Computer};
@@ -15,8 +18,10 @@ use as_infer::computer::{Class, Computer};
 const FOOTAGE: [ContentKind; 4] = [ContentKind::Live, ContentKind::Mixed, ContentKind::Animation, ContentKind::Anime];
 
 /// What new projects of each footage start with on `computer`, when the
-/// person chose `choice` and finds people without a visible face or not.
-pub fn defaults(computer: &Computer, choice: ScanChoice, find_bodies: bool) -> ScanDefaults {
+/// person chose `choice` and finds people without a visible face or not;
+/// and whether the first-start notice is still due (`notice_done`: the
+/// person ticked "Don't show this again" or met the setting).
+pub fn defaults(computer: &Computer, choice: ScanChoice, find_bodies: bool, notice_done: bool) -> ScanDefaults {
     let footage = FOOTAGE
         .into_iter()
         .map(|content| ScanAdvice { content, fast: fast(computer.class, choice, find_bodies, content) })
@@ -25,6 +30,9 @@ pub fn defaults(computer: &Computer, choice: ScanChoice, find_bodies: bool) -> S
         computer: ThisComputer { class: class(computer.class), name: computer.name.clone() },
         choice,
         footage,
+        // Anime starts with Fast Scan on Automatic wherever the class gets it,
+        // so the notice has something to say even while faceless people are found.
+        notice: choice == ScanChoice::Auto && computer.class.fast_by_default() && !notice_done,
     }
 }
 
@@ -73,7 +81,7 @@ mod tests {
 
     /// Live, mixed, 3D animation, anime: Fast Scan or not.
     fn fast_for(class: Class, choice: ScanChoice, find_bodies: bool) -> [bool; 4] {
-        let d = defaults(&on(class), choice, find_bodies);
+        let d = defaults(&on(class), choice, find_bodies, false);
         assert_eq!(d.footage.iter().map(|a| a.content).collect::<Vec<_>>(), FOOTAGE, "every footage, in order");
         FOOTAGE.map(|content| advice(&d, content))
     }
@@ -85,7 +93,7 @@ mod tests {
                 assert_eq!(fast_for(class, ScanChoice::Auto, bodies), [false; 4], "{class:?}, bodies {bodies}");
             }
         }
-        let d = defaults(&on(Class::ForAi), ScanChoice::Auto, false);
+        let d = defaults(&on(Class::ForAi), ScanChoice::Auto, false, false);
         assert_eq!(d.computer, ThisComputer { class: GraphicsClass::ForAi, name: "Graphics".into() });
         assert_eq!(d.choice, ScanChoice::Auto);
     }
@@ -98,7 +106,7 @@ mod tests {
             (Class::Processor, GraphicsClass::Processor),
         ] {
             assert_eq!(fast_for(class, ScanChoice::Auto, false), [true, true, false, true], "{class:?}");
-            assert_eq!(defaults(&on(class), ScanChoice::Auto, false).computer.class, named);
+            assert_eq!(defaults(&on(class), ScanChoice::Auto, false, false).computer.class, named);
         }
     }
 
@@ -106,7 +114,7 @@ mod tests {
     fn animation_keeps_the_full_scan_on_automatic() {
         for class in [Class::ForAi, Class::NotForAi, Class::Integrated, Class::Processor, Class::Unknown] {
             for bodies in [false, true] {
-                let d = defaults(&on(class), ScanChoice::Auto, bodies);
+                let d = defaults(&on(class), ScanChoice::Auto, bodies, false);
                 assert!(!advice(&d, ContentKind::Animation), "{class:?}, bodies {bodies}");
             }
         }
@@ -129,6 +137,6 @@ mod tests {
                 assert_eq!(fast_for(class, ScanChoice::Full, bodies), [false; 4], "{class:?}, bodies {bodies}");
             }
         }
-        assert_eq!(defaults(&on(Class::Integrated), ScanChoice::Full, false).choice, ScanChoice::Full);
+        assert_eq!(defaults(&on(Class::Integrated), ScanChoice::Full, false, false).choice, ScanChoice::Full);
     }
 }

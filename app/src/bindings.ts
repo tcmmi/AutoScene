@@ -53,6 +53,11 @@ export const commands = {
 	 *  On and Off apply to every footage. Only here: `settings_update` keeps it.
 	 */
 	scanDefaultSet: (choice: ScanChoice) => __TAURI_INVOKE<ScanDefaults>("scan_default_set", { choice }),
+	/**
+	 *  "Don't show this again" on the first-start notice about Fast Scan: it
+	 *  isn't shown again in this library, whatever the graphics become.
+	 */
+	scanNoticeDone: () => __TAURI_INVOKE<null>("scan_notice_done"),
 	projectsList: () => __TAURI_INVOKE<ProjectSummary[]>("projects_list"),
 	projectGet: (projectId: ProjectId) => __TAURI_INVOKE<ProjectSummary>("project_get", { projectId }),
 	/**
@@ -1803,13 +1808,19 @@ export type ScanChoice =
 
 /**
  *  The scan new projects start with, and why: what the New Project dialog,
- *  Settings and Edit details say about Fast Scan.
+ *  Settings, Edit details and the first-start notice say about Fast Scan.
  */
 export type ScanDefaults = {
 	computer: ThisComputer,
 	choice: ScanChoice,
 	/**  One entry per footage: live action, mixed, 3D animation, anime. */
 	footage: ScanAdvice[],
+	/**
+	 *  The first-start notice is due: the choice is Automatic, this
+	 *  computer's graphics get Fast Scan, and the notice isn't done for this
+	 *  library ("Don't show this again", or a default met in Settings).
+	 */
+	notice: boolean,
 };
 
 /**

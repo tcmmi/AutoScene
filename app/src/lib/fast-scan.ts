@@ -1,4 +1,4 @@
-import type { ContentKind, GraphicsClass, Platform, ScanDefaults } from "@/bindings"
+import type { ContentKind, GraphicsClass, Platform, ScanDefaults, ThisComputer } from "@/bindings"
 
 /*
  * Every sentence about Fast Scan's default for new projects (design-i52 §5.5),
@@ -112,3 +112,45 @@ export function fastScanHint(
 
 const withSuits = (full: string, content: ContentKind, d: ScanDefaults | undefined) =>
   d && showsSuits(content, d) ? `${full} Fast Scan suits ${SUITED[d.computer.class]}.` : full
+
+// -- the first-start notice ----------------------------------------------------
+
+/** The graphics the analysis runs on, as the notice names them. */
+export function deviceLabel(c: ThisComputer, platform: Platform): string {
+  if (c.name) return c.name
+  if (c.class === "processor") return "Processor"
+  return platform === "macos" ? "This Mac" : "Built-in graphics"
+}
+
+const HEAVY = "so new projects start with Fast Scan."
+
+/** Why new projects start with Fast Scan here, said of what the analysis runs on. Empty where they don't. */
+export function noticeLead(c: ThisComputer, platform: Platform): string {
+  const here = platform === "macos" ? "This Mac" : "This computer"
+  switch (c.class) {
+    case "integrated":
+      return `${here} analyses video on its built-in graphics. A full scan is heavy work for them, ${HEAVY}`
+    case "notForAi":
+      return `This graphics card has no hardware made for AI work. A full scan is heavy work for it, ${HEAVY}`
+    case "processor":
+      if (platform === "linux") return `On Linux, AutoScene analyses video on the processor. A full scan is heavy work for a processor, ${HEAVY}`
+      if (platform === "macos") return `This Mac analyses video on its processor. A full scan is heavy work for a processor, ${HEAVY}`
+      return `This computer has no graphics card AutoScene can use. A full scan is heavy work for a processor, ${HEAVY}`
+    default:
+      return ""
+  }
+}
+
+/** What Fast Scan gives, and what it costs. */
+export const NOTICE_FACTS = [
+  { kind: "faster", title: "Much faster", body: "It looks at only a few frames of each shot." },
+  { kind: "faces", title: "Less sure who is who", body: "It finds fewer faces, so characters get mixed up more often." },
+] as const
+
+/** The notice's foot: what keeps the full scan, and where the default changes. */
+export function noticeFoot(d: ScanDefaults): string {
+  const keeps = liveFast(d)
+    ? "3D animation keeps the full scan."
+    : "3D animation keeps the full scan, and so does live action while characters without a visible face are found."
+  return `${keeps} You can change the default any time in Settings.`
+}

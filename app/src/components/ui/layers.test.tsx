@@ -2,7 +2,7 @@ import { useState } from "react"
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { layerOpen, useLayerSafetyNet } from "@/lib/layers"
+import { layerOpen, useLayerOpen, useLayerSafetyNet } from "@/lib/layers"
 import { Dialog, DialogContent } from "./dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./dropdown-menu"
 import { Select } from "./select"
@@ -74,6 +74,58 @@ describe("layers", () => {
   it("doesn't count a list that is part of the page", () => {
     render(<div role="listbox" aria-label="Results" />)
     expect(layerOpen()).toBe(false)
+  })
+})
+
+describe("useLayerOpen", () => {
+  function Watcher() {
+    const [watch, setWatch] = useState(false)
+    const open = useLayerOpen(watch)
+    return (
+      <>
+        <button type="button" onClick={() => setWatch((w) => !w)}>
+          {watch ? "Stop watching" : "Watch"}
+        </button>
+        <output aria-label="Layer">{open ? "open" : "free"}</output>
+        <MenuThenDialog />
+      </>
+    )
+  }
+  const layer = () => screen.getByRole("status", { name: "Layer", hidden: true }).textContent
+
+  it("useLayerOpen follows a menu opening and closing, only while watching", async () => {
+    const user = userEvent.setup()
+    const spy = vi.spyOn(MutationObserver.prototype, "observe")
+    // Radix observes too: count only observers of layers' `data-state`.
+    const observe = { calls: () => spy.mock.calls.filter(([, o]) => o?.attributeFilter?.includes("data-state")).length }
+    render(<Watcher />)
+    // Not watching: a menu opening isn't followed, and nothing is observed.
+    await user.click(screen.getByRole("button", { name: "Options" }))
+    await screen.findByRole("menu")
+    expect(layer()).toBe("free")
+    expect(observe.calls()).toBe(0)
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull())
+
+    await user.click(screen.getByRole("button", { name: "Watch" }))
+    expect(observe.calls()).toBe(1)
+    expect(layer()).toBe("free")
+    await user.click(screen.getByRole("button", { name: "Options" }))
+    await screen.findByRole("menu")
+    await waitFor(() => expect(layer()).toBe("open"))
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull())
+    await waitFor(() => expect(layer()).toBe("free"))
+
+    // A menu already open when watching starts is seen at once; stopping forgets it.
+    await user.click(screen.getByRole("button", { name: "Stop watching" }))
+    await user.click(screen.getByRole("button", { name: "Options" }))
+    await screen.findByRole("menu")
+    await act(async () => {
+      screen.getByRole("button", { name: "Watch", hidden: true }).click()
+    })
+    expect(layer()).toBe("open")
+    spy.mockRestore()
   })
 })
 

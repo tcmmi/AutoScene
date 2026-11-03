@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 
 /** How long `<body>` may stay unclickable with nothing open before it is given back. */
 const GRACE_MS = 300
@@ -45,3 +45,21 @@ export function layerOpen(): boolean {
 }
 
 const LAYERS = ["dialog", "alertdialog", "menu", "listbox"].map((r) => `[role="${r}"][data-state="open"]`).join(", ")
+
+/**
+ * `layerOpen()` as state, while `watch` is true: it follows layers opening
+ * and closing (their `data-state`), so something waiting for the window to be
+ * free sees the moment it is. Nothing is observed while it isn't watching.
+ */
+export function useLayerOpen(watch: boolean): boolean {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!watch) return
+    const check = () => setOpen(layerOpen())
+    const observer = new MutationObserver(check)
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-state"] })
+    check()
+    return () => observer.disconnect()
+  }, [watch])
+  return watch && open
+}

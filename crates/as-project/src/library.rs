@@ -31,6 +31,12 @@ const KEY_SCAN_DEFAULT: &str = "scan_default";
 /// Fast Scan's default before it followed the computer: "1" or "0", written
 /// by every save of the settings. Read once, into [`KEY_SCAN_DEFAULT`].
 const KEY_LEGACY_FAST_SCAN: &str = "fast_scan";
+/// "done" once the first-start notice about Fast Scan is done for this
+/// library: "Don't show this again", or a default met in Settings. One flag
+/// for the library, whatever the graphics become: every class that gets Fast
+/// Scan gets the same default, so a second notice would say nothing new.
+const KEY_SCAN_NOTICE: &str = "scan_notice";
+const NOTICE_DONE: &str = "done";
 const KEY_ANILIST: &str = "anilist";
 /// The keyboard shortcuts the person changed, as JSON.
 const KEY_SHORTCUTS: &str = "shortcuts";
@@ -227,23 +233,32 @@ impl Library {
         })
     }
 
-    /// The scan new projects of each footage start with, and why.
+    /// The scan new projects of each footage start with, and why, and
+    /// whether the first-start notice is due.
     pub fn scan_defaults(&self) -> ProjectResult<ScanDefaults> {
-        Ok(scan::defaults(&self.computer(), self.scan_choice()?, self.finds_bodies()))
+        let notice_done = self.db.setting(KEY_SCAN_NOTICE)?.as_deref() == Some(NOTICE_DONE);
+        Ok(scan::defaults(&self.computer(), self.scan_choice()?, self.finds_bodies(), notice_done))
     }
 
     /// Chooses the scan new projects start with: On or Off for every footage,
     /// or Automatic, which follows this computer (the choice is deleted).
     /// Only here: [`Library::update_settings`] keeps it as it is, so a page
-    /// saving a copy of the settings made before can't change it.
+    /// saving a copy of the settings made before can't change it. The person
+    /// met the setting, so the first-start notice is done too.
     pub fn set_scan_default(&self, choice: ScanChoice) -> ProjectResult<ScanDefaults> {
         let value = match choice {
             ScanChoice::Auto => None,
             ScanChoice::Fast => Some("fast"),
             ScanChoice::Full => Some("full"),
         };
-        self.db.write_settings(&[(KEY_SCAN_DEFAULT, value)])?;
+        self.db.write_settings(&[(KEY_SCAN_DEFAULT, value), (KEY_SCAN_NOTICE, Some(NOTICE_DONE))])?;
         self.scan_defaults()
+    }
+
+    /// "Don't show this again" on the first-start notice: it isn't due again
+    /// in this library, whatever the graphics become.
+    pub fn scan_notice_done(&self) -> ProjectResult<()> {
+        Ok(self.db.set_setting(KEY_SCAN_NOTICE, NOTICE_DONE)?)
     }
 
     /// Whether new live-action projects find their faces with Fast Scan.
@@ -271,7 +286,12 @@ impl Library {
         let language = as_media::lang::canonical(&s.audio_language).unwrap_or_default();
         self.db.set_setting(KEY_AUDIO_LANGUAGE, &language)?;
         self.db.set_setting(KEY_FIND_BODIES, if s.find_bodies { "1" } else { "0" })?;
-        self.find_bodies.store(s.find_bodies, Ordering::Relaxed);
+        let bodies_changed = self.find_bodies.swap(s.find_bodies, Ordering::Relaxed) != s.find_bodies;
+        // The switch was changed in Settings, where Fast Scan's row says why
+        // it is on here: the person met the setting, so the notice is done.
+        if bodies_changed && self.scan_defaults()?.notice {
+            self.scan_notice_done()?;
+        }
         self.db.set_setting(KEY_ANILIST, if s.anilist { "1" } else { "0" })?;
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
         // `allow_unreviewed_plugins` stays: see `set_allows_unreviewed_plugins`.
@@ -1102,7 +1122,7 @@ mod tests {
         let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), built_in_graphics).unwrap();
         assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Fast);
         let auto = lib.set_scan_default(ScanChoice::Auto).unwrap();
-        assert_eq!(auto, scan::defaults(&lib.computer(), ScanChoice::Auto, false));
+        assert_eq!(auto, scan::defaults(&lib.computer(), ScanChoice::Auto, false, true));
         assert_eq!(stored(&lib, KEY_SCAN_DEFAULT), None, "Automatic stores nothing");
         // A choice a newer app stored, that this one can't read, is Automatic.
         lib.db.set_setting(KEY_SCAN_DEFAULT, "balanced").unwrap();
@@ -1213,6 +1233,127 @@ mod tests {
         assert!(lib.set_scan_default(ScanChoice::Fast).unwrap().footage[0].fast);
         lib.create_project(&new_project(ContentKind::Live)).unwrap();
         assert_eq!(PROBES.load(Ordering::SeqCst), 1);
+    }
+
+    fn gtx() -> Machine {
+        Machine::Windows(Some(vec![computer::Adapter {
+            vendor: 0x10DE,
+            device: 0x1C03,
+            name: "NVIDIA GeForce GTX 1060 6GB".into(),
+            integrated: false,
+            luid: 0x1_0828,
+        }]))
+    }
+
+    fn processor_only() -> Machine {
+        Machine::CpuRuntime
+    }
+
+    fn notice_due(lib: &Library) -> bool {
+        lib.scan_defaults().unwrap().notice
+    }
+
+    #[test]
+    fn the_notice_is_due_until_dont_show_this_again() {
+        let (dir, lib) = lib_on(built_in_graphics);
+        assert!(notice_due(&lib));
+        // Saving other settings, or making a project, doesn't end it.
+        lib.update_settings(&AppSettings { audio_language: "fra".into(), ..lib.settings().unwrap() }).unwrap();
+        lib.create_project(&new_project(ContentKind::Live)).unwrap();
+        assert!(notice_due(&lib), "Continue without the tick stores nothing");
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), built_in_graphics).unwrap();
+        assert!(notice_due(&lib), "still due at the next start");
+        lib.scan_notice_done().unwrap();
+        assert!(!notice_due(&lib));
+        assert_eq!(stored(&lib, KEY_SCAN_NOTICE).as_deref(), Some("done"));
+        // Fast Scan stays the default: the notice only said so.
+        assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Auto);
+        assert!(lib.settings().unwrap().fast_scan);
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), built_in_graphics).unwrap();
+        assert!(!notice_due(&lib), "kept across starts");
+    }
+
+    #[test]
+    fn dont_show_again_holds_when_the_graphics_change() {
+        let (dir, lib) = lib_on(built_in_graphics);
+        lib.scan_notice_done().unwrap();
+        drop(lib);
+        // A new card without matrix units, a driver that leaves only the
+        // processor, then the built-in graphics again: one flag for the library.
+        for probe in [gtx as fn() -> Machine, processor_only, built_in_graphics] {
+            let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), probe).unwrap();
+            assert!(lib.computer().class.fast_by_default());
+            assert!(!notice_due(&lib), "{:?}", lib.computer().class);
+        }
+    }
+
+    #[test]
+    fn choosing_a_default_ends_the_notice() {
+        for choice in [ScanChoice::Auto, ScanChoice::Fast, ScanChoice::Full] {
+            let (_dir, lib) = lib_on(built_in_graphics);
+            assert!(notice_due(&lib));
+            assert!(!lib.set_scan_default(choice).unwrap().notice, "{choice:?}");
+            assert_eq!(stored(&lib, KEY_SCAN_NOTICE).as_deref(), Some("done"), "{choice:?}");
+            // Back to Automatic later (the toast's Undo): still not due.
+            assert!(!lib.set_scan_default(ScanChoice::Auto).unwrap().notice, "{choice:?}");
+        }
+    }
+
+    #[test]
+    fn a_settings_change_that_leaves_fast_scan_the_default_meets_the_notice() {
+        // Faceless people on: live action keeps the full scan, anime still
+        // starts with Fast Scan here, and the change was made where Fast
+        // Scan's row says why.
+        let (_dir, lib) = lib_on(built_in_graphics);
+        lib.update_settings(&AppSettings { find_bodies: true, ..lib.settings().unwrap() }).unwrap();
+        assert!(!notice_due(&lib));
+        assert_eq!(stored(&lib, KEY_SCAN_NOTICE).as_deref(), Some("done"));
+        // Saving the same value again isn't a change.
+        let (_dir, lib) = lib_on(built_in_graphics);
+        lib.update_settings(&AppSettings { find_bodies: false, ..lib.settings().unwrap() }).unwrap();
+        assert!(notice_due(&lib));
+        assert_eq!(stored(&lib, KEY_SCAN_NOTICE), None);
+        // Where the full scan is the default, the change has nothing to meet.
+        let (_dir, lib) = lib_on(rtx);
+        lib.update_settings(&AppSettings { find_bodies: true, ..lib.settings().unwrap() }).unwrap();
+        assert_eq!(stored(&lib, KEY_SCAN_NOTICE), None);
+    }
+
+    #[test]
+    fn faceless_people_on_still_brings_the_notice_for_anime() {
+        let (dir, lib) = lib_on(built_in_graphics);
+        // Turned on before this app version: no change is made now.
+        lib.db.set_setting(KEY_FIND_BODIES, "1").unwrap();
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), built_in_graphics).unwrap();
+        let d = lib.scan_defaults().unwrap();
+        assert!(!scan::advice(&d, ContentKind::Live) && scan::advice(&d, ContentKind::Anime));
+        assert!(d.notice);
+    }
+
+    #[test]
+    fn no_notice_where_the_full_scan_is_the_default() {
+        for probe in [rtx as fn() -> Machine, || Machine::Windows(None)] {
+            let (_dir, lib) = lib_on(probe);
+            assert!(!lib.computer().class.fast_by_default());
+            assert!(!notice_due(&lib), "{:?}", lib.computer().class);
+        }
+        // On or Off chosen (here by an older app's "1", which met no notice):
+        // the person decided, so there is nothing to announce.
+        let (dir, lib) = lib_on(built_in_graphics);
+        for choice in ["fast", "full"] {
+            lib.db.set_setting(KEY_SCAN_DEFAULT, choice).unwrap();
+            assert!(!notice_due(&lib), "{choice}");
+        }
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), built_in_graphics).unwrap();
+        lib.db.write_settings(&[(KEY_SCAN_DEFAULT, None), (KEY_LEGACY_FAST_SCAN, Some("1"))]).unwrap();
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), built_in_graphics).unwrap();
+        assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Fast);
+        assert!(!notice_due(&lib));
     }
 
     #[test]

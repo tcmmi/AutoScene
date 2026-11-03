@@ -39,6 +39,7 @@ function defaults(): ScanDefaults {
       content,
       fast: here && content !== "animation" && (content === "anime" || !state.findBodies),
     })),
+    notice: false,
   }
 }
 

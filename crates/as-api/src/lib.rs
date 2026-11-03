@@ -200,7 +200,7 @@ pub struct ScanAdvice {
 }
 
 /// The scan new projects start with, and why: what the New Project dialog,
-/// Settings and Edit details say about Fast Scan.
+/// Settings, Edit details and the first-start notice say about Fast Scan.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanDefaults {
@@ -208,6 +208,10 @@ pub struct ScanDefaults {
     pub choice: ScanChoice,
     /// One entry per footage: live action, mixed, 3D animation, anime.
     pub footage: Vec<ScanAdvice>,
+    /// The first-start notice is due: the choice is Automatic, this
+    /// computer's graphics get Fast Scan, and the notice isn't done for this
+    /// library ("Don't show this again", or a default met in Settings).
+    pub notice: bool,
 }
 
 // ---------------------------------------------------------------------------

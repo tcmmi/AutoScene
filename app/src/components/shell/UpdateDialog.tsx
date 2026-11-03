@@ -3,10 +3,13 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { formatBytes } from "@/lib/format"
+import { noticeOpen, useFastScanNotice } from "@/state/fast-scan-notice"
 import { useUpdates } from "@/state/updates"
 
 export function UpdateDialog() {
   const u = useUpdates()
+  // Two modals never stack: the update waits while the first-start notice is open.
+  const notice = useFastScanNotice(noticeOpen)
   const status = u.status
   if (!status) return null
 
@@ -14,7 +17,7 @@ export function UpdateDialog() {
   const fraction = u.total ? u.downloaded / u.total : null
 
   return (
-    <Dialog open={u.dialogOpen} onOpenChange={(o) => !busy && u.setDialogOpen(o)}>
+    <Dialog open={u.dialogOpen && !notice} onOpenChange={(o) => !busy && u.setDialogOpen(o)}>
       <DialogContent
         hideClose={busy}
         title={

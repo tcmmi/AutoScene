@@ -79,6 +79,15 @@ pub async fn scan_default_set(state: State<'_, AppState>, choice: ScanChoice) ->
     blocking(move || Ok(lib.set_scan_default(choice)?)).await
 }
 
+/// "Don't show this again" on the first-start notice about Fast Scan: it
+/// isn't shown again in this library, whatever the graphics become.
+#[tauri::command]
+#[specta::specta]
+pub async fn scan_notice_done(state: State<'_, AppState>) -> AppResult<()> {
+    let lib = state.library.clone();
+    blocking(move || Ok(lib.scan_notice_done()?)).await
+}
+
 /// Show a file or folder in Explorer / Finder: one AutoScene knows (its
 /// library, data and logs, a project's folder, an episode's file, an
 /// export's folder or files, a folder a plugin is loaded from, a list saved

@@ -186,6 +186,8 @@ const machine = MACHINES[machineName ?? "rtx"] ?? MACHINES.rtx
 if (machineName) appInfo.platform = machine.platform
 /** The person's choice: only `scan_default_set` changes it, as in the library. */
 let scanChoice: ScanChoice = "auto"
+/** The first-start notice is done ("Don't show this again", or a default met in Settings): one flag, whatever the graphics. */
+let noticeDone = false
 
 /** Like `as_project::scan::defaults`: what a new project of `content` starts with. */
 function startsFast(content: ContentKind): boolean {
@@ -197,7 +199,9 @@ function startsFast(content: ContentKind): boolean {
 
 function scanDefaults(): ScanDefaults {
   const footage = (["live", "mixed", "animation", "anime"] as const).map((content) => ({ content, fast: startsFast(content) }))
-  return { computer: { class: machine.class, name: machine.name }, choice: scanChoice, footage }
+  const fastHere = ["notForAi", "integrated", "processor"].includes(machine.class)
+  const notice = scanChoice === "auto" && fastHere && !noticeDone
+  return { computer: { class: machine.class, name: machine.name }, choice: scanChoice, footage, notice }
 }
 
 let settings: AppSettings = { libraryRoot: ROOT, exportPresetId: "prores-hq", audioLanguage: "eng", allowUnreviewedPlugins: false }
@@ -998,16 +1002,25 @@ const handlers: Record<string, Handler> = {
   settings_update: ({ settings: s }) => {
     // Like the backend: only plugins_allow_unreviewed changes this one, and
     // only scan_default_set Fast Scan's default (`fastScan` is read only).
+    const bodiesChanged = ((s as AppSettings).findBodies ?? false) !== (settings.findBodies ?? false)
     settings = { ...(s as AppSettings), allowUnreviewedPlugins: allows() }
     followFastScan()
+    // Changed in Settings, where Fast Scan's row says why it is on: the notice is met.
+    if (bodiesChanged && scanDefaults().notice) noticeDone = true
     setMockBodies(settings.findBodies ?? false)
     return settings
   },
   scan_defaults_get: () => scanDefaults(),
   scan_default_set: ({ choice }) => {
     scanChoice = choice as ScanChoice
+    // The person met the setting (Settings, or the notice's Turn off): the notice is done.
+    noticeDone = true
     followFastScan()
     return scanDefaults()
+  },
+  scan_notice_done: () => {
+    noticeDone = true
+    return null
   },
   projects_list: () => [...projects].sort((a, b) => b.updatedAt - a.updatedAt).map(summary),
   project_get: ({ projectId }) => summary(find(projectId)),
@@ -1467,9 +1480,11 @@ export function installMockBackend() {
     },
     { shouldMockEvents: true },
   )
+  // `?mockEmpty=1`: a library with nothing in it yet, as at the first start.
+  if (new URLSearchParams(window.location.search).get("mockEmpty")) projects.splice(0)
   // A running ingest so the activity UI has something to show.
-  const f = projects[0]
-  const m = f.media.find((x) => x.status === "indexing")
-  if (m) window.setTimeout(() => ingest(f, m), 500)
+  const f = projects.at(0)
+  const m = f?.media.find((x) => x.status === "indexing")
+  if (f && m) window.setTimeout(() => ingest(f, m), 500)
   console.info("[mock] AutoScene mock backend installed")
 }

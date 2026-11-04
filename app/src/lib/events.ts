@@ -2,6 +2,7 @@ import { toast } from "sonner"
 import type { JobInfo } from "@/bindings"
 import { pluginToast } from "@/features/plugins/plugin-toast"
 import { isFinished, useActivity } from "@/state/activity"
+import { usePluginReview } from "@/state/plugin-review"
 import { commands, events } from "./ipc"
 import { reveal } from "./os"
 import { exportsQuery, qk, queryClient } from "./queries"
@@ -20,7 +21,9 @@ import { exportsQuery, qk, queryClient } from "./queries"
  * | cast:changed     | cast(pid) and everything under it (tracks, presence, packs) |
  * | pack:changed     | pack(pid, cid): its settings (an export keeps them) |
  * | export:changed   | exports(pid)                                       |
- * | plugins:changed  | plugins and every plugin's settings; settings when no plugin is named |
+ * | plugins:changed  | plugins and every plugin's settings, the catalog; settings when no plugin is named |
+ * | catalog:changed  | the catalog, the plugins                           |
+ * | catalog:progress | the install review's download (progress only)      |
  * | plugin-page:event | an open plugin page (PluginFrame listens)         |
  * | hardware:changed | hardware (the graphics the analysis runs on)       |
  */
@@ -83,11 +86,19 @@ export function startEventBridge(): () => void {
     events.pluginsChanged.listen(({ payload }) => {
       // Prefix match: the list and each plugin's settings.
       void queryClient.invalidateQueries({ queryKey: qk.plugins })
+      // What the catalog offers is worked out against what is installed.
+      void queryClient.invalidateQueries({ queryKey: qk.catalog })
       // None named: the setting may have changed, under a settings save
       // still on its way with the value from before.
       if (payload.pluginId == null) void queryClient.invalidateQueries({ queryKey: qk.settings })
     }),
     events.hardwareChanged.listen(() => void queryClient.invalidateQueries({ queryKey: qk.hardware })),
+    events.catalogChanged.listen(() => {
+      // A check may offer new versions, and withdraw installed plugins.
+      void queryClient.invalidateQueries({ queryKey: qk.catalog })
+      void queryClient.invalidateQueries({ queryKey: qk.plugins })
+    }),
+    events.catalogProgress.listen(({ payload }) => usePluginReview.getState().progress(payload.pluginId, payload.done, payload.total)),
   )
   // Snapshot only once the listeners are live, so nothing falls between the two.
   void Promise.all(unlisten)

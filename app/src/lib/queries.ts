@@ -47,6 +47,9 @@ export const qk = {
   // Outside the plugins: `plugins:changed` fires on every settings save, and
   // a banner is up to 512 KB. Another picture comes with another hash.
   pluginBanner: (id: string, hash: string | null) => ["pluginBanner", id, hash] as const,
+  // Outside the plugins, but what it offers is worked out against them:
+  // `plugins:changed` and `catalog:changed` refresh it.
+  catalog: ["catalog"] as const,
 }
 
 export function useAppInfo() {
@@ -166,6 +169,11 @@ export function useCharacterShots(pid: ProjectId, cid: CharacterId, enabled = tr
 /** Where characters are on screen in one media. */
 export function usePresence(pid: ProjectId, mid: MediaId, enabled: boolean) {
   return useQuery({ queryKey: qk.presence(pid, mid), queryFn: () => commands.mediaPresence(pid, mid), enabled })
+}
+
+/** AutoScene's plugin catalog as it holds it: never the network (`checkCatalog` asks it). */
+export function useCatalog() {
+  return useQuery({ queryKey: qk.catalog, queryFn: () => commands.catalogList() })
 }
 
 /** The installed plugins, broken ones too. */

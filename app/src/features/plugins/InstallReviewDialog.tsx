@@ -1,15 +1,18 @@
 import type * as React from "react"
 import { useId, useState } from "react"
 import { toast } from "sonner"
-import type { PageSpec, PluginInfo, PluginReview, PluginUpdate } from "@/bindings"
-import { CircleNotch } from "@/components/icons"
+import type { PageSpec, PluginInfo, PluginReview, PluginUpdate, ReviewCatalog } from "@/bindings"
+import { CircleNotch, ShieldCheck } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
+import { Progress } from "@/components/ui/progress"
+import { formatBytes } from "@/lib/format"
 import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
-import { usePluginReview } from "@/state/plugin-review"
+import { type Getting, usePluginReview } from "@/state/plugin-review"
+import { catalogDay } from "./catalog-items"
 import { PluginIcon } from "./PluginIcon"
 import { allowUnreviewed } from "./plugin-actions"
 import { MAX_RAIL_PAGES } from "./page-items"
@@ -22,15 +25,26 @@ import { checkedWhen, permissionLabel, reviewedPackage, trustLabel, trustLine } 
  * on here), its name typed, and the person's yes in the dialog AutoScene
  * then shows outside the page. Closed without installing, the review goes,
  * and the files it unpacked. It shows what `usePluginReview` holds, from
- * wherever that was asked for, so the shell mounts it once.
+ * wherever that was asked for, so the shell mounts it once. A package got
+ * from the catalog shows here while it comes, with a Cancel.
  */
 export function InstallReviewDialog() {
   const review = usePluginReview((s) => s.review)
+  const getting = usePluginReview((s) => s.getting)
   const close = usePluginReview((s) => s.close)
+  const cancelGet = usePluginReview((s) => s.cancelGet)
   // While it installs it stays open: closed, it would install all the same.
   const [busy, setBusy] = useState(false)
   return (
-    <Dialog open={review != null} onOpenChange={(open) => !open && !busy && close()}>
+    <Dialog
+      open={review != null || getting != null}
+      onOpenChange={(open) => {
+        if (open || busy) return
+        if (review) close()
+        else cancelGet()
+      }}
+    >
+      {!review && getting && <GettingForm getting={getting} onCancel={cancelGet} />}
       {review && (
         <ReviewForm
           key={review.ticketId}
@@ -42,6 +56,35 @@ export function InstallReviewDialog() {
         />
       )}
     </Dialog>
+  )
+}
+
+/**
+ * A package on its way from the catalog: how far it came, and Cancel. Once
+ * it is in and asks for nothing new, it installs at once: then it can't be
+ * cancelled.
+ */
+function GettingForm({ getting, onCancel }: { getting: Getting; onCancel: () => void }) {
+  const { label, done, total, installing } = getting
+  const part = done != null && total != null && total > 0 ? done / total : null
+  return (
+    <DialogContent title={installing ? `Updating ${label}…` : `Getting ${label}…`} hideClose>
+      <div className="flex flex-col gap-2.5">
+        <Progress value={installing ? null : part} />
+        <p className="text-sm text-fg-2">
+          {installing
+            ? "It asks for nothing new, so it installs at once."
+            : done != null && total != null && total > 0
+              ? `${formatBytes(done)} of ${formatBytes(total)} from AutoScene's plugin catalog`
+              : "From AutoScene's plugin catalog"}
+        </p>
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" disabled={installing} onClick={onCancel}>
+          Cancel
+        </Button>
+      </DialogFooter>
+    </DialogContent>
   )
 }
 
@@ -80,6 +123,8 @@ function ReviewForm({
     try {
       const installed = await commands.pluginInstall(review.ticketId, review.needsUnreviewed)
       void queryClient.invalidateQueries({ queryKey: qk.plugins })
+      // What the catalog offers is worked out against what is installed.
+      void queryClient.invalidateQueries({ queryKey: qk.catalog })
       onInstalled()
       toast(`${verb === "Update" ? "Updated" : verb === "Load" ? "Loaded" : "Installed"} ${installed.name}`)
     } catch (e) {
@@ -133,6 +178,7 @@ function ReviewForm({
             {trust.label}
           </Badge>
           <p className="text-sm text-fg-1">{trustLine(p, review.update)}</p>
+          {review.catalog && <Built catalog={review.catalog} />}
           {review.update && <Before update={review.update} p={p} />}
         </div>
 
@@ -195,6 +241,28 @@ function ReviewForm({
         </Button>
       </DialogFooter>
     </DialogContent>
+  )
+}
+
+/** Where AutoScene's catalog built a plugin it reviewed from: the repository, the commit and the folder. */
+function Built({ catalog }: { catalog: ReviewCatalog }) {
+  const repo = catalog.repository.replace(/^https:\/\//, "")
+  const folder = catalog.path && catalog.path !== "." ? `, in ${catalog.path}` : ""
+  return (
+    <p className="flex items-start gap-2 text-sm text-fg-2">
+      <ShieldCheck className="mt-0.5 size-4 shrink-0 text-fg-3" />
+      <span>
+        Built from{" "}
+        <span data-selectable className="text-fg-1">
+          {repo}
+        </span>{" "}
+        at{" "}
+        <span data-selectable className="font-mono text-fg-1">
+          {catalog.commit.slice(0, 7)}
+        </span>
+        {folder}.{catalog.published != null && ` Catalog of ${catalogDay(catalog.published)}.`}
+      </span>
+    </p>
   )
 }
 

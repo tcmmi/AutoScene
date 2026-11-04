@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { toast } from "sonner"
 import type { ExportItem, ExportSummary, JobInfo } from "@/bindings"
 import { useActivity } from "@/state/activity"
+import { usePluginReview } from "@/state/plugin-review"
 import { startEventBridge } from "./events"
 import { commands } from "./ipc"
 import { queryClient } from "./queries"
@@ -149,9 +150,34 @@ describe("plugins changing", () => {
     const read = vi.spyOn(queryClient, "invalidateQueries")
     handlers.pluginsChanged({ payload: { pluginId: "dev.a.one" } })
     handlers.pluginsChanged({ payload: { pluginId: null } })
-    // The list, and by prefix every plugin's settings; the settings too when
-    // whether unreviewed plugins may run changed.
-    expect(read.mock.calls).toEqual([[{ queryKey: ["plugins"] }], [{ queryKey: ["plugins"] }], [{ queryKey: ["settings"] }]])
+    // The list, and by prefix every plugin's settings, and what the catalog
+    // offers against them; the settings too when whether unreviewed plugins
+    // may run changed.
+    expect(read.mock.calls).toEqual([
+      [{ queryKey: ["plugins"] }],
+      [{ queryKey: ["catalog"] }],
+      [{ queryKey: ["plugins"] }],
+      [{ queryKey: ["catalog"] }],
+      [{ queryKey: ["settings"] }],
+    ])
     read.mockRestore()
+  })
+
+  it("catalog:changed refetches the catalog and the plugins", () => {
+    const read = vi.spyOn(queryClient, "invalidateQueries")
+    handlers.catalogChanged({ payload: { withdrawn: [] } })
+    expect(read.mock.calls).toEqual([[{ queryKey: ["catalog"] }], [{ queryKey: ["plugins"] }]])
+    read.mockRestore()
+  })
+
+  it("catalog:progress moves the download the review waits for, and no other", () => {
+    usePluginReview.setState({
+      getting: { pluginId: "dev.a.one", label: "One", done: null, total: null, installing: false },
+    })
+    handlers.catalogProgress({ payload: { pluginId: "dev.a.two", done: 5, total: 10 } })
+    expect(usePluginReview.getState().getting?.done).toBeNull()
+    handlers.catalogProgress({ payload: { pluginId: "dev.a.one", done: 5, total: 10 } })
+    expect(usePluginReview.getState().getting).toMatchObject({ done: 5, total: 10 })
+    usePluginReview.setState({ getting: null })
   })
 })

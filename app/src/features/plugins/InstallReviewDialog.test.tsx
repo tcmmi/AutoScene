@@ -1,10 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { PluginInfo, PluginReview, PluginUpdate } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { usePluginReview } from "@/state/plugin-review"
-import { pluginInfo } from "@/test/plugins"
+import { catalogReview, pluginInfo } from "@/test/plugins"
 import { InstallReviewDialog } from "./InstallReviewDialog"
 
 vi.mock("@/lib/ipc", async (importOriginal) => ({
@@ -12,6 +12,8 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
   commands: {
     pluginInstall: vi.fn(() => Promise.resolve(pluginInfo({ id: "dev.example.discord-notify", name: "Discord Notify" }))),
     pluginDiscard: vi.fn(() => Promise.resolve(null)),
+    catalogGet: vi.fn(),
+    catalogCancel: vi.fn(() => Promise.resolve(null)),
     pluginsAllowUnreviewed: vi.fn((on: boolean) =>
       Promise.resolve({ libraryRoot: "C:\\Library", exportPresetId: "prores-hq", audioLanguage: "eng", allowUnreviewedPlugins: on }),
     ),
@@ -56,7 +58,7 @@ const install = () => screen.getByRole("button", { name: "Install" }) as HTMLBut
 
 beforeEach(() => {
   vi.clearAllMocks()
-  usePluginReview.setState({ review: null, loading: false, queue: [] })
+  usePluginReview.setState({ review: null, loading: false, queue: [], getting: null })
 })
 afterEach(() => {
   cleanup()
@@ -412,5 +414,42 @@ describe("the install review", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
     expect(commands.pluginDiscard).not.toHaveBeenCalled()
     expect(toast).toHaveBeenCalledWith("Installed Discord Notify")
+  })
+
+  it("says where AutoScene built a catalog plugin from", () => {
+    show(catalogReview(pluginInfo({ id: "dev.autoscene.poster-maker", name: "Poster Maker" })))
+    expect(screen.getByText(/^Built from/).textContent).toBe(
+      "Built from github.com/tcmmi/AutoScene at 4f1c2a9, in examples/plugins/poster-maker. Catalog of 3 November 2026.",
+    )
+    expect(install().disabled).toBe(false)
+    // A package picked from a file says nothing of the kind.
+    cleanup()
+    show(review())
+    expect(screen.queryByText(/^Built from/)).toBeNull()
+  })
+
+  it("shows the download and cancels it", async () => {
+    render(<InstallReviewDialog />)
+    let fail: (e: unknown) => void = () => {}
+    vi.mocked(commands.catalogGet).mockReturnValue(new Promise((_, reject) => (fail = reject)))
+    vi.mocked(commands.catalogCancel).mockImplementation(() => {
+      fail({ code: "cancelled", message: "Cancelled." })
+      return Promise.resolve(null)
+    })
+    const { getFromCatalog } = await import("./catalog-actions")
+    const done = getFromCatalog({ id: "dev.autoscene.poster-maker", name: "Poster Maker" })
+    const dialog = await screen.findByRole("dialog", { name: "Getting Poster Maker…" })
+    expect(within(dialog).getByRole("progressbar").getAttribute("aria-valuenow")).toBeNull()
+    // `catalog:progress` moves it.
+    act(() => usePluginReview.getState().progress("dev.autoscene.poster-maker", 24_000, 48_000))
+    expect(within(dialog).getByRole("progressbar").getAttribute("aria-valuenow")).toBe("50")
+    expect(within(dialog).getByText("23.4 KB of 46.9 KB from AutoScene's plugin catalog")).toBeTruthy()
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    await done
+    expect(commands.catalogCancel).toHaveBeenCalledWith("dev.autoscene.poster-maker")
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    // Cancelled by the person: nothing went wrong.
+    expect(toast.error).not.toHaveBeenCalled()
   })
 })

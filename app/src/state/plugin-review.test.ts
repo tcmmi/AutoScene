@@ -8,6 +8,7 @@ import { READ_LIMIT_MS, usePluginReview } from "./plugin-review"
 vi.mock("@/lib/ipc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ipc")>()),
   commands: { pluginDiscard: vi.fn(() => Promise.resolve(null)) },
+  isAppError: (e: unknown) => typeof e === "object" && e !== null && "code" in e,
 }))
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
 
@@ -25,7 +26,7 @@ const store = () => usePluginReview.getState()
 
 beforeEach(() => {
   vi.clearAllMocks()
-  usePluginReview.setState({ review: null, loading: false, queue: [] })
+  usePluginReview.setState({ review: null, loading: false, queue: [], getting: null })
 })
 afterEach(() => vi.useRealTimers())
 
@@ -128,5 +129,69 @@ describe("the install review store", () => {
     }, "boom.asp")
     expect(toast.error).toHaveBeenLastCalledWith("Couldn't open boom.asp", { description: expect.stringContaining("Boom") })
     expect(store().review).toBeNull()
+  })
+
+  it("a catalog get shows how far it came, and its cancel says nothing", async () => {
+    let fail: (e: unknown) => void = () => {}
+    const cancel = vi.fn(() => fail({ code: "cancelled", message: "Cancelled." }))
+    const settled = store().openReview(() => new Promise((_, reject) => (fail = reject)), {
+      label: "Poster Maker",
+      get: { pluginId: "dev.a.poster", cancel },
+    })
+    expect(store().getting).toEqual({ pluginId: "dev.a.poster", label: "Poster Maker", done: null, total: null, installing: false })
+    // Only its own progress moves it.
+    store().progress("dev.a.other", 1, 2)
+    expect(store().getting?.done).toBeNull()
+    store().progress("dev.a.poster", 1, 2)
+    expect(store().getting).toMatchObject({ done: 1, total: 2 })
+    store().cancelGet()
+    // Its asker learns it was the person's Cancel, not a failure.
+    expect(await settled).toBe("cancelled")
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(store().getting).toBeNull()
+    expect(store().loading).toBe(false)
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it("a plugin whose get waits or comes isn't got twice", async () => {
+    let read: (r: PluginReview) => void = () => {}
+    const load = vi.fn(() => new Promise<PluginReview>((resolve) => (read = resolve)))
+    const ask = { label: "Poster Maker", get: { pluginId: "dev.a.poster", cancel: () => {} } }
+    const first = store().openReview(load, ask)
+    // While it comes.
+    expect(await store().openReview(load, ask)).toBe("skipped")
+    // While it waits behind another.
+    const other = store().openReview(() => Promise.resolve(review("other")), { label: "Other", get: { pluginId: "dev.a.other", cancel: () => {} } })
+    expect(await store().openReview(load, { ...ask, get: { ...ask.get, pluginId: "dev.a.other" } })).toBe("skipped")
+    expect(load).toHaveBeenCalledOnce()
+    read(review("poster"))
+    expect(await first).toBe("shown")
+    store().close()
+    expect(await other).toBe("shown")
+  })
+
+  it("a download is never given up on: the person can cancel it", async () => {
+    vi.useFakeTimers()
+    let read: (r: PluginReview) => void = () => {}
+    const settled = store().openReview(() => new Promise((resolve) => (read = resolve)), {
+      label: "Big",
+      get: { pluginId: "dev.a.big", cancel: () => {} },
+    })
+    await vi.advanceTimersByTimeAsync(READ_LIMIT_MS + 1)
+    expect(toast.error).not.toHaveBeenCalled()
+    read(review("big"))
+    await settled
+    expect(store().review?.ticketId).toBe("big")
+  })
+
+  it("a review its asker takes care of doesn't show, and the next one does", async () => {
+    const install = vi.fn(() => Promise.resolve(true))
+    expect(await store().openReview(() => Promise.resolve(review("quiet")), { label: "Quiet", install })).toBe("done")
+    expect(install).toHaveBeenCalledWith(expect.objectContaining({ ticketId: "quiet" }))
+    expect(store().review).toBeNull()
+    expect(store().loading).toBe(false)
+    // One it leaves to the person shows.
+    await store().openReview(() => Promise.resolve(review("loud")), { label: "Loud", install: () => Promise.resolve(false) })
+    expect(store().review?.ticketId).toBe("loud")
   })
 })

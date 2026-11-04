@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
-import type { PluginInfo } from "@/bindings"
-import { DotsThree } from "@/components/icons"
-import { Artwork } from "@/components/ui/artwork"
+import type { CatalogPlugin, PluginInfo } from "@/bindings"
+import { ArrowsClockwise, CircleNotch, DotsThree } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { ContextArea } from "@/components/ui/context-area"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
@@ -12,8 +12,11 @@ import { TruncatedText } from "@/components/ui/tooltip"
 import { commands, errorMessage } from "@/lib/ipc"
 import { usePluginBanner } from "@/lib/queries"
 import { cn } from "@/lib/utils"
+import { getsPlugin, usePluginReview } from "@/state/plugin-review"
+import { updatePlugin } from "./catalog-actions"
 import { keepPlugin } from "./plugin-actions"
-import { pluginPicture, reviewedPackage, trustLabel } from "./plugin-items"
+import { PluginArt } from "./PluginArt"
+import { reviewedPackage, trustLabel } from "./plugin-items"
 import { PluginItems } from "./plugin-menu"
 
 /** Why a plugin AutoScene hasn't reviewed doesn't run, on its card. */
@@ -24,17 +27,25 @@ const NOT_ALLOWED = "Doesn't run until the setting below allows it."
  * its settings, ⋯ shows on hover. Under the art, AutoScene's caption: how far
  * it trusts the plugin, who the plugin says it is by and its version, and its
  * switch; then why it doesn't run, when it is broken or not allowed. None of
- * that is ever drawn on the plugin's own pixels.
+ * that is ever drawn on the plugin's own pixels. When the catalog offers a
+ * newer version (`update`), Update… sits before the switch.
  */
 export function PluginCard({
   p,
+  update,
   onLoadAgain,
   onUninstall,
 }: {
   p: PluginInfo
+  update?: CatalogPlugin
   onLoadAgain: () => void
   onUninstall: () => void
 }) {
+  // Its update is being got, or waits its turn: the button spins, and
+  // waits (a second click would only ask again).
+  const getting = usePluginReview((s) => getsPlugin(s, p.id))
+  const onUpdate = update && (() => void updatePlugin(update))
+  const { data: banner } = usePluginBanner(p)
   const trust = trustLabel(p)
   const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
   const facts = [by, `version ${p.version}`].filter(Boolean).join(" · ")
@@ -49,13 +60,15 @@ export function PluginCard({
     }
   }
   return (
-    <ContextArea menu={<PluginItems kit={contextKit} p={p} onLoadAgain={onLoadAgain} onUninstall={onUninstall} />}>
+    <ContextArea menu={<PluginItems kit={contextKit} p={p} onLoadAgain={onLoadAgain} onUninstall={onUninstall} onUpdate={onUpdate} />}>
       <div role="group" aria-label={p.name}>
         {/* The art and its ⋯ rise together; the caption stays. */}
         <div className="group/art relative transition-transform duration-[var(--dur-med)] ease-out hover:-translate-y-1 has-[a:focus-visible]:-translate-y-1">
           <Link to="/plugins/$id" params={{ id: p.id }} className="block rounded-2xl">
             <PluginArt
-              p={p}
+              name={p.name}
+              icon={p.icon}
+              banner={banner}
               className={cn(
                 "aspect-[2/1] rounded-2xl picture-edge transition-[box-shadow,opacity] duration-[var(--dur-med)] group-hover/art:shadow-lift",
                 // Turned off, it dims, as its settings' picture does.
@@ -74,7 +87,7 @@ export function PluginCard({
               <DotsThree className="size-5" weight="bold" />
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <PluginItems kit={dropdownKit} p={p} onLoadAgain={onLoadAgain} onUninstall={onUninstall} />
+              <PluginItems kit={dropdownKit} p={p} onLoadAgain={onLoadAgain} onUninstall={onUninstall} onUpdate={onUpdate} />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -83,6 +96,11 @@ export function PluginCard({
           <Badge tone={trust.tone} className="min-w-0 truncate">
             {trust.label}
           </Badge>
+          {update && (
+            <Button size="sm" className="ml-auto" disabled={getting} onClick={onUpdate}>
+              {getting ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />} Update…
+            </Button>
+          )}
           <Switch aria-label={`Enable ${p.name}`} checked={p.enabled} onCheckedChange={(on) => void setEnabled(on)} />
         </div>
         <TruncatedText className="mt-1.5 pl-0.5 text-sm text-fg-2">{facts}</TruncatedText>
@@ -94,55 +112,5 @@ export function PluginCard({
         )}
       </div>
     </ContextArea>
-  )
-}
-
-/**
- * A plugin's art, 2:1: its banner with its name on the dark bottom; else its
- * icon blurred into a backdrop, the sharp icon on glass and the name; else its
- * name set large as the picture, as a TV app shows a title without artwork.
- * Until its banner is in hand, the icon or the name shows.
- */
-function PluginArt({ p, className }: { p: PluginInfo; className?: string }) {
-  const { data: banner } = usePluginBanner(p)
-  const picture = pluginPicture(banner)
-  const icon = pluginPicture(p.icon)
-  const art = picture != null || icon != null
-  return (
-    <Artwork
-      src={picture}
-      className={className}
-      imgClassName="group-hover/art:scale-[1.04] duration-[600ms]"
-      fallback={
-        <div aria-hidden className="artwork-fallback absolute inset-0 -z-10 overflow-hidden">
-          {icon && (
-            <img
-              src={icon}
-              alt=""
-              draggable={false}
-              className="size-full scale-150 object-cover blur-2xl saturate-150 transition-transform duration-[600ms] ease-out group-hover/art:scale-[1.6]"
-            />
-          )}
-        </div>
-      }
-    >
-      {art ? (
-        <>
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-4">
-            {picture == null && icon && (
-              <span className="mb-3 flex size-14 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-lg backdrop-blur-md">
-                <img src={icon} alt="" draggable={false} className="size-9 object-contain" />
-              </span>
-            )}
-            <div className="display truncate text-2xl text-white drop-shadow-[0_2px_12px_rgb(0_0_0/0.6)]">{p.name}</div>
-          </div>
-        </>
-      ) : (
-        <div className="absolute inset-x-0 bottom-0 p-5">
-          <div className="display line-clamp-3 text-3xl break-words text-fg-1">{p.name}</div>
-        </div>
-      )}
-    </Artwork>
   )
 }

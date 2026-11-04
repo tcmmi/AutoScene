@@ -82,7 +82,7 @@ Rules:
 - **Rail** (76px, `components/shell/Rail.tsx`) on the window's left edge, on the native material where there is
   one: the mark, Library, each recent project as its picture (gold ring when open), New project, and at the bottom
   Search (`Ctrl/⌘ K`), Activity (a ring fills as work runs), Plugins (lit on Plugins and on a plugin's settings) and
-  Settings. Plugins' tile menu offers Install a plugin…, and Load a folder… while plugins AutoScene hasn't reviewed
+  Settings. Plugins' tile menu offers Install from a file…, and Load a folder… while plugins AutoScene hasn't reviewed
   are allowed; the tile spins while a plugin is read, and the review shows over whatever is open. `Ctrl/⌘ B`
   hides it. Under Library sit up to four plugin page tiles, each with the plugin's icon, AutoScene's plugin mark in
   its corner and a tooltip that starts with "Plugin"; the other pages are in the palette.
@@ -115,7 +115,7 @@ Rules:
   card's. The short tail follows: Command palette, Settings.
   - On a page's empty space (`Page menu`) the menu shows the page's entries, then the full app list: Back, Command
     palette, New project, Library, Activity, Plugins, the rail, Keyboard shortcuts, Settings, Reload.
-  - Plugins' own `Page menu` offers what its rail tile's menu offers (Install a plugin…, and Load a folder… while
+  - Plugins' own `Page menu` offers what its rail tile's menu offers (Install from a file…, and Load a folder… while
     allowed) above the full app list.
   - Dialogs and the drawer show only what they offer, never the app's entries, and no menu when they offer
     nothing.
@@ -185,15 +185,26 @@ Rules:
     Shift+Z for the whole episode) and scrolls with the wheel; zoomed in, a thin overview of the episode shows the
     part in view.
   - Only the timecode, the playhead and the glow follow every video frame; shots and lanes are drawn on canvases.
-- **Plugins:** every installed plugin as a 2:1 card in the Library's grid. The art is the plugin's banner with its
+- **Plugins** (`/plugins`): Installed · Browse as a pill under the title (`?view=browse` keeps Browse), the search
+  beside it. Installed: every installed plugin as a 2:1 card in the Library's grid. The art is the plugin's banner with its
   name on the dark bottom; else its icon blurred into a backdrop, the sharp icon on glass and the name; else its name
   set large as the picture (no glyph: two such plugins differ by their names). The caption under the art is
   AutoScene's: the trust badge, "Says it is by …" ("By …" only for a package AutoScene reviewed) and the version,
   the switch; then why it doesn't run, when it is broken (red) or not allowed (calm, pointing at the setting below).
   A plugin turned off is dimmed. The title's line counts the plugins and how many run. ⋯ shows on hover and lists what
   the right-click does; a broken loaded folder offers Load its folder again… only while unreviewed plugins are
-  allowed. Install a plugin… is the white pill (Load a folder… beside it while unreviewed plugins are allowed); from
-  six plugins a search finds one by its name, author, description or id; the allow switch sits below the cards.
+  allowed. Install from a file… sits back in dark glass (Load a folder… beside it while unreviewed plugins are
+  allowed): the catalog is the way in, so with nothing installed Browse plugins is the white pill. From six plugins a
+  search finds one by its name, author, description or id; the allow switch sits below the cards. When the catalog
+  has newer versions, they sit above the rest under Updates, each card with Update…, and Update all (n) takes those
+  that ask for nothing new; one whose review marks anything New (a permission, host, page or program), or that
+  replaces a loaded folder or a plugin AutoScene hadn't reviewed, opens that review instead.
+- **Plugins → Browse:** the catalog first (when it was checked, Check now, and the daily switch; a gold banner when
+  it is out of date, and then no cards and no search), then each plugin AutoScene's catalog offers as a card in the
+  same art language, its icon as the art (the catalog has no banners) or its name. The caption: "Reviewed by
+  AutoScene", "By … · version …", its summary, what it may do in one line, and Install… or Update… (or Installed,
+  Not for this computer, Needs a newer AutoScene). No white pill: each card installs its own. While a package comes,
+  the review dialog shows how far, with Cancel; the review then says where the catalog built it from.
 - **A plugin's settings** (`/plugins/<id>`, "Its settings" in menus; Settings lists only the app's own sections): its
   picture as the hero, always blurred (the banner, else the icon, else the fallback), the sharp banner or icon
   framed beside the name, the trust badge, the version and the licence as chips, then "Says it is by …" ("By …"

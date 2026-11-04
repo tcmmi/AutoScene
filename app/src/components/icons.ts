@@ -13,6 +13,7 @@ export {
   ArrowSquareOut,
   ArrowUUpLeft,
   ArrowUUpRight,
+  ArrowsClockwise,
   ArrowsDownUp,
   ArrowsMerge,
   ArrowsOutLineHorizontal,

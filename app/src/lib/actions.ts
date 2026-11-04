@@ -24,6 +24,8 @@ export function useAppActions() {
       goProject: (pid: string, page: "overview" | "episodes" | "cast" | "exports" = "overview") =>
         void navigate({ to: page === "overview" ? "/p/$pid" : `/p/$pid/${page}`, params: { pid } }),
       goPlugins: () => void navigate({ to: "/plugins" }),
+      /** What AutoScene's plugin catalog offers. */
+      goBrowsePlugins: () => void navigate({ to: "/plugins", search: { view: "browse" } }),
       /** A plugin's settings: its own screen under Plugins. */
       goPlugin: (id: string) => void navigate({ to: "/plugins/$id", params: { id } }),
       goSettings: (section: SettingsSection = "general") => void navigate({ to: "/settings/$section", params: { section } }),

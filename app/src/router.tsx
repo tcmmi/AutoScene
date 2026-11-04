@@ -50,6 +50,8 @@ const pluginsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/plugins",
   staticData: { crumb: "Plugins" },
+  // Installed, or what the catalog offers (`?view=browse`).
+  validateSearch: (s: Record<string, unknown>): { view?: "browse" } => (s.view === "browse" ? { view: "browse" } : {}),
   component: PluginsPage,
 })
 

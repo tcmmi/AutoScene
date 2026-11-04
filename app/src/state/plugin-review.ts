@@ -1,12 +1,40 @@
 import { toast } from "sonner"
 import { create } from "zustand"
 import type { PluginReview } from "@/bindings"
-import { commands, errorMessage } from "@/lib/ipc"
+import { commands, errorMessage, isAppError } from "@/lib/ipc"
 
 /** A read that takes longer than this is given up on, so one stuck package can't hold up every later one. */
 export const READ_LIMIT_MS = 60_000
 
-type Waiting = { load: () => Promise<PluginReview>; label: string; settled: () => void }
+/**
+ * What a read for a review is, besides its load: `label` names it when it
+ * fails (its file or plugin). A package got from the catalog (`get`) shows
+ * in the dialog while it comes, with how far it is and a Cancel. `install`
+ * sees the review before it shows, and takes care of it when it says so (an
+ * update that asks for nothing new installs in one click): then it doesn't show.
+ */
+export type ReviewAsk = {
+  label: string
+  get?: { pluginId: string; cancel: () => void }
+  install?: (review: PluginReview) => Promise<boolean>
+}
+
+/** A package on its way from the catalog, as the dialog shows it; `installing` once it is read and installs at once. */
+export type Getting = { pluginId: string; label: string; done: number | null; total: number | null; installing: boolean }
+
+/**
+ * How a read for a review came out: its review `shown`, `done` without it
+ * (its `install` took care of it), `failed` (said in a toast), `cancelled`
+ * by the person, or `skipped` because the same plugin's get already waits
+ * or comes.
+ */
+export type ReviewOutcome = "shown" | "done" | "failed" | "cancelled" | "skipped"
+
+type Waiting = ReviewAsk & { load: () => Promise<PluginReview>; settled: (outcome: ReviewOutcome) => void }
+
+/** Whether a get of `pluginId` from the catalog waits or comes: its buttons wait for it. */
+export const getsPlugin = (s: { queue: ReadonlyArray<Pick<ReviewAsk, "get">>; getting: Getting | null }, pluginId: string) =>
+  s.getting?.pluginId === pluginId || s.queue.some((w) => w.get?.pluginId === pluginId)
 
 type PluginReviewState = {
   /** The review being asked about; the install dialog shows it. */
@@ -15,14 +43,21 @@ type PluginReviewState = {
   loading: boolean
   /** Reads for reviews that wait for the one shown now. */
   queue: Waiting[]
+  /** The catalog package being got for the next review, while it comes. */
+  getting: Getting | null
   /**
    * Reads a package or folder for a review (`label` names it when that
    * fails: its file or plugin) and shows it. Reviews come one at a time: one
    * asked for while another is read or shown waits until that one is closed.
    * The promise ends when this one has been read, or failed to be, not when
-   * it is closed.
+   * it is closed, with how it came out. A get of a plugin whose get already
+   * waits or comes is skipped: a second click doesn't ask twice.
    */
-  openReview: (load: () => Promise<PluginReview>, label: string) => Promise<void>
+  openReview: (load: () => Promise<PluginReview>, ask: string | ReviewAsk) => Promise<ReviewOutcome>
+  /** How far the package of `pluginId` came (`catalog:progress`), in bytes. */
+  progress: (pluginId: string, done: number | null, total: number | null) => void
+  /** Ends the get under way (it fails as cancelled, which says nothing). */
+  cancelGet: () => void
   /**
    * Ends the review shown and shows the next. Its ticket goes with it, the
    * files it unpacked among them, unless the install took it.
@@ -36,22 +71,30 @@ type PluginReviewState = {
  * the shell, shows whichever comes.
  */
 export const usePluginReview = create<PluginReviewState>((set, get) => {
+  /** The read under way: its get's Cancel. */
+  let current: Waiting | null = null
   /** Reads the next waiting one, when nothing is read or shown. */
   const next = () => {
     const { review, loading, queue } = get()
     if (review || loading || queue.length === 0) return
     const [head, ...rest] = queue
-    set({ loading: true, queue: rest })
+    current = head
+    const getting = head.get ? { pluginId: head.get.pluginId, label: head.label, done: null, total: null, installing: false } : null
+    set({ loading: true, queue: rest, getting })
     // `async` so that a load which throws at once is a failed one.
     const loaded = (async () => head.load())()
     let gaveUp = false
     let timer: ReturnType<typeof setTimeout> | undefined
-    const limit = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        gaveUp = true
-        reject(new Error("Reading it took too long. Is the file on a drive that is not connected?"))
-      }, READ_LIMIT_MS)
-    })
+    // A download shows how far it came and can be cancelled: it may take
+    // longer than a read, and the person decides when it is too long.
+    const limit = head.get
+      ? new Promise<never>(() => {})
+      : new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            gaveUp = true
+            reject(new Error("Reading it took too long. Is the file on a drive that is not connected?"))
+          }, READ_LIMIT_MS)
+        })
     // A read that ends after it was given up on has staged a ticket nobody will see.
     loaded.then(
       (late) => {
@@ -60,16 +103,26 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
       () => undefined,
     )
     void Promise.race([loaded, limit]).then(
-      (read) => {
+      async (read) => {
         clearTimeout(timer)
-        set({ review: read, loading: false })
-        head.settled()
+        let done = false
+        if (head.install) {
+          set((s) => ({ getting: s.getting && { ...s.getting, installing: true } }))
+          done = await head.install(read).catch(() => false)
+        }
+        current = null
+        set({ review: done ? null : read, loading: false, getting: null })
+        head.settled(done ? "done" : "shown")
+        if (done) next()
       },
       (e: unknown) => {
         clearTimeout(timer)
-        set({ loading: false })
-        toast.error(`Couldn't open ${head.label}`, { description: errorMessage(e) })
-        head.settled()
+        current = null
+        set({ loading: false, getting: null })
+        // Cancelled by the person: nothing went wrong.
+        const cancelled = isAppError(e) && e.code === "cancelled"
+        if (!cancelled) toast.error(`Couldn't open ${head.label}`, { description: errorMessage(e) })
+        head.settled(cancelled ? "cancelled" : "failed")
         next()
       },
     )
@@ -78,11 +131,20 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
     review: null,
     loading: false,
     queue: [],
-    openReview: (load, label) =>
-      new Promise<void>((settled) => {
-        set((s) => ({ queue: [...s.queue, { load, label, settled }] }))
+    getting: null,
+    openReview: (load, ask) =>
+      new Promise<ReviewOutcome>((settled) => {
+        const what = typeof ask === "string" ? { label: ask } : ask
+        if (what.get && getsPlugin(get(), what.get.pluginId)) return settled("skipped")
+        set((s) => ({ queue: [...s.queue, { ...what, load, settled }] }))
         next()
       }),
+    progress: (pluginId, done, total) =>
+      set((s) => (s.getting?.pluginId === pluginId && !s.getting.installing ? { getting: { ...s.getting, done, total } } : {})),
+    cancelGet: () => {
+      if (get().getting?.installing) return
+      current?.get?.cancel()
+    },
     close: (opts) => {
       const { review } = get()
       if (!review) return

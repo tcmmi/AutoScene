@@ -1,6 +1,6 @@
 import { toast } from "sonner"
 import type { PluginInfo } from "@/bindings"
-import { ArrowCounterClockwise, ArrowSquareOut, Copy, FileText, FolderOpen, Scan, SlidersHorizontal, Trash } from "@/components/icons"
+import { ArrowCounterClockwise, ArrowSquareOut, ArrowsClockwise, Copy, FileText, FolderOpen, Scan, SlidersHorizontal, Trash } from "@/components/icons"
 import type { MenuKit } from "@/components/ui/menu-actions"
 import { useAppActions } from "@/lib/actions"
 import { errorMessage } from "@/lib/ipc"
@@ -17,6 +17,7 @@ import { sourceLabel } from "./plugin-items"
  * its review while it is broken (`onLoadAgain`, where that review can show)
  * and unreviewed plugins are allowed: the backend refuses that review while
  * they are not. Uninstall only where it can be asked (`onUninstall`).
+ * Update… first while the catalog offers a newer version (`onUpdate`).
  */
 export function PluginItems({
   kit,
@@ -24,12 +25,14 @@ export function PluginItems({
   settings = true,
   onLoadAgain,
   onUninstall,
+  onUpdate,
 }: {
   kit: MenuKit
   p: PluginInfo
   settings?: boolean
   onLoadAgain?: () => void
   onUninstall?: () => void
+  onUpdate?: () => void
 }) {
   const { goPlugin } = useAppActions()
   const allowed = useSettings().data?.allowUnreviewedPlugins ?? false
@@ -38,6 +41,11 @@ export function PluginItems({
   const folder = p.source === "folder"
   return (
     <>
+      {onUpdate && (
+        <Item onSelect={onUpdate}>
+          <ArrowsClockwise /> Update…
+        </Item>
+      )}
       {settings && (
         <Item onSelect={() => goPlugin(p.id)}>
           <SlidersHorizontal /> Its settings

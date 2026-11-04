@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { AppSettings, PluginInfo, PluginReview } from "@/bindings"
+import type { AppSettings, CatalogView, PluginInfo, PluginReview } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
 import { ContextArea } from "@/components/ui/context-area"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -13,14 +13,16 @@ import { commands } from "@/lib/ipc"
 import { pickPluginFile } from "@/lib/media"
 import { qk, queryClient } from "@/lib/queries"
 import { usePluginReview } from "@/state/plugin-review"
-import { pluginInfo } from "@/test/plugins"
+import { catalogPlugin, catalogReview, catalogView, pluginInfo } from "@/test/plugins"
+import { useUpdatingAll } from "./catalog-actions"
 import { InstallReviewDialog } from "./InstallReviewDialog"
 import { useInstallFlow } from "./install-plugin"
 import { PluginHero } from "./PluginSettingsPage"
 import { PluginsPage } from "./PluginsPage"
 
-const { state, reveal, openExternalUrl, goPlugin, copyText } = vi.hoisted(() => ({
-  state: { plugins: [] as PluginInfo[], allow: false },
+const { state, reveal, openExternalUrl, goPlugin, copyText, pluginToast } = vi.hoisted(() => ({
+  pluginToast: vi.fn(),
+  state: { plugins: [] as PluginInfo[], allow: false, catalog: null as CatalogView | null },
   reveal: vi.fn(),
   openExternalUrl: vi.fn(),
   goPlugin: vi.fn(),
@@ -49,6 +51,10 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     pluginBanner: vi.fn(() => Promise.resolve(null)),
     pluginOpenSource: vi.fn(() => Promise.resolve(true)),
     revealPath: vi.fn(() => Promise.resolve()),
+    catalogList: vi.fn(() => Promise.resolve(state.catalog ?? { status: { ready: false }, plugins: [] })),
+    catalogGet: vi.fn(),
+    catalogCancel: vi.fn(() => Promise.resolve(null)),
+    pluginInstall: vi.fn(),
   },
 }))
 vi.mock("@/lib/media", async (importOriginal) => ({
@@ -56,6 +62,7 @@ vi.mock("@/lib/media", async (importOriginal) => ({
   pickFolder: vi.fn(() => Promise.resolve("D:\\Plugins\\mine")),
   pickPluginFile: vi.fn(() => Promise.resolve("D:\\Downloads\\Notify.asp")),
 }))
+vi.mock("./plugin-toast", () => ({ pluginToast }))
 vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal, openExternalUrl, copyText }))
 vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn(), goPlugin, goPlugins: vi.fn() }) }))
 // The view, with the right-click it offers on its empty space.
@@ -137,11 +144,15 @@ beforeEach(() => {
   vi.mocked(commands.pluginInspectFolder).mockReset()
   vi.mocked(pickPluginFile).mockReset()
   useInstallFlow.setState({ checking: null, busy: false })
-  usePluginReview.setState({ review: null, loading: false, queue: [] })
+  usePluginReview.setState({ review: null, loading: false, queue: [], getting: null })
+  useUpdatingAll.setState({ updating: false })
   // The router puts each place at its top, which jsdom can't scroll.
   vi.spyOn(window, "scrollTo").mockImplementation(() => {})
   state.plugins = []
   state.allow = false
+  state.catalog = null
+  vi.mocked(commands.catalogGet).mockReset()
+  vi.mocked(commands.pluginInstall).mockReset()
 })
 afterEach(cleanup)
 
@@ -218,10 +229,14 @@ describe("PluginsPage", () => {
     expect((await art("Broken")).contains(why)).toBe(false)
   })
 
-  it("says so when no plugin is installed, with one Install a plugin…", async () => {
+  it("says so when no plugin is installed, with one Install from a file…", async () => {
     show()
     expect(await screen.findByText("No plugins yet")).toBeTruthy()
-    expect(screen.getAllByRole("button", { name: "Install a plugin…" })).toHaveLength(1)
+    expect(screen.getAllByRole("button", { name: "Install from a file…" })).toHaveLength(1)
+    // The catalog is the way in: its button is the white one.
+    const browse = screen.getByRole("button", { name: "Browse plugins" })
+    expect(browse.className).toContain("bg-white/[0.18]")
+    expect(screen.getByRole("button", { name: "Install from a file…" }).className).not.toContain("bg-white/[0.18]")
     expect(screen.queryByRole("textbox", { name: "Find a plugin" })).toBeNull()
     // The setting it needs is still there, below.
     expect(allowSwitch()).toBeTruthy()
@@ -229,10 +244,13 @@ describe("PluginsPage", () => {
     queryClient.clear()
 
     state.allow = true
-    show()
+    const { router } = show()
     expect(await screen.findByText("No plugins yet")).toBeTruthy()
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Load a folder…" })).toHaveLength(1))
-    expect(screen.getAllByRole("button", { name: "Install a plugin…" })).toHaveLength(1)
+    expect(screen.getAllByRole("button", { name: "Install from a file…" })).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse plugins" }))
+    await waitFor(() => expect(router.state.location.search).toEqual({ view: "browse" }))
   })
 
   it("finds a plugin by its name, author or description from six plugins", async () => {
@@ -594,7 +612,7 @@ describe("PluginsPage", () => {
     const load = await screen.findByRole("button", { name: /Load a folder/ })
     fireEvent.click(load)
     await waitFor(() => expect(load.querySelector(".animate-spin")).not.toBeNull())
-    expect(screen.getByRole("button", { name: /Install a plugin/ }).querySelector(".animate-spin")).toBeNull()
+    expect(screen.getByRole("button", { name: /Install from a file/ }).querySelector(".animate-spin")).toBeNull()
     checked({ ticketId: "t", plugin: pluginInfo({ id: "dev.me.mine", name: "Mine" }), update: null, needsUnreviewed: true, allowed: true, uvMissing: false, catalog: null })
     await waitFor(() => expect(load.querySelector(".animate-spin")).toBeNull())
   })
@@ -602,7 +620,7 @@ describe("PluginsPage", () => {
   it("opens the review of the package it picked, in the shell's dialog", async () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
     show()
-    const install = await screen.findByRole("button", { name: /Install a plugin/ })
+    const install = await screen.findByRole("button", { name: /Install from a file/ })
     // A package that can't be read is named by its file.
     vi.mocked(commands.pluginInspect).mockRejectedValueOnce({ code: "invalid", message: "Not a plugin package." })
     fireEvent.click(install)
@@ -627,7 +645,7 @@ describe("PluginsPage", () => {
     state.allow = true
     show()
     const load = await screen.findByRole("button", { name: /Load a folder/ })
-    const install = screen.getByRole("button", { name: /Install a plugin/ })
+    const install = screen.getByRole("button", { name: /Install from a file/ })
     act(() => useInstallFlow.setState({ checking: "file", busy: true }))
     // The one install flow: this page shows what the tile started.
     expect((install as HTMLButtonElement).disabled).toBe(true)
@@ -667,7 +685,7 @@ describe("PluginsPage", () => {
   it("hides Load a folder while unreviewed plugins are off", async () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
     show()
-    expect(await screen.findByRole("button", { name: "Install a plugin…" })).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "Install from a file…" })).toBeTruthy()
     await waitFor(() => expect((allowSwitch() as HTMLButtonElement).disabled).toBe(false))
     expect(screen.queryByRole("button", { name: "Load a folder…" })).toBeNull()
     cleanup()
@@ -678,7 +696,7 @@ describe("PluginsPage", () => {
     expect(await screen.findByRole("button", { name: "Load a folder…" })).toBeTruthy()
   })
 
-  it("the page menu offers Install a plugin… and Load a folder…", async () => {
+  it("the page menu offers Install from a file… and Load a folder…", async () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
     const page = (
       <AppMenu>
@@ -697,12 +715,12 @@ describe("PluginsPage", () => {
     // While AutoScene may only run what it has reviewed: a package, and the app's own list under it.
     show(page)
     let menu = await open()
-    expect(listed(menu).slice(0, 2)).toEqual(["Install a plugin…", "Back"])
+    expect(listed(menu).slice(0, 2)).toEqual(["Install from a file…", "Back"])
     expect(listed(menu)).toContain("Plugins")
     expect(listed(menu)).not.toContain("Load a folder…")
     vi.mocked(pickPluginFile).mockResolvedValueOnce("D:\\Plugins\\one.asp")
     vi.mocked(commands.pluginInspect).mockRejectedValueOnce({ code: "invalid", message: "Not a plugin." })
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Install a plugin…" }))
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Install from a file…" }))
     await waitFor(() => expect(commands.pluginInspect).toHaveBeenCalledExactlyOnceWith("D:\\Plugins\\one.asp"))
     await waitFor(() => expect(failed).toHaveBeenCalledWith("Couldn't open one.asp", { description: "Not a plugin." }))
     cleanup()
@@ -713,7 +731,7 @@ describe("PluginsPage", () => {
     show(page)
     await waitFor(() => expect(screen.getByRole("button", { name: /Load a folder/ })).toBeTruthy())
     menu = await open()
-    expect(listed(menu).slice(0, 3)).toEqual(["Install a plugin…", "Load a folder…", "Back"])
+    expect(listed(menu).slice(0, 3)).toEqual(["Install from a file…", "Load a folder…", "Back"])
     vi.mocked(commands.pluginInspectFolder).mockRejectedValueOnce({ code: "invalid", message: "No plugin.json." })
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Load a folder…" }))
     await waitFor(() => expect(commands.pluginInspectFolder).toHaveBeenCalledExactlyOnceWith("D:\\Plugins\\mine"))
@@ -860,5 +878,159 @@ describe("PluginsPage", () => {
     expect(ownItems).toEqual(["Show its folder", "Show its log", "Copy its id", "Uninstall…"])
     expect(screen.queryByText(/source/)).toBeNull()
     expect(commands.pluginOpenSource).not.toHaveBeenCalled()
+  })
+
+  it("updates in one click when nothing new is asked for", async () => {
+    const notify = pluginInfo({ id: "dev.autoscene.discord-notify", name: "Discord Notify", permissions: ["network"], networkHosts: ["discord.com"] })
+    state.plugins = [notify, pluginInfo({ id: "dev.a.other", name: "Other" })]
+    state.catalog = catalogView([
+      catalogPlugin({ id: notify.id, name: notify.name, version: "1.0.1", installed: "1.0.0", update: true, permissions: ["network"], hosts: ["discord.com"] }),
+    ])
+    const next = { ...notify, version: "1.0.1" }
+    vi.mocked(commands.catalogGet).mockResolvedValue(catalogReview(next, {}))
+    vi.mocked(commands.pluginInstall).mockResolvedValue(next)
+    show()
+    // The update sits above the rest, under its own heading.
+    const updates = (await screen.findByRole("heading", { name: /Updates/ })).closest("section")!
+    expect(within(updates).getByRole("group", { name: "Discord Notify" })).toBeTruthy()
+    expect(within(updates).queryByRole("group", { name: "Other" })).toBeNull()
+    expect(screen.getByRole("heading", { name: /Installed/ })).toBeTruthy()
+
+    fireEvent.click(within(await card("Discord Notify")).getByRole("button", { name: "Update…" }))
+    await waitFor(() => expect(commands.pluginInstall).toHaveBeenCalledWith("t-dev.autoscene.discord-notify", false))
+    expect(pluginToast).toHaveBeenCalledWith("Discord Notify", { text: "updated to 1.0.1" })
+    // No review was asked: it asked for nothing new.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(usePluginReview.getState().review).toBeNull()
+  })
+
+  it("opens the review when an update asks for more", async () => {
+    const hello = pluginInfo({ id: "dev.autoscene.hello-export", name: "Hello Export", permissions: ["exports:read"] })
+    state.plugins = [hello]
+    state.catalog = catalogView([
+      catalogPlugin({
+        id: hello.id,
+        name: hello.name,
+        version: "1.1.0",
+        installed: "1.0.0",
+        update: true,
+        permissions: ["exports:read", "network"],
+        hosts: ["discord.com"],
+        addsPermissions: ["network"],
+        addsHosts: ["discord.com"],
+      }),
+    ])
+    const next = { ...hello, version: "1.1.0", permissions: ["exports:read", "network"] as PluginInfo["permissions"], networkHosts: ["discord.com"] }
+    vi.mocked(commands.catalogGet).mockResolvedValue(catalogReview(next, { addedPermissions: ["network"], addedHosts: ["discord.com"] }))
+    show()
+    // It asks for more: Update all would leave it out, so there is none.
+    expect(await screen.findByRole("heading", { name: /Updates/ })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Update all/ })).toBeNull()
+
+    fireEvent.click(within(await card("Hello Export")).getByRole("button", { name: "Update…" }))
+    const dialog = await screen.findByRole("dialog", { name: "Update Hello Export?" })
+    expect(commands.pluginInstall).not.toHaveBeenCalled()
+    // What it newly asks for is marked.
+    expect(within(dialog).getByText("New")).toBeTruthy()
+    expect(within(dialog).getByText("New: discord.com")).toBeTruthy()
+  })
+
+  it("Update all leaves out updates that ask for more", async () => {
+    const quiet = ["dev.a.one", "dev.a.two"].map((id, i) => pluginInfo({ id, name: `Quiet ${i + 1}` }))
+    const loud = pluginInfo({ id: "dev.a.loud", name: "Loud" })
+    state.plugins = [...quiet, loud]
+    state.catalog = catalogView([
+      ...quiet.map((p) => catalogPlugin({ id: p.id, name: p.name, version: "2.0.0", installed: "1.0.0", update: true })),
+      catalogPlugin({ id: loud.id, name: loud.name, version: "2.0.0", installed: "1.0.0", update: true, permissions: ["network"], addsPermissions: ["network"] }),
+    ])
+    vi.mocked(commands.catalogGet).mockImplementation((id) => {
+      const p = state.plugins.find((x) => x.id === id)!
+      return Promise.resolve(catalogReview({ ...p, version: "2.0.0" }, {}))
+    })
+    vi.mocked(commands.pluginInstall).mockImplementation((ticket) =>
+      Promise.resolve({ ...state.plugins.find((p) => ticket === `t-${p.id}`)!, version: "2.0.0" }),
+    )
+    show()
+    fireEvent.click(await screen.findByRole("button", { name: "Update all (2)" }))
+    await waitFor(() => expect(commands.pluginInstall).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(commands.catalogGet).mock.calls.map(([id]) => id)).toEqual(["dev.a.one", "dev.a.two"])
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  it("Update all stops at a review that asks for more after all", async () => {
+    const quiet = ["dev.a.one", "dev.a.two"].map((id, i) => pluginInfo({ id, name: `Quiet ${i + 1}` }))
+    state.plugins = quiet
+    state.catalog = catalogView(quiet.map((p) => catalogPlugin({ id: p.id, name: p.name, version: "2.0.0", installed: "1.0.0", update: true })))
+    // The catalog's entry asks for nothing new; its package asks for the network.
+    vi.mocked(commands.catalogGet).mockImplementation((id) => {
+      const p = state.plugins.find((x) => x.id === id)!
+      return Promise.resolve(catalogReview({ ...p, version: "2.0.0", permissions: ["network"] }, { addedPermissions: ["network"] }))
+    })
+    show()
+    fireEvent.click(await screen.findByRole("button", { name: "Update all (2)" }))
+    expect(await screen.findByRole("dialog", { name: "Update Quiet 1?" })).toBeTruthy()
+    // The person says no: Update all stopped there, so nothing more is got.
+    act(() => usePluginReview.getState().close())
+    await act(() => new Promise((done) => setTimeout(done, 20)))
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(vi.mocked(commands.catalogGet).mock.calls.map(([id]) => id)).toEqual(["dev.a.one"])
+    expect(commands.pluginInstall).not.toHaveBeenCalled()
+  })
+
+  it("a Cancel stops Update all, and a second click doesn't run it twice", async () => {
+    const quiet = ["dev.a.one", "dev.a.two", "dev.a.three"].map((id, i) => pluginInfo({ id, name: `Quiet ${i + 1}` }))
+    state.plugins = quiet
+    state.catalog = catalogView(quiet.map((p) => catalogPlugin({ id: p.id, name: p.name, version: "2.0.0", installed: "1.0.0", update: true })))
+    let fail: (e: unknown) => void = () => {}
+    vi.mocked(commands.catalogGet).mockImplementation(() => new Promise((_, reject) => (fail = reject)))
+    vi.mocked(commands.catalogCancel).mockImplementationOnce(() => {
+      fail({ code: "cancelled", message: "Cancelled." })
+      return Promise.resolve(null)
+    })
+    show()
+    const all = (await screen.findByRole("button", { name: "Update all (3)" })) as HTMLButtonElement
+    fireEvent.click(all)
+    const getting = await screen.findByRole("dialog", { name: "Getting Quiet 1…" })
+    // While it runs, it waits: a second click asks for nothing.
+    expect(all.disabled).toBe(true)
+    fireEvent.click(all)
+    fireEvent.click(within(getting).getByRole("button", { name: "Cancel" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    await waitFor(() => expect(all.disabled).toBe(false))
+    // One Cancel stops them all.
+    await act(() => new Promise((done) => setTimeout(done, 20)))
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(vi.mocked(commands.catalogGet).mock.calls.map(([id]) => id)).toEqual(["dev.a.one"])
+  })
+
+  it("a card's Update… waits while its get waits its turn", async () => {
+    const two = ["dev.a.one", "dev.a.two"].map((id, i) => pluginInfo({ id, name: `Quiet ${i + 1}` }))
+    state.plugins = two
+    state.catalog = catalogView(two.map((p) => catalogPlugin({ id: p.id, name: p.name, version: "2.0.0", installed: "1.0.0", update: true })))
+    vi.mocked(commands.catalogGet).mockImplementation(() => new Promise(() => {}))
+    show()
+    const one = within(await card("Quiet 1")).getByRole("button", { name: "Update…" }) as HTMLButtonElement
+    const second = within(await card("Quiet 2")).getByRole("button", { name: "Update…" }) as HTMLButtonElement
+    fireEvent.click(one)
+    await screen.findByRole("dialog", { name: "Getting Quiet 1…" })
+    // Asked for behind the one that comes: it waits too, and is asked for once.
+    act(() => void usePluginReview.getState().openReview(() => commands.catalogGet("dev.a.two"), { label: "Quiet 2", get: { pluginId: "dev.a.two", cancel: () => {} } }))
+    expect(one.disabled).toBe(true)
+    await waitFor(() => expect(second.disabled).toBe(true))
+    expect(await usePluginReview.getState().openReview(() => commands.catalogGet("dev.a.two"), { label: "Quiet 2", get: { pluginId: "dev.a.two", cancel: () => {} } })).toBe("skipped")
+    expect(vi.mocked(commands.catalogGet).mock.calls.map(([id]) => id)).toEqual(["dev.a.one"])
+  })
+
+  it("each view starts unsearched, however it is reached", async () => {
+    const user = userEvent.setup()
+    state.plugins = six()
+    state.catalog = catalogView([catalogPlugin({ id: "dev.autoscene.poster-maker", name: "Poster Maker" })])
+    const { router } = show()
+    await user.type(await screen.findByRole("textbox", { name: "Find a plugin" }), "alpha")
+    expect(names()).toEqual(["Alpha Tool"])
+    // As the palette goes there: not through the pill.
+    await act(() => router.navigate({ to: "/plugins", search: { view: "browse" } }))
+    expect(await card("Poster Maker")).toBeTruthy()
+    expect((screen.getByRole("textbox", { name: "Find a plugin" }) as HTMLInputElement).value).toBe("")
   })
 })

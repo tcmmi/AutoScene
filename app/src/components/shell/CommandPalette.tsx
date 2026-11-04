@@ -4,6 +4,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { Command } from "cmdk"
 import { Dialog as D } from "radix-ui"
 import {
+  ArrowsClockwise,
   DownloadSimple,
   FileText,
   FilmStrip,
@@ -24,6 +25,7 @@ import {
 } from "@/components/icons"
 import { Artwork } from "@/components/ui/artwork"
 import { Kbd } from "@/components/ui/kbd"
+import { checkCatalog } from "@/features/plugins/catalog-actions"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { runPlugin } from "@/features/plugins/plugin-actions"
 import { useAppActions } from "@/lib/actions"
@@ -84,6 +86,7 @@ export function CommandPalette() {
     { id: "settings", label: "Settings", icon: <GearSix />, run: () => a.goSettings(), keys: keys("global.settings") },
     { id: "shortcuts", label: "Keyboard shortcuts", icon: <Keyboard />, run: () => a.goSettings("shortcuts") },
     { id: "plugins", label: "Plugins", icon: <PuzzlePiece />, run: a.goPlugins },
+    { id: "browse-plugins", label: "Browse plugins", icon: <PuzzlePiece />, run: a.goBrowsePlugins },
     { id: "about", label: "About AutoScene", icon: <Info />, run: () => a.goSettings("about") },
   ]
   const projectItems: Item[] = (projects ?? []).map((p) => ({
@@ -119,6 +122,7 @@ export function CommandPalette() {
     { id: "activity", label: "Show activity", icon: <Queue />, run: a.toggleActivity, keys: keys("global.activity") },
     { id: "sidebar", label: "Show or hide the rail", icon: <SidebarSimple />, run: a.toggleSidebar, keys: keys("global.sidebar") },
     { id: "updates", label: "Check for updates", icon: <DownloadSimple />, run: a.checkUpdates },
+    { id: "plugin-updates", label: "Check for plugin updates", icon: <ArrowsClockwise />, run: () => void checkCatalog() },
     { id: "logs", label: "Open logs folder", icon: <FileText />, run: () => void a.openLogs() },
   ]
 

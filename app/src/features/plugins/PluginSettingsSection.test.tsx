@@ -323,3 +323,47 @@ describe("a plugin's settings", () => {
     expect(await screen.findByText("This plugin isn't installed")).toBeTruthy()
   })
 })
+
+describe("a choice setting", () => {
+  const withLabels = (labels: string[]): SettingSpec => ({
+    key: "pick",
+    title: "Pick",
+    description: null,
+    kind: {
+      type: "select",
+      default: labels[0].toLowerCase(),
+      options: labels.map((l) => ({ value: l.toLowerCase(), label: l })),
+    },
+  })
+
+  it("is a segmented control for three short choices", async () => {
+    show({ settings: [withLabels(["Low", "Mid", "High"])] })
+    const group = await screen.findByRole("radiogroup", { name: "Pick" })
+    expect(within(group).getAllByRole("radio")).toHaveLength(3)
+    expect(within(group).getByRole("radio", { name: "Low" }).getAttribute("aria-checked")).toBe("true")
+    expect(screen.queryByRole("combobox", { name: "Pick" })).toBeNull()
+  })
+
+  it("is a menu for three long choices", async () => {
+    // 11 + 11 + 11 = 33 characters, one over what fits side by side.
+    show({ settings: [withLabels(["Very quiet.", "Fairly loud", "Really loud"])] })
+    await screen.findByRole("combobox", { name: "Pick" })
+    expect(screen.queryByRole("radiogroup", { name: "Pick" })).toBeNull()
+  })
+
+  it("stays a segmented control at exactly 32 characters", async () => {
+    show({ settings: [withLabels(["Very quiet", "Fairly loud", "Really loud"])] })
+    await screen.findByRole("radiogroup", { name: "Pick" })
+  })
+
+  it("is a menu for one choice of 33 characters", async () => {
+    show({ settings: [withLabels(["A label that runs to 33 character"])] })
+    await screen.findByRole("combobox", { name: "Pick" })
+  })
+
+  it("is a menu for four choices", async () => {
+    show({ settings: [withLabels(["A", "B", "C", "D"])] })
+    await screen.findByRole("combobox", { name: "Pick" })
+    expect(screen.queryByRole("radiogroup", { name: "Pick" })).toBeNull()
+  })
+})

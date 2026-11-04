@@ -1406,7 +1406,8 @@ mod tests {
             (as_plugin::CatalogKeys::new(&[]).unwrap(), none)
         });
         let urls = vec![CATALOG_AT.to_owned()];
-        let catalog = CatalogHost::new(&paths, lib.shared_db(), keys, urls, fetch);
+        let shelf: Arc<dyn catalog::GetPackage> = Arc::new(Arc::new(catalog::tests::Shelf::default()));
+        let catalog = CatalogHost::new(&paths, lib.shared_db(), keys, urls, fetch, shelf);
         let pages = Pages::new(Arc::new(MemoryKit::default()), Vec::new());
         (lib, Arc::new(PluginHost::reaching(store, catalog, pages, page_events, Box::new(net), start)))
     }

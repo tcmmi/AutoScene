@@ -52,6 +52,10 @@ pub enum PluginError {
     /// the catalog's own sentence.
     #[error("AutoScene withdrew {name}. {reason}")]
     Withdrawn { name: String, reason: String },
+    /// A pinned download failed: `what` names it ("Hello Export", "uv"),
+    /// and `detail` says what went wrong (for the log).
+    #[error("AutoScene couldn't get {what}. Check the internet connection, then try again.")]
+    Download { what: String, detail: String },
     #[error("{}", .0.user_message())]
     Db(#[from] as_db::DbError),
     #[error("{}", as_core::io_message(.0))]
@@ -69,6 +73,7 @@ impl PluginError {
             Self::Crashed { name, detail } => format!("{name} crashed: {detail}"),
             Self::Keychain { detail: Some(detail), .. } => format!("keychain: {detail}"),
             Self::Withdrawn { name, reason } => format!("plugin withdrawn: {name}: {reason}"),
+            Self::Download { what, detail } => format!("download of {what}: {detail}"),
             Self::Db(e) => format!("plugin registry: {e}"),
             Self::Io(e) => format!("plugin files: {e}"),
             e => e.to_string(),

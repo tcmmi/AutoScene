@@ -17,6 +17,16 @@
 //! ([`as_plugin::Store::set_catalog`]), and the runs of a plugin it newly
 //! withdrew stop, with its pages and its service ([`refresh_and_apply`]).
 //!
+//! A plugin installs and updates from the catalog in two steps, as one from
+//! a file does: its package is got and checked ([`CatalogHost::get`]), then
+//! the person says yes to the review (`plugin_install`). The package comes
+//! as AutoScene's models do, from the addresses the index lists, and is kept
+//! only with the size and SHA-256 it lists. It waits in
+//! `cache/plugin-downloads` until it is checked; that folder is emptied at
+//! each start. Only a version the catalog offers here is got, newer than
+//! the one installed, from an index that hasn't run out, and only the
+//! version it lists, under the lock it reviewed, is staged.
+//!
 //! Debug builds read `~/.autoscene/catalog.json`, which names other
 //! addresses (http too) and more keys: a catalog of one's own to try the
 //! app against. What it takes is kept apart ([`DEV_ROW`], `cache/catalog-dev`):
@@ -29,18 +39,20 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use as_core::{AppPaths, CancelToken};
 use as_db::LibraryDb;
 use as_jobs::JobRunner;
+use as_models::{ModelStore, Packed, Pinned};
 use as_plugin::catalog::{
     self, Catalog, CatalogKeys, CatalogState, Checked, Entry, MAX_INDEX_BYTES, MAX_SIG_BYTES, NEEDS_NEWER_APP, Offer,
     STATE_VERSION,
 };
+use as_plugin::fetch::fetch_error;
 use as_plugin::keys::CATALOG_URLS;
 use as_plugin::manifest::current_platform;
-use as_plugin::{Installed, PluginError, PluginId, PluginResult};
+use as_plugin::{Installed, PluginError, PluginId, PluginResult, Store, Ticket, package};
 use parking_lot::Mutex;
 use semver::Version;
 use serde::Serialize;
@@ -51,7 +63,7 @@ use tauri_specta::Event;
 
 use super::{PluginHost, serde_name};
 use crate::error::AppResult;
-use crate::events::{CatalogChanged, PluginsChanged};
+use crate::events::{CatalogChanged, CatalogProgress, PluginsChanged};
 use crate::plugins;
 use crate::state::AppState;
 
@@ -74,6 +86,8 @@ pub const STARTUP_FRESH: Duration = Duration::from_secs(3600);
 pub const TICK: Duration = Duration::from_secs(600);
 /// How long one GET may take, its body included.
 pub const BUDGET: Duration = Duration::from_secs(30);
+/// How often `catalog:progress` is sent at most while a package comes.
+pub const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
 /// The files of the index held, in its folder.
 const INDEX: &str = "index.json";
@@ -82,6 +96,14 @@ const SIG: &str = "index.json.minisig";
 /// What a check says when an address didn't answer as it should (the log
 /// has what went wrong).
 const UNREACHABLE: &str = "AutoScene couldn't reach its plugin catalog.";
+/// What a get says when the index ran out, or there is none.
+const OUT_OF_DATE: &str = "The plugin catalog is out of date. Check it again, then try again.";
+/// What a get says when this build has no catalog (no keys or addresses):
+/// checking again changes nothing.
+const NO_CATALOG: &str = "This AutoScene has no plugin catalog.";
+/// What a get says when the package isn't the version it lists, under the
+/// lock it reviewed (the log has which).
+const NOT_LISTED: &str = "The catalog's package isn't the one it lists. Try again later.";
 
 /// Gets a file of the catalog: its whole body, at most `max` bytes, or why
 /// not (for the log).
@@ -98,6 +120,56 @@ impl Fetch for UreqFetch {
     }
 }
 
+/// Gets the package of a catalog entry into a folder: its file there, with
+/// the entry's size and SHA-256, or why not (in words about the plugin).
+/// `progress(done, total)` as its bytes come; `cancel` ends it.
+pub trait GetPackage: Send + Sync {
+    fn get(
+        &self,
+        e: &Entry,
+        dir: &Path,
+        cancel: &CancelToken,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> PluginResult<PathBuf>;
+}
+
+/// [`GetPackage`] from the internet, as AutoScene's models come: from each
+/// of the entry's addresses in turn, resumed after an interruption, and kept
+/// only once it has the entry's size and SHA-256.
+pub struct ModelDownload;
+
+impl GetPackage for ModelDownload {
+    fn get(
+        &self,
+        e: &Entry,
+        dir: &Path,
+        cancel: &CancelToken,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> PluginResult<PathBuf> {
+        ModelStore::new(dir).fetch_pinned(&pinned(e), cancel, progress).map_err(|err| fetch_error(&e.name, err))
+    }
+}
+
+/// The package of `e` as the file the store downloads.
+fn pinned(e: &Entry) -> Pinned {
+    Pinned {
+        id: format!("{} {}", e.id, e.version),
+        file: package_file(e),
+        urls: e.package.urls.clone(),
+        sha256: e.package.sha256.clone(),
+        size: e.package.size,
+        packed: Packed::File,
+        exec: false,
+    }
+}
+
+/// The name of the package of `e` while it downloads: its SHA-256, so a
+/// part of one package is never resumed as another's, whichever index
+/// listed them, and no two ids and versions share a file.
+fn package_file(e: &Entry) -> String {
+    format!("{}.asp", e.package.sha256)
+}
+
 /// The catalog of this app: where it is fetched from, the keys it is checked
 /// with, and what was taken of it.
 pub struct CatalogHost {
@@ -110,6 +182,12 @@ pub struct CatalogHost {
     dir: PathBuf,
     db: Arc<LibraryDb>,
     fetch: Arc<dyn Fetch>,
+    /// Where packages come from ([`CatalogHost::get`]).
+    packages: Arc<dyn GetPackage>,
+    /// `cache/plugin-downloads`: the packages that are coming.
+    downloads_dir: PathBuf,
+    /// The gets under way, by plugin: one each at a time, and what ends it.
+    downloads: Mutex<HashMap<PluginId, CancelToken>>,
     /// One check at a time: the daily one and "Check now" take turns.
     one: Mutex<()>,
     /// One [`apply`] at a time, from what the store judged by before to the
@@ -122,15 +200,17 @@ pub struct CatalogHost {
 
 impl CatalogHost {
     /// The catalog of the data folder `paths`, whose row is in `db`, checked
-    /// with `keys` at `urls` through `fetch`.
+    /// with `keys` at `urls` through `fetch`, whose packages come through
+    /// `packages`.
     pub fn new(
         paths: &AppPaths,
         db: Arc<LibraryDb>,
         keys: CatalogKeys,
         urls: Vec<String>,
         fetch: Arc<dyn Fetch>,
+        packages: Arc<dyn GetPackage>,
     ) -> Self {
-        Self::open(paths, db, keys, urls, fetch, false)
+        Self::open(paths, db, keys, urls, (fetch, packages), false)
     }
 
     /// [`CatalogHost::new`]; `dev` keeps what it takes in [`DEV_ROW`] and
@@ -140,7 +220,7 @@ impl CatalogHost {
         db: Arc<LibraryDb>,
         keys: CatalogKeys,
         urls: Vec<String>,
-        fetch: Arc<dyn Fetch>,
+        (fetch, packages): (Arc<dyn Fetch>, Arc<dyn GetPackage>),
         dev: bool,
     ) -> Self {
         let host = Self {
@@ -150,6 +230,11 @@ impl CatalogHost {
             dir: paths.cache().join(if dev { "catalog-dev" } else { "catalog" }),
             db,
             fetch,
+            packages,
+            // One folder for both: a package's file is named by its hash
+            // ([`package_file`]), whichever index listed it.
+            downloads_dir: paths.plugin_downloads(),
+            downloads: Mutex::default(),
             one: Mutex::new(()),
             applying: Mutex::new(()),
             newer_row: AtomicBool::new(false),
@@ -165,9 +250,9 @@ impl CatalogHost {
         #[cfg(debug_assertions)]
         if let Some(o) = dev::read(&dev::path()) {
             let (keys, urls) = dev::configured(o);
-            return Self::open(paths, db, keys, urls, Arc::new(UreqFetch), true);
+            return Self::open(paths, db, keys, urls, (Arc::new(UreqFetch), Arc::new(ModelDownload)), true);
         }
-        Self::new(paths, db, CatalogKeys::builtin(), compiled_urls(), Arc::new(UreqFetch))
+        Self::new(paths, db, CatalogKeys::builtin(), compiled_urls(), Arc::new(UreqFetch), Arc::new(ModelDownload))
     }
 
     /// Whether this build checks the catalog: it has keys and addresses,
@@ -268,6 +353,133 @@ impl CatalogHost {
         let stale = s.fetched_at > now || now >= s.fetched_at.saturating_add(wait.as_secs());
         let retry = s.last_error.is_none() || s.checked_at > now || now >= s.checked_at.saturating_add(RETRY.as_secs());
         stale && retry
+    }
+
+    /// Gets the package of the version of `download`'s plugin the catalog
+    /// offers here, and checks it in `store` for the person's review: one
+    /// newer than the version installed (never an older one), from an index
+    /// that hasn't run out. `progress(done, total)` as its bytes come. The
+    /// package is the file the index pins, and the ticket the version it
+    /// lists, under the lock it reviewed. [`CatalogHost::cancel`] ends it,
+    /// and a cancel wins over whatever else went wrong meanwhile. The
+    /// package goes once it is checked.
+    pub fn get(
+        &self,
+        store: &Store,
+        download: &Downloading<'_>,
+        mut progress: impl FnMut(u64, u64),
+    ) -> PluginResult<Ticket> {
+        let id = &download.id;
+        let catalog = store.catalog();
+        if !catalog.living(catalog::now()) {
+            return Err(PluginError::Invalid(self.not_living(&catalog).into()));
+        }
+        let e = match catalog.offer(id, store.app_version(), current_platform()) {
+            Some(Offer::Here(e)) => e,
+            Some(Offer::NeedsNewerApp(_)) => return Err(PluginError::TooNew("engines.autoscene".into())),
+            Some(Offer::NotHere(_)) => return Err(PluginError::Platform),
+            None => return Err(unlisted(&catalog, id)),
+        };
+        match store.get(id) {
+            Ok(p) if !newer(e, &p.record.version) => {
+                return Err(PluginError::Invalid(format!("Version {} is installed already.", p.record.version)));
+            }
+            Ok(_) | Err(PluginError::NotFound(_)) => {}
+            Err(failed) => return Err(failed),
+        }
+        let got = self.packages.get(e, &self.downloads_dir, &download.cancel, &mut progress);
+        let staged = got.and_then(|path| {
+            let staged = store.stage(&path);
+            forget(&path);
+            staged
+        });
+        // Cancelled, it says so, whatever else went wrong meanwhile: in the
+        // download, its check, or the checks below.
+        let t = staged.map_err(|e| if download.cancelled() { PluginError::Cancelled } else { e })?;
+        if download.cancelled() {
+            store.discard(t);
+            return Err(PluginError::Cancelled);
+        }
+        // The version the entry names, which the catalog reviewed: its lock
+        // is the one it lists (an index lists each version once).
+        let listed = t.manifest.id == e.id && same_version(&t.manifest.version, &e.version);
+        if !listed || t.approval.is_none() {
+            let lock = package::sha256_hex(&t.lock_bytes);
+            let (got, approved) = (format!("{} {}", t.manifest.id, t.manifest.version), t.approval.is_some());
+            let latest = store.catalog();
+            store.discard(t);
+            if listed && !latest.living(catalog::now()) {
+                // It ran out while the package came.
+                return Err(PluginError::Invalid(self.not_living(&latest).into()));
+            }
+            log::warn!(
+                "the catalog's package of {} {} is {got} with lock {lock} (reviewed: {approved})",
+                e.id,
+                e.version
+            );
+            return Err(PluginError::Invalid(NOT_LISTED.into()));
+        }
+        Ok(t)
+    }
+
+    /// Why nothing is got from `catalog`, which isn't living: only a newer
+    /// AutoScene can check it, this build has no catalog, or it ran out (as
+    /// the view tells them apart).
+    fn not_living(&self, catalog: &Catalog) -> &'static str {
+        if self.newer_row() || catalog.state().last_error.as_deref() == Some(NEEDS_NEWER_APP) {
+            NEEDS_NEWER_APP
+        } else if !self.ready() {
+            NO_CATALOG
+        } else {
+            OUT_OF_DATE
+        }
+    }
+
+    /// Ends the get of `id` under way, if there is one.
+    pub fn cancel(&self, id: &PluginId) {
+        if let Some(cancel) = self.downloads.lock().get(id) {
+            cancel.cancel();
+        }
+    }
+
+    /// Marks a get of `id` as under way, before anything else is done for
+    /// it: from here, [`CatalogHost::cancel`] ends it, until
+    /// [`Downloading::end`] (or the guard drops). A second one is refused
+    /// meanwhile, naming the plugin as `store`'s catalog lists it.
+    pub fn begin(&self, store: &Store, id: &PluginId) -> PluginResult<Downloading<'_>> {
+        let mut downloads = self.downloads.lock();
+        if !downloads.contains_key(id) {
+            let cancel = CancelToken::new();
+            downloads.insert(id.clone(), cancel.clone());
+            return Ok(Downloading { downloads: &self.downloads, id: id.clone(), cancel, ended: false });
+        }
+        drop(downloads);
+        let catalog = store.catalog();
+        let listed = catalog.index().and_then(|i| i.plugins.iter().find(|e| &e.id == id));
+        let name = listed.map_or_else(|| id.to_string(), |e| e.name.clone());
+        Err(PluginError::Invalid(format!("AutoScene is getting {name} already.")))
+    }
+
+    /// Removes what gets that never finished left (at the start): partly
+    /// downloaded packages, and finished ones never checked. Not while a get
+    /// runs: one that starts meanwhile waits for this.
+    pub fn clear_downloads(&self) {
+        let downloads = self.downloads.lock();
+        if !downloads.is_empty() {
+            return;
+        }
+        let dir = &self.downloads_dir;
+        let removed = match std::fs::symlink_metadata(dir) {
+            Ok(md) if md.is_dir() => std::fs::remove_dir_all(dir),
+            Ok(_) => std::fs::remove_file(dir),
+            Err(e) => Err(e),
+        };
+        match removed {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                log::warn!("removing the plugin downloads left from before: {e}");
+            }
+            _ => {}
+        }
     }
 
     /// Fetches the index and its signature at `base`, and checks them
@@ -377,6 +589,79 @@ impl CatalogHost {
     }
 }
 
+/// A get of a plugin's package under way ([`CatalogHost::begin`]).
+pub struct Downloading<'a> {
+    downloads: &'a Mutex<HashMap<PluginId, CancelToken>>,
+    id: PluginId,
+    /// What ends it.
+    cancel: CancelToken,
+    /// [`Downloading::end`] took it out of `downloads` already.
+    ended: bool,
+}
+
+impl Downloading<'_> {
+    /// Whether it was cancelled.
+    pub fn cancelled(&self) -> bool {
+        self.cancel.is_cancelled()
+    }
+
+    /// Ends the get, once its review is ready: whether it was cancelled
+    /// before. A cancel after this finds no get, and the review stands.
+    pub fn end(mut self) -> bool {
+        let cancelled = {
+            let mut downloads = self.downloads.lock();
+            downloads.remove(&self.id);
+            self.cancel.is_cancelled()
+        };
+        self.ended = true;
+        cancelled
+    }
+}
+
+impl Drop for Downloading<'_> {
+    fn drop(&mut self) {
+        // Once ended, the entry may already be a later get's.
+        if !self.ended {
+            self.downloads.lock().remove(&self.id);
+        }
+    }
+}
+
+/// Why the catalog offers nothing of `id`: it withdrew each version it
+/// lists, or it lists none.
+fn unlisted(catalog: &Catalog, id: &PluginId) -> PluginError {
+    let listed = catalog.index().into_iter().flat_map(|i| &i.plugins).filter(|e| &e.id == id);
+    let withdrawn = listed.filter_map(|e| Some((e, catalog.withdrawal(id, &e.version)?))).next();
+    match withdrawn {
+        Some((e, w)) => PluginError::Withdrawn { name: e.name.clone(), reason: w.reason.clone() },
+        None => PluginError::Invalid(format!("AutoScene's plugin catalog doesn't list {id}.")),
+    }
+}
+
+/// Removes the package downloaded at `path`, the store's mark that it was
+/// checked, and the lock its download held: best-effort, as the start
+/// empties their folder anyway. One get of a plugin runs at a time, and its
+/// file is named by its hash, so no other download waits on that lock.
+fn forget(path: &Path) {
+    let beside = |ext: &str| {
+        let mut name = path.as_os_str().to_owned();
+        name.push(ext);
+        PathBuf::from(name)
+    };
+    for file in [path.to_path_buf(), beside(".verified"), beside(".lock")] {
+        if let Err(e) = std::fs::remove_file(file)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            log::info!("a plugin download stays until the next start: {e}");
+        }
+    }
+}
+
+/// Whether the versions `a` and `b` are the same, as semver reads them.
+fn same_version(a: &str, b: &str) -> bool {
+    matches!((Version::parse(a), Version::parse(b)), (Ok(a), Ok(b)) if a == b)
+}
+
 /// The file at `path`, if it has at most `max` bytes.
 fn read_capped(path: &Path, max: u64) -> PluginResult<Vec<u8>> {
     let mut bytes = Vec::new();
@@ -432,6 +717,59 @@ pub fn refresh_and_apply(app: &AppHandle) -> AppResult<CatalogView> {
     let (view, withdrawn, changed) = apply(&host, &state.jobs, catalog::now(), daily);
     tell(app, &withdrawn, changed);
     Ok(view)
+}
+
+/// [`CatalogHost::get`] under `download`, telling the page how far its
+/// package came (`catalog:progress`, [`told`]).
+pub fn get(app: &AppHandle, host: &PluginHost, download: &Downloading<'_>) -> PluginResult<Ticket> {
+    let plugin_id = download.id.to_string();
+    told(&host.catalog, &host.store, download, |done, total| {
+        let _ = CatalogProgress { plugin_id: plugin_id.clone(), done: done as f64, total: total as f64 }.emit(app);
+    })
+}
+
+/// [`CatalogHost::get`], telling `tell` how far the package came: at most
+/// every [`PROGRESS_EVERY`], at once when all of it came (before its
+/// check), and what was left untold when it failed.
+fn told(
+    catalog: &CatalogHost,
+    store: &Store,
+    download: &Downloading<'_>,
+    mut tell: impl FnMut(u64, u64),
+) -> PluginResult<Ticket> {
+    let mut telling = Telling::default();
+    let got = catalog.get(store, download, |done, total| {
+        if telling.tell(Instant::now(), done, total) {
+            tell(done, total);
+        }
+    });
+    if let Some((done, total)) = telling.untold {
+        tell(done, total);
+    }
+    got
+}
+
+/// What of a download's progress is told: at most every [`PROGRESS_EVERY`],
+/// all of it at once, and what is left untold for its end.
+#[derive(Default)]
+struct Telling {
+    /// When it was last told.
+    last: Option<Instant>,
+    /// What came since, untold.
+    untold: Option<(u64, u64)>,
+}
+
+impl Telling {
+    /// Whether `done` of `total` is told at `now`.
+    fn tell(&mut self, now: Instant, done: u64, total: u64) -> bool {
+        let all = done >= total;
+        if !all && self.last.is_some_and(|last| now.saturating_duration_since(last) < PROGRESS_EVERY) {
+            self.untold = Some((done, total));
+            return false;
+        }
+        (self.last, self.untold) = (Some(now), None);
+        true
+    }
 }
 
 /// Tells the page what a check withdrew, and whether the plugins withdrawn
@@ -859,7 +1197,7 @@ pub(super) mod tests {
         std::fs::create_dir_all(&paths.data).unwrap();
         let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
         let urls = urls.iter().map(|u| (*u).to_owned()).collect();
-        let host = CatalogHost::new(&paths, db.clone(), keys, urls, Arc::new(served.clone()));
+        let host = CatalogHost::new(&paths, db.clone(), keys, urls, Arc::new(served.clone()), shelf());
         (db, host)
     }
 
@@ -1048,7 +1386,7 @@ pub(super) mod tests {
         later["somethingNew"] = json!(true);
         let written = later.to_string();
         db.set_setting(ROW, &written).unwrap();
-        let host = CatalogHost::new(&paths, db.clone(), key.keys(), vec![A.into()], Arc::new(served.clone()));
+        let host = CatalogHost::new(&paths, db.clone(), key.keys(), vec![A.into()], Arc::new(served.clone()), shelf());
         assert!(!host.ready() && host.newer_row());
         // Nothing is fetched, at start or when the person asks, and the row stays as it is.
         assert!(!host.due(NOW, true, true));
@@ -1075,7 +1413,7 @@ pub(super) mod tests {
         let later = CatalogState { v: STATE_VERSION + 1, ..row(&db).unwrap() };
         db.set_setting(ROW, &serde_json::to_string(&later).unwrap()).unwrap();
         let paths = AppPaths::at(tmp.join("data"));
-        let host = CatalogHost::new(&paths, db.clone(), key.keys(), vec![A.into()], Arc::new(served.clone()));
+        let host = CatalogHost::new(&paths, db.clone(), key.keys(), vec![A.into()], Arc::new(served.clone()), shelf());
         assert!(host.newer_row());
         let loaded = host.load();
         assert!(loaded.index().is_none());
@@ -1122,13 +1460,13 @@ pub(super) mod tests {
         let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
         let fetch = || -> Arc<dyn Fetch> { Arc::new(served.clone()) };
         // A debug build follows the override, on the data folder a release build uses too.
-        let dev = CatalogHost::open(&paths, db.clone(), dev_key.keys(), vec![A.into()], fetch(), true);
+        let dev = CatalogHost::open(&paths, db.clone(), dev_key.keys(), vec![A.into()], (fetch(), shelf()), true);
         let taken = dev.refresh(NOW, &Catalog::none()).unwrap();
         assert_eq!(seq(&taken), Some(50));
         assert!(row(&db).is_none());
         assert!(!tmp.join("data/cache/catalog").exists());
         // The release build takes its own catalog, and the dev one's withdrawal isn't in it.
-        let release = CatalogHost::new(&paths, db.clone(), real_key.keys(), vec![B.into()], fetch());
+        let release = CatalogHost::new(&paths, db.clone(), real_key.keys(), vec![B.into()], fetch(), shelf());
         assert!(release.due(NOW, true, true));
         let taken = release.refresh(NOW + 60, &Catalog::none()).unwrap();
         assert_eq!(seq(&taken), Some(3));
@@ -1396,5 +1734,641 @@ pub(super) mod tests {
         }
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    // Getting a plugin's package (`CatalogHost::get`).
+
+    /// What a get of the [`Shelf`] does first, as its package comes: a
+    /// test's hand in it.
+    pub type During = Arc<dyn Fn(&Entry, &CancelToken) + Send + Sync>;
+
+    /// Packages by `<id>-<version>`, as the catalog's addresses serve them
+    /// (whatever the entry pins): each is copied into the folder as the
+    /// entry's file, with the mark the store writes once a download checked
+    /// out. Keeps what was asked for.
+    #[derive(Default)]
+    pub struct Shelf {
+        pub packages: Mutex<HashMap<String, Vec<u8>>>,
+        pub asked: Mutex<Vec<String>>,
+        pub during: Mutex<Option<During>>,
+    }
+
+    impl Shelf {
+        /// Serves `bytes` as the package of `id` at `version`.
+        fn put(&self, id: &str, version: &str, bytes: &[u8]) {
+            self.packages.lock().insert(format!("{id}-{version}"), bytes.to_vec());
+        }
+    }
+
+    impl GetPackage for Arc<Shelf> {
+        fn get(
+            &self,
+            e: &Entry,
+            dir: &Path,
+            cancel: &CancelToken,
+            progress: &mut dyn FnMut(u64, u64),
+        ) -> PluginResult<PathBuf> {
+            let (asked, file) = (format!("{}-{}", e.id, e.version), package_file(e));
+            self.asked.lock().push(asked.clone());
+            let during = self.during.lock().clone();
+            if let Some(during) = during {
+                during(e, cancel);
+            }
+            // None at its address fails, cancelled or not.
+            let bytes = self.packages.lock().get(&asked).cloned();
+            let bytes = bytes.ok_or_else(|| PluginError::Download { what: e.name.clone(), detail: asked })?;
+            if cancel.is_cancelled() {
+                return Err(PluginError::Cancelled);
+            }
+            let total = bytes.len() as u64;
+            progress(0, total);
+            std::fs::create_dir_all(dir)?;
+            std::fs::write(dir.join(&file), &bytes)?;
+            std::fs::write(dir.join(format!("{file}.verified")), package::sha256_hex(&bytes))?;
+            progress(total, total);
+            Ok(dir.join(file))
+        }
+    }
+
+    /// Nothing on it.
+    pub fn shelf() -> Arc<dyn GetPackage> {
+        Arc::new(Arc::new(Shelf::default()))
+    }
+
+    /// The package of the plugin `id` at `version` (the plugins.rs tests'
+    /// `manifest`), as asp packs it, unsigned, with `more` at the end of its
+    /// script: its bytes, and the SHA-256 of its lock.
+    fn packed(id: &str, version: &str, more: &str) -> (Vec<u8>, String) {
+        let mut m = super::super::tests::manifest(id, false);
+        m["version"] = json!(version);
+        let files = [
+            ("plugin.json", serde_json::to_vec_pretty(&m).unwrap()),
+            ("main.py", format!("print('hello'){more}\n").into_bytes()),
+            ("main.py.lock", b"version = 1\n".to_vec()),
+        ];
+        let listed = files.iter().map(|(path, bytes)| as_plugin::LockedFile {
+            path: (*path).into(),
+            size: bytes.len() as u64,
+            sha256: package::sha256_hex(bytes),
+            exec: false,
+        });
+        let lock = as_plugin::FilesLock { lock_version: package::LOCK_VERSION, files: listed.collect() };
+        let lock = serde_json::to_vec(&lock).unwrap();
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, bytes) in files.iter().map(|(p, b)| (*p, b.as_slice())).chain([(package::LOCK, lock.as_slice())]) {
+            zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            std::io::Write::write_all(&mut zip, bytes).unwrap();
+        }
+        (zip.finish().unwrap().into_inner(), package::sha256_hex(&lock))
+    }
+
+    /// The entry of the package `bytes`, whose lock has the SHA-256 `lock`,
+    /// as the catalog's CI lists it: the plugin `id` at `version`.
+    fn entry_of(id: &str, version: &str, (bytes, lock): &(Vec<u8>, String)) -> Value {
+        let mut e = entry(id, version);
+        e["lock"] = json!(lock);
+        e["package"]["size"] = json!(bytes.len());
+        e["package"]["sha256"] = json!(package::sha256_hex(bytes));
+        e
+    }
+
+    /// A catalog in hand that lists `plugins` and withdraws `withdrawn`,
+    /// published `published` and running out at `expires`.
+    fn held(plugins: Vec<Value>, withdrawn: Vec<Value>, published: u64, expires: u64) -> Arc<Catalog> {
+        let mut index = index(1, plugins, withdrawn);
+        (index["published"], index["expires"]) = (json!(published), json!(expires));
+        let index: catalog::Index = serde_json::from_value(index).unwrap();
+        let state = CatalogState {
+            v: STATE_VERSION,
+            epoch: index.epoch,
+            seq: index.seq,
+            published,
+            expires,
+            withdrawn: index.withdrawn.clone(),
+            ..CatalogState::default()
+        };
+        Arc::new(Catalog::new(Some(index), state))
+    }
+
+    /// [`held`], living now: published a day ago, running out in 29 days.
+    /// The store judges by the clock, so these tests use it too.
+    fn living(plugins: Vec<Value>, withdrawn: Vec<Value>) -> Arc<Catalog> {
+        let now = catalog::now();
+        held(plugins, withdrawn, now - DAY, now + 29 * DAY)
+    }
+
+    /// [`held`], run out a day ago.
+    fn run_out(plugins: Vec<Value>) -> Arc<Catalog> {
+        let now = catalog::now();
+        held(plugins, Vec::new(), now - 31 * DAY, now - DAY)
+    }
+
+    /// A store and its catalog in a folder of their own, whose packages
+    /// come off `shelf`.
+    struct Getting {
+        tmp: PathBuf,
+        paths: AppPaths,
+        db: Arc<LibraryDb>,
+        store: Arc<Store>,
+        host: CatalogHost,
+        shelf: Arc<Shelf>,
+    }
+
+    impl Getting {
+        fn new(name: &str) -> Self {
+            let tmp = scratch(&format!("get-{name}"));
+            let paths = AppPaths::at(tmp.join("data"));
+            std::fs::create_dir_all(&paths.data).unwrap();
+            let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
+            let app = Version::parse("1.0.3-BETA").unwrap();
+            let secrets = Arc::new(as_plugin::MemorySecrets::default());
+            let store = Arc::new(Store::open(&paths, db.clone(), app, secrets).unwrap());
+            let shelf = Arc::new(Shelf::default());
+            let host = Self::host(&paths, &db, Arc::new(shelf.clone()));
+            Self { tmp, paths, db, store, host, shelf }
+        }
+
+        /// A catalog of `paths` whose packages come through `packages`.
+        /// Nothing is ever fetched: the catalog is the one set in the store.
+        fn host(paths: &AppPaths, db: &Arc<LibraryDb>, packages: Arc<dyn GetPackage>) -> CatalogHost {
+            let fetch = Arc::new(Arc::new(Served::default()));
+            CatalogHost::new(paths, db.clone(), Key::new().keys(), vec![CATALOG_AT.into()], fetch, packages)
+        }
+
+        fn get(&self, id: &str) -> PluginResult<Ticket> {
+            self.get_with(id, |_, _| {})
+        }
+
+        /// A get of `id` as `catalog_get` makes one: begun, got and ended,
+        /// with `progress` as its package comes.
+        fn get_with(&self, id: &str, progress: impl FnMut(u64, u64)) -> PluginResult<Ticket> {
+            let download = self.host.begin(&self.store, &PluginId::parse(id).unwrap())?;
+            let t = self.host.get(&self.store, &download, progress)?;
+            if download.end() {
+                self.store.discard(t);
+                return Err(PluginError::Cancelled);
+            }
+            Ok(t)
+        }
+
+        /// The names in `plugins/.staging` and `cache/plugin-downloads`.
+        fn left(&self) -> Vec<String> {
+            let names = |dir: PathBuf| -> Vec<String> {
+                let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+                entries.map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect()
+            };
+            [names(self.paths.plugins().join(".staging")), names(self.paths.plugin_downloads())].concat()
+        }
+
+        fn done(self) {
+            let Self { tmp, paths, db, store, host, shelf } = self;
+            drop((paths, db, store, host, shelf));
+            std::fs::remove_dir_all(&tmp).unwrap();
+        }
+    }
+
+    /// Waits until `flag` is set (a get in another thread came that far).
+    fn wait_for(flag: &AtomicBool) {
+        let start = Instant::now();
+        while !flag.load(Ordering::SeqCst) {
+            assert!(start.elapsed() < Duration::from_secs(10), "the get never started");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    /// A [`During`] that holds the get of `id` until it is cancelled,
+    /// having set `started`.
+    fn holding(id: &'static str, started: &Arc<AtomicBool>) -> During {
+        let started = started.clone();
+        Arc::new(move |e: &Entry, cancel: &CancelToken| {
+            if e.id.as_str() == id {
+                started.store(true, Ordering::SeqCst);
+                let start = Instant::now();
+                while !cancel.is_cancelled() && start.elapsed() < Duration::from_secs(10) {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn a_catalog_package_is_got_checked_and_reviewed() {
+        let g = Getting::new("reviewed");
+        let v110 = packed(HELLO, "1.1.0", "");
+        g.shelf.put(HELLO, "1.1.0", &v110.0);
+        g.store.set_catalog(living(vec![entry_of(HELLO, "1.1.0", &v110)], vec![]));
+        let mut came = Vec::new();
+        let t = g.get_with(HELLO, |done, total| came.push((done, total))).unwrap();
+        assert_eq!(*g.shelf.asked.lock(), [format!("{HELLO}-1.1.0")]);
+        let size = v110.0.len() as u64;
+        assert_eq!(came, [(0, size), (size, size)]);
+        // The version it lists, reviewed by it, built where it says.
+        assert_eq!((t.manifest.id.as_str(), t.manifest.version.as_str()), (HELLO, "1.1.0"));
+        assert_eq!(t.verdict.trust, as_plugin::Trust::Reviewed);
+        let built = t.approval.clone().unwrap();
+        assert_eq!(
+            (built.repo.as_str(), built.commit.as_str(), built.path.as_str()),
+            ("https://github.com/tcmmi/autoscene", "c".repeat(40).as_str(), "examples/plugins/hello-export")
+        );
+        assert!(t.previous.is_none());
+        // It installs as reviewed: no setting for others, no typed yes.
+        let p = g.store.commit(t, false, false).unwrap();
+        assert_eq!((p.record.version.as_str(), p.record.trust), ("1.1.0", as_plugin::Trust::Reviewed));
+        // A newer version is an update of it.
+        let v120 = packed(HELLO, "1.2.0", "");
+        g.shelf.put(HELLO, "1.2.0", &v120.0);
+        g.store.set_catalog(living(vec![entry_of(HELLO, "1.1.0", &v110), entry_of(HELLO, "1.2.0", &v120)], vec![]));
+        let t = g.get(HELLO).unwrap();
+        assert_eq!(t.manifest.version, "1.2.0");
+        assert_eq!(t.previous.as_ref().map(|r| r.version.as_str()), Some("1.1.0"));
+        assert_eq!(g.store.commit(t, false, false).unwrap().record.version, "1.2.0");
+        g.done();
+    }
+
+    #[test]
+    fn a_package_that_is_not_its_entry_is_refused() {
+        let g = Getting::new("not-its-entry");
+        let (v100, v110) = (packed(HELLO, "1.0.0", ""), packed(HELLO, "1.1.0", ""));
+        let other = packed("dev.a.other", "1.1.0", "");
+        // The others are listed too, so the catalog reviewed them: still not what 1.1.0's entry names.
+        let listed = vec![
+            entry_of(HELLO, "1.0.0", &v100),
+            entry_of(HELLO, "1.1.0", &v110),
+            entry_of("dev.a.other", "1.1.0", &other),
+        ];
+        g.store.set_catalog(living(listed, vec![]));
+        let changed = packed(HELLO, "1.1.0", "  # changed");
+        for (what, bytes) in [("another id", &other.0), ("another version", &v100.0), ("another lock", &changed.0)] {
+            g.shelf.put(HELLO, "1.1.0", bytes);
+            let refused = g.get(HELLO).unwrap_err();
+            assert!(matches!(refused, PluginError::Invalid(_)), "{what}: {refused:?}");
+            assert_eq!(refused.to_string(), NOT_LISTED, "{what}");
+            // Nothing of it stays: not staged, not downloaded.
+            assert_eq!(g.left(), Vec::<String>::new(), "{what}");
+        }
+        // The one it lists is got.
+        g.shelf.put(HELLO, "1.1.0", &v110.0);
+        let t = g.get(HELLO).unwrap();
+        assert_eq!(t.manifest.version, "1.1.0");
+        g.store.discard(t);
+        g.done();
+    }
+
+    #[test]
+    fn an_older_or_the_same_version_is_never_offered() {
+        let g = Getting::new("older");
+        let (v100, v110) = (packed(HELLO, "1.0.0", ""), packed(HELLO, "1.1.0", ""));
+        g.shelf.put(HELLO, "1.1.0", &v110.0);
+        g.store.set_catalog(living(vec![entry_of(HELLO, "1.0.0", &v100), entry_of(HELLO, "1.1.0", &v110)], vec![]));
+        g.store.commit(g.get(HELLO).unwrap(), false, false).unwrap();
+        let asked = g.shelf.asked.lock().len();
+        // The same version is installed: nothing is got.
+        assert_eq!(g.get(HELLO).unwrap_err().to_string(), "Version 1.1.0 is installed already.");
+        // Only an older one offered: never a downgrade.
+        g.store.set_catalog(living(vec![entry_of(HELLO, "1.0.0", &v100)], vec![]));
+        assert_eq!(g.get(HELLO).unwrap_err().to_string(), "Version 1.1.0 is installed already.");
+        // Newer ones this AutoScene can't run, or not on this computer: not offered either.
+        let v200 = packed(HELLO, "2.0.0", "");
+        let mut future = entry_of(HELLO, "2.0.0", &v200);
+        future["engines"] = json!(">=9.0.0");
+        g.store.set_catalog(living(vec![future], vec![]));
+        assert!(matches!(g.get(HELLO), Err(PluginError::TooNew(_))));
+        let mut elsewhere = entry_of(HELLO, "2.0.0", &v200);
+        let other = if current_platform() == "linux-x86_64" { "windows-x86_64" } else { "linux-x86_64" };
+        elsewhere["platforms"] = json!([other]);
+        g.store.set_catalog(living(vec![elsewhere], vec![]));
+        assert!(matches!(g.get(HELLO), Err(PluginError::Platform)));
+        // One it doesn't list at all.
+        let unknown = g.get("dev.a.unknown").unwrap_err();
+        assert_eq!(unknown.to_string(), "AutoScene's plugin catalog doesn't list dev.a.unknown.");
+        assert_eq!(g.shelf.asked.lock().len(), asked);
+        assert_eq!(g.store.get(&PluginId::parse(HELLO).unwrap()).unwrap().record.version, "1.1.0");
+        g.done();
+    }
+
+    #[test]
+    fn nothing_installs_from_a_catalog_past_its_expiry_or_a_withdrawn_version() {
+        let g = Getting::new("expiry");
+        let (v100, v110) = (packed(HELLO, "1.0.0", ""), packed(HELLO, "1.1.0", ""));
+        g.shelf.put(HELLO, "1.0.0", &v100.0);
+        g.shelf.put(HELLO, "1.1.0", &v110.0);
+        let both = || vec![entry_of(HELLO, "1.0.0", &v100), entry_of(HELLO, "1.1.0", &v110)];
+        // No index, or one that ran out.
+        for catalog in [Arc::new(Catalog::none()), run_out(both())] {
+            g.store.set_catalog(catalog);
+            assert_eq!(g.get(HELLO).unwrap_err().to_string(), OUT_OF_DATE);
+        }
+        // Every version withdrawn: it says why.
+        g.store.set_catalog(living(both(), vec![withdrawal(HELLO, "*")]));
+        let withdrawn = g.get(HELLO).unwrap_err();
+        assert!(matches!(withdrawn, PluginError::Withdrawn { .. }), "{withdrawn:?}");
+        assert_eq!(withdrawn.to_string(), "AutoScene withdrew Hello Export. It sent export paths to a server.");
+        assert!(g.shelf.asked.lock().is_empty());
+        // The newest withdrawn: the version before it is got, never it.
+        g.store.set_catalog(living(both(), vec![withdrawal(HELLO, ">=1.1.0")]));
+        let t = g.get(HELLO).unwrap();
+        assert_eq!(t.manifest.version, "1.0.0");
+        g.store.discard(t);
+        // Withdrawn while it came: its check refuses it.
+        let (store, withdrawing) = (g.store.clone(), living(both(), vec![withdrawal(HELLO, "*")]));
+        g.store.set_catalog(living(both(), vec![]));
+        *g.shelf.during.lock() =
+            Some(Arc::new(move |_: &Entry, _: &CancelToken| store.set_catalog(withdrawing.clone())));
+        assert!(matches!(g.get(HELLO), Err(PluginError::Withdrawn { .. })));
+        // Run out while it came: out of date.
+        let (store, out) = (g.store.clone(), run_out(both()));
+        g.store.set_catalog(living(both(), vec![]));
+        *g.shelf.during.lock() = Some(Arc::new(move |_: &Entry, _: &CancelToken| store.set_catalog(out.clone())));
+        assert_eq!(g.get(HELLO).unwrap_err().to_string(), OUT_OF_DATE);
+        assert_eq!(g.left(), Vec::<String>::new());
+        g.done();
+    }
+
+    #[test]
+    fn one_download_per_plugin_at_a_time_and_cancel_ends_it() {
+        let g = Getting::new("one-at-a-time");
+        const POSTER: &str = "dev.a.poster";
+        let (hello, poster) = (packed(HELLO, "1.1.0", ""), packed(POSTER, "1.0.0", ""));
+        g.shelf.put(HELLO, "1.1.0", &hello.0);
+        g.shelf.put(POSTER, "1.0.0", &poster.0);
+        g.store.set_catalog(living(vec![entry_of(HELLO, "1.1.0", &hello), entry_of(POSTER, "1.0.0", &poster)], vec![]));
+        // Hello Export's package comes until it is cancelled.
+        let started = Arc::new(AtomicBool::new(false));
+        *g.shelf.during.lock() = Some(holding(HELLO, &started));
+        std::thread::scope(|s| {
+            let first = s.spawn(|| g.get(HELLO));
+            wait_for(&started);
+            // A second get of it is refused while the first runs (as no run: it isn't in Activity).
+            let second = g.get(HELLO).unwrap_err();
+            assert!(matches!(&second, PluginError::Invalid(_)), "{second:?}");
+            assert_eq!(second.to_string(), "AutoScene is getting Hello Export already.");
+            // Another plugin's comes meanwhile.
+            let t = g.get(POSTER).unwrap();
+            g.store.discard(t);
+            g.host.cancel(&PluginId::parse(HELLO).unwrap());
+            assert!(matches!(first.join().unwrap(), Err(PluginError::Cancelled)));
+        });
+        // Once it ended, it may be got again.
+        *g.shelf.during.lock() = None;
+        g.store.discard(g.get(HELLO).unwrap());
+        // Cancelled once its package came, before its check was done: no ticket, and nothing stays.
+        let id = PluginId::parse(HELLO).unwrap();
+        let cancel_once_it_came = |done, total| {
+            if done == total {
+                g.host.cancel(&id);
+            }
+        };
+        let cancelled = g.get_with(HELLO, cancel_once_it_came);
+        assert!(matches!(cancelled, Err(PluginError::Cancelled)), "{cancelled:?}");
+        assert_eq!(g.left(), Vec::<String>::new());
+        // Also when its checks then fail (the package isn't the one listed): the cancel wins.
+        g.shelf.put(HELLO, "1.1.0", &poster.0);
+        let cancelled = g.get_with(HELLO, cancel_once_it_came);
+        assert!(matches!(cancelled, Err(PluginError::Cancelled)), "{cancelled:?}");
+        assert_eq!(g.left(), Vec::<String>::new());
+        g.shelf.put(HELLO, "1.1.0", &hello.0);
+        // Cancelled once its package was checked, while its review was made: it ends as cancelled.
+        let download = g.host.begin(&g.store, &id).unwrap();
+        let t = g.host.get(&g.store, &download, |_, _| {}).unwrap();
+        g.host.cancel(&id);
+        assert!(download.end());
+        g.store.discard(t);
+        // A cancel once it ended finds no get: the review stands, and the next get is its own.
+        let download = g.host.begin(&g.store, &id).unwrap();
+        let t = g.host.get(&g.store, &download, |_, _| {}).unwrap();
+        assert!(!download.end());
+        g.host.cancel(&id);
+        let next = g.host.begin(&g.store, &id).unwrap();
+        assert!(!next.cancelled());
+        drop(next);
+        g.store.discard(t);
+        // Cancelled while it failed for another reason (an address that never answered): cancelled.
+        g.shelf.packages.lock().clear();
+        *g.shelf.during.lock() = Some(Arc::new(|_: &Entry, cancel: &CancelToken| cancel.cancel()));
+        assert!(matches!(g.get(HELLO), Err(PluginError::Cancelled)));
+        *g.shelf.during.lock() = None;
+        g.shelf.put(HELLO, "1.1.0", &hello.0);
+        // Cancelling none is nothing.
+        g.host.cancel(&id);
+        g.store.discard(g.get(HELLO).unwrap());
+        g.done();
+    }
+
+    #[test]
+    fn the_download_is_removed_once_it_is_staged() {
+        let g = Getting::new("removed");
+        let v110 = packed(HELLO, "1.1.0", "");
+        g.shelf.put(HELLO, "1.1.0", &v110.0);
+        g.store.set_catalog(living(vec![entry_of(HELLO, "1.1.0", &v110)], vec![]));
+        let downloads = g.paths.plugin_downloads();
+        // The package and the store's mark of it go; what was staged stays for the review.
+        let t = g.get(HELLO).unwrap();
+        assert!(downloads.is_dir());
+        assert_eq!(std::fs::read_dir(&downloads).unwrap().count(), 0);
+        assert!(t.staged.as_ref().unwrap().join("plugin.json").is_file());
+        g.store.discard(t);
+        // Also when its check fails.
+        g.shelf.put(HELLO, "1.1.0", &packed(HELLO, "1.1.0", "  # changed").0);
+        assert!(g.get(HELLO).is_err());
+        assert_eq!(g.left(), Vec::<String>::new());
+        // What a get that never finished left goes at the start.
+        std::fs::write(downloads.join(format!("{HELLO}-1.1.0.asp.part")), b"half").unwrap();
+        g.host.clear_downloads();
+        assert!(!downloads.exists());
+        g.host.clear_downloads();
+        // Never under a get that runs.
+        let started = Arc::new(AtomicBool::new(false));
+        *g.shelf.during.lock() = Some(holding(HELLO, &started));
+        std::thread::scope(|s| {
+            let running = s.spawn(|| g.get(HELLO));
+            wait_for(&started);
+            std::fs::create_dir_all(&downloads).unwrap();
+            std::fs::write(downloads.join(format!("{HELLO}-1.1.0.asp.part")), b"coming").unwrap();
+            g.host.clear_downloads();
+            assert!(downloads.join(format!("{HELLO}-1.1.0.asp.part")).is_file());
+            g.host.cancel(&PluginId::parse(HELLO).unwrap());
+            assert!(matches!(running.join().unwrap(), Err(PluginError::Cancelled)));
+        });
+        g.done();
+    }
+
+    #[test]
+    fn a_package_comes_as_its_entry_pins_it_and_a_failure_names_the_plugin() {
+        let tmp = scratch("model-download");
+        let mut e: Entry = serde_json::from_value(entry(HELLO, "1.1.0")).unwrap();
+        let p = pinned(&e);
+        // Named by its hash: never another package's part, whichever index listed it.
+        assert_eq!(p.file, format!("{}.asp", "b".repeat(64)));
+        assert_eq!((p.urls, p.size, p.sha256), (e.package.urls.clone(), 4096, "b".repeat(64)));
+        assert!(matches!(p.packed, Packed::File) && !p.exec);
+        // An address that can't be read fails as a download of the plugin,
+        // in its own words (never the AI model's): no request leaves.
+        e.package.urls = vec!["https://exa mple.com/hello.asp".into()];
+        let failed = ModelDownload.get(&e, &tmp, &CancelToken::new(), &mut |_, _| {}).unwrap_err();
+        assert!(matches!(&failed, PluginError::Download { what, .. } if what == "Hello Export"), "{failed:?}");
+        assert_eq!(
+            failed.to_string(),
+            "AutoScene couldn't get Hello Export. Check the internet connection, then try again."
+        );
+        let cancel = CancelToken::new();
+        cancel.cancel();
+        assert!(matches!(ModelDownload.get(&e, &tmp, &cancel, &mut |_, _| {}), Err(PluginError::Cancelled)));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn progress_is_told_at_most_every_100_ms_and_what_is_left_at_the_end() {
+        let start = Instant::now();
+        let at = |ms: u64| start + Duration::from_millis(ms);
+        let mut telling = Telling::default();
+        assert!(telling.tell(at(0), 0, 100));
+        assert!(!telling.tell(at(40), 10, 100));
+        assert!(!telling.tell(at(99), 20, 100));
+        assert!(telling.tell(at(100), 30, 100));
+        assert_eq!(telling.untold, None);
+        assert!(!telling.tell(at(150), 60, 100));
+        // A download that fails here tells what came last at its end.
+        assert_eq!(telling.untold, Some((60, 100)));
+        // All of it is told at once, before the package is checked.
+        assert!(telling.tell(at(160), 100, 100));
+        assert_eq!(telling.untold, None);
+    }
+
+    /// A package that comes in three steps, then fails, as a connection
+    /// that drops.
+    struct Dropping;
+
+    impl GetPackage for Dropping {
+        fn get(
+            &self,
+            e: &Entry,
+            _: &Path,
+            _: &CancelToken,
+            progress: &mut dyn FnMut(u64, u64),
+        ) -> PluginResult<PathBuf> {
+            for done in [0, 10, 20] {
+                progress(done, 100);
+            }
+            Err(PluginError::Download { what: e.name.clone(), detail: "connection reset".into() })
+        }
+    }
+
+    #[test]
+    fn the_page_hears_how_far_a_package_came_all_of_it_at_once_and_the_last_on_a_failure() {
+        let g = Getting::new("told");
+        let v110 = packed(HELLO, "1.1.0", "");
+        g.shelf.put(HELLO, "1.1.0", &v110.0);
+        g.store.set_catalog(living(vec![entry_of(HELLO, "1.1.0", &v110)], vec![]));
+        let (id, size) = (PluginId::parse(HELLO).unwrap(), v110.0.len() as u64);
+        // Within 100 ms: its start, and all of it at once, while it waits for its check.
+        let (mut heard, downloads) = (Vec::new(), g.paths.plugin_downloads());
+        let waiting = || std::fs::read_dir(&downloads).map_or(0, Iterator::count);
+        let download = g.host.begin(&g.store, &id).unwrap();
+        let t = told(&g.host, &g.store, &download, |done, total| heard.push((done, total, waiting()))).unwrap();
+        assert_eq!(heard, [(0, size, 0), (size, size, 2)]);
+        g.store.discard(t);
+        drop(download);
+        // One that failed: what came last is told too.
+        let dropping = Getting::host(&g.paths, &g.db, Arc::new(Dropping));
+        let mut heard = Vec::new();
+        let download = dropping.begin(&g.store, &id).unwrap();
+        let failed = told(&dropping, &g.store, &download, |done, total| heard.push((done, total)));
+        assert!(matches!(failed, Err(PluginError::Download { .. })), "{failed:?}");
+        assert_eq!(heard, [(0, 100), (20, 100)]);
+        drop(download);
+        drop(dropping);
+        g.done();
+    }
+
+    /// Serves `data` on 127.0.0.1 to each request, as a package's address
+    /// does; its address.
+    fn serve(data: Vec<u8>) -> String {
+        use std::io::{BufRead, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/hello-export.asp", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for conn in listener.incoming() {
+                let Ok(mut conn) = conn else { return };
+                let mut reader = std::io::BufReader::new(conn.try_clone().unwrap());
+                // The request, up to its blank line.
+                let mut line = String::new();
+                while reader.read_line(&mut line).unwrap_or(0) > 0 && !line.trim().is_empty() {
+                    line.clear();
+                }
+                let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", data.len());
+                let _ = conn.write_all(head.as_bytes()).and_then(|()| conn.write_all(&data));
+            }
+        });
+        url
+    }
+
+    #[test]
+    fn a_package_comes_from_its_address_as_a_model_does_and_a_cancel_ends_it_midway() {
+        let g = Getting::new("from-its-address");
+        // Big enough to come in many pieces: what zip can't shrink much.
+        let noise: String = (0..6_000u32).map(|i| package::sha256_hex(&i.to_le_bytes())).collect();
+        let v110 = packed(HELLO, "1.1.0", &format!("  # {noise}"));
+        assert!(v110.0.len() > 2 << 16, "{} bytes come in one piece", v110.0.len());
+        let mut e = entry_of(HELLO, "1.1.0", &v110);
+        e["package"]["urls"] = json!([serve(v110.0.clone())]);
+        g.store.set_catalog(living(vec![e], vec![]));
+        let host = Getting::host(&g.paths, &g.db, Arc::new(ModelDownload));
+        let (id, size) = (PluginId::parse(HELLO).unwrap(), v110.0.len() as u64);
+        // It comes, is checked and waits for the review; nothing of the download stays.
+        let mut heard = Vec::new();
+        let download = host.begin(&g.store, &id).unwrap();
+        let t = told(&host, &g.store, &download, |done, total| heard.push((done, total))).unwrap();
+        assert!(!download.end());
+        assert_eq!((heard.first(), heard.last()), (Some(&(0, size)), Some(&(size, size))), "{heard:?}");
+        assert_eq!((t.manifest.version.as_str(), t.verdict.trust), ("1.1.0", as_plugin::Trust::Reviewed));
+        assert_eq!(std::fs::read_dir(g.paths.plugin_downloads()).unwrap().count(), 0);
+        g.store.discard(t);
+        // Cancelled while it comes: it ends there, and nothing is staged.
+        let mut came = Vec::new();
+        let download = host.begin(&g.store, &id).unwrap();
+        let cancelled = host.get(&g.store, &download, |done, total| {
+            came.push(done);
+            if done > 0 && done < total {
+                host.cancel(&id);
+            }
+        });
+        assert!(matches!(cancelled, Err(PluginError::Cancelled)), "{came:?}: {:?}", cancelled.map(|_| ()));
+        assert!(came.last().is_some_and(|&done| done > 0 && done < size), "{came:?} of {size}");
+        drop(download);
+        // Only what a later get resumes (or the next start removes) is left.
+        let left = g.left();
+        assert!(left.iter().all(|n| n.ends_with(".part") || n.ends_with(".lock")), "{left:?}");
+        drop(host);
+        g.done();
+    }
+
+    #[test]
+    fn a_get_says_why_when_the_catalog_can_t_be_checked_again() {
+        let g = Getting::new("not-checked");
+        let id = PluginId::parse(HELLO).unwrap();
+        let said = |host: &CatalogHost| {
+            let download = host.begin(&g.store, &id).unwrap();
+            host.get(&g.store, &download, |_, _| {}).unwrap_err().to_string()
+        };
+        // An index that ran out, or none: check it again.
+        g.store.set_catalog(Arc::new(Catalog::none()));
+        assert_eq!(said(&g.host), OUT_OF_DATE);
+        // A build without a catalog: checking again changes nothing.
+        let fetch = Arc::new(Arc::new(Served::default()));
+        let none = CatalogHost::new(&g.paths, g.db.clone(), CatalogKeys::new(&[]).unwrap(), Vec::new(), fetch, shelf());
+        assert_eq!(said(&none), NO_CATALOG);
+        // The last check found a catalog only a newer AutoScene reads.
+        let state = CatalogState { last_error: Some(NEEDS_NEWER_APP.into()), ..CatalogState::default() };
+        g.store.set_catalog(Arc::new(Catalog::new(None, state)));
+        assert_eq!(said(&g.host), NEEDS_NEWER_APP);
+        // A newer AutoScene checked it.
+        g.store.set_catalog(Arc::new(Catalog::none()));
+        g.db.set_setting(ROW, &json!({ "v": STATE_VERSION + 1 }).to_string()).unwrap();
+        let newer = Getting::host(&g.paths, &g.db, shelf());
+        assert!(newer.newer_row());
+        assert_eq!(said(&newer), NEEDS_NEWER_APP);
+        assert!(g.shelf.asked.lock().is_empty());
+        drop((none, newer));
+        g.done();
     }
 }

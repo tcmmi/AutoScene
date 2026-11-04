@@ -112,6 +112,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::plugins::plugin_run,
             commands::catalog::catalog_list,
             commands::catalog::catalog_refresh,
+            commands::catalog::catalog_get,
+            commands::catalog::catalog_cancel,
             commands::plugins::plugin_secret_set,
             commands::plugins::plugin_secret_clear,
             commands::plugins::plugin_page_open,
@@ -141,6 +143,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             events::PluginsChanged,
             events::PluginPageEvent,
             events::CatalogChanged,
+            events::CatalogProgress,
             updater::UpdateProgress,
         ])
         // The name parts the pack export's templates can use: its buttons read them.
@@ -342,9 +345,11 @@ The log is in {}",
                 if let Ok(tools) = handle.state::<state::AppState>().tools() {
                     let _ = tools.caps();
                 }
-                // What a plugin install or uninstall that never finished left.
+                // What a plugin install or uninstall that never finished left,
+                // and downloads from the catalog that didn't.
                 if let Some(plugins) = &handle.state::<state::AppState>().plugins {
                     plugins.store.remove_leftovers();
+                    plugins.catalog.clear_downloads();
                 }
             });
             // The plugin catalog, checked shortly after the start and then daily.

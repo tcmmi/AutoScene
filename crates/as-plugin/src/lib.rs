@@ -8,6 +8,8 @@
 //! AutoScene's review, its author's pinned key, or nobody AutoScene knows.
 //! AutoScene's plugin catalog ([`catalog`]) is a signed index of the
 //! versions it reviewed, by the hash of their lock, and of those it withdrew.
+//! Its packages download as AutoScene's models do; what fails is said in
+//! words about the plugin ([`fetch`]).
 //! The installed plugins, and what the person set for them, are kept by
 //! [`store`]; the values of secret settings by the system's keychain
 //! ([`secrets`]).
@@ -32,6 +34,7 @@
 pub mod calls;
 pub mod catalog;
 pub mod error;
+pub mod fetch;
 pub mod keys;
 pub mod log;
 pub mod manifest;

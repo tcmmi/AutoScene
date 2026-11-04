@@ -22,6 +22,7 @@ import type {
   PluginInfo,
   PluginReview,
   PluginUpdate,
+  ReviewCatalog,
   SettingSpec,
   SettingValue,
 } from "@/bindings"
@@ -343,7 +344,7 @@ export function nextPluginPackage(): string {
   return PACKAGES[offered++ % PACKAGES.length].path
 }
 
-function review(p: MockPlugin, allow: boolean): PluginReview {
+function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = null): PluginReview {
   const previous = installed.get(p.id)
   const ticketId = crypto.randomUUID()
   // As installed, it keeps what the version before had turned on.
@@ -371,7 +372,47 @@ function review(p: MockPlugin, allow: boolean): PluginReview {
       }
     : null
   const needsUnreviewed = !reviewed(next)
-  return { ticketId, plugin: info(next, allow), update, needsUnreviewed, allowed: !needsUnreviewed || allow, uvMissing: false, catalog: null }
+  return { ticketId, plugin: info(next, allow), update, needsUnreviewed, allowed: !needsUnreviewed || allow, uvMissing: false, catalog }
+}
+
+/** What AutoScene's catalog says of a plugin it offers, as `catalog_get` reads it from the package. */
+export type CatalogPackage = {
+  id: string
+  name: string
+  version: string
+  summary: string
+  author: string
+  license: string | null
+  permissions: string[]
+  hosts: string[]
+  gpu: boolean
+  uvScript: boolean
+  icon: string | null
+  repository: string
+}
+
+/**
+ * The review of a package got from the catalog (`catalog_get`): the plugin
+ * as the catalog lists it, reviewed, with where it was built from. Hello
+ * Export keeps its actions and settings.
+ */
+export function inspectCatalogPackage(o: CatalogPackage, built: ReviewCatalog, allow: boolean): PluginReview {
+  const listed = {
+    name: o.name,
+    version: o.version,
+    trust: "reviewed" as const,
+    description: o.summary,
+    author: o.author,
+    license: o.license,
+    repository: o.repository,
+    permissions: o.permissions as Permission[],
+    networkHosts: o.hosts,
+    gpu: o.gpu,
+    uvScript: o.uvScript,
+    icon: o.icon,
+  }
+  const p = o.id === "dev.autoscene.hello-export" ? hello(o.version, listed) : plugin({ id: o.id, ...listed })
+  return review(p, allow, built)
 }
 
 export function inspectPackage(path: string, allow: boolean): PluginReview {

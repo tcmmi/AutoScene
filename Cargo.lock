@@ -299,6 +299,7 @@ dependencies = [
  "as-core",
  "as-db",
  "as-media",
+ "as-models",
  "base64 0.23.1",
  "keyring",
  "minisign",
@@ -575,6 +576,7 @@ dependencies = [
  "webview2-com",
  "windows-core 0.62.2",
  "windows-sys 0.61.2",
+ "zip 9.2.2",
 ]
 
 [[package]]

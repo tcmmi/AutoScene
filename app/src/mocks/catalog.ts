@@ -4,21 +4,27 @@
  * new; Hello Export 1.1.0, an update that asks for the network and
  * discord.com; Discord Notify 1.0.1), checked an hour ago. What each offers
  * is worked out against the mock's installed plugins when it is shown.
+ * Getting one (`catalog_get`) takes a quarter of a second, in five steps of
+ * `catalog:progress`, and gives its review; `catalog_cancel` ends it.
  *
  * `?mockCatalog=` shows the other states: `expired` (the index ran out and
  * the last check failed), `offline` (the last check failed, the index held
- * still lives), `unset` (this build has no catalog keys), `newer` (a later
- * AutoScene checked it), `withdrawn` (the index withdraws
- * `dev.example.leaky`).
+ * still lives; a get fails after two steps, as a download that broke off),
+ * `unset` (this build has no catalog keys), `newer` (a later AutoScene
+ * checked it), `withdrawn` (the index withdraws `dev.example.leaky`), `full`
+ * (a get finds the drive full).
  */
-import type { CatalogPlugin, CatalogView } from "@/bindings"
-import { mockPlugin } from "./plugins"
+import type { CatalogPlugin, CatalogView, PluginReview } from "@/bindings"
+import { inspectCatalogPackage, mockPlugin } from "./plugins"
 
-type MockCatalog = "living" | "expired" | "offline" | "unset" | "newer" | "withdrawn"
+type MockCatalog = "living" | "expired" | "offline" | "unset" | "newer" | "withdrawn" | "full"
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
 const UNREACHABLE = "AutoScene couldn't reach its plugin catalog."
+const OUT_OF_DATE = "The plugin catalog is out of date. Check it again, then try again."
+const NO_CATALOG = "This AutoScene has no plugin catalog."
+const NEEDS_NEWER_APP = "This catalog needs a newer AutoScene."
 
 /** A plain rounded square in `fill`, as the catalog's SVG icons arrive (base64). */
 const icon = (fill: string) =>
@@ -80,7 +86,7 @@ const WITHDRAWN = [{ id: "dev.example.leaky", reason: "It sent export paths to a
 
 function mode(): MockCatalog {
   const asked = new URLSearchParams(window.location.search).get("mockCatalog")
-  const known: MockCatalog[] = ["expired", "offline", "unset", "newer", "withdrawn"]
+  const known: MockCatalog[] = ["expired", "offline", "unset", "newer", "withdrawn", "full"]
   return known.find((m) => m === asked) ?? "living"
 }
 
@@ -89,6 +95,8 @@ let fetchedAt = Date.now() - HOUR
 let checkedAt = fetchedAt
 /** The withdrawals already told of (`catalog:changed` says each once). */
 let told = false
+/** The gets under way, by plugin: what ends each. */
+const getting = new Map<string, () => void>()
 
 function newer(a: string, b: string): boolean {
   const parts = (v: string) => v.split(/[.+-]/).slice(0, 3).map(Number)
@@ -147,4 +155,48 @@ export function catalogRefresh(daily: boolean): { view: CatalogView; withdrawn: 
   const withdrawn = m === "withdrawn" && !told ? WITHDRAWN.map((w) => w.id) : []
   told ||= withdrawn.length > 0
   return { view: catalogList(daily), withdrawn }
+}
+
+/**
+ * `catalog_get`: the package of `id` the catalog offers, newer than the one
+ * installed, in five steps 50 ms apart (`progress(done, total)`), then its
+ * review. One at a time per plugin; `catalogCancel` ends it.
+ */
+export async function catalogGet(id: string, allow: boolean, progress: (done: number, total: number) => void): Promise<PluginReview> {
+  const m = mode()
+  const e = ENTRIES.find((x) => x.id === id)
+  if (getting.has(id)) throw { code: "invalid", message: `AutoScene is getting ${e?.name ?? id} already.` }
+  if (m === "expired") throw { code: "invalid", message: OUT_OF_DATE }
+  if (m === "unset") throw { code: "invalid", message: NO_CATALOG }
+  if (m === "newer") throw { code: "invalid", message: NEEDS_NEWER_APP }
+  if (!e) throw { code: "invalid", message: `AutoScene's plugin catalog doesn't list ${id}.` }
+  const p = mockPlugin(id)
+  if (p && !newer(e.version, p.version)) throw { code: "invalid", message: `Version ${p.version} is installed already.` }
+  if (m === "full") {
+    const mb = Math.ceil((e.sizeBytes ?? 0) / 1_000_000)
+    throw { code: "invalid", message: `There isn't enough free space for ${e.name}. Free up ${mb} MB on the drive of AutoScene's data folder and try again.` }
+  }
+  let cancelled = false
+  getting.set(id, () => {
+    cancelled = true
+  })
+  try {
+    for (let step = 1; step <= 5; step++) {
+      await new Promise((done) => window.setTimeout(done, 50))
+      if (cancelled) throw { code: "cancelled", message: "Cancelled." }
+      // Offline, the download breaks off after two steps (the page offers to try again).
+      if (m === "offline" && step > 2)
+        throw { code: "invalid", message: `AutoScene couldn't get ${e.name}. Check the internet connection, then try again.` }
+      progress(Math.round((e.sizeBytes ?? 0) * (step / 5)), e.sizeBytes ?? 0)
+    }
+  } finally {
+    getting.delete(id)
+  }
+  const built = { published: Date.now() - DAY, repository: e.repository, commit: e.commit, path: e.path }
+  return inspectCatalogPackage(e, built, allow)
+}
+
+/** `catalog_cancel`: ends the get of `id` under way, if there is one. */
+export function catalogCancel(id: string) {
+  getting.get(id)?.()
 }

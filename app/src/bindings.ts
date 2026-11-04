@@ -338,6 +338,17 @@ export const commands = {
 	 */
 	catalogRefresh: () => __TAURI_INVOKE<CatalogView>("catalog_refresh"),
 	/**
+	 *  Gets the version of `plugin_id` the catalog offers here (newer than the
+	 *  one installed) and checks it, for the review dialog. One at a time per
+	 *  plugin; `catalog_cancel` ends it until its review is ready.
+	 */
+	catalogGet: (pluginId: string) => __TAURI_INVOKE<PluginReview>("catalog_get", { pluginId }),
+	/**
+	 *  Ends the get of `plugin_id` under way (it fails as cancelled). None
+	 *  under way is no error.
+	 */
+	catalogCancel: (pluginId: string) => __TAURI_INVOKE<null>("catalog_cancel", { pluginId }),
+	/**
 	 *  Keep `value` in the system's keychain as a plugin's secret setting
 	 *  `key`, in place of the one before. The value never comes back: the
 	 *  plugin's info says only which are set.
@@ -401,6 +412,7 @@ export const events = {
 	anilistChanged: makeEvent<AniListChanged>("anilist:changed"),
 	castChanged: makeEvent<CastChanged>("cast:changed"),
 	catalogChanged: makeEvent<CatalogChanged>("catalog:changed"),
+	catalogProgress: makeEvent<CatalogProgress>("catalog:progress"),
 	exportChanged: makeEvent<ExportChanged>("export:changed"),
 	hardwareChanged: makeEvent<HardwareChanged>("hardware:changed"),
 	jobChanged: makeEvent<JobChanged>("job:changed"),
@@ -742,6 +754,16 @@ export type CatalogPlugin = {
 	addsHosts: string[],
 	runsHere: boolean,
 	needsNewerApp: boolean,
+};
+
+/**
+ *  How far the package of `plugin_id` came from the catalog (`catalog_get`),
+ *  in bytes: at most every 100 ms, and once at the end.
+ */
+export type CatalogProgress = {
+	pluginId: string,
+	done: number | null,
+	total: number | null,
 };
 
 /**  Where AutoScene stands with its catalog. Times are Unix ms. */

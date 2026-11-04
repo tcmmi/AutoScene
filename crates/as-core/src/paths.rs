@@ -5,6 +5,7 @@
 //! | app data (models, runtimes, library.db, logs) | `%LOCALAPPDATA%\AutoScene` | `~/Library/Application Support/AutoScene` |
 //! | default library (project folders) | `Documents\AutoScene Library` | `~/Documents/AutoScene Library` |
 //! | plugins, what they keep, their logs | app data `plugins`, `plugin-data`, `logs\plugins` | app data `plugins`, `plugin-data`, `logs/plugins` |
+//! | plugin packages from the catalog, while they download | app data `cache\plugin-downloads` | app data `cache/plugin-downloads` |
 //! | updater override | `~/.autoscene/updates.json` | same |
 //!
 //! `AUTOSCENE_DATA_DIR` overrides the app data root (tests, portable installs).
@@ -73,6 +74,12 @@ impl AppPaths {
     /// Plugins' logs, a file per plugin id.
     pub fn plugin_logs(&self) -> PathBuf {
         self.logs().join("plugins")
+    }
+    /// Plugin packages from the catalog while they download, until they are
+    /// checked; emptied at each start. Outside [`AppPaths::plugins`], whose
+    /// folders are taken for plugins.
+    pub fn plugin_downloads(&self) -> PathBuf {
+        self.cache().join("plugin-downloads")
     }
 
     /// Where new projects go unless the user picks another folder.

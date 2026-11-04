@@ -11,7 +11,7 @@
 import { emit } from "@tauri-apps/api/event"
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks"
 import { isFinished } from "@/state/activity"
-import { catalogList, catalogRefresh } from "./catalog"
+import { catalogCancel, catalogGet, catalogList, catalogRefresh } from "./catalog"
 import {
   castEdit,
   castGet,
@@ -1433,6 +1433,12 @@ const handlers: Record<string, Handler> = {
     void emit("catalog:changed", { withdrawn })
     if (withdrawn.length > 0) void emit("plugins:changed", { pluginId: null })
     return view
+  },
+  catalog_get: ({ pluginId }) =>
+    catalogGet(String(pluginId), allows(), (done, total) => void emit("catalog:progress", { pluginId, done, total })),
+  catalog_cancel: ({ pluginId }) => {
+    catalogCancel(String(pluginId))
+    return null
   },
   plugin_run: ({ pluginId, actionId, kind, projectId, exportId }) =>
     startPluginJob(String(pluginId), String(actionId), kind as ActionKind, (projectId as string | null) ?? null, (exportId as string | null) ?? null),

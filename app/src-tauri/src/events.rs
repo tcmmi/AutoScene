@@ -123,6 +123,17 @@ pub struct CatalogChanged {
     pub withdrawn: Vec<String>,
 }
 
+/// How far the package of `plugin_id` came from the catalog (`catalog_get`),
+/// in bytes: at most every 100 ms, and once at the end.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "catalog:progress")]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogProgress {
+    pub plugin_id: String,
+    pub done: f64,
+    pub total: f64,
+}
+
 /// Something for one open plugin page (its session): that its plugin's
 /// settings changed, or that it was closed. Sent to the main webview only.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]

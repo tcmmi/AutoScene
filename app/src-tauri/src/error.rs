@@ -99,10 +99,19 @@ impl From<PluginError> for AppError {
             | PluginError::UvMissing
             | PluginError::Denied(_)
             | PluginError::Catalog(_)
-            | PluginError::Withdrawn { .. } => ErrorCode::Invalid,
+            | PluginError::Withdrawn { .. }
+            // A catalog package that didn't come: the page offers to try again.
+            | PluginError::Download { .. } => ErrorCode::Invalid,
         };
         match (&e, code) {
-            (PluginError::BadSignature(_) | PluginError::KeyChanged { .. } | PluginError::Keychain { .. }, _) => {
+            // Why a download failed is in its detail, which only the log keeps.
+            (
+                PluginError::BadSignature(_)
+                | PluginError::KeyChanged { .. }
+                | PluginError::Keychain { .. }
+                | PluginError::Download { .. },
+                _,
+            ) => {
                 log::warn!("{}", e.detail());
             }
             (PluginError::Withdrawn { .. }, _) => log::info!("{}", e.detail()),
@@ -140,6 +149,7 @@ mod tests {
             PluginError::Denied("A run reads only the project it runs in.".into()),
             PluginError::Catalog("This catalog is older than the one AutoScene has.".into()),
             PluginError::Withdrawn { name: "Leaky".into(), reason: "It sent export paths to a server.".into() },
+            PluginError::Download { what: "Poster".into(), detail: "connection refused".into() },
         ];
         for e in invalid {
             let words = e.to_string();
@@ -148,6 +158,9 @@ mod tests {
         let withdrawn =
             PluginError::Withdrawn { name: "Leaky".into(), reason: "It sent export paths to a server.".into() };
         assert_eq!(said(withdrawn).1, "AutoScene withdrew Leaky. It sent export paths to a server.");
+        // What went wrong is the log's, never the message's.
+        let download = PluginError::Download { what: "Poster".into(), detail: "connection refused".into() };
+        assert_eq!(said(download).1, "AutoScene couldn't get Poster. Check the internet connection, then try again.");
         assert_eq!(said(PluginError::NotFound("dev.a.b".into())).0, ErrorCode::NotFound);
         assert_eq!(said(PluginError::Closed), (ErrorCode::NotFound, "This page was closed.".into()));
         assert_eq!(

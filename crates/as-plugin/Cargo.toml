@@ -45,6 +45,9 @@ zip.workspace = true
 minisign-verify.workspace = true
 base64.workspace = true
 keyring.workspace = true
+# A catalog package downloads as AutoScene's models do (src/fetch.rs words
+# what fails).
+as-models.workspace = true
 # net.fetch (src/net.rs).
 ureq.workspace = true
 url.workspace = true

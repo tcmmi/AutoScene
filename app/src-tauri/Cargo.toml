@@ -73,6 +73,8 @@ tauri-plugin-window-state = "=3.0.0-alpha.2"
 minisign.workspace = true
 # The catalog's tests make writing its row fail, with a trigger.
 rusqlite.workspace = true
+# The catalog's tests pack the packages it offers.
+zip.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # A plugin page's saved file is marked as a download (plugins/calls.rs).

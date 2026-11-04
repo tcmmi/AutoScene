@@ -171,13 +171,15 @@ fn nvdec_suits(info: &MediaInfo) -> bool {
         && info.video.rotation == 0
 }
 
-/// [`decode_samples`] with `decoder`. When NVDEC can't be used or fails
-/// part way (no NVIDIA GPU, a codec it doesn't take, a lost device), the
-/// samples from the first one not delivered on are decoded in software
-/// (trying costs a moment: the decoder fails as it starts). A run and its
-/// resumption see the same pixels as long as they decode the same way; one
-/// that fell back, or a resumption on a machine where the GPU decoder
-/// changed, may differ slightly in its later chunks.
+/// [`decode_samples`] with `decoder`. NVDEC is tried only where the check of
+/// this machine found CUDA working ([`Tools::caps`]): a driver that failed or
+/// hung there isn't started again, as nothing but a cancel would end a
+/// decoder stuck in it. When it can't be used or fails part way (a codec it
+/// doesn't take, a lost device), the samples from the first one not delivered
+/// on are decoded in software. A run and its resumption see the same pixels
+/// as long as they decode the same way; one that fell back, or a resumption
+/// on a machine where the GPU decoder changed, may differ slightly in its
+/// later chunks.
 #[allow(clippy::too_many_arguments)]
 pub fn decode_samples_with(
     tools: &Tools,
@@ -190,7 +192,7 @@ pub fn decode_samples_with(
     mut on_frame: impl FnMut(FrameIdx, &[u8]) -> MediaResult<bool>,
 ) -> MediaResult<u32> {
     assert!(step > 0);
-    if decoder == Decoder::Cpu || !nvdec_suits(src.info) {
+    if decoder == Decoder::Cpu || !nvdec_suits(src.info) || !cuda_works(tools) {
         return decode_samples(tools, src, from, step, (w, h), cancel, on_frame);
     }
     let mut chain: Vec<String> = Vec::new();
@@ -219,6 +221,11 @@ pub fn decode_samples_with(
             Ok(delivered + decode_samples(tools, src, next, step, (w, h), cancel, on_frame)?)
         }
     }
+}
+
+/// Whether this machine's check found CUDA working, the device NVDEC runs on.
+fn cuda_works(tools: &Tools) -> bool {
+    tools.caps().decode.as_ref().is_some_and(|d| d.hwaccel == "cuda")
 }
 
 /// Shared decoder: `-ss` pre-roll, deinterlacing (when the source needs it),
@@ -394,6 +401,7 @@ mod tests {
     use as_core::Rational;
 
     use super::*;
+    use crate::{Caps, HwDecode};
 
     fn info(width: u32, height: u32, sar: Rational, rotation: i32) -> MediaInfo {
         serde_json::from_value(serde_json::json!({
@@ -505,7 +513,7 @@ mod tests {
     #[test]
     fn a_decoder_that_never_answers_is_ended_by_a_cancel() {
         let dir = tempfile::tempdir().unwrap();
-        let tools = Tools::hung(dir.path());
+        let tools = Tools::hung(dir.path()).with_caps(cuda());
         let (info, index) = hundred_frames();
         let path = dir.path().join("clip.mp4");
         let src = Source { path: &path, info: &info, index: &index };
@@ -519,6 +527,51 @@ mod tests {
             cancelled_midway(|cancel| decode_samples(&tools, src, 0, 1, (16, 16), cancel, |_, _| Ok(true)));
         assert!(matches!(out, Err(ref e) if e.is_cancelled()), "{out:?}");
         assert!(took < Duration::from_secs(15), "came back after {took:?}");
+    }
+
+    /// What the check of a machine with working CUDA finds.
+    fn cuda() -> Caps {
+        let decode = HwDecode { hwaccel: "cuda".into(), output_format: "cuda".into() };
+        Caps { decode: Some(decode), ..Caps::default() }
+    }
+
+    /// Whether a decode that asks `decoder`, on a machine whose check found
+    /// `caps`, starts the driver: a stand-in that hangs on `-hwaccel` notes
+    /// that, and any other run ends the decode at once.
+    fn starts_the_driver(caps: Caps, decoder: Decoder) -> bool {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::picky(dir.path(), "-hwaccel").with_caps(caps);
+        let (info, index) = hundred_frames();
+        assert!(nvdec_suits(&info));
+        let path = dir.path().join("clip.mp4");
+        let src = Source { path: &path, info: &info, index: &index };
+        let (hangs, cancel) = (dir.path().join("hangs"), CancelToken::new());
+        thread::scope(|s| {
+            let decoding =
+                s.spawn(|| decode_samples_with(&tools, src, 0, 1, (16, 16), decoder, &cancel, |_, _| Ok(true)));
+            let start = std::time::Instant::now();
+            while !decoding.is_finished() && !hangs.exists() {
+                assert!(start.elapsed() < Duration::from_secs(120), "the decode neither ended nor hung");
+                thread::sleep(Duration::from_millis(20));
+            }
+            cancel.cancel();
+            drop(decoding.join().unwrap());
+        });
+        hangs.exists()
+    }
+
+    /// Where the check found the NVIDIA driver failing or hanging, the decode
+    /// that asks for the GPU never starts it: a driver stuck there would
+    /// hold the scan until the person cancels. Another device isn't CUDA.
+    /// A card the person chose is held to the same check.
+    #[test]
+    fn the_gpu_decoder_starts_only_where_the_check_found_cuda() {
+        for decoder in [Decoder::Nvdec, Decoder::NvdecOn(1)] {
+            assert!(!starts_the_driver(Caps::default(), decoder));
+            let elsewhere = HwDecode { hwaccel: "d3d11va".into(), output_format: "d3d11".into() };
+            assert!(!starts_the_driver(Caps { decode: Some(elsewhere), ..Caps::default() }, decoder));
+            assert!(starts_the_driver(cuda(), decoder));
+        }
     }
 
     /// A decode nobody cancels still runs to its end.

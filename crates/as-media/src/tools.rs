@@ -93,6 +93,13 @@ impl Tools {
         Self { ffmpeg: path.clone(), ffprobe: path, version: "stand-in".into(), caps: OnceLock::new() }
     }
 
+    /// These tools, with the check of this machine already made: `caps`.
+    #[cfg(test)]
+    pub(crate) fn with_caps(self, caps: Caps) -> Self {
+        self.caps.set(caps).expect("no check was made yet");
+        self
+    }
+
     /// Tools with this ffmpeg (and no ffprobe).
     #[cfg(all(test, unix))]
     pub(crate) fn with_ffmpeg(ffmpeg: PathBuf) -> Self {

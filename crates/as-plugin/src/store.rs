@@ -259,6 +259,8 @@ pub struct Store {
     root: PathBuf,
     data: PathBuf,
     logs: PathBuf,
+    /// Where the large files plugins name are kept ([`crate::resources`]).
+    resources: PathBuf,
     db: Arc<LibraryDb>,
     /// What AutoScene's catalog reviewed and withdrew ([`Store::set_catalog`]).
     catalog: RwLock<Arc<Catalog>>,
@@ -300,6 +302,7 @@ impl Store {
             root: paths.plugins(),
             data: paths.plugin_data(),
             logs: paths.plugin_logs(),
+            resources: paths.plugin_resources(),
             db,
             catalog: RwLock::new(Arc::new(Catalog::none())),
             app,
@@ -882,6 +885,13 @@ impl Store {
         self.data.join(id.as_str())
     }
 
+    /// What the large files `p`'s manifest names take on the disk now, by
+    /// their sizes ([`crate::resources::kept_bytes_in`]): never a hash.
+    pub fn resource_bytes(&self, p: &Installed) -> u64 {
+        let named = p.manifest.as_ref().map_or(&[][..], |m| &m.resources);
+        crate::resources::kept_bytes_in(&self.resources.join(p.record.id.as_str()), named)
+    }
+
     /// Where the runs of `id` write their log.
     pub fn log_path(&self, id: &PluginId) -> PathBuf {
         self.logs.join(format!("{id}.log"))
@@ -900,7 +910,8 @@ impl Store {
     /// `ffmpeg_version`) and each of its settings, as [`Store::values`] gives
     /// them. The run speaks the protocol the plugin declared. The project and
     /// the export it runs on are the host's to add, and so are the answers to
-    /// its calls and a uv script's uv. A broken plugin can't run.
+    /// its calls, a uv script's uv and the folder of the large files its
+    /// plugin names ([`crate::resources`]). A broken plugin can't run.
     pub fn run_spec(
         &self,
         p: &Installed,
@@ -919,6 +930,7 @@ impl Store {
                 id: id.clone(),
                 version: p.record.version.clone(),
                 data_dir: data_dir.to_string_lossy().into_owned(),
+                resources_dir: None,
             },
             app: AppContext { version: self.app.to_string(), platform: current_platform().into() },
             tools: ToolPaths {
@@ -941,6 +953,7 @@ impl Store {
             ffmpeg: ffmpeg.into(),
             ffprobe: ffprobe.into(),
             uv: None,
+            resources: None,
             protocol: m.engines.protocol,
             calls: None,
             message,
@@ -953,7 +966,8 @@ impl Store {
     /// `calls` answering its calls, and a serve line with a new id that
     /// names what a run line does but a task. Only a plugin whose runtime is
     /// a service has one, and it speaks protocol 2; a broken plugin has
-    /// none. A uv script's uv is the host's to get.
+    /// none. A uv script's uv, and the folder of the large files its plugin
+    /// names, are the host's to get.
     pub fn serve_spec(
         &self,
         p: &Installed,
@@ -975,6 +989,7 @@ impl Store {
                 id: id.clone(),
                 version: p.record.version.clone(),
                 data_dir: data_dir.to_string_lossy().into_owned(),
+                resources_dir: None,
             },
             app: AppContext { version: self.app.to_string(), platform: current_platform().into() },
             tools: ToolPaths {
@@ -993,6 +1008,7 @@ impl Store {
             ffmpeg: ffmpeg.into(),
             ffprobe: ffprobe.into(),
             uv: None,
+            resources: None,
             ready_wait: READY_WAIT,
             message,
             calls,
@@ -1869,6 +1885,8 @@ mod tests {
             },
             icon: None,
             approved: catalog::now() - DAY,
+            resource_bytes: 0,
+            resource_hosts: Vec::new(),
         }
     }
 

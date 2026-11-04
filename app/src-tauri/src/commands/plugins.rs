@@ -265,8 +265,9 @@ pub async fn plugin_discard(state: State<'_, AppState>, ticket_id: String) -> Ap
     .await
 }
 
-/// Uninstall a plugin, with what it kept when `delete_data`. A folder it was
-/// loaded from stays. Refused while it runs; its runs still waiting go.
+/// Uninstall a plugin, with the large files it downloaded, and what it kept
+/// when `delete_data`. A folder it was loaded from stays. Refused while it
+/// runs; its runs still waiting go.
 #[tauri::command]
 #[specta::specta]
 pub async fn plugin_uninstall(
@@ -277,15 +278,9 @@ pub async fn plugin_uninstall(
 ) -> AppResult<()> {
     let id = PluginId::parse(&plugin_id)?;
     let (host, jobs) = (host(&state)?, state.jobs.clone());
-    blocking(move || {
-        let name = host.store.get(&id).ok().and_then(|p| p.manifest.map(|m| m.name));
-        // A run that starts meanwhile waits, then finds it gone.
-        let _changing = host.change(&id, name.as_deref().unwrap_or(id.as_str()), "It is being uninstalled.")?;
-        host.store.uninstall(&id, delete_data)?;
-        host.stop(&jobs, &id);
-        Ok(())
-    })
-    .await?;
+    // A run that starts meanwhile waits, then finds it gone; its downloaded
+    // files go too.
+    blocking(move || Ok(host.uninstall(&jobs, &id, delete_data)?)).await?;
     changed(&app, Some(plugin_id));
     Ok(())
 }

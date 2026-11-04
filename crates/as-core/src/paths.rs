@@ -6,6 +6,7 @@
 //! | default library (project folders) | `Documents\AutoScene Library` | `~/Documents/AutoScene Library` |
 //! | plugins, what they keep, their logs | app data `plugins`, `plugin-data`, `logs\plugins` | app data `plugins`, `plugin-data`, `logs/plugins` |
 //! | plugin packages from the catalog, while they download | app data `cache\plugin-downloads` | app data `cache/plugin-downloads` |
+//! | the large files plugins name, a folder per plugin id | app data `cache\plugin-resources` | app data `cache/plugin-resources` |
 //! | updater override | `~/.autoscene/updates.json` | same |
 //!
 //! `AUTOSCENE_DATA_DIR` overrides the app data root (tests, portable installs).
@@ -80,6 +81,12 @@ impl AppPaths {
     /// folders are taken for plugins.
     pub fn plugin_downloads(&self) -> PathBuf {
         self.cache().join("plugin-downloads")
+    }
+    /// The large files plugins name in their `plugin.json` (`resources`),
+    /// a folder per plugin id, each file checked by its hash. Kept while an
+    /// installed version names them.
+    pub fn plugin_resources(&self) -> PathBuf {
+        self.cache().join("plugin-resources")
     }
 
     /// Where new projects go unless the user picks another folder.

@@ -227,6 +227,11 @@ pub struct PluginContext {
     pub version: String,
     /// A folder the plugin may keep files in; runs start there.
     pub data_dir: String,
+    /// The folder of the large files its `plugin.json` names, each checked
+    /// by its hash ([`crate::resources`]): only when it names some, so no
+    /// other plugin's line changes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources_dir: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -622,6 +627,7 @@ mod tests {
                 id: PluginId::parse("dev.autoscene.hello").unwrap(),
                 version: "1.2.0".into(),
                 data_dir: "/data".into(),
+                resources_dir: None,
             },
             app: AppContext { version: "1.0.3-BETA".into(), platform: "linux-x86_64".into() },
             tools: ToolPaths { ffmpeg: "/ffmpeg".into(), ffprobe: "/ffprobe".into(), ffmpeg_version: "9.0".into() },

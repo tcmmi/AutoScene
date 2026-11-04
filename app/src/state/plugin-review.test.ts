@@ -20,6 +20,8 @@ const review = (ticketId: string): PluginReview => ({
   allowed: true,
   uvMissing: false,
   uvBytes: 15236317,
+  resourceBytes: 0,
+  resourceHosts: [],
   catalog: null,
 })
 

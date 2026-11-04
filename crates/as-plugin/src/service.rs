@@ -91,6 +91,10 @@ pub struct ServiceSpec {
     /// AutoScene's uv ([`crate::uv`]), which the host got for a uv script
     /// before the start: without it, the script doesn't start.
     pub uv: Option<PathBuf>,
+    /// The folder of the large files its `plugin.json` names, which the
+    /// host got before the start ([`crate::resources`]); none when it names
+    /// none.
+    pub resources: Option<PathBuf>,
     /// How long it may take to say it is ready ([`READY_WAIT`]), from the
     /// start of its program.
     pub ready_wait: Duration,
@@ -185,13 +189,27 @@ impl ProcessService {
         if cancel.is_cancelled() {
             return Err(PluginError::Cancelled);
         }
-        let ServiceSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, uv, ready_wait, mut message, calls } =
-            spec;
+        let ServiceSpec {
+            name,
+            dir,
+            launch,
+            data_dir,
+            log_path,
+            ffmpeg,
+            ffprobe,
+            uv,
+            resources,
+            ready_wait,
+            mut message,
+            calls,
+        } = spec;
         let mut cmd = runtime::command(&name, &dir, &launch, || uv)?;
         let id = message.plugin.id.clone();
-        let data_dir = runtime::prepare(&mut cmd, &data_dir, &ffmpeg, &ffprobe, &id, message.protocol)?;
+        let place = (data_dir.as_path(), resources.as_deref());
+        let (data_dir, resources) = runtime::prepare(&mut cmd, place, &ffmpeg, &ffprobe, &id, message.protocol)?;
         cmd.env("AUTOSCENE_MODE", "service");
         message.plugin.data_dir = data_dir.to_string_lossy().into_owned();
+        message.plugin.resources_dir = resources.map(|r| r.to_string_lossy().into_owned());
         message.tools.ffmpeg = ffmpeg.to_string_lossy().into_owned();
         message.tools.ffprobe = ffprobe.to_string_lossy().into_owned();
         let mut log = PluginLog::open_rolling(&log_path, &message.service_id, "serve")?;

@@ -42,9 +42,10 @@ use crate::error::{PluginError, PluginResult};
 use crate::keys::{CATALOG_KEYS, FIRST_EPOCH, KeyRole, MIN_EPOCH};
 use crate::log::utc;
 use crate::manifest::{
-    MAX_PLATFORMS, PluginId, check_requirement, clean, cut, is_host, is_platform, requirement_for, shown,
-    version_matches,
+    MAX_PLATFORMS, MAX_RESOURCE_URLS, MAX_RESOURCES, MAX_RESOURCES_BYTES, PluginId, check_requirement, clean, cut,
+    is_host, is_platform, requirement_for, shown, version_matches,
 };
+use crate::net::public_name;
 use crate::package::{MAX_PACKAGE_BYTES, Picture, PictureFormat, check_path, picture_bytes_ok, sha256_hex};
 use crate::trust::{key_id, signer_id};
 
@@ -195,6 +196,17 @@ pub struct Entry {
     pub icon: Option<String>,
     /// When the catalog approved it, in Unix seconds.
     pub approved: u64,
+    /// What the large files its manifest names take, in bytes
+    /// ([`crate::manifest::Resource`]): what its first run downloads.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub resource_bytes: u64,
+    /// The hosts those files come from, lowercase, each once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resource_hosts: Vec<String>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// Where a reviewed package is, and what it is.
@@ -780,6 +792,9 @@ fn entry(v: &Value, published: u64) -> Option<(Entry, Version)> {
         && e.permissions.iter().all(|p| permission_name(p))
         && e.hosts.len() <= MAX_NAMES
         && e.hosts.iter().all(|h| is_host(h))
+        && e.resource_bytes <= MAX_RESOURCES_BYTES
+        && e.resource_hosts.len() <= MAX_RESOURCES * MAX_RESOURCE_URLS
+        && e.resource_hosts.iter().all(|h| is_host(h) && public_name(h))
         && e.platforms.len() <= MAX_PLATFORMS
         && e.platforms.iter().all(|p| is_platform(p))
         && runtime_name(&e.runtime)
@@ -1563,6 +1578,10 @@ mod tests {
             ("a runtime with a hidden character", |e| e["runtime"] = "process\u{202E}".into()),
             ("a URL with a control character", |e| e["package"]["urls"] = json!(["https://a.example/x\u{7}.asp"])),
             ("a host that can't be one", |e| e["hosts"] = json!(["https://discord.com"])),
+            ("resources past 8 GiB", |e| e["resourceBytes"] = (MAX_RESOURCES_BYTES + 1).into()),
+            ("49 resource hosts", |e| e["resourceHosts"] = json!(vec!["huggingface.co"; 49])),
+            ("a resource host on this computer", |e| e["resourceHosts"] = json!(["localhost"])),
+            ("a resource host that is an address", |e| e["resourceHosts"] = json!(["127.0.0.1"])),
             ("unreadable engines", |e| e["engines"] = ">=1.0.0 <2".into()),
             ("a source outside github.com", |e| e["source"]["repo"] = "https://gitlab.com/tcmmi/autoscene".into()),
             ("a source a folder up", |e| e["source"]["repo"] = "https://github.com/tcmmi/..".into()),
@@ -1617,6 +1636,8 @@ mod tests {
         e["authorKey"] = owner.online.public().into();
         e["source"]["path"] = ".".into();
         e["hosts"] = json!(["discord.com"]);
+        e["resourceBytes"] = MAX_RESOURCES_BYTES.into();
+        e["resourceHosts"] = json!(["huggingface.co", "cas-bridge.xethub.hf.co"]);
         e["permissions"] = json!(["a".repeat(32)]);
         e["platforms"] = json!(["windows-x86_64", "freebsd-x86_64"]);
         assert!(matches!(check_with(json!([e]), json!([])), Ok(Checked::Newer(_))));
@@ -1652,6 +1673,7 @@ mod tests {
         let e = &a.index.plugins[0];
         assert_eq!((e.author_key.as_deref(), e.summary.as_str(), e.license.as_deref()), (None, "", None));
         assert!(e.platforms.is_empty() && e.permissions.is_empty() && e.hosts.is_empty() && e.icon.is_none());
+        assert!(e.resource_bytes == 0 && e.resource_hosts.is_empty());
         assert_eq!((e.runtime.as_str(), e.gpu, e.uv_script, e.source.path.as_str()), ("", false, false, ""));
         assert!(a.index.withdrawn.is_empty());
     }

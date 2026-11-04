@@ -20,6 +20,13 @@ pub const USER_AGENT: &str = concat!("AutoScene/", env!("CARGO_PKG_VERSION"), " 
 /// a plain http address: the hash would still catch a forged file, but
 /// nothing of it has to travel in the clear.
 pub fn agent(url: &str) -> ureq::Agent {
+    config(url).build().into()
+}
+
+/// What [`agent`] is made of: its timeouts, its user agent, the proxy the
+/// environment names (`HTTPS_PROXY`, `ALL_PROXY`), and `https_only` when
+/// `url` is on https. For an agent that resolves names its own way.
+pub fn config(url: &str) -> ureq::config::ConfigBuilder<ureq::typestate::AgentScope> {
     ureq::Agent::config_builder()
         .https_only(url.starts_with("https://"))
         .timeout_resolve(Some(CONNECT_TIMEOUT))
@@ -27,8 +34,6 @@ pub fn agent(url: &str) -> ureq::Agent {
         .timeout_send_request(Some(CONNECT_TIMEOUT))
         .timeout_recv_response(Some(CONNECT_TIMEOUT))
         .user_agent(USER_AGENT)
-        .build()
-        .into()
 }
 
 /// GET `url` (`range`: its Range header), following its redirects here, not

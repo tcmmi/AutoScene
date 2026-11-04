@@ -1,7 +1,8 @@
 //! What a pinned download that failed says to the person. A catalog
-//! package and AutoScene's uv ([`crate::uv`]) download as AutoScene's
-//! models do (`as_models`), whose texts name "the AI model": they never
-//! reach the person as they are.
+//! package, AutoScene's uv ([`crate::uv`]) and the large files a plugin
+//! names ([`crate::resources`]) download as AutoScene's models do
+//! (`as_models`), whose texts name "the AI model": they never reach the
+//! person as they are.
 
 use as_models::ModelError;
 

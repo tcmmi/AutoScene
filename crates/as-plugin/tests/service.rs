@@ -67,8 +67,12 @@ impl Served {
 
     fn spec(&self) -> ServiceSpec {
         let exe = Path::new(env!("CARGO_BIN_EXE_asp_test_plugin"));
-        let plugin =
-            PluginContext { id: PluginId::parse(ID).unwrap(), version: "1.2.0".into(), data_dir: "/data".into() };
+        let plugin = PluginContext {
+            id: PluginId::parse(ID).unwrap(),
+            version: "1.2.0".into(),
+            data_dir: "/data".into(),
+            resources_dir: None,
+        };
         ServiceSpec {
             name: NAME.into(),
             dir: exe.parent().unwrap().to_path_buf(),
@@ -82,6 +86,7 @@ impl Served {
             ffprobe: self.dir.path().join("tools").join("ffprobe"),
             // A program: no uv runs.
             uv: None,
+            resources: None,
             ready_wait: self.ready_wait,
             message: ServeMessage {
                 protocol: 2,
@@ -161,6 +166,9 @@ fn a_service_answers_requests_by_id() {
     assert_eq!(serve["plugin"]["dataDir"], json!(s.data()));
     assert_eq!(serve["settings"], json!({"greeting": "Hi"}));
     assert_eq!(s.text("mode"), "service");
+    // Its plugin names no large files: no folder of them.
+    assert!(serve["plugin"].get("resourcesDir").is_none(), "{serve}");
+    assert_eq!(s.text("resources"), "");
 
     assert_eq!(ask(&service, "count", json!({"text": "one two three"})), Ok(json!({"words": 3})));
     // What the page asked, and from where.
@@ -200,6 +208,21 @@ fn a_service_answers_requests_by_id() {
     }
     // Never what a request or a response carried.
     assert!(!log.contains("one two") && !log.contains("words"), "{log}");
+}
+
+#[test]
+fn a_service_gets_its_resources_folder() {
+    let s = Served::new("serve");
+    let folder = s.dir.path().join("cache").join("plugin-resources").join(ID);
+    let spec = ServiceSpec { resources: Some(folder.clone()), ..s.spec() };
+    let events = s.events.clone();
+    let service =
+        ProcessService::start(spec, Arc::new(move |e| events.lock().unwrap().push(e)), &CancelToken::new()).unwrap();
+    // In its serve line and its environment.
+    let serve: Value = serde_json::from_str(&s.text("serve.json")).unwrap();
+    assert_eq!(PathBuf::from(serve["plugin"]["resourcesDir"].as_str().unwrap()), folder);
+    assert_eq!(PathBuf::from(s.text("resources")), folder);
+    service.stop(STOP_GRACE);
 }
 
 #[test]

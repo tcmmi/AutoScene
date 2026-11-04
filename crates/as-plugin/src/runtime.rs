@@ -126,6 +126,10 @@ pub struct RunSpec {
     /// AutoScene's uv ([`crate::uv`]), which the host got for a uv script:
     /// without it, the script doesn't start.
     pub uv: Option<PathBuf>,
+    /// The folder of the large files its `plugin.json` names, which the
+    /// host got before the run ([`crate::resources`]); none when it names
+    /// none. The run line and the environment name it only then.
+    pub resources: Option<PathBuf>,
     /// The protocol its plugin declared (`engines.protocol`), which the run
     /// speaks: an older plugin gets the run it always got.
     pub protocol: u32,
@@ -154,12 +158,14 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
     }
-    let RunSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, uv, protocol, calls, mut message } = spec;
+    let RunSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, uv, resources, protocol, calls, mut message } =
+        spec;
     let mut cmd = command(&name, &dir, &launch, || uv)?;
     let id = message.plugin.id.clone();
-    let data_dir = prepare(&mut cmd, &data_dir, &ffmpeg, &ffprobe, &id, protocol)?;
+    let (data_dir, resources) = prepare(&mut cmd, (&data_dir, resources.as_deref()), &ffmpeg, &ffprobe, &id, protocol)?;
     message.protocol = protocol;
     message.plugin.data_dir = data_dir.to_string_lossy().into_owned();
+    message.plugin.resources_dir = resources.map(|r| r.to_string_lossy().into_owned());
     message.tools.ffmpeg = ffmpeg.to_string_lossy().into_owned();
     message.tools.ffprobe = ffprobe.to_string_lossy().into_owned();
     let mut log = PluginLog::open(&log_path, &message.run_id, &message.action.id)?;
@@ -244,19 +250,22 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
 /// its data folder `data_dir` (made when it isn't there) with only the
 /// environment variables of [`allowed_env`], those [`command`] set for its
 /// program, and those AutoScene sets for every plugin, and its three pipes.
-/// Gives the data folder as an absolute path. Python writes no bytecode
+/// A plugin that names large files gets their folder `resources` as
+/// `AUTOSCENE_RESOURCES`; others get no such variable. Gives the data
+/// folder, and that one, as absolute paths. Python writes no bytecode
 /// beside a module it imports: the plugin's folder stays as it was
 /// installed.
 pub(crate) fn prepare(
     cmd: &mut Command,
-    data_dir: &Path,
+    (data_dir, resources): (&Path, Option<&Path>),
     ffmpeg: &Path,
     ffprobe: &Path,
     id: &PluginId,
     protocol: u32,
-) -> PluginResult<PathBuf> {
+) -> PluginResult<(PathBuf, Option<PathBuf>)> {
     fs::create_dir_all(data_dir)?;
     let data_dir = std::path::absolute(data_dir)?;
+    let resources = resources.map(std::path::absolute).transpose()?;
     let own: Vec<_> = cmd.get_envs().filter_map(|(name, value)| Some((name.to_owned(), value?.to_owned()))).collect();
     cmd.current_dir(&data_dir)
         .env_clear()
@@ -274,7 +283,10 @@ pub(crate) fn prepare(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    Ok(data_dir)
+    if let Some(resources) = &resources {
+        cmd.env("AUTOSCENE_RESOURCES", resources);
+    }
+    Ok((data_dir, resources))
 }
 
 /// Starts `cmd`, the program of the plugin `id`, as the root of a tree;
@@ -1129,7 +1141,7 @@ mod tests {
         let mut cmd = command("Hello", dir.path(), &launch, || Some(managed_uv(&runtimes))).unwrap();
         let id = PluginId::parse("dev.a.hello").unwrap();
         let (ffmpeg, ffprobe) = (Path::new("ffmpeg"), Path::new("ffprobe"));
-        prepare(&mut cmd, &dir.path().join("data"), ffmpeg, ffprobe, &id, 2).unwrap();
+        prepare(&mut cmd, (&dir.path().join("data"), None), ffmpeg, ffprobe, &id, 2).unwrap();
         let envs: std::collections::BTreeMap<_, _> =
             cmd.get_envs().filter_map(|(k, v)| Some((k.to_str()?.to_owned(), v?.to_owned()))).collect();
         // Set after every other variable was cleared: they reach uv.
@@ -1149,7 +1161,7 @@ mod tests {
         }
         let launch = Launch::Exe { program: "bin/tool".into(), args: Vec::new() };
         let mut cmd = command("Hello", dir.path(), &launch, || Some(managed_uv(&runtimes))).unwrap();
-        prepare(&mut cmd, &dir.path().join("data"), ffmpeg, ffprobe, &id, 2).unwrap();
+        prepare(&mut cmd, (&dir.path().join("data"), None), ffmpeg, ffprobe, &id, 2).unwrap();
         assert!(!cmd.get_envs().any(|(k, _)| k.to_string_lossy().starts_with("UV_")));
     }
 

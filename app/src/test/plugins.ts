@@ -33,6 +33,7 @@ export function pluginInfo(o: Partial<PluginInfo> & Pick<PluginInfo, "id" | "nam
     logPath: `C:\\AutoScene\\logs\\plugins\\${o.id}.log`,
     serviceLogPath: null,
     warnings: [],
+    resourceBytes: 0,
     ...o,
   }
 }
@@ -62,6 +63,8 @@ export function catalogPlugin(o: Partial<CatalogPlugin> & Pick<CatalogPlugin, "i
     addsHosts: [],
     runsHere: true,
     needsNewerApp: false,
+    resourceBytes: 0,
+    addsResourceHosts: [],
     ...o,
   }
 }
@@ -99,12 +102,15 @@ export function catalogReview(plugin: PluginInfo, update: Partial<PluginUpdate> 
       addedPages: [],
       startsProgram: false,
       becomesService: false,
+      addedResourceHosts: [],
       ...update,
     },
     needsUnreviewed: false,
     allowed: true,
     uvMissing: false,
     uvBytes: null,
+    resourceBytes: 0,
+    resourceHosts: [],
     catalog: {
       published: Date.UTC(2026, 10, 3, 9),
       repository: "https://github.com/tcmmi/AutoScene",

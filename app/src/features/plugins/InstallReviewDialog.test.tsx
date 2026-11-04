@@ -40,6 +40,8 @@ const review = (o: Partial<PluginReview> = {}): PluginReview => ({
   allowed: true,
   uvMissing: false,
   uvBytes: 15236317,
+  resourceBytes: 0,
+  resourceHosts: [],
   catalog: null,
   ...o,
 })
@@ -161,6 +163,7 @@ describe("the install review", () => {
       addedPages: [],
       startsProgram: false,
       becomesService: false,
+      addedResourceHosts: [],
     }
     show(review({ update }))
     expect(screen.getByText("The installed version: Reviewed by AutoScene.")).toBeTruthy()
@@ -210,6 +213,7 @@ describe("the install review", () => {
           addedPages: [],
           startsProgram: false,
           becomesService: false,
+          addedResourceHosts: [],
         },
       }),
     )
@@ -292,6 +296,7 @@ describe("the install review", () => {
       addedPages: ["clips"],
       startsProgram: false,
       becomesService: false,
+      addedResourceHosts: [],
     }
     // By its id: another page may have the same title.
     show(review({ plugin: { ...pages, pages: [page("main", "Clips"), page("clips", "Clips")] }, update }))
@@ -328,6 +333,7 @@ describe("the install review", () => {
       addedPages: [],
       startsProgram: false,
       becomesService: true,
+      addedResourceHosts: [],
     }
     show(review({ plugin: counter, update }))
     const now = screen.getByText("Now keeps its program running while its page is open.")
@@ -371,6 +377,7 @@ describe("the install review", () => {
       addedPages: [],
       startsProgram: false,
       becomesService: false,
+      addedResourceHosts: [],
     }
     show(review({ plugin: signed, update }))
     expect(

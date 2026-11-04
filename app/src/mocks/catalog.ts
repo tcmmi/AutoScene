@@ -32,7 +32,10 @@ const icon = (fill: string) =>
   `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${fill}"/><path d="M8 12h8" stroke="#0b0b0c" stroke-width="2"/></svg>`)}`
 
 /** An entry as `index.json` lists it, with what the view works out. */
-type Entry = Omit<CatalogPlugin, "installed" | "update" | "addsPermissions" | "addsHosts" | "runsHere" | "needsNewerApp">
+type Entry = Omit<
+  CatalogPlugin,
+  "installed" | "update" | "addsPermissions" | "addsHosts" | "runsHere" | "needsNewerApp" | "addsResourceHosts"
+>
 
 function entry(o: Pick<Entry, "id" | "name" | "summary" | "version" | "permissions" | "hosts"> & Partial<Entry>): Entry {
   return {
@@ -48,6 +51,7 @@ function entry(o: Pick<Entry, "id" | "name" | "summary" | "version" | "permissio
     icon: null,
     sizeBytes: 48_213,
     approved: Date.now() - 3 * DAY,
+    resourceBytes: 0,
     ...o,
   }
 }
@@ -134,6 +138,8 @@ function offer(e: Entry): CatalogPlugin {
     // Nothing of the withdrawn plugin is offered to run.
     runsHere: e.id !== LEAKY_ID,
     needsNewerApp: false,
+    // No mock plugin names large files.
+    addsResourceHosts: [],
   }
 }
 

@@ -17,7 +17,9 @@
 //! A run ([`runtime`]) starts the plugin's program and speaks the protocol
 //! ([`protocol`]) with it over its stdin and stdout; what else it writes
 //! goes to its log ([`log`]). A Python script runs through AutoScene's own
-//! uv, which comes pinned, the first time one needs it ([`uv`]). From protocol 2 a plugin may call AutoScene
+//! uv, which comes pinned, the first time one needs it ([`uv`]). The large
+//! files a plugin names come the same way, at its first run, each checked
+//! by its hash ([`resources`]). From protocol 2 a plugin may call AutoScene
 //! for its project, its exports and its settings, keep a little state
 //! ([`page_state`]), and reach the hosts it names on the internet
 //! ([`net`]); each call is checked against what the plugin may use
@@ -44,6 +46,7 @@ pub mod package;
 pub mod page_state;
 pub mod pages;
 pub mod protocol;
+pub mod resources;
 pub mod runtime;
 pub mod secrets;
 pub mod service;
@@ -57,13 +60,14 @@ pub use error::{PluginError, PluginResult};
 pub use keys::KeyRole;
 pub use manifest::{
     ActionSpec, Author, CommandSpec, Engines, Launch, Manifest, PageScope, PageSpec, Parsed, Permission, PluginId,
-    Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue, SourceLink, current_platform,
+    Resource, Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue, SourceLink, current_platform,
 };
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{
     ActionContext, ActionKind, AppContext, CallId, ClipContext, ExportContext, PluginContext, ProjectContext,
     RequestContext, RunMessage, ServeMessage, ServiceMessage, ToolPaths, Trigger,
 };
+pub use resources::Resources;
 pub use runtime::RunSpec;
 pub use secrets::{MemorySecrets, OsKeyring, SecretStore};
 pub use service::{OnEvent, ProcessService, Service, ServiceEvent, ServiceSpec};

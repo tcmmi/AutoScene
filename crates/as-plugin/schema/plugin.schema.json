@@ -75,6 +75,12 @@
       "description": "With manifestVersion 2: wide art, a .png, .jpg or .webp file of at most 512 KB in the plugin, best 2:1 (1200x600).",
       "type": "string",
       "pattern": "\\.([pP][nN][gG]|[jJ][pP][eE]?[gG]|[wW][eE][bB][pP])$"
+    },
+    "resources": {
+      "description": "With manifestVersion 2: large files the plugin's program needs, such as a model's weights. AutoScene gets each at the plugin's first run, keeps it by its hash, and hands the program their folder (AUTOSCENE_RESOURCES).",
+      "type": "array",
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/resource" }
     }
   },
   "additionalProperties": false,
@@ -84,6 +90,7 @@
       "then": {
         "properties": {
           "banner": false,
+          "resources": false,
           "runtime": { "properties": { "type": { "const": "process" } } },
           "contributes": {
             "properties": {
@@ -103,6 +110,7 @@
         "required": ["contributes"],
         "properties": {
           "platforms": false,
+          "resources": { "maxItems": 0 },
           "runtime": { "properties": { "command": false, "gpu": false } },
           "contributes": {
             "required": ["pages"],
@@ -210,6 +218,39 @@
     },
     "permission": {
       "enum": ["exports:read", "exports:write", "project:read", "network"]
+    },
+    "resource": {
+      "description": "A large file, got from one of its addresses and kept only with its size and SHA-256.",
+      "type": "object",
+      "required": ["name", "urls", "sha256", "size"],
+      "properties": {
+        "name": {
+          "description": "Its file name in the plugin's folder of resources: letters, digits and . _ @ + -, unique in any case, not ending in .part, .verified, .lock, .unpacked or .archive.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9._@+-]*[A-Za-z0-9_@+-]$"
+        },
+        "urls": {
+          "description": "Where it comes from, tried in turn: plain https:// addresses of hosts on the internet, on port 443. On Hugging Face, pin a revision (resolve/<40 hex digits>/), never a branch.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/link" }
+        },
+        "sha256": {
+          "description": "Its SHA-256: 64 lowercase hex digits.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size": {
+          "description": "Its size in bytes: at most 4 GiB, and all of a plugin's at most 8 GiB.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967296
+        }
+      },
+      "additionalProperties": false
     },
     "network": {
       "description": "Where it connects. Needs the network permission.",

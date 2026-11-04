@@ -18,9 +18,12 @@
 //! [`crate::pages`]), the runtime type `none`, of a plugin that runs no
 //! program and has only pages, and `service`, of a plugin whose program
 //! speaks protocol 2 and also keeps running while one of its pages is open
-//! ([`crate::service`]), and a banner, the plugin's wide art (a picture in
-//! its package, [`crate::package::Picture`]). A version 1 manifest reads as
-//! it always did: its pages, secret settings and banner are skipped with a
+//! ([`crate::service`]), a banner, the plugin's wide art (a picture in
+//! its package, [`crate::package::Picture`]), and resources: large files
+//! named by their addresses, size and hash, which AutoScene gets at the
+//! plugin's first run and keeps by that hash ([`Resource`],
+//! [`crate::resources`]). A version 1 manifest reads as
+//! it always did: its pages, secret settings, banner and resources are skipped with a
 //! warning that names version 2, and a runtime type only version 2 has is
 //! refused with that hint. In version 2, a network host that names this
 //! computer or its network, or an address, gets a warning: `net.fetch` never
@@ -68,6 +71,24 @@ pub const MAX_SETTINGS: usize = 32;
 pub const MAX_SECRETS: usize = 8;
 /// The most pages a plugin may add.
 pub const MAX_PAGES: usize = 4;
+/// The most large files a plugin may name (`resources`, manifest version 2).
+pub const MAX_RESOURCES: usize = 16;
+/// The largest one of them.
+pub const MAX_RESOURCE_BYTES: u64 = 4 << 30;
+/// The most bytes all of a plugin's take.
+pub const MAX_RESOURCES_BYTES: u64 = 8 << 30;
+/// The most addresses one of them may come from, tried in turn.
+pub const MAX_RESOURCE_URLS: usize = 3;
+/// The longest name one of them may have, in bytes.
+pub const MAX_RESOURCE_NAME: usize = 100;
+/// Endings `as_models` gives the files it keeps beside a download (an
+/// archive's part, `.archive.part`, ends in `.part`): a resource never ends
+/// in one, or `a` and `a.part` would resume into each other.
+pub const RESOURCE_SIDECARS: &[&str] = &[".part", ".verified", ".lock", ".unpacked"];
+
+/// What a resource's name never ends in: [`RESOURCE_SIDECARS`], and
+/// `.archive`, since `as_models` counts `a.archive.part` as a part of `a`.
+const RESOURCE_REFUSED_ENDINGS: &[&str] = &[".part", ".verified", ".lock", ".unpacked", ".archive"];
 
 /// The platforms a manifest can name, as `<os>-<arch>`.
 pub const PLATFORMS: [&str; 6] =
@@ -98,7 +119,7 @@ const NOT_PROGRAMS: &str = "uv uvx py pyw node deno bun perl ruby php osascript 
 /// toward the uv form.
 const SCRIPTS: [&str; 5] = [".bat", ".cmd", ".ps1", ".sh", ".py"];
 const UV_FORM: &str = r#"["uv", "run", "--script", "--locked", "<script>.py"]"#;
-const TOP_KEYS: [&str; 17] = [
+const TOP_KEYS: [&str; 18] = [
     "$schema",
     "manifestVersion",
     "id",
@@ -116,6 +137,7 @@ const TOP_KEYS: [&str; 17] = [
     "contributes",
     "icon",
     "banner",
+    "resources",
 ];
 
 /// A plugin's id: a reverse domain name such as `dev.example.my-plugin`,
@@ -232,6 +254,45 @@ pub struct Manifest {
     /// Its wide art (manifest version 2): a `.png`, `.jpg` or `.webp` in the
     /// package, checked at install as the icon is.
     pub banner: Option<String>,
+    /// The large files it names (manifest version 2), which AutoScene gets
+    /// at its first run and keeps by their hash ([`crate::resources`]).
+    pub resources: Vec<Resource>,
+}
+
+/// A large file a plugin names in its `plugin.json`: a model's weights, say,
+/// too large for its package. Got from one of its addresses (plain
+/// `https://`, on the internet) and kept only when it has its size and
+/// SHA-256, which the plugin's lock covers like its code.
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Resource {
+    /// Its file name in the plugin's folder of resources.
+    pub name: String,
+    /// Tried in turn.
+    pub urls: Vec<String>,
+    /// 64 lowercase hex digits.
+    pub sha256: String,
+    /// In bytes, a whole number from 1 to [`MAX_RESOURCE_BYTES`].
+    pub size: f64,
+}
+
+impl Resource {
+    /// Its size in bytes.
+    pub fn bytes(&self) -> u64 {
+        self.size as u64
+    }
+
+    /// The hosts of its addresses, lowercase.
+    pub fn hosts(&self) -> impl Iterator<Item = String> + '_ {
+        self.urls.iter().filter_map(|url| url_host(url))
+    }
+}
+
+/// The host of the address `url` (`https://host[:port]/…`), lowercase.
+fn url_host(url: &str) -> Option<String> {
+    let address = url.strip_prefix("https://")?.split(['/', '?', '#']).next()?;
+    let host = address.split_once(':').map_or(address, |(host, _)| host);
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
@@ -473,6 +534,23 @@ impl Manifest {
     /// Its page `id`.
     pub fn page(&self, id: &str) -> Option<&PageSpec> {
         self.pages.iter().find(|p| p.id == id)
+    }
+
+    /// The hosts its resources come from, each once, in the order they are
+    /// named.
+    pub fn resource_hosts(&self) -> Vec<String> {
+        let mut hosts: Vec<String> = Vec::new();
+        for host in self.resources.iter().flat_map(Resource::hosts) {
+            if !hosts.contains(&host) {
+                hosts.push(host);
+            }
+        }
+        hosts
+    }
+
+    /// What all its resources take, in bytes.
+    pub fn resource_bytes(&self) -> u64 {
+        self.resources.iter().map(Resource::bytes).sum()
     }
 
     /// Its source: its `repository`, which [`parse`] keeps only as a plain
@@ -807,6 +885,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             None => None,
         },
     };
+    let resources = resources(&root, manifest_version, kind, &mut w)?;
     root.warn_unknown(&TOP_KEYS, &mut w);
 
     if w.len() > MAX_WARNINGS {
@@ -834,8 +913,134 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         pages,
         icon,
         banner,
+        resources,
     };
     Ok(Parsed { manifest, warnings: w })
+}
+
+/// The large files a manifest of `version` names (`resources`), for a
+/// plugin of runtime `kind`. Version 1 skips them with a warning, as
+/// AutoScene 1.0 skips a key it doesn't know. What could stand for more
+/// than the person agreed to is refused: more files or bytes than allowed,
+/// an address that isn't a plain `https://` one of a host on the internet
+/// (port 443), a hash or a size that isn't one, two files of one name in
+/// any case, or a name that isn't a plain file name or ends in one of
+/// [`RESOURCE_REFUSED_ENDINGS`]. An address on Hugging Face that follows a branch
+/// instead of a revision gets a warning: its file will change one day, and
+/// then fail its hash.
+fn resources(root: &Obj, version: u32, kind: RuntimeKind, w: &mut Vec<String>) -> PluginResult<Vec<Resource>> {
+    if root.get("resources").is_none() {
+        return Ok(Vec::new());
+    }
+    if version < 2 {
+        w.push(r#"Skipped resources: they need "manifestVersion": 2."#.into());
+        return Ok(Vec::new());
+    }
+    let listed = root.list("resources")?;
+    if listed.is_empty() {
+        return Ok(Vec::new());
+    }
+    if kind == RuntimeKind::None {
+        return Err(invalid("A plugin that runs no program has no use for resources."));
+    }
+    if listed.len() > MAX_RESOURCES {
+        return Err(invalid(format!("The plugin names more than {MAX_RESOURCES} resources.")));
+    }
+    let mut out: Vec<Resource> = Vec::with_capacity(listed.len());
+    let mut total = 0u64;
+    for (i, v) in listed.iter().enumerate() {
+        let o = object(v, format!("resources[{i}]"))?;
+        o.warn_unknown(&["name", "urls", "sha256", "size"], w);
+        let name = o.required_text("name")?;
+        resource_name(name, &o.at("name"))?;
+        if out.iter().any(|r| r.name.eq_ignore_ascii_case(name)) {
+            return Err(invalid(format!("The plugin's resources name \"{}\" twice.", shown(name))));
+        }
+        let urls = o.list("urls")?;
+        if !(1..=MAX_RESOURCE_URLS).contains(&urls.len()) {
+            return Err(invalid(format!(
+                "The plugin's {} must list 1 to {MAX_RESOURCE_URLS} addresses.",
+                o.at("urls")
+            )));
+        }
+        let mut addresses = Vec::with_capacity(urls.len());
+        for (j, url) in urls.iter().enumerate() {
+            let Some(url) = url.as_str().filter(|url| resource_url(url)) else {
+                return Err(invalid(format!(
+                    "The plugin's {}[{j}] isn't a plain https:// address of a host on the internet.",
+                    o.at("urls")
+                )));
+            };
+            addresses.push(url.to_owned());
+        }
+        if addresses.iter().any(|url| follows_a_branch(url)) {
+            w.push(format!(
+                "{} follows a branch of Hugging Face: pin a revision, or the file will stop matching its hash.",
+                shown(name)
+            ));
+        }
+        let sha256 = o.required_text("sha256")?;
+        if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+            return Err(invalid(format!("The plugin's {} must be 64 lowercase hex digits.", o.at("sha256"))));
+        }
+        let size = match o.whole("size")? {
+            Some(n @ 1..=MAX_RESOURCE_BYTES) => n,
+            Some(_) => {
+                return Err(invalid(format!("The plugin's {} must be from 1 byte to 4 GiB.", o.at("size"))));
+            }
+            None => return Err(o.missing("size")),
+        };
+        total += size;
+        if total > MAX_RESOURCES_BYTES {
+            return Err(invalid("The plugin's resources come to more than 8 GiB."));
+        }
+        out.push(Resource { name: name.to_owned(), urls: addresses, sha256: sha256.to_owned(), size: size as f64 });
+    }
+    Ok(out)
+}
+
+/// Refuses a resource's `name` (at `path` in the manifest) that isn't one
+/// plain file name of a package ([`check_path`]), is longer than
+/// [`MAX_RESOURCE_NAME`] or ends, in any case, in one of
+/// [`RESOURCE_REFUSED_ENDINGS`].
+fn resource_name(name: &str, path: &str) -> PluginResult<()> {
+    if name.contains('/') {
+        return Err(invalid(format!("The plugin's {path} must be a file name, without a folder.")));
+    }
+    check_path(name)?;
+    if name.len() > MAX_RESOURCE_NAME {
+        return Err(invalid(format!("The plugin's {path} is longer than {MAX_RESOURCE_NAME} characters.")));
+    }
+    if let Some(end) = RESOURCE_REFUSED_ENDINGS.iter().find(|end| ends_with_any_case(name, end)) {
+        let end = &name[name.len() - end.len()..];
+        return Err(invalid(format!(
+            "The resource name \"{}\" ends in \"{end}\", which AutoScene keeps beside its downloads.",
+            shown(name)
+        )));
+    }
+    Ok(())
+}
+
+/// Whether `url` is an address a resource may come from: a plain `https://`
+/// link ([`plain_link`]: no `user@`), on port 443, of a name on the internet
+/// ([`net::public_name`]: no address, no `localhost`).
+fn resource_url(url: &str) -> bool {
+    let Some(address) = url.strip_prefix("https://").and_then(|rest| rest.split(['/', '?', '#']).next()) else {
+        return false;
+    };
+    let (host, port) = address.split_once(':').unwrap_or((address, "443"));
+    plain_link(url) && port == "443" && net::public_name(host)
+}
+
+/// Whether `url` is a Hugging Face file that follows a branch: its
+/// `resolve/` names no 40-digit revision.
+fn follows_a_branch(url: &str) -> bool {
+    let on_hf = url_host(url).is_some_and(|h| h == "huggingface.co" || h.ends_with(".huggingface.co") || h == "hf.co");
+    let Some(rev) = url.split("/resolve/").nth(1).map(|rest| rest.split(['/', '?', '#']).next().unwrap_or_default())
+    else {
+        return false;
+    };
+    on_hf && !(rev.len() == 40 && rev.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 /// Reads a version requirement such as `>=1.0.0, <2` (a plugin's
@@ -2297,6 +2502,198 @@ mod tests {
         }
     }
 
+    /// A revision of a Hugging Face repository.
+    const REV: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    /// A resource `name` of 1000 bytes, from a pinned Hugging Face revision.
+    fn resource(name: &str) -> Value {
+        json!({
+            "name": name,
+            "urls": [format!("https://huggingface.co/org/repo/resolve/{REV}/{name}")],
+            "sha256": "4b28e8dafc871cb41f00589e7df8455b244817a2fc3c67f3607ac3854ffc2a9d",
+            "size": 1000
+        })
+    }
+
+    /// The plugin, of manifest version 2, naming `resources`.
+    fn with_resources(resources: Value) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["resources"] = resources;
+        })
+    }
+
+    #[test]
+    fn resources_need_version_2() {
+        // Version 1 skips them, whatever they hold, with a word.
+        for resources in [json!([resource("model.onnx")]), json!("not a list")] {
+            let p = with(|v| v["resources"] = resources).unwrap();
+            assert!(p.manifest.resources.is_empty());
+            assert_eq!(p.warnings, [r#"Skipped resources: they need "manifestVersion": 2."#]);
+        }
+        // Version 2 reads them.
+        let p = with_resources(json!([resource("model.onnx"), resource("vocab.json")])).unwrap();
+        assert_eq!(p.warnings, Vec::<String>::new());
+        let r = &p.manifest.resources[0];
+        assert_eq!((r.name.as_str(), r.size, r.bytes()), ("model.onnx", 1000.0, 1000));
+        assert_eq!(r.urls, [format!("https://huggingface.co/org/repo/resolve/{REV}/model.onnx")]);
+        assert_eq!(r.sha256, "4b28e8dafc871cb41f00589e7df8455b244817a2fc3c67f3607ac3854ffc2a9d");
+        assert_eq!(p.manifest.resource_bytes(), 2000);
+        assert_eq!(p.manifest.resource_hosts(), ["huggingface.co"]);
+        // Left out, or an empty list, it names none.
+        assert!(with_resources(json!([])).unwrap().manifest.resources.is_empty());
+        assert!(with(|v| v["manifestVersion"] = json!(2)).unwrap().manifest.resources.is_empty());
+        // A key a later AutoScene may read is skipped with a word.
+        let mut later = resource("model.onnx");
+        later["mirrors"] = json!([]);
+        let p = with_resources(json!([later])).unwrap();
+        assert_eq!(p.warnings, ["Ignored resources[0].mirrors, which this AutoScene doesn't know."]);
+        assert_eq!(p.manifest.resources.len(), 1);
+    }
+
+    #[test]
+    fn a_resource_is_a_plain_https_file_pinned_by_size_and_hash() {
+        let refused = |r: Value, what: &str| {
+            let e = with_resources(json!([r]));
+            assert!(matches!(e, Err(PluginError::Invalid(_))), "{what}: {e:?}");
+            message(e)
+        };
+        let at = |url: &str| {
+            let mut r = resource("model.onnx");
+            r["urls"] = json!([url]);
+            r
+        };
+        // Plain https, on port 443, to a name on the internet.
+        for (what, url) in [
+            ("http", "http://example.com/model.onnx"),
+            ("a user part", "https://user@example.com/model.onnx"),
+            ("an IP literal", "https://93.184.216.34/model.onnx"),
+            ("an IPv6 literal", "https://[2606:4700::1111]/model.onnx"),
+            ("localhost", "https://localhost/model.onnx"),
+            ("a local name", "https://nas.local/model.onnx"),
+            ("port 8443", "https://example.com:8443/model.onnx"),
+            ("a space", "https://example.com/my model.onnx"),
+        ] {
+            let said = refused(at(url), what);
+            let words = "The plugin's resources[0].urls[0] isn't a plain https:// address of a host on the internet.";
+            assert_eq!(said, words, "{what}");
+        }
+        assert!(with_resources(json!([at("https://example.com:443/model.onnx")])).is_ok());
+        for urls in [json!([]), json!(vec!["https://example.com/m"; 4])] {
+            let mut r = resource("model.onnx");
+            r["urls"] = urls;
+            assert_eq!(refused(r, "urls"), "The plugin's resources[0].urls must list 1 to 3 addresses.");
+        }
+        // Its hash and its size.
+        let upper = "4B28E8DAFC871CB41F00589E7DF8455B244817A2FC3C67F3607AC3854FFC2A9D".to_owned();
+        for sha256 in [upper, "a".repeat(63), "x".into()] {
+            let mut r = resource("model.onnx");
+            r["sha256"] = json!(sha256);
+            assert_eq!(refused(r, &sha256), "The plugin's resources[0].sha256 must be 64 lowercase hex digits.");
+        }
+        for size in [json!(0), json!(MAX_RESOURCE_BYTES + 1)] {
+            let mut r = resource("model.onnx");
+            r["size"] = size.clone();
+            let said = refused(r, &size.to_string());
+            assert_eq!(said, "The plugin's resources[0].size must be from 1 byte to 4 GiB.");
+        }
+        let mut r = resource("model.onnx");
+        r["size"] = json!(1.5);
+        assert_eq!(refused(r, "1.5"), "The plugin's resources[0].size must be a whole number.");
+        let mut most = resource("model.onnx");
+        most["size"] = json!(MAX_RESOURCE_BYTES);
+        assert!(with_resources(json!([most])).is_ok());
+        // All of them at most 8 GiB.
+        let three: Vec<Value> = ["a.onnx", "b.onnx", "c.onnx"]
+            .iter()
+            .map(|name| {
+                let mut r = resource(name);
+                r["size"] = json!(3u64 << 30);
+                r
+            })
+            .collect();
+        assert_eq!(message(with_resources(json!(three))), "The plugin's resources come to more than 8 GiB.");
+        assert!(with_resources(json!(three[..2])).is_ok());
+        // At most 16 files.
+        let many: Vec<Value> = (0..=MAX_RESOURCES).map(|i| resource(&format!("part{i}.bin"))).collect();
+        assert_eq!(message(with_resources(json!(many))), "The plugin names more than 16 resources.");
+        assert!(with_resources(json!(many[..MAX_RESOURCES])).is_ok());
+        // One name once, in any case.
+        let twice = json!([resource("Model.onnx"), resource("model.ONNX")]);
+        assert_eq!(message(with_resources(twice)), r#"The plugin's resources name "model.ONNX" twice."#);
+        // A plain file name, of a package's letters.
+        assert_eq!(
+            refused(resource("models/model.onnx"), "a folder"),
+            "The plugin's resources[0].name must be a file name, without a folder."
+        );
+        for name in ["my model.onnx".to_owned(), "nul.onnx".into(), "model.".into(), "..".into(), "a".repeat(101)] {
+            let said = refused(resource(&name), &name);
+            assert!(said.contains("can't be used") || said.contains("longer than 100"), "{name}: {said}");
+        }
+        // Never one of the endings AutoScene keeps beside a download, in any case.
+        for (name, end) in [
+            ("a.part", ".part"),
+            ("a.VERIFIED", ".VERIFIED"),
+            ("a.lock", ".lock"),
+            ("a.unpacked", ".unpacked"),
+            ("a.archive", ".archive"),
+            ("a.Archive", ".Archive"),
+        ] {
+            assert_eq!(
+                refused(resource(name), name),
+                format!(r#"The resource name "{name}" ends in "{end}", which AutoScene keeps beside its downloads."#)
+            );
+        }
+        assert!(with_resources(json!([resource("a.archive.bin")])).is_ok());
+    }
+
+    #[test]
+    fn a_plugin_that_runs_no_program_has_no_resources() {
+        let none = |resources: Value| {
+            with(|v| {
+                v["manifestVersion"] = json!(2);
+                v["runtime"] = json!({"type": "none"});
+                v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]});
+                v["resources"] = resources;
+            })
+        };
+        let said = message(none(json!([resource("model.onnx")])));
+        assert_eq!(said, "A plugin that runs no program has no use for resources.");
+        // An empty list names none.
+        assert!(none(json!([])).unwrap().manifest.resources.is_empty());
+    }
+
+    #[test]
+    fn a_hugging_face_branch_gets_a_warning() {
+        let warned = |urls: Value| {
+            let mut r = resource("model.onnx");
+            r["urls"] = urls;
+            with_resources(json!([r])).unwrap().warnings
+        };
+        let said =
+            ["model.onnx follows a branch of Hugging Face: pin a revision, or the file will stop matching its hash."];
+        for url in [
+            "https://huggingface.co/org/repo/resolve/main/model.onnx".to_owned(),
+            "https://huggingface.co/datasets/org/data/resolve/v1.0/model.onnx".to_owned(),
+            format!("https://huggingface.co/org/repo/resolve/{}/model.onnx", &REV[..39]),
+            "https://hf.co/org/repo/resolve/main/model.onnx".to_owned(),
+        ] {
+            assert_eq!(warned(json!([url])), said, "{url}");
+        }
+        // A revision, or another host, is no branch.
+        for url in [
+            format!("https://huggingface.co/org/repo/resolve/{REV}/model.onnx"),
+            format!("https://huggingface.co/org/repo/resolve/{}/model.onnx", REV.to_uppercase()),
+            "https://github.com/org/repo/releases/download/main/model.onnx".to_owned(),
+        ] {
+            assert!(warned(json!([url])).is_empty(), "{url}");
+        }
+        // Said once for a file, however many of its addresses follow one.
+        let both =
+            json!(["https://huggingface.co/a/b/resolve/main/m.onnx", "https://huggingface.co/c/d/resolve/dev/m.onnx"]);
+        assert_eq!(warned(both), said);
+    }
+
     /// The names an `enum` of the schema lists.
     fn named(list: &Value) -> BTreeSet<&str> {
         list.as_array().unwrap().iter().map(|name| name.as_str().unwrap()).collect()
@@ -2342,9 +2739,13 @@ mod tests {
             (&defs["network"]["properties"]["hosts"]["maxItems"], MAX_HOSTS),
             (&defs["commandLine"]["maxItems"], MAX_ARGS),
             (&select["then"]["properties"]["options"]["maxItems"], MAX_OPTIONS),
+            (&schema["properties"]["resources"]["maxItems"], MAX_RESOURCES),
+            (&defs["resource"]["properties"]["urls"]["maxItems"], MAX_RESOURCE_URLS),
+            (&defs["resource"]["properties"]["name"]["maxLength"], MAX_RESOURCE_NAME),
         ] {
             assert_eq!(*limit, json!(max));
         }
+        assert_eq!(defs["resource"]["properties"]["size"]["maximum"], json!(MAX_RESOURCE_BYTES));
 
         // The runtime types, setting types and page scopes it names are
         // the parser's. A kind added to the parser fails to compile here
@@ -2395,6 +2796,7 @@ mod tests {
         full["contributes"]["settings"] =
             json!([{"key": "pick", "type": "select", "title": "Pick", "options": options}]);
         full["contributes"]["pages"] = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
+        full["resources"] = json!([resource("model.onnx")]);
         let reads = |v: &Value, what: &str| {
             let p = read(v).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             assert_eq!(p.warnings, Vec::<String>::new(), "{what}");
@@ -2415,6 +2817,7 @@ mod tests {
             ("command", "/contributes/commands/0"),
             ("option", "/contributes/settings/0/options/0"),
             ("page", "/contributes/pages/0"),
+            ("resource", "/resources/0"),
         ];
         // Every object the schema describes is here, but a setting, whose
         // keys depend on its type (below).
@@ -2463,6 +2866,7 @@ mod tests {
             v["runtime"]["type"] = json!(runtime);
             if runtime == "none" {
                 v["runtime"] = json!({"type": "none"});
+                v.as_object_mut().unwrap().remove("resources");
                 let c = v["contributes"].as_object_mut().unwrap();
                 c.remove("exportActions");
                 c.remove("commands");

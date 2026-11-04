@@ -354,6 +354,8 @@ The log is in {}",
                 if let Some(plugins) = &handle.state::<state::AppState>().plugins {
                     plugins.store.remove_leftovers();
                     plugins.catalog.clear_downloads();
+                    // Large files no installed plugin names any more.
+                    plugins.prune_resources();
                 }
             });
             // The plugin catalog, checked shortly after the start and then daily.

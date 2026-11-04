@@ -201,7 +201,12 @@ impl Program {
 }
 
 fn plugin() -> PluginContext {
-    PluginContext { id: PluginId::parse("dev.example.hello").unwrap(), version: "0.1.0".into(), data_dir: ".".into() }
+    PluginContext {
+        id: PluginId::parse("dev.example.hello").unwrap(),
+        version: "0.1.0".into(),
+        data_dir: ".".into(),
+        resources_dir: None,
+    }
 }
 
 fn app() -> AppContext {

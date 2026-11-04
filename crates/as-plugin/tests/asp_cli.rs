@@ -2041,3 +2041,76 @@ fn init_never_writes_into_a_folder_that_has_files() {
     assert!(files_in(&empty).contains(&"main.py".to_owned()));
     assert_eq!(names(tmp.path()), ["empty", "nested", "plugin.json", "taken"]);
 }
+
+/// A SHA-256 of a large file.
+const WEIGHTS_SHA: &str = "4b28e8dafc871cb41f00589e7df8455b244817a2fc3c67f3607ac3854ffc2a9d";
+/// A revision of a Hugging Face repository.
+const REV: &str = "0123456789abcdef0123456789abcdef01234567";
+
+/// The plugin of `dir` as of manifest version 2, naming the large files `resources`.
+fn with_resources(dir: &Path, resources: Value) {
+    edit_manifest(dir, |v| {
+        v["manifestVersion"] = json!(2);
+        v["resources"] = resources;
+    });
+}
+
+#[test]
+fn pack_warns_of_a_branch_url() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = uv_plugin(&place("hello"));
+    let at = |url: &str| json!([{"name": "model.onnx", "urls": [url], "sha256": WEIGHTS_SHA, "size": 1000}]);
+    // A file that follows a branch will stop matching its hash one day.
+    with_resources(&src, at("https://huggingface.co/org/repo/resolve/main/model.onnx"));
+    let warning = "warning: model.onnx follows a branch of Hugging Face: pin a revision, or the file will stop \
+                   matching its hash.\n";
+    let out = place("hello.asp");
+    assert_eq!(asp(&["pack", text(&src), text(&out)]).warnings(), warning);
+    let verified = asp(&["verify", text(&out)]);
+    assert_eq!(verified.err, warning);
+    assert_eq!(verified.ok(), "dev.autoscene.hello-export 1.2.0: Unreviewed\n");
+    // A revision: not a word.
+    with_resources(&src, at(&format!("https://huggingface.co/org/repo/resolve/{REV}/model.onnx")));
+    assert_eq!(asp(&["pack", text(&src), text(&place("pinned.asp"))]).warnings(), "");
+    // An address AutoScene would never fetch from fails the pack.
+    with_resources(&src, at("http://huggingface.co/org/repo/resolve/main/model.onnx"));
+    let run = asp(&["pack", text(&src), text(&place("plain.asp"))]);
+    assert_ne!(run.code, Some(0));
+    assert!(run.err.contains("isn't a plain https:// address of a host on the internet"), "{}", run.err);
+    assert!(!place("plain.asp").exists());
+}
+
+#[test]
+fn catalog_add_counts_resource_bytes_and_hosts() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = uv_plugin(&place("hello"));
+    let model = format!("https://huggingface.co/org/repo/resolve/{REV}/model.onnx");
+    let mirror = "https://github.com/org/repo/releases/download/v1/model.onnx";
+    let vocab = format!("https://HuggingFace.co/org/repo/resolve/{REV}/vocab.json");
+    with_resources(
+        &src,
+        json!([
+            {"name": "model.onnx", "urls": [model, mirror], "sha256": WEIGHTS_SHA, "size": 300_000_000u64},
+            {"name": "vocab.json", "urls": [vocab], "sha256": WEIGHTS_SHA, "size": 12_000_000u64}
+        ]),
+    );
+    let package = place("hello.asp");
+    asp(&["pack", text(&src), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    cat.add(&package).ok();
+    // What its first run downloads, and from where: each host once, lowercase.
+    let entry = &cat.json()["plugins"][0];
+    assert_eq!(entry["resourceBytes"], json!(312_000_000u64));
+    assert_eq!(entry["resourceHosts"], json!(["huggingface.co", "github.com"]));
+    // AutoScene reads them back.
+    cat.publish();
+    cat.verify(&[]).ok();
+    let index: catalog::Index = serde_json::from_value(cat.json()).unwrap();
+    let e = &index.plugins[0];
+    assert_eq!(
+        (e.resource_bytes, e.resource_hosts.clone()),
+        (312_000_000, vec!["huggingface.co".into(), "github.com".into()])
+    );
+}

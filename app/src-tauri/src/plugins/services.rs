@@ -10,7 +10,8 @@
 //! own: one that asks while it starts waits for that start and fails with
 //! it, or gives up once its own time is over while the start goes on for
 //! the others. A uv script gets AutoScene's uv first ([`PluginHost`]'s
-//! `uv_for`), which its pages hear; its program's time to get ready counts
+//! `uv_for`), and a plugin the large files it names after that
+//! (`resources_for`), which its pages hear; its program's time to get ready counts
 //! from its start. It is claimed under the busy lock, where a change of its
 //! plugin is marked and where the pages close that its plugin may no longer
 //! show: a change refuses its start, and a page that closed starts none. A
@@ -28,7 +29,7 @@
 //! still wait for the analysis.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -43,7 +44,7 @@ use parking_lot::{Condvar, Mutex};
 use tauri::{AppHandle, Manager};
 
 use super::calls::AppCalls;
-use super::{PluginHost, runnable};
+use super::{CHECKING_FILES, Fetched, GETTING_FILES, PluginHost, runnable};
 use crate::events::{PageEvent, PluginPageEvent, ServiceStatus};
 use crate::state::AppState;
 
@@ -62,14 +63,14 @@ const WAIT_TICK: Duration = Duration::from_millis(100);
 /// How a plugin's service starts: its program (the app's [`ProgramStart`]),
 /// or a test's stand-in.
 pub trait StartService: Send + Sync {
-    /// Starts the service of `p` for `host`, a uv script through `uv`,
-    /// telling `events` how it goes, until `cancel` fires: the service once
-    /// it is ready.
+    /// Starts the service of `p` for `host`, with what was `got` for it (a
+    /// uv script's uv, its plugin's large files), telling `events` how it
+    /// goes, until `cancel` fires: the service once it is ready.
     fn start(
         &self,
         host: &Arc<PluginHost>,
         p: &Installed,
-        uv: Option<PathBuf>,
+        got: Fetched,
         events: OnEvent,
         cancel: &CancelToken,
     ) -> PluginResult<Arc<dyn Service>>;
@@ -501,8 +502,10 @@ impl PluginHost {
             // it is now: its page may have opened before. The setting going
             // off stops it and closes its pages itself.
             let started = host.store.get(&plugin).and_then(|p| {
-                let launch = runnable(&p, true)?.launch();
-                // Its pages hear that it gets uv, not how far: a stage is all they show.
+                let m = runnable(&p, true)?;
+                let launch = m.launch();
+                // Its pages hear that it gets uv, or its files, not how far:
+                // a stage is all they show.
                 let got = std::cell::Cell::new(false);
                 let getting = |stage: &str, fraction: Option<f64>| {
                     if fraction.is_none() {
@@ -510,13 +513,18 @@ impl PluginHost {
                         events(ServiceEvent::Progress { stage: stage.into(), fraction });
                     }
                 };
-                // One that can't start on this computer says so as it starts.
-                let uv = match &launch {
-                    Ok(launch) => host.uv_for(launch, &cancel, &getting)?,
-                    Err(_) => None,
+                // One that can't start on this computer says so as it
+                // starts, and gets nothing first.
+                let (uv, resources) = match &launch {
+                    Ok(launch) => (
+                        host.uv_for(launch, &cancel, &getting)?,
+                        host.resources_for(&plugin, m, (CHECKING_FILES, GETTING_FILES), &cancel, &getting)?,
+                    ),
+                    Err(_) => (None, None),
                 };
-                // uv is here: from now it starts (uv getting Python and the
-                // packages, then its program), and its pages say just that.
+                // uv and its files are here: from now it starts (uv getting
+                // Python and the packages, then its program), and its pages
+                // say just that.
                 if got.get() {
                     host.tell_service(
                         &plugin,
@@ -524,7 +532,7 @@ impl PluginHost {
                         PageEvent::ServiceState { state: ServiceStatus::Starting, message: None },
                     );
                 }
-                host.services.start.start(&host, &p, uv, events, &cancel)
+                host.services.start.start(&host, &p, Fetched { uv, resources }, events, &cancel)
             });
             host.settle(&plugin, start, started);
         });
@@ -635,20 +643,21 @@ impl StartService for ProgramStart {
         &self,
         host: &Arc<PluginHost>,
         p: &Installed,
-        uv: Option<PathBuf>,
+        got: Fetched,
         events: OnEvent,
         cancel: &CancelToken,
     ) -> PluginResult<Arc<dyn Service>> {
         let state = self.0.state::<AppState>();
         let tools = state.tools().map_err(|e| PluginError::Invalid(e.message))?;
         let calls = AppCalls::service(state.library.clone(), host.clone(), p)?;
-        let spec = serve_spec(host, p, &tools.ffmpeg, &tools.ffprobe, &tools.version, Arc::new(calls), uv)?;
+        let spec = serve_spec(host, p, &tools.ffmpeg, &tools.ffprobe, &tools.version, Arc::new(calls), got)?;
         Ok(ProcessService::start(spec, events, cancel)?)
     }
 }
 
 /// The service of `p` as [`ProgramStart`] starts it: the store's
-/// [`as_plugin::Store::serve_spec`], through `uv` when it is a uv script.
+/// [`as_plugin::Store::serve_spec`], with what was `got` for it: through
+/// its uv when it is a uv script, and with the folder of its large files.
 fn serve_spec(
     host: &PluginHost,
     p: &Installed,
@@ -656,10 +665,10 @@ fn serve_spec(
     ffprobe: &Path,
     ffmpeg_version: &str,
     calls: Arc<dyn HostCalls>,
-    uv: Option<PathBuf>,
+    got: Fetched,
 ) -> PluginResult<ServiceSpec> {
     let mut spec = host.store.serve_spec(p, ffmpeg, ffprobe, ffmpeg_version, calls)?;
-    spec.uv = uv;
+    (spec.uv, spec.resources) = (got.uv, got.resources);
     Ok(spec)
 }
 
@@ -670,18 +679,20 @@ fn failed(message: &str) -> CallError {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use as_jobs::{Class, JobRunner};
     use as_plugin::RequestContext;
     use serde_json::{Value, json};
 
-    use super::super::GETTING_UV;
     use super::super::catalog::tests::{Key, NOW, Served, index, withdrawal};
     use super::super::pages;
     use super::super::tests::{
-        CATALOG_AT, FakeUv, Heard, TEST_UV, closed, host_cataloged, host_getting_uv, host_starting,
+        CATALOG_AT, FakeFiles, FakeUv, HF, Heard, TEST_FILES, TEST_UV, closed, host_cataloged, host_getting,
+        host_getting_uv, host_starting, resource,
     };
+    use super::super::{GETTING_FILES, GETTING_UV};
     use super::*;
 
     /// A service that answers each request with its method, counts the
@@ -737,6 +748,8 @@ mod tests {
         events: Arc<Mutex<Vec<OnEvent>>>,
         /// The uv each start was given.
         uv: Arc<Mutex<Vec<Option<PathBuf>>>>,
+        /// The folder of large files each start was given.
+        resources: Arc<Mutex<Vec<Option<PathBuf>>>>,
     }
 
     impl StartService for Starter {
@@ -744,12 +757,13 @@ mod tests {
             &self,
             _: &Arc<PluginHost>,
             _: &Installed,
-            uv: Option<PathBuf>,
+            got: Fetched,
             events: OnEvent,
             cancel: &CancelToken,
         ) -> PluginResult<Arc<dyn Service>> {
             self.asked.fetch_add(1, Ordering::SeqCst);
-            self.uv.lock().push(uv);
+            self.uv.lock().push(got.uv);
+            self.resources.lock().push(got.resources);
             self.events.lock().push(events.clone());
             let until = Instant::now() + self.delay;
             while Instant::now() < until && !cancel.is_cancelled() {
@@ -774,6 +788,11 @@ mod tests {
     /// The plugin `id` that runs a service and has the global page `main`,
     /// loaded from its folder in `tmp` (with the setting on).
     fn served(host: &PluginHost, lib: &as_project::Library, tmp: &Path, id: &str) -> PluginId {
+        served_with(host, lib, tmp, id, Value::Null)
+    }
+
+    /// [`served`], naming the large files `resources` (unless null).
+    fn served_with(host: &PluginHost, lib: &as_project::Library, tmp: &Path, id: &str, resources: Value) -> PluginId {
         let dir = tmp.join(id);
         std::fs::create_dir_all(dir.join("ui")).unwrap();
         for file in ["main.py", "main.py.lock", "ui/index.html"] {
@@ -790,6 +809,10 @@ mod tests {
             "runtime": {"type": "service", "command": {"*": ["uv", "run", "--script", "--locked", "main.py"]}},
             "contributes": {"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]}
         });
+        let mut manifest = manifest;
+        if !resources.is_null() {
+            manifest["resources"] = resources;
+        }
         std::fs::write(dir.join("plugin.json"), manifest.to_string()).unwrap();
         lib.set_allows_unreviewed_plugins(true).unwrap();
         host.store.commit(host.store.stage_folder(&dir).unwrap(), true, true).unwrap().record.id
@@ -1334,7 +1357,7 @@ mod tests {
             Path::new("ffprobe"),
             "9.0",
             Arc::new(Refused),
-            Some(TEST_UV.into()),
+            Fetched { uv: Some(TEST_UV.into()), resources: None },
         );
         assert_eq!(spec.unwrap().uv, Some(PathBuf::from(TEST_UV)));
         // The next start finds it here, and says nothing of it.
@@ -1361,6 +1384,70 @@ mod tests {
         let e = host.service(&m, None).err().unwrap();
         assert_eq!(e.message, "AutoScene couldn't get uv. Check the internet connection, then try again.");
         assert_eq!(starter.asked.load(Ordering::SeqCst), 2);
+        alone(&host);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_service_gets_its_resources_before_it_starts() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-service-files-{}", std::process::id()));
+        let (starter, files) = (Starter::default(), FakeFiles::missing(false));
+        let (lib, host, heard) = host_getting(&tmp, starter.clone(), FakeUv::here(), Some(files.clone()));
+        let named = json!([resource("model.onnx", HF, 300)]);
+        let id = served_with(&host, &lib, &tmp, "dev.a.service", named.clone());
+        let page = pages::open(&host, &lib, &id, "main", None).unwrap();
+        wait_for(|| host.services.running(&id).is_some());
+        // Got once, and given to the start: its program gets their folder.
+        let kept_in = Path::new(TEST_FILES).join("dev.a.service");
+        assert_eq!(files.got.load(Ordering::SeqCst), 1);
+        assert_eq!(*starter.resources.lock(), [Some(kept_in.clone())]);
+        assert_eq!(*starter.uv.lock(), [Some(PathBuf::from(TEST_UV))]);
+        // Its page heard it get them as it started, then that it is ready.
+        wait_for(|| states(&heard, &page.session).last() == Some(&ServiceStatus::Ready));
+        let starting = |heard: &Heard| -> Vec<Option<String>> {
+            let heard = heard.lock();
+            let said = heard.iter().filter_map(|e| match &e.event {
+                PageEvent::ServiceState { state: ServiceStatus::Starting, message } => Some(message.clone()),
+                _ => None,
+            });
+            said.collect()
+        };
+        assert_eq!(starting(&heard), [None, Some(GETTING_FILES.to_owned()), None]);
+        let p = host.store.get(&id).unwrap();
+        let got = Fetched { uv: None, resources: Some(kept_in.clone()) };
+        let spec = serve_spec(&host, &p, Path::new("ffmpeg"), Path::new("ffprobe"), "9.0", Arc::new(Refused), got);
+        assert_eq!(spec.unwrap().resources, Some(kept_in));
+        // The next start finds them, and says nothing of them.
+        heard.lock().clear();
+        host.services.stop(&id, STOP_GRACE);
+        let m = host.pages.get(&page.session).unwrap();
+        host.service(&m, None).unwrap();
+        assert_eq!(files.got.load(Ordering::SeqCst), 1);
+        assert!(starting(&heard).iter().all(Option::is_none), "{:?}", starting(&heard));
+        // After the app's next start, the first start hashes them, and its
+        // page hears so first.
+        wait_for(|| host.services.running(&id).is_some());
+        heard.lock().clear();
+        host.services.stop(&id, STOP_GRACE);
+        files.forget_checks();
+        host.service(&m, None).unwrap();
+        wait_for(|| host.services.running(&id).is_some());
+        assert_eq!(starting(&heard), [None, Some(CHECKING_FILES.to_owned()), None]);
+        assert_eq!(files.got.load(Ordering::SeqCst), 1);
+        host.shutdown();
+        alone(&host);
+        drop((host, lib));
+
+        // When they don't come, its program never starts, and the page hears why.
+        let tmp2 = tmp.join("failing");
+        let (lib, host, _) = host_getting(&tmp2, starter.clone(), FakeUv::here(), Some(FakeFiles::missing(true)));
+        let id = served_with(&host, &lib, &tmp2, "dev.a.service", named);
+        let m = page_of(&host, &id);
+        let asked = starter.asked.load(Ordering::SeqCst);
+        let e = host.service(&m, None).err().unwrap();
+        assert_eq!(e.message, "AutoScene couldn't get Service's files. Check the internet connection, then try again.");
+        assert_eq!(starter.asked.load(Ordering::SeqCst), asked);
         alone(&host);
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();

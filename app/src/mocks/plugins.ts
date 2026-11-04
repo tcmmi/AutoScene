@@ -97,6 +97,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     logPath: `${DATA}\\logs\\plugins\\${o.id}.log`,
     serviceLogPath: o.runtime === "service" ? `${DATA}\\logs\\plugins\\${o.id}.service.log` : null,
     warnings: [],
+    resourceBytes: 0,
     ...o,
   }
 }
@@ -406,12 +407,24 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
         addedPages: p.pages.filter((x) => !previous.pages.some((y) => y.id === x.id)).map((x) => x.id),
         startsProgram: previous.runtime === "none" && p.runtime !== "none",
         becomesService: previous.runtime !== "service" && p.runtime === "service",
+        addedResourceHosts: [],
       }
     : null
   const needsUnreviewed = !reviewed(next)
   // As on a computer where no uv script has run yet: AutoScene's uv comes with the first.
   const uv = { uvMissing: next.uvScript, uvBytes: 15236317 }
-  return { ticketId, plugin: info(next, allow), update, needsUnreviewed, allowed: !needsUnreviewed || allow, ...uv, catalog }
+  // No mock plugin names large files.
+  const files = { resourceBytes: 0, resourceHosts: [] }
+  return {
+    ticketId,
+    plugin: info(next, allow),
+    update,
+    needsUnreviewed,
+    allowed: !needsUnreviewed || allow,
+    ...uv,
+    ...files,
+    catalog,
+  }
 }
 
 /** What AutoScene's catalog says of a plugin it offers, as `catalog_get` reads it from the package. */

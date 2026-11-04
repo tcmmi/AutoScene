@@ -41,12 +41,14 @@ struct Plugin {
     message: RunMessage,
     protocol: u32,
     calls: Option<Arc<dyn HostCalls>>,
+    /// The folder of its large files, when it names some.
+    resources: Option<PathBuf>,
 }
 
 impl Plugin {
     fn new(mode: &'static str) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        Self { dir, mode, args: Vec::new(), message: message(), protocol: 1, calls: None }
+        Self { dir, mode, args: Vec::new(), message: message(), protocol: 1, calls: None, resources: None }
     }
 
     /// A plugin of protocol 2 in `mode`, whose calls `answers` answers.
@@ -85,6 +87,7 @@ impl Plugin {
             ffprobe: self.dir.path().join("tools").join("ffprobe"),
             // A program: no uv runs.
             uv: None,
+            resources: self.resources.clone(),
             protocol: self.protocol,
             calls: self.calls.clone(),
             message: self.message.clone(),
@@ -120,7 +123,12 @@ fn message() -> RunMessage {
     RunMessage {
         protocol: 1,
         run_id: "run-1".into(),
-        plugin: PluginContext { id: PluginId::parse(ID).unwrap(), version: "1.2.0".into(), data_dir: "/data".into() },
+        plugin: PluginContext {
+            id: PluginId::parse(ID).unwrap(),
+            version: "1.2.0".into(),
+            data_dir: "/data".into(),
+            resources_dir: None,
+        },
         app: AppContext { version: "1.0.3-BETA".into(), platform: "linux-x86_64".into() },
         tools: ToolPaths {
             ffmpeg: "/tools/ffmpeg".into(),
@@ -485,6 +493,52 @@ fn only_allowlisted_variables_reach_the_plugin() {
     // It runs in its data folder.
     let cwd = PathBuf::from(dump["cwd"].as_str().unwrap());
     assert_eq!(cwd.canonicalize().unwrap(), data.canonicalize().unwrap());
+}
+
+/// The environment `p` (in mode `env`) ran with, and its folder.
+fn env_of(p: &Plugin) -> Value {
+    serde_json::from_str(&fs::read_to_string(p.data().join("env.json")).unwrap()).unwrap()
+}
+
+#[test]
+fn a_run_gets_its_resources_folder() {
+    // In the environment, as an absolute path.
+    let mut p = Plugin::new("env");
+    let folder = p.dir.path().join("cache").join("plugin-resources").join(ID);
+    p.resources = Some(folder.clone());
+    assert_eq!(p.run().unwrap(), None);
+    let vars = env_of(&p)["vars"].as_object().unwrap().clone();
+    assert_eq!(PathBuf::from(vars["AUTOSCENE_RESOURCES"].as_str().unwrap()), folder);
+    // And in the run line, under plugin, whatever the line held before.
+    let mut p = Plugin::new("echo");
+    p.resources = Some(folder.clone());
+    p.message.plugin.resources_dir = Some("/elsewhere".into());
+    assert_eq!(p.run().unwrap().as_deref(), Some("Echoed."));
+    let line: Value = serde_json::from_str(&p.text("run.json")).unwrap();
+    assert_eq!(PathBuf::from(line["plugin"]["resourcesDir"].as_str().unwrap()), folder);
+    // A relative folder reaches it as an absolute one.
+    let mut p = Plugin::new("env");
+    p.resources = Some(PathBuf::from("plugin-resources").join(ID));
+    p.run().unwrap();
+    let given = PathBuf::from(env_of(&p)["vars"]["AUTOSCENE_RESOURCES"].as_str().unwrap());
+    assert!(given.is_absolute() && given.ends_with(Path::new("plugin-resources").join(ID)), "{}", given.display());
+}
+
+#[test]
+fn a_run_without_resources_gets_neither() {
+    // A plugin that names no large files gets the line and the environment
+    // it always got.
+    let p = Plugin::new("env");
+    p.run().unwrap();
+    assert!(!env_of(&p)["vars"].as_object().unwrap().contains_key("AUTOSCENE_RESOURCES"));
+    let mut p = Plugin::new("echo");
+    // Whatever the line held: the run's own folder decides.
+    p.message.plugin.resources_dir = Some("/elsewhere".into());
+    p.run().unwrap();
+    let line: Value = serde_json::from_str(&p.text("run.json")).unwrap();
+    let plugin = line["plugin"].as_object().unwrap();
+    let keys: BTreeSet<&str> = plugin.keys().map(String::as_str).collect();
+    assert_eq!(keys, BTreeSet::from(["id", "version", "dataDir"]));
 }
 
 #[cfg(windows)]

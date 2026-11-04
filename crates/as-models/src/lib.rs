@@ -13,7 +13,8 @@
 //!
 //! Downloads go to `<file>.part` (a whole archive a file is taken out of:
 //! `<file>.archive.part`) and resume with an HTTP range request after an
-//! interruption. One install of a model runs at a time, across processes
+//! interruption; one that resumed and then fails its hash is fetched once
+//! more from its first byte. One install of a model runs at a time, across processes
 //! (`<file>.lock`), and only when its drive has room for it. A model that is
 //! one file of a zip archive (`member`) is fetched alone, by the byte ranges
 //! the archive's directory gives (see [`zip`]), and unpacked.
@@ -301,6 +302,33 @@ impl ModelStore {
         self.ready(p)
     }
 
+    /// [`Self::installed_pinned`], whose hash ends with `Cancelled` once
+    /// `cancel` fires: a file of a few GiB takes a while to read.
+    pub fn installed_pinned_until(&self, p: &Pinned, cancel: &CancelToken) -> ModelResult<Option<PathBuf>> {
+        self.ready_until(p, Some(cancel))
+    }
+
+    /// Whether [`Self::installed_pinned`] would read all of `p`'s file now:
+    /// it is there with its marker, and this store hasn't hashed it as it
+    /// is. Reads sizes and times alone.
+    pub fn would_hash(&self, p: &Pinned) -> bool {
+        self.marked(p).is_some_and(|path| stamp(&path).map_or(true, |now| self.checked().get(&p.file) != Some(&now)))
+    }
+
+    /// Fails when the drive of the store's folder hasn't room (and
+    /// [`SPARE`]) for what fetching all of `ps` still downloads: each one's
+    /// size less the part an earlier try left. One check before the first
+    /// of several files, so the whole shortfall is told at once, before
+    /// gigabytes came for nothing.
+    pub fn room_for_pinned(&self, ps: &[Pinned]) -> ModelResult<()> {
+        let left = |p: &Pinned| {
+            let [part, _] = self.parts(p);
+            let have = fs::metadata(part).map(|md| md.len()).unwrap_or(0);
+            if have > p.size { p.size } else { p.size - have }
+        };
+        self.room_for(ps.iter().map(left).fold(0, u64::saturating_add))
+    }
+
     /// Path of a model whose download finished and was verified, without
     /// hashing its file again: for listing the models, not for loading one.
     pub fn downloaded(&self, id: &str) -> ModelResult<Option<PathBuf>> {
@@ -317,6 +345,11 @@ impl ModelStore {
 
     /// The file of `p` when it is installed and still the pinned one.
     fn ready(&self, p: &impl AsPinned) -> ModelResult<Option<PathBuf>> {
+        self.ready_until(p, None)
+    }
+
+    /// [`Self::ready`], whose hash ends once `cancel` fires.
+    fn ready_until(&self, p: &impl AsPinned, cancel: Option<&CancelToken>) -> ModelResult<Option<PathBuf>> {
         let p = &*p.as_pinned();
         plain_name(p)?;
         let Some(path) = self.marked(p) else { return Ok(None) };
@@ -324,7 +357,7 @@ impl ModelStore {
         if self.checked().get(&p.file) == Some(&now) {
             return Ok(Some(path));
         }
-        let got = sha256(&path)?;
+        let got = sha256(&path, cancel)?;
         if got != p.sha256 {
             let damaged = ModelError::Checksum { id: p.id.clone(), got };
             tracing::warn!(model = %p.id, error = %damaged.detail(), "an installed file is damaged; it is downloaded again");
@@ -355,16 +388,39 @@ impl ModelStore {
         cancel: &CancelToken,
         progress: impl FnMut(u64, u64),
     ) -> ModelResult<PathBuf> {
-        if let Some(path) = self.ready(p)? {
+        self.fetch_pinned_through(p, None, cancel, progress)
+    }
+
+    /// [`Self::fetch_pinned`], each request through `agent`: one whose
+    /// names resolve only to public addresses, say, or a test's plain-http
+    /// one. Redirects keep its `https_only`, as [`net::agent`]'s do.
+    pub fn fetch_pinned_via(
+        &self,
+        p: &Pinned,
+        agent: &ureq::Agent,
+        cancel: &CancelToken,
+        progress: impl FnMut(u64, u64),
+    ) -> ModelResult<PathBuf> {
+        self.fetch_pinned_through(p, Some(agent), cancel, progress)
+    }
+
+    fn fetch_pinned_through(
+        &self,
+        p: &Pinned,
+        via: Option<&ureq::Agent>,
+        cancel: &CancelToken,
+        progress: impl FnMut(u64, u64),
+    ) -> ModelResult<PathBuf> {
+        if let Some(path) = self.ready_until(p, Some(cancel))? {
             return Ok(path);
         }
         fs::create_dir_all(&self.dir)?;
         let _lock = self.lock(p, cancel)?;
         // The install that held the lock may have brought the file.
-        if let Some(path) = self.ready(p)? {
+        if let Some(path) = self.ready_until(p, Some(cancel))? {
             return Ok(path);
         }
-        self.fetch(p, cancel, progress)
+        self.fetch_through(p, via, cancel, progress)
     }
 
     /// Hold `<file>.lock` of `p` (until the file is dropped), waiting while
@@ -400,13 +456,25 @@ impl ModelStore {
         }
     }
 
-    /// Fetch `p` from its addresses in turn. A failed download, a wrong
-    /// hash or a changed source moves on to the next one, without the
-    /// bytes the last one sent (a resumed part from another host could only
-    /// fail the hash); the last address's error is the one returned.
-    fn fetch(
+    /// Fetch `p` from its addresses in turn, with [`net::agent`]'s.
+    #[cfg(test)]
+    fn fetch(&self, p: &impl AsPinned, cancel: &CancelToken, progress: impl FnMut(u64, u64)) -> ModelResult<PathBuf> {
+        self.fetch_through(p, None, cancel, progress)
+    }
+
+    /// Fetch `p` from its addresses in turn, through `via` (else each
+    /// address's [`net::agent`]). A failed download, a wrong hash or a
+    /// changed source moves on to the next one, without the bytes the last
+    /// one sent (a resumed part from another host could only fail the
+    /// hash); the last address's error is the one returned. A download that
+    /// resumed bytes of an earlier try and then fails its hash is fetched
+    /// once more from its first byte at the same address: those bytes may
+    /// be of another file (a pin that changed after a cancel, the same name
+    /// with another hash), and the address may well be right.
+    fn fetch_through(
         &self,
         p: &impl AsPinned,
+        via: Option<&ureq::Agent>,
         cancel: &CancelToken,
         mut progress: impl FnMut(u64, u64),
     ) -> ModelResult<PathBuf> {
@@ -418,11 +486,18 @@ impl ModelStore {
         for (i, url) in p.urls.iter().enumerate() {
             if i > 0 {
                 tracing::warn!(model = %p.id, error = %last.detail(), "trying the next address");
-                for part in self.parts(p) {
-                    let _ = fs::remove_file(part);
-                }
+                self.drop_parts(p);
             }
-            match self.fetch_from(p, url, watch, &mut progress) {
+            let mut resumed = 0;
+            let mut fetched = self.fetch_from(p, url, via, watch, &mut progress, &mut resumed);
+            if resumed > 0
+                && let Err(e @ ModelError::Checksum { .. }) = &fetched
+            {
+                tracing::warn!(model = %p.id, error = %e.detail(), "a resumed download failed its hash; fetching it whole");
+                self.drop_parts(p);
+                fetched = self.fetch_from(p, url, via, watch, &mut progress, &mut resumed);
+            }
+            match fetched {
                 Err(e @ (ModelError::Download(_) | ModelError::Checksum { .. } | ModelError::Changed(_))) => last = e,
                 done => return done,
             }
@@ -430,27 +505,56 @@ impl ModelStore {
         Err(last)
     }
 
-    /// Fetch `p` from `url`, verify it and put it in place with its marker.
+    /// Removes what earlier tries at `p` downloaded.
+    fn drop_parts(&self, p: &Pinned) {
+        for part in self.parts(p) {
+            let _ = fs::remove_file(part);
+        }
+    }
+
+    /// Fetch `p` from `url` (through `via`, else its own [`net::agent`]),
+    /// verify it and put it in place with its marker. `resumed`: how many
+    /// of the bytes an earlier try had left the download went on from
+    /// (none when the server sent everything again).
     fn fetch_from(
         &self,
         p: &Pinned,
         url: &str,
+        via: Option<&ureq::Agent>,
         watch: Watch,
         progress: &mut dyn FnMut(u64, u64),
+        resumed: &mut u64,
     ) -> ModelResult<PathBuf> {
+        *resumed = 0;
         let id = p.id.as_str();
         let [part, _] = self.parts(p);
-        let agent = agent(url);
+        let own;
+        let agent = match via {
+            Some(agent) => agent,
+            None => {
+                own = agent(url);
+                &own
+            }
+        };
         // The file as it will be kept, and its hash.
         let (ready, got) = match &p.packed {
             Packed::File => {
-                self.download(&agent, id, url, &part, p.size, 0, watch, progress)?;
-                (part.clone(), sha256(&part)?)
+                *resumed = self.download(agent, id, url, &part, p.size, 0, watch, progress)?;
+                (part.clone(), sha256(&part, Some(watch.cancel))?)
             }
-            Packed::ZipMember(member) => self.download_member(&agent, p, url, member, &part, watch, progress)?,
-            Packed::TarGzMember { member, archive_size, archive_sha256 } => {
-                self.download_tar_member(&agent, p, url, member, (*archive_size, archive_sha256), watch, progress)?
+            Packed::ZipMember(member) => {
+                self.download_member(agent, p, url, member, &part, watch, progress, resumed)?
             }
+            Packed::TarGzMember { member, archive_size, archive_sha256 } => self.download_tar_member(
+                agent,
+                p,
+                url,
+                member,
+                (*archive_size, archive_sha256),
+                watch,
+                progress,
+                resumed,
+            )?,
         };
         if got != p.sha256 {
             let _ = fs::remove_file(&part);
@@ -530,7 +634,8 @@ impl ModelStore {
     /// Fetch `member` of the zip archive at `url` alone: the archive's
     /// directory (at its end), the member's local header, then its packed
     /// bytes into `part` (resumable), unpacked next to where the file goes.
-    /// Returns the unpacked file and its hash.
+    /// Returns the unpacked file and its hash; `resumed`: the packed bytes
+    /// an earlier try had left.
     #[allow(clippy::too_many_arguments)]
     fn download_member(
         &self,
@@ -541,6 +646,7 @@ impl ModelStore {
         part: &Path,
         watch: Watch,
         progress: &mut dyn FnMut(u64, u64),
+        resumed: &mut u64,
     ) -> ModelResult<(PathBuf, String)> {
         let fail = |e: String| ModelError::Download(format!("{} in {url}: {e}", p.id));
         // Room for the packed bytes still to come and the unpacked file
@@ -578,6 +684,7 @@ impl ModelStore {
             fs::remove_file(part)?;
             have = 0;
         }
+        *resumed = have;
         if have < entry.compressed {
             tracing::info!(model = %p.id, member, resume_from = have, "downloading");
             let (from, to) = (data + have, data + entry.compressed - 1);
@@ -614,7 +721,8 @@ impl ModelStore {
     /// no other. An archive that fails its hash after a resume is damaged
     /// here (a power cut can leave junk at a part's end), like a wrong hash;
     /// one downloaded whole in this call is another archive: the source
-    /// changed. Returns the unpacked file and its hash.
+    /// changed. Returns the unpacked file and its hash; `resumed`: the
+    /// archive's bytes an earlier try had left.
     #[allow(clippy::too_many_arguments)]
     fn download_tar_member(
         &self,
@@ -625,10 +733,12 @@ impl ModelStore {
         (archive_size, archive_sha256): (u64, &str),
         watch: Watch,
         progress: &mut dyn FnMut(u64, u64),
+        resumed: &mut u64,
     ) -> ModelResult<(PathBuf, String)> {
         let [_, archive] = self.parts(p);
-        let resumed = self.download(agent, &p.id, url, &archive, archive_size, p.size, watch, progress)?;
-        let got = sha256(&archive)?;
+        *resumed = self.download(agent, &p.id, url, &archive, archive_size, p.size, watch, progress)?;
+        let resumed = *resumed;
+        let got = sha256(&archive, Some(watch.cancel))?;
         if got != archive_sha256 {
             let _ = fs::remove_file(&archive);
             if resumed > 0 {
@@ -962,11 +1072,16 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn sha256(path: &Path) -> std::io::Result<String> {
+/// The SHA-256 of the file at `path`, read a MiB at a time: `Cancelled`
+/// once `cancel` fires, between two of them.
+fn sha256(path: &Path, cancel: Option<&CancelToken>) -> ModelResult<String> {
     let mut f = File::open(path)?;
     let mut h = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
     loop {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return Err(ModelError::Cancelled);
+        }
         let n = f.read(&mut buf)?;
         if n == 0 {
             break;
@@ -1211,13 +1326,13 @@ mod tests {
             entry.compressed
         );
 
-        // A part left from another archive fails the hash, goes, and the next try works.
+        // A part left from another archive fails the hash, goes, and the
+        // member is fetched whole at once.
         let again = tempfile::tempdir().unwrap();
         let store = ModelStore::new(again.path());
         fs::write(again.path().join("reid_0265.onnx.part"), vec![0u8; half]).unwrap();
-        assert!(matches!(store.fetch(&m, &CancelToken::new(), |_, _| {}), Err(ModelError::Checksum { .. })));
-        assert!(!again.path().join("reid_0265.onnx.part").exists());
         assert_eq!(fs::read(store.fetch(&m, &CancelToken::new(), |_, _| {}).unwrap()).unwrap(), model);
+        assert!(!again.path().join("reid_0265.onnx.part").exists());
 
         // A member that isn't the pinned size: the source changed, nothing is downloaded.
         let changed = Model { size: m.size + 1, ..m };
@@ -1690,12 +1805,131 @@ mod tests {
         let len = damaged.len();
         damaged[len - 512..].fill(0);
         fs::write(dir.path().join("uv.archive.part"), &damaged).unwrap();
-        let r = store.fetch_pinned(&p, &CancelToken::new(), |_, _| {});
-        assert!(matches!(r, Err(ModelError::Checksum { .. })), "{r:?}");
-        assert_eq!(names(dir.path()), ["uv.lock"], "the damaged archive goes");
-        assert_eq!(sent.load(Ordering::Relaxed), 0);
-        // The next try downloads it whole.
+        // The damaged archive goes, and it is downloaded whole at once.
         assert_eq!(fs::read(store.fetch_pinned(&p, &CancelToken::new(), |_, _| {}).unwrap()).unwrap(), uv);
+        assert_eq!(sent.load(Ordering::Relaxed), archive.len() as u64);
+        assert_eq!(names(dir.path()), ["uv", "uv.lock", "uv.verified"]);
+        // An archive at the address that isn't the pinned one, after a
+        // resume: the source changed, and nothing is kept.
+        let other = tempfile::tempdir().unwrap();
+        let mut changed = archive.clone();
+        changed[len / 2] ^= 0xFF;
+        let (url, _) = serve(changed);
+        fs::write(other.path().join("uv.archive.part"), &archive[..len / 2]).unwrap();
+        let r = ModelStore::new(other.path()).fetch_pinned(
+            &tar_pin(url, "uv", &archive, &uv),
+            &CancelToken::new(),
+            |_, _| {},
+        );
+        assert!(matches!(&r, Err(ModelError::Changed(why)) if why.contains("isn't the pinned archive")), "{r:?}");
+        assert_eq!(names(other.path()), ["uv.lock"]);
+    }
+
+    #[test]
+    fn a_resumed_part_that_fails_its_hash_is_fetched_whole_once_more() {
+        let file = model_bytes(100_000);
+        let len = file.len() as u64;
+        let (url, sent) = serve(file.clone());
+        let p = test_model("weights.bin", url, None, &file).pinned();
+        let dir = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(dir.path());
+        // A part of another file (its pin changed after a cancel: the same
+        // name, another hash): resumed, it fails the hash; fetched whole at
+        // the same address, it is the file.
+        fs::write(dir.path().join("weights.bin.part"), vec![7u8; 40_000]).unwrap();
+        let mut last = (0, 0);
+        let path = store.fetch_pinned(&p, &CancelToken::new(), |d, t| last = (d, t)).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), file);
+        assert_eq!(sent.load(Ordering::Relaxed), (len - 40_000) + len, "the rest, then all of it once");
+        assert_eq!(last, (len, len));
+        assert_eq!(names(dir.path()), ["weights.bin", "weights.bin.lock", "weights.bin.verified"]);
+
+        // Only once: an address whose file isn't the pinned one fails after
+        // its second try, and keeps nothing.
+        let (wrong, sent) = serve(model_bytes(100_001)[1..].to_vec());
+        let other = tempfile::tempdir().unwrap();
+        fs::write(other.path().join("weights.bin.part"), vec![7u8; 40_000]).unwrap();
+        let p = Pinned { urls: vec![wrong], ..p };
+        let r = ModelStore::new(other.path()).fetch_pinned(&p, &CancelToken::new(), |_, _| {});
+        assert!(matches!(r, Err(ModelError::Checksum { .. })), "{r:?}");
+        assert_eq!(sent.load(Ordering::Relaxed), (len - 40_000) + len);
+        assert_eq!(names(other.path()), ["weights.bin.lock"]);
+        // A download that started at its first byte isn't tried again.
+        let r = ModelStore::new(other.path()).fetch_pinned(&p, &CancelToken::new(), |_, _| {});
+        assert!(matches!(r, Err(ModelError::Checksum { .. })), "{r:?}");
+        assert_eq!(sent.load(Ordering::Relaxed), (len - 40_000) + 2 * len);
+        // Nor one whose part was longer than the pin: it went before
+        // anything travelled, so the wrong file came once.
+        let (wrong, sent) = serve(model_bytes(100_001)[1..].to_vec());
+        let third = tempfile::tempdir().unwrap();
+        fs::write(third.path().join("weights.bin.part"), vec![7u8; 200_000]).unwrap();
+        let p = Pinned { urls: vec![wrong], ..p };
+        let r = ModelStore::new(third.path()).fetch_pinned(&p, &CancelToken::new(), |_, _| {});
+        assert!(matches!(r, Err(ModelError::Checksum { .. })), "{r:?}");
+        assert_eq!(sent.load(Ordering::Relaxed), len);
+    }
+
+    #[test]
+    fn a_hash_ends_at_a_cancel_and_a_store_tells_when_it_would_hash() {
+        let model = model_bytes(3 << 20);
+        let m = test_model("big.onnx", String::new(), None, &model);
+        let p = m.pinned();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.onnx");
+        fs::write(&path, &model).unwrap();
+        fs::write(dir.path().join("big.onnx.verified"), &m.sha256).unwrap();
+        let store = ModelStore::new(dir.path());
+        assert!(store.would_hash(&p));
+        // A cancel ends the hash, and says nothing of the file: its marker stays.
+        let cancelled = CancelToken::new();
+        cancelled.cancel();
+        assert!(matches!(store.installed_pinned_until(&p, &cancelled), Err(ModelError::Cancelled)));
+        assert!(matches!(store.fetch_pinned(&p, &cancelled, |_, _| {}), Err(ModelError::Cancelled)));
+        assert!(dir.path().join("big.onnx.verified").exists());
+        assert!(store.would_hash(&p));
+        // Hashed once, it isn't again in this store.
+        assert_eq!(store.installed_pinned_until(&p, &CancelToken::new()).unwrap(), Some(path));
+        assert!(!store.would_hash(&p));
+        assert!(ModelStore::new(dir.path()).would_hash(&p));
+        // Nothing there, nothing to hash.
+        let empty = tempfile::tempdir().unwrap();
+        assert!(!ModelStore::new(empty.path()).would_hash(&p));
+    }
+
+    #[test]
+    fn room_for_several_files_is_checked_at_once() {
+        fn one_mb(_: &Path) -> std::io::Result<u64> {
+            Ok(1 << 20)
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let a = test_model("a.bin", String::new(), None, &model_bytes(300_000)).pinned();
+        let b = test_model("b.bin", String::new(), None, &model_bytes(200_000)).pinned();
+        let c = test_model("c.bin", String::new(), None, &model_bytes(100_000)).pinned();
+        // b half there; c's part longer than its pin, so it goes: all of c comes.
+        fs::write(dir.path().join("b.bin.part"), vec![0u8; 50_000]).unwrap();
+        fs::write(dir.path().join("c.bin.part"), vec![0u8; 150_000]).unwrap();
+        let full = ModelStore { free_space: one_mb, ..ModelStore::new(dir.path()) };
+        let e = full.room_for_pinned(&[a.clone(), b.clone(), c.clone()]).unwrap_err();
+        let need = 300_000 + 150_000 + 100_000 + SPARE;
+        assert!(matches!(e, ModelError::NoSpace { need: n, free, .. } if n == need && free == 1 << 20), "{e:?}");
+        ModelStore::new(dir.path()).room_for_pinned(&[a, b, c]).unwrap();
+    }
+
+    #[test]
+    fn a_pinned_file_comes_through_the_agent_it_is_given() {
+        let file = model_bytes(10_000);
+        let (url, sent) = serve(file.clone());
+        let p = test_model("via.bin", url.clone(), None, &file).pinned();
+        let dir = tempfile::tempdir().unwrap();
+        // An agent that may only speak https never reaches the plain-http server.
+        let https_only: ureq::Agent = net::config("https://example.com/").build().into();
+        let r = ModelStore::new(dir.path()).fetch_pinned_via(&p, &https_only, &CancelToken::new(), |_, _| {});
+        assert!(matches!(&r, Err(ModelError::Download(_))), "{r:?}");
+        assert_eq!(sent.load(Ordering::Relaxed), 0);
+        // One that may, does.
+        let plain = net::agent(&url);
+        let path = ModelStore::new(dir.path()).fetch_pinned_via(&p, &plain, &CancelToken::new(), |_, _| {}).unwrap();
+        assert_eq!(fs::read(path).unwrap(), file);
     }
 
     #[test]

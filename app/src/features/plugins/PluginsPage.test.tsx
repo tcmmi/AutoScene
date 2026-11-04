@@ -453,6 +453,8 @@ describe("PluginsPage", () => {
       allowed: true,
       uvMissing: false,
       uvBytes: 15236317,
+      resourceBytes: 0,
+      resourceHosts: [],
       catalog: null,
     }
     let read: (r: PluginReview) => void = () => {}
@@ -522,6 +524,8 @@ describe("PluginsPage", () => {
       allowed: true,
       uvMissing: false,
       uvBytes: 15236317,
+      resourceBytes: 0,
+      resourceHosts: [],
       catalog: null,
     })
     show(<PluginHero p={p} />)
@@ -615,7 +619,7 @@ describe("PluginsPage", () => {
     fireEvent.click(load)
     await waitFor(() => expect(load.querySelector(".animate-spin")).not.toBeNull())
     expect(screen.getByRole("button", { name: /Install from a file/ }).querySelector(".animate-spin")).toBeNull()
-    checked({ ticketId: "t", plugin: pluginInfo({ id: "dev.me.mine", name: "Mine" }), update: null, needsUnreviewed: true, allowed: true, uvMissing: false, uvBytes: 15236317, catalog: null })
+    checked({ ticketId: "t", plugin: pluginInfo({ id: "dev.me.mine", name: "Mine" }), update: null, needsUnreviewed: true, allowed: true, uvMissing: false, uvBytes: 15236317, resourceBytes: 0, resourceHosts: [], catalog: null })
     await waitFor(() => expect(load.querySelector(".animate-spin")).toBeNull())
   })
 
@@ -637,6 +641,8 @@ describe("PluginsPage", () => {
       allowed: true,
       uvMissing: false,
       uvBytes: 15236317,
+      resourceBytes: 0,
+      resourceHosts: [],
       catalog: null,
     })
     fireEvent.click(install)

@@ -318,8 +318,9 @@ export const commands = {
 	 */
 	pluginDiscard: (ticketId: string) => __TAURI_INVOKE<null>("plugin_discard", { ticketId }),
 	/**
-	 *  Uninstall a plugin, with what it kept when `delete_data`. A folder it was
-	 *  loaded from stays. Refused while it runs; its runs still waiting go.
+	 *  Uninstall a plugin, with the large files it downloaded, and what it kept
+	 *  when `delete_data`. A folder it was loaded from stays. Refused while it
+	 *  runs; its runs still waiting go.
 	 */
 	pluginUninstall: (pluginId: string, deleteData: boolean) => __TAURI_INVOKE<null>("plugin_uninstall", { pluginId, deleteData }),
 	/**  Turn a plugin on or off. Off, its runs stop, and those still waiting go. */
@@ -763,6 +764,16 @@ export type CatalogPlugin = {
 	addsHosts: string[],
 	runsHere: boolean,
 	needsNewerApp: boolean,
+	/**
+	 *  What the large files it names take, in bytes: what its first run
+	 *  downloads.
+	 */
+	resourceBytes: number | null,
+	/**
+	 *  Hosts those files come from that the installed version's
+	 *  `plugin.json` doesn't name (all of them when it can't be read).
+	 */
+	addsResourceHosts: string[],
 };
 
 /**
@@ -1775,6 +1786,11 @@ export type PluginInfo = {
 	serviceLogPath: string | null,
 	/**  What was skipped or changed in its `plugin.json`. */
 	warnings: string[],
+	/**
+	 *  What the large files its `plugin.json` names take on the disk now,
+	 *  in bytes (by their sizes; 0 for one that names none or got none yet).
+	 */
+	resourceBytes: number | null,
 };
 
 /**
@@ -1810,6 +1826,16 @@ export type PluginReview = {
 	uvMissing: boolean,
 	/**  What getting uv downloads at most, in bytes. */
 	uvBytes: number | null,
+	/**
+	 *  What its first run still downloads of the large files it names, in
+	 *  bytes: 0 when it names none, or AutoScene keeps them all already.
+	 */
+	resourceBytes: number | null,
+	/**
+	 *  Where those files come from: the hosts of their addresses, each
+	 *  once, as it names them.
+	 */
+	resourceHosts: string[],
 	/**
 	 *  Where AutoScene's catalog says the plugin was built from, when the
 	 *  catalog reviewed it.
@@ -1848,6 +1874,11 @@ export type PluginUpdate = {
 	 *  installed version, as the person agreed to it, doesn't.
 	 */
 	becomesService: boolean,
+	/**
+	 *  Hosts its large files come from that the installed version's
+	 *  `plugin.json` doesn't name (all of them when that can't be read).
+	 */
+	addedResourceHosts: string[],
 };
 
 /**

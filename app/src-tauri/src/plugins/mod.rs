@@ -49,7 +49,14 @@
 //!
 //! A uv script runs through AutoScene's own uv ([`as_plugin::uv`]): the
 //! first run or service start that needs it gets it ([`GetUv`]), and says
-//! so ([`GETTING_UV`]).
+//! so ([`GETTING_UV`]). The large files a plugin names come next, the same
+//! way, each checked by its hash ([`GetResources`], [`as_plugin::resources`]):
+//! a run says "Getting files for" its plugin, a service's page
+//! [`GETTING_FILES`]; and before the first hash of kept ones in a process
+//! (a minute for 8 GiB from a cold disk, which a cancel ends), "Checking
+//! files for" it, or [`CHECKING_FILES`]. They go with the plugin's uninstall
+//! ([`PluginHost::uninstall`]), and at the next start once no installed
+//! version names them ([`PluginHost::prune_resources`]).
 //!
 //! AutoScene's catalog says which plugins it reviewed and which it withdrew
 //! ([`catalog`]). It is read before the window opens and checked at start
@@ -77,8 +84,8 @@ use as_plugin::service::STOP_GRACE;
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
     ActionContext, ActionKind, Approval, Caller, CommandSpec, Extra, Grants, HostCalls, HostMethod, Installed, Launch,
-    Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record, RunSpec, RuntimeKind,
-    SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
+    Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record, Resource, Resources,
+    RunSpec, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -110,6 +117,15 @@ const MAX_PAGE_RUNS: usize = 16;
 /// What a run, or a service's start, says while it gets uv.
 pub const GETTING_UV: &str = "Getting uv";
 
+/// What a service's start says while it gets its plugin's large files (a
+/// run names the plugin: "Getting files for Big Model").
+pub const GETTING_FILES: &str = "Getting files";
+
+/// What a service's start says while it hashes the large files its plugin
+/// kept, the first time in a process (a run names the plugin: "Checking
+/// files for Big Model").
+pub const CHECKING_FILES: &str = "Checking files";
+
 /// Tells the app's page what became of one of its open plugin pages.
 pub type PageEvents = Box<dyn Fn(PluginPageEvent) + Send + Sync>;
 
@@ -134,6 +150,82 @@ impl GetUv for ManagedUv {
     fn install(&self, cancel: &CancelToken, progress: &mut dyn FnMut(u64, u64)) -> PluginResult<PathBuf> {
         as_plugin::uv::install(&self.0, cancel, progress)
     }
+}
+
+/// Where the large files plugins name come from and are kept: AutoScene's
+/// cache ([`Resources`]), or a test's stand-in. One for the app, so a file
+/// is hashed once per process.
+pub trait GetResources: Send + Sync {
+    /// The folder of `id`'s files, which its program gets.
+    fn dir(&self, id: &PluginId) -> PathBuf;
+    /// The ones of `rs` not kept yet (a kept file is hashed the first time
+    /// this process asks, until `cancel` fires).
+    fn missing<'a>(&self, id: &PluginId, rs: &'a [Resource], cancel: &CancelToken) -> PluginResult<Vec<&'a Resource>>;
+    /// Whether [`GetResources::missing`] would hash a kept file of `rs` now:
+    /// by sizes and times alone.
+    fn needs_check(&self, id: &PluginId, rs: &[Resource]) -> bool;
+    /// What getting the files of `rs` would download, by their sizes and
+    /// marks alone: for the review, which hashes nothing.
+    fn to_get(&self, id: &PluginId, rs: &[Resource]) -> u64;
+    /// Gets those of `rs` not kept yet, for the plugin named `name`:
+    /// `progress(done, total)` as their bytes come; `cancel` ends it.
+    fn fetch(
+        &self,
+        id: &PluginId,
+        name: &str,
+        rs: &[Resource],
+        cancel: &CancelToken,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> PluginResult<PathBuf>;
+    /// Removes what no installed plugin names ([`Resources::prune`]).
+    fn prune(&self, installed: &[(PluginId, Option<Vec<Resource>>)]);
+    /// Removes `id`'s files: it was uninstalled.
+    fn remove(&self, id: &PluginId);
+}
+
+impl GetResources for Resources {
+    fn dir(&self, id: &PluginId) -> PathBuf {
+        Resources::dir(self, id)
+    }
+
+    fn missing<'a>(&self, id: &PluginId, rs: &'a [Resource], cancel: &CancelToken) -> PluginResult<Vec<&'a Resource>> {
+        Resources::missing(self, id, rs, cancel)
+    }
+
+    fn needs_check(&self, id: &PluginId, rs: &[Resource]) -> bool {
+        Resources::needs_check(self, id, rs)
+    }
+
+    fn to_get(&self, id: &PluginId, rs: &[Resource]) -> u64 {
+        Resources::to_get(self, id, rs)
+    }
+
+    fn fetch(
+        &self,
+        id: &PluginId,
+        name: &str,
+        rs: &[Resource],
+        cancel: &CancelToken,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> PluginResult<PathBuf> {
+        Resources::fetch(self, id, name, rs, cancel, progress)
+    }
+
+    fn prune(&self, installed: &[(PluginId, Option<Vec<Resource>>)]) {
+        Resources::prune(self, installed);
+    }
+
+    fn remove(&self, id: &PluginId) {
+        Resources::remove(self, id);
+    }
+}
+
+/// What a plugin's program gets before it starts: AutoScene's uv, for a uv
+/// script, and the folder of its plugin's large files, when it names some.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Fetched {
+    pub uv: Option<PathBuf>,
+    pub resources: Option<PathBuf>,
 }
 
 /// The plugins of this app, and what they are doing.
@@ -173,6 +265,8 @@ pub struct PluginHost {
     pub services: Services,
     /// Where uv scripts' uv comes from.
     uv: Box<dyn GetUv>,
+    /// Where the plugins' large files come from and are kept.
+    resources: Box<dyn GetResources>,
 }
 
 /// The plugins in use: by a run, or by an install, update or uninstall.
@@ -286,6 +380,9 @@ pub struct PluginInfo {
     pub service_log_path: Option<String>,
     /// What was skipped or changed in its `plugin.json`.
     pub warnings: Vec<String>,
+    /// What the large files its `plugin.json` names take on the disk now,
+    /// in bytes (by their sizes; 0 for one that names none or got none yet).
+    pub resource_bytes: f64,
 }
 
 /// Where a plugin's files are.
@@ -329,6 +426,12 @@ pub struct PluginReview {
     pub uv_missing: bool,
     /// What getting uv downloads at most, in bytes.
     pub uv_bytes: f64,
+    /// What its first run still downloads of the large files it names, in
+    /// bytes: 0 when it names none, or AutoScene keeps them all already.
+    pub resource_bytes: f64,
+    /// Where those files come from: the hosts of their addresses, each
+    /// once, as it names them.
+    pub resource_hosts: Vec<String>,
     /// Where AutoScene's catalog says the plugin was built from, when the
     /// catalog reviewed it.
     pub catalog: Option<ReviewCatalog>,
@@ -379,6 +482,9 @@ pub struct PluginUpdate {
     /// It keeps its program running while its page is open, and the
     /// installed version, as the person agreed to it, doesn't.
     pub becomes_service: bool,
+    /// Hosts its large files come from that the installed version's
+    /// `plugin.json` doesn't name (all of them when that can't be read).
+    pub added_resource_hosts: Vec<String>,
 }
 
 /// The plugin host of this app's data folder, with plugins' secrets in the
@@ -401,7 +507,8 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
             store.set_catalog(Arc::new(catalog.load()));
             let start = Box::new(services::ProgramStart(app.clone()));
             let uv = Box::new(ManagedUv(paths.runtimes()));
-            let host = Arc::new(PluginHost::new(store, catalog, pages, page_events, start, uv));
+            let resources = Box::new(Resources::new(paths.plugin_resources()));
+            let host = Arc::new(PluginHost::new(store, catalog, pages, page_events, start, uv, resources));
             pages::watch(app.clone(), Arc::downgrade(&host));
             services::reap(Arc::downgrade(&host));
             Some(host)
@@ -424,8 +531,9 @@ pub fn host(state: &AppState) -> AppResult<Arc<PluginHost>> {
 impl PluginHost {
     /// The host of `store`, judged by `catalog`, with no page open yet in
     /// `pages`, whose open pages hear what becomes of them through
-    /// `page_events`, whose services start through `start`, and whose uv
-    /// scripts get uv from `uv`.
+    /// `page_events`, whose services start through `start`, whose uv
+    /// scripts get uv from `uv`, and whose plugins get their large files
+    /// from `resources`.
     pub fn new(
         store: Store,
         catalog: CatalogHost,
@@ -433,8 +541,9 @@ impl PluginHost {
         page_events: PageEvents,
         start: Box<dyn StartService>,
         uv: Box<dyn GetUv>,
+        resources: Box<dyn GetResources>,
     ) -> Self {
-        Self::reaching(store, catalog, pages, page_events, Box::new(UreqTransport::new()), (start, uv))
+        Self::reaching(store, catalog, pages, page_events, Box::new(UreqTransport::new()), (start, uv, resources))
     }
 
     /// [`PluginHost::new`], whose plugins' `net.fetch` calls go to `net`.
@@ -444,7 +553,7 @@ impl PluginHost {
         pages: Pages,
         page_events: PageEvents,
         net: Box<dyn Transport>,
-        (start, uv): (Box<dyn StartService>, Box<dyn GetUv>),
+        (start, uv, resources): (Box<dyn StartService>, Box<dyn GetUv>, Box<dyn GetResources>),
     ) -> Self {
         Self {
             store,
@@ -461,6 +570,7 @@ impl PluginHost {
             beats: pages::Heartbeats::default(),
             services: Services::new(start),
             uv,
+            resources,
         }
     }
 
@@ -486,9 +596,39 @@ impl PluginHost {
         self.uv.install(cancel, &mut progress).map(Some)
     }
 
+    /// The folder of the large files `m`, the manifest of the plugin `id`,
+    /// names: none when it names none. A file kept already is hashed the
+    /// first time this process asks, which `report` hears first (`checking`)
+    /// since it takes a while. Those not kept yet come now, as `report`
+    /// hears (`stage`, and how far once their bytes come). Either ends once
+    /// `cancel` fires; a cancel keeps what came for the next try.
+    fn resources_for(
+        &self,
+        id: &PluginId,
+        m: &Manifest,
+        (checking, stage): (&str, &str),
+        cancel: &CancelToken,
+        report: &dyn Fn(&str, Option<f64>),
+    ) -> PluginResult<Option<PathBuf>> {
+        if m.resources.is_empty() {
+            return Ok(None);
+        }
+        if self.resources.needs_check(id, &m.resources) {
+            report(checking, None);
+        }
+        if self.resources.missing(id, &m.resources, cancel)?.is_empty() {
+            return Ok(Some(self.resources.dir(id)));
+        }
+        report(stage, None);
+        let mut progress = |done: u64, total: u64| report(stage, Some(done as f64 / total.max(1) as f64));
+        self.resources.fetch(id, &m.name, &m.resources, cancel, &mut progress).map(Some)
+    }
+
     /// A run of `action` of `p`, as [`Store::run_spec`] makes it, through
     /// AutoScene's uv when it is a uv script ([`PluginHost::uv_for`]: got
-    /// now when it isn't here, as `report` hears, until `cancel` fires).
+    /// now when it isn't here, as `report` hears, until `cancel` fires),
+    /// and then with the large files its plugin names
+    /// ([`PluginHost::resources_for`], got the same way).
     fn run_spec(
         &self,
         p: &Installed,
@@ -499,7 +639,40 @@ impl PluginHost {
     ) -> PluginResult<RunSpec> {
         let mut spec = self.store.run_spec(p, action, ffmpeg, ffprobe, ffmpeg_version)?;
         spec.uv = self.uv_for(&spec.launch, cancel, report)?;
+        if let Some(m) = &p.manifest {
+            let stages = (format!("Checking files for {}", m.name), format!("Getting files for {}", m.name));
+            spec.resources = self.resources_for(&p.record.id, m, (&stages.0, &stages.1), cancel, report)?;
+        }
         Ok(spec)
+    }
+
+    /// Uninstalls `id`, with what it kept when `delete_data`, and the large
+    /// files it downloaded; a folder it was loaded from stays. Refused while
+    /// it runs. Its runs still waiting go, on `jobs`; one that starts
+    /// meanwhile waits, then finds it gone.
+    pub fn uninstall(&self, jobs: &JobRunner, id: &PluginId, delete_data: bool) -> PluginResult<()> {
+        let name = self.store.get(id).ok().and_then(|p| p.manifest.map(|m| m.name));
+        let _changing = self.change(id, name.as_deref().unwrap_or(id.as_str()), "It is being uninstalled.")?;
+        self.store.uninstall(id, delete_data)?;
+        self.resources.remove(id);
+        self.stop(jobs, id);
+        Ok(())
+    }
+
+    /// Removes the large files no installed plugin names any more: those an
+    /// update stopped naming, and those of plugins uninstalled while they
+    /// couldn't go. A plugin whose `plugin.json` can't be read keeps its
+    /// files. At the app's start, off its thread.
+    pub fn prune_resources(&self) {
+        let plugins = match self.store.list() {
+            Ok(plugins) => plugins,
+            Err(e) => {
+                log::warn!("listing plugins for their downloaded files: {}", e.detail());
+                return;
+            }
+        };
+        let installed: Vec<_> = plugins.into_iter().map(|p| (p.record.id, p.manifest.map(|m| m.resources))).collect();
+        self.resources.prune(&installed);
     }
 
     /// Keeps `t` for [`PluginHost::take`] under its id, and drops the
@@ -928,6 +1101,7 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
             .filter(|m| m.runtime.kind == RuntimeKind::Service)
             .map(|_| store.service_log_path(id).to_string_lossy().into_owned()),
         warnings: p.warnings.clone(),
+        resource_bytes: store.resource_bytes(p) as f64,
     }
 }
 
@@ -948,6 +1122,8 @@ pub fn review(t: &Ticket, host: &PluginHost, allow_unreviewed: bool) -> PluginRe
         allowed: !needs_unreviewed || allow_unreviewed,
         uv_missing: plugin.uv_script && host.uv.installed().is_none(),
         uv_bytes: as_plugin::uv::download_bytes() as f64,
+        resource_bytes: host.resources.to_get(&t.manifest.id, &t.manifest.resources) as f64,
+        resource_hosts: t.manifest.resource_hosts(),
         catalog: t.approval.as_ref().map(ReviewCatalog::from),
         plugin,
     }
@@ -997,6 +1173,9 @@ fn as_installed(t: &Ticket) -> Installed {
 /// none when it is broken).
 fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> PluginUpdate {
     let pages_before = before.and_then(|b| b.manifest.as_ref()).map_or(&[][..], |b| &b.pages);
+    // Where its files came from, by the plugin.json its lock fixes: none
+    // known when it can't be read, so each host is said to be new.
+    let fetched_from = before.and_then(|b| b.manifest.as_ref()).map(Manifest::resource_hosts).unwrap_or_default();
     // One whose row is gone is taken to run a program, so nothing is said
     // to be new that may not be.
     let agreed = before.map_or(RuntimeKind::Process, |b| b.extra.agreed_runtime());
@@ -1016,6 +1195,7 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
         // Only by what the person agreed to: one whose row is gone isn't
         // said to change how it runs.
         becomes_service: before.is_some() && agreed != RuntimeKind::Service && m.runtime.kind == RuntimeKind::Service,
+        added_resource_hosts: m.resource_hosts().into_iter().filter(|h| !fetched_from.contains(h)).collect(),
     }
 }
 
@@ -1432,13 +1612,13 @@ mod tests {
 
     fn host_with(tmp: &Path, net: impl Transport + 'static, page_events: PageEvents) -> (Library, Arc<PluginHost>) {
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
-        host_of(tmp, net, page_events, (Box::new(NoStart), FakeUv::here()), secrets, None)
+        host_of(tmp, net, page_events, (Box::new(NoStart), FakeUv::here(), None), secrets, None)
     }
 
     /// [`host_in`], whose secrets `secrets` keeps.
     pub(super) fn host_keeping(tmp: &Path, secrets: Arc<dyn as_plugin::SecretStore>) -> (Library, Arc<PluginHost>) {
         let page_events = Box::new(|_: PluginPageEvent| {});
-        host_of(tmp, UreqTransport::new(), page_events, (Box::new(NoStart), FakeUv::here()), secrets, None)
+        host_of(tmp, UreqTransport::new(), page_events, (Box::new(NoStart), FakeUv::here(), None), secrets, None)
     }
 
     /// [`host_hearing`], whose services start through `start`.
@@ -1452,11 +1632,22 @@ mod tests {
         start: impl StartService + 'static,
         uv: Arc<FakeUv>,
     ) -> (Library, Arc<PluginHost>, Heard) {
+        host_getting(tmp, start, uv, None)
+    }
+
+    /// [`host_getting_uv`], whose plugins get their large files from
+    /// `files` (else from AutoScene's cache in `tmp`).
+    pub(super) fn host_getting(
+        tmp: &Path,
+        start: impl StartService + 'static,
+        uv: Arc<FakeUv>,
+        files: Option<Arc<FakeFiles>>,
+    ) -> (Library, Arc<PluginHost>, Heard) {
         let heard = Heard::default();
         let keep = heard.clone();
         let page_events = Box::new(move |e: PluginPageEvent| keep.lock().push(e));
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
-        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, (Box::new(start), uv), secrets, None);
+        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, (Box::new(start), uv, files), secrets, None);
         (lib, host, heard)
     }
 
@@ -1474,7 +1665,7 @@ mod tests {
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
         let fetch: Arc<dyn catalog::Fetch> = Arc::new(served.clone());
         let checked = Some((key.keys(), fetch));
-        let started = (Box::new(start) as Box<dyn StartService>, FakeUv::here());
+        let started = (Box::new(start) as Box<dyn StartService>, FakeUv::here(), None);
         let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, started, secrets, checked);
         (lib, host, heard)
     }
@@ -1483,7 +1674,7 @@ mod tests {
         tmp: &Path,
         net: impl Transport + 'static,
         page_events: PageEvents,
-        (start, uv): (Box<dyn StartService>, Arc<FakeUv>),
+        (start, uv, files): (Box<dyn StartService>, Arc<FakeUv>, Option<Arc<FakeFiles>>),
         secrets: Arc<dyn as_plugin::SecretStore>,
         checked: Option<(as_plugin::CatalogKeys, Arc<dyn catalog::Fetch>)>,
     ) -> (Library, Arc<PluginHost>) {
@@ -1501,7 +1692,12 @@ mod tests {
         let shelf: Arc<dyn catalog::GetPackage> = Arc::new(Arc::new(catalog::tests::Shelf::default()));
         let catalog = CatalogHost::new(&paths, lib.shared_db(), keys, urls, fetch, shelf);
         let pages = Pages::new(Arc::new(MemoryKit::default()), Vec::new());
-        let host = PluginHost::reaching(store, catalog, pages, page_events, Box::new(net), (start, Box::new(uv)));
+        let resources: Box<dyn GetResources> = match files {
+            Some(files) => Box::new(files),
+            None => Box::new(Resources::new(paths.plugin_resources())),
+        };
+        let host =
+            PluginHost::reaching(store, catalog, pages, page_events, Box::new(net), (start, Box::new(uv), resources));
         (lib, Arc::new(host))
     }
 
@@ -1554,6 +1750,121 @@ mod tests {
         }
     }
 
+    /// Where the tests' large files are said to be kept: they never are.
+    pub(super) const TEST_FILES: &str = "cache/plugin-resources-test";
+
+    /// The plugins' large files as a test has them: each missing until it is
+    /// got, unless its download fails; never on the disk.
+    #[derive(Default)]
+    pub(super) struct FakeFiles {
+        kept: Mutex<HashSet<(PluginId, String)>>,
+        /// Kept files this process hasn't hashed yet: the next look hashes
+        /// them, which a cancel ends.
+        unchecked: Mutex<HashSet<(PluginId, String)>>,
+        fails: bool,
+        /// How often files were got.
+        pub(super) got: std::sync::atomic::AtomicUsize,
+        /// The plugins whose files were removed.
+        pub(super) removed: Mutex<Vec<PluginId>>,
+    }
+
+    impl FakeFiles {
+        /// None kept yet; their download `fails`, or they come.
+        pub(super) fn missing(fails: bool) -> Arc<Self> {
+            Arc::new(Self { fails, ..Self::default() })
+        }
+
+        fn kept(&self, id: &PluginId, r: &Resource) -> bool {
+            self.kept.lock().contains(&(id.clone(), r.name.clone()))
+        }
+
+        /// As after the app's next start: every kept file is hashed at the
+        /// next look.
+        pub(super) fn forget_checks(&self) {
+            let kept = self.kept.lock().clone();
+            *self.unchecked.lock() = kept;
+        }
+    }
+
+    impl GetResources for Arc<FakeFiles> {
+        fn dir(&self, id: &PluginId) -> PathBuf {
+            Path::new(TEST_FILES).join(id.as_str())
+        }
+
+        fn missing<'a>(
+            &self,
+            id: &PluginId,
+            rs: &'a [Resource],
+            cancel: &CancelToken,
+        ) -> PluginResult<Vec<&'a Resource>> {
+            if self.needs_check(id, rs) {
+                if cancel.is_cancelled() {
+                    return Err(PluginError::Cancelled);
+                }
+                let mut unchecked = self.unchecked.lock();
+                for r in rs {
+                    unchecked.remove(&(id.clone(), r.name.clone()));
+                }
+            }
+            Ok(rs.iter().filter(|r| !self.kept(id, r)).collect())
+        }
+
+        fn needs_check(&self, id: &PluginId, rs: &[Resource]) -> bool {
+            let unchecked = self.unchecked.lock();
+            rs.iter().any(|r| unchecked.contains(&(id.clone(), r.name.clone())))
+        }
+
+        fn to_get(&self, id: &PluginId, rs: &[Resource]) -> u64 {
+            rs.iter().filter(|r| !self.kept(id, r)).map(Resource::bytes).sum()
+        }
+
+        fn fetch(
+            &self,
+            id: &PluginId,
+            name: &str,
+            rs: &[Resource],
+            cancel: &CancelToken,
+            progress: &mut dyn FnMut(u64, u64),
+        ) -> PluginResult<PathBuf> {
+            if cancel.is_cancelled() {
+                return Err(PluginError::Cancelled);
+            }
+            let total = self.to_get(id, rs);
+            progress(0, total);
+            if self.fails {
+                return Err(PluginError::Download {
+                    what: format!("{name}'s files"),
+                    detail: "connection refused".into(),
+                });
+            }
+            progress(total, total);
+            self.kept.lock().extend(rs.iter().map(|r| (id.clone(), r.name.clone())));
+            self.got.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.dir(id))
+        }
+
+        fn prune(&self, _: &[(PluginId, Option<Vec<Resource>>)]) {}
+
+        fn remove(&self, id: &PluginId) {
+            self.kept.lock().retain(|(kept, _)| kept != id);
+            self.removed.lock().push(id.clone());
+        }
+    }
+
+    /// The `plugin.json` of [`manifest`]'s plugin `id`, of manifest version
+    /// 2, naming `resources`.
+    pub(super) fn with_resources(id: &str, resources: serde_json::Value) -> serde_json::Value {
+        let mut m = manifest(id, false);
+        m["manifestVersion"] = serde_json::json!(2);
+        m["resources"] = resources;
+        m
+    }
+
+    /// A large file `name` of `size` bytes at `url`.
+    pub(super) fn resource(name: &str, url: &str, size: u64) -> serde_json::Value {
+        serde_json::json!({"name": name, "urls": [url], "sha256": package::sha256_hex(name.as_bytes()), "size": size})
+    }
+
     /// No service starts in the tests that don't start one.
     pub(super) struct NoStart;
 
@@ -1562,7 +1873,7 @@ mod tests {
             &self,
             _: &Arc<PluginHost>,
             _: &Installed,
-            _: Option<PathBuf>,
+            _: Fetched,
             _: as_plugin::OnEvent,
             _: &as_core::CancelToken,
         ) -> PluginResult<Arc<dyn as_plugin::Service>> {
@@ -2454,6 +2765,173 @@ mod tests {
         uv.install(&CancelToken::new(), &mut |_, _| {}).unwrap();
         assert!(!review(&t, &host, true).uv_missing);
         host.store.discard(t);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// Where the tests' plugins' files come from: a pinned Hugging Face
+    /// revision, and a host of its own.
+    pub(super) const HF: &str =
+        "https://huggingface.co/org/repo/resolve/0123456789abcdef0123456789abcdef01234567/model.onnx";
+    const CDN: &str = "https://cdn.example.com/vocab.bin";
+
+    #[test]
+    fn a_plugin_gets_its_resources_before_it_runs() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-files-run-{}", std::process::id()));
+        let (uv, files) = (FakeUv::missing(false), FakeFiles::missing(false));
+        let (lib, host, _) = host_getting(&tmp, NoStart, uv.clone(), Some(files.clone()));
+        let big = with_resources(
+            "dev.a.big",
+            serde_json::json!([resource("model.onnx", HF, 300), resource("vocab.bin", CDN, 12)]),
+        );
+        let p = host.store.commit(folder(&host, &tmp, &big), true, true).unwrap();
+        let action = ActionContext { kind: ActionKind::Command, id: "hello".into(), trigger: Trigger::Palette };
+        let heard = Mutex::new(Vec::new());
+        let report = |stage: &str, f: Option<f64>| heard.lock().push((stage.to_owned(), f));
+        let cancel = CancelToken::new();
+        let tools = (Path::new("ffmpeg"), Path::new("ffprobe"), "9.0");
+        let run = |action: &ActionContext| host.run_spec(&p, action.clone(), tools, &cancel, &report);
+        // Not kept yet: after uv, the run gets them, says so, and its program
+        // is given their folder.
+        let spec = run(&action).unwrap();
+        let kept_in = Path::new(TEST_FILES).join("dev.a.big");
+        assert_eq!((spec.uv, spec.resources), (Some(PathBuf::from(TEST_UV)), Some(kept_in.clone())));
+        let files_stage = |f| ("Getting files for Plugin dev.a.big".to_owned(), f);
+        let uv_stage = |f| (GETTING_UV.to_owned(), f);
+        let said = vec![
+            uv_stage(None),
+            uv_stage(Some(0.0)),
+            uv_stage(Some(1.0)),
+            files_stage(None),
+            files_stage(Some(0.0)),
+            files_stage(Some(1.0)),
+        ];
+        assert_eq!(*heard.lock(), said);
+        // Kept, the next run is given them at once, without a word.
+        heard.lock().clear();
+        assert_eq!(run(&action).unwrap().resources, Some(kept_in.clone()));
+        assert!(heard.lock().is_empty());
+        assert_eq!(files.got.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // After the app's next start, the first run hashes them, and says so
+        // first; a cancel ends the hash.
+        files.forget_checks();
+        let cancelled = CancelToken::new();
+        cancelled.cancel();
+        let e = host.run_spec(&p, action.clone(), tools, &cancelled, &report).err().unwrap();
+        assert!(matches!(plugin_job_error(e), JobError::Cancelled));
+        let checking = ("Checking files for Plugin dev.a.big".to_owned(), None);
+        assert_eq!(*heard.lock(), std::slice::from_ref(&checking));
+        heard.lock().clear();
+        assert_eq!(run(&action).unwrap().resources, Some(kept_in));
+        assert_eq!(*heard.lock(), [checking]);
+        heard.lock().clear();
+        assert_eq!(files.got.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // A plugin that names none gets none, and nothing is got for it.
+        let plain = host.store.commit(folder(&host, &tmp, &manifest("dev.a.plain", false)), true, true).unwrap();
+        let spec = host.run_spec(&plain, action.clone(), tools, &cancel, &report).unwrap();
+        assert_eq!(spec.resources, None);
+        assert!(heard.lock().is_empty());
+        drop((host, lib));
+
+        // A download that fails fails the run in its words; a cancel cancels it.
+        let (lib, host, _) =
+            host_getting(&tmp.join("failing"), NoStart, FakeUv::here(), Some(FakeFiles::missing(true)));
+        let p = host.store.commit(folder(&host, &tmp.join("failing"), &big), true, true).unwrap();
+        let e = host.run_spec(&p, action.clone(), tools, &cancel, &report).err().unwrap();
+        let words = "AutoScene couldn't get Plugin dev.a.big's files. Check the internet connection, then try again.";
+        assert!(matches!(plugin_job_error(e), JobError::Failed(m) if m == words));
+        cancel.cancel();
+        let e = host.run_spec(&p, action.clone(), tools, &cancel, &report).err().unwrap();
+        assert!(matches!(plugin_job_error(e), JobError::Cancelled));
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_review_says_what_a_plugin_downloads_and_from_where() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-files-review-{}", std::process::id()));
+        let files = FakeFiles::missing(false);
+        let (lib, host, _) = host_getting(&tmp, NoStart, FakeUv::here(), Some(files.clone()));
+        let big = with_resources(
+            "dev.a.big",
+            serde_json::json!([resource("model.onnx", HF, 300_000_000), resource("vocab.bin", CDN, 12_000_000)]),
+        );
+        let t = folder(&host, &tmp, &big);
+        let shown = review(&t, &host, true);
+        assert_eq!(shown.resource_bytes, 312e6);
+        assert_eq!(shown.resource_hosts, ["huggingface.co", "cdn.example.com"]);
+        let sent = serde_json::to_value(&shown).unwrap();
+        assert_eq!(sent["resourceBytes"], serde_json::json!(312e6));
+        assert_eq!(sent["resourceHosts"], serde_json::json!(["huggingface.co", "cdn.example.com"]));
+        // Kept already: nothing to download, from the same hosts.
+        let rs = &t.manifest.resources;
+        files.fetch(&t.manifest.id, "Big", rs, &CancelToken::new(), &mut |_, _| {}).unwrap();
+        let shown = review(&t, &host, true);
+        assert_eq!((shown.resource_bytes, shown.resource_hosts.len()), (0.0, 2));
+        // A plugin that names none downloads none.
+        let plain = folder(&host, &tmp, &manifest("dev.a.plain", false));
+        let shown = review(&plain, &host, true);
+        assert_eq!((shown.resource_bytes, shown.resource_hosts.len()), (0.0, 0));
+        host.store.discard(t);
+        host.store.discard(plain);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn an_update_with_a_new_download_host_marks_it_new() {
+        let parse =
+            |v: &serde_json::Value| as_plugin::manifest::parse_for_any_app(v.to_string().as_bytes()).unwrap().manifest;
+        let previous = plugin("dev.a.big", Trust::Reviewed, false).record;
+        let mut before = plugin("dev.a.big", Trust::Reviewed, false);
+        before.manifest =
+            Some(parse(&with_resources("dev.a.big", serde_json::json!([resource("model.onnx", HF, 300)]))));
+        let both = serde_json::json!([resource("model.onnx", HF, 300), resource("vocab.bin", CDN, 12)]);
+        let mut next = with_resources("dev.a.big", both);
+        next["version"] = serde_json::json!("1.1.0");
+        let m = parse(&next);
+        // The installed version's files come from huggingface.co: the other host is new.
+        let u = update(&previous, Some(&before), &m);
+        assert_eq!(u.added_resource_hosts, ["cdn.example.com"]);
+        let sent = serde_json::to_value(&u).unwrap();
+        assert_eq!(sent["addedResourceHosts"], serde_json::json!(["cdn.example.com"]));
+        // The same hosts, or fewer, are nothing new.
+        assert!(update(&previous, Some(&before), before.manifest.as_ref().unwrap()).added_resource_hosts.is_empty());
+        // One whose plugin.json names none: both are new. So are they when
+        // its plugin.json can't be read, or its row is gone.
+        before.manifest = Some(parse(&manifest("dev.a.big", false)));
+        assert_eq!(update(&previous, Some(&before), &m).added_resource_hosts, ["huggingface.co", "cdn.example.com"]);
+        before.manifest = None;
+        assert_eq!(update(&previous, Some(&before), &m).added_resource_hosts.len(), 2);
+        assert_eq!(update(&previous, None, &m).added_resource_hosts.len(), 2);
+    }
+
+    #[test]
+    fn uninstall_removes_its_downloaded_files() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-files-uninstall-{}", std::process::id()));
+        let (lib, host) = host_in(&tmp);
+        let big = with_resources("dev.a.big", serde_json::json!([resource("model.onnx", HF, 300)]));
+        let p = host.store.commit(folder(&host, &tmp, &big), true, true).unwrap();
+        // Its files, as a run left them in AutoScene's cache.
+        let kept = AppPaths::at(tmp.join("data")).plugin_resources().join("dev.a.big");
+        std::fs::create_dir_all(&kept).unwrap();
+        std::fs::write(kept.join("model.onnx"), [7u8; 300]).unwrap();
+        std::fs::write(kept.join("model.onnx.verified"), package::sha256_hex(b"model.onnx")).unwrap();
+        // Plugins says how much they take, by their sizes.
+        assert_eq!(info(&p, &host.store, true).resource_bytes, 300.0);
+        assert_eq!(info(&plugin("dev.a.none", Trust::Reviewed, false), &host.store, true).resource_bytes, 0.0);
+        // Another plugin's files stay.
+        let other = AppPaths::at(tmp.join("data")).plugin_resources().join("dev.a.other");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("x.bin"), b"x").unwrap();
+        let jobs = JobRunner::new(&[(Class::Plugin, 1)], |_| {});
+        host.uninstall(&jobs, &p.record.id, false).unwrap();
+        assert!(!kept.exists(), "its files went with it");
+        assert!(other.join("x.bin").exists());
+        assert!(host.store.list().unwrap().is_empty());
+        // The next start removes the files of a plugin that isn't installed.
+        host.prune_resources();
+        assert!(!other.exists());
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
     }

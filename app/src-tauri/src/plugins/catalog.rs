@@ -52,7 +52,7 @@ use as_plugin::catalog::{
 use as_plugin::fetch::fetch_error;
 use as_plugin::keys::CATALOG_URLS;
 use as_plugin::manifest::current_platform;
-use as_plugin::{Installed, PluginError, PluginId, PluginResult, Store, Ticket, package};
+use as_plugin::{Installed, Manifest, PluginError, PluginId, PluginResult, Store, Ticket, package};
 use parking_lot::Mutex;
 use semver::Version;
 use serde::Serialize;
@@ -882,6 +882,12 @@ pub struct CatalogPlugin {
     pub adds_hosts: Vec<String>,
     pub runs_here: bool,
     pub needs_newer_app: bool,
+    /// What the large files it names take, in bytes: what its first run
+    /// downloads.
+    pub resource_bytes: f64,
+    /// Hosts those files come from that the installed version's
+    /// `plugin.json` doesn't name (all of them when it can't be read).
+    pub adds_resource_hosts: Vec<String>,
 }
 
 /// The catalog of `host` at `now`, with `daily` the setting.
@@ -943,6 +949,9 @@ fn listed(catalog: &Catalog, id: &PluginId, installed: Option<&Installed>, app: 
     let new = |names: &[String], has: &dyn Fn(&str) -> bool| -> Vec<String> {
         if record.is_none() { Vec::new() } else { names.iter().filter(|n| !has(n)).cloned().collect() }
     };
+    // Where the installed version's files come from, by its plugin.json,
+    // which its lock fixes: none known when it can't be read.
+    let fetched_from = installed.and_then(|p| p.manifest.as_ref()).map(Manifest::resource_hosts).unwrap_or_default();
     Some(CatalogPlugin {
         id: entry.id.to_string(),
         name: entry.name.clone(),
@@ -968,6 +977,8 @@ fn listed(catalog: &Catalog, id: &PluginId, installed: Option<&Installed>, app: 
         adds_hosts: new(&entry.hosts, &|h| hosts.contains(h)),
         runs_here,
         needs_newer_app,
+        resource_bytes: entry.resource_bytes as f64,
+        adds_resource_hosts: new(&entry.resource_hosts, &|h| fetched_from.iter().any(|f| f == h)),
     })
 }
 
@@ -1627,6 +1638,40 @@ pub(super) mod tests {
             assert_eq!((shown.version.as_str(), shown.runs_here), ("2.0.0", false));
             assert_eq!((shown.update, shown.needs_newer_app), (false, needs_newer_app), "{id}");
         }
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn adds_resource_hosts_compares_with_the_installed_manifest() {
+        let tmp = scratch("view-resources");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        let mut big = entry(HELLO, "1.1.0");
+        big["resourceBytes"] = json!(312_000_000u64);
+        big["resourceHosts"] = json!(["huggingface.co", "cdn.example.com"]);
+        served.index(A, &key, &index(2, vec![big], vec![]));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        let catalog = host.refresh(NOW, &Catalog::none()).unwrap();
+        let app = Version::parse("1.0.3-BETA").unwrap();
+        let hello = PluginId::parse(HELLO).unwrap();
+        // Not installed: how much its first run downloads, and nothing "added".
+        let shown = listed(&catalog, &hello, None, &app).unwrap();
+        assert_eq!((shown.resource_bytes, shown.adds_resource_hosts.len()), (312e6, 0));
+        // Installed, its plugin.json naming files from huggingface.co: the other host is new.
+        let parse = |v: &Value| as_plugin::manifest::parse_for_any_app(v.to_string().as_bytes()).unwrap().manifest;
+        let model = super::super::tests::resource("model.onnx", super::super::tests::HF, 300);
+        let mut installed = super::super::tests::plugin(HELLO, as_plugin::Trust::Reviewed, false);
+        installed.manifest = Some(parse(&super::super::tests::with_resources(HELLO, json!([model]))));
+        let shown = listed(&catalog, &hello, Some(&installed), &app).unwrap();
+        assert_eq!(shown.adds_resource_hosts, ["cdn.example.com"]);
+        let sent = serde_json::to_value(&shown).unwrap();
+        assert_eq!((&sent["resourceBytes"], &sent["addsResourceHosts"]), (&json!(312e6), &json!(["cdn.example.com"])));
+        // Its plugin.json naming none: both are new; so they are when it can't be read.
+        installed.manifest = Some(parse(&super::super::tests::manifest(HELLO, false)));
+        let shown = listed(&catalog, &hello, Some(&installed), &app).unwrap();
+        assert_eq!(shown.adds_resource_hosts, ["huggingface.co", "cdn.example.com"]);
+        installed.manifest = None;
+        assert_eq!(listed(&catalog, &hello, Some(&installed), &app).unwrap().adds_resource_hosts.len(), 2);
         drop((db, host));
         std::fs::remove_dir_all(&tmp).unwrap();
     }

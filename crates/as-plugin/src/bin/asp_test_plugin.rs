@@ -307,6 +307,7 @@ fn main() {
 fn serve(mode: &str, stdin: &mut impl BufRead, first: &str) {
     fs::write("serve.json", first).expect("serve.json");
     fs::write("mode", env::var("AUTOSCENE_MODE").unwrap_or_default()).expect("mode");
+    fs::write("resources", env::var("AUTOSCENE_RESOURCES").unwrap_or_default()).expect("resources");
     if mode == "serve-slow-start" {
         send(json!({"type": "progress", "fraction": 0.5, "stage": "Getting Python"}));
         thread::sleep(Duration::from_millis(300));

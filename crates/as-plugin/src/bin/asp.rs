@@ -616,6 +616,9 @@ fn catalog_add(
         source,
         icon: listing.icon.clone(),
         approved: now,
+        // What its first run downloads, and from where.
+        resource_bytes: m.resource_bytes(),
+        resource_hosts: m.resource_hosts(),
     };
     // Checked as AutoScene checks an entry of an index published now.
     let alone = Index { plugins: vec![entry], ..probe(index.epoch, now) };

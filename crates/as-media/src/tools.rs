@@ -12,6 +12,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use crate::caps::Caps;
 use crate::{MediaError, MediaResult};
@@ -43,24 +44,121 @@ pub const PROBE_FORMATS: &str = "matroska,webm,mov,mp4,m4a,3gp,3g2,mj2,avi,asf,m
 const MIN_MAJOR: u32 = 7;
 const MIN_LIBAVCODEC: u32 = 61;
 
+/// How long `ffmpeg -version` may take. It prints at once; a binary that
+/// can't is damaged or stuck, and is ended with whatever it started.
+const VERSION_WAIT: Duration = Duration::from_secs(10);
+
 impl Tools {
     /// Find ffmpeg + ffprobe: in `bundled` alone when given (the app's
     /// resource folder), else in `AUTOSCENE_FFMPEG_DIR` or on `PATH`.
     pub fn locate(bundled: Option<&Path>) -> MediaResult<Self> {
         let (ffmpeg, ffprobe) = find(bundled, std::env::var_os("AUTOSCENE_FFMPEG_DIR"), std::env::var_os("PATH"))
             .ok_or(MediaError::ToolsMissing)?;
-        Self::checked(ffmpeg, ffprobe)
+        Self::checked(ffmpeg, ffprobe, VERSION_WAIT)
     }
 
-    fn checked(ffmpeg: PathBuf, ffprobe: PathBuf) -> MediaResult<Self> {
-        let out = crate::proc::output(no_window(Command::new(&ffmpeg)).arg("-version"))
-            .map_err(|_| MediaError::ToolsMissing)?;
+    /// An ffmpeg that doesn't print its version within `wait` is as good as
+    /// missing: nothing else it does can be trusted, and startup waits on it.
+    fn checked(ffmpeg: PathBuf, ffprobe: PathBuf, wait: Duration) -> MediaResult<Self> {
+        let out = crate::proc::output_within(no_window(Command::new(&ffmpeg)).arg("-version"), wait)
+            .ok()
+            .flatten()
+            .ok_or(MediaError::ToolsMissing)?;
         let version = supported_version(&String::from_utf8_lossy(&out.stdout))?;
         // Where it is says who the user is (their home folder): not at info,
         // which is what a shared log holds.
         tracing::debug!(ffmpeg = %ffmpeg.display(), "media tools found");
         tracing::info!(%version, "media tools ready");
         Ok(Self { ffmpeg, ffprobe, version, caps: OnceLock::new() })
+    }
+
+    /// Tools whose ffmpeg never answers, as one stuck in a GPU driver does:
+    /// a program in `dir` that does nothing for a minute, whatever it is asked.
+    #[cfg(test)]
+    pub(crate) fn hung(dir: &Path) -> Self {
+        #[cfg(windows)]
+        let path = {
+            let p = dir.join("hung-ffmpeg.cmd");
+            // A loop, not `ping` or `timeout`: those are processes of their own,
+            // and ending the script alone would leave them holding the pipes.
+            std::fs::write(&p, "@echo off\r\n:again\r\ngoto again\r\n").unwrap();
+            p
+        };
+        #[cfg(unix)]
+        let path = {
+            let p = dir.join("hung-ffmpeg");
+            write_script(&p, "#!/bin/sh\nexec sleep 60\n");
+            p
+        };
+        Self { ffmpeg: path.clone(), ffprobe: path, version: "stand-in".into(), caps: OnceLock::new() }
+    }
+
+    /// Tools with this ffmpeg (and no ffprobe).
+    #[cfg(all(test, unix))]
+    pub(crate) fn with_ffmpeg(ffmpeg: PathBuf) -> Self {
+        Self { ffmpeg, ffprobe: PathBuf::new(), version: "stand-in".into(), caps: OnceLock::new() }
+    }
+
+    /// Tools that answer the lists (`-encoders`: NVENC and AMF H.264, HEVC
+    /// NVENC; `-hwaccels`: cuda) and let every other ffmpeg run succeed at
+    /// once, except one whose arguments contain `hang_on`: that one writes a
+    /// line to `hangs` in `dir` and never ends. Its ffprobe describes a 64x64
+    /// picture.
+    #[cfg(test)]
+    pub(crate) fn picky(dir: &Path, hang_on: &str) -> Self {
+        const PROBE: &str = r#"{"format":{"format_name":"image2"},"streams":[{"index":0,"codec_type":"video","codec_name":"png","width":64,"height":64,"color_primaries":"bt709","color_transfer":"bt709","color_space":"bt709"}]}"#;
+        let hangs = dir.join("hangs");
+        let hangs = hangs.display();
+        #[cfg(windows)]
+        let (ffmpeg, ffprobe) = {
+            let (ffmpeg, ffprobe) = (dir.join("picky-ffmpeg.cmd"), dir.join("picky-ffprobe.cmd"));
+            let script = [
+                "@echo off".to_string(),
+                r#"echo %* | findstr /C:"-encoders" >NUL && goto enc"#.to_string(),
+                r#"echo %* | findstr /C:"-hwaccels" >NUL && goto hw"#.to_string(),
+                format!(r#"echo %* | findstr /C:"{hang_on}" >NUL && goto hang"#),
+                "exit /b 0".to_string(),
+                ":enc".to_string(),
+                "echo  V....D h264_nvenc x".to_string(),
+                "echo  V....D hevc_nvenc x".to_string(),
+                "echo  V....D h264_amf x".to_string(),
+                "exit /b 0".to_string(),
+                ":hw".to_string(),
+                "echo Hardware acceleration methods:".to_string(),
+                "echo cuda".to_string(),
+                "exit /b 0".to_string(),
+                ":hang".to_string(),
+                format!(r#"echo x >> "{hangs}""#),
+                // A loop, not `ping`: that is a process of its own.
+                ":stay".to_string(),
+                "goto stay".to_string(),
+                String::new(),
+            ]
+            .join("\r\n");
+            std::fs::write(&ffmpeg, script).unwrap();
+            std::fs::write(&ffprobe, format!("@echo off\r\necho {PROBE}\r\n")).unwrap();
+            (ffmpeg, ffprobe)
+        };
+        #[cfg(unix)]
+        let (ffmpeg, ffprobe) = {
+            let (ffmpeg, ffprobe) = (dir.join("picky-ffmpeg"), dir.join("picky-ffprobe"));
+            let script = [
+                "#!/bin/sh".to_string(),
+                r#"case "$*" in"#.to_string(),
+                r#"*-encoders*) printf ' V....D h264_nvenc x\n V....D hevc_nvenc x\n V....D h264_amf x\n'; exit 0;;"#
+                    .to_string(),
+                r#"*-hwaccels*) printf 'Hardware acceleration methods:\ncuda\n'; exit 0;;"#.to_string(),
+                format!("*{hang_on}*) echo x >> '{hangs}'; exec sleep 60;;"),
+                "esac".to_string(),
+                "exit 0".to_string(),
+                String::new(),
+            ]
+            .join("\n");
+            write_script(&ffmpeg, &script);
+            write_script(&ffprobe, &format!("#!/bin/sh\nprintf '%s' '{PROBE}'\n"));
+            (ffmpeg, ffprobe)
+        };
+        Self { ffmpeg, ffprobe, version: "stand-in".into(), caps: OnceLock::new() }
     }
 
     /// `ffmpeg -hide_banner -nostdin` with no console window.
@@ -131,6 +229,18 @@ fn supported_version(out: &str) -> MediaResult<String> {
         }
     };
     if new_enough { Ok(version) } else { Err(MediaError::ToolsTooOld(version)) }
+}
+
+/// Write an executable script for a test. Other tests start processes at the
+/// same time, and one forked while this file was open for writing still holds
+/// it until it has run its program; starting the script in that moment fails
+/// ("text file busy"). The pause is longer than that.
+#[cfg(all(test, unix))]
+pub(crate) fn write_script(path: &Path, text: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, text).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::thread::sleep(Duration::from_millis(150));
 }
 
 #[cfg(windows)]
@@ -275,5 +385,18 @@ mod tests {
             Err(MediaError::Probe { message, .. }) => assert!(message.contains("whitelist"), "{message}"),
             other => panic!("the manifest was read: {other:?}"),
         }
+    }
+
+    /// The version check ends at its limit: a binary that doesn't answer is a
+    /// missing one, not a startup that never ends.
+    #[test]
+    fn an_ffmpeg_that_never_prints_its_version_counts_as_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let hung = Tools::hung(dir.path());
+        let start = std::time::Instant::now();
+        let out = Tools::checked(hung.ffmpeg.clone(), hung.ffprobe.clone(), Duration::from_millis(500));
+        assert!(matches!(out, Err(MediaError::ToolsMissing)), "{out:?}");
+        let took = start.elapsed();
+        assert!(took >= Duration::from_millis(500) && took < Duration::from_secs(10), "{took:?}");
     }
 }

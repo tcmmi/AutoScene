@@ -9,7 +9,11 @@
 //! ([`Decoder::Nvdec`]): the same decoder for a run and its resumption.
 
 use std::io::{BufReader, Read};
-use std::process::Stdio;
+use std::process::{Child, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread;
+use std::time::Duration;
 
 use as_core::{CancelToken, FrameIdx, FrameRange};
 
@@ -99,16 +103,15 @@ pub fn decode_still(tools: &Tools, path: &std::path::Path, cancel: &CancelToken)
     tracing::debug!(cmd = ?cmd, "decode a still");
     let mut child = crate::proc::spawn(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()))?;
     let mut stderr = child.stderr.take().expect("piped stderr");
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut child = Watched::new(child, cancel);
     let stderr_thread = std::thread::spawn(move || {
         let mut s = String::new();
         let _ = stderr.read_to_string(&mut s);
         s.lines().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n")
     });
     let mut rgb = vec![0u8; (w * h * 3) as usize];
-    let read = {
-        let mut stdout = child.stdout.take().expect("piped stdout");
-        stdout.read_exact(&mut rgb)
-    };
+    let read = stdout.read_exact(&mut rgb);
     let status = child.wait()?;
     let tail = stderr_thread.join().unwrap_or_default();
     if cancel.is_cancelled() {
@@ -241,6 +244,7 @@ fn decode_raw(
     let mut child = crate::proc::spawn(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()))?;
     let mut stdout = BufReader::with_capacity(1 << 20, child.stdout.take().expect("piped stdout"));
     let mut stderr = child.stderr.take().expect("piped stderr");
+    let mut child = Watched::new(child, cancel);
     let stderr_thread = std::thread::spawn(move || {
         let mut s = String::new();
         let _ = stderr.read_to_string(&mut s);
@@ -272,8 +276,10 @@ fn decode_raw(
             Err(e) => break Some(e),
         }
     };
+    // A kill from the watch ends the read as an end of data or a broken pipe.
+    let stopped = if child.was_killed() { Some(MediaError::Cancelled) } else { stopped };
     if let Some(e) = stopped {
-        let _ = child.kill();
+        child.kill();
         let _ = child.wait();
         let _ = stderr_thread.join();
         // Stopping on purpose (on_frame said so) isn't an error for the caller.
@@ -284,10 +290,83 @@ fn decode_raw(
     }
     let status = child.wait()?;
     let tail = stderr_thread.join().unwrap_or_default();
+    // The watch runs until the process has ended: one that stalls after its
+    // last frame (a driver tearing down) is cancelled like any other.
+    if child.was_killed() {
+        return Err(MediaError::Cancelled);
+    }
     if !status.success() {
         return Err(MediaError::Ffmpeg(if tail.is_empty() { format!("exit status {status}") } else { tail }));
     }
     Ok((delivered, f))
+}
+
+/// A decoder's process, killed the moment `cancel` fires. The readers below
+/// block on its pipe, and an ffmpeg that has stopped answering (a hung GPU
+/// driver) never sends the next byte: without this, a cancel is only seen
+/// once something arrives, which may be never.
+struct Watched {
+    child: Arc<Mutex<Child>>,
+    stop: Arc<AtomicBool>,
+    killed: Arc<AtomicBool>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl Watched {
+    fn new(child: Child, cancel: &CancelToken) -> Self {
+        let child = Arc::new(Mutex::new(child));
+        let (stop, killed) = (Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
+        let (c, s, k, cancel) = (child.clone(), stop.clone(), killed.clone(), cancel.clone());
+        let thread = thread::spawn(move || {
+            while !s.load(Ordering::Acquire) {
+                if cancel.is_cancelled() {
+                    k.store(true, Ordering::Release);
+                    let _ = c.lock().unwrap_or_else(PoisonError::into_inner).kill();
+                    return;
+                }
+                thread::park_timeout(Duration::from_millis(40));
+            }
+        });
+        Self { child, stop, killed, thread: Some(thread) }
+    }
+
+    /// Stop watching.
+    fn stop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(t) = self.thread.take() {
+            t.thread().unpark();
+            let _ = t.join();
+        }
+    }
+
+    /// Whether the watch has killed the process.
+    fn was_killed(&self) -> bool {
+        self.killed.load(Ordering::Acquire)
+    }
+
+    fn kill(&self) {
+        let _ = self.child.lock().unwrap_or_else(PoisonError::into_inner).kill();
+    }
+
+    /// Wait for the process to end, while the watch goes on: a process that
+    /// closed its output and then hangs is still ended by a cancel. The lock
+    /// is only held for a look, or the watch could not kill.
+    fn wait(&mut self) -> std::io::Result<ExitStatus> {
+        let status = loop {
+            if let Some(status) = self.child.lock().unwrap_or_else(PoisonError::into_inner).try_wait()? {
+                break status;
+            }
+            thread::sleep(Duration::from_millis(5));
+        };
+        self.stop();
+        Ok(status)
+    }
+}
+
+impl Drop for Watched {
+    fn drop(&mut self) {
+        self.stop();
+    }
 }
 
 #[cfg(test)]
@@ -339,5 +418,98 @@ mod tests {
             assert!(!coded(codec), "{codec} is decoded in software");
         }
         assert!(!nvdec_suits(&info(1920, 1080, Rational::new(1, 1), 90)), "rotated");
+    }
+
+    /// What the decoders below are asked to cancel: a source of 100 frames.
+    fn hundred_frames() -> (MediaInfo, as_core::FrameIndex) {
+        let pts: Vec<i64> = (0..100).map(|i| i * 3600).collect();
+        let index = as_core::FrameIndex::from_pts(Rational::new(1, 90_000), Rational::new(25, 1), pts).unwrap();
+        (info(64, 64, Rational::new(1, 1), 0), index)
+    }
+
+    /// Runs `decode` while a cancel arrives from another thread after 300 ms;
+    /// returns how long it took to come back.
+    fn cancelled_midway<T>(decode: impl FnOnce(&CancelToken) -> T) -> (T, Duration) {
+        let cancel = CancelToken::new();
+        let later = cancel.clone();
+        let canceller = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(300));
+            later.cancel();
+        });
+        let start = std::time::Instant::now();
+        let out = decode(&cancel);
+        let took = start.elapsed();
+        canceller.join().unwrap();
+        (out, took)
+    }
+
+    /// An ffmpeg that has stopped answering sends no frame, so the read for
+    /// the next one never returns: the person's cancel must end it anyway.
+    #[test]
+    fn a_decoder_that_never_answers_is_ended_by_a_cancel() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::hung(dir.path());
+        let (info, index) = hundred_frames();
+        let path = dir.path().join("clip.mp4");
+        let src = Source { path: &path, info: &info, index: &index };
+        let (out, took) = cancelled_midway(|cancel| {
+            decode_samples_with(&tools, src, 0, 1, (16, 16), Decoder::Nvdec, cancel, |_, _| Ok(true))
+        });
+        assert!(matches!(out, Err(ref e) if e.is_cancelled()), "{out:?}");
+        assert!(took >= Duration::from_millis(300) && took < Duration::from_secs(15), "came back after {took:?}");
+
+        let (out, took) =
+            cancelled_midway(|cancel| decode_samples(&tools, src, 0, 1, (16, 16), cancel, |_, _| Ok(true)));
+        assert!(matches!(out, Err(ref e) if e.is_cancelled()), "{out:?}");
+        assert!(took < Duration::from_secs(15), "came back after {took:?}");
+    }
+
+    /// A decode nobody cancels still runs to its end.
+    #[test]
+    fn the_watch_leaves_a_decoder_that_finishes_alone() {
+        let mut cmd = if cfg!(windows) {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/C", "echo hello"]);
+            c
+        } else {
+            let mut c = std::process::Command::new("echo");
+            c.arg("hello");
+            c
+        };
+        let cancel = CancelToken::new();
+        let child = crate::proc::spawn(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped())).unwrap();
+        let mut watched = Watched::new(child, &cancel);
+        let status = watched.wait().unwrap();
+        assert!(status.success());
+        assert!(!watched.was_killed(), "nothing was killed");
+    }
+
+    /// The still decoder too: its ffmpeg answers the probe and then goes quiet.
+    #[test]
+    fn a_still_decode_that_never_answers_is_ended_by_a_cancel() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::picky(dir.path(), "-frames:v");
+        let (out, took) = cancelled_midway(|cancel| decode_still(&tools, &dir.path().join("face.png"), cancel));
+        assert!(matches!(out, Err(ref e) if e.is_cancelled()), "{out:?}");
+        assert!(took >= Duration::from_millis(300) && took < Duration::from_secs(15), "came back after {took:?}");
+    }
+
+    /// A process that has sent everything and then stalls, waiting to end, is
+    /// still under the watch.
+    #[test]
+    fn the_watch_goes_on_while_the_process_is_waited_for() {
+        let mut cmd = if cfg!(windows) {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/C", "ping -n 60 127.0.0.1 >NUL"]);
+            c
+        } else {
+            let mut c = std::process::Command::new("sh");
+            c.args(["-c", "sleep 60"]);
+            c
+        };
+        let child = crate::proc::spawn(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped())).unwrap();
+        let (status, took) = cancelled_midway(|cancel| Watched::new(child, cancel).wait());
+        assert!(!status.unwrap().success());
+        assert!(took >= Duration::from_millis(300) && took < Duration::from_secs(15), "came back after {took:?}");
     }
 }

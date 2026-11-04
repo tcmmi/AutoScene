@@ -3,7 +3,7 @@
 //! Every ffmpeg/ffprobe the app starts goes through [`spawn`] or [`output`].
 //! On Windows each child joins a job object created with
 //! `KILL_ON_JOB_CLOSE`: the job's only handle belongs to this process, so when
-//! it ends — normally, through the updater's `exit(0)`, or in a crash — the
+//! it ends â€” normally, through the updater's `exit(0)`, or in a crash â€” the
 //! system kills every child with it. Nothing is left holding `ffmpeg.exe`
 //! open during an update or writing a half-finished file.
 //!
@@ -27,6 +27,60 @@ pub fn output(cmd: &mut Command) -> io::Result<Output> {
     let child = spawn(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()))?;
     child.wait_with_output()
 }
+
+/// [`output`] with a limit, for checks that can hang (a hardware driver does).
+/// The child is the root of a [`Tree`], so an overrun ends it and everything
+/// it started. `Ok(None)`: it overran. An `Err` is a program that wouldn't
+/// start, or one that can't be watched. A thread per pipe reads while the
+/// child runs, or a long listing would fill the pipe and stop it.
+pub fn output_within(cmd: &mut Command, limit: Duration) -> io::Result<Option<Output>> {
+    fn drain(pipe: Option<impl io::Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut bytes);
+            }
+            bytes
+        })
+    }
+
+    let mut tree = spawn_tree(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()))?;
+    let stdout = drain(tree.take_stdout());
+    let stderr = drain(tree.take_stderr());
+
+    let start = std::time::Instant::now();
+    let watched = loop {
+        match tree.has_exited() {
+            Ok(true) => break Ok(true),
+            Ok(false) if start.elapsed() < limit => std::thread::sleep(Duration::from_millis(20)),
+            Ok(false) => break Ok(false),
+            Err(e) => break Err(e),
+        }
+    };
+    // Ended either way; whatever the root left running goes with it, which
+    // also closes the pipes the readers wait on. An overrun is the answer,
+    // not a failure of the kill: a root that won't be reaped is logged by the
+    // tree and the check counts as hung all the same.
+    let status = match watched {
+        Ok(true) => Some(tree.finish()),
+        Ok(false) | Err(_) => {
+            if let Err(e) = tree.kill_tree(OVERRUN_GRACE) {
+                tracing::warn!(error = %e, "couldn't reap a process that overran its limit");
+            }
+            None
+        }
+    };
+    let (stdout, stderr) = (stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default());
+    match (watched, status) {
+        (Ok(true), Some(status)) => Ok(Some(Output { status: status?, stdout, stderr })),
+        (Err(e), _) => Err(e),
+        _ => Ok(None),
+    }
+}
+
+/// How long a check that overran gets to end after it is asked to (Unix only;
+/// elsewhere everything ends at once). A hung driver doesn't answer: not long.
+const OVERRUN_GRACE: Duration = Duration::from_millis(300);
 
 /// A child and every process it starts, ended together.
 ///
@@ -664,5 +718,75 @@ mod tests {
         let ended = eventually(Duration::from_secs(5), || again.try_wait().unwrap().is_some());
         again.kill().ok();
         assert!(ended && ran.exists(), "the command's next child starts suspended");
+    }
+
+    /// A command that outlives every wait the tests use.
+    fn sleeper() -> Command {
+        if cfg!(windows) {
+            let mut c = Command::new("cmd");
+            c.args(["/C", "ping -n 60 127.0.0.1 >NUL"]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.args(["-c", "sleep 60"]);
+            c
+        }
+    }
+
+    #[test]
+    fn a_check_that_never_ends_is_stopped_at_its_limit() {
+        let start = Instant::now();
+        let out = output_within(&mut sleeper(), Duration::from_millis(400)).unwrap();
+        assert!(out.is_none(), "an overrun has no output");
+        let took = start.elapsed();
+        assert!(took >= Duration::from_millis(400), "{took:?}");
+        assert!(took < Duration::from_secs(10), "stopped after {took:?}");
+    }
+
+    /// The root's own children go with it: a hung ffmpeg could hold a helper.
+    #[cfg(unix)]
+    #[test]
+    fn an_overrun_ends_what_the_check_started() {
+        // The pid is on stdout, which an overrun throws away: a file keeps it.
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("pid");
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(format!("sleep 60 & echo $! > '{}'; wait", pidfile.display()));
+        assert!(output_within(&mut cmd, Duration::from_millis(600)).unwrap().is_none());
+        let pid: libc::pid_t = std::fs::read_to_string(&pidfile).unwrap().trim().parse().unwrap();
+        let gone = (0..100).any(|_| {
+            // SAFETY: signal 0 only tests whether the process exists.
+            let alive = unsafe { libc::kill(pid, 0) } == 0;
+            if alive {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            !alive
+        });
+        assert!(gone, "the grandchild {pid} still runs");
+    }
+
+    #[test]
+    fn a_check_that_ends_returns_all_of_its_output() {
+        // More than a pipe holds: it only ends if someone reads while it runs.
+        let dir = tempfile::tempdir().unwrap();
+        let big = dir.path().join("big.txt");
+        std::fs::write(&big, "x".repeat(300_000)).unwrap();
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("cmd");
+            c.args(["/C", "type"]);
+            c
+        } else {
+            Command::new("cat")
+        };
+        let out =
+            output_within(cmd.arg(&big), Duration::from_secs(30)).unwrap().expect("it ends well within the limit");
+        assert!(out.status.success());
+        assert_eq!(out.stdout.len(), 300_000);
+    }
+
+    #[test]
+    fn a_program_that_isnt_there_is_an_error_not_a_hang() {
+        let mut cmd = Command::new("as-no-such-program-here");
+        assert!(output_within(&mut cmd, Duration::from_secs(5)).is_err());
     }
 }

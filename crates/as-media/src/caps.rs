@@ -1,9 +1,20 @@
 //! What this machine's ffmpeg can actually do — verified by smoke tests, not
 //! just by what the build lists (an `h264_nvenc` entry means nothing on an AMD
 //! machine).
+//!
+//! Every check is a short ffmpeg run with a bounded wait. A hardware driver
+//! can hang for ever (several NVIDIA decoders or encoders starting at once
+//! under WSL do); a check that overruns is ended with everything it started,
+//! logged, and counts as "not available", so AutoScene goes on without that
+//! capability instead of stopping at the first export or scan. Checks of one
+//! driver run one after another (the hang needs several at once); only
+//! different drivers are checked side by side.
 
 use std::collections::HashSet;
+use std::process::{Command, Output};
+use std::sync::{Mutex, PoisonError};
 use std::thread;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -98,43 +109,91 @@ const DECODERS: &[(&str, &str, &str)] = if cfg!(target_os = "macos") {
     &[("cuda", "cuda", "cuda"), ("vaapi", "vaapi", "vaapi")]
 };
 
+/// How long a check may take before it counts as failed. A working one takes
+/// about a second; a cold GPU that has to wake first, a few more.
+#[derive(Clone, Copy, Debug)]
+struct Waits {
+    /// `-encoders` and `-hwaccels`: the build's lists, no hardware involved.
+    list: Duration,
+    /// A run that starts a hardware encoder or decoder.
+    smoke: Duration,
+}
+
+const WAITS: Waits = Waits { list: Duration::from_secs(10), smoke: Duration::from_secs(20) };
+
+/// The checks of one detection. After a check hung, the others that would
+/// start the same driver aren't tried: they would only hang too, and each
+/// would cost a wait of its own. A driver is a vendor's (the NVIDIA one serves
+/// NVENC and NVDEC alike) or a decoder's own; another driver's checks are
+/// unaffected.
+struct Checks<'a> {
+    tools: &'a Tools,
+    waits: Waits,
+    hung: Mutex<HashSet<&'static str>>,
+}
+
+/// The driver a vendor's encoders start.
+fn driver(vendor: Vendor) -> &'static str {
+    match vendor {
+        Vendor::Nvidia => "nvidia",
+        Vendor::Amd => "amd",
+        Vendor::Intel => "intel",
+        Vendor::Apple => "apple",
+    }
+}
+
+/// The driver a decoder's device starts (CUDA is NVIDIA's, as NVENC is).
+fn device_driver(device: &'static str) -> &'static str {
+    match device {
+        "cuda" => driver(Vendor::Nvidia),
+        "videotoolbox" => driver(Vendor::Apple),
+        other => other,
+    }
+}
+
 impl Caps {
     pub fn detect(tools: &Tools) -> Self {
+        Self::detect_within(tools, WAITS)
+    }
+
+    fn detect_within(tools: &Tools, waits: Waits) -> Self {
+        let checks = &Checks { tools, waits, hung: Mutex::default() };
         let listed = |flag: &str| -> String {
-            crate::proc::output(tools.ffmpeg().arg(flag))
-                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-                .unwrap_or_default()
+            let out = checks.run(tools.ffmpeg().arg(flag), flag, waits.list, None);
+            out.map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default()
         };
         let enc_list = listed("-encoders");
         let present: HashSet<&str> = enc_list.lines().filter_map(|l| l.split_whitespace().nth(1)).collect();
         let hwaccels = listed("-hwaccels");
 
         let candidates: Vec<_> = HW_ENCODERS.iter().filter(|(n, ..)| present.contains(n)).collect();
+        // One driver's encoders one after another: it is several NVIDIA
+        // encoders starting at once that hangs. Drivers are independent.
         let hw_encoders: Vec<HwEncoder> = thread::scope(|s| {
-            let handles: Vec<_> = candidates
-                .iter()
-                .map(|&&(name, family, vendor)| {
-                    s.spawn(move || smoke_encode(tools, name).then(|| HwEncoder { name: name.into(), family, vendor }))
+            let handles: Vec<_> = [Vendor::Nvidia, Vendor::Amd, Vendor::Intel, Vendor::Apple]
+                .into_iter()
+                .map(|v| {
+                    let mine: Vec<_> = candidates.iter().filter(|c| c.2 == v).copied().collect();
+                    s.spawn(move || {
+                        mine.into_iter()
+                            .filter(|&&(name, _, vendor)| checks.smoke_encode(name, vendor))
+                            .map(|&(name, family, vendor)| HwEncoder { name: name.into(), family, vendor })
+                            .collect::<Vec<_>>()
+                    })
                 })
                 .collect();
-            handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
+            handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
         });
 
         let decode = DECODERS
             .iter()
             .filter(|(accel, ..)| hwaccels.lines().any(|l| l.trim() == *accel))
-            .find(|(_, device, _)| smoke_device(tools, device))
+            .find(|(_, device, _)| checks.smoke_device(device))
             .map(|(accel, _, fmt)| HwDecode { hwaccel: (*accel).into(), output_format: (*fmt).into() });
 
         let sw_encoders = SW_ENCODERS.iter().filter(|n| present.contains(*n)).map(|n| (*n).to_string()).collect();
         let nvenc_lossless = if hw_encoders.iter().any(|e| e.name == "hevc_nvenc") {
-            thread::scope(|s| {
-                let handles: Vec<_> = NVENC_LOSSLESS
-                    .iter()
-                    .map(|&fmt| s.spawn(move || smoke_lossless(tools, fmt).then(|| fmt.to_string())))
-                    .collect();
-                handles.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
-            })
+            NVENC_LOSSLESS.iter().filter(|&&fmt| checks.smoke_lossless(fmt)).map(|&fmt| fmt.to_string()).collect()
         } else {
             Vec::new()
         };
@@ -153,37 +212,196 @@ impl Caps {
     }
 }
 
-fn smoke_encode(tools: &Tools, encoder: &str) -> bool {
-    crate::proc::output(
-        tools
-            .ffmpeg()
-            .args(["-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24", "-frames:v", "3"])
-            .args(["-pix_fmt", if encoder.contains("videotoolbox") { "nv12" } else { "yuv420p" }])
-            .args(["-c:v", encoder, "-f", "null", "-"]),
-    )
-    .is_ok_and(|o| o.status.success())
-}
-
 /// The layouts lossless HEVC NVENC is asked to take (as `as_export::lossless`
 /// hands frames to it).
 const NVENC_LOSSLESS: &[&str] = &["yuv420p", "p010le", "yuv444p", "yuv444p16le"];
 
-fn smoke_lossless(tools: &Tools, pix_fmt: &str) -> bool {
-    crate::proc::output(
-        tools
-            .ffmpeg()
-            .args(["-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24", "-frames:v", "3"])
-            .args(["-pix_fmt", pix_fmt, "-c:v", "hevc_nvenc", "-preset", "p4", "-tune", "lossless", "-f", "null", "-"]),
-    )
-    .is_ok_and(|o| o.status.success())
+impl Checks<'_> {
+    /// Run `cmd`, the check `what`, for at most `limit`. `None` when it didn't
+    /// end in time or couldn't start: the check then counts as failed. One
+    /// that overran was ended with everything it started; when it starts a
+    /// hardware `driver`, the later checks of that driver stand down.
+    fn run(&self, cmd: &mut Command, what: &str, limit: Duration, driver: Option<&'static str>) -> Option<Output> {
+        let hung = || self.hung.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(driver) = driver.filter(|d| hung().contains(d)) {
+            tracing::warn!(
+                check = what,
+                driver,
+                "not tried: an earlier check of this driver hung; counting it as not available"
+            );
+            return None;
+        }
+        match crate::proc::output_within(cmd, limit) {
+            Ok(Some(out)) => Some(out),
+            Ok(None) => {
+                tracing::warn!(
+                    check = what,
+                    waited_secs = limit.as_secs_f64(),
+                    "a media check didn't end in time and was stopped; counting it as not available"
+                );
+                if let Some(driver) = driver {
+                    hung().insert(driver);
+                }
+                None
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, check = what, "a media check couldn't run");
+                None
+            }
+        }
+    }
+
+    fn smoke_encode(&self, encoder: &str, vendor: Vendor) -> bool {
+        let mut cmd = self.tools.ffmpeg();
+        cmd.args(["-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24", "-frames:v", "3"])
+            .args(["-pix_fmt", if encoder.contains("videotoolbox") { "nv12" } else { "yuv420p" }])
+            .args(["-c:v", encoder, "-f", "null", "-"]);
+        self.run(&mut cmd, encoder, self.waits.smoke, Some(driver(vendor))).is_some_and(|o| o.status.success())
+    }
+
+    fn smoke_lossless(&self, pix_fmt: &str) -> bool {
+        let mut cmd = self.tools.ffmpeg();
+        cmd.args(["-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24", "-frames:v", "3"]).args([
+            "-pix_fmt",
+            pix_fmt,
+            "-c:v",
+            "hevc_nvenc",
+            "-preset",
+            "p4",
+            "-tune",
+            "lossless",
+            "-f",
+            "null",
+            "-",
+        ]);
+        self.run(&mut cmd, "hevc_nvenc lossless", self.waits.smoke, Some(driver(Vendor::Nvidia)))
+            .is_some_and(|o| o.status.success())
+    }
+
+    fn smoke_device(&self, device: &'static str) -> bool {
+        let mut cmd = self.tools.ffmpeg();
+        cmd.args(["-v", "error", "-init_hw_device", &format!("{device}=hw"), "-f", "lavfi", "-i", "nullsrc=s=64x64"])
+            .args(["-frames:v", "1", "-f", "null", "-"]);
+        self.run(&mut cmd, device, self.waits.smoke, Some(device_driver(device))).is_some_and(|o| o.status.success())
+    }
 }
 
-fn smoke_device(tools: &Tools, device: &str) -> bool {
-    crate::proc::output(
-        tools
-            .ffmpeg()
-            .args(["-v", "error", "-init_hw_device", &format!("{device}=hw"), "-f", "lavfi", "-i", "nullsrc=s=64x64"])
-            .args(["-frames:v", "1", "-f", "null", "-"]),
-    )
-    .is_ok_and(|o| o.status.success())
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use super::*;
+
+    /// The limits detection runs with: the lists are quick, a driver gets
+    /// longer, and no check is without a bound.
+    #[test]
+    fn the_shipped_limits_are_the_ones_the_checks_use() {
+        const { assert!(WAITS.list.as_secs() >= 5 && WAITS.list.as_secs() <= 15) };
+        const { assert!(WAITS.smoke.as_secs() >= 15 && WAITS.smoke.as_secs() <= 30) };
+        const { assert!(WAITS.list.as_millis() < WAITS.smoke.as_millis()) };
+    }
+
+    /// Lists and driver runs have limits of their own: with an ffmpeg that
+    /// hangs on everything, the lists end at `list` (a `smoke` of half a
+    /// minute would show), and nothing is available.
+    #[test]
+    fn detection_with_an_ffmpeg_that_hangs_ends_with_nothing_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::hung(dir.path());
+        let waits = Waits { list: Duration::from_millis(500), smoke: Duration::from_secs(30) };
+        let start = Instant::now();
+        let caps = Caps::detect_within(&tools, waits);
+        let took = start.elapsed();
+        assert!(caps.decode.is_none() && caps.hw_encoders.is_empty() && caps.sw_encoders.is_empty(), "{caps:?}");
+        assert!(caps.nvenc_lossless.is_empty());
+        // Two lists, one wait each; far from the 60 s the stand-in sleeps.
+        assert!(took >= Duration::from_secs(1), "{took:?}");
+        assert!(took < Duration::from_secs(10), "the lists waited {took:?}");
+    }
+
+    /// The lists come at once and every driver run hangs: each driver
+    /// (NVIDIA's NVENC and CUDA together, AMD's) is asked once, and the rest
+    /// of its checks are not tried.
+    #[test]
+    fn a_driver_that_hangs_costs_one_wait_and_leaves_nothing_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::picky(dir.path(), "-frames:v");
+        let waits = Waits { list: Duration::from_secs(30), smoke: Duration::from_secs(4) };
+        let caps = Caps::detect_within(&tools, waits);
+        assert!(caps.decode.is_none() && caps.hw_encoders.is_empty() && caps.nvenc_lossless.is_empty(), "{caps:?}");
+        // h264_nvenc and h264_amf; hevc_nvenc, CUDA and the lossless layouts
+        // were spared.
+        let hangs = std::fs::read_to_string(dir.path().join("hangs")).unwrap();
+        assert_eq!(hangs.lines().count(), 2, "a driver that hung was tried again: {hangs:?}");
+    }
+
+    /// One driver hanging does not take the others' hardware with it.
+    #[test]
+    fn a_hung_amd_check_leaves_nvidia_encoding_and_decoding_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::picky(dir.path(), "h264_amf");
+        let waits = Waits { list: Duration::from_secs(30), smoke: Duration::from_secs(3) };
+        let caps = Caps::detect_within(&tools, waits);
+        let names: Vec<_> = caps.hw_encoders.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["h264_nvenc", "hevc_nvenc"], "{caps:?}");
+        assert_eq!(caps.decode.as_ref().map(|d| d.hwaccel.as_str()), Some("cuda"));
+        assert_eq!(caps.nvenc_lossless, NVENC_LOSSLESS);
+    }
+
+    /// A driver's checks run one after another, never side by side: the
+    /// stand-in takes a lock for every run and notes when it finds it taken.
+    #[cfg(unix)]
+    #[test]
+    fn one_driver_is_never_asked_twice_at_a_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let (lock, overlaps, runs) = (dir.path().join("lock"), dir.path().join("overlaps"), dir.path().join("runs"));
+        let script = dir.path().join("ffmpeg");
+        let lines = [
+            "#!/bin/sh".to_string(),
+            r#"case "$*" in"#.to_string(),
+            r#"*-encoders*) printf ' V....D h264_nvenc x\n V....D hevc_nvenc x\n V....D av1_nvenc x\n'; exit 0;;"#
+                .to_string(),
+            r#"*-hwaccels*) printf 'Hardware acceleration methods:\ncuda\n'; exit 0;;"#.to_string(),
+            "esac".to_string(),
+            format!("echo run >> '{}'", runs.display()),
+            format!("mkdir '{}' 2>/dev/null || echo overlap >> '{}'", lock.display(), overlaps.display()),
+            "sleep 0.2".to_string(),
+            format!("rmdir '{}' 2>/dev/null", lock.display()),
+            "exit 0".to_string(),
+            String::new(),
+        ];
+        crate::tools::write_script(&script, &lines.join("\n"));
+        let tools = Tools::with_ffmpeg(script);
+        let caps = Caps::detect_within(&tools, WAITS);
+        assert_eq!(caps.hw_encoders.len(), 3, "{caps:?}");
+        assert_eq!(caps.nvenc_lossless.len(), NVENC_LOSSLESS.len());
+        // Three encoders, the decoder and the four lossless layouts.
+        assert_eq!(std::fs::read_to_string(&runs).unwrap().lines().count(), 8);
+        assert!(!overlaps.exists(), "two NVIDIA checks ran at once");
+    }
+
+    /// One hung check spares the same driver's others their waits, and only those.
+    #[test]
+    fn after_a_check_hung_the_same_drivers_others_are_not_tried() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::hung(dir.path());
+        let waits = Waits { list: Duration::from_millis(500), smoke: Duration::from_millis(600) };
+        let checks = Checks { tools: &tools, waits, hung: Mutex::default() };
+        let start = Instant::now();
+        assert!(!checks.smoke_device("cuda"));
+        assert!(start.elapsed() >= Duration::from_millis(600));
+        assert!(checks.hung.lock().unwrap().contains("nvidia"));
+        let again = Instant::now();
+        assert!(!checks.smoke_encode("hevc_nvenc", Vendor::Nvidia));
+        assert!(!checks.smoke_lossless("yuv420p"));
+        assert!(
+            again.elapsed() < Duration::from_millis(300),
+            "waited {:?} for a driver known to hang",
+            again.elapsed()
+        );
+        // Another driver's check is still made (and hangs, here).
+        let other = Instant::now();
+        assert!(!checks.smoke_encode("h264_amf", Vendor::Amd));
+        assert!(other.elapsed() >= Duration::from_millis(600), "AMD was not tried");
+    }
 }

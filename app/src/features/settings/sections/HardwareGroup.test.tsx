@@ -236,6 +236,60 @@ describe("Settings → General → Graphics card", () => {
   })
 })
 
+describe("Settings → General → Graphics card that is gone", () => {
+  it("choosing Automatic clears the stored card, though the row already shows Automatic", async () => {
+    const user = userEvent.setup()
+    state.settings = { ...state.settings, gpu: IRIS.key }
+    state.hardware = oneCard({ missing: true })
+    vi.mocked(commands.settingsUpdate).mockImplementationOnce((s: AppSettings) => {
+      state.settings = s
+      state.hardware = oneCard()
+      return Promise.resolve(s)
+    })
+    show()
+    await screen.findByText(/isn't connected/)
+    expect(select().textContent).toBe("Automatic")
+    await options(user)
+    await user.click(screen.getByRole("option", { name: "Automatic" }))
+    await waitFor(() => expect(commands.settingsUpdate).toHaveBeenCalledWith(expect.objectContaining({ gpu: "" })))
+    // The card is no longer chosen, so the line about it goes.
+    expect(await screen.findByText("Analysis runs on the NVIDIA GeForce RTX 3060 Ti.")).toBeTruthy()
+    expect(screen.queryByText(/isn't connected/)).toBeNull()
+  })
+
+  it("a stored card with fewer than two cards left clears the same way", async () => {
+    const user = userEvent.setup()
+    state.settings = { ...state.settings, gpu: IRIS.key }
+    state.hardware = oneCard()
+    show()
+    await screen.findByText("Analysis runs on the NVIDIA GeForce RTX 3060 Ti.")
+    expect(select().textContent).toBe("Automatic")
+    await options(user)
+    await user.click(screen.getByRole("option", { name: "Automatic" }))
+    await waitFor(() => expect(commands.settingsUpdate).toHaveBeenCalledWith(expect.objectContaining({ gpu: "" })))
+  })
+
+  it("choosing the processor while the card is gone still works", async () => {
+    const user = userEvent.setup()
+    state.settings = { ...state.settings, gpu: IRIS.key }
+    state.hardware = oneCard({ missing: true })
+    show()
+    await screen.findByText(/isn't connected/)
+    await options(user)
+    await user.click(screen.getByRole("option", { name: "Processor only" }))
+    await waitFor(() => expect(commands.settingsUpdate).toHaveBeenCalledWith(expect.objectContaining({ gpu: "cpu" })))
+  })
+
+  it("Automatic chosen again, with nothing stored, saves nothing", async () => {
+    const user = userEvent.setup()
+    show()
+    await screen.findByText("Analysis runs on the NVIDIA GeForce RTX 3060 Ti.")
+    await options(user)
+    await user.click(screen.getByRole("option", { name: "Automatic" }))
+    expect(commands.settingsUpdate).not.toHaveBeenCalled()
+  })
+})
+
 describe("Settings → General → NVIDIA acceleration", () => {
   /** The row in state `row`. */
   async function row(r: AccelRow, over: Partial<AccelInfo> = {}, card: Partial<HardwareInfo> = {}) {

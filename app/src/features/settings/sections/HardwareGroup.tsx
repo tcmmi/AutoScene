@@ -13,7 +13,8 @@ import { openExternalUrl } from "@/lib/os"
 import { qk, queryClient, useAppInfo, useHardware, useSettings } from "@/lib/queries"
 import { SettingRow, SettingsGroup } from "../primitives"
 
-const AUTO: SelectOption = { value: "auto", label: "Automatic" }
+const AUTOMATIC = "Automatic"
+const AUTO: SelectOption = { value: "auto", label: AUTOMATIC }
 const PROCESSOR: SelectOption = { value: "cpu", label: "Processor only" }
 
 /** Where "Get the driver" leads: NVIDIA's own driver page. */
@@ -294,9 +295,12 @@ export function HardwareGroup() {
         <Select
           aria-label={label}
           className="w-[260px]"
-          value={data.selected}
+          // A stored card the list no longer shows (gone, or one of fewer than two left) shows Automatic as a hint, not as chosen:
+          // picking Automatic is then a change, and clears the card.
+          value={data.selected === "auto" && settings?.gpu && settings.gpu !== "cpu" ? "" : data.selected}
+          placeholder={AUTOMATIC}
           disabled={!settings}
-          onChange={(v) => settings && v !== data.selected && void choose(settings, v)}
+          onChange={(v) => settings && void choose(settings, v)}
           options={options(data)}
         />
       )

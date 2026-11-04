@@ -2386,7 +2386,9 @@ or the file will stop matching its hash."
 start, gets the files AutoScene doesn't have yet, after uv. Activity
 shows "Getting files for <name>" with how far it came. Each file comes
 from its addresses in turn, resumes after an interruption, and counts only
-with its size and SHA-256. A Cancel keeps what came, for the next try. A
+with its size and SHA-256. An address that sends more than that size is
+stopped there: nothing it sent stays, nor what an earlier try had left of
+that file. A Cancel or a full drive keeps what came, for the next try. A
 file whose pin changed (the same name with another hash) comes again.
 Without the room for all of them: "There isn't enough free space for
 <name>'s files. Free up <n> MB on the drive of AutoScene's data folder and

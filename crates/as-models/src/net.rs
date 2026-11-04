@@ -36,18 +36,35 @@ pub fn config(url: &str) -> ureq::config::ConfigBuilder<ureq::typestate::AgentSc
         .user_agent(USER_AGENT)
 }
 
-/// GET `url` (`range`: its Range header), following its redirects here, not
-/// in ureq: ureq reads a redirect's body to its end inside `.call()`, where
-/// only a global timeout bounds it, and a whole model can't have one. A
-/// redirect's body is never read; its connection just closes. A cancel is
-/// checked before every hop, and each keeps the agent's `https_only`.
-/// `budget`: how long a small request may take in all, its body included.
+/// GET a pinned file at `url`, as [`request`] does, asking for its own bytes:
+/// its pin, a range and the bytes kept all count those, and a compressed
+/// answer lets a few bytes on the wire unpack into many. A server may
+/// compress all the same: ureq unpacks what it is sent, and the readers count
+/// what comes out.
 pub(crate) fn get(
     agent: &ureq::Agent,
     url: &str,
     range: Option<&str>,
     budget: Option<Duration>,
     watch: Watch,
+) -> ModelResult<ureq::http::Response<ureq::Body>> {
+    request(agent, url, range, budget, watch, Some("identity"))
+}
+
+/// GET `url` (`range`: its Range header), following its redirects here, not
+/// in ureq: ureq reads a redirect's body to its end inside `.call()`, where
+/// only a global timeout bounds it, and a whole model can't have one. A
+/// redirect's body is never read; its connection just closes. A cancel is
+/// checked before every hop, and each keeps the agent's `https_only`.
+/// `budget`: how long a small request may take in all, its body included.
+/// `encoding`: its Accept-Encoding header, else ureq's own.
+fn request(
+    agent: &ureq::Agent,
+    url: &str,
+    range: Option<&str>,
+    budget: Option<Duration>,
+    watch: Watch,
+    encoding: Option<&str>,
 ) -> ModelResult<ureq::http::Response<ureq::Body>> {
     let failed = |e: String| ModelError::Download(format!("{url}: {e}"));
     // A budget too long to reach is no budget (rather than a panic).
@@ -58,6 +75,9 @@ pub(crate) fn get(
         let mut req = agent.get(at.as_str());
         if let Some(range) = range {
             req = req.header("Range", range);
+        }
+        if let Some(encoding) = encoding {
+            req = req.header("Accept-Encoding", encoding);
         }
         let resp = req
             .config()
@@ -77,12 +97,12 @@ pub(crate) fn get(
 
 /// The whole body of `url`, which must answer 200 within `budget` (its
 /// body included) and send at most `max` bytes. Redirects are followed as
-/// [`get`] does; nothing is sent beyond the request and the user agent.
+/// [`request`] does; nothing is sent beyond the request and the user agent.
 /// The error says what went wrong, for logs: a caller words it for people.
 pub fn get_capped(url: &str, max: u64, budget: Duration, cancel: &CancelToken) -> Result<Vec<u8>, String> {
     // A body quiet for the whole budget is over it anyway.
     let watch = Watch { cancel, stall: budget };
-    let resp = get(&agent(url), url, None, Some(budget), watch).map_err(plain)?;
+    let resp = request(&agent(url), url, None, Some(budget), watch, None).map_err(plain)?;
     if resp.status() != 200 {
         return Err(format!("{url}: the server answered {}", resp.status()));
     }

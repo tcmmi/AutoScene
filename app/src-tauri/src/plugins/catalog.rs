@@ -2685,6 +2685,19 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn a_package_longer_than_its_entry_is_stopped_and_nothing_stays() {
+        let tmp = scratch("package-too-long");
+        let mut e: Entry = serde_json::from_value(entry(HELLO, "1.1.0")).unwrap();
+        e.package.urls = vec![serve(vec![0; e.package.size as usize + 1])];
+        let failed = ModelDownload.get(&e, &tmp, &CancelToken::new(), &mut |_, _| {}).unwrap_err();
+        assert!(matches!(&failed, PluginError::Download { what, .. } if what == "Hello Export"), "{failed:?}");
+        assert!(failed.detail().contains("more than 4096 bytes"), "{}", failed.detail());
+        let names: Vec<_> = std::fs::read_dir(&tmp).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, [format!("{}.asp.lock", "b".repeat(64)).as_str()]);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
     fn a_package_comes_from_its_address_as_a_model_does_and_a_cancel_ends_it_midway() {
         let g = Getting::new("from-its-address");
         // Big enough to come in many pieces: what zip can't shrink much.

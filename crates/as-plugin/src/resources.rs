@@ -26,7 +26,8 @@
 //! Either way the manifest's address is plain https on port 443 of a name
 //! on the internet, every hop stays on https (at most 10, to any host:
 //! Hugging Face sends its files to its CDN), nothing of the person's
-//! travels with it, and the body counts only by its hash.
+//! travels with it, and the body counts only by its size, where it stops,
+//! and its hash.
 //!
 //! What no installed version names goes at the app's start, and so do the
 //! folders of plugins that are gone ([`Resources::prune`]); an uninstall
@@ -258,21 +259,24 @@ fn pinned(id: &PluginId, r: &Resource) -> Pinned {
 
 /// Removes the files in `dir` none of `rs` names, with their markers,
 /// locks and parts (a resource is one file, never an archive's member:
-/// an `.archive.part` is nobody's).
+/// an `.archive.part` is nobody's), and a part longer than the file it is
+/// of, which no fetch would resume: it goes now, not at the next fetch.
 fn prune_files(dir: &Path, rs: &[Resource]) {
     let Ok(entries) = fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
         let file = RESOURCE_SIDECARS.iter().find_map(|end| name.strip_suffix(end)).unwrap_or(name);
-        if rs.iter().any(|r| r.name == file) {
-            continue;
-        }
-        match remove(&entry.path()) {
-            Ok(()) => tracing::info!(file = name, "removed a plugin's file that it no longer names"),
-            Err(e) => {
-                tracing::info!(file = name, error = %e, "a plugin's file it no longer names stays until the next start")
+        let what = match rs.iter().find(|r| r.name == file) {
+            Some(r) if name.ends_with(".part") && entry.metadata().is_ok_and(|md| md.len() > r.bytes()) => {
+                "part longer than its file"
             }
+            Some(_) => continue,
+            None => "file it no longer names",
+        };
+        match remove(&entry.path()) {
+            Ok(()) => tracing::info!(file = name, "removed a plugin's {what}"),
+            Err(e) => tracing::info!(file = name, error = %e, "a plugin's {what} stays until the next start"),
         }
     }
 }
@@ -506,6 +510,38 @@ mod tests {
         assert!(e.detail().contains("dev.example.big-model/model.onnx"), "{}", e.detail());
         assert_eq!(names(&store.dir(&id())), ["model.onnx.lock"], "nothing of it stays");
         assert_eq!(store.missing(&id(), &rs, &CancelToken::new()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_host_that_sends_more_than_the_pin_is_stopped_and_nothing_stays() {
+        let pinned = weights(100_000, 1);
+        let (url, _) = serve(weights(100_001, 1));
+        let rs = [resource("model.onnx", &[&url], &pinned)];
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Resources::new(tmp.path());
+        let e = fetch(&store, &rs).unwrap_err();
+        assert!(matches!(&e, PluginError::Download { what, .. } if what == "Big Model's files"), "{e:?}");
+        assert!(e.detail().contains("more than 100000 bytes"), "{}", e.detail());
+        assert_eq!(names(&store.dir(&id())), ["model.onnx.lock"], "nothing of it stays");
+    }
+
+    #[test]
+    fn a_part_longer_than_its_file_goes_without_waiting_for_a_fetch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Resources::new(tmp.path());
+        let rs = vec![resource("model.onnx", &[], b"four"), resource("vocab.bin", &[], b"four")];
+        let dir = store.dir(&id());
+        fs::create_dir_all(&dir).unwrap();
+        let put = || {
+            fs::write(dir.join("model.onnx.part"), b"longer").unwrap();
+            fs::write(dir.join("vocab.bin.part"), b"four").unwrap();
+        };
+        put();
+        store.prune(&[(id(), Some(rs.clone()))]);
+        assert_eq!(names(&dir), ["vocab.bin.part"], "a part that fits stays for a resume");
+        put();
+        store.prune_unnamed(&id(), &rs);
+        assert_eq!(names(&dir), ["vocab.bin.part"]);
     }
 
     #[test]

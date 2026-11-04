@@ -14,7 +14,9 @@
 //! Downloads go to `<file>.part` (a whole archive a file is taken out of:
 //! `<file>.archive.part`) and resume with an HTTP range request after an
 //! interruption; one that resumed and then fails its hash is fetched once
-//! more from its first byte. One install of a model runs at a time, across processes
+//! more from its first byte. A download ends at its pinned size: however the
+//! server frames or compresses it, a byte more fails it and its part goes, as
+//! a part does when its drive fills up. One install of a model runs at a time, across processes
 //! (`<file>.lock`), and only when its drive has room for it. A model that is
 //! one file of a zip archive (`member`) is fetched alone, by the byte ranges
 //! the archive's directory gives (see [`zip`]), and unpacked.
@@ -259,11 +261,14 @@ pub struct ModelStore {
     stall: Duration,
     /// The free bytes on the drive of a folder.
     free_space: fn(&Path) -> std::io::Result<u64>,
+    /// Writes a download's bytes to its part: a test's full drive or its count,
+    /// else the file.
+    write_part: fn(&mut File, &[u8]) -> std::io::Result<()>,
 }
 
 impl ModelStore {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Self { dir: dir.into(), checked: Arc::default(), stall: STALL_TIMEOUT, free_space }
+        Self { dir: dir.into(), checked: Arc::default(), stall: STALL_TIMEOUT, free_space, write_part: File::write_all }
     }
 
     pub fn dir(&self) -> &Path {
@@ -627,7 +632,7 @@ impl ModelStore {
         if have > 0 && resp.status() != 206 {
             have = 0;
         }
-        stream(resp, part, have, size, id, watch, progress)?;
+        self.stream(resp, part, have, size, id, url, watch, progress)?;
         Ok(have)
     }
 
@@ -692,7 +697,7 @@ impl ModelStore {
             if resp.status() != 206 {
                 return Err(fail(format!("the server sent {} instead of the member's bytes", resp.status())));
             }
-            stream(resp, part, have, entry.compressed, &p.id, watch, progress)?;
+            self.stream(resp, part, have, entry.compressed, &p.id, url, watch, progress)?;
         }
         // Unpacked and hashed in one go — never more than the file and a
         // byte, whatever the data claims; an archive replaced meanwhile (a
@@ -779,6 +784,59 @@ impl ModelStore {
                 Err(e)
             }
         }
+    }
+
+    /// Write the body of `resp` to `part` — after its first `have` bytes,
+    /// which it keeps — until it holds `total`, and never more: a length past
+    /// the missing bytes fails the download at its headers, and a chunk that
+    /// would pass `total` fails it unwritten, however the body is framed or
+    /// compressed. A body that long isn't the file, so the part goes, with
+    /// the bytes it went on from. Any other failure leaves it for a resume,
+    /// a full drive too: the pin bounds the part, and [`Self::room_for`]
+    /// counts what it holds. `progress(done, total)` as bytes come.
+    #[allow(clippy::too_many_arguments)]
+    fn stream(
+        &self,
+        resp: ureq::http::Response<ureq::Body>,
+        part: &Path,
+        have: u64,
+        total: u64,
+        id: &str,
+        url: &str,
+        watch: Watch,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> ModelResult<()> {
+        let past = || ModelError::Download(format!("{id}: {url} sent more than {total} bytes"));
+        // ureq names no length for a body it unpacks: that one counts below.
+        if resp.body().content_length().is_some_and(|len| len > total - have) {
+            let _ = fs::remove_file(part);
+            return Err(past());
+        }
+        let mut out = OpenOptions::new().create(true).write(true).append(have > 0).truncate(have == 0).open(part)?;
+        let mut done = have;
+        let mut too_long = false;
+        progress(done, total);
+        let got = pump(resp, id, watch, |chunk| {
+            let len = chunk.len() as u64;
+            if len > total - done {
+                too_long = true;
+                return Err(past());
+            }
+            (self.write_part)(&mut out, chunk)?;
+            done += len;
+            progress(done, total);
+            Ok(())
+        })
+        .and_then(|()| Ok(out.sync_all()?));
+        if too_long {
+            drop(out);
+            let _ = fs::remove_file(part);
+        }
+        got?;
+        if done != total {
+            return Err(ModelError::Download(format!("{id}: got {done} of {total} bytes")));
+        }
+        Ok(())
     }
 
     /// Delete the files of models a better one replaced (the manifest's
@@ -887,7 +945,9 @@ impl Watch<'_> {
 
 /// Hand the body of `resp` to `sink` as it comes. The body is read on its
 /// own thread, so cancelling (or a stalled connection) never waits on a
-/// socket that has gone quiet. `what` names the transfer in errors.
+/// socket that has gone quiet. `what` names the transfer in errors. Nothing
+/// here limits how much comes: a body may never end, so `sink` counts what
+/// it gets (unpacked, when the answer was compressed) and stops it.
 pub(crate) fn pump(
     resp: ureq::http::Response<ureq::Body>,
     what: &str,
@@ -925,33 +985,6 @@ pub(crate) fn pump(
         last_data = Instant::now();
         sink(&chunk)?;
     }
-}
-
-/// Write the body of `resp` to `part` — after its first `have` bytes, which
-/// it keeps — until it holds `total`. `progress(done, total)` as bytes come.
-fn stream(
-    resp: ureq::http::Response<ureq::Body>,
-    part: &Path,
-    have: u64,
-    total: u64,
-    id: &str,
-    watch: Watch,
-    progress: &mut dyn FnMut(u64, u64),
-) -> ModelResult<()> {
-    let mut out = OpenOptions::new().create(true).write(true).append(have > 0).truncate(have == 0).open(part)?;
-    let mut done = have;
-    progress(done, total);
-    pump(resp, id, watch, |chunk| {
-        out.write_all(chunk)?;
-        done += chunk.len() as u64;
-        progress(done.min(total), total);
-        Ok(())
-    })?;
-    out.sync_all()?;
-    if done != total {
-        return Err(ModelError::Download(format!("{id}: got {done} of {total} bytes")));
-    }
-    Ok(())
 }
 
 /// Bytes `from..from + len` of the file at `url` (`len` > 0): only those,
@@ -1180,6 +1213,12 @@ mod tests {
     /// announcing a body it sends a few bytes of, then holding the
     /// connection without a word more. `/gone/…` answers 404.
     fn serve(data: Vec<u8>) -> (String, Arc<AtomicU64>) {
+        serve_padded(data, 0)
+    }
+
+    /// [`serve`], with `pad` bytes too many after any body of 100 000 bytes
+    /// or more: the small reads of an archive's directory come as asked.
+    fn serve_padded(data: Vec<u8>, pad: usize) -> (String, Arc<AtomicU64>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/cheetah.zip", listener.local_addr().unwrap());
         let sent = Arc::new(AtomicU64::new(0));
@@ -1212,12 +1251,42 @@ mod tests {
                     None => ("200 OK", &data[..], String::new()),
                 };
                 counted.fetch_add(body.len() as u64, Ordering::Relaxed);
-                let head =
-                    format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\n{extra}Connection: close\r\n\r\n", body.len());
+                let pad = vec![0u8; if body.len() >= 100_000 { pad } else { 0 }];
+                let len = body.len() + pad.len();
+                let head = format!("HTTP/1.1 {status}\r\nContent-Length: {len}\r\n{extra}Connection: close\r\n\r\n");
                 let _ = conn.write_all(head.as_bytes()).and_then(|()| conn.write_all(body));
+                let _ = conn.write_all(&pad);
             }
         });
         (url, sent)
+    }
+
+    /// A server that answers every request with `head`, then `body` `rounds`
+    /// times or until the client hangs up: its address, and what it was
+    /// asked (in lower case).
+    fn serve_flood(head: String, body: Vec<u8>, rounds: u32) -> (String, Arc<Mutex<String>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/flood.onnx", listener.local_addr().unwrap());
+        let asked = Arc::new(Mutex::new(String::new()));
+        let heard = asked.clone();
+        std::thread::spawn(move || {
+            for conn in listener.incoming() {
+                let Ok(mut conn) = conn else { return };
+                let mut reader = std::io::BufReader::new(conn.try_clone().unwrap());
+                let mut line = String::new();
+                while reader.read_line(&mut line).unwrap_or(0) > 0 && !line.trim().is_empty() {
+                    heard.lock().unwrap().push_str(&line.to_ascii_lowercase());
+                    line.clear();
+                }
+                let _ = conn.write_all(head.as_bytes());
+                for _ in 0..rounds {
+                    if conn.write_all(&body).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+        (url, asked)
     }
 
     /// A server that answers every range request with its headers and half
@@ -1708,6 +1777,174 @@ mod tests {
         let fits = tar_gz(&[("uv", REGULAR, &uv, None)]);
         assert_eq!(targz::take(&fits[..], "uv", 5000, &mut copied).unwrap(), targz::Taken::Copied(5000));
         assert_eq!(hex(&copied.hash.finalize()), sha(&uv));
+    }
+
+    /// The failure of a body that passed `size` bytes.
+    fn past(r: &ModelResult<PathBuf>, size: u64) -> bool {
+        matches!(r, Err(ModelError::Download(why)) if why.contains(&format!("more than {size} bytes")))
+    }
+
+    #[test]
+    fn a_body_past_its_pin_stops_there_and_nothing_of_it_stays() {
+        /// What reached a part, whatever became of it.
+        static WRITTEN: AtomicU64 = AtomicU64::new(0);
+        fn counted(out: &mut File, bytes: &[u8]) -> std::io::Result<()> {
+            WRITTEN.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+            out.write_all(bytes)
+        }
+        let model = model_bytes(200_000);
+        // No flood is endless (64 MiB at most): a test that fails can't fill
+        // the disk it runs on.
+        let junk = model_bytes(1 << 16);
+        let mut chunk = format!("{:x}\r\n", junk.len()).into_bytes();
+        chunk.extend_from_slice(&junk);
+        chunk.extend_from_slice(b"\r\n");
+        let answers = [
+            ("chunked", "Transfer-Encoding: chunked", chunk, model.len() as u64),
+            ("until the connection closes", "Connection: close", junk.clone(), model.len() as u64),
+            ("with a length past its pin", "Content-Length: 1000000000000", junk.clone(), 0),
+        ];
+        for (how, header, body, at_most) in answers {
+            let (url, _) = serve_flood(format!("HTTP/1.1 200 OK\r\n{header}\r\n\r\n"), body, 1024);
+            let m = test_model("flood.onnx", url.clone(), None, &model);
+            let dir = tempfile::tempdir().unwrap();
+            let store = ModelStore { write_part: counted, ..ModelStore::new(dir.path()) };
+            let mut most = 0;
+            let r = store.fetch(&m, &CancelToken::new(), |done, _| most = most.max(done));
+            assert!(past(&r, m.size), "{how}: {r:?}");
+            assert!(matches!(&r, Err(ModelError::Download(why)) if why.contains(&url)), "{how}: {r:?}");
+            assert!(most <= at_most, "{how}: {most} bytes reported");
+            let written = WRITTEN.swap(0, Ordering::Relaxed);
+            assert!(written <= at_most, "{how}: {written} bytes written");
+            assert!(names(dir.path()).is_empty(), "{how}: {:?}", names(dir.path()));
+        }
+
+        // A resume answered with more than what is missing: the bytes it
+        // went on from go too. A length says so before anything is written.
+        let length = format!("Content-Length: {}\r\n", model.len() - 999);
+        for (header, at_most) in [("", model.len() as u64 - 1000), (length.as_str(), 0)] {
+            let (url, asked) = serve_flood(format!("HTTP/1.1 206 Partial Content\r\n{header}\r\n"), junk.clone(), 1024);
+            let m = test_model("flood.onnx", url, None, &model);
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join("flood.onnx.part"), &model[..1000]).unwrap();
+            let store = ModelStore { write_part: counted, ..ModelStore::new(dir.path()) };
+            let r = store.fetch(&m, &CancelToken::new(), |_, _| {});
+            assert!(past(&r, m.size), "{r:?}");
+            let written = WRITTEN.swap(0, Ordering::Relaxed);
+            assert!(written <= at_most, "{written} bytes written");
+            assert!(names(dir.path()).is_empty(), "{:?}", names(dir.path()));
+            assert!(asked.lock().unwrap().contains("range: bytes=1000-"));
+        }
+
+        // A length that hides the rest: it ends the body, and the file is whole.
+        let mut more = model.clone();
+        more.extend_from_slice(&junk);
+        let (url, _) = serve_flood(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", model.len()), more, 1);
+        let m = test_model("flood.onnx", url, None, &model);
+        let dir = tempfile::tempdir().unwrap();
+        let path = ModelStore::new(dir.path()).fetch(&m, &CancelToken::new(), |_, _| {}).unwrap();
+        assert_eq!(fs::read(path).unwrap(), model);
+        assert_eq!(names(dir.path()), ["flood.onnx", "flood.onnx.verified"]);
+    }
+
+    #[test]
+    fn a_compressed_body_counts_what_it_unpacks_to() {
+        let model = model_bytes(200_000);
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        gz.write_all(&vec![0u8; 8 << 20]).unwrap();
+        let bomb = gz.finish().unwrap();
+        assert!((bomb.len() as u64) < model.len() as u64, "{} bytes travel", bomb.len());
+        let head = format!("HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n", bomb.len());
+        let (url, asked) = serve_flood(head, bomb, 1);
+        // Sent though nobody asked for it: stopped at the pin all the same.
+        let m = test_model("bomb.onnx", url.clone(), None, &model);
+        let dir = tempfile::tempdir().unwrap();
+        let r = ModelStore::new(dir.path()).fetch(&m, &CancelToken::new(), |_, _| {});
+        assert!(past(&r, m.size), "{r:?}");
+        assert!(names(dir.path()).is_empty(), "{:?}", names(dir.path()));
+        assert!(asked.lock().unwrap().contains("accept-encoding: identity"));
+        // A capped get takes compression, and its cap counts what comes out.
+        asked.lock().unwrap().clear();
+        let r = net::get_capped(&url, 1000, Duration::from_secs(20), &CancelToken::new());
+        assert!(matches!(&r, Err(why) if why.contains("more than 1000 bytes")), "{r:?}");
+        assert!(asked.lock().unwrap().contains("accept-encoding: gzip"));
+
+        // The length of a packed body says nothing of what comes out: a file
+        // that grew in packing still comes.
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+        gz.write_all(&model).unwrap();
+        let packed = gz.finish().unwrap();
+        assert!(packed.len() > model.len(), "{} bytes travel", packed.len());
+        let head = format!("HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n", packed.len());
+        let (url, _) = serve_flood(head, packed, 1);
+        let m = test_model("packed.onnx", url, None, &model);
+        let dir = tempfile::tempdir().unwrap();
+        let path = ModelStore::new(dir.path()).fetch(&m, &CancelToken::new(), |_, _| {}).unwrap();
+        assert_eq!(fs::read(path).unwrap(), model);
+    }
+
+    #[test]
+    fn an_archive_or_a_member_past_its_pin_stops_there_too() {
+        // A tar.gz, taken whole: the archive's size is the pin that counts.
+        let uv = model_bytes(5000);
+        let archive = tar_gz(&[("uv", REGULAR, &uv, None)]);
+        let mut more = archive.clone();
+        more.extend_from_slice(&model_bytes(1000));
+        let (url, _) = serve(more);
+        let dir = tempfile::tempdir().unwrap();
+        let p = tar_pin(url, "uv", &archive, &uv);
+        let r = ModelStore::new(dir.path()).fetch_pinned(&p, &CancelToken::new(), |_, _| {});
+        assert!(past(&r, archive.len() as u64), "{r:?}");
+        assert_eq!(names(dir.path()), ["uv.lock"]);
+
+        // A member of a zip: its packed size in the archive.
+        let model = model_bytes(300_000);
+        let zip = zip::tests::archive(&[("reid_0265.onnx", &model, false), ("other", &[7u8; 200_000], false)], b"");
+        let (url, _) = serve_padded(zip, 1000);
+        let m = test_model("reid_0265.onnx", url, Some("reid_0265.onnx"), &model);
+        let dir = tempfile::tempdir().unwrap();
+        let r = ModelStore::new(dir.path()).fetch(&m, &CancelToken::new(), |_, _| {});
+        assert!(past(&r, m.size), "{r:?}");
+        assert!(names(dir.path()).is_empty(), "{:?}", names(dir.path()));
+    }
+
+    #[test]
+    fn a_drive_that_fills_up_keeps_what_came_for_the_next_try() {
+        /// Half a chunk fits, then the drive is full.
+        fn fills_up(out: &mut File, bytes: &[u8]) -> std::io::Result<()> {
+            out.write_all(&bytes[..bytes.len() / 2])?;
+            Err(std::io::ErrorKind::StorageFull.into())
+        }
+        let file = model_bytes(300_000);
+        let (first, _) = serve(file.clone());
+        let (next, sent) = serve(file.clone());
+        let mut p = test_model("full.onnx", String::new(), None, &file).pinned();
+        p.urls = vec![first, next.clone()];
+        let dir = tempfile::tempdir().unwrap();
+        let part = dir.path().join("full.onnx.part");
+        // What an earlier try left stays too, with what this one added.
+        fs::write(&part, &file[..1000]).unwrap();
+        let full = ModelStore { write_part: fills_up, ..ModelStore::new(dir.path()) };
+        let r = full.fetch_pinned(&p, &CancelToken::new(), |_, _| {});
+        assert!(matches!(&r, Err(ModelError::Io(e)) if e.kind() == std::io::ErrorKind::StorageFull), "{r:?}");
+        let kept = fs::metadata(&part).unwrap().len();
+        assert!(kept > 1000 && kept < file.len() as u64, "{kept} bytes kept");
+        assert_eq!(sent.load(Ordering::Relaxed), 0, "no other address is tried");
+        // With room again, only the rest travels.
+        p.urls = vec![next];
+        let path = ModelStore::new(dir.path()).fetch_pinned(&p, &CancelToken::new(), |_, _| {}).unwrap();
+        assert_eq!(fs::read(path).unwrap(), file);
+        assert_eq!(sent.load(Ordering::Relaxed), file.len() as u64 - kept);
+
+        // The archive of a tar.gz member, as a file's part.
+        let uv = model_bytes(5000);
+        let archive = tar_gz(&[("uv", REGULAR, &uv, None)]);
+        let (url, _) = serve(archive.clone());
+        let dir = tempfile::tempdir().unwrap();
+        let full = ModelStore { write_part: fills_up, ..ModelStore::new(dir.path()) };
+        let r = full.fetch_pinned(&tar_pin(url, "uv", &archive, &uv), &CancelToken::new(), |_, _| {});
+        assert!(matches!(&r, Err(ModelError::Io(_))), "{r:?}");
+        assert_eq!(names(dir.path()), ["uv.archive.part", "uv.lock"]);
     }
 
     #[test]

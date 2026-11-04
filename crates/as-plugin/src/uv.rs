@@ -351,6 +351,22 @@ mod tests {
     }
 
     #[test]
+    fn a_release_longer_than_its_pin_is_stopped_and_nothing_stays() {
+        let uv = b"uv, the binary\n".repeat(20_000);
+        let archive = tar_gz(&[("uv-test/uv", &uv)]);
+        let pin = test_pin("", &archive, &uv);
+        let mut more = archive;
+        more.push(0);
+        let (url, _) = serve(more);
+        let tmp = tempfile::tempdir().unwrap();
+        let e = install_as(tmp.path(), &UvPin { url, ..pin }, &CancelToken::new(), |_, _| {}).unwrap_err();
+        assert!(matches!(&e, PluginError::Download { what, .. } if what == "uv"), "{e:?}");
+        assert!(e.detail().contains("more than"), "{}", e.detail());
+        let names: Vec<_> = fs::read_dir(tmp.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, ["uv.lock"]);
+    }
+
+    #[test]
     fn a_uv_pin_downloads_like_a_model() {
         let uv = b"uv, the binary\n".repeat(20_000);
         let archive = tar_gz(&[("uv-test/uvx", b"not uv"), ("uv-test/uv", &uv)]);

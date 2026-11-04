@@ -1,5 +1,5 @@
 import { useState } from "react"
-import type { PluginInfo, PluginReview } from "@/bindings"
+import type { PluginInfo } from "@/bindings"
 import { ArrowCounterClockwise, CircleNotch, FolderOpen, MagnifyingGlass, Plus, PuzzlePiece, X } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -8,16 +8,16 @@ import { Page } from "@/components/ui/page"
 import { Switch } from "@/components/ui/switch"
 import { TopBar } from "@/components/ui/topbar"
 import { plural } from "@/features/cast/cast"
+import { InstallItems } from "@/features/plugins/InstallItems"
+import { usePluginInstall } from "@/features/plugins/install-plugin"
 import { useLoadAgain } from "@/features/plugins/load-again"
 import { PluginCard } from "@/features/plugins/PluginCard"
 import { allowUnreviewed } from "@/features/plugins/plugin-actions"
 import { FIND_FROM, pluginMatches } from "@/features/plugins/plugin-items"
 import { UninstallDialog } from "@/features/plugins/UninstallDialog"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
-import { commands, errorMessage } from "@/lib/ipc"
-import { baseName, pickFolder, pickPluginFile } from "@/lib/media"
+import { errorMessage } from "@/lib/ipc"
 import { usePlugins, useSettings } from "@/lib/queries"
-import { usePluginReview } from "@/state/plugin-review"
 
 const ALLOW = "Allow plugins that AutoScene has not reviewed"
 
@@ -31,8 +31,8 @@ const GRID = "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y
 export function PluginsPage() {
   const { data: settings } = useSettings()
   const { data: plugins, error, isFetching, refetch } = usePlugins()
-  const allowed = settings?.allowUnreviewedPlugins ?? false
-  const [checking, setChecking] = useState<"file" | "folder" | null>(null)
+  const flow = usePluginInstall()
+  const { allowed, checking, install, loadFolder } = flow
   const [removing, setRemoving] = useState<PluginInfo | null>(null)
   const [query, setQuery] = useState("")
   // A card's folder is read again on its own: the header's buttons don't spin for it.
@@ -41,24 +41,6 @@ export function PluginsPage() {
   const finding = (plugins?.length ?? 0) >= FIND_FROM || query !== ""
   const shown = plugins?.filter((p) => pluginMatches(p, query))
   const any = plugins != null && plugins.length > 0
-
-  const inspect = async (
-    what: "file" | "folder",
-    pick: () => Promise<string | null>,
-    check: (path: string) => Promise<PluginReview>,
-  ) => {
-    const path = await pick()
-    if (!path) return
-    setChecking(what)
-    try {
-      // The review opens in the shell's dialog, once it is read.
-      await usePluginReview.getState().openReview(() => check(path), baseName(path))
-    } finally {
-      setChecking(null)
-    }
-  }
-  const install = () => void inspect("file", pickPluginFile, commands.pluginInspect)
-  const loadFolder = () => void inspect("folder", () => pickFolder("Choose the plugin's folder"), commands.pluginInspectFolder)
 
   const installButton = (
     <Button variant="primary" size="lg" disabled={checking != null} onClick={install}>
@@ -72,7 +54,7 @@ export function PluginsPage() {
   )
 
   return (
-    <Page topbar={<TopBar />}>
+    <Page topbar={<TopBar />} menu={<InstallItems flow={flow} />}>
       <header className="flex flex-wrap items-end justify-between gap-6 px-10 pt-10 pb-8">
         <div>
           <h1 className="display text-5xl text-fg-1">Plugins</h1>

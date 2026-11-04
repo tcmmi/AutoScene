@@ -4,6 +4,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
   AppWindow,
   ArrowCounterClockwise,
+  CircleNotch,
   DownloadSimple,
   FileText,
   FilmStrip,
@@ -29,6 +30,8 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { contextKit } from "@/components/ui/menu-actions"
 import { DeleteProjectDialog, ProjectDetailsDialog } from "@/features/library/ProjectDialogs"
 import { NewProjectItems, ProjectItems } from "@/features/library/project-actions"
+import { InstallItems } from "@/features/plugins/InstallItems"
+import { usePluginInstall } from "@/features/plugins/install-plugin"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { pluginsLit } from "@/features/plugins/plugin-items"
 import { type PageItem, pageLink, railPages, railTooltip } from "@/features/plugins/page-items"
@@ -135,12 +138,7 @@ export function Rail() {
           }
         />
         <ActivityButton />
-        <RailLink
-          to="/plugins"
-          icon={<PuzzlePiece />}
-          label="Plugins"
-          active={pluginsLit(path)}
-        />
+        <PluginsTile active={pluginsLit(path)} />
         <RailLink
           to="/settings/general"
           icon={<GearSix />}
@@ -173,6 +171,25 @@ export function Rail() {
       <ProjectDetailsDialog project={renaming} onOpenChange={(o) => !o && setRenaming(null)} />
       <DeleteProjectDialog project={deleting} onOpenChange={(o) => !o && setDeleting(null)} />
     </nav>
+  )
+}
+
+/**
+ * The Plugins tile. Its menu installs a plugin, and loads a folder while
+ * AutoScene may run plugins it hasn't reviewed. While a plugin is read it
+ * spins, wherever the install started; the window shows the review over
+ * whatever is open.
+ */
+function PluginsTile({ active }: { active: boolean }) {
+  const flow = usePluginInstall()
+  return (
+    <RailLink
+      to="/plugins"
+      icon={flow.checking ? <CircleNotch className="animate-spin" /> : <PuzzlePiece />}
+      label="Plugins"
+      active={active}
+      menu={<InstallItems flow={flow} />}
+    />
   )
 }
 

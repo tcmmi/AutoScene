@@ -129,6 +129,7 @@ export function useGlobalBindings() {
       // The native ⌘E accelerator swallows the keystroke; the player listens for this instead.
       "file:export": () => window.dispatchEvent(new CustomEvent(EXPORT_REQUEST)),
       "view:activity": a.toggleActivity,
+      "view:plugins": calm(a.goPlugins),
       "view:toggle-sidebar": calm(a.toggleSidebar),
       "file:reveal": () => window.dispatchEvent(new CustomEvent(REVEAL_REQUEST)),
       "edit:copy-timecodes": () => window.dispatchEvent(new CustomEvent(COPY_TIMECODES_REQUEST)),

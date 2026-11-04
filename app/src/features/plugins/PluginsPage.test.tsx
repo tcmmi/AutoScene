@@ -7,12 +7,15 @@ import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { AppSettings, PluginInfo, PluginReview } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
+import { ContextArea } from "@/components/ui/context-area"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
+import { pickPluginFile } from "@/lib/media"
 import { qk, queryClient } from "@/lib/queries"
 import { usePluginReview } from "@/state/plugin-review"
 import { pluginInfo } from "@/test/plugins"
 import { InstallReviewDialog } from "./InstallReviewDialog"
+import { useInstallFlow } from "./install-plugin"
 import { PluginHero } from "./PluginSettingsPage"
 import { PluginsPage } from "./PluginsPage"
 
@@ -54,14 +57,23 @@ vi.mock("@/lib/media", async (importOriginal) => ({
   pickPluginFile: vi.fn(() => Promise.resolve("D:\\Downloads\\Notify.asp")),
 }))
 vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal, openExternalUrl, copyText }))
-vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn(), goPlugin }) }))
-// The window's menu, around the rows' own entries.
-vi.mock("@/components/ui/page", () => ({ Page: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }))
+vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn(), goPlugin, goPlugins: vi.fn() }) }))
+// The view, with the right-click it offers on its empty space.
+vi.mock("@/components/ui/page", () => ({
+  Page: ({ children, menu }: { children: React.ReactNode; menu?: React.ReactNode }) => (
+    <ContextArea kind="page" menu={menu ?? null}>
+      <main>{children}</main>
+    </ContextArea>
+  ),
+}))
 
 const BANNER = "data:image/jpeg;base64,/9j/4AAQ"
 const ICON = "data:image/svg+xml;base64,PHN2Zy8+"
 
-/** `ui` (Plugins, unless said otherwise) at `/plugins`, in the app's router: a plugin's screen says which it is. The shell's review dialog is there too. */
+/**
+ * `ui` (Plugins, unless said otherwise) at `/plugins`, in the app's router: a plugin's screen says which it is. The
+ * window's one install review is there too.
+ */
 function show(ui: React.ReactNode = <PluginsPage />) {
   const root = createRootRoute({
     component: () => (
@@ -123,6 +135,8 @@ beforeEach(() => {
   // A review a failed case left unasked must not answer the next one.
   vi.mocked(commands.pluginInspect).mockReset()
   vi.mocked(commands.pluginInspectFolder).mockReset()
+  vi.mocked(pickPluginFile).mockReset()
+  useInstallFlow.setState({ checking: null, busy: false })
   usePluginReview.setState({ review: null, loading: false, queue: [] })
   // The router puts each place at its top, which jsdom can't scroll.
   vi.spyOn(window, "scrollTo").mockImplementation(() => {})
@@ -609,6 +623,20 @@ describe("PluginsPage", () => {
     expect(commands.pluginInspect).toHaveBeenLastCalledWith("D:\\Downloads\\Notify.asp")
   })
 
+  it("waits while the rail tile's install reads a plugin", async () => {
+    state.allow = true
+    show()
+    const load = await screen.findByRole("button", { name: /Load a folder/ })
+    const install = screen.getByRole("button", { name: /Install a plugin/ })
+    act(() => useInstallFlow.setState({ checking: "file", busy: true }))
+    // The one install flow: this page shows what the tile started.
+    expect((install as HTMLButtonElement).disabled).toBe(true)
+    expect((load as HTMLButtonElement).disabled).toBe(true)
+    expect(install.querySelector(".animate-spin")).not.toBeNull()
+    act(() => useInstallFlow.setState({ checking: null, busy: false }))
+    expect((install as HTMLButtonElement).disabled).toBe(false)
+  })
+
   it("uninstalls a plugin, and what it kept only when asked", async () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" }), pluginInfo({ id: "dev.a.two", name: "Two" })]
     show(
@@ -648,6 +676,47 @@ describe("PluginsPage", () => {
     state.allow = true
     show()
     expect(await screen.findByRole("button", { name: "Load a folder…" })).toBeTruthy()
+  })
+
+  it("the page menu offers Install a plugin… and Load a folder…", async () => {
+    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
+    const page = (
+      <AppMenu>
+        <div>
+          <PluginsPage />
+        </div>
+      </AppMenu>
+    )
+    const open = async () => {
+      fireEvent.contextMenu(await screen.findByRole("heading", { name: "Plugins" }), { clientX: 40, clientY: 40 })
+      return screen.findByRole("menu")
+    }
+    const listed = (menu: HTMLElement) => within(menu).getAllByRole("menuitem").map((i) => i.textContent?.trim())
+    const failed = vi.spyOn(toast, "error")
+
+    // While AutoScene may only run what it has reviewed: a package, and the app's own list under it.
+    show(page)
+    let menu = await open()
+    expect(listed(menu).slice(0, 2)).toEqual(["Install a plugin…", "Back"])
+    expect(listed(menu)).toContain("Plugins")
+    expect(listed(menu)).not.toContain("Load a folder…")
+    vi.mocked(pickPluginFile).mockResolvedValueOnce("D:\\Plugins\\one.asp")
+    vi.mocked(commands.pluginInspect).mockRejectedValueOnce({ code: "invalid", message: "Not a plugin." })
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Install a plugin…" }))
+    await waitFor(() => expect(commands.pluginInspect).toHaveBeenCalledExactlyOnceWith("D:\\Plugins\\one.asp"))
+    await waitFor(() => expect(failed).toHaveBeenCalledWith("Couldn't open one.asp", { description: "Not a plugin." }))
+    cleanup()
+    queryClient.clear()
+
+    // Allowed: a folder too, read through the same review.
+    state.allow = true
+    show(page)
+    await waitFor(() => expect(screen.getByRole("button", { name: /Load a folder/ })).toBeTruthy())
+    menu = await open()
+    expect(listed(menu).slice(0, 3)).toEqual(["Install a plugin…", "Load a folder…", "Back"])
+    vi.mocked(commands.pluginInspectFolder).mockRejectedValueOnce({ code: "invalid", message: "No plugin.json." })
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Load a folder…" }))
+    await waitFor(() => expect(commands.pluginInspectFolder).toHaveBeenCalledExactlyOnceWith("D:\\Plugins\\mine"))
   })
 
   it("opens plugin folder and log via ⋯ menu items", async () => {

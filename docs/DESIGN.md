@@ -82,9 +82,10 @@ Rules:
 - **Rail** (76px, `components/shell/Rail.tsx`) on the window's left edge, on the native material where there is
   one: the mark, Library, each recent project as its picture (gold ring when open), New project, and at the bottom
   Search (`Ctrl/⌘ K`), Activity (a ring fills as work runs), Plugins (lit on Plugins and on a plugin's settings) and
-  Settings. `Ctrl/⌘ B` hides it. Under Library sit up
-  to four plugin page tiles, each with the plugin's icon, AutoScene's plugin mark in its corner and a tooltip that
-  starts with "Plugin"; the other pages are in the palette.
+  Settings. Plugins' tile menu offers Install a plugin…, and Load a folder… while plugins AutoScene hasn't reviewed
+  are allowed; the tile spins while a plugin is read, and the review shows over whatever is open. `Ctrl/⌘ B`
+  hides it. Under Library sit up to four plugin page tiles, each with the plugin's icon, AutoScene's plugin mark in
+  its corner and a tooltip that starts with "Plugin"; the other pages are in the palette.
 - **Top bar** (56px, `components/ui/topbar.tsx`) per view: back and title on the left, a project's sections
   (Overview · Episodes · Cast · Exports) as a pill in the middle, actions on the right. It is the drag region
   (double-click maximises); over a hero it is clear until the page scrolls, then glass with the title. A project's
@@ -113,7 +114,9 @@ Rules:
   `ContextArea`. The menu lists the clicked element's own entries first, innermost first: a shot's before its
   card's. The short tail follows: Command palette, Settings.
   - On a page's empty space (`Page menu`) the menu shows the page's entries, then the full app list: Back, Command
-    palette, New project, Library, Activity, the rail, Keyboard shortcuts, Settings, Reload.
+    palette, New project, Library, Activity, Plugins, the rail, Keyboard shortcuts, Settings, Reload.
+  - Plugins' own `Page menu` offers what its rail tile's menu offers (Install a plugin…, and Load a folder… while
+    allowed) above the full app list.
   - Dialogs and the drawer show only what they offer, never the app's entries, and no menu when they offer
     nothing.
   - On Windows the top bar's empty parts and its title are the window's caption: Minimize, Maximize, Close.

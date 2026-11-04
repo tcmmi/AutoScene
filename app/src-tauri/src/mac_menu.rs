@@ -81,6 +81,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item(app, "view:exports", "Exports", Some("CmdOrCtrl+3"))?)
         .separator()
         .item(&item(app, "view:activity", "Activity", Some("CmdOrCtrl+J"))?)
+        .item(&item(app, "view:plugins", "Plugins", None)?)
         .item(&item(app, "view:toggle-sidebar", "Toggle Sidebar", Some("CmdOrCtrl+B"))?)
         .separator()
         .fullscreen()

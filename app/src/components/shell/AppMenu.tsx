@@ -10,6 +10,7 @@ import {
   Keyboard,
   MagnifyingGlass,
   Plus,
+  PuzzlePiece,
   Queue,
   SidebarSimple,
   SquaresFour,
@@ -226,6 +227,9 @@ export function FullAppItems() {
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.toggleActivity} shortcut={keys("global.activity")}>
         <Queue /> Activity
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={actions.goPlugins}>
+        <PuzzlePiece /> Plugins
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.toggleSidebar} shortcut={keys("global.sidebar")}>
         <SidebarSimple /> {railHidden ? "Show the rail" : "Hide the rail"}

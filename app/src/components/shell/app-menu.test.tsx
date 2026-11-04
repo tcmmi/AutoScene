@@ -7,15 +7,18 @@ import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-m
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { AppMenu } from "./AppMenu"
 
-// The app's entries navigate; here only their order matters.
+const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }))
+
+// The app's entries navigate: where to is all that is checked of it.
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
   useCanGoBack: () => false,
 }))
 
 afterEach(() => {
   cleanup()
+  navigate.mockReset()
   window.getSelection()?.removeAllRanges()
   // A failing case must not leave the next one unclickable.
   document.body.style.pointerEvents = ""
@@ -28,6 +31,7 @@ const FULL_LIST = [
   "New project…",
   "Library",
   "Activity",
+  "Plugins",
   "Hide the rail",
   "Keyboard shortcuts",
   "Settings",
@@ -83,6 +87,20 @@ describe("the window's menu", () => {
     )
     await rightClick(screen.getByText("Nothing here"))
     expect(entries()).toEqual(["Add files…", ...FULL_LIST])
+  })
+
+  it("the full app list has Plugins", async () => {
+    render(
+      <AppMenu>
+        <div>
+          <p>Rail</p>
+        </div>
+      </AppMenu>,
+    )
+    await rightClick(screen.getByText("Rail"))
+    expect(entries()).toContain("Plugins")
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Plugins" }))
+    await waitFor(() => expect(navigate).toHaveBeenCalledExactlyOnceWith({ to: "/plugins" }))
   })
 
   it("on an element of a page: the element's entries and the short tail, not the page's", async () => {

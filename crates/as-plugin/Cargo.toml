@@ -24,9 +24,20 @@ test = false
 doc = false
 
 [features]
-# The WebAssembly tier: wasmtime and its sandbox (src/wasm). The app turns it
-# on; asp needs it to check components.
-wasm = ["dep:wasmtime", "dep:wasmtime-wasi", "dep:wasmtime-wasi-http", "dep:tokio", "dep:http"]
+# The WebAssembly tier: wasmtime, its sandbox and its network guard
+# (src/wasm). The app turns it on; asp needs it to check components.
+wasm = [
+    "dep:wasmtime",
+    "dep:wasmtime-wasi",
+    "dep:wasmtime-wasi-http",
+    "dep:tokio",
+    "dep:http",
+    "dep:rustls",
+    "dep:tokio-rustls",
+    "dep:webpki-roots",
+    "dep:hyper",
+    "dep:http-body-util",
+]
 cli = ["wasm", "dep:minisign", "dep:tempfile"]
 
 [dependencies]
@@ -63,8 +74,14 @@ tempfile = { workspace = true, optional = true }
 wasmtime = { workspace = true, optional = true }
 wasmtime-wasi = { workspace = true, optional = true }
 wasmtime-wasi-http = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
+# The workspace's tokio has no `net`; the network guard connects itself.
+tokio = { workspace = true, optional = true, features = ["net"] }
 http = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+tokio-rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
+hyper = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
 
 # page-state.json is opened without following a link (O_NOFOLLOW).
 [target.'cfg(unix)'.dependencies]
@@ -79,6 +96,9 @@ rusqlite.workspace = true
 # components written as text.
 as-testkit.workspace = true
 wat.workspace = true
+# A local HTTPS server for the network guard's tests (tests/wasm_net.rs).
+rcgen.workspace = true
+hyper = { workspace = true, features = ["server"] }
 # A uv archive, as its release packs it (src/uv.rs).
 tar.workspace = true
 flate2.workspace = true

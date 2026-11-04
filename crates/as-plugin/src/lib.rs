@@ -33,9 +33,10 @@
 //! A plugin may instead be a WebAssembly component (manifest version 2,
 //! runtime `wasm`), which runs in a sandbox (`wasm`, with the feature of
 //! that name): it sees only the folders its permissions give it, reaches
-//! no network yet, and is held to its memory and time limits. This
-//! AutoScene doesn't install one yet: it reads its manifest and checks its
-//! package, and says it needs a newer AutoScene ([`store`]).
+//! only the hosts it names, as `net.fetch` does, and is held to its memory
+//! and time limits. This AutoScene doesn't install one yet: it reads its
+//! manifest and checks its package, and says it needs a newer AutoScene
+//! ([`store`]).
 //!
 //! What a plugin says it does (its permissions) is shown before install.
 //! Its calls into AutoScene are held to it; what its program does itself is

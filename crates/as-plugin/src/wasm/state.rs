@@ -44,6 +44,7 @@ pub(crate) struct State {
 }
 
 impl State {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         wasi: WasiCtx,
         memory: u64,
@@ -52,6 +53,7 @@ impl State {
         progress: watch::Sender<Progress>,
         log: Arc<Mutex<PluginLog>>,
         secrets: BTreeMap<String, String>,
+        guard: Guard,
     ) -> Self {
         let mut table = ResourceTable::new();
         table.set_max_capacity(MAX_TABLE);
@@ -59,7 +61,7 @@ impl State {
             wasi,
             table,
             http: WasiHttpCtx::new(),
-            guard: Guard,
+            guard,
             limiter: Limiter::new(memory),
             cancel,
             cancel_seen: None,

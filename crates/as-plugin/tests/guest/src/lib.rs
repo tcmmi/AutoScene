@@ -1,7 +1,9 @@
-//! A stand-in WebAssembly plugin for the sandbox tests (`tests/wasm.rs`).
+//! A stand-in WebAssembly plugin for the sandbox tests (`tests/wasm.rs`,
+//! and `tests/wasm_net.rs` for its requests).
 //! Each action (`action.id`) does one thing a plugin may or may not do,
 //! and says how it went; the settings carry its inputs: `paths`, `urls`
-//! and `links` (one per line) and `bytes`.
+//! and `links` (one per line), `bytes` and `timeout-ms` (what a request
+//! asks for as each of its timeouts).
 
 #[cfg(not(feature = "frozen"))]
 wit_bindgen::generate!({ world: "plugin", path: "../../wit" });
@@ -16,6 +18,7 @@ use std::{fs, thread};
 
 use autoscene::plugin::host::{self, LogLevel};
 use autoscene::plugin::types::{ActionKind, SettingValue, Trigger};
+use wasip2::http::types::{ErrorCode, FutureIncomingResponse, IncomingResponse};
 
 struct TestGuest;
 
@@ -198,7 +201,17 @@ fn sockets() -> String {
     .join("\n")
 }
 
-fn fetch(url: &str, host_header: Option<&str>) -> String {
+/// The options a request asks for: each timeout `ms` long, when given.
+fn options(ms: Option<f64>) -> Option<wasip2::http::types::RequestOptions> {
+    let ns = (ms? * 1e6) as u64;
+    let options = wasip2::http::types::RequestOptions::new();
+    let _ = options.set_connect_timeout(Some(ns));
+    let _ = options.set_first_byte_timeout(Some(ns));
+    let _ = options.set_between_bytes_timeout(Some(ns));
+    Some(options)
+}
+
+fn fetch(url: &str, host_header: Option<&str>, timeout_ms: Option<f64>) -> String {
     use wasip2::http::outgoing_handler;
     use wasip2::http::types::{Fields, OutgoingRequest, Scheme};
     let (scheme, rest) = match url.split_once("://") {
@@ -220,12 +233,16 @@ fn fetch(url: &str, host_header: Option<&str>) -> String {
     let _ = req.set_scheme(Some(&scheme));
     let _ = req.set_authority(Some(authority));
     let _ = req.set_path_with_query(Some(path));
-    match outgoing_handler::handle(req, None) {
+    match outgoing_handler::handle(req, options(timeout_ms)) {
         Err(code) => format!("{url}: error {code:?}"),
         Ok(fut) => {
             fut.subscribe().block();
             match fut.get() {
-                Some(Ok(Ok(resp))) => format!("{url}: status {}", resp.status()),
+                Some(Ok(Ok(resp))) => {
+                    // So a test knows the head is in.
+                    host::log(LogLevel::Info, &format!("{url}: head in"));
+                    format!("{url}: status {}{}", resp.status(), answer(&resp))
+                }
                 Some(Ok(Err(code))) => format!("{url}: error {code:?}"),
                 other => format!("{url}: no answer {other:?}"),
             }
@@ -233,19 +250,57 @@ fn fetch(url: &str, host_header: Option<&str>) -> String {
     }
 }
 
-fn fetch_many(url: &str) -> String {
+/// The rest of an answer: where it points, when it does (it isn't
+/// followed), and how much of its body came, or how reading it failed.
+fn answer(resp: &wasip2::http::types::IncomingResponse) -> String {
+    use wasip2::http::types::http_error_code;
+    use wasip2::io::streams::StreamError;
+    let mut out = String::new();
+    if let Some(to) = resp.headers().get("location").first() {
+        out += &format!(" location {}", String::from_utf8_lossy(to));
+    }
+    let Ok(body) = resp.consume() else { return out + ", no body" };
+    let Ok(stream) = body.stream() else { return out + ", no body" };
+    let mut bytes = 0;
+    loop {
+        match stream.blocking_read(64 << 10) {
+            Ok(part) => bytes += part.len(),
+            Err(StreamError::Closed) => return out + &format!(", {bytes} bytes"),
+            Err(StreamError::LastOperationFailed(e)) => {
+                let code = http_error_code(&e).map_or_else(|| e.to_debug_string(), |code| format!("{code:?}"));
+                return out + &format!(", body error {code} after {bytes} bytes");
+            }
+        }
+    }
+}
+
+/// Starts a GET of `url` (`https://` only), without waiting for it.
+fn start(url: &str) -> Result<FutureIncomingResponse, ErrorCode> {
     use wasip2::http::outgoing_handler;
     use wasip2::http::types::{Fields, OutgoingRequest, Scheme};
     let rest = url.strip_prefix("https://").unwrap_or(url);
     let (authority, path) = rest.split_once('/').map_or((rest, "/".to_owned()), |(a, p)| (a, format!("/{p}")));
+    let req = OutgoingRequest::new(Fields::new());
+    let _ = req.set_scheme(Some(&Scheme::Https));
+    let _ = req.set_authority(Some(authority));
+    let _ = req.set_path_with_query(Some(&path));
+    outgoing_handler::handle(req, None)
+}
+
+/// The answer to a request [`start`] made, once it is in.
+fn awaited(fut: &FutureIncomingResponse) -> Result<IncomingResponse, ErrorCode> {
+    fut.subscribe().block();
+    match fut.get() {
+        Some(Ok(r)) => r,
+        _ => Err(ErrorCode::InternalError(Some("no answer".into()))),
+    }
+}
+
+fn fetch_many(url: &str) -> String {
     let mut pending = Vec::new();
     let mut out = Vec::new();
     for i in 0..9 {
-        let req = OutgoingRequest::new(Fields::new());
-        let _ = req.set_scheme(Some(&Scheme::Https));
-        let _ = req.set_authority(Some(authority));
-        let _ = req.set_path_with_query(Some(&path));
-        match outgoing_handler::handle(req, None) {
+        match start(url) {
             Ok(fut) => pending.push((i, fut)),
             Err(code) => out.push(format!("{i}: error {code:?}")),
         }
@@ -257,6 +312,45 @@ fn fetch_many(url: &str) -> String {
             Some(Ok(Err(code))) => format!("{i}: error {code:?}"),
             other => format!("{i}: no answer {other:?}"),
         });
+    }
+    out.join("\n")
+}
+
+/// Holds the answers of eight requests to `held` (heads in, bodies unread)
+/// while it makes a ninth to `then`, then lets them go and makes a tenth,
+/// as soon as it may.
+fn fetch_held(held: &str, then: &str) -> String {
+    let mut out = Vec::new();
+    let mut answers = Vec::new();
+    for i in 0..8 {
+        match start(held).and_then(|fut| awaited(&fut)) {
+            Ok(resp) => {
+                out.push(format!("{i}: status {}", resp.status()));
+                answers.push(resp);
+            }
+            Err(code) => out.push(format!("{i}: error {code:?}")),
+        }
+    }
+    // Their bodies wait, and each still holds its place.
+    thread::sleep(Duration::from_millis(100));
+    out.push(match start(then).and_then(|fut| awaited(&fut)) {
+        Ok(resp) => format!("8: status {}", resp.status()),
+        Err(code) => format!("8: error {code:?}"),
+    });
+    drop(answers);
+    // The places come back as their connections end.
+    for tries in 1.. {
+        match start(then).and_then(|fut| awaited(&fut)) {
+            Err(ErrorCode::ConnectionLimitReached) if tries < 100 => thread::sleep(Duration::from_millis(20)),
+            Ok(resp) => {
+                out.push(format!("9: status {}{}", resp.status(), answer(&resp)));
+                break;
+            }
+            Err(code) => {
+                out.push(format!("9: error {code:?}"));
+                break;
+            }
+        }
     }
     out.join("\n")
 }
@@ -378,12 +472,21 @@ impl Guest for TestGuest {
                 Ok(Some(format!("got {}", wasip2::random::random::get_random_bytes(bytes).len())))
             }
             "fail" => Err(RunError { message: "It failed on purpose.".into(), detail: Some("details".into()) }),
-            "fetch" => Ok(Some(lines(&req, "urls").iter().map(|u| fetch(u, None)).collect::<Vec<_>>().join("\n"))),
+            "fetch" => {
+                let timeout_ms = number(&req, "timeout-ms");
+                let said: Vec<String> = lines(&req, "urls").iter().map(|u| fetch(u, None, timeout_ms)).collect();
+                Ok(Some(said.join("\n")))
+            }
             "fetch-many" => Ok(Some(fetch_many(lines(&req, "urls").first().map_or("", String::as_str)))),
+            "fetch-held" => {
+                let urls = lines(&req, "urls");
+                let url = |i: usize| urls.get(i).map_or("", String::as_str);
+                Ok(Some(fetch_held(url(0), url(1))))
+            }
             "fetch-host" => {
                 let urls = lines(&req, "urls");
                 let other = urls.get(1).map_or("other.example", String::as_str);
-                Ok(Some(fetch(urls.first().map_or("", String::as_str), Some(other))))
+                Ok(Some(fetch(urls.first().map_or("", String::as_str), Some(other), None)))
             }
             "secret" => {
                 let some = host::secret("token").is_some();

@@ -13,9 +13,10 @@
 //!
 //! No other folder, no socket, no name lookup, no program and none of the
 //! app's environment. A request over wasi:http goes through AutoScene's
-//! guard ([`net`]); this AutoScene refuses each. What it writes to stdout
-//! and stderr goes to its log ([`stdio`]), and the request it runs on names
-//! its folders as it sees them ([`convert`]).
+//! guard ([`Net`]): only `https://` to the hosts its grants name, on their
+//! public addresses, and none without the network permission. What it
+//! writes to stdout and stderr goes to its log ([`stdio`]), and the request
+//! it runs on names its folders as it sees them ([`convert`]).
 //!
 //! A run is held to its limits ([`Limits`]): the memory of all its linear
 //! memories and tables together ([`limits`]) and its time. Stop makes
@@ -57,6 +58,8 @@ use wasmtime::{Engine, Store, UpdateDeadline};
 
 pub use self::cache::{keep_only, remove};
 pub use self::imports::{WASI_PATCH, WORLD_MINOR};
+pub use self::net::{Dial, Net, NetLimits, Resolve};
+use crate::Permission;
 pub use crate::calls::Grants;
 use crate::error::{PluginError, PluginResult};
 use crate::log::PluginLog;
@@ -168,13 +171,25 @@ pub struct Checked {
 /// otherwise (the trap and its wasm backtrace go to its log). A run is never
 /// retried.
 pub fn run(spec: WasmSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64>)) -> PluginResult<Option<String>> {
+    run_with(spec, Net::system(), cancel, report)
+}
+
+/// [`run`], with its requests sent through `net`: for tests, which answer
+/// them from this computer.
+#[doc(hidden)]
+pub fn run_with(
+    spec: WasmSpec,
+    net: Net,
+    cancel: &CancelToken,
+    report: &dyn Fn(&str, Option<f64>),
+) -> PluginResult<Option<String>> {
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
     }
     let engine = engine::engine()?;
     fs::create_dir_all(&spec.data_dir)?;
     let log = Arc::new(Mutex::new(PluginLog::open(&spec.log_path, &spec.message.run_id, &spec.message.action.id)?));
-    let ran = run_in(engine, spec, &log, cancel, report);
+    let ran = run_in(engine, spec, net, &log, cancel, report);
     // How a run that started ended is in the log already.
     if let Err(e) = &ran
         && !matches!(
@@ -327,6 +342,7 @@ enum Ended {
 fn run_in(
     engine: &Engine,
     spec: WasmSpec,
+    net: Net,
     log: &Arc<Mutex<PluginLog>>,
     cancel: &CancelToken,
     report: &dyn Fn(&str, Option<f64>),
@@ -349,7 +365,12 @@ fn run_in(
 
     let deadline = Instant::now() + limits.time;
     let (progress, mut progressed) = tokio::sync::watch::channel(None);
-    let state = state::State::new(wasi, limits.memory, cancel.clone(), deadline, progress, log.clone(), secrets);
+    // Its requests go only where its grants say: nowhere without the
+    // network permission, whatever hosts they name.
+    let hosts: &[String] = if grants.has(Permission::Network) { &grants.hosts } else { &[] };
+    let guard = net::Guard::new(Arc::new(net), hosts, cancel.clone());
+    let told = guard.told();
+    let state = state::State::new(wasi, limits.memory, cancel.clone(), deadline, progress, log.clone(), secrets, guard);
     let mut store = Store::new(engine, state);
     store.limiter(|s| &mut s.limiter);
     // Each tick of the epoch: end the run past its deadline or its grace
@@ -411,7 +432,9 @@ fn run_in(
         }
         ended
     });
-    let (hit, cancel_seen) = (store.data().limiter.hit, store.data().cancel_seen.or(stop_seen.get()));
+    // Stop counts as seen also when a request of the plugin told it so.
+    let cancel_seen = store.data().cancel_seen.or(stop_seen.get()).or(told.get().copied());
+    let hit = store.data().limiter.hit;
     drop(store);
     // A plain drop would wait for a file call that never ends.
     rt.shutdown_timeout(DRAIN);

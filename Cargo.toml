@@ -84,8 +84,16 @@ wasmtime = { version = "=50.0.1", default-features = false, features = ["runtime
 wasmtime-wasi = { version = "=50.0.1", default-features = false, features = ["p2"] }
 wasmtime-wasi-http = { version = "=50.0.1", default-features = false, features = ["p2"] }
 http = "=1.5.0"
+# The network guard of WebAssembly plugins (as-plugin's src/wasm/net.rs):
+# AutoScene's own TLS and HTTP/1.1 client, with Mozilla's roots.
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "tls12", "logging", "std"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12", "logging"] }
+webpki-roots = "=1.0.11"
+hyper = { version = "=1.12.0", features = ["client", "http1"] }
+http-body-util = "=0.1.5"
 # tests only
 wat = "=1.263.0"
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
 
 [profile.dev]
 # Media/vision code is unusable unoptimised; keep debug info but optimise deps.

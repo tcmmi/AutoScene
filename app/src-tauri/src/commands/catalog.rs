@@ -1,4 +1,4 @@
-//! AutoScene's plugin catalog (Settings → Plugins): what it offers and where
+//! AutoScene's plugin catalog (the Plugins page): what it offers and where
 //! AutoScene stands with it, "Check now", and getting a plugin it offers to
 //! install or update it. Each check emits `catalog:changed`, and
 //! `plugins:changed` when it withdrew a plugin or lifted a withdrawal (see

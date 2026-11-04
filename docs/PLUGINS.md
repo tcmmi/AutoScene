@@ -476,10 +476,10 @@ as AutoScene does. The examples `discord-notify-wasm` (Rust) and
    The file cargo builds is named after the crate; the `README.md` asp
    wrote names it.
 3. Check it: `asp check plugin`.
-4. In AutoScene, turn on **Settings → Plugins → Allow plugins that
-   AutoScene has not reviewed**, then **Load a folder…** and pick
-   `plugin`. AutoScene runs the component that is there at each run: a new
-   build counts at the next one. Run **Say hello** from the palette.
+4. In AutoScene, open **Plugins** in the rail and turn on **Allow plugins
+   that AutoScene has not reviewed** (the switch sits under the cards), then
+   **Load a folder…** and pick `plugin`. AutoScene runs the component that
+   is there at each run: a new build counts at the next one. Run **Say hello** from the palette.
 5. Pack it to share: `asp pack plugin my-plugin.asp`, and sign it (see
    [Signing](#signing-with-asp)).
 

@@ -44,8 +44,8 @@ A Python plugin can't use the network in this version of AutoScene.
 
 ## Try it
 
-Turn on **Settings → Plugins → Allow plugins that AutoScene has not
-reviewed**, then **Install a plugin…** and pick `clip-list-py.asp` (or
-**Load a folder…** and pick `plugin`). Run **Save a clip list** from an
+Turn on **Plugins → Allow plugins that AutoScene has not reviewed** (the
+switch sits under the cards), then **Install a plugin…** and pick
+`clip-list-py.asp` (or **Load a folder…** and pick `plugin`). Run **Save a clip list** from an
 export's menu. AutoScene compiles the component once, which takes a few
 seconds, and keeps what it compiled.

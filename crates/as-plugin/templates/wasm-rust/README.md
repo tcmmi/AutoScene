@@ -33,10 +33,11 @@ it sees only what its permissions give it.
    `cp target/wasm32-wasip2/release/{{wasm}} plugin/plugin.wasm`
 4. Check it: `asp check plugin` lists what the component imports, and says
    what AutoScene would refuse.
-5. In AutoScene, turn on **Settings → Plugins → Allow plugins that
-   AutoScene has not reviewed**. Then choose **Load a folder…** and pick
-   the `plugin` folder. AutoScene runs the component that is there at each
-   run, so a new build counts at the next one.
+5. In AutoScene, open **Plugins** in the rail and turn on **Allow plugins
+   that AutoScene has not reviewed** (the switch sits under the cards).
+   Then choose **Load a folder…** and pick the `plugin` folder. AutoScene
+   runs the component that is there at each run, so a new build counts at
+   the next one.
 6. Run it: **Say hello** is in the palette (Ctrl+K, or ⌘K on a Mac). Its
    answer shows as a toast and in Activity.
 7. To share it, pack it in this folder: `asp pack plugin {{package}}`. Sign

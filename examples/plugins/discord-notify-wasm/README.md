@@ -77,8 +77,9 @@ wasi:http, which needs the `network` permission.
 
 ## Try it
 
-Turn on **Settings → Plugins → Allow plugins that AutoScene has not
-reviewed**, then **Install a plugin…** and pick `discord-notify-wasm.asp`
-(or **Load a folder…** and pick `plugin`). In its settings, choose
+Turn on **Plugins → Allow plugins that AutoScene has not reviewed** (the
+switch sits under the cards), then **Install a plugin…** and pick
+`discord-notify-wasm.asp` (or **Load a folder…** and pick `plugin`). In its
+settings, choose
 **Set…** beside **Webhook URL** and paste the URL. Then run **Post to
 Discord** from an export's menu.

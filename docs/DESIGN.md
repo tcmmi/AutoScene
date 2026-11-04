@@ -209,9 +209,13 @@ Rules:
   allowed): the catalog is the way in, so with nothing installed Browse plugins is the white pill. From six plugins a
   search finds one by its name, author, description or id; the allow switch sits below the cards. When the catalog
   has newer versions, they sit above the rest under Updates, each card with Update…, and Update all (n) takes those
-  that ask for nothing new; one whose review marks anything New (a permission, host, page or program, or a host its
-  large files come from), or that replaces a loaded folder or a plugin AutoScene hadn't reviewed, opens that review
-  instead (a larger download from hosts it already named stays quiet: the files' hashes are what was reviewed). A
+  that ask for nothing new; one whose review marks anything New (a permission, host, page, program, a program kept
+  running, higher limits in the sandbox, or a host its large files come from), that leaves the sandbox it ran in, or
+  that replaces a loaded folder or a plugin AutoScene hadn't reviewed, opens that review instead (a larger download
+  from hosts it already named stays quiet: the files' hashes are what was reviewed). After that review, an update that
+  may do more than the person agreed to (a permission, host or program, one kept running, one out of the sandbox) also
+  takes a yes in a dialog of the system's own, which the page can't give or skip for an update (uninstalling and
+  installing again is a first install, which it doesn't ask for). A
   plugin AutoScene withdrew has a red `Banner` at the top of both views (at most three, then "and n more"), "AutoScene withdrew Plugin
   “name”" with the catalog's reason, Update… while the catalog has a version that isn't withdrawn, and Uninstall….
   Its card says "Withdrawn" in place of the trust badge, shows the reason under the facts, and its switch is off and

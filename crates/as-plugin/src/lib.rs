@@ -78,8 +78,8 @@ pub use error::{PluginError, PluginResult};
 pub use keys::KeyRole;
 pub use manifest::{
     ActionSpec, Author, CommandSpec, Engines, EventKind, EventSpec, Launch, Manifest, PackActionSpec, PackFileSpec,
-    PageScope, PageSpec, Parsed, Permission, PluginId, Resource, Runtime, RuntimeKind, SelectOption, SettingKind,
-    SettingSpec, SettingValue, ShotFilterSpec, SourceLink, WasmLimits, current_platform,
+    PageScope, PageSpec, Parsed, Permission, PluginId, Resource, Runtime, RuntimeChange, RuntimeKind, SelectOption,
+    SettingKind, SettingSpec, SettingValue, ShotFilterSpec, SourceLink, WasmLimits, current_platform,
 };
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{
@@ -91,5 +91,5 @@ pub use resources::Resources;
 pub use runtime::{RunSpec, VerdictSink};
 pub use secrets::{MemorySecrets, OsKeyring, SecretStore};
 pub use service::{OnEvent, ProcessService, Service, ServiceEvent, ServiceSpec};
-pub use store::{Approval, Extra, Installed, Record, Source, Store, Ticket};
+pub use store::{Approval, Extra, Installed, Record, Source, Store, Ticket, Widens};
 pub use trust::{AuthorKey, Trust, Verdict};

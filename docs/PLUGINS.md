@@ -585,16 +585,19 @@ The review says so: it starts with "It runs in a sandbox. It sees only its
 own folder and what is listed here.", heads the list "What it may do
 (enforced)", and adds "It can't start programs or see your other files.",
 the plugin's limits ("It may use up to 512 MB of memory. A run stops after
-30 minutes.") and "Not limited: what it sends to those sites, and how much
-it writes." (without `network`: "Not limited: how much it writes."). With
-`network` but no `network.hosts` it says "May use the network, but names
-no site: every request is refused." Under how it runs it says "A
+30 minutes.", marked New when an update raises either) and "Not limited:
+what it sends to those sites, and how much it writes." (without `network`:
+"Not limited: how much it writes."). With `network` but no `network.hosts`
+it says "May use the network, but names no site: every request is
+refused." Under how it runs it says "A
 WebAssembly plugin. AutoScene checked and compiled it." Plugins marks it **Sandboxed**, on its card and on its screen, and its
 settings say "It runs in a sandbox. AutoScene enforces these." under what
 it may use. An update that leaves the sandbox for a program or a service
 says so in red: "The installed version ran in a sandbox. This version runs
 with your user rights." (one of pages only runs no program: its pages run
-in their own sandbox).
+in their own sandbox). It never installs in one click or in Update all,
+and the person says yes to it in a dialog of the system's own too, however
+much AutoScene reviewed it (see [Trust](#trust)).
 
 **What the sandbox doesn't limit:**
 
@@ -2459,6 +2462,26 @@ off, such plugins don't run, their actions and pages aren't offered, their
 runs stop, their pages close and their services stop. The review can turn
 it on, after the same question.
 
+An update may do no more than the person agreed to without such a yes,
+even one AutoScene reviewed, even one from a `.asp` file: a new permission
+or host, a program where none ran, a program kept running, a program
+outside the sandbox it ran in. Whatever the page says, AutoScene asks after
+the review, says what is new, and a no leaves the plugin as it was and the
+review open. It goes by what the person agreed to, not by what the
+installed files say now. A new page, a new host for its large files and
+higher limits in the sandbox are marked New in the review, and keep the
+update out of one click, but aren't asked here: a page gets only what its
+plugin was granted, AutoScene fetches those files by their hashes, and a
+limit is how much of the same it may use. A loaded folder is asked about at
+each load, with what is new.
+
+That yes covers updates. What the person agreed to goes with the plugin when
+it is uninstalled, so uninstalling it and installing it again is a first
+install, and a first install of a plugin AutoScene reviewed asks nothing in
+such a dialog. A script in AutoScene's page can do that, at the cost of the
+plugin's secrets and settings. It can't land a review it opened as an update
+that way: that review is refused, and has to be opened again.
+
 Trust is about who made a plugin, not about what it may do. A WebAssembly
 plugin runs in its sandbox whatever its trust, and still needs "Allow
 plugins that AutoScene has not reviewed", and its name typed, when AutoScene
@@ -2530,12 +2553,14 @@ is open.
 - **Update…** shows on an installed plugin while the catalog offers a newer
   version. An update never goes back to an older version. One that asks
   for nothing new (no permission, host, page, program, service, or host its
-  large files come from, and no uv to get first) of a reviewed package
-  installs in one click, and says so in a toast; one that asks for more
-  opens its review, which marks each new thing New. **Update all**
-  installs, in turn, the updates that ask for no new permission, host or
-  host for large files; at the first whose review asks for more (a page,
-  a program, a service, uv), it stops with that review open.
+  large files come from, nothing outside the sandbox it ran in, no higher
+  limits in it, and no uv to get first) of a reviewed package installs in
+  one click, and says so in a toast; one that asks for more opens its
+  review, which marks each new thing New. **Update all** installs, in turn, the updates that ask for
+  no new permission, host, host for large files, program or service, and
+  don't leave the sandbox; at the first whose review asks for more (a page,
+  higher limits, uv, or what its catalog entry didn't say), it stops with
+  that review open.
 - **Out of date**: the catalog AutoScene holds ran out (it lives at most 31
   days) and it couldn't get a newer one. Nothing installs or updates from
   it, and Browse says since when it couldn't check. Installed plugins keep

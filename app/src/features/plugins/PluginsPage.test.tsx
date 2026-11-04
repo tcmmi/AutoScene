@@ -1024,6 +1024,36 @@ describe("PluginsPage", () => {
     expect(screen.queryByRole("dialog")).toBeNull()
   })
 
+  it("an update that leaves the sandbox stays out of Update all and shows its review", async () => {
+    const quiet = pluginInfo({ id: "dev.a.quiet", name: "Quiet" })
+    const boxed = pluginInfo({ id: "dev.a.boxed", name: "Boxed", runtime: "wasm" })
+    state.plugins = [quiet, boxed]
+    state.catalog = catalogView([
+      catalogPlugin({ id: quiet.id, name: quiet.name, version: "2.0.0", installed: "1.0.0", update: true }),
+      // The same permissions and hosts: only how it runs changes.
+      catalogPlugin({ id: boxed.id, name: boxed.name, version: "2.0.0", installed: "1.0.0", update: true, runtime: "process", leavesSandbox: true }),
+    ])
+    vi.mocked(commands.catalogGet).mockResolvedValue(catalogReview({ ...boxed, version: "2.0.0", runtime: "process" }, { leavesSandbox: true }))
+    show()
+    expect(await screen.findByRole("button", { name: "Update all (1)" })).toBeTruthy()
+    fireEvent.click(screen.getAllByRole("button", { name: "Update…" })[1])
+    const dialog = await screen.findByRole("dialog", { name: "Update Boxed?" })
+    expect(within(dialog).getByText("The installed version ran in a sandbox. This version runs with your user rights.")).toBeTruthy()
+    expect(commands.pluginInstall).not.toHaveBeenCalled()
+  })
+
+  it("Update all stops at a review that leaves the sandbox after all", async () => {
+    const boxed = pluginInfo({ id: "dev.a.boxed", name: "Boxed", runtime: "wasm" })
+    state.plugins = [boxed]
+    // The catalog's entry says nothing of it; its package runs a program.
+    state.catalog = catalogView([catalogPlugin({ id: boxed.id, name: boxed.name, version: "2.0.0", installed: "1.0.0", update: true })])
+    vi.mocked(commands.catalogGet).mockResolvedValue(catalogReview({ ...boxed, version: "2.0.0", runtime: "process" }, { leavesSandbox: true }))
+    show()
+    fireEvent.click(await screen.findByRole("button", { name: "Update all (1)" }))
+    expect(await screen.findByRole("dialog", { name: "Update Boxed?" })).toBeTruthy()
+    expect(commands.pluginInstall).not.toHaveBeenCalled()
+  })
+
   it("Update all stops at a review that asks for more after all", async () => {
     const quiet = ["dev.a.one", "dev.a.two"].map((id, i) => pluginInfo({ id, name: `Quiet ${i + 1}` }))
     state.plugins = quiet

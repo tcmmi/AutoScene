@@ -352,8 +352,8 @@ function Permissions({ review }: { review: PluginReview }) {
 /**
  * What a WebAssembly plugin may do in AutoScene's sandbox, with what an
  * update adds marked: walls AutoScene keeps, not the plugin's word. Then
- * what it can't do, its limits, and what the sandbox doesn't limit. It never
- * says "safe".
+ * what it can't do, its limits, marked when an update raises them, and what
+ * the sandbox doesn't limit. It never says "safe".
  */
 function Sandboxed({ review, sandbox }: { review: PluginReview; sandbox: PluginSandbox }) {
   const p = review.plugin
@@ -381,7 +381,10 @@ function Sandboxed({ review, sandbox }: { review: PluginReview; sandbox: PluginS
       </ul>
       <div className="mt-1.5 flex flex-col gap-1 text-sm text-fg-2">
         <p>It can't start programs or see your other files.</p>
-        <p>{limitsLine(sandbox)}</p>
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {limitsLine(sandbox)}
+          {review.update?.raisedLimits && <Badge tone="accent">New</Badge>}
+        </p>
         <p>{network ? "Not limited: what it sends to those sites, and how much it writes." : "Not limited: how much it writes."}</p>
       </div>
     </section>

@@ -52,7 +52,7 @@ use as_plugin::catalog::{
 use as_plugin::fetch::fetch_error;
 use as_plugin::keys::CATALOG_URLS;
 use as_plugin::manifest::current_platform;
-use as_plugin::{Installed, Manifest, PluginError, PluginId, PluginResult, Store, Ticket, package};
+use as_plugin::{Installed, Manifest, PluginError, PluginId, PluginResult, RuntimeKind, Store, Ticket, package};
 use parking_lot::Mutex;
 use semver::Version;
 use serde::Serialize;
@@ -880,6 +880,11 @@ pub struct CatalogPlugin {
     /// What it asks that the installed one wasn't granted.
     pub adds_permissions: Vec<String>,
     pub adds_hosts: Vec<String>,
+    /// How it would run past what the person agreed to, as an update's
+    /// review says (`PluginUpdate`): each keeps it out of Update all.
+    pub starts_program: bool,
+    pub becomes_service: bool,
+    pub leaves_sandbox: bool,
     pub runs_here: bool,
     pub needs_newer_app: bool,
     /// What the large files it names take, in bytes: what its first run
@@ -952,6 +957,10 @@ fn listed(catalog: &Catalog, id: &PluginId, installed: Option<&Installed>, app: 
     // Where the installed version's files come from, by its plugin.json,
     // which its lock fixes: none known when it can't be read.
     let fetched_from = installed.and_then(|p| p.manifest.as_ref()).map(Manifest::resource_hosts).unwrap_or_default();
+    // A runtime it doesn't name, or this AutoScene doesn't know, counts as a
+    // program: nothing is said to stay in the sandbox that may not.
+    let runs = serde_json::from_value(Value::from(entry.runtime.as_str())).unwrap_or(RuntimeKind::Process);
+    let runtime = installed.map(|p| p.extra.agreed_runtime().change_to(runs)).unwrap_or_default();
     Some(CatalogPlugin {
         id: entry.id.to_string(),
         name: entry.name.clone(),
@@ -975,6 +984,9 @@ fn listed(catalog: &Catalog, id: &PluginId, installed: Option<&Installed>, app: 
         update: runs_here && record.is_some_and(|r| newer(entry, &r.version)),
         adds_permissions: new(&entry.permissions, &|p| granted.contains(p)),
         adds_hosts: new(&entry.hosts, &|h| hosts.contains(h)),
+        starts_program: runtime.starts_program,
+        becomes_service: runtime.becomes_service,
+        leaves_sandbox: runtime.leaves_sandbox,
         runs_here,
         needs_newer_app,
         resource_bytes: entry.resource_bytes as f64,
@@ -1092,6 +1104,7 @@ pub(super) mod tests {
 
     use super::super::tests::{CATALOG_AT, NoStart, host_cataloged};
     use super::*;
+    use crate::error::ErrorCode;
 
     pub const NOW: u64 = 1_800_000_000;
     pub const DAY: u64 = 86_400;
@@ -1643,6 +1656,43 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn the_view_says_how_an_update_would_run_past_what_the_person_agreed_to() {
+        use RuntimeKind::{None as Pages, Process, Service, Wasm};
+        let app = Version::parse("1.0.3-BETA").unwrap();
+        let hello = PluginId::parse(HELLO).unwrap();
+        let shown = |agreed: Option<RuntimeKind>, runtime: &str| {
+            let mut update = entry(HELLO, "1.1.0");
+            update["runtime"] = json!(runtime);
+            let catalog = living(vec![update], vec![]);
+            let mut installed = super::super::tests::plugin(HELLO, as_plugin::Trust::Reviewed, false);
+            let shown = match agreed {
+                Some(agreed) => {
+                    installed.extra = as_plugin::Extra::agreed(agreed);
+                    listed(&catalog, &hello, Some(&installed), &app).unwrap()
+                }
+                None => listed(&catalog, &hello, None, &app).unwrap(),
+            };
+            (shown.starts_program, shown.becomes_service, shown.leaves_sandbox)
+        };
+        assert_eq!(shown(Some(Wasm), "process"), (false, false, true));
+        assert_eq!(shown(Some(Wasm), "service"), (false, true, true));
+        assert_eq!(shown(Some(Process), "service"), (false, true, false));
+        assert_eq!(shown(Some(Pages), "process"), (true, false, false));
+        assert_eq!(shown(Some(Pages), "wasm"), (true, false, false));
+        // By what the person agreed to, and it may do no more.
+        for (agreed, runtime) in [(Process, "process"), (Wasm, "wasm"), (Process, "wasm"), (Service, "process")] {
+            assert_eq!(shown(Some(agreed), runtime), (false, false, false), "{agreed:?} to {runtime}");
+        }
+        // A runtime it doesn't name, or this AutoScene doesn't know, counts as a program.
+        for runtime in ["", "quantum"] {
+            assert_eq!(shown(Some(Wasm), runtime), (false, false, true), "{runtime}");
+            assert_eq!(shown(Some(Pages), runtime), (true, false, false), "{runtime}");
+        }
+        // Not installed: nothing to go past.
+        assert_eq!(shown(None, "process"), (false, false, false));
+    }
+
+    #[test]
     fn adds_resource_hosts_compares_with_the_installed_manifest() {
         let tmp = scratch("view-resources");
         let (key, served) = (Key::new(), Arc::new(Served::default()));
@@ -1846,11 +1896,15 @@ pub(super) mod tests {
     fn packed(id: &str, version: &str, more: &str) -> (Vec<u8>, String) {
         let mut m = super::super::tests::manifest(id, false);
         m["version"] = json!(version);
-        let files = [
+        zipped(&[
             ("plugin.json", serde_json::to_vec_pretty(&m).unwrap()),
             ("main.py", format!("print('hello'){more}\n").into_bytes()),
             ("main.py.lock", b"version = 1\n".to_vec()),
-        ];
+        ])
+    }
+
+    /// The package of `files`, and the SHA-256 of its lock.
+    fn zipped(files: &[(&str, Vec<u8>)]) -> (Vec<u8>, String) {
         let listed = files.iter().map(|(path, bytes)| as_plugin::LockedFile {
             path: (*path).into(),
             size: bytes.len() as u64,
@@ -2028,6 +2082,185 @@ pub(super) mod tests {
         assert_eq!(t.previous.as_ref().map(|r| r.version.as_str()), Some("1.1.0"));
         assert_eq!(g.store.commit(t, false, false).unwrap().record.version, "1.2.0");
         g.done();
+    }
+
+    /// The review of the package `bytes` as `host` keeps one, from the file
+    /// `name` in `tmp`: its ticket's id.
+    fn reviewing(host: &PluginHost, tmp: &Path, name: &str, (bytes, _): &(Vec<u8>, String)) -> String {
+        let path = tmp.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        let t = host.store.stage(&path).unwrap();
+        let id = t.id.to_string();
+        host.keep(t);
+        id
+    }
+
+    #[test]
+    fn an_update_out_of_the_sandbox_takes_the_persons_own_yes_whatever_the_page_says() {
+        // The test guest (`cargo xtask wasm-guests`): the installed version runs it.
+        let Some(guest) = as_testkit::fixture_file("wasm/guest.wasm") else { return };
+        let tmp = host_scratch("out-of-the-sandbox");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = super::super::tests::host_in(&tmp);
+        let m = super::super::tests::wasm_manifest(HELLO, None);
+        let sandboxed =
+            zipped(&[("plugin.json", m.to_string().into_bytes()), ("plugin.wasm", std::fs::read(guest).unwrap())]);
+        // The same permissions and hosts, as a program with the person's rights.
+        let program = packed(HELLO, "1.1.0", "");
+        let listed = vec![entry_of(HELLO, "1.0.0", &sandboxed), entry_of(HELLO, "1.1.0", &program)];
+        host.store.set_catalog(living(listed, vec![]));
+
+        let first = reviewing(&host, &tmp, "first.asp", &sandboxed);
+        let p = super::super::install(&host, &first, false, false, |q| panic!("a new plugin asked {q:?}")).unwrap();
+        assert_eq!(p.extra.agreed_runtime(), RuntimeKind::Wasm);
+
+        let update = reviewing(&host, &tmp, "update.asp", &program);
+        // The page's consent is no answer: the question comes whatever it says.
+        for page in [false, true] {
+            let mut asked = Vec::new();
+            let no = super::super::install(&host, &update, false, page, |q| {
+                asked.push(q);
+                false
+            });
+            assert_eq!(no.unwrap_err().code, ErrorCode::Cancelled);
+            let [(title, text, yes)] = asked.as_slice() else { panic!("{asked:?}") };
+            assert_eq!((title.as_str(), *yes), (format!("Update Plugin {HELLO}?").as_str(), "Update"));
+            let says = "AutoScene reviewed this version. The installed version ran in a sandbox. This version \
+                        runs with your user rights: it can read, change and send anything you can.";
+            assert!(text.starts_with(says), "{text}");
+            assert!(text.contains("Version: 1.1.0 (1.0.0 is installed)"), "{text}");
+            let now = host.store.get(&PluginId::parse(HELLO).unwrap()).unwrap();
+            assert_eq!((now.record.version.as_str(), now.extra.agreed_runtime()), ("1.0.0", RuntimeKind::Wasm));
+        }
+        // A no kept the review: the yes installs it, and that is what was agreed to.
+        let p = super::super::install(&host, &update, false, false, |_| true).unwrap();
+        assert_eq!((p.record.version.as_str(), p.extra.agreed_runtime()), ("1.1.0", RuntimeKind::Process));
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_reviewed_update_asks_only_when_it_may_do_more() {
+        let tmp = host_scratch("asks-when-more");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = super::super::tests::host_in(&tmp);
+        let files = |m: &Value| {
+            zipped(&[
+                ("plugin.json", serde_json::to_vec_pretty(m).unwrap()),
+                ("main.py", b"print('hello')\n".to_vec()),
+                ("main.py.lock", b"version = 1\n".to_vec()),
+                ("ui/main.html", b"<p>hi</p>".to_vec()),
+            ])
+        };
+        let mut m = super::super::tests::manifest(HELLO, false);
+        let v100 = files(&m);
+        // Asks for what the installed version never did.
+        m["version"] = json!("1.1.0");
+        m["permissions"] = json!(["network"]);
+        m["network"] = json!({"hosts": ["discord.com"]});
+        let v110 = files(&m);
+        // The same again: the person agreed to that with 1.1.0.
+        m["version"] = json!("1.2.0");
+        let v120 = files(&m);
+        // Keeps its program running now.
+        m["version"] = json!("1.3.0");
+        (m["manifestVersion"], m["engines"]["protocol"]) = (json!(2), json!(2));
+        m["runtime"]["type"] = json!("service");
+        m["contributes"]["pages"] = json!([{"id": "main", "title": "Main", "entry": "ui/main.html"}]);
+        let v130 = files(&m);
+        let listed = [("1.0.0", &v100), ("1.1.0", &v110), ("1.2.0", &v120), ("1.3.0", &v130)];
+        host.store.set_catalog(living(listed.iter().map(|(v, package)| entry_of(HELLO, v, package)).collect(), vec![]));
+
+        let quietly = |name: &str, package| {
+            let t = reviewing(&host, &tmp, name, package);
+            super::super::install(&host, &t, false, false, |q| panic!("it asked {q:?}")).unwrap();
+        };
+        let asking = |name: &str, package| {
+            let t = reviewing(&host, &tmp, name, package);
+            let mut text = String::new();
+            let yes = |(_, said, _): super::super::Question| {
+                text = said;
+                true
+            };
+            super::super::install(&host, &t, false, false, yes).unwrap();
+            text
+        };
+        quietly("1.0.0.asp", &v100);
+        let text = asking("1.1.0.asp", &v110);
+        assert!(
+            text.contains("\n\nNew in this version:\n· Talks to the internet\n· Talks to discord.com\n\n"),
+            "{text}"
+        );
+        quietly("1.2.0.asp", &v120);
+        let text = asking("1.3.0.asp", &v130);
+        assert!(text.contains(" It now keeps its program running while its page is open."), "{text}");
+        assert!(!text.contains("New in this version"), "{text}");
+        let p = host.store.get(&PluginId::parse(HELLO).unwrap()).unwrap();
+        assert_eq!((p.record.version.as_str(), p.extra.agreed_runtime()), ("1.3.0", RuntimeKind::Service));
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_running_plugin_is_refused_before_the_question_and_a_yes_a_run_cut_off_is_asked_again() {
+        let tmp = host_scratch("question-while-running");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = super::super::tests::host_in(&tmp);
+        let mut m = super::super::tests::manifest(HELLO, false);
+        let files = |m: &Value| {
+            zipped(&[
+                ("plugin.json", serde_json::to_vec_pretty(m).unwrap()),
+                ("main.py", b"print('hello')\n".to_vec()),
+                ("main.py.lock", b"version = 1\n".to_vec()),
+            ])
+        };
+        let v100 = files(&m);
+        m["version"] = json!("1.1.0");
+        m["permissions"] = json!(["network"]);
+        let v110 = files(&m);
+        let listed = vec![entry_of(HELLO, "1.0.0", &v100), entry_of(HELLO, "1.1.0", &v110)];
+        host.store.set_catalog(living(listed, vec![]));
+        let first = reviewing(&host, &tmp, "1.0.0.asp", &v100);
+        super::super::install(&host, &first, false, false, |q| panic!("it asked {q:?}")).unwrap();
+
+        let id = PluginId::parse(HELLO).unwrap();
+        let (job, update) = (as_core::JobId::new(), reviewing(&host, &tmp, "1.1.0.asp", &v110));
+        let start = || host.busy.lock().running.insert(job, id.clone());
+        let end = || host.busy.lock().running.remove(&job);
+        let running = |e: crate::error::AppError| {
+            assert_eq!(e.code, ErrorCode::NotReady, "{}", e.message);
+            assert!(e.message.ends_with("is running. Wait for it to finish, or stop it in Activity."), "{}", e.message);
+        };
+
+        // While it runs nothing is asked: a yes couldn't take effect.
+        start();
+        running(super::super::install(&host, &update, false, false, |q| panic!("it asked {q:?}")).unwrap_err());
+        end();
+
+        // A run that starts during the question: the yes is lost, the review kept.
+        let lost = super::super::install(&host, &update, false, false, |_| {
+            start();
+            true
+        });
+        running(lost.unwrap_err());
+        end();
+        let kept = host.take(&update).unwrap();
+        assert!(!kept.confirmed);
+        host.keep(kept);
+
+        // Asked again, and a no stands, whatever was answered before.
+        let mut asked = 0;
+        let no = super::super::install(&host, &update, false, false, |_| {
+            asked += 1;
+            false
+        });
+        assert_eq!((no.unwrap_err().code, asked), (ErrorCode::Cancelled, 1));
+        assert_eq!(host.store.get(&id).unwrap().record.version, "1.0.0");
+
+        let p = super::super::install(&host, &update, false, false, |_| true).unwrap();
+        assert_eq!(p.record.version, "1.1.0");
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

@@ -126,6 +126,23 @@ describe("a sandboxed plugin's permissions", () => {
     expect(permissionLabel("network")).toBe("Talks to the internet")
   })
 
+  it("the system's own question says them in these words", async () => {
+    // The dialog an update asks in is written in Rust (`permission_words`): the page can't alter it, and it can't
+    // say less than the review. The app's types leave Node out, so `node:fs` comes in untyped.
+    const fs: { readFileSync(path: URL, encoding: "utf8"): string } = await import("node:fs" as string)
+    // Through a variable: Vite would turn `new URL("./x", import.meta.url)` into an asset import.
+    const here = import.meta.url
+    const file = fs.readFileSync(new URL("../../../src-tauri/src/plugins/mod.rs", here), "utf8")
+    // The code that says them, not its tests, which say them too.
+    const backend = file.slice(0, file.indexOf("mod tests {"))
+    expect(backend).toContain("fn permission_words(")
+    for (const p of ["exports:read", "exports:write", "project:read", "network"] as const) {
+      for (const sandbox of [undefined, { hosts: [] }, { hosts: ["discord.com"] }]) {
+        expect(backend).toContain(`"${permissionLabel(p, sandbox)}"`)
+      }
+    }
+  })
+
   it("names its limits as a person says them", () => {
     expect(limitsLine({ memoryMb: 512, minutes: 30 })).toBe("It may use up to 512 MB of memory. A run stops after 30 minutes.")
     expect(limitsLine({ memoryMb: 16, minutes: 1 })).toBe("It may use up to 16 MB of memory. A run stops after 1 minute.")

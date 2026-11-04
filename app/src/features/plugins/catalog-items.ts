@@ -6,7 +6,11 @@ import { downloadSize, firstTime, joinWords, permissionLabel, pluginMatches } fr
  * reviewed it, it replaces a reviewed package installed (not a developer's
  * folder, nor one AutoScene didn't review), and it changes nothing the
  * review would mark New: no permission, host or page, no host its large
- * files come from, no program where none ran, none kept running. One that would need uv first shows too.
+ * files come from, no program where none ran, none kept running, none
+ * outside the sandbox it ran in, no higher limits in it. One that would need
+ * uv first shows too.
+ * The backend doesn't take this page's word for it: an update that may do
+ * more takes a yes in a dialog of the system's own (`plugins::install`).
  */
 export function oneClick(r: PluginReview): boolean {
   const u = r.update
@@ -22,7 +26,9 @@ export function oneClick(r: PluginReview): boolean {
     u.addedResourceHosts.length === 0 &&
     u.addedPages.length === 0 &&
     !u.startsProgram &&
-    !u.becomesService
+    !u.becomesService &&
+    !u.leavesSandbox &&
+    !u.raisedLimits
   )
 }
 
@@ -40,10 +46,19 @@ export function updatesOf(catalog: CatalogPlugin[] | undefined): CatalogPlugin[]
  * Whether an update asks for nothing new, so Update all takes it: its review
  * still says so before it installs. A new host its large files come from is
  * something new; a larger download from known hosts is not (the files'
- * hashes are what was reviewed, and the review still states their size).
+ * hashes are what was reviewed, and the review still states their size). So
+ * is running in another way than the person agreed to: a program where none
+ * ran, one kept running, one outside the sandbox.
  */
-export const asksNothingNew = (p: Pick<CatalogPlugin, "addsPermissions" | "addsHosts" | "addsResourceHosts">) =>
-  p.addsPermissions.length === 0 && p.addsHosts.length === 0 && p.addsResourceHosts.length === 0
+export const asksNothingNew = (
+  p: Pick<CatalogPlugin, "addsPermissions" | "addsHosts" | "addsResourceHosts" | "startsProgram" | "becomesService" | "leavesSandbox">,
+) =>
+  p.addsPermissions.length === 0 &&
+  p.addsHosts.length === 0 &&
+  p.addsResourceHosts.length === 0 &&
+  !p.startsProgram &&
+  !p.becomesService &&
+  !p.leavesSandbox
 
 /**
  * What a catalog entry says it may do, in one line: its permissions in

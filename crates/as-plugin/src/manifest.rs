@@ -392,6 +392,33 @@ pub enum RuntimeKind {
     Wasm,
 }
 
+/// What running as another runtime takes a plugin past the one the person
+/// agreed to. None of it is true of a plugin that enters the sandbox, or
+/// that stops running a program.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RuntimeChange {
+    /// It runs a program, and the person agreed to none.
+    pub starts_program: bool,
+    /// It keeps its program running while its page is open, and the person
+    /// agreed to one that doesn't.
+    pub becomes_service: bool,
+    /// The person agreed to the sandbox, and it runs a program outside it:
+    /// with their user rights. One of pages only doesn't: its pages run in
+    /// theirs.
+    pub leaves_sandbox: bool,
+}
+
+impl RuntimeKind {
+    /// What running as `new` changes, for a plugin agreed to run as this.
+    pub fn change_to(self, new: RuntimeKind) -> RuntimeChange {
+        RuntimeChange {
+            starts_program: self == Self::None && new != Self::None,
+            becomes_service: self != Self::Service && new == Self::Service,
+            leaves_sandbox: self == Self::Wasm && matches!(new, Self::Process | Self::Service),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Runtime {
@@ -4574,5 +4601,34 @@ mod tests {
         let mut m = read(&plugin()).unwrap().manifest;
         m.repository = Some("https://autoscene.app@github.com/a/b".into());
         assert_eq!(m.source_link(), None);
+    }
+
+    #[test]
+    fn another_runtime_says_only_what_goes_past_the_one_agreed_to() {
+        use RuntimeKind::{None as Pages, Process, Service, Wasm};
+        // Agreed to, runs as: whether it starts a program, keeps one running
+        // and leaves the sandbox.
+        let cases = [
+            (Pages, Pages, false, false, false),
+            (Pages, Wasm, true, false, false),
+            (Pages, Process, true, false, false),
+            (Pages, Service, true, true, false),
+            (Wasm, Pages, false, false, false),
+            (Wasm, Wasm, false, false, false),
+            (Wasm, Process, false, false, true),
+            (Wasm, Service, false, true, true),
+            (Process, Pages, false, false, false),
+            (Process, Wasm, false, false, false),
+            (Process, Process, false, false, false),
+            (Process, Service, false, true, false),
+            (Service, Pages, false, false, false),
+            (Service, Wasm, false, false, false),
+            (Service, Process, false, false, false),
+            (Service, Service, false, false, false),
+        ];
+        for (agreed, new, starts_program, becomes_service, leaves_sandbox) in cases {
+            let change = RuntimeChange { starts_program, becomes_service, leaves_sandbox };
+            assert_eq!(agreed.change_to(new), change, "{agreed:?} to {new:?}");
+        }
     }
 }

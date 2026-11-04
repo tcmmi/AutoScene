@@ -36,7 +36,16 @@ const icon = (fill: string) =>
 /** An entry as `index.json` lists it, with what the view works out. */
 type Entry = Omit<
   CatalogPlugin,
-  "installed" | "update" | "addsPermissions" | "addsHosts" | "runsHere" | "needsNewerApp" | "addsResourceHosts"
+  | "installed"
+  | "update"
+  | "addsPermissions"
+  | "addsHosts"
+  | "startsProgram"
+  | "becomesService"
+  | "leavesSandbox"
+  | "runsHere"
+  | "needsNewerApp"
+  | "addsResourceHosts"
 >
 
 function entry(o: Pick<Entry, "id" | "name" | "summary" | "version" | "permissions" | "hosts"> & Partial<Entry>): Entry {
@@ -151,6 +160,9 @@ function offer(e: Entry): CatalogPlugin {
     update: p != null && newer(e.version, p.version),
     addsPermissions: adds(e.permissions, p?.permissions ?? []),
     addsHosts: adds(e.hosts, p?.networkHosts ?? []),
+    startsProgram: p?.runtime === "none" && e.runtime !== "none",
+    becomesService: p != null && p.runtime !== "service" && e.runtime === "service",
+    leavesSandbox: p?.runtime === "wasm" && (e.runtime === "process" || e.runtime === "service"),
     // Nothing of the withdrawn plugin is offered to run.
     runsHere: e.id !== LEAKY_ID,
     needsNewerApp: false,

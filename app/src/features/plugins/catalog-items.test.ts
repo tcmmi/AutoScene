@@ -17,6 +17,8 @@ describe("catalog items", () => {
     expect(oneClick(catalogReview(mine, { addedPages: ["poster"] }))).toBe(false)
     expect(oneClick(catalogReview(mine, { startsProgram: true }))).toBe(false)
     expect(oneClick(catalogReview(mine, { becomesService: true }))).toBe(false)
+    expect(oneClick(catalogReview(mine, { leavesSandbox: true }))).toBe(false)
+    expect(oneClick(catalogReview(mine, { raisedLimits: true }))).toBe(false)
     expect(oneClick(catalogReview(mine, { sourceBefore: "folder" }))).toBe(false)
     expect(oneClick(catalogReview(mine, { trustBefore: "unreviewed" }))).toBe(false)
     expect(oneClick(catalogReview(mine, { trustBefore: "pinned" }))).toBe(false)
@@ -57,6 +59,15 @@ describe("catalog items", () => {
     const update = catalogPlugin({ id: "dev.a.model", name: "Model", installed: "0.9.0", update: true, resourceBytes: 327_155_712 })
     expect(asksNothingNew(update)).toBe(true)
     expect(asksNothingNew({ ...update, addsResourceHosts: ["huggingface.co"] })).toBe(false)
+  })
+
+  it("asksNothingNew: an update that runs past what the person agreed to is left out of Update all", () => {
+    // The same permissions and hosts: what changes is how it runs.
+    const update = catalogPlugin({ id: "dev.a.mine", name: "Mine", installed: "0.9.0", update: true, permissions: ["exports:read"] })
+    expect(asksNothingNew(update)).toBe(true)
+    expect(asksNothingNew({ ...update, startsProgram: true })).toBe(false)
+    expect(asksNothingNew({ ...update, becomesService: true })).toBe(false)
+    expect(asksNothingNew({ ...update, leavesSandbox: true })).toBe(false)
   })
 
   it("catalogNewHosts: an update says the host that is new, none when there is none", () => {

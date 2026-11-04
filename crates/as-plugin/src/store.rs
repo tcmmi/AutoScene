@@ -56,6 +56,13 @@
 //! AutoScene can't read (a later AutoScene's) is listed as such and never
 //! written over, and so is a plugin that doesn't work with this AutoScene
 //! (one put back to an older version).
+//!
+//! Reviewed or not, an update may do no more than the person agreed to
+//! without their yes ([`Widens`]): for one AutoScene reviewed that yes is
+//! [`Ticket::confirmed`], which nothing the page says can set. It covers
+//! updates: what was agreed to goes with the plugin's row, so uninstalling
+//! and installing again is a first install. A review of an update never
+//! lands as one: it is refused, and has to be opened again.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -79,8 +86,8 @@ use crate::calls::HostCalls;
 use crate::catalog::{self, Catalog};
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{
-    self, Launch, Manifest, Parsed, Permission, PluginId, RuntimeKind, SettingKind, SettingSpec, SettingValue,
-    current_platform, invalid, shown,
+    self, Launch, Manifest, Parsed, Permission, PluginId, RuntimeChange, RuntimeKind, SettingKind, SettingSpec,
+    SettingValue, current_platform, invalid, shown,
 };
 use crate::package::{
     self, FilesLock, LOCK, LOCK_VERSION, LockedFile, MANIFEST, MAX_LOCK_BYTES, Picture, PictureFormat, Unpacked,
@@ -261,7 +268,41 @@ pub struct Ticket {
     /// A WebAssembly plugin's code, compiled when it was checked, in its
     /// folder of [`Store::cache_dir`]: the one code [`Store::commit`] keeps.
     pub compiled: Option<PathBuf>,
+    /// The person said yes to it in a dialog of the system's own. Only the
+    /// app sets it, once they did: no command takes it from the page.
+    pub confirmed: bool,
     pub created: Instant,
+}
+
+/// What an update may do that the person never agreed to, by the installed
+/// version's record and the runtime agreed to. New pages, new hosts for its
+/// large files and higher limits in the sandbox aren't in it: its review
+/// marks them, but they let it reach no more than it could (a page gets only
+/// what its plugin was granted, AutoScene is what fetches those files, by
+/// their hashes, and a limit is how much of the same it may use).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Widens {
+    /// Permissions it says it needs that the installed version didn't.
+    pub permissions: Vec<Permission>,
+    pub hosts: Vec<String>,
+    pub runtime: RuntimeChange,
+}
+
+impl Widens {
+    /// What `m` adds to the installed `previous`, agreed to run as `agreed`
+    /// (none when its row is gone: nothing is said of how it runs).
+    pub fn of(previous: &Record, agreed: Option<RuntimeKind>, m: &Manifest) -> Self {
+        Self {
+            permissions: m.permissions.iter().filter(|p| !previous.permissions.contains(p)).copied().collect(),
+            hosts: m.network_hosts.iter().filter(|h| !previous.network_hosts.contains(h)).cloned().collect(),
+            runtime: agreed.map(|a| a.change_to(m.runtime.kind)).unwrap_or_default(),
+        }
+    }
+
+    /// Whether it may do anything more.
+    pub fn any(&self) -> bool {
+        *self != Self::default()
+    }
 }
 
 /// Where AutoScene's catalog says a package it reviewed was built from,
@@ -609,6 +650,7 @@ impl Store {
             staged: Some(staged.to_path_buf()),
             previous,
             compiled,
+            confirmed: false,
             created: Instant::now(),
         })
     }
@@ -674,6 +716,7 @@ impl Store {
             staged: None,
             previous,
             compiled,
+            confirmed: false,
             created: Instant::now(),
         })
     }
@@ -715,14 +758,23 @@ impl Store {
         }
     }
 
+    /// What the plugin of `m` may do that the version installed now, as the
+    /// person agreed to it, may not: nothing when none is.
+    pub fn widens(&self, m: &Manifest) -> PluginResult<Widens> {
+        let Some(previous) = self.record(&m.id)? else { return Ok(Widens::default()) };
+        Ok(Widens::of(&previous, Some(self.extra(&previous)?.agreed_runtime()), m))
+    }
+
     /// Installs the plugin of `t`. One AutoScene hasn't reviewed needs
     /// `allow_unreviewed` (the setting) and `accept_unreviewed` (the
-    /// person's typed yes). Its files and its trust are checked again, by
-    /// the catalog of now, and what it replaces is the installed version
-    /// now, which may have changed since it was staged. One the catalog
-    /// reviewed when it was staged and doesn't now, or withdrew meanwhile,
-    /// is refused. Whatever fails, the plugin stays as it was, and the staged
-    /// folder is removed.
+    /// person's typed yes); one it reviewed that [`Store::widens`] its
+    /// installed version needs [`Ticket::confirmed`]. Its files and its
+    /// trust are checked again, by the catalog of now, and what it replaces
+    /// is the installed version now, which may have changed since it was
+    /// staged. One the catalog reviewed when it was staged and doesn't now,
+    /// or withdrew meanwhile, is refused, and so is one staged as an update
+    /// of a plugin uninstalled since. Whatever fails, the plugin stays as it
+    /// was, and the staged folder is removed.
     pub fn commit(&self, t: Ticket, allow_unreviewed: bool, accept_unreviewed: bool) -> PluginResult<Installed> {
         let installed = self.install(&t, allow_unreviewed, accept_unreviewed);
         if installed.is_err() {
@@ -745,6 +797,11 @@ impl Store {
         };
         let _changing = self.changing.lock();
         let previous = self.record(&m.id)?;
+        // What was agreed to went with its row, so nothing below could tell
+        // what this update adds: a first install has its own review.
+        if t.previous.is_some() && previous.is_none() {
+            return Err(invalid("This plugin was uninstalled while its update waited. Open it again."));
+        }
         let pin = previous.as_ref().and_then(|p| p.author_key.as_ref());
         let lock = package.is_some().then_some(t.lock_bytes.as_slice());
         let (sig, author_pub) = (t.signature.as_deref(), t.author_pub.as_deref());
@@ -763,6 +820,11 @@ impl Store {
         let lock_sha256 = package.is_some().then(|| package::sha256_hex(&t.lock_bytes));
         if let Some(p) = &previous {
             check_update(p, m, verdict.trust, lock_sha256.as_deref())?;
+        }
+        // By the installed version now: the page's word is no yes here, and
+        // one AutoScene hasn't reviewed had its own above.
+        if verdict.trust == Trust::Reviewed && !t.confirmed && self.widens(m)?.any() {
+            return Err(invalid("This update asks for more than you agreed to. Open it again."));
         }
         // The secrets it has keep their values, and the events it still has
         // stay on; it runs as its manifest says from now, which the person
@@ -2755,6 +2817,13 @@ mod tests {
         assert!(store.wasm_spec(&p, hello_action()).is_err());
         assert!(crate::calls::Grants::of(&p).is_err());
 
+        // Loading it again goes by what the person agreed to, not by what
+        // its folder says now, and the dialog's yes stands for no typed one.
+        let mut t = store.stage_folder(&dev).unwrap();
+        assert!(store.widens(&t.manifest).unwrap().runtime.leaves_sandbox);
+        t.confirmed = true;
+        assert_eq!(store.commit(t, true, false).unwrap_err().to_string(), "Confirm that you want to install it.");
+
         // Loaded again, the person agreed to that; its code goes.
         let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
         assert_eq!((p.broken.as_deref(), p.extra.agreed_runtime()), (None, RuntimeKind::Process));
@@ -3459,6 +3528,190 @@ mod tests {
             assert_eq!(e.to_string(), why);
             assert_eq!(place.plugins(), [".staging", ".trash"]);
         }
+    }
+
+    /// [`hello`] at `version` that asks for `permissions` and may talk to
+    /// `hosts`.
+    fn asking(version: &str, permissions: &[&str], hosts: &[&str]) -> Files {
+        let mut m = manifest(ID, version);
+        m["permissions"] = json!(permissions);
+        if !hosts.is_empty() {
+            m["network"] = json!({"hosts": hosts});
+        }
+        files(&m)
+    }
+
+    /// Hello Export at `version` as a plugin of pages only.
+    fn pages_only(version: &str) -> Files {
+        let mut m = manifest(ID, version);
+        m["manifestVersion"] = json!(2);
+        m["runtime"] = json!({"type": "none"});
+        m["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]});
+        let page = ("ui/index.html".to_owned(), b"<!doctype html>".to_vec());
+        vec![("plugin.json".to_owned(), serde_json::to_vec_pretty(&m).unwrap()), page]
+    }
+
+    /// Hello Export at `version` with a program it keeps running while its
+    /// page is open.
+    fn serving(version: &str) -> Files {
+        let mut m = manifest(ID, version);
+        m["manifestVersion"] = json!(2);
+        m["engines"]["protocol"] = json!(2);
+        m["runtime"]["type"] = json!("service");
+        m["contributes"]["pages"] = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
+        let mut files = files(&m);
+        files.push(("ui/index.html".to_owned(), b"<!doctype html>".to_vec()));
+        files
+    }
+
+    #[test]
+    fn a_reviewed_update_that_may_do_more_takes_a_yes_the_page_cant_give() {
+        let place = Place::new();
+        let store = place.store();
+        let net = ["exports:read", "network"];
+        #[cfg_attr(not(feature = "wasm"), expect(unused_mut))]
+        let mut cases = vec![
+            ("a permission", hello("1.0.0"), asking("1.1.0", &["exports:read", "project:read"], &[])),
+            ("a host", asking("1.0.0", &net, &["a.example"]), asking("1.1.0", &net, &["a.example", "b.example"])),
+            ("a program", pages_only("1.0.0"), hello("1.1.0")),
+            ("a program it keeps running", hello("1.0.0"), serving("1.1.0")),
+        ];
+        #[cfg(feature = "wasm")]
+        if let Some(guest) = guest() {
+            cases.push(("a program, out of the sandbox", wasm_plugin(ID, "1.0.0", &guest), hello("1.1.0")));
+            cases.push(("a service, out of the sandbox", wasm_plugin(ID, "1.0.0", &guest), serving("1.1.0")));
+        }
+        for (what, before, after) in cases {
+            let (old, new) = (place.package(&before, None, false), place.package(&after, None, false));
+            reviewed(&store, &[&old, &new]);
+            let installed = store.commit(store.stage(&old).unwrap(), false, false).unwrap();
+            // Whatever the page says: neither is the person's yes.
+            for page in [false, true] {
+                let t = store.stage(&new).unwrap();
+                assert_eq!(t.verdict.trust, Trust::Reviewed, "{what}");
+                assert!(store.widens(&t.manifest).unwrap().any(), "{what}");
+                let e = store.commit(t, page, page).unwrap_err();
+                assert_eq!(e.to_string(), "This update asks for more than you agreed to. Open it again.", "{what}");
+                let now = store.get(&id()).unwrap();
+                assert_eq!(now.record.version, "1.0.0", "{what}");
+                assert_eq!(now.extra.agreed_runtime(), installed.extra.agreed_runtime(), "{what}");
+                assert_eq!(place.plugins(), holding(&installed), "{what}: a refused update leaves nothing");
+            }
+            let mut t = store.stage(&new).unwrap();
+            t.confirmed = true;
+            let p = store.commit(t, false, false).unwrap();
+            let runs = p.manifest.as_ref().unwrap().runtime.kind;
+            assert_eq!((p.record.version.as_str(), p.extra.agreed_runtime()), ("1.1.0", runs), "{what}");
+            store.uninstall(&id(), false).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_reviewed_update_that_may_do_no_more_takes_no_such_yes() {
+        let place = Place::new();
+        let store = place.store();
+        #[cfg_attr(not(feature = "wasm"), expect(unused_mut))]
+        let mut cases = vec![
+            ("the same", hello("1.0.0"), hello("1.1.0")),
+            ("a permission less", asking("1.0.0", &["exports:read", "project:read"], &[]), hello("1.1.0")),
+            ("a program it no longer keeps running", serving("1.0.0"), hello("1.1.0")),
+            ("no program", hello("1.0.0"), pages_only("1.1.0")),
+        ];
+        #[cfg(feature = "wasm")]
+        if let Some(guest) = guest() {
+            cases.push(("into the sandbox", hello("1.0.0"), wasm_plugin(ID, "1.1.0", &guest)));
+            cases.push(("pages out of the sandbox", wasm_plugin(ID, "1.0.0", &guest), pages_only("1.1.0")));
+        }
+        for (what, before, after) in cases {
+            let (old, new) = (place.package(&before, None, false), place.package(&after, None, false));
+            reviewed(&store, &[&old, &new]);
+            store.commit(store.stage(&old).unwrap(), false, false).unwrap();
+            let p = store.commit(store.stage(&new).unwrap(), false, false).unwrap();
+            assert_eq!(p.record.version, "1.1.0", "{what}");
+            store.uninstall(&id(), false).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_reviewed_update_goes_by_the_version_installed_when_it_lands() {
+        let place = Place::new();
+        let store = place.store();
+        let both = ["exports:read", "project:read"];
+        // What it replaced when it was opened, what replaced that meanwhile
+        // without a question, and the update: no more than the first, more
+        // than the second.
+        #[cfg_attr(not(feature = "wasm"), expect(unused_mut))]
+        let mut cases =
+            vec![("a permission", asking("1.0.0", &both, &[]), hello("1.1.0"), asking("1.2.0", &both, &[]))];
+        #[cfg(feature = "wasm")]
+        if let Some(guest) = guest() {
+            cases.push(("the sandbox", hello("1.0.0"), wasm_plugin(ID, "1.1.0", &guest), hello("1.2.0")));
+        }
+        for (what, first, meanwhile, update) in cases {
+            let packages = [&first, &meanwhile, &update].map(|files| place.package(files, None, false));
+            reviewed(&store, &[&packages[0], &packages[1], &packages[2]]);
+            store.commit(store.stage(&packages[0]).unwrap(), false, false).unwrap();
+            let t = store.stage(&packages[2]).unwrap();
+            assert!(!store.widens(&t.manifest).unwrap().any(), "{what}");
+            store.commit(store.stage(&packages[1]).unwrap(), false, false).unwrap();
+            let e = store.commit(t, false, false).unwrap_err();
+            assert_eq!(e.to_string(), "This update asks for more than you agreed to. Open it again.", "{what}");
+            assert_eq!(store.get(&id()).unwrap().record.version, "1.1.0", "{what}");
+            store.uninstall(&id(), false).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_review_of_an_update_doesnt_land_as_a_first_install() {
+        let place = Place::new();
+        let store = place.store();
+        #[cfg_attr(not(feature = "wasm"), expect(unused_mut))]
+        let mut cases = vec![
+            ("a permission", hello("1.0.0"), asking("1.1.0", &["exports:read", "project:read"], &[])),
+            ("nothing more", hello("1.0.0"), hello("1.1.0")),
+        ];
+        #[cfg(feature = "wasm")]
+        if let Some(guest) = guest() {
+            cases.push(("out of the sandbox", wasm_plugin(ID, "1.0.0", &guest), hello("1.1.0")));
+        }
+        for (what, before, after) in cases {
+            let (old, new) = (place.package(&before, None, false), place.package(&after, None, false));
+            reviewed(&store, &[&old, &new]);
+            for confirmed in [false, true] {
+                store.commit(store.stage(&old).unwrap(), false, false).unwrap();
+                let mut t = store.stage(&new).unwrap();
+                t.confirmed = confirmed;
+                assert!(t.previous.is_some(), "{what}");
+                store.uninstall(&id(), false).unwrap();
+                let e = store.commit(t, false, false).unwrap_err();
+                let said = "This plugin was uninstalled while its update waited. Open it again.";
+                assert_eq!(e.to_string(), said, "{what}");
+                assert!(store.get(&id()).is_err(), "{what}");
+            }
+            // Opened again, it is a first install: nothing is known of what was agreed to.
+            let p = store.commit(store.stage(&new).unwrap(), false, false).unwrap();
+            assert_eq!(p.record.version, "1.1.0", "{what}");
+            store.uninstall(&id(), false).unwrap();
+        }
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn a_package_autoscene_hasnt_reviewed_keeps_its_own_gate_when_it_leaves_the_sandbox() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        let update = place.unsigned("1.1.0");
+        let t = store.stage(&update).unwrap();
+        assert_eq!(t.verdict.trust, Trust::Unreviewed);
+        assert!(store.widens(&t.manifest).unwrap().runtime.leaves_sandbox);
+        assert!(matches!(store.commit(t, false, true), Err(PluginError::NotAllowed)));
+        let t = store.stage(&update).unwrap();
+        assert_eq!(store.commit(t, true, false).unwrap_err().to_string(), "Confirm that you want to install it.");
+        assert_eq!(store.get(&id()).unwrap().extra.agreed_runtime(), RuntimeKind::Wasm);
+        let p = install(&store, &update).unwrap();
+        assert_eq!((p.record.version.as_str(), p.extra.agreed_runtime()), ("1.1.0", RuntimeKind::Process));
     }
 
     #[test]

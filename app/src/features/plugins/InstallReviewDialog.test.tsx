@@ -165,6 +165,7 @@ describe("the install review", () => {
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
+      raisedLimits: false,
       addedResourceHosts: [],
     }
     show(review({ update }))
@@ -216,6 +217,7 @@ describe("the install review", () => {
           startsProgram: false,
           becomesService: false,
           leavesSandbox: false,
+          raisedLimits: false,
           addedResourceHosts: [],
         },
       }),
@@ -300,6 +302,7 @@ describe("the install review", () => {
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
+      raisedLimits: false,
       addedResourceHosts: [],
     }
     // By its id: another page may have the same title.
@@ -338,6 +341,7 @@ describe("the install review", () => {
       startsProgram: false,
       becomesService: true,
       leavesSandbox: false,
+      raisedLimits: false,
       addedResourceHosts: [],
     }
     show(review({ plugin: counter, update }))
@@ -381,6 +385,7 @@ describe("the install review", () => {
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
+      raisedLimits: false,
       addedResourceHosts: ["cdn.example.com"],
     }
     show(review({ update, resourceBytes: 1_000_000, resourceHosts: ["huggingface.co", "cdn.example.com"] }))
@@ -457,6 +462,7 @@ describe("the install review", () => {
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
+      raisedLimits: false,
       addedResourceHosts: [],
     }
     show(review({ plugin: signed, update }))
@@ -513,6 +519,7 @@ describe("the install review", () => {
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
+      raisedLimits: false,
       addedResourceHosts: [],
     }
     const posting = { ...clipList, permissions: ["exports:read", "network"] as PluginInfo["permissions"], networkHosts: ["discord.com", "hooks.example.com"] }
@@ -553,6 +560,29 @@ describe("the install review", () => {
     expect(screen.getByText("It may use up to 64 MB of memory. A run stops after 1 hour.")).toBeTruthy()
   })
 
+  it("marks a sandboxed plugin's limits when an update raises them, and only then", () => {
+    const update: PluginUpdate = {
+      fromVersion: "1.0.0",
+      trustBefore: "reviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: [],
+      addedPages: [],
+      startsProgram: false,
+      becomesService: false,
+      leavesSandbox: false,
+      raisedLimits: true,
+      addedResourceHosts: [],
+    }
+    const plugin = { ...clipList, permissions: [], sandbox: { memoryMb: 4096, minutes: 1440 } }
+    const limits = "It may use up to 4096 MB of memory. A run stops after 24 hours."
+    show(review({ plugin, update }))
+    expect(within(screen.getByText(limits)).getByText("New")).toBeTruthy()
+    cleanup()
+    show(review({ plugin, update: { ...update, raisedLimits: false } }))
+    expect(within(screen.getByText(limits)).queryByText("New")).toBeNull()
+  })
+
   it("warns when an update leaves the sandbox", () => {
     const update: PluginUpdate = {
       fromVersion: "1.0.0",
@@ -564,6 +594,7 @@ describe("the install review", () => {
       startsProgram: false,
       becomesService: false,
       leavesSandbox: true,
+      raisedLimits: false,
       addedResourceHosts: [],
     }
     show(review({ plugin: discord, update }))

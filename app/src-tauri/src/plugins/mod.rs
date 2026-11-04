@@ -109,8 +109,8 @@ use as_plugin::wasm;
 use as_plugin::{
     ActionContext, ActionKind, Approval, Caller, CommandSpec, EventKind, Extra, Grants, HostCalls, HostMethod,
     Installed, Launch, Manifest, OsKeyring, PackActionSpec, PageSpec, Permission, PluginError, PluginId, PluginResult,
-    Record, Resource, Resources, RunSpec, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger, Trust, package,
-    runtime,
+    Record, Resource, Resources, RunSpec, RuntimeChange, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger,
+    Trust, Widens, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -570,6 +570,11 @@ pub struct PluginUpdate {
     /// sandbox, and this one runs a program outside it: with their user
     /// rights. One of pages only isn't said to: its pages run in theirs.
     pub leaves_sandbox: bool,
+    /// It stays in the sandbox and may use more memory or run longer than
+    /// the installed version's `plugin.json` says (it is said to when that
+    /// can't be read). No more reach, so no system dialog, but the person
+    /// read those limits: its review marks them.
+    pub raised_limits: bool,
     /// Hosts its large files come from that the installed version's
     /// `plugin.json` doesn't name (all of them when that can't be read).
     pub added_resource_hosts: Vec<String>,
@@ -822,7 +827,6 @@ impl PluginHost {
     }
 
     /// Whether a run of `id` is running.
-    #[cfg(test)]
     fn is_running(&self, id: &PluginId) -> bool {
         self.busy.lock().running.values().any(|p| p == id)
     }
@@ -1301,6 +1305,151 @@ fn sandbox(m: &Manifest) -> Option<PluginSandbox> {
     Some(PluginSandbox { memory_mb: limits.memory_mb, minutes: limits.minutes })
 }
 
+/// What a dialog of the system's own asks: its title, its text and the yes.
+pub type Question = (String, String, &'static str);
+
+/// Installs the plugin the review `ticket_id` showed. One AutoScene hasn't
+/// reviewed needs the setting, `accept_unreviewed` (the person typed its
+/// name), and their yes to `ask`, a dialog of the system's own. So does one
+/// AutoScene reviewed that may do more than the version it replaces, as the
+/// person agreed to that ([`Store::widens`]), whatever the page says: the
+/// page can't answer that dialog. A no keeps the review (`cancelled`).
+/// Refused while the version it replaces runs, before anything is asked: a
+/// yes to what can't happen now would have to be given again.
+pub fn install(
+    host: &PluginHost,
+    ticket_id: &str,
+    allow_unreviewed: bool,
+    accept_unreviewed: bool,
+    ask: impl FnOnce(Question) -> bool,
+) -> AppResult<Installed> {
+    let mut ticket = host.take(ticket_id)?;
+    if host.is_running(&ticket.manifest.id) {
+        let busy = PluginError::Busy(ticket.manifest.name.clone());
+        host.keep(ticket);
+        return Err(busy.into());
+    }
+    // What can't be read here, the commit refuses.
+    let widens = host.store.widens(&ticket.manifest).unwrap_or_default();
+    let asks = match ticket.verdict.trust {
+        Trust::Reviewed => widens.any(),
+        // Only when the page said yes and the setting allows it: else the
+        // commit refuses anyway.
+        _ => allow_unreviewed && accept_unreviewed,
+    };
+    if asks && !ask(install_question(&ticket, &widens)) {
+        host.keep(ticket);
+        return Err(AppError::new(ErrorCode::Cancelled, "It wasn't installed."));
+    }
+    // Its runs wait from here until the row names the new version. One that
+    // started during the question loses the yes: the review kept asks again.
+    let changing = match host.change(&ticket.manifest.id, &ticket.manifest.name, "It is being updated.") {
+        Ok(changing) => changing,
+        Err(busy) => {
+            host.keep(ticket);
+            return Err(busy.into());
+        }
+    };
+    ticket.confirmed = asks;
+    let p = host.store.commit(ticket, allow_unreviewed, accept_unreviewed)?;
+    drop(changing);
+    Ok(p)
+}
+
+/// What installing the plugin of `t` asks, from what was checked here (not
+/// what the page shows), with `widens` what it may do that the installed
+/// version, as the person agreed to it, may not.
+fn install_question(t: &Ticket, widens: &Widens) -> Question {
+    let m = &t.manifest;
+    let yes = match (&t.source, &t.previous) {
+        (Source::Folder { .. }, _) => "Load",
+        (_, Some(_)) => "Update",
+        _ => "Install",
+    };
+    let reviewed = t.verdict.trust == Trust::Reviewed;
+    let who = match (reviewed, &t.verdict.author_key) {
+        (true, _) => format!("By: {}", m.author.name),
+        (_, Some(key)) if t.verdict.trust == Trust::Pinned => {
+            format!("Says it is by: {}\nSigned with key {}", m.author.name, key.key_id)
+        }
+        _ => format!("Says it is by: {}\nNot signed", m.author.name),
+    };
+    let place = match &t.source {
+        Source::Folder { path } => format!("\nFolder: {path}"),
+        Source::Package { .. } => String::new(),
+    };
+    let installed = t.previous.as_ref().map_or(String::new(), |p| format!(" ({} is installed)", p.version));
+    // A WebAssembly plugin can't do what a program can: the question says
+    // what is true of it, as the review does.
+    let how = match m.is_sandboxed() {
+        true => "in a sandbox: it sees only its own folder and what it asks for.",
+        false => "with your user rights: it can read, change and send anything you can.",
+    };
+    let runs = match widens.runtime {
+        RuntimeChange { leaves_sandbox: true, .. } => {
+            format!("The installed version ran in a sandbox. This version runs {how}")
+        }
+        RuntimeChange { starts_program: true, .. } => {
+            format!("The installed version runs no program. This version runs one {how}")
+        }
+        _ if !m.runs_program() => "It runs no program: its pages run in a sandbox.".to_owned(),
+        _ => format!("It runs {how}"),
+    };
+    let service = match widens.runtime.becomes_service {
+        true => " It now keeps its program running while its page is open.",
+        false => "",
+    };
+    let new = new_lines(m, widens);
+    let new = match new.is_empty() {
+        true => String::new(),
+        false => format!("\n\nNew in this version:\n· {}", new.join("\n· ")),
+    };
+    let first = match reviewed {
+        true => "AutoScene reviewed this version.",
+        false => "AutoScene has not reviewed it.",
+    };
+    let text = format!(
+        "{first} {runs}{service}{new}\n\n\
+         Id: {}\nVersion: {}{installed}\n{who}{place}",
+        m.id, m.version
+    );
+    (format!("{yes} {}?", m.name), text, yes)
+}
+
+/// What `widens` adds to the plugin of `m`, a line each, as its review says it.
+fn new_lines(m: &Manifest, widens: &Widens) -> Vec<String> {
+    let sandbox = m.is_sandboxed().then_some(m.network_hosts.as_slice());
+    let mut new: Vec<String> = widens.permissions.iter().map(|p| permission_words(*p, sandbox).to_owned()).collect();
+    match sandbox {
+        // Its line on the network ends in the sites, as in the review.
+        Some(_) if !widens.hosts.is_empty() => {
+            let words = permission_words(Permission::Network, sandbox);
+            new.retain(|line| line != words);
+            new.push(format!("{words} {}", widens.hosts.join(", ")));
+        }
+        _ => new.extend(widens.hosts.iter().map(|h| format!("Talks to {h}"))),
+    }
+    new
+}
+
+/// What `p` lets a plugin do, as the review says it (`permissionLabel`, whose
+/// tests hold these words to its own): what it says it does, or, for one in
+/// the sandbox (`sandbox`, with the sites it may reach), what the sandbox lets
+/// it do.
+fn permission_words(p: Permission, sandbox: Option<&[String]>) -> &'static str {
+    match (p, sandbox) {
+        (Permission::ExportsRead, None) => "Reads the exported clips",
+        (Permission::ExportsWrite, None) => "Changes or adds files beside the exported clips",
+        (Permission::ProjectRead, None) => "Reads the project: its episodes and characters",
+        (Permission::Network, None) => "Talks to the internet",
+        (Permission::ExportsRead, Some(_)) => "Reads the files in the export's folder",
+        (Permission::ExportsWrite, Some(_)) => "Reads, changes and deletes files in the export's folder",
+        (Permission::ProjectRead, Some(_)) => "Reads the project's folder",
+        (Permission::Network, Some([])) => "May use the network, but names no site: every request is refused.",
+        (Permission::Network, Some(_)) => "Talks to these sites, over https only:",
+    }
+}
+
 /// `t` for the review dialog of `host`, with `allow_unreviewed` the
 /// setting.
 pub fn review(t: &Ticket, host: &PluginHost, allow_unreviewed: bool) -> PluginReview {
@@ -1375,26 +1524,33 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
     // Where its files came from, by the plugin.json its lock fixes: none
     // known when it can't be read, so each host is said to be new.
     let fetched_from = before.and_then(|b| b.manifest.as_ref()).map(Manifest::resource_hosts).unwrap_or_default();
-    // One whose row is gone is taken to run a program, so nothing is said
-    // to be new that may not be.
-    let agreed = before.map_or(RuntimeKind::Process, |b| b.extra.agreed_runtime());
+    // Only by what the person agreed to: one whose row is gone isn't said
+    // to change how it runs.
+    let agreed = before.map(|b| b.extra.agreed_runtime());
+    let widens = Widens::of(previous, agreed, m);
+    // The limits the review showed, by the plugin.json its lock fixes: raised
+    // when that can't be read. One new to the sandbox had none to raise.
+    let limits_before = before.and_then(|b| b.manifest.as_ref()).and_then(sandbox);
+    let raised_limits = agreed == Some(RuntimeKind::Wasm)
+        && sandbox(m).is_some_and(|now| {
+            limits_before.is_none_or(|was| now.memory_mb > was.memory_mb || now.minutes > was.minutes)
+        });
     PluginUpdate {
         from_version: previous.version.clone(),
         trust_before: trust(previous),
         source_before: source(previous),
-        added_permissions: m.permissions.iter().filter(|p| !previous.permissions.contains(p)).copied().collect(),
-        added_hosts: m.network_hosts.iter().filter(|h| !previous.network_hosts.contains(h)).cloned().collect(),
+        added_permissions: widens.permissions,
+        added_hosts: widens.hosts,
         added_pages: m
             .pages
             .iter()
             .filter(|p| !pages_before.iter().any(|b| b.id == p.id))
             .map(|p| p.id.clone())
             .collect(),
-        starts_program: agreed == RuntimeKind::None && m.runs_program(),
-        // Only by what the person agreed to: one whose row is gone isn't
-        // said to change how it runs.
-        becomes_service: before.is_some() && agreed != RuntimeKind::Service && m.runtime.kind == RuntimeKind::Service,
-        leaves_sandbox: before.is_some() && agreed == RuntimeKind::Wasm && m.runs_program() && !m.is_sandboxed(),
+        starts_program: widens.runtime.starts_program,
+        becomes_service: widens.runtime.becomes_service,
+        leaves_sandbox: widens.runtime.leaves_sandbox,
+        raised_limits,
         added_resource_hosts: m.resource_hosts().into_iter().filter(|h| !fetched_from.contains(h)).collect(),
     }
 }
@@ -2466,6 +2622,169 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_folder_loaded_again_says_what_is_new_and_takes_the_same_yes() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-load-again-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = host_in(&tmp);
+        let m = manifest("dev.a.dev", false);
+        let review = |m: &serde_json::Value| {
+            let t = folder(&host, &tmp, m);
+            let id = t.id.to_string();
+            host.keep(t);
+            id
+        };
+        install(&host, &review(&m), true, true, |_| true).unwrap();
+
+        let mut more = m.clone();
+        more["version"] = serde_json::json!("1.1.0");
+        more["permissions"] = serde_json::json!(["network"]);
+        more["network"] = serde_json::json!({"hosts": ["discord.com"]});
+        // The setting off, or no typed name: refused, and nothing is asked.
+        for (allow, typed) in [(false, true), (true, false)] {
+            let t = review(&more);
+            assert!(install(&host, &t, allow, typed, |q| panic!("it asked {q:?}")).is_err());
+        }
+        // A no keeps the review, and the plugin as it was.
+        let t = review(&more);
+        let mut asked = None;
+        let no = install(&host, &t, true, true, |q| {
+            asked = Some(q);
+            false
+        });
+        assert_eq!(no.unwrap_err().code, ErrorCode::Cancelled);
+        let (title, text, yes) = asked.unwrap();
+        assert_eq!((title.as_str(), yes), ("Load Plugin dev.a.dev?", "Load"));
+        assert!(text.starts_with("AutoScene has not reviewed it. It runs with your user rights"), "{text}");
+        assert!(
+            text.contains("\n\nNew in this version:\n· Talks to the internet\n· Talks to discord.com\n\n"),
+            "{text}"
+        );
+        assert!(text.contains("Version: 1.1.0 (1.0.0 is installed)") && text.contains("Folder: "), "{text}");
+        let id = PluginId::parse("dev.a.dev").unwrap();
+        assert_eq!(host.store.get(&id).unwrap().record.version, "1.0.0");
+
+        let p = install(&host, &t, true, true, |_| true).unwrap();
+        assert_eq!(
+            (p.record.version.as_str(), p.record.network_hosts.as_slice()),
+            ("1.1.0", &["discord.com".to_owned()][..])
+        );
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_question_says_a_plugin_of_pages_only_runs_no_program() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-pages-question-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join("pages/ui")).unwrap();
+        let (lib, host) = host_in(&tmp);
+        let m =
+            page_only("dev.a.pages", serde_json::json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]));
+        std::fs::write(tmp.join("pages/plugin.json"), m.to_string()).unwrap();
+        std::fs::write(tmp.join("pages/ui/index.html"), b"<p>hi</p>").unwrap();
+        let t = host.store.stage_folder(&tmp.join("pages")).unwrap();
+        let (_, text, _) = install_question(&t, &Widens::default());
+        assert!(
+            text.starts_with("AutoScene has not reviewed it. It runs no program: its pages run in a sandbox."),
+            "{text}"
+        );
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_question_says_how_it_ran_and_how_it_will_run() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-question-runs-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = host_in(&tmp);
+        let mut t = folder(&host, &tmp, &manifest("dev.a.runs", false));
+        let starts =
+            Widens { runtime: RuntimeChange { starts_program: true, ..RuntimeChange::default() }, ..Widens::default() };
+        let (_, text, _) = install_question(&t, &starts);
+        let says = "AutoScene has not reviewed it. The installed version runs no program. This version runs one \
+                    with your user rights: it can read, change and send anything you can.";
+        assert!(text.starts_with(says), "{text}");
+        t.manifest.runtime.kind = RuntimeKind::Wasm;
+        let (_, text, _) = install_question(&t, &starts);
+        let says = "The installed version runs no program. This version runs one in a sandbox: it sees only its \
+                    own folder and what it asks for.";
+        assert!(text.contains(says), "{text}");
+        drop((t, host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_question_says_who_it_is_by_as_far_as_autoscene_checked() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-question-who-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = host_in(&tmp);
+        let mut t = folder(&host, &tmp, &manifest("dev.a.who", false));
+        let by = t.manifest.author.name.clone();
+        let says = |t: &Ticket| install_question(t, &Widens::default()).1;
+        assert!(says(&t).contains(&format!("\nSays it is by: {by}\nNot signed\n")), "{}", says(&t));
+
+        let key = as_plugin::AuthorKey { base64: "a2V5".into(), key_id: "ABCD1234".into() };
+        t.verdict = as_plugin::Verdict { trust: Trust::Pinned, author_key: Some(key.clone()) };
+        assert!(says(&t).contains(&format!("\nSays it is by: {by}\nSigned with key ABCD1234\n")), "{}", says(&t));
+
+        // A key that isn't what the plugin is held to says nothing of who signed it.
+        t.verdict = as_plugin::Verdict { trust: Trust::Unreviewed, author_key: Some(key.clone()) };
+        assert!(says(&t).contains("\nNot signed\n"), "{}", says(&t));
+
+        // Reviewed, it is by whom the catalog says, signed or not.
+        t.verdict = as_plugin::Verdict { trust: Trust::Reviewed, author_key: Some(key) };
+        let text = says(&t);
+        assert!(
+            text.starts_with("AutoScene reviewed this version.") && text.contains(&format!("\nBy: {by}")),
+            "{text}"
+        );
+        assert!(!text.contains("Says it is by") && !text.contains("igned"), "{text}");
+        drop((t, host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_question_says_what_is_new_as_the_review_does() {
+        use Permission::{ExportsRead, ExportsWrite, Network, ProjectRead};
+        let parsed =
+            |m: serde_json::Value| as_plugin::manifest::parse_for_any_app(m.to_string().as_bytes()).unwrap().manifest;
+        let program = parsed(manifest("dev.a.new", false));
+        let boxed = parsed(wasm_manifest("dev.a.new", None));
+        let adding = |permissions: &[Permission], hosts: &[&str]| Widens {
+            permissions: permissions.to_vec(),
+            hosts: hosts.iter().map(|h| (*h).to_owned()).collect(),
+            ..Widens::default()
+        };
+        let cases = [
+            (ExportsRead, "Reads the exported clips", "Reads the files in the export's folder"),
+            (
+                ExportsWrite,
+                "Changes or adds files beside the exported clips",
+                "Reads, changes and deletes files in the export's folder",
+            ),
+            (ProjectRead, "Reads the project: its episodes and characters", "Reads the project's folder"),
+            (Network, "Talks to the internet", "May use the network, but names no site: every request is refused."),
+        ];
+        for (p, as_a_program, in_the_sandbox) in cases {
+            assert_eq!(new_lines(&program, &adding(&[p], &[])), [as_a_program], "{p:?}");
+            assert_eq!(new_lines(&boxed, &adding(&[p], &[])), [in_the_sandbox], "{p:?}");
+        }
+
+        // The sites it names: a program's are a line each, the sandbox's end its line on the network.
+        let hosts = ["discord.com", "api.example.org"];
+        let mut named = boxed.clone();
+        named.network_hosts = hosts.map(str::to_owned).to_vec();
+        let sites = "Talks to these sites, over https only: discord.com, api.example.org";
+        assert_eq!(
+            new_lines(&program, &adding(&[Network], &hosts)),
+            ["Talks to the internet", "Talks to discord.com", "Talks to api.example.org"]
+        );
+        assert_eq!(new_lines(&named, &adding(&[Network], &hosts)), [sites]);
+        assert_eq!(new_lines(&named, &adding(&[], &hosts)), [sites]);
+        assert_eq!(new_lines(&named, &adding(&[Network, ProjectRead], &hosts)), ["Reads the project's folder", sites]);
+        assert!(new_lines(&named, &Widens::default()).is_empty());
+    }
+
     /// The `plugin.json` of a plugin `id` that runs no program and has `pages`.
     pub(super) fn page_only(id: &str, pages: serde_json::Value) -> serde_json::Value {
         serde_json::json!({
@@ -2870,7 +3189,7 @@ mod tests {
     }
 
     /// The `plugin.json` of the WebAssembly plugin `id`, with `limits`.
-    fn wasm_manifest(id: &str, limits: Option<serde_json::Value>) -> serde_json::Value {
+    pub(super) fn wasm_manifest(id: &str, limits: Option<serde_json::Value>) -> serde_json::Value {
         let mut m = manifest(id, false);
         m["manifestVersion"] = serde_json::json!(2);
         m["runtime"] = serde_json::json!({"type": "wasm", "component": "plugin.wasm"});
@@ -2968,6 +3287,50 @@ mod tests {
         assert!(update(&previous, Some(&before), &service).leaves_sandbox);
         let u = update(&previous, Some(&before), &program);
         assert_eq!(serde_json::to_value(&u).unwrap()["leavesSandbox"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn an_update_that_raises_its_sandbox_limits_says_so() {
+        const ID: &str = "dev.a.boxed";
+        let previous = plugin(ID, Trust::Reviewed, false).record;
+        let before = wasm_plugin(ID, Trust::Reviewed, Some(serde_json::json!({"memoryMb": 512, "minutes": 30})));
+        let limits = |memory: u32, minutes: u32| {
+            let limits = serde_json::json!({"memoryMb": memory, "minutes": minutes});
+            wasm_plugin(ID, Trust::Reviewed, Some(limits)).manifest.unwrap()
+        };
+        let raised = |before: Option<&Installed>, m: &Manifest| update(&previous, before, m).raised_limits;
+        for (memory, minutes, more) in [
+            (512, 30, false),
+            (256, 10, false),
+            (4096, 30, true),
+            (512, 1440, true),
+            (4096, 10, true),
+            (256, 1440, true),
+        ] {
+            assert_eq!(raised(Some(&before), &limits(memory, minutes)), more, "{memory} MB, {minutes} minutes");
+        }
+        // Limits it leaves unset are the default ones.
+        let unset = wasm_plugin(ID, Trust::Reviewed, None);
+        assert!(!raised(Some(&unset), &limits(512, 30)));
+        assert!(raised(Some(&unset), &limits(1024, 30)));
+        assert!(!raised(Some(&before), unset.manifest.as_ref().unwrap()));
+        // It takes no system dialog: its reach is the same.
+        assert!(!update(&previous, Some(&before), &limits(4096, 1440)).leaves_sandbox);
+
+        // One new to the sandbox had none to raise, and a program has none.
+        let mut process = before.clone();
+        process.extra = Extra::agreed(RuntimeKind::Process);
+        process.manifest = plugin(ID, Trust::Reviewed, false).manifest;
+        assert!(!raised(Some(&process), &limits(4096, 1440)));
+        assert!(!raised(Some(&before), &plugin(ID, Trust::Reviewed, false).manifest.unwrap()));
+        // Nothing is said of one whose row is gone.
+        assert!(!raised(None, &limits(4096, 1440)));
+        // What can't be read may have been lower.
+        let mut broken = before.clone();
+        broken.manifest = None;
+        assert!(raised(Some(&broken), &limits(512, 30)));
+        let u = update(&previous, Some(&before), &limits(4096, 30));
+        assert_eq!(serde_json::to_value(&u).unwrap()["raisedLimits"], serde_json::json!(true));
     }
 
     /// The library, whose project has one export, `.1`, whatever its id.

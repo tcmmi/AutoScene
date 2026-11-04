@@ -337,10 +337,9 @@ export const commands = {
 	 */
 	pluginInspectFolder: (path: string) => __TAURI_INVOKE<PluginReview>("plugin_inspect_folder", { path }),
 	/**
-	 *  Install the plugin the review `ticket_id` showed. One AutoScene hasn't
-	 *  reviewed needs the setting, `accept_unreviewed` (the person typed its
-	 *  name), and the person's yes in a dialog of the system's own; a no keeps
-	 *  the review (`cancelled`). Refused while the version it replaces runs.
+	 *  Install the plugin the review `ticket_id` showed ([`plugins::install`]):
+	 *  one AutoScene hasn't reviewed, and an update that may do more than the
+	 *  person agreed to, take their yes in a dialog of the system's own.
 	 */
 	pluginInstall: (ticketId: string, acceptUnreviewed: boolean) => __TAURI_INVOKE<PluginInfo>("plugin_install", { ticketId, acceptUnreviewed }),
 	/**
@@ -884,6 +883,13 @@ export type CatalogPlugin = {
 	/**  What it asks that the installed one wasn't granted. */
 	addsPermissions: string[],
 	addsHosts: string[],
+	/**
+	 *  How it would run past what the person agreed to, as an update's
+	 *  review says (`PluginUpdate`): each keeps it out of Update all.
+	 */
+	startsProgram: boolean,
+	becomesService: boolean,
+	leavesSandbox: boolean,
 	runsHere: boolean,
 	needsNewerApp: boolean,
 	/**
@@ -2168,6 +2174,13 @@ export type PluginUpdate = {
 	 *  rights. One of pages only isn't said to: its pages run in theirs.
 	 */
 	leavesSandbox: boolean,
+	/**
+	 *  It stays in the sandbox and may use more memory or run longer than
+	 *  the installed version's `plugin.json` says (it is said to when that
+	 *  can't be read). No more reach, so no system dialog, but the person
+	 *  read those limits: its review marks them.
+	 */
+	raisedLimits: boolean,
 	/**
 	 *  Hosts its large files come from that the installed version's
 	 *  `plugin.json` doesn't name (all of them when that can't be read).

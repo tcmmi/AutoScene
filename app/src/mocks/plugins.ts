@@ -592,6 +592,10 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
         // Hosts its files come from that the installed version's plugin.json doesn't name, downloaded or not.
         addedResourceHosts: (largeOf(p)?.hosts ?? []).filter((h) => !(largeOf(previous)?.hosts ?? []).includes(h)),
         leavesSandbox: previous.runtime === "wasm" && (p.runtime === "process" || p.runtime === "service"),
+        raisedLimits:
+          previous.sandbox != null &&
+          p.sandbox != null &&
+          (p.sandbox.memoryMb > previous.sandbox.memoryMb || p.sandbox.minutes > previous.sandbox.minutes),
       }
     : null
   const needsUnreviewed = !reviewed(next)

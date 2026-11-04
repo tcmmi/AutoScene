@@ -11,9 +11,12 @@
 //! The page can't say yes alone to code AutoScene hasn't reviewed: turning
 //! the setting on, and installing such a plugin, each ask the person in a
 //! dialog of the system's own ([`confirm`]), with what the backend checked.
-//! So does a plugin's source that isn't a GitHub repository, before it
+//! So does an update that may do more than the person agreed to, reviewed or
+//! not, and a plugin's source that isn't a GitHub repository, before it
 //! opens. A script in the page could call these commands; it can't answer
-//! that.
+//! that. An update's yes covers an update: a script can still uninstall a
+//! plugin, which takes its secrets and settings, and install it again, and
+//! that is a first install, which asks nothing of one AutoScene reviewed.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -22,7 +25,7 @@ use std::time::Instant;
 use as_api::AppSettings;
 use as_core::{ExportId, JobId, ProjectId};
 use as_plugin::calls::FileFilter;
-use as_plugin::{ActionKind, PluginError, PluginId, SettingValue, Source, Ticket, Trigger, Trust};
+use as_plugin::{ActionKind, PluginError, PluginId, SettingValue, Trigger};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -145,37 +148,6 @@ fn confirm(app: &AppHandle, title: &str, message: String, yes: &str) -> bool {
     dialog.blocking_show()
 }
 
-/// What installing the plugin of `t` asks, from what was checked here (not
-/// what the page shows): its title, its text and the yes.
-fn install_question(t: &Ticket) -> (String, String, &'static str) {
-    let m = &t.manifest;
-    let yes = match (&t.source, &t.previous) {
-        (Source::Folder { .. }, _) => "Load",
-        (_, Some(_)) => "Update",
-        _ => "Install",
-    };
-    let signed = match &t.verdict.author_key {
-        Some(key) if t.verdict.trust == Trust::Pinned => format!("Signed with key {}", key.key_id),
-        _ => "Not signed".to_owned(),
-    };
-    let place = match &t.source {
-        Source::Folder { path } => format!("\nFolder: {path}"),
-        Source::Package { .. } => String::new(),
-    };
-    // A WebAssembly plugin can't do what a program can: the question says
-    // what is true of it, as the review does.
-    let runs = match m.is_sandboxed() {
-        true => "It runs in a sandbox: it sees only its own folder and what it asks for.",
-        false => "It runs with your user rights: it can read, change and send anything you can.",
-    };
-    let text = format!(
-        "AutoScene has not reviewed it. {runs}\n\n\
-         Id: {}\nVersion: {}\nSays it is by: {}\n{signed}{place}",
-        m.id, m.version, m.author.name
-    );
-    (format!("{yes} {}?", m.name), text, yes)
-}
-
 /// Unpack and check the plugin package at `path`, for the review dialog,
 /// which answers with `plugin_install` or `plugin_discard`.
 #[tauri::command]
@@ -222,10 +194,9 @@ pub async fn plugin_inspect_folder(state: State<'_, AppState>, path: String) -> 
     .await
 }
 
-/// Install the plugin the review `ticket_id` showed. One AutoScene hasn't
-/// reviewed needs the setting, `accept_unreviewed` (the person typed its
-/// name), and the person's yes in a dialog of the system's own; a no keeps
-/// the review (`cancelled`). Refused while the version it replaces runs.
+/// Install the plugin the review `ticket_id` showed ([`plugins::install`]):
+/// one AutoScene hasn't reviewed, and an update that may do more than the
+/// person agreed to, take their yes in a dialog of the system's own.
 #[tauri::command]
 #[specta::specta]
 pub async fn plugin_install(
@@ -238,26 +209,8 @@ pub async fn plugin_install(
     let asking = app.clone();
     let installed = blocking(move || {
         let allow = lib.allows_unreviewed_plugins()?;
-        let ticket = host.take(&ticket_id)?;
-        // Asked only when the page said yes and the setting allows it: else
-        // the commit refuses anyway.
-        if ticket.verdict.trust != Trust::Reviewed && allow && accept_unreviewed {
-            let (title, text, yes) = install_question(&ticket);
-            if !confirm(&asking, &title, text, yes) {
-                host.keep(ticket);
-                return Err(AppError::new(ErrorCode::Cancelled, "It wasn't installed."));
-            }
-        }
-        // Its runs wait from here until the row names the new version.
-        let changing = match host.change(&ticket.manifest.id, &ticket.manifest.name, "It is being updated.") {
-            Ok(changing) => changing,
-            Err(busy) => {
-                host.keep(ticket);
-                return Err(busy.into());
-            }
-        };
-        let p = host.store.commit(ticket, allow, accept_unreviewed)?;
-        drop(changing);
+        let ask = |(title, text, yes): plugins::Question| confirm(&asking, &title, text, yes);
+        let p = plugins::install(&host, &ticket_id, allow, accept_unreviewed, ask)?;
         Ok(info(&p, &host.store, allow))
     })
     .await?;

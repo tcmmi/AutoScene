@@ -2114,3 +2114,63 @@ fn catalog_add_counts_resource_bytes_and_hosts() {
         (312_000_000, vec!["huggingface.co".into(), "github.com".into()])
     );
 }
+
+/// Every key of the JSON `example` is one `read` has too, at the same place:
+/// the docs spell no field AutoScene skips.
+fn keys_read(example: &Value, read: &Value, at: &str) {
+    match (example, read) {
+        (Value::Object(ex), Value::Object(rd)) => {
+            for (key, v) in ex {
+                let Some(r) = rd.get(key) else { panic!("{at}.{key} isn't a field AutoScene reads") };
+                keys_read(v, r, &format!("{at}.{key}"));
+            }
+        }
+        (Value::Array(ex), Value::Array(rd)) => {
+            assert_eq!(ex.len(), rd.len(), "{at}");
+            for (i, (e, r)) in ex.iter().zip(rd).enumerate() {
+                keys_read(e, r, &format!("{at}[{i}]"));
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn the_catalog_example_in_the_docs_checks_out() {
+    let doc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/CATALOG.md");
+    let doc = fs::read_to_string(&doc).unwrap().replace("\r\n", "\n");
+    let (_, rest) = doc.split_once("<!-- index-example -->\n").expect("CATALOG.md marks its example");
+    let (block, _) = rest.split_once("<!-- /index-example -->").expect("the example's end is marked");
+    let json = block.trim().strip_prefix("```json\n").and_then(|b| b.strip_suffix("```")).expect("a json block");
+
+    // It reads as an index, with no field AutoScene skips.
+    let example: Value = serde_json::from_str(json).unwrap();
+    let index: catalog::Index = serde_json::from_str(json).unwrap();
+    keys_read(&example, &serde_json::to_value(&index).unwrap(), "index");
+    assert_eq!((index.catalog_version, index.epoch), (catalog::CATALOG_VERSION, 1));
+    assert_eq!((index.plugins.len(), index.withdrawn.len()), (2, 1));
+
+    // Its dates hold as printed: `bump` below dates it anew, so they are
+    // checked here.
+    let published = index.published;
+    assert!(
+        published < index.expires && index.expires - published <= catalog::MAX_LIFETIME,
+        "the example lives too long"
+    );
+    for e in &index.plugins {
+        assert!(e.approved <= published, "{} {} is approved after the index", e.id, e.version);
+    }
+    for w in &index.withdrawn {
+        assert!(w.since <= published, "the withdrawal of {} is dated after the index", w.id);
+    }
+
+    // Dated and signed as the catalog's CI does, AutoScene takes it: each
+    // entry and withdrawal keeps its other rules.
+    let tmp = tempfile::tempdir().unwrap();
+    let cat = CiCatalog::new(&tmp.path().join("site"), &tmp.path().join("online"));
+    write_json(&cat.index, &example);
+    cat.publish();
+    let verified = cat.verify(&[]).ok();
+    assert!(verified.starts_with(&format!("{}: epoch 1, number 8, ", cat.index.display())), "{verified}");
+    assert!(verified.ends_with("\n2 plugin versions and 1 withdrawal.\n"), "{verified}");
+}

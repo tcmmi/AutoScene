@@ -6,7 +6,8 @@ one of the plugin's pages), pages of its own that AutoScene shows full
 screen, or both. It describes itself in a `plugin.json`, and AutoScene draws
 what it adds (menu entries, palette commands, its settings, a tile for its
 page). It ships as a package, an `.asp` file, which the `asp` tool makes and
-signs.
+signs. AutoScene's plugin catalog lists the versions AutoScene reviewed (see
+[The catalog](#the-catalog)).
 
 This guide is for plugin authors. It describes AutoScene's plugins as they
 are now: versions 1 and 2 of the manifest and of the protocol. Version 2
@@ -26,7 +27,8 @@ How a plugin runs is its `runtime.type`:
 - **`process`**: AutoScene starts its program once per run and talks to it
   over stdin and stdout. The program is either a program in the plugin's
   own folder (an `.exe` on Windows), or a Python script, which
-  [uv](https://docs.astral.sh/uv/) runs with the packages its lock pins.
+  [uv](https://docs.astral.sh/uv/) runs with the packages its lock pins
+  (AutoScene's own uv: see [AutoScene's uv](#autoscenes-uv)).
 - **`service`** (version 2): a process plugin whose program also runs while
   one of its pages is open, and answers the page's requests (see
   [Services](#services)).
@@ -63,8 +65,9 @@ that what it does matches what it says.
 
 ## Quick start
 
-1. Install [uv](https://docs.astral.sh/uv/) and `asp` (from a checkout of
-   this repository):
+1. Install [uv](https://docs.astral.sh/uv/), to lock the script (version
+   0.13.7 or older: see [AutoScene's uv](#autoscenes-uv)), and `asp` (from a
+   checkout of this repository):
 
    ```bash
    cargo install --path crates/as-plugin --features cli --bin asp
@@ -123,15 +126,10 @@ The other examples, in `examples/plugins`:
 
 - **The program** is started by its full path in the plugin's folder, with
   the arguments `plugin.json` gives. No shell reads the command. A uv
-  script runs as `uv run --script --locked <the script's full path>`.
-  AutoScene looks for uv on the PATH (but not in the Microsoft Store's
-  `WindowsApps` folder), then in `~/.local/bin` and `~/.cargo/bin`; then in
-  `%LOCALAPPDATA%\Microsoft\WinGet\Links` on Windows, and in
-  `/opt/homebrew/bin` and `/usr/local/bin` on macOS and Linux. Apps started
-  from the macOS Dock or Finder don't get the shell's PATH, which is why the
-  folders count. Without uv, the run fails with "This plugin needs uv,
-  which isn't installed. Install it from docs.astral.sh/uv, then try
-  again."
+  script runs as `uv run --script --locked <the script's full path>`,
+  through AutoScene's own uv, never one on the PATH. The first run that
+  needs it gets it (see [AutoScene's uv](#autoscenes-uv)), and so it does
+  the large files the plugin names (see [Large files](#large-files)).
 - **The current folder** is the plugin's data folder (`plugin-data/<id>`,
   see [where AutoScene keeps plugins](#where-autoscene-keeps-plugins)). It
   is the plugin's to keep files in between runs. It stays through updates,
@@ -150,8 +148,8 @@ The other examples, in `examples/plugins`:
     `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, and those that start
     with `LC_` or `XDG_`.
 
-  Every other variable is left out, also uv's own (`UV_CACHE_DIR`,
-  `UV_INDEX_URL`); uv still reads its config files. AutoScene adds:
+  Every other variable is left out, also the person's own for uv
+  (`UV_CACHE_DIR`, `UV_INDEX_URL`). AutoScene adds:
 
   | Variable | Value |
   |---|---|
@@ -160,6 +158,9 @@ The other examples, in `examples/plugins`:
   | `AUTOSCENE_FFMPEG`, `AUTOSCENE_FFPROBE` | AutoScene's FFmpeg and ffprobe |
   | `AUTOSCENE_PROTOCOL` | The protocol the plugin declared: `1` or `2` |
   | `AUTOSCENE_MODE` | `service` for a service; left out for a run |
+  | `AUTOSCENE_RESOURCES` | The folder of its large files; only when it names some (see [Large files](#large-files)) |
+  | `UV_CACHE_DIR`, `UV_PYTHON_INSTALL_DIR` | For a uv script only: where AutoScene's uv keeps packages and Pythons |
+  | `UV_NO_CONFIG` | For a uv script only: `1`, so uv reads no configuration file of the person's |
   | `PYTHONUNBUFFERED`, `PYTHONUTF8` | `1` |
   | `PYTHONIOENCODING` | `utf-8` |
 
@@ -294,7 +295,7 @@ The first line on the plugin's stdin is the run:
 |---|---|
 | `protocol` | The protocol the plugin declared (`engines.protocol`), which AutoScene speaks to it: `1` or `2`. |
 | `runId` | A new id for each run. It also heads the run's part of the log. |
-| `plugin` | The plugin's `id` and installed `version`, and `dataDir`: its data folder, where the run starts. |
+| `plugin` | The plugin's `id` and installed `version`, and `dataDir`: its data folder, where the run starts. `resourcesDir`, only for a plugin that names large files: their folder (see [Large files](#large-files)). |
 | `app` | AutoScene's `version`, and the `platform` it runs on: `windows-x86_64`, `windows-aarch64`, `macos-aarch64`, `macos-x86_64`, `linux-x86_64` or `linux-aarch64`. |
 | `tools` | AutoScene's `ffmpeg` and `ffprobe` (full paths) and FFmpeg's version. |
 | `settings` | Each of the plugin's settings: the person's value, else its default. A setting with neither is left out. Numbers are JSON numbers and may come as `3.0`, also for whole-number settings. |
@@ -1021,8 +1022,10 @@ program of its own, beside the service.
   AutoScene's start, and never for a run. There is one service per plugin,
   for all its pages.
 - **Its start.** It has 2 minutes to say it is ready (uv may fetch Python
-  and the script's packages first). Until then its pages show it starting,
-  with the stage its progress lines name; a request that comes meanwhile
+  and the script's packages first). Before its program starts, its pages
+  show "Getting uv" while AutoScene gets its uv, and "Checking files" or
+  "Getting files" for its large files. Then they show it starting, with
+  the stage its progress lines name; a request that comes meanwhile
   waits for it. One that isn't ready in time is ended: "<name> didn't
   start in time."
 - **Requests.** At most 32 of them wait for their answer at once; one more
@@ -1130,7 +1133,8 @@ to the hosts its `network.hosts` names and the person agreed to:
   that ends in `home.arpa`.
 - **No proxy**: it never goes through one, which would look the name up
   itself. A plugin behind a company proxy can't reach the internet this
-  way.
+  way. What AutoScene downloads for a plugin, its uv and its large files,
+  does go through the proxy (see [Large files](#large-files)).
 - **The request**: `GET` (the default), `HEAD`, `POST`, `PUT`, `PATCH` or
   `DELETE`. At most 32 headers, 8 KB in all, as `[name, value]` pairs;
   never `host`, `user-agent`, `connection`, `content-length`,
@@ -1225,6 +1229,7 @@ did, and with `"manifestVersion": 2` it reads the same, but for one warning
 | `"runtime": { "type": "service" }` | Refused: `The plugin's runtime.type "service" needs "manifestVersion": 2.` | Read; it needs protocol 2. |
 | `"runtime": { "type": "none" }` | Refused, as `service` is. | Read. |
 | A host in `network.hosts` that can't be on the internet | Read. | Read, with the warning `net.fetch can't reach <host>.` |
+| `resources` | Skipped, with the warning `Skipped resources: they need "manifestVersion": 2.` | Read (see [Large files](#large-files)). |
 
 AutoScene 1.0 reads only version 1 and protocol 1: it refuses a version 2
 manifest, and protocol 2, with "This plugin needs a newer AutoScene." So
@@ -1251,6 +1256,7 @@ or a `runtime.type` it doesn't know (`wasm`, say).
 | `contributes` | no | Its `exportActions`, `commands`, `settings` and, in version 2, `pages`. |
 | `icon` | no | A `.png` or `.svg` file in the plugin. |
 | `banner` | no | With `"manifestVersion": 2`: wide art, a `.png`, `.jpg` or `.webp` file in the plugin. |
+| `resources` | no | With `"manifestVersion": 2`: large files AutoScene downloads for it (see [Large files](#large-files)). |
 | `$schema` | no | Allowed, and not read. |
 
 Texts lose control characters and invisible ones. A name or title longer
@@ -1293,7 +1299,8 @@ two forms:
   makes uv refuse a lock that doesn't match the script's `# /// script`
   block, so the lock decides what uv installs. On the first run uv fetches
   the packages, and a Python when the computer has none it can use; it
-  keeps them in its cache.
+  keeps them in AutoScene's `runtimes` folder (see
+  [AutoScene's uv](#autoscenes-uv)).
 - **A program in the plugin's folder**: `["<path>", "<argument>", …]`. The
   path is a package path (see [paths](#paths)) that doesn't start with a
   dash. On Windows the program must be an `.exe`: Windows runs a `.bat` or
@@ -1352,9 +1359,11 @@ these each time its pages ask." An update that names a permission or a host
 the version before didn't marks it "New" in its review. The review also
 says how the plugin runs (a uv script fetches Python and its packages on
 its first run; a page-only plugin "Runs no program. Its pages run in a
-sandbox."; a service "Keeps its program running while its page is open.")
-and whether uv is missing, lists its pages and where they show, and shows
-the plugin's `description` under "In its own words".
+sandbox."; a service "Keeps its program running while its page is open."),
+that AutoScene gets uv first when it isn't here yet and how much that
+downloads, and what the plugin's large files take and where they come
+from. It lists its pages and where they show, and shows the plugin's
+`description` under "In its own words".
 
 What each permission lets a plugin ask AutoScene for:
 
@@ -1482,10 +1491,10 @@ object, a `plugin.json` over 256 KB. What a later AutoScene may add is
 skipped with a warning, so a plugin made for one still installs in an
 older one: an unknown field, contribution kind or setting type, a page of
 a scope this AutoScene doesn't know, a platform this AutoScene doesn't
-know, and in a version 1 manifest `pages`, `banner` and secret settings,
-which need `"manifestVersion": 2`. A higher `manifestVersion` or
-`engines.protocol`, or a `runtime.type` other than `process`, `service`
-and `none`, needs a newer AutoScene.
+know, and in a version 1 manifest `pages`, `banner`, `resources` and
+secret settings, which need `"manifestVersion": 2`. A higher
+`manifestVersion` or `engines.protocol`, or a `runtime.type` other than
+`process`, `service` and `none`, needs a newer AutoScene.
 
 The review lists the warnings under "Skipped in its plugin.json", and so
 do the plugin's settings.
@@ -1589,20 +1598,115 @@ files go in the lock's order, dated 1980, each deflated, but those deflate
 would pack more than 100 times smaller (zero-padded model weights), which
 are stored.
 
+## Large files
+
+A program that needs files too large for its package, a model's weights
+say, names them in `plugin.json` (with `"manifestVersion": 2`). AutoScene
+downloads them for it, checks each one by its SHA-256, and keeps them:
+
+```json
+"resources": [
+  {
+    "name": "htdemucs.onnx",
+    "urls": ["https://huggingface.co/org/repo/resolve/0123456789abcdef0123456789abcdef01234567/htdemucs.onnx"],
+    "sha256": "4b28e8dafc871cb41f00589e7df8455b244817a2fc3c67f3607ac3854ffc2a9d",
+    "size": 284123456
+  }
+]
+```
+
+| Field | What it is |
+|---|---|
+| `name` | Its file name in the plugin's folder of large files: one part of a package path (see [Paths](#paths)), with no folder, at most 100 characters. |
+| `urls` | 1 to 3 addresses, tried in turn. Each is a plain `https://` address (no `user@`), on port 443, of a host name on the internet: no IP address, no `localhost`. |
+| `sha256` | Its SHA-256: 64 lowercase hex digits. |
+| `size` | Its size in bytes: 1 byte to 4 GiB. |
+
+A plugin names at most 16 files, 8 GiB together, and none when it runs no
+program ("A plugin that runs no program has no use for resources."). Two
+names that differ only in case are refused, and so is a name that ends,
+in any case, in `.part`, `.verified`, `.lock`, `.unpacked` or `.archive`:
+AutoScene keeps files of those names beside its downloads. A file that
+breaks a rule refuses the plugin: it could stand for more than the person
+agreed to. Another key in a file's object is skipped with a warning.
+
+**Pin a revision.** An address on Hugging Face that follows a branch (its
+`resolve/` names no 40-digit commit) gets a warning, in the review and
+from `asp pack`: "<name> follows a branch of Hugging Face: pin a revision,
+or the file will stop matching its hash."
+
+**When they come.** The first run that needs them, or a service's first
+start, gets the files AutoScene doesn't have yet, after uv. Activity
+shows "Getting files for <name>" with how far it came. Each file comes
+from its addresses in turn, resumes after an interruption, and counts only
+with its size and SHA-256. A Cancel keeps what came, for the next try. A
+file whose pin changed (the same name with another hash) comes again.
+Without the room for all of them: "There isn't enough free space for
+<name>'s files. Free up <n> MB on the drive of AutoScene's data folder and
+try again."
+
+**Checked once each start.** The first run (or service start) after
+AutoScene starts hashes the files it keeps ("Checking files for <name>":
+about a minute for 8 GiB from a cold disk; Cancel ends it). After that a
+file counts while its size and time stay as they were.
+
+**What the program gets.** Its folder, as `AUTOSCENE_RESOURCES` and
+`plugin.resourcesDir` in the run line, only when the plugin names large
+files: no other plugin's environment or run line changes.
+
+```python
+weights = os.path.join(os.environ["AUTOSCENE_RESOURCES"], "htdemucs.onnx")
+```
+
+Leave the folder to AutoScene: a changed file fails its hash, and comes
+again.
+
+**How they come.** As AutoScene's own models do, not as `net.fetch`'s
+requests: through the proxy the environment names (`HTTPS_PROXY`,
+`ALL_PROXY`), with AutoScene's user agent and nothing of the person's. At
+most 10 redirects, each on `https://`, to any host (Hugging Face sends its
+files on to its CDN). A name AutoScene resolves itself, without a proxy,
+resolves only to public addresses, after each redirect too. The hosts
+aren't checked against `network.hosts`: the review names them.
+
+**Where they are kept.** `cache/plugin-resources/<id>/` in the data
+folder. Two plugins never share a file. An uninstall removes the plugin's
+folder, and at each start AutoScene removes the files no installed version
+names and the folders of plugins that are gone.
+
+**What the person sees.** The review says "It downloads 312 MB from
+huggingface.co at its first run. AutoScene keeps the files in its cache
+and checks each one by its hash." (an update: "at its next run"). A host
+the installed version's files didn't come from is marked New, and such an
+update never installs in one click. Its card in Browse says "Downloads
+312 MB at its first run", and its settings "Downloaded files", with their
+size.
+
+**What review covers.** The files' hashes are in `plugin.json`, which the
+lock covers, which the signature or the catalog covers: a reviewed
+plugin's files are as fixed as its code. That proves their bytes, not that
+they are harmless: load them so that nothing in them runs. Prefer ONNX,
+safetensors or GGUF; never `pickle.load` a file, and use
+`torch.load(..., weights_only=True)`. The catalog's rules for large files
+are in [CATALOG.md](CATALOG.md#large-files).
+
 ## Trust
 
 Who signed a package's `files.lock` decides how far AutoScene trusts it.
 
 | Trust | Its badge | What it means |
 |---|---|---|
-| Reviewed | Reviewed by AutoScene | An AutoScene Plugins key, compiled into the app, signed this version. |
+| Reviewed | Reviewed by AutoScene | AutoScene's plugin catalog lists this exact version: the SHA-256 of its `files.lock` (see [The catalog](#the-catalog)). |
 | Pinned | Signed, not reviewed | Signed with the key in its `author.pub`. The first install pins that key: an update must be signed with it. That key came in the package, so it shows no one's name: the review says so, and names the author as the plugin "says it is by". |
 | Unreviewed | Not reviewed | Nobody signed it, or a key AutoScene doesn't know did. |
 | | Loaded from a folder | A developer's folder, run as its files are now. It always counts as unreviewed. |
 
-**AutoScene hasn't reviewed any plugin yet**: the app holds no review keys
-so far, so every plugin is Pinned or Unreviewed for now. A key a package
-brings along never makes it Reviewed.
+A key a package brings along never makes it Reviewed: only the catalog
+does, and it signs its list, never a package. A package the catalog lists
+is Reviewed whether or not its author signed it, and is pinned to the
+author key the catalog names (or keeps its pin when it names none). **The
+catalog isn't open yet**: this AutoScene holds none of its keys, so every
+plugin is Pinned or Unreviewed for now.
 
 A plugin AutoScene hasn't reviewed (Pinned, Unreviewed, or loaded from a
 folder) needs **Plugins → Allow plugins that AutoScene has not
@@ -1635,9 +1739,10 @@ hosts and pages the update adds, a program where the version before ran
 none ("The installed version runs no program."), and a service where it
 had none ("Now keeps its program running while its page is open.").
 
-- **Trust:** a Reviewed plugin takes only reviewed versions. A Pinned one
-  takes versions its pinned key signed, and reviewed ones. An Unreviewed
-  one takes any, and a signed update pins its key.
+- **Trust:** a Reviewed plugin takes only reviewed versions: from the
+  catalog, or a package the catalog lists. A Pinned one takes versions its
+  pinned key signed, and reviewed ones. An Unreviewed one takes any, and a
+  signed update pins its key.
 - **Version:** an update must be newer. An older one is refused with
   "Version 1.2.0 is installed, which is newer than 1.1.0. Uninstall it
   first to go back." The same version installs again only with the same
@@ -1658,6 +1763,75 @@ of the version before. A review that waits more than 10 minutes expires:
 
 The pin goes with an uninstall: installing the plugin again is a first
 install.
+
+## The catalog
+
+AutoScene's plugin catalog is a list of the plugin versions AutoScene
+reviewed, which AutoScene fetches and checks by its signature. Each
+version in it was built by the catalog's CI from public source on GitHub,
+at a fixed commit, and read by a person. How it is made, signed and
+checked is in [CATALOG.md](CATALOG.md).
+
+**The catalog isn't open yet.** This AutoScene holds none of its keys:
+**Browse** says "The plugin catalog isn't open yet", and plugins install
+from their `.asp` file. The rest of this section is what it does once it
+is open.
+
+- **Browse** (Plugins → Browse) shows each plugin the catalog lists, its
+  newest version this AutoScene runs on this computer, as a card: "Reviewed
+  by AutoScene", who it is by, its summary, and what it asks for.
+  **Install…** gets its package and opens its review, as a package from a
+  file does. A version the computer can't run says "Not for this computer"
+  or "Needs a newer AutoScene". The review shows where the catalog built it
+  from: the repository, the commit and the folder.
+- **Update…** shows on an installed plugin while the catalog offers a newer
+  version. An update never goes back to an older version. One that asks
+  for nothing new (no permission, host, page, program, service, or host its
+  large files come from, and no uv to get first) of a reviewed package
+  installs in one click, and says so in a toast; one that asks for more
+  opens its review, which marks each new thing New. **Update all**
+  installs, in turn, the updates that ask for no new permission, host or
+  host for large files; at the first whose review asks for more (a page,
+  a program, a service, uv), it stops with that review open.
+- **Out of date**: the catalog AutoScene holds ran out (it lives at most 31
+  days) and it couldn't get a newer one. Nothing installs or updates from
+  it, and Browse says since when it couldn't check. Installed plugins keep
+  their trust and keep running.
+- **Withdrawn**: AutoScene took a version back (malware, a data leak,
+  broken security). The plugin stops: its runs, its pages and its service.
+  It can't run or install again, nor load from a folder. Its banner says
+  "AutoScene withdrew Plugin “<name>”" with the catalog's reason, and
+  offers **Uninstall…**, and **Update…** while a version that isn't
+  withdrawn is there. A withdrawal holds after the catalog runs out too.
+- **The daily check**: AutoScene checks the catalog soon after it starts
+  (unless it did in the last hour) and then once a day, for new versions
+  and withdrawals. **Check the plugin catalog every day** in Browse turns
+  that off; then AutoScene doesn't learn of withdrawn plugins. **Check
+  now** in Browse, and **Check for plugin updates** in the palette, check
+  at once.
+
+## Submit a plugin to the catalog
+
+The catalog lives in its own repository on GitHub,
+`tcmmi/autoscene-plugins`. Its README and `POLICY.md` say how to submit a
+plugin and what is accepted. In short:
+
+- **Source on GitHub, at a commit.** Its source is public on
+  `https://github.com/`, and `plugin.json` names that repository as
+  `repository`. A pull request to the catalog names the commit.
+- **Built by the catalog.** No binaries are taken. The build kinds are
+  `uv-script` (every program is a uv script with its lock), `cargo` (every
+  program is one its CI builds with `cargo build --locked --release`) and
+  `files` (a plugin that runs no program).
+- **What CI checks.** It builds the package from the commit, runs `asp
+  pack` and `asp verify` on it, refuses files that may run and that it
+  didn't build, and checks large files by their size and hash. The pull
+  request's job summary shows what the version asks for against the last
+  approved one (`asp catalog diff`): permissions, hosts, platforms, its
+  runtime, uv and the graphics card.
+- **Review.** A person reads the whole change since the last approved
+  version, what it asks for, and its lock. There is no fixed time for a
+  review.
 
 ## What AutoScene enforces
 
@@ -1723,11 +1897,12 @@ read and must not write, is a rule nothing enforces either (see
 asp keygen <dir> [--force] [--unencrypted]
 asp pack <plugin-folder> <out.asp>
 asp sign <in.asp> --key <asp.key> [--out <out.asp>]
-asp verify <in.asp> [--review-key <RW…>]…
+asp verify <in.asp> [--catalog <index.json> [--online-key <RW…>]… [--offline-key <RW…>]…]
 asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
 ```
 
-`asp init` is under [Developing a plugin](#developing-a-plugin).
+`asp init` is under [Developing a plugin](#developing-a-plugin), and `asp
+catalog`, which keeps the catalog, in [CATALOG.md](CATALOG.md#asp-catalog).
 
 1. **Make a key once**, outside any plugin folder:
 
@@ -1760,8 +1935,12 @@ asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
    ```
 
    It prints Reviewed, Pinned with the key's id, or Unreviewed, with the
-   warnings AutoScene would show. `--review-key` adds a review key to the
-   app's own, to test a review signature.
+   warnings AutoScene would show. `--catalog` judges it by a catalog's
+   `index.json` (with its `index.json.minisig` beside it), as an AutoScene
+   that holds no catalog takes it: Reviewed when it lists the package's
+   lock, and an error when it withdrew the version. `--online-key` and
+   `--offline-key` add catalog keys to AutoScene's own, to try a catalog of
+   your own.
 
 The keys and the signature are minisign's formats; asp signs the prehashed
 way, which is all AutoScene takes.
@@ -1841,6 +2020,61 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
 - Uninstalling a loaded folder makes AutoScene forget it and its settings;
   the folder stays as it is.
 
+## AutoScene's uv
+
+A uv script runs through AutoScene's own uv, never one on the PATH: a
+plugin runs with the uv AutoScene pinned, whatever else is installed.
+
+- **Its version** is 0.13.7. AutoScene pins its release for each platform
+  (`crates/as-plugin/uv.toml`): the download's address, size and SHA-256,
+  and uv's own, checked against GitHub's digest and the release's build
+  attestation when it was pinned.
+- **It comes** the first time a plugin needs it: at its first run, or its
+  service's first start ("Getting uv"). The review says so before the
+  install, and how much it downloads (about 15 MB). It comes as
+  AutoScene's models do, and counts only with its pinned SHA-256. Without
+  it, the run fails with "This plugin needs uv, and AutoScene couldn't get
+  it."; a failed download says "AutoScene couldn't get uv. Check the
+  internet connection, then try again."
+- **It is kept** in `runtimes/uv-<version>/` in the data folder. What uv
+  fetches for the scripts it runs, their packages and Pythons, stays
+  beside it, in `runtimes/uv-cache/` and `runtimes/uv-python/`. A uv of
+  another version is removed at the next start; what it fetched stays.
+- **uv reads no configuration of the person's**: no `uv.toml`, and none of
+  their `UV_` variables (see [Where it runs](#where-it-runs)).
+- **Lock with uv 0.13.7 or older.** A lock from a newer uv may use a
+  format this one can't read, and then the script doesn't run. A newer
+  AutoScene may pin a newer uv; the catalog's CI checks locks with the uv
+  AutoScene pins.
+
+## Opening .asp files
+
+A double-click on a package, "Open with" AutoScene, or AutoScene started
+with a package on its command line opens AutoScene with the package's
+install review, as a package dropped on the window does. Opening a package
+never installs it: the person decides in the review. When AutoScene runs
+already, the package goes to its window. Several packages are reviewed one
+after the other, and one opened again while its review waits or shows is
+not reviewed twice ("<file> is already being reviewed").
+
+- **Windows.** The installer registers the file type "AutoScene plugin"
+  for `.asp`, for the user who installs. Uninstalling puts back what
+  `.asp` was before. When other programs claim `.asp` too, Windows may ask
+  which program opens it the first time: choose AutoScene there.
+- **macOS.** The app declares the file type `com.autoscene.plugin` for
+  `.asp`.
+- **Linux, deb and rpm.** The package installs the type
+  `application/x-autoscene-plugin` (`*.asp` that is a zip), weighted below
+  the system's own `application/x-asp`, so web pages named `.asp` stay
+  what they are. Desktops that type files by name alone (`xdg-mime` with
+  the Perl `mimetype`, outside GNOME and KDE) may call a package
+  `application/x-asp`: use "Open with" there.
+- **Linux, AppImage.** It registers nothing: open a package from Plugins,
+  or drop it on the window.
+
+**Sharing packages.** Outlook blocks `.asp` attachments (it takes them for
+web pages). Share a package by a link, or in a zip.
+
 ## Where AutoScene keeps plugins
 
 AutoScene's data folder is `%LOCALAPPDATA%\AutoScene` on Windows,
@@ -1854,7 +2088,12 @@ AutoScene's data folder is `%LOCALAPPDATA%\AutoScene` on Windows,
 | `plugin-data/<id>/page-state.json` | What `state.*` keeps (see [What a page keeps](#what-a-page-keeps)). |
 | `logs/plugins/<id>.log` | Its log, and the one before in `<id>.log.1`. |
 | `logs/plugins/<id>.service.log` | Its service's log, and the one before in `<id>.service.log.1`. |
-| `library.db` | In the `settings` table: its record (`plugin.<id>`), the settings the person changed (`plugin_settings.<id>`), the runtime the person agreed to and the names of the secrets set (`plugin_extra.<id>`), and the id the keychain keeps this data folder's secrets under (`plugins_keychain`). |
+| `cache/plugin-resources/<id>/` | The large files it names (see [Large files](#large-files)). |
+| `cache/catalog/` | The catalog AutoScene holds: `index.json` and its signature. |
+| `cache/plugin-downloads/` | A package coming from the catalog, until it is checked. Emptied at each start. |
+| `runtimes/uv-<version>/` | AutoScene's uv (see [AutoScene's uv](#autoscenes-uv)). |
+| `runtimes/uv-cache/`, `runtimes/uv-python/` | What uv fetched for scripts: their packages, and Pythons. |
+| `library.db` | In the `settings` table: its record (`plugin.<id>`), the settings the person changed (`plugin_settings.<id>`), the runtime the person agreed to and the names of the secrets set (`plugin_extra.<id>`), the id the keychain keeps this data folder's secrets under (`plugins_keychain`), and what AutoScene took of the catalog (`plugins_catalog`). |
 
 The values of secret settings are in the system's keychain, not in the
 data folder (see [Secret settings](#secret-settings)). An uninstall
@@ -1872,8 +2111,6 @@ folders it has no record of.
 
 ## Not in this version
 
-- **A catalog** to browse, review, install and update plugins in the app,
-  and the review keys that come with it.
 - **WebAssembly plugins**: `runtime.type` `wasm`, a plugin whose
   permissions are enforced for its program too, needs a newer AutoScene.
 - **Shortcuts** for plugin commands.

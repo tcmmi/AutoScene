@@ -123,6 +123,7 @@ cd app && npm test
 | `tools/model-prep/` | Dev-only Python that prepares models (never shipped) |
 | `docs/DESIGN.md` | The design system |
 | `docs/PLUGINS.md` | How to write, package and sign a plugin |
+| `docs/CATALOG.md` | AutoScene's plugin catalog: its signed index, its keys, `asp catalog` and the runbook |
 | `examples/plugins/` | Four example plugins: export actions (`hello-export`, and `discord-notify` with a secret and `net.fetch`), a page (`hello-page`), a service (`hello-service`) |
 
 `src/autoscene/` and `ui/` hold AutoScene 0.1, the Python-based version. They

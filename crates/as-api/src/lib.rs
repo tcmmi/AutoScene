@@ -132,6 +132,9 @@ pub struct AppSettings {
     /// What Discord may show. Everything off until the person turns it on.
     #[serde(default)]
     pub discord_rpc: DiscordRpcSettings,
+    /// The language AutoScene speaks: Automatic until the person chooses one.
+    #[serde(default)]
+    pub language: UiLanguage,
 }
 
 fn yes() -> bool {
@@ -153,6 +156,56 @@ pub struct DiscordRpcSettings {
     pub show_episode: bool,
     /// The open character's name in place of "Making a scenepack".
     pub show_character: bool,
+}
+
+/// The language AutoScene speaks, as the person chose it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum UiLanguage {
+    /// Automatic: the first language on the system's list that AutoScene
+    /// speaks, English when it speaks none of them.
+    #[default]
+    System,
+    En,
+}
+
+impl UiLanguage {
+    /// What the library stores for it; Automatic stores nothing.
+    pub fn code(self) -> Option<&'static str> {
+        match self {
+            Self::System => None,
+            Self::En => Some("en"),
+        }
+    }
+
+    /// The choice a stored code stands for; `None` for one this version
+    /// doesn't know.
+    pub fn from_code(code: &str) -> Option<Self> {
+        match code {
+            "en" => Some(Self::En),
+            _ => None,
+        }
+    }
+}
+
+/// A language AutoScene speaks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Lang {
+    En,
+}
+
+/// The language AutoScene speaks now, the choice it comes from, and what
+/// Automatic would speak.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UiLocale {
+    pub setting: UiLanguage,
+    /// What `setting` comes to on this computer: the language in use.
+    pub resolved: Lang,
+    /// What Automatic comes to on this computer, whatever is chosen now: what
+    /// the Automatic option is labelled with.
+    pub automatic: Lang,
 }
 
 /// The keys the person chose: an editor's keys to start from, and their own

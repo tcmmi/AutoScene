@@ -53,6 +53,8 @@ serde_json.workspace = true
 specta.workspace = true
 specta-serde.workspace = true
 specta-util.workspace = true
+# The language Automatic follows (locale.rs).
+sys-locale.workspace = true
 # Discord's local pipe or socket (discord.rs).
 tokio = { workspace = true, features = ["net"] }
 log = "0.4.34"

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use as_api::{AppInfo, MediaToolsStatus, ModelInfo, Platform, ScanChoice, ScanDefaults};
+use as_api::{AppInfo, MediaToolsStatus, ModelInfo, Platform, ScanChoice, ScanDefaults, UiLocale};
 use as_core::AppPaths;
 use as_project::Library;
 use tauri::{AppHandle, State};
@@ -77,6 +77,15 @@ pub async fn scan_defaults_get(state: State<'_, AppState>) -> AppResult<ScanDefa
 pub async fn scan_default_set(state: State<'_, AppState>, choice: ScanChoice) -> AppResult<ScanDefaults> {
     let lib = state.library.clone();
     blocking(move || Ok(lib.set_scan_default(choice)?)).await
+}
+
+/// The language AutoScene speaks and the choice it comes from: asked behind
+/// the splash, so the first paint speaks it, and after a save. From memory,
+/// because the first paint waits for the answer.
+#[tauri::command]
+#[specta::specta]
+pub async fn ui_locale(state: State<'_, AppState>) -> AppResult<UiLocale> {
+    Ok(*state.language.lock())
 }
 
 /// "Don't show this again" on the first-start notice about Fast Scan: it

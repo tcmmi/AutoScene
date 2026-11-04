@@ -10,6 +10,7 @@
  */
 import { emit } from "@tauri-apps/api/event"
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks"
+import { LANGUAGES, OFFERED } from "@/lib/i18n"
 import { isFinished } from "@/state/activity"
 import { catalogAtStart, catalogCancel, catalogGet, catalogList, catalogRefresh } from "./catalog"
 import {
@@ -214,6 +215,24 @@ let settings: AppSettings = {
   gpu: initialGpu,
   pluginCatalogChecks: true,
   nvidiaAcceleration: initialAccelOn,
+  language: "system",
+}
+/**
+ * The language the mock speaks. `localStorage["autoscene.mock.language"]` stands
+ * in for the system with any language i18n has, also one not offered yet; else
+ * the browser's list counts, walked as the backend walks the system's.
+ */
+function uiLocale() {
+  const setting = settings.language ?? "system"
+  let asked: string | null = null
+  try {
+    asked = localStorage.getItem("autoscene.mock.language")
+  } catch {
+    // No storage here: the browser's list decides.
+  }
+  const spoken = navigator.languages.map((tag) => tag.split("-")[0]!.toLowerCase()).find((l) => OFFERED.some((o) => o === l))
+  const system = LANGUAGES.find((l) => l === asked) ?? spoken ?? "en"
+  return { setting, resolved: setting === "system" ? system : setting, automatic: system }
 }
 /** A graphics card chosen while an analysis runs applies from the next one (`?mockHardware=busy`). */
 let gpuPending = false
@@ -1128,6 +1147,7 @@ const handlers: Record<string, Handler> = {
     ]
   },
   settings_get: () => settings,
+  ui_locale: () => uiLocale(),
   settings_update: ({ settings: s }) => {
     // Like the backend: only plugins_allow_unreviewed changes this one, and
     // only scan_default_set Fast Scan's default (`fastScan` is read only).

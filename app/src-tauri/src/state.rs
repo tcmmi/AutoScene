@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use as_api::{AnalysisStage, JobInfo, JobKind, JobState, MediaToolsStatus};
+use as_api::{AnalysisStage, JobInfo, JobKind, JobState, MediaToolsStatus, UiLocale};
 use as_core::{AppPaths, MediaId, ProjectId};
 use as_engine::hardware::Hardware;
 use as_engine::{Engine, Launch, Note};
@@ -70,6 +70,9 @@ pub struct AppState {
     /// their folder wherever the person saved them (see
     /// `commands::system::reveal_path`).
     pub saved_lists: Arc<parking_lot::Mutex<HashSet<PathBuf>>>,
+    /// The language AutoScene speaks now and the choice it comes from (see
+    /// [`crate::locale::ui_locale`]).
+    pub language: Arc<parking_lot::Mutex<UiLocale>>,
     /// ffmpeg/ffprobe once found (see [`AppState::tools`]).
     tools: Arc<OnceLock<Arc<Tools>>>,
     /// The ffmpeg folder this build uses (see [`sidecar_dir`]).
@@ -126,6 +129,8 @@ impl AppState {
         let pack = accel.pack(library.nvidia_acceleration());
         let engine = Arc::new(Engine::new(engine_launch(&engine_start, &library.gpu(), pack)));
         let plugins = crate::plugins::open(app, &library, paths);
+        // A setting that can't be read counts as Automatic.
+        let language = crate::locale::ui_locale(library.ui_language().unwrap_or_default());
         let library = Arc::new(library);
         let (handle, lib) = (app.clone(), Arc::clone(&library));
         engine.watch(move |note| {
@@ -147,6 +152,7 @@ impl AppState {
             anilist: Arc::default(),
             plugins,
             saved_lists: Arc::default(),
+            language: Arc::new(parking_lot::Mutex::new(language)),
             tools: Arc::new(OnceLock::new()),
             bundled_ffmpeg,
             engine_start,

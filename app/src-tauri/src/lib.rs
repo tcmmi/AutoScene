@@ -12,6 +12,7 @@ mod discord;
 mod error;
 mod events;
 mod keep_awake;
+mod locale;
 #[cfg(target_os = "macos")]
 mod mac_menu;
 mod paths;
@@ -46,6 +47,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::system::models,
             commands::system::scan_defaults_get,
             commands::system::scan_default_set,
+            commands::system::ui_locale,
             commands::system::scan_notice_done,
             commands::hardware::hardware_info,
             commands::hardware::accel_install,

@@ -8,6 +8,7 @@
 import i18next, { type FormatterModule } from "i18next"
 import { createElement, Fragment, type ReactNode, useSyncExternalStore } from "react"
 import { initReactI18next } from "react-i18next"
+import { commands } from "@/bindings"
 import { en, loadLanguage, NAMESPACES } from "@/locales"
 
 /** What i18n can load. Settings offers `OFFERED`; the pseudo-locale is for development only. */
@@ -131,15 +132,28 @@ function askedInDevelopment(): Lang | typeof PSEUDO | null {
   return LANGUAGES.find((l) => l === asked) ?? null
 }
 
-/** Before the first render: the language to start in. Never blocks the start: on any error AutoScene stays English. */
-export async function startLanguage(): Promise<void> {
+let asks = 0
+
+/**
+ * Speaks what the saved settings come to, at once and with no toast: the
+ * screen switching says it. On any error the language in use stays. Always
+ * goes through `setLanguage`, also for the language in use: that is what
+ * stops a language still loading. When replies cross, the newest ask counts.
+ */
+export async function applySettings(): Promise<void> {
+  const mine = ++asks
   try {
-    const lng = askedInDevelopment()
-    if (lng && lng !== "en") await setLanguage(lng)
-    else document.documentElement.lang = "en"
+    const lng = askedInDevelopment() ?? (await commands.uiLocale()).resolved
+    if (mine === asks) await setLanguage(lng)
   } catch (e) {
-    console.error("Couldn't load the language; staying with English", e)
+    console.error("Couldn't load the language; staying with the one in use", e)
   }
+}
+
+/** Before the first render: the language to start in. An error doesn't stop the start: AutoScene stays English. */
+export async function startLanguage(): Promise<void> {
+  document.documentElement.lang = "en"
+  await applySettings()
 }
 
 function subscribe(onChange: () => void) {

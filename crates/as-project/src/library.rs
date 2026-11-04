@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use as_api::{
     AppSettings, ContentKind, ImportCandidate, NewProject, ProjectKind, ProjectSummary, ScanChoice, ScanDefaults,
-    Shortcuts, now_ms,
+    Shortcuts, UiLanguage, now_ms,
 };
 use as_core::{AppPaths, CancelToken, MediaId, ProjectId};
 use as_db::{LibraryDb, NewMedia, ProjectDb};
@@ -48,6 +48,8 @@ const KEY_CATALOG_CHECKS: &str = "plugin_catalog_checks";
 /// `0` once NVIDIA's engine is switched off; it is on unless it is.
 const KEY_NVIDIA_ACCELERATION: &str = "nvidia_acceleration";
 const KEY_DISCORD_RPC: &str = "discord_rpc";
+/// The language the person chose ([`UiLanguage::code`]); unset is Automatic.
+const KEY_UI_LANGUAGE: &str = "ui_language";
 /// Most series and films people cut are watched in their original English
 /// track; dubbed tracks are often flagged "default" too, so a language
 /// preference beats the file's flag.
@@ -204,6 +206,7 @@ impl Library {
             plugin_catalog_checks: self.db.setting(KEY_CATALOG_CHECKS)?.as_deref() != Some("0"),
             nvidia_acceleration: self.nvidia_acceleration(),
             discord_rpc: self.discord_rpc()?,
+            language: self.ui_language()?,
         })
     }
 
@@ -219,6 +222,13 @@ impl Library {
             self.nvidia_acceleration.store(on, Ordering::Relaxed);
         }
         Ok(())
+    }
+
+    /// The language the person chose. One this version doesn't know (a newer
+    /// AutoScene's, a damaged row) reads as Automatic.
+    pub fn ui_language(&self) -> ProjectResult<UiLanguage> {
+        let stored = self.db.setting(KEY_UI_LANGUAGE)?;
+        Ok(stored.as_deref().and_then(UiLanguage::from_code).unwrap_or_default())
     }
 
     /// The graphics the analysis runs on, as Settings stores them: `""`
@@ -359,6 +369,14 @@ impl Library {
         // `allow_unreviewed_plugins` stays: see `set_allows_unreviewed_plugins`.
         // Fast Scan's default too: see `set_scan_default`.
         self.db.set_setting(KEY_CATALOG_CHECKS, if s.plugin_catalog_checks { "1" } else { "0" })?;
+        // A language a newer app stored, that this one can't read, stays
+        // until the person picks one here: going back a version doesn't lose
+        // the choice.
+        let language = self.db.setting(KEY_UI_LANGUAGE)?;
+        let unreadable = language.is_some_and(|code| UiLanguage::from_code(&code).is_none());
+        if !unreadable || s.language != UiLanguage::System {
+            self.db.write_settings(&[(KEY_UI_LANGUAGE, s.language.code())])?;
+        }
         // Keys a newer app stored, that this one can't read, stay unless
         // they were changed here.
         let unreadable =
@@ -802,6 +820,7 @@ mod tests {
             plugin_catalog_checks: true,
             nvidia_acceleration: true,
             discord_rpc: Default::default(),
+            language: Default::default(),
         })
         .unwrap();
         assert_eq!(lib.audio_language().unwrap(), "deu", "stored as an ISO 639-2 code");
@@ -1363,6 +1382,34 @@ mod tests {
     }
 
     #[test]
+    fn the_language_is_automatic_until_one_is_chosen() {
+        let (dir, lib) = lib_on(hybrid);
+        assert_eq!(lib.settings().unwrap().language, UiLanguage::System);
+        assert_eq!(stored(&lib, KEY_UI_LANGUAGE), None, "Automatic stores nothing");
+        let saved = lib.update_settings(&AppSettings { language: UiLanguage::En, ..lib.settings().unwrap() }).unwrap();
+        assert_eq!(saved.language, UiLanguage::En);
+        assert_eq!(stored(&lib, KEY_UI_LANGUAGE).as_deref(), Some("en"));
+        // Saving other settings keeps it.
+        lib.update_settings(&AppSettings { audio_language: "fra".into(), ..lib.settings().unwrap() }).unwrap();
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), hybrid).unwrap();
+        assert_eq!(lib.ui_language().unwrap(), UiLanguage::En, "kept across starts");
+        lib.update_settings(&AppSettings { language: UiLanguage::System, ..lib.settings().unwrap() }).unwrap();
+        assert_eq!(stored(&lib, KEY_UI_LANGUAGE), None, "Automatic deletes it");
+    }
+
+    #[test]
+    fn a_language_this_version_cant_read_stays_until_one_is_chosen() {
+        let (_dir, lib) = lib_on(hybrid);
+        lib.db.set_setting(KEY_UI_LANGUAGE, "ro").unwrap();
+        assert_eq!(lib.settings().unwrap().language, UiLanguage::System, "reads as Automatic");
+        lib.update_settings(&AppSettings { audio_language: "fra".into(), ..lib.settings().unwrap() }).unwrap();
+        assert_eq!(stored(&lib, KEY_UI_LANGUAGE).as_deref(), Some("ro"), "a save of other settings keeps it");
+        lib.update_settings(&AppSettings { language: UiLanguage::En, ..lib.settings().unwrap() }).unwrap();
+        assert_eq!(stored(&lib, KEY_UI_LANGUAGE).as_deref(), Some("en"), "a language chosen replaces it");
+    }
+
+    #[test]
     fn the_gpu_choice_is_kept() {
         let (dir, lib) = lib_on(hybrid);
         assert_eq!((lib.gpu(), stored(&lib, KEY_GPU)), (String::new(), None), "Automatic stores nothing");
@@ -1689,6 +1736,7 @@ mod tests {
             plugin_catalog_checks: true,
             nvidia_acceleration: true,
             discord_rpc: Default::default(),
+            language: Default::default(),
         };
         assert!(matches!(lib.update_settings(&bad), Err(ProjectError::Invalid(_))));
         assert_eq!(lib.settings().unwrap().export_preset_id, "h264-edit");

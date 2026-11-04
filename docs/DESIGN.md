@@ -325,6 +325,9 @@ The UI's words are in a catalog, not in the code, so AutoScene can speak more th
 - Components call `useTranslation(ns)`; code outside React (toasts, palette data, `lib/`) calls `t` from
   `@/lib/i18n` when it shows the words. Numbers, sizes, dates, lists and times go through `fmt` (`@/lib/i18n`):
   English reads as it always did (en-GB dates, "14,200", "1.5 KB"), another language writes them its way.
+- The language is a setting (`AppSettings.language`). Automatic takes the first language on the system's list that
+  AutoScene speaks, English when it speaks none (`app/src-tauri/src/locale.rs`). A language joins `SPOKEN` there and
+  `OFFERED` in `lib/i18n.ts` together, when its catalog is complete; Settings shows no choice until there is one.
 
 Rules for every word on screen:
 

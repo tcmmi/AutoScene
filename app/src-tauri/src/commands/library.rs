@@ -201,6 +201,7 @@ pub async fn settings_update(
         if launch_changed {
             state.relaunch();
         }
+        *state.language.lock() = crate::locale::ui_locale(saved.language);
         // The only place that starts or ends the status on Discord: it may
         // wait for its thread, here off the UI thread.
         if let Some(discord) = handle.try_state::<crate::discord::Presence>() {

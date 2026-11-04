@@ -54,6 +54,12 @@ export const commands = {
 	 */
 	scanDefaultSet: (choice: ScanChoice) => __TAURI_INVOKE<ScanDefaults>("scan_default_set", { choice }),
 	/**
+	 *  The language AutoScene speaks and the choice it comes from: asked behind
+	 *  the splash, so the first paint speaks it, and after a save. From memory,
+	 *  because the first paint waits for the answer.
+	 */
+	uiLocale: () => __TAURI_INVOKE<UiLocale>("ui_locale"),
+	/**
 	 *  "Don't show this again" on the first-start notice about Fast Scan: it
 	 *  isn't shown again in this library, whatever the graphics become.
 	 */
@@ -771,6 +777,8 @@ export type AppSettings = {
 	nvidiaAcceleration?: boolean,
 	/**  What Discord may show. Everything off until the person turns it on. */
 	discordRpc?: DiscordRpcSettings,
+	/**  The language AutoScene speaks: Automatic until the person chooses one. */
+	language?: UiLanguage,
 };
 
 export type AudioCodec = { codec: "none" } | 
@@ -1497,6 +1505,9 @@ export type KeyBinding = {
 	shift?: boolean,
 	alt?: boolean,
 };
+
+/**  A language AutoScene speaks. */
+export type Lang = "en";
 
 /**  The project list or a project's summary changed. */
 export type LibraryChanged = {
@@ -2639,6 +2650,29 @@ export type Trust =
 "pinned" | 
 /**  Nobody AutoScene knows signed it. */
 "unreviewed";
+
+/**  The language AutoScene speaks, as the person chose it. */
+export type UiLanguage = 
+/**
+ *  Automatic: the first language on the system's list that AutoScene
+ *  speaks, English when it speaks none of them.
+ */
+"system" | "en";
+
+/**
+ *  The language AutoScene speaks now, the choice it comes from, and what
+ *  Automatic would speak.
+ */
+export type UiLocale = {
+	setting: UiLanguage,
+	/**  What `setting` comes to on this computer: the language in use. */
+	resolved: Lang,
+	/**
+	 *  What Automatic comes to on this computer, whatever is chosen now: what
+	 *  the Automatic option is labelled with.
+	 */
+	automatic: Lang,
+};
 
 /**
  *  Download progress. `downloaded == 0 && total == None` after the download

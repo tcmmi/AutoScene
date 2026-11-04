@@ -155,7 +155,9 @@ Rules:
   characters a row under the title finds someone: a search, All · Named · To review, and the order. Ctrl/⌘-click
   selects cards, Shift-click every one between; a glass bar at the bottom hides them (a toast takes them back).
 - **Character:** the project's artwork as the hero (their blurred face without any) with the portrait (click to choose it from their clearest faces), the name
-  (click to rename) and facts as chips; Build a scenepack as the white pill; shots scrub on hover.
+  (click to rename) and facts as chips; Build a scenepack as the white pill; shots scrub on hover. Shots close
+  together stack on one card: hover scrubs them all, a click opens them in a band under the row, Enter or the Play
+  button watches from the first.
 - **Scenepack:** the character's portrait and name, the filters in a glass bar that stays under the top bar (order,
   shot sizes as chips, length, episodes, limit, handles, "only them", flash cuts, and a plugin's filters with the
   plugin mark: a ring fills while one checks, a warning mark once its check failed, a filter of a plugin that is off is

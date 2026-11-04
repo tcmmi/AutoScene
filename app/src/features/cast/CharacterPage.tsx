@@ -20,7 +20,7 @@ import {
   X,
 } from "@/components/icons"
 import { toast } from "sonner"
-import type { CastEdit, Character, CharacterShot, FaceTrackItem, MediaItem } from "@/bindings"
+import type { CastEdit, Character, CharacterShot, FaceTrackItem, MediaItem, ShotGroup } from "@/bindings"
 import { Artwork } from "@/components/ui/artwork"
 import { Badge } from "@/components/ui/badge"
 import { ContextArea } from "@/components/ui/context-area"
@@ -37,19 +37,22 @@ import { Input } from "@/components/ui/input"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { Page } from "@/components/ui/page"
+import { keepLatest, SETTLE_MS, usePageEntry } from "@/components/ui/page-scroll"
 import { Segmented } from "@/components/ui/segmented"
 import { Tooltip } from "@/components/ui/tooltip"
 import { TopBar } from "@/components/ui/topbar"
 import { VirtualGrid } from "@/components/ui/virtual-grid"
 import { ProjectLoadError } from "@/features/project/ProjectLoadError"
+import { groupSeconds, reopen, shotKey, stackCards, type StackCard } from "@/features/shots/groups"
 import { ShotCard } from "@/features/shots/ShotCard"
 import { type BodyVerdict, formatShotLength } from "@/features/shots/shots"
+import { BAND_ID, ShotBand, ShotStack } from "@/features/shots/ShotStack"
 import { useAmbient } from "@/lib/ambient"
 import { useFittedTitle } from "@/lib/fit-text"
 import { assetUrl } from "@/lib/media"
 import { modKey } from "@/lib/platform"
 import { firstFailure, useCast, useCastTracks, useCharacterShots, useMediaList, useProject } from "@/lib/queries"
-import { FACES_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
+import { FACES_SHORTCUTS, SHOTS_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
 import { castEdit, formatScreenTime, plural } from "./cast"
 import { CharacterItems } from "./character-actions"
@@ -60,11 +63,22 @@ import { canPlayMoment } from "./moment"
 import { PickCharacter } from "./PickCharacter"
 
 const NO_TRACKS: FaceTrackItem[] = []
-const NO_SHOTS: CharacterShot[] = []
+const NO_GROUPS: ShotGroup[] = []
+const NO_KEYS: string[] = []
+const cardKey = (c: StackCard) => c.key
 
 type View = "shots" | "faces"
 /** The view last chosen, for the next character opened. */
 let lastView: View = "shots"
+
+/** The open stack, and what the focus goes back to: `focus` is a selector inside the grid. */
+type ShotsLeft = { open: string[] | null; focus: string | null }
+/** How each visit left its Shots view, by history entry: Back returns to it, a new visit starts closed. */
+const shotsLeft = new Map<string, ShotsLeft>()
+const leaveShots = (entry: string, change: Partial<ShotsLeft>) =>
+  keepLatest(shotsLeft, entry, { open: null, focus: null, ...shotsLeft.get(entry), ...change })
+
+const cardButton = (key: string) => `[data-card="${key}"] button`
 
 /** One character (or everyone nobody claimed): faces, decisions, export. */
 export function CharacterPage() {
@@ -361,15 +375,62 @@ function Shots({
   onBody: (bodies: number[], verdict: BodyVerdict) => void
 }) {
   const shots = useCharacterShots(pid, character.id)
-  const list = useMemo(() => shots.data?.flatMap((g) => g.shots) ?? NO_SHOTS, [shots.data])
-  const seconds = useMemo(
-    () =>
-      list.reduce((sum, s) => {
-        const fps = media.get(s.mediaId)?.fps
-        return sum + (fps ? ((s.end - s.start) * fps.den) / fps.num : 0)
-      }, 0),
-    [list, media],
+  const cards = useMemo(() => stackCards(shots.data ?? NO_GROUPS), [shots.data])
+  const count = useMemo(() => cards.reduce((sum, c) => sum + c.shots.length, 0), [cards])
+  const seconds = useMemo(() => cards.reduce((sum, c) => sum + groupSeconds(c.shots, media.get(c.mediaId)?.fps), 0), [cards, media])
+
+  // The entry it opened under: the router moves on before this page goes.
+  const [entry] = useState(usePageEntry())
+  // The open stack, by its shots: it stays open through an edit, a new analysis or a visit to the player.
+  const [openKeys, setOpenKeys] = useState(() => shotsLeft.get(entry)?.open ?? null)
+  useEffect(() => leaveShots(entry, { open: openKeys, focus: null }), [entry, openKeys])
+  const { open: opened, focus: left } = useMemo(() => reopen(openKeys ?? NO_KEYS, cards), [openKeys, cards])
+  const grid = useRef<HTMLDivElement>(null)
+  const toggle = useCallback((c: StackCard, show: boolean) => setOpenKeys(show ? c.shots.map(shotKey) : null), [])
+  const watchFrom = useCallback(
+    (at: { mediaId: string; start: number }, focus: string) => {
+      leaveShots(entry, { focus })
+      onOpen(at)
+    },
+    [entry, onOpen],
   )
+  const watch = useCallback((c: StackCard) => watchFrom(c, cardButton(c.key)), [watchFrom])
+  const watchCard = useCallback((s: CharacterShot) => watchFrom(s, cardButton(shotKey(s))), [watchFrom])
+  const watchInBand = useCallback((s: CharacterShot) => watchFrom(s, `#${BAND_ID} ${cardButton(shotKey(s))}`), [watchFrom])
+  const openKey = opened?.key
+  const close = useCallback(() => {
+    if (openKey) grid.current?.querySelector<HTMLElement>(cardButton(openKey))?.focus()
+    setOpenKeys(null)
+  }, [openKey])
+  useShortcuts(SHOTS_SHORTCUTS, { close }, { enabled: opened !== null, overTooltips: true })
+  // Where the focus goes once the grid has drawn it, unless it is somewhere already.
+  const [landing, setLanding] = useState(() => shotsLeft.get(entry)?.focus ?? null)
+  // Nothing left to show: the band closes, and focus that was in it goes to the card that stayed.
+  // (While the shots load there's nothing to go by yet.)
+  if (shots.data && openKeys !== null && !opened) {
+    setOpenKeys(null)
+    setLanding(left && cardButton(left.key))
+  }
+  const drawn = cards.length > 0
+  useEffect(() => {
+    const root = grid.current
+    if (!root || !landing) return
+    const land = () => {
+      const target = root.querySelector<HTMLElement>(landing)
+      if (!target) return
+      if (document.activeElement === document.body) target.focus()
+      setLanding(null)
+    }
+    const rows = new MutationObserver(land)
+    rows.observe(root, { childList: true, subtree: true })
+    const giveUp = window.setTimeout(() => setLanding(null), SETTLE_MS)
+    land()
+    return () => {
+      rows.disconnect()
+      window.clearTimeout(giveUp)
+    }
+  }, [landing, drawn])
+
   if (shots.isPending) {
     return (
       <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
@@ -382,7 +443,7 @@ function Shots({
   if (shots.isError && shots.data === undefined) {
     return <ErrorState error={shots.error} title="Their shots couldn't be loaded" onRetry={() => void shots.refetch()} />
   }
-  if (list.length === 0) {
+  if (cards.length === 0) {
     return (
       <p className="text-md text-fg-3">
         {character.waiting > 0 ? "Their episode is being analysed again; the shots come back when it's done." : "No shots yet."}
@@ -392,17 +453,46 @@ function Shots({
   return (
     <>
       <p className="mb-4 text-sm text-fg-3">
-        {plural(list.length, "shot")} · {formatShotLength(seconds)} in all · hover to scrub, click to watch
+        {plural(count, "shot")} · {formatShotLength(seconds)} in all · hover to scrub
       </p>
-      <VirtualGrid
-        items={list}
-        minItemWidth={240}
-        itemHeight={(w) => (w * 9) / 16}
-        getKey={(s) => `${s.mediaId}:${s.start}`}
-        renderItem={(s) => (
-          <ShotCard shot={s} media={media.get(s.mediaId)} name={character.label} onOpen={onOpen} onBody={onBody} />
-        )}
-      />
+      <div ref={grid}>
+        <VirtualGrid
+          items={cards}
+          minItemWidth={240}
+          itemHeight={(w) => (w * 9) / 16}
+          getKey={cardKey}
+          renderItem={(c) => (
+            <div data-card={c.key}>
+              {c.shots.length > 1 ? (
+                <ShotStack card={c} media={media.get(c.mediaId)} open={c === opened} onToggle={toggle} onWatch={watch} />
+              ) : (
+                <ShotCard shot={c.shots[0]} media={media.get(c.mediaId)} name={character.label} onOpen={watchCard} onBody={onBody} />
+              )}
+            </div>
+          )}
+          detail={
+            opened && openKeys
+              ? {
+                  index: cards.indexOf(opened),
+                  key: openKeys[0],
+                  render: ({ itemWidth, columns, gap, column }) => (
+                    <ShotBand
+                      card={opened}
+                      media={media.get(opened.mediaId)}
+                      name={character.label}
+                      columns={columns}
+                      notch={column * (itemWidth + gap) + itemWidth / 2}
+                      onOpen={watchInBand}
+                      onBody={onBody}
+                      onWatch={watch}
+                      onClose={close}
+                    />
+                  ),
+                }
+              : undefined
+          }
+        />
+      </div>
     </>
   )
 }

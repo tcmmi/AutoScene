@@ -3,7 +3,7 @@ import { useState } from "react"
 import { useRouterState } from "@tanstack/react-router"
 import { cn } from "@/lib/utils"
 import { ContextArea, type MenuContent } from "./context-area"
-import { PageScrollElement, PageScrolled, useScrollMemory } from "./page-scroll"
+import { PageEntry, PageScrollElement, PageScrolled, useScrollMemory } from "./page-scroll"
 
 /**
  * A view: it scrolls as a whole, its top bar (`TopBar`) stays on top and
@@ -40,11 +40,13 @@ export function Page({
           className={cn("relative h-full overflow-x-hidden overflow-y-auto", className)}
         >
           {topbar}
-          <PageScrollElement.Provider value={scroller}>
-            <div key={path} className="animate-rise-in">
-              {children}
-            </div>
-          </PageScrollElement.Provider>
+          <PageEntry.Provider value={entry}>
+            <PageScrollElement.Provider value={scroller}>
+              <div key={path} className="animate-rise-in">
+                {children}
+              </div>
+            </PageScrollElement.Provider>
+          </PageEntry.Provider>
         </div>
       </ContextArea>
     </PageScrolled.Provider>

@@ -9,7 +9,7 @@ import { CARD_ASPECT, spriteStyle } from "./shots"
  * shot — at the scrubbed cell, the character's face in a corner, and how far
  * along the pointer is. Without a sprite, the face fills the card.
  */
-export function ShotFrames({ shot, scrub }: { shot: CharacterShot; scrub: Scrub }) {
+export function ShotFrames({ shot, scrub }: { shot: CharacterShot; scrub: Pick<Scrub, "cells" | "cell" | "hover"> }) {
   // Width ÷ height of one cell, once the sprite has loaded (16:9 until then).
   const [aspect, setAspect] = useState(CARD_ASPECT)
   const { cells, cell, hover } = scrub

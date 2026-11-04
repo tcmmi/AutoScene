@@ -4,7 +4,10 @@
 //!
 //! 1. reads the wheel's address, size and digest from the Python Package Index,
 //! 2. downloads the wheel and compares its SHA-256 with the Index's digest,
-//! 3. unpacks the plugin's libraries and NVIDIA's acknowledgements,
+//! 3. unpacks the plugin's libraries and NVIDIA's acknowledgements, refusing
+//!    a wheel that gives one of them anything but a plain name: the digest
+//!    only says the Index holds this wheel, and until step 4 nothing says
+//!    who made it,
 //! 4. refuses unless every library carries a valid Authenticode signature by
 //!    "NVIDIA Corporation", the only proof of origin there is: the Index
 //!    shows no attestation for this project,
@@ -35,6 +38,9 @@ const ENGINE_LIBRARY: &str = "tensorrt_rtx_";
 const NOTICES: &str = "TRTRTX_Acknowledgements.txt";
 /// The one signer the libraries may carry, as their certificate names it.
 const SIGNER: &str = "NVIDIA Corporation";
+/// How PowerShell is told which file to look at: in its environment, so no
+/// name is ever read as part of a script.
+const FILE_VARIABLE: &str = "PIN_ACCEL_FILE";
 /// The terms the person agrees to in Settings.
 const LICENCE: &str = "https://docs.nvidia.com/deeplearning/tensorrt-rtx/latest/reference/sla.html";
 
@@ -155,8 +161,17 @@ fn wheel(meta: &Value) -> Result<(String, u64, String)> {
     Ok((url, size, sha256))
 }
 
+/// Whether `name`, as a wheel has it, is a plain file name: nothing a file
+/// system reads as a way out of the folder (`zip` hands the name over raw, a
+/// `\` and all), and nothing a shell could read as more than a name.
+fn plain_name(name: &str) -> bool {
+    !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
 /// Put the plugin's libraries and NVIDIA's notices from the wheel `bytes`
-/// into `dir`, and say what each is. Nothing in them runs.
+/// into `dir`, and say what each is. Nothing in them runs, and none of them
+/// lands anywhere else: a wheel that names one otherwise than plainly is
+/// refused before it is written.
 fn unpack(bytes: &[u8], dir: &Path) -> Result<Vec<Pin>> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes))?;
     let mut pins = Vec::new();
@@ -166,6 +181,9 @@ fn unpack(bytes: &[u8], dir: &Path) -> Result<Vec<Pin>> {
         let Some(name) = member.strip_prefix(PACKAGE) else { continue };
         if !file.is_file() || name.contains('/') || !(is_library(name) || name == NOTICES) {
             continue;
+        }
+        if !plain_name(name) {
+            bail!("the wheel names a file {name:?}: only letters, digits, '.', '_' and '-' are taken");
         }
         let name = name.to_string();
         let packed = file.compressed_size();
@@ -184,7 +202,7 @@ fn unpack(bytes: &[u8], dir: &Path) -> Result<Vec<Pin>> {
 
 /// What Windows says of the signature of `file`.
 fn signature(file: &Path) -> Result<Signature> {
-    let script = "$s = Get-AuthenticodeSignature -LiteralPath $args[0]; \
+    let script = "$s = Get-AuthenticodeSignature -LiteralPath $env:PIN_ACCEL_FILE; \
                   [pscustomobject]@{ Status = [string]$s.Status; Subject = $s.SignerCertificate.Subject } \
                   | ConvertTo-Json -Compress";
     let out = powershell(script, file)?;
@@ -215,7 +233,7 @@ fn common_name(subject: &str) -> Option<&str> {
 
 /// The release of the library `file`.
 fn file_version(file: &Path) -> Result<String> {
-    let out = powershell("(Get-Item -LiteralPath $args[0]).VersionInfo.ProductVersion", file)?;
+    let out = powershell("(Get-Item -LiteralPath $env:PIN_ACCEL_FILE).VersionInfo.ProductVersion", file)?;
     release(&out).with_context(|| format!("{} names no version, but {out:?}", file.display()))
 }
 
@@ -226,11 +244,13 @@ fn release(version: &str) -> Option<String> {
     numbers.then(|| parts.join("."))
 }
 
-/// What `script` prints about `file` ($args[0]).
+/// What `script` prints about `file`, which it finds in [`FILE_VARIABLE`].
+/// The path stays out of the script's text: PowerShell ends a quoted string
+/// at more than the `'` one could escape (U+2019 too).
 fn powershell(script: &str, file: &Path) -> Result<String> {
-    let wrapper = format!("& {{ {script} }} '{}'", file.display().to_string().replace('\'', "''"));
     let out = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &wrapper])
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .env(FILE_VARIABLE, file)
         .output()
         .context("spawning PowerShell (pin-accel runs on Windows only)")?;
     if !out.status.success() {
@@ -335,6 +355,62 @@ mod tests {
         let plain = dir.path().join("it's unsigned.dll");
         fs::write(&plain, b"MZ not a library").unwrap();
         assert!(check_signer("it's unsigned.dll", &signature(&plain).unwrap()).is_err());
+    }
+
+    /// A path is a path, whatever it holds: PowerShell ends a string at
+    /// U+2019 as it does at `'`, and what follows it here would print.
+    #[cfg(windows)]
+    #[test]
+    fn a_path_is_never_read_as_part_of_a_script() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("x\u{2019}; Write-Output ran; \u{2019}.dll");
+        fs::write(&file, b"MZ not a library").unwrap();
+        // Windows' answer alone: anything printed beside it isn't one.
+        assert_ne!(signature(&file).unwrap().status, "Valid");
+    }
+
+    /// A wheel of the notices and of a library named `name`.
+    fn wheel_with(name: &str) -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (file, data) in [(NOTICES, b"thanks".as_slice()), (name, b"code")] {
+            zip.start_file(format!("{PACKAGE}{file}"), stored).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn a_library_with_more_than_a_plain_name_is_refused_before_it_is_written() {
+        for name in [
+            // Would be read as code when its signature is looked at.
+            "x\u{2019}; Start-Process calc; \u{2019}.dll",
+            "x'; Start-Process calc; '.dll",
+            // Has no '/', and leaves the folder on Windows.
+            r"..\..\x.dll",
+            r"sub\x.dll",
+            // Another stream of a file, a name that isn't ASCII, and a space.
+            "x.dll:hidden.dll",
+            "caf\u{e9}.dll",
+            " x.dll",
+        ] {
+            let top = tempfile::tempdir().unwrap();
+            let dir = top.path().join("a").join("b");
+            fs::create_dir_all(&dir).unwrap();
+            let e = unpack(&wheel_with(name), &dir).err().unwrap_or_else(|| panic!("{name:?} was taken"));
+            assert!(e.to_string().contains("names a file"), "{name:?}: {e}");
+            // The notices came first; nothing else is anywhere.
+            for (folder, held) in [(&dir, NOTICES), (&top.path().join("a"), "b"), (&top.path().to_owned(), "a")] {
+                let names: Vec<_> = fs::read_dir(folder).unwrap().map(|e| e.unwrap().file_name()).collect();
+                assert_eq!(names, [held], "{name:?}");
+            }
+        }
+        // A file that isn't one of the pack's is left in the wheel, whatever its name.
+        let dir = tempfile::tempdir().unwrap();
+        assert!(unpack(&wheel_with(r"..\..\x.py"), dir.path()).is_ok());
+        // A library named plainly is taken.
+        let pins = unpack(&wheel_with("nvinfer_10-rtx.1.dll"), dir.path()).unwrap();
+        assert!(pins.iter().any(|p| p.name == "nvinfer_10-rtx.1.dll"));
     }
 
     #[test]

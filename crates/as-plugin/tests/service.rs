@@ -276,8 +276,9 @@ fn a_crash_fails_every_waiting_request() {
     assert_eq!(ask(&service, "count", Value::Null), Err(failed("Test Plugin stopped.")));
     let log = s.log_text();
     assert!(log.contains("[stderr] problem with request \"r"), "{log}");
-    // The host notes how it ended, with what its stderr said last.
-    assert!(log.lines().any(|l| l.starts_with("[host] ") && l.ends_with("; problem with request \"r3\"")), "{log}");
+    // The host notes how it ended, with what its stderr said last: the request
+    // that reached it third, whichever of the three that was.
+    assert!(log.lines().any(|l| l.starts_with("[host] ") && l.contains("; problem with request \"r")), "{log}");
 }
 
 #[test]

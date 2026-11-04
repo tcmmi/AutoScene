@@ -171,6 +171,6 @@ describe("a plugin page's frame", () => {
     render(frame(""))
     const cover = await screen.findByRole("alert")
     expect(within(cover).getByText("Couldn't open this page.")).toBeTruthy()
-    expect(document.activeElement).toBe(within(cover).getByRole("button", { name: "Try again" }))
+    await waitFor(() => expect(document.activeElement).toBe(within(cover).getByRole("button", { name: "Try again" })))
   })
 })

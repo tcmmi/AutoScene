@@ -43,6 +43,17 @@ export function reviewedPackage(p: Pick<PluginInfo, "trust" | "source">): boolea
   return p.source === "package" && p.trust === "reviewed"
 }
 
+/**
+ * The menu entry that opens a plugin's source, none when its plugin.json
+ * names none. Only a reviewed package's is its source: AutoScene's review
+ * signed that plugin.json. Of any other, nothing shows that its code came
+ * from there, as "Says it is by" says of its author.
+ */
+export function sourceLabel(p: Pick<PluginInfo, "trust" | "source" | "repository">): string | null {
+  if (!p.repository) return null
+  return reviewedPackage(p) ? "Show its source" : "Show the source it names"
+}
+
 const PERMISSIONS = new Map<Permission, string>([
   ["exports:read", "Reads the exported clips"],
   ["exports:write", "Changes or adds files beside the exported clips"],

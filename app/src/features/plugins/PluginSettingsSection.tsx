@@ -3,9 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
 import type { PluginInfo, SettingKind, SettingSpec, SettingValue } from "@/bindings"
-import { AppWindow, ArrowSquareOut, CircleNotch, Copy, FolderOpen, GithubLogo, PuzzlePiece, ShieldCheck } from "@/components/icons"
+import { AppWindow, CircleNotch, Copy, DotsThree, FolderOpen, PuzzlePiece, ShieldCheck } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
+import { ContextArea } from "@/components/ui/context-area"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Segmented } from "@/components/ui/segmented"
@@ -16,13 +19,14 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { PathText, SettingRow, SettingsGroup } from "@/features/settings/primitives"
 import { useAppActions } from "@/lib/actions"
 import { commands, errorMessage } from "@/lib/ipc"
-import { copyText, openExternalUrl, reveal } from "@/lib/os"
+import { copyText, reveal } from "@/lib/os"
 import { isMac } from "@/lib/platform"
 import { qk, queryClient, usePluginBanner, usePluginSettings, usePlugins } from "@/lib/queries"
 import { PluginIcon } from "./PluginIcon"
 import { pageLink } from "./page-items"
 import { keepPlugin } from "./plugin-actions"
 import { checkedWhen, permissionLabel } from "./plugin-items"
+import { PluginItems } from "./plugin-menu"
 
 type Values = Partial<Record<string, SettingValue>>
 type NumberKind = Extract<SettingKind, { type: "number" }>
@@ -258,78 +262,78 @@ function about(s: SettingSpec): React.ReactNode {
 }
 
 function PluginHeroHeader({ p }: { p: PluginInfo }) {
-  const isGithub = p.repository?.includes("github.com")
   const { data: banner, isError } = usePluginBanner(p)
   // Its place is kept while it loads. The whole 2:1 picture shows, framed in
   // a strip of fixed height.
   const art = p.bannerHash != null && !isError && banner !== null
+  // Its right-click lists what its ⋯ lists.
   return (
-    <div className="mb-8 overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03]">
-      {art && (
-        <div className="flex h-56 justify-center overflow-hidden border-b border-white/[0.06] bg-black/40">
-          {banner && <img src={banner} alt="" draggable={false} className="aspect-[2/1] h-full max-w-full object-cover" />}
-        </div>
-      )}
-      <div className="p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] text-fg-1 shadow-md ring-1 ring-white/10 [&_img]:size-9 [&_svg]:size-8">
-              <PluginIcon src={p.icon} />
-            </span>
-            <div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-2xl font-bold tracking-tight text-fg-1">{p.name}</h1>
-                <span className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-0.5 font-mono text-xs text-fg-2">
-                  v{p.version}
-                </span>
-                {p.license && (
-                  <span className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-0.5 text-xs text-fg-2">
-                    {p.license}
+    <ContextArea menu={<PluginItems kit={contextKit} p={p} settings={false} />}>
+      <div className="mb-8 overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03]">
+        {art && (
+          <div className="flex h-56 justify-center overflow-hidden border-b border-white/[0.06] bg-black/40">
+            {banner && <img src={banner} alt="" draggable={false} className="aspect-[2/1] h-full max-w-full object-cover" />}
+          </div>
+        )}
+        <div className="p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] text-fg-1 shadow-md ring-1 ring-white/10 [&_img]:size-9 [&_svg]:size-8">
+                <PluginIcon src={p.icon} />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="min-w-0 text-2xl font-bold tracking-tight break-words text-fg-1">{p.name}</h1>
+                  <span className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-0.5 font-mono text-xs text-fg-2">
+                    v{p.version}
                   </span>
-                )}
-                {p.gpu && (
-                  <span className="rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                    GPU
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-fg-2">
-                {p.author && (
-                  <span>
-                    By <span className="font-medium text-fg-1">{p.author}</span>
-                  </span>
-                )}
-                <span className="text-white/20">•</span>
-                <Tooltip label="Click to copy plugin ID">
-                  <button
-                    type="button"
-                    onClick={() => void copyText(p.id, "plugin ID")}
-                    className="group inline-flex items-center gap-1 font-mono text-xs text-fg-3 hover:text-fg-1"
-                  >
-                    {p.id}
-                    <Copy className="size-3 opacity-40 group-hover:opacity-100" />
-                  </button>
-                </Tooltip>
+                  {p.license && (
+                    <span className="rounded-md border border-white/10 bg-white/[0.06] px-2 py-0.5 text-xs text-fg-2">
+                      {p.license}
+                    </span>
+                  )}
+                  {p.gpu && (
+                    <span className="rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                      GPU
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-fg-2">
+                  {p.author && (
+                    <span>
+                      By <span className="font-medium text-fg-1">{p.author}</span>
+                    </span>
+                  )}
+                  <span className="text-white/20">•</span>
+                  <Tooltip label="Click to copy plugin ID">
+                    <button
+                      type="button"
+                      onClick={() => void copyText(p.id, "plugin ID")}
+                      className="group inline-flex items-center gap-1 font-mono text-xs text-fg-3 hover:text-fg-1"
+                    >
+                      {p.id}
+                      <Copy className="size-3 opacity-40 group-hover:opacity-100" />
+                    </button>
+                  </Tooltip>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {p.repository && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => void openExternalUrl(p.repository!)}
-                className="gap-2"
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label={`${p.name} options`}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-white/[0.08] hover:text-fg-1 data-[state=open]:bg-white/[0.08]"
               >
-                {isGithub ? <GithubLogo /> : <ArrowSquareOut />}
-                Repository
-              </Button>
-            )}
+                <DotsThree className="size-5" weight="bold" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <PluginItems kit={dropdownKit} p={p} settings={false} />
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
+          {p.description && <p className="mt-4 text-md leading-relaxed text-fg-2">{p.description}</p>}
         </div>
-        {p.description && <p className="mt-4 text-md leading-relaxed text-fg-2">{p.description}</p>}
       </div>
-    </div>
+    </ContextArea>
   )
 }
 

@@ -397,7 +397,7 @@ impl AppCalls {
                 }
                 let asked = format!("Plugin “{}” asks to open:\n\n{url}", m.name);
                 let dialog = limits.dialog(m, io, now)?;
-                let yes = io.confirm("Open this link in your browser?", &asked, "Open");
+                let yes = io.confirm(OPEN_LINK_TITLE, &asked, OPEN_LINK_YES);
                 dialog.closed(yes)?;
                 if !yes {
                     return Ok(PageAnswer::value(json!({ "opened": false })));
@@ -714,6 +714,12 @@ const MAX_OPENED: u64 = 16 << 20;
 const MAX_SERVICE_METHOD: usize = 64;
 /// The most calls of one page AutoScene answers at once.
 pub const MAX_PAGE_CALLS: usize = 16;
+
+/// The title and the yes of the dialog that asks before a plugin's link
+/// opens: one its page asks to open (`ui.openExternal`), and its source
+/// (`plugin_open_source`).
+pub(crate) const OPEN_LINK_TITLE: &str = "Open this link in your browser?";
+pub(crate) const OPEN_LINK_YES: &str = "Open";
 
 /// What an open page's call gets: its answer; an effect the app's page
 /// carries out, then answers with `result`; or an error.

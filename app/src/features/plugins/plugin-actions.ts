@@ -42,6 +42,19 @@ export async function allowUnreviewed(on: boolean): Promise<boolean> {
   }
 }
 
+/**
+ * Open a plugin's source in the browser. AutoScene reads the link from the
+ * plugin's own plugin.json, and asks first, in a dialog of the system's
+ * own, unless it is a GitHub repository. A no says nothing more.
+ */
+export async function openSource(p: Pick<PluginInfo, "id">) {
+  try {
+    await commands.pluginOpenSource(p.id)
+  } catch (e) {
+    toast.error("Couldn't open the link", { description: errorMessage(e) })
+  }
+}
+
 /** Put `p` as the backend gave it back into the plugin list on hand. */
 export function keepPlugin(p: PluginInfo) {
   queryClient.setQueryData<PluginInfo[]>(qk.plugins, (list) => list?.map((x) => (x.id === p.id ? p : x)))

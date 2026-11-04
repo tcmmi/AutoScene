@@ -277,6 +277,15 @@ export const commands = {
 	 */
 	pluginBanner: (pluginId: string) => __TAURI_INVOKE<string | null>("plugin_banner", { pluginId }),
 	/**
+	 *  Open a plugin's source in the person's browser: the `repository` its
+	 *  own plugin.json names, read here (the page hands no link). A plain
+	 *  GitHub repository opens at once; any other link only after the person's
+	 *  yes in the dialog of the system's own that a page's `ui.openExternal`
+	 *  asks in too ([`confirm`]). Whether it opened: a no is `false`, with
+	 *  nothing more to say.
+	 */
+	pluginOpenSource: (pluginId: string) => __TAURI_INVOKE<boolean>("plugin_open_source", { pluginId }),
+	/**
 	 *  Let plugins AutoScene hasn't reviewed be installed and run, or not
 	 *  (`settings_update` never changes it, so a save from a copy of the
 	 *  settings made before can't turn it back). On, it asks the person first

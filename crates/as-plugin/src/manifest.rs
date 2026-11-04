@@ -242,6 +242,16 @@ pub struct Author {
     pub url: Option<String>,
 }
 
+/// Where a plugin says its source is ([`Manifest::source_link`]): the
+/// `repository` of its own plugin.json, never a link a page hands in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceLink {
+    pub url: String,
+    /// Whether AutoScene asks the person before it opens it: for all but a
+    /// plain GitHub repository.
+    pub asks: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Engines {
@@ -463,6 +473,19 @@ impl Manifest {
     /// Its page `id`.
     pub fn page(&self, id: &str) -> Option<&PageSpec> {
         self.pages.iter().find(|p| p.id == id)
+    }
+
+    /// Its source: its `repository`, which [`parse`] keeps only as a plain
+    /// `https://` link. It opens without asking only when it is a GitHub
+    /// repository, or a folder or file in one ([`github_repository`]). Any
+    /// other host, a page of GitHub's whose name [`GITHUB_PAGES`] lists
+    /// (signing in, granting an app, its settings) or that has no
+    /// repository's form, and any link with a query asks first. None without
+    /// a repository.
+    pub fn source_link(&self) -> Option<SourceLink> {
+        let url = self.repository.clone().filter(|url| plain_link(url))?;
+        let asks = !github_repository(&url);
+        Some(SourceLink { url, asks })
     }
 }
 
@@ -1126,6 +1149,109 @@ pub fn plain_link(url: &str) -> bool {
     let (host, port) = address.map_or(("", ""), |a| a.split_once(':').unwrap_or((a, "443")));
     let port_ok = port.bytes().all(|b| b.is_ascii_digit()) && port.parse::<u16>().is_ok_and(|p| p > 0);
     plain && port_ok && is_host(&host.to_ascii_lowercase())
+}
+
+/// The first parts of github.com's paths that are GitHub's own pages, not
+/// an account's: signing in, granting an app, settings, Copilot's sign-up,
+/// redeeming a code and the like. No account has one of these names. A
+/// page of GitHub's that isn't listed here opens like a repository when its
+/// path has a repository's form.
+const GITHUB_PAGES: [&str; 36] = [
+    "login",
+    "logout",
+    "settings",
+    "apps",
+    "marketplace",
+    "sponsors",
+    "orgs",
+    "organizations",
+    "users",
+    "account",
+    "sessions",
+    "oauth",
+    "codespaces",
+    "notifications",
+    "new",
+    "join",
+    "signup",
+    "features",
+    "enterprise",
+    "pricing",
+    "security",
+    "site",
+    "explore",
+    "topics",
+    "search",
+    "copilot",
+    "github-copilot",
+    "enterprises",
+    "redeem",
+    "contact",
+    "dashboard",
+    "stars",
+    "collections",
+    "trending",
+    "about",
+    "readme",
+];
+
+/// Whether `link` is a plain GitHub repository, or a folder or file in
+/// one: `https://github.com/<owner>/<repo>`, optionally ending in `.git` or
+/// followed by `/tree/…` or `/blob/…`, without a port, a `user@`, a query
+/// or a fragment. `<owner>` has the form of a GitHub account's name and is
+/// none of GitHub's own pages ([`GITHUB_PAGES`]). The link must already be
+/// as a browser reads it, so no `..` or escaped dot resolves to another
+/// page of github.com, and what follows `tree` or `blob` escapes nothing.
+fn github_repository(link: &str) -> bool {
+    let Ok(url) = url::Url::parse(link) else { return false };
+    let plain = url.scheme() == "https"
+        && url.host_str() == Some("github.com")
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.as_str() == link;
+    let Some(mut parts) = url.path_segments().filter(|_| plain).map(|s| s.collect::<Vec<_>>()) else {
+        return false;
+    };
+    // `/<owner>/<repo>/` is the repository too.
+    if parts.len() > 2 && parts.last() == Some(&"") {
+        parts.pop();
+    }
+    match parts.as_slice() {
+        [owner, repo] => github_account(owner) && github_repo_name(repo),
+        [owner, repo, kind, path @ ..] => {
+            github_account(owner)
+                && github_repo_name(repo)
+                && matches!(*kind, "tree" | "blob")
+                && !path.is_empty()
+                && path.iter().all(|part| !part.is_empty() && !part.contains('%'))
+        }
+        _ => false,
+    }
+}
+
+/// A GitHub account's name: 1 to 39 letters, digits and single dashes, not
+/// at either end, and none of GitHub's own pages.
+fn github_account(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 39
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--")
+        && !GITHUB_PAGES.contains(&name.to_ascii_lowercase().as_str())
+}
+
+/// A GitHub repository's name: 1 to 100 letters, digits, `-`, `_` and
+/// `.`, but not `.` or `..`.
+fn github_repo_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 100
+        && name != "."
+        && name != ".."
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
 }
 
 /// A host name as the network permission names it: lowercase labels of 1
@@ -2769,5 +2895,108 @@ mod tests {
         for url in ["https://autoscene.app", "https://GitHub.com/a/b?c=d#e", "https://example.org:8443/x"] {
             assert_eq!(link(url).as_deref(), Some(url));
         }
+    }
+
+    /// The source link of a plugin.json whose `repository` is `url`.
+    fn source(url: &str) -> Option<SourceLink> {
+        with(|v| v["repository"] = json!(url)).unwrap().manifest.source_link()
+    }
+
+    #[test]
+    fn the_source_link_is_the_plugin_jsons_own() {
+        let p = with(|v| v["repository"] = json!("https://gitlab.com/someone/hello-export")).unwrap();
+        assert_eq!(p.manifest.repository.as_deref(), Some("https://gitlab.com/someone/hello-export"));
+        assert_eq!(
+            p.manifest.source_link(),
+            Some(SourceLink { url: "https://gitlab.com/someone/hello-export".into(), asks: true })
+        );
+        // Not its author's page, which may be anywhere.
+        assert_eq!(read(&plugin()).unwrap().manifest.author.url.as_deref(), Some("https://autoscene.app"));
+        assert_eq!(read(&plugin()).unwrap().manifest.source_link(), None);
+    }
+
+    #[test]
+    fn only_a_github_repository_opens_without_asking() {
+        for url in [
+            "https://github.com/a/b",
+            "https://github.com/a/b.git",
+            "https://github.com/a/b/tree/main/plugin",
+            "https://github.com/a/b/",
+            "https://github.com/a/b/blob/v1.2.0/plugins/hello/plugin.json",
+            "https://github.com/tcmmi/AutoScene",
+            "https://github.com/some-one/my_plugin.v2",
+        ] {
+            assert_eq!(source(url), Some(SourceLink { url: url.into(), asks: false }), "{url}");
+        }
+        for url in [
+            "https://github.com.evil.example/x",
+            "https://evil.example/github.com/x",
+            "https://gist.github.com/x",
+            "https://github.com:8443/a/b",
+            "https://gitlab.com/a/b",
+            "https://github.com/login/oauth/authorize?client_id=x&scope=repo",
+            "https://github.com/apps/x/installations/new",
+            "https://github.com/settings/tokens",
+            "https://github.com/a/b?tab=x",
+            "https://github.com/a",
+            "https://github.com/a/b/issues/new",
+            // Nor any other way to one of GitHub's own pages, or another repository.
+            "https://github.com/Settings/tokens",
+            "https://github.com/a/b/tree/../../../settings/tokens",
+            "https://github.com/a/b/tree/main/%2e%2e/%2e%2e/%2e%2e/settings",
+            "https://github.com/a/b/blob/main/%2F..%2F..%2Fsettings",
+            "https://github.com/a/b/tree",
+            "https://github.com/a/b/tree//x",
+            "https://github.com/a/b#readme",
+            "https://github.com/a/b?",
+            "https://github.com:443/a/b",
+            "https://GitHub.com/a/b",
+            "https://github.com/-a/b",
+            "https://github.com/a--b/c",
+            "https://github.com/a/..",
+            "https://github.com/a/b/c",
+            "https://github.com",
+            "https://autoscene.app",
+            // GitHub's own pages with two parts, as a repository has.
+            "https://github.com/apps/x",
+            "https://github.com/login/device",
+            "https://github.com/marketplace/x",
+            "https://github.com/github-copilot/signup",
+            "https://github.com/redeem/x",
+            "https://github.com/contact/report-abuse",
+            // Longer than any account's or repository's name.
+            format!("https://github.com/{}/b", "a".repeat(40)).as_str(),
+            format!("https://github.com/a/{}", "b".repeat(101)).as_str(),
+        ] {
+            // Asked, never refused: `parse` let it through.
+            assert_eq!(source(url), Some(SourceLink { url: url.into(), asks: true }), "{url}");
+        }
+        // Every one of GitHub's own pages, however it is written.
+        for page in GITHUB_PAGES {
+            for url in
+                [format!("https://github.com/{page}/x"), format!("https://github.com/{}/x", page.to_ascii_uppercase())]
+            {
+                assert_eq!(source(&url), Some(SourceLink { url: url.clone(), asks: true }), "{url}");
+            }
+        }
+        // The longest names still open.
+        for url in
+            [format!("https://github.com/{}/b", "a".repeat(39)), format!("https://github.com/a/{}", "b".repeat(100))]
+        {
+            assert_eq!(source(&url), Some(SourceLink { url: url.clone(), asks: false }), "{url}");
+        }
+    }
+
+    #[test]
+    fn a_plugin_without_a_repository_has_no_source_link() {
+        assert_eq!(read(&plugin()).unwrap().manifest.repository, None);
+        assert_eq!(read(&plugin()).unwrap().manifest.source_link(), None);
+        // One its plugin.json names but `parse` left out is none either.
+        let p = with(|v| v["repository"] = json!("http://github.com/a/b")).unwrap();
+        assert_eq!((p.manifest.source_link(), p.warnings.len()), (None, 1));
+        // Nor one that isn't a plain link, however the manifest came to hold it.
+        let mut m = read(&plugin()).unwrap().manifest;
+        m.repository = Some("https://autoscene.app@github.com/a/b".into());
+        assert_eq!(m.source_link(), None);
     }
 }

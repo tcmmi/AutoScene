@@ -1242,7 +1242,7 @@ or a `runtime.type` it doesn't know (`wasm`, say).
 | `description` | yes | At most 300 characters. |
 | `author` | yes | `{ "name": …, "url": … }`: a name of at most 60 characters, and an optional `https://` link. |
 | `license` | no | Such as `MIT`, at most 60 characters. |
-| `repository` | no | An `https://` link. |
+| `repository` | no | An `https://` link to its source, which its menu opens: a GitHub repository (`https://github.com/<owner>/<repo>`, or a `/tree/…` or `/blob/…` in it) at once, any other link after the person says yes. |
 | `engines` | yes | `autoscene`: the AutoScene versions it works with. `protocol`: the protocol its program speaks, `1` or `2`; `2` for a service, and for pages that start runs. |
 | `platforms` | no | The platforms it runs on. Left out or empty: everywhere it has a command for. |
 | `runtime` | yes | `type`: `"process"`, or in version 2 `"service"` or `"none"`. `command`: the command per platform. `gpu`: `true` when it uses the graphics card (default `false`). A plugin of `none` has neither. |

@@ -164,6 +164,8 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
       trust: "unreviewed",
       author: "Example Dev",
       license: null,
+      // Not on GitHub: its source opens only after a yes.
+      repository: "https://gitlab.com/example-dev/discord-notify",
       description: "Posts each finished export's clip list to a Discord channel.",
       protocol: 2,
       permissions: ["exports:read", "network"],

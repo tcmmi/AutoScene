@@ -215,6 +215,31 @@ const allows = () => settings.allowUnreviewedPlugins ?? false
 /** Whether the plugin catalog is checked every day (on by default). */
 const checksCatalog = () => settings.pluginCatalogChecks ?? true
 
+/** GitHub's own pages, which no account's name can be (as-plugin's `GITHUB_PAGES`). */
+const GITHUB_PAGES = new Set([
+  "login", "logout", "settings", "apps", "marketplace", "sponsors", "orgs", "organizations", "users",
+  "account", "sessions", "oauth", "codespaces", "notifications", "new", "join", "signup", "features",
+  "enterprise", "pricing", "security", "site", "explore", "topics", "search", "copilot", "github-copilot",
+  "enterprises", "redeem", "contact", "dashboard", "stars", "collections", "trending", "about", "readme",
+])
+
+/**
+ * Whether a plugin's source opens without asking, as the backend's
+ * `source_link` says: a plain GitHub repository, or a folder or file in one
+ * (a trailing slash too). A part under tree/blob has none of the characters
+ * a browser would escape or read otherwise (`"`, `<`, `>`, `` ` ``, `{`,
+ * `}`, `\`, `%`), as the backend's `url.as_str() == link` check says.
+ */
+function githubRepository(link: string): boolean {
+  const m =
+    /^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100})(\/|\/(?:tree|blob)(?:\/[!$&-.0-;=@-[\]^_a-z|~]+)+\/?)?$/.exec(
+      link,
+    )
+  const owner = m?.[1] ?? ""
+  const plain = /^[A-Za-z0-9](?:-?[A-Za-z0-9])*$/.test(owner) && !GITHUB_PAGES.has(owner.toLowerCase())
+  return plain && !link.split("/").some((part) => part === "." || part === "..")
+}
+
 /** Canned AniList answers (no network in the mock). */
 const ANILIST_SERIES: AniListMedia[] = [
   { id: 21519, title: "Frieren: Beyond Journey's End", format: "TV", episodes: 28, year: 2023 },
@@ -1352,6 +1377,21 @@ const handlers: Record<string, Handler> = {
   // Plugins: one reviewed is installed; each .asp picked offers another (see mocks/plugins.ts).
   plugins_list: () => pluginsList(allows()),
   plugin_banner: ({ pluginId }) => pluginBanner(String(pluginId)),
+  // The browser's confirm stands in for the system's dialog, as for a page's ui.openExternal.
+  plugin_open_source: ({ pluginId }) => {
+    const p = mockPlugin(String(pluginId))
+    if (!p) throw { code: "not_found", message: `${String(pluginId)} isn't installed.` }
+    const url = p.repository
+    if (!url) throw { code: "not_found", message: "Its plugin.json names no source." }
+    const asked = `Open this link in your browser?
+
+Plugin “${p.name}” links to its source at:
+
+${url}`
+    if (!githubRepository(url) && !window.confirm(asked)) return false
+    window.open(url, "_blank", "noopener")
+    return true
+  },
   plugins_allow_unreviewed: ({ on }) => {
     const before = allows()
     settings = { ...settings, allowUnreviewedPlugins: Boolean(on) }

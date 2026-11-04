@@ -3,18 +3,14 @@ import { toast } from "sonner"
 import type { PluginInfo, PluginReview } from "@/bindings"
 import {
   ArrowCounterClockwise,
-  ArrowSquareOut,
   CircleNotch,
   DotsThree,
-  FileText,
   FolderOpen,
   GearSix,
-  GithubLogo,
   ListBullets,
   MagnifyingGlass,
   Plus,
   PuzzlePiece,
-  SlidersHorizontal,
   SquaresFour,
   Trash,
   X,
@@ -24,7 +20,7 @@ import { Button } from "@/components/ui/button"
 import { ContextArea } from "@/components/ui/context-area"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { type MenuKit, contextKit, dropdownKit } from "@/components/ui/menu-actions"
+import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Page } from "@/components/ui/page"
@@ -35,11 +31,11 @@ import { InstallReviewDialog } from "@/features/plugins/InstallReviewDialog"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { allowUnreviewed, keepPlugin } from "@/features/plugins/plugin-actions"
 import { hasSettings, reviewedPackage, trustLabel } from "@/features/plugins/plugin-items"
+import { PluginItems } from "@/features/plugins/plugin-menu"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
 import { useAppActions } from "@/lib/actions"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder, pickPluginFile } from "@/lib/media"
-import { openExternalUrl, reveal } from "@/lib/os"
 import { qk, queryClient, usePluginBanner, usePlugins, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 
@@ -340,36 +336,6 @@ export function PluginsPage() {
         </Dialog>
       </div>
     </Page>
-  )
-}
-
-function PluginItems({ kit, p, onUninstall }: { kit: MenuKit; p: PluginInfo; onUninstall: () => void }) {
-  const { goSettings } = useAppActions()
-  const { Item, Separator } = kit
-  const isGithub = p.repository?.includes("github.com")
-  return (
-    <>
-      {hasSettings(p) && (
-        <Item onSelect={() => goSettings(`plugin.${p.id}`)}>
-          <SlidersHorizontal /> Settings
-        </Item>
-      )}
-      {p.repository && (
-        <Item onSelect={() => void openExternalUrl(p.repository!)}>
-          {isGithub ? <GithubLogo /> : <ArrowSquareOut />} Repository
-        </Item>
-      )}
-      <Item onSelect={() => reveal(p.folder)}>
-        <FolderOpen /> Show its folder
-      </Item>
-      <Item onSelect={() => reveal(p.logPath)}>
-        <FileText /> Show its log
-      </Item>
-      <Separator />
-      <Item destructive onSelect={onUninstall}>
-        <Trash /> Uninstall…
-      </Item>
-    </>
   )
 }
 

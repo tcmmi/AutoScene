@@ -2,6 +2,7 @@ import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { AppSettings, PluginInfo, PluginReview } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
@@ -12,7 +13,11 @@ import { pluginInfo } from "@/test/plugins"
 import { PluginSettingsSection } from "./PluginSettingsSection"
 import { PluginsPage } from "./PluginsPage"
 
-const { state, reveal } = vi.hoisted(() => ({ state: { plugins: [] as PluginInfo[], allow: false }, reveal: vi.fn() }))
+const { state, reveal, openExternalUrl } = vi.hoisted(() => ({
+  state: { plugins: [] as PluginInfo[], allow: false },
+  reveal: vi.fn(),
+  openExternalUrl: vi.fn(),
+}))
 
 const settings = (allow: boolean): AppSettings => ({
   libraryRoot: "C:\\Library",
@@ -33,11 +38,12 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     pluginDiscard: vi.fn(() => Promise.resolve(null)),
     pluginSettingsGet: vi.fn(() => Promise.resolve({})),
     pluginBanner: vi.fn(() => Promise.resolve(null)),
+    pluginOpenSource: vi.fn(() => Promise.resolve(true)),
     revealPath: vi.fn(() => Promise.resolve()),
   },
 }))
 vi.mock("@/lib/media", () => ({ pickFolder: vi.fn(() => Promise.resolve("D:\\Plugins\\mine")), pickPluginFile: vi.fn() }))
-vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal }))
+vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal, openExternalUrl }))
 vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn() }) }))
 // The window's menu, around the rows' own entries.
 vi.mock("@/components/ui/page", () => ({ Page: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }))
@@ -347,5 +353,105 @@ describe("PluginsPage", () => {
     expect(sources.length).toBeGreaterThan(2)
     for (const src of sources) expect(src).toMatch(/^data:/)
     expect(container.innerHTML).not.toContain("someone.png")
+  })
+
+  // The page never opens a plugin's link itself: AutoScene reads it from the
+  // plugin.json, and asks first unless it is a GitHub repository.
+  it("Show the source it names asks AutoScene to open it", async () => {
+    const user = userEvent.setup()
+    const p = pluginInfo({ id: "dev.a.mine", name: "Mine", trust: "unreviewed", repository: "https://gitlab.com/a/b" })
+    state.plugins = [p]
+    const page = render(<PluginsPage />, { wrapper })
+    await user.click(await screen.findByRole("button", { name: "Mine options" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Show the source it names" }))
+    await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledWith("dev.a.mine"))
+    page.unmount()
+    // Its settings say the same, in their ⋯ (the card's list without
+    // Settings and Uninstall) and in their right-click.
+    const settings = render(
+      <AppMenu>
+        <div>
+          <PluginSettingsSection id="dev.a.mine" />
+        </div>
+      </AppMenu>,
+      { wrapper },
+    )
+    await user.click(await screen.findByRole("button", { name: "Mine options" }))
+    const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
+    expect(items).toEqual(["Show the source it names", "Show its folder", "Show its log"])
+    await user.click(screen.getByRole("menuitem", { name: "Show the source it names" }))
+    await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledTimes(2))
+    fireEvent.contextMenu(screen.getByRole("heading", { name: "Mine" }), { clientX: 40, clientY: 40 })
+    fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Show the source it names" }))
+    await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledTimes(3))
+    expect(vi.mocked(commands.pluginOpenSource).mock.calls).toEqual([["dev.a.mine"], ["dev.a.mine"], ["dev.a.mine"]])
+    expect(openExternalUrl).not.toHaveBeenCalled()
+    settings.unmount()
+  })
+
+  // A no says nothing more; a failure says why.
+  it("Show its source says only what went wrong", async () => {
+    const user = userEvent.setup()
+    const error = vi.spyOn(toast, "error")
+    state.plugins = [pluginInfo({ id: "dev.a.mine", name: "Mine", repository: "https://gitlab.com/a/b" })]
+    render(<PluginsPage />, { wrapper })
+    const show = async () => {
+      await user.click(await screen.findByRole("button", { name: "Mine options" }))
+      await user.click(await screen.findByRole("menuitem", { name: "Show its source" }))
+    }
+    vi.mocked(commands.pluginOpenSource).mockResolvedValueOnce(false)
+    await show()
+    await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledTimes(1))
+    await act(() => new Promise((done) => setTimeout(done, 0)))
+    expect(error).not.toHaveBeenCalled()
+    vi.mocked(commands.pluginOpenSource).mockRejectedValueOnce({ code: "io", message: "AutoScene couldn't open the link." })
+    await show()
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledExactlyOnceWith("Couldn't open the link", { description: "AutoScene couldn't open the link." }),
+    )
+    error.mockRestore()
+  })
+
+  it("a reviewed package says Show its source", async () => {
+    const user = userEvent.setup()
+    const repository = "https://github.com/a/b"
+    state.plugins = [
+      pluginInfo({ id: "dev.a.reviewed", name: "Reviewed", repository }),
+      // Signed is not reviewed, and a loaded folder never is.
+      pluginInfo({ id: "dev.a.pinned", name: "Pinned", trust: "pinned", repository }),
+      pluginInfo({ id: "dev.a.folder", name: "Folder", source: "folder", repository }),
+    ]
+    render(<PluginsPage />, { wrapper })
+    const entries = async (name: string) => {
+      await user.click(await screen.findByRole("button", { name: `${name} options` }))
+      const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
+      await user.keyboard("{Escape}")
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull())
+      return items
+    }
+    expect(await entries("Reviewed")).toEqual(["Show its source", "Show its folder", "Show its log", "Uninstall…"])
+    expect((await entries("Pinned"))[0]).toBe("Show the source it names")
+    expect((await entries("Folder"))[0]).toBe("Show the source it names")
+    await user.click(await screen.findByRole("button", { name: "Reviewed options" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Show its source" }))
+    await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledWith("dev.a.reviewed"))
+    expect(openExternalUrl).not.toHaveBeenCalled()
+  })
+
+  it("no source entry without a repository", async () => {
+    const user = userEvent.setup()
+    state.plugins = [pluginInfo({ id: "dev.a.plain", name: "Plain", trust: "unreviewed" })]
+    const page = render(<PluginsPage />, { wrapper })
+    await user.click(await screen.findByRole("button", { name: "Plain options" }))
+    const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
+    expect(items).toEqual(["Show its folder", "Show its log", "Uninstall…"])
+    page.unmount()
+    // Nor does the ⋯ of its settings.
+    render(<PluginSettingsSection id="dev.a.plain" />, { wrapper })
+    await user.click(await screen.findByRole("button", { name: "Plain options" }))
+    const ownItems = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
+    expect(ownItems).toEqual(["Show its folder", "Show its log"])
+    expect(screen.queryByText(/source/)).toBeNull()
+    expect(commands.pluginOpenSource).not.toHaveBeenCalled()
   })
 })

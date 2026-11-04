@@ -1,17 +1,19 @@
 //! Plugins (Settings → Plugins): what is installed and each one's banner,
 //! installing it after a review, uninstalling, turning plugins and their
 //! after-export actions on or off, their settings and secrets, whether
-//! plugins AutoScene hasn't reviewed may run, running their actions, and
-//! opening, closing and answering their pages. Each change emits
-//! `plugins:changed`; runs report as jobs, and an open page hears of its
-//! plugin's changes through `plugin-page:event`. A page's frame calls
-//! nothing itself: the app's page hands its calls on with the session it
-//! holds ([`plugin_page_call`]).
+//! plugins AutoScene hasn't reviewed may run, running their actions,
+//! opening their source, and opening, closing and answering their pages.
+//! Each change emits `plugins:changed`; runs report as jobs, and an open
+//! page hears of its plugin's changes through `plugin-page:event`. A page's
+//! frame calls nothing itself: the app's page hands its calls on with the
+//! session it holds ([`plugin_page_call`]).
 //!
 //! The page can't say yes alone to code AutoScene hasn't reviewed: turning
 //! the setting on, and installing such a plugin, each ask the person in a
 //! dialog of the system's own ([`confirm`]), with what the backend checked.
-//! A script in the page could call these commands; it can't answer that.
+//! So does a plugin's source that isn't a GitHub repository, before it
+//! opens. A script in the page could call these commands; it can't answer
+//! that.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -57,6 +59,35 @@ pub async fn plugin_banner(state: State<'_, AppState>, plugin_id: String) -> App
     let id = PluginId::parse(&plugin_id)?;
     let host = host(&state)?;
     blocking(move || Ok(host.store.banner_data_url(&host.store.get(&id)?))).await
+}
+
+/// Open a plugin's source in the person's browser: the `repository` its
+/// own plugin.json names, read here (the page hands no link). A plain
+/// GitHub repository opens at once; any other link only after the person's
+/// yes in the dialog of the system's own that a page's `ui.openExternal`
+/// asks in too ([`confirm`]). Whether it opened: a no is `false`, with
+/// nothing more to say.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_open_source(app: AppHandle, state: State<'_, AppState>, plugin_id: String) -> AppResult<bool> {
+    let id = PluginId::parse(&plugin_id)?;
+    let host = host(&state)?;
+    blocking(move || {
+        let p = host.store.get(&id)?;
+        let Some((name, link)) = p.manifest.as_ref().and_then(|m| Some((&m.name, m.source_link()?))) else {
+            return Err(AppError::new(ErrorCode::NotFound, "Its plugin.json names no source."));
+        };
+        let asked = format!("Plugin “{name}” links to its source at:\n\n{}", link.url);
+        if link.asks && !confirm(&app, calls::OPEN_LINK_TITLE, asked, calls::OPEN_LINK_YES) {
+            return Ok(false);
+        }
+        app.opener().open_url(&link.url, None::<&str>).map_err(|e| {
+            log::warn!("plugin {id}: opening its source: {e}");
+            AppError::new(ErrorCode::Io, "AutoScene couldn't open the link.")
+        })?;
+        Ok(true)
+    })
+    .await
 }
 
 /// One change of whether plugins AutoScene hasn't reviewed may run at a

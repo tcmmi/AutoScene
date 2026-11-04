@@ -55,7 +55,7 @@ pub use error::{PluginError, PluginResult};
 pub use keys::KeyRole;
 pub use manifest::{
     ActionSpec, Author, CommandSpec, Engines, Launch, Manifest, PageScope, PageSpec, Parsed, Permission, PluginId,
-    Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue, current_platform,
+    Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue, SourceLink, current_platform,
 };
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{

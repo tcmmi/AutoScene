@@ -6,6 +6,7 @@ import { usePluginReview } from "@/state/plugin-review"
 import { startEventBridge } from "./events"
 import { commands } from "./ipc"
 import { queryClient } from "./queries"
+import { pluginInfo } from "@/test/plugins"
 
 // Each backend event's listener, as the bridge registers it.
 const { handlers } = vi.hoisted(() => ({ handlers: {} as Record<string, (e: { payload: unknown }) => void> }))
@@ -26,6 +27,7 @@ vi.mock("./ipc", () => ({
     jobsList: vi.fn(() => Promise.resolve([])),
     exportsList: vi.fn(),
     revealPath: vi.fn(() => Promise.resolve(null)),
+    pluginsList: vi.fn(),
   },
   errorMessage: (e: unknown) => String(e),
 }))
@@ -62,10 +64,12 @@ async function finish(list: ExportSummary[]) {
   return vi.mocked(toast.success).mock.calls[0][1] as { action?: { label: string; onClick: () => void } }
 }
 
+const goPlugins = vi.fn()
+
 let stop: () => void
 beforeEach(() => {
   useActivity.setState({ jobs: {}, order: [] })
-  stop = startEventBridge()
+  stop = startEventBridge({ goPlugins })
   handlers.jobChanged({ payload: job({}) })
 })
 afterEach(() => {
@@ -168,6 +172,54 @@ describe("plugins changing", () => {
     handlers.catalogChanged({ payload: { withdrawn: [] } })
     expect(read.mock.calls).toEqual([[{ queryKey: ["catalog"] }], [{ queryKey: ["plugins"] }]])
     read.mockRestore()
+  })
+
+  it("a newly withdrawn plugin toasts once", async () => {
+    const leaky = pluginInfo({ id: "dev.example.leaky", name: "Leaky Export", withdrawn: "It sent export paths to a server.", active: false })
+    vi.mocked(commands.pluginsList).mockResolvedValue([leaky, pluginInfo({ id: "dev.a.fine", name: "Fine" })])
+    handlers.catalogChanged({ payload: { withdrawn: ["dev.example.leaky"] } })
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledOnce())
+    // AutoScene's words: the plugin's name between quotes, the catalog's reason under it.
+    const [title, options] = vi.mocked(toast.error).mock.calls[0] as unknown as [string, { description: string; action: { label: string; onClick: () => void } }]
+    expect(title).toBe("AutoScene withdrew Plugin “Leaky Export”")
+    expect(options.description).toBe("It sent export paths to a server.")
+    expect(options.action.label).toBe("Show")
+    options.action.onClick()
+    expect(goPlugins).toHaveBeenCalledOnce()
+
+    // The next checks name it again: once per session is enough.
+    handlers.catalogChanged({ payload: { withdrawn: ["dev.example.leaky"] } })
+    handlers.catalogChanged({ payload: { withdrawn: [] } })
+    await new Promise((done) => setTimeout(done, 20))
+    expect(toast.error).toHaveBeenCalledOnce()
+  })
+
+  it("a check that names one told of and one new toasts only the new one", async () => {
+    const withdrawn = (id: string, name: string) => pluginInfo({ id, name, withdrawn: "It was unsafe.", active: false })
+    vi.mocked(commands.pluginsList).mockResolvedValue([withdrawn("dev.a.first", "First"), withdrawn("dev.a.second", "Second")])
+    handlers.catalogChanged({ payload: { withdrawn: ["dev.a.first"] } })
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledOnce())
+    handlers.catalogChanged({ payload: { withdrawn: ["dev.a.first", "dev.a.second"] } })
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(toast.error).mock.calls.map(([title]) => title)).toEqual([
+      "AutoScene withdrew Plugin “First”",
+      "AutoScene withdrew Plugin “Second”",
+    ])
+  })
+
+  it("a withdrawal the plugins don't show gets no toast", async () => {
+    // Uninstalled meanwhile, or not withdrawn as the list has it now.
+    vi.mocked(commands.pluginsList).mockResolvedValue([pluginInfo({ id: "dev.a.fine", name: "Fine" })])
+    handlers.catalogChanged({ payload: { withdrawn: ["dev.a.gone", "dev.a.fine"] } })
+    await vi.waitFor(() => expect(commands.pluginsList).toHaveBeenCalled())
+    await new Promise((done) => setTimeout(done, 20))
+    expect(toast.error).not.toHaveBeenCalled()
+
+    // Nor when the list can't be read.
+    vi.mocked(commands.pluginsList).mockRejectedValue(new Error("no"))
+    handlers.catalogChanged({ payload: { withdrawn: ["dev.a.fine"] } })
+    await new Promise((done) => setTimeout(done, 20))
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
   it("catalog:progress moves the download the review waits for, and no other", () => {

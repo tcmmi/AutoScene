@@ -28,7 +28,9 @@ const NOT_ALLOWED = "Doesn't run until the setting below allows it."
  * it trusts the plugin, who the plugin says it is by and its version, and its
  * switch; then why it doesn't run, when it is broken or not allowed. None of
  * that is ever drawn on the plugin's own pixels. When the catalog offers a
- * newer version (`update`), Update… sits before the switch.
+ * newer version (`update`), Update… sits before the switch. A plugin AutoScene
+ * withdrew says "Withdrawn" in place of its trust, with the catalog's reason
+ * under it, and its switch is off and can't be turned on.
  */
 export function PluginCard({
   p,
@@ -47,6 +49,8 @@ export function PluginCard({
   const onUpdate = update && (() => void updatePlugin(update))
   const { data: banner } = usePluginBanner(p)
   const trust = trustLabel(p)
+  // AutoScene took it back: it doesn't run, whatever its switch said.
+  const withdrawn = p.withdrawn != null
   const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
   const facts = [by, `version ${p.version}`].filter(Boolean).join(" · ")
   // The backend's reason sends people to Plugins, where the card already is:
@@ -71,8 +75,8 @@ export function PluginCard({
               banner={banner}
               className={cn(
                 "aspect-[2/1] rounded-2xl picture-edge transition-[box-shadow,opacity] duration-[var(--dur-med)] group-hover/art:shadow-lift",
-                // Turned off, it dims, as its settings' picture does.
-                !p.enabled && "opacity-60",
+                // Turned off or withdrawn, it dims, as its settings' picture does.
+                (!p.enabled || withdrawn) && "opacity-60",
               )}
             />
           </Link>
@@ -101,11 +105,18 @@ export function PluginCard({
               {getting ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />} Update…
             </Button>
           )}
-          <Switch aria-label={`Enable ${p.name}`} checked={p.enabled} onCheckedChange={(on) => void setEnabled(on)} />
+          <Switch
+            aria-label={`Enable ${p.name}`}
+            checked={p.enabled && !withdrawn}
+            disabled={withdrawn}
+            onCheckedChange={(on) => void setEnabled(on)}
+          />
         </div>
         <TruncatedText className="mt-1.5 pl-0.5 text-sm text-fg-2">{facts}</TruncatedText>
-        {/* Broken is a fault; not allowed is the person's choice, which the setting below changes. */}
-        {p.broken != null ? (
+        {/* Withdrawn is AutoScene's word; broken is a fault; not allowed is the person's choice, which the setting below changes. */}
+        {p.withdrawn != null ? (
+          <p className="mt-1.5 pl-0.5 text-sm text-danger">{p.withdrawn}</p>
+        ) : p.broken != null ? (
           <p className="mt-1.5 pl-0.5 text-sm text-danger">{p.broken}</p>
         ) : (
           blocked && <p className="mt-1.5 pl-0.5 text-sm text-fg-3">{blocked}</p>

@@ -36,6 +36,7 @@ vi.mock("@/lib/queries", () => ({
   usePlugins: () => ({ data: list.plugins, isPending: false, error: list.error }),
   useProject: () => ({ data: { id: "p1", title: "Show", kind: "series" } }),
   useAppInfo: () => ({ data: { version: "1.0.3-BETA" } }),
+  useCatalog: () => ({ data: undefined }),
 }))
 vi.mock("@/lib/ipc", async (importOriginal) => {
   const ipc = await importOriginal<typeof import("@/lib/ipc")>()
@@ -160,6 +161,34 @@ describe("a plugin's page", () => {
     expect(await screen.findByText(broken)).toBeTruthy()
     expect(screen.queryByLabelText("Main")).toBeNull()
     expect(pluginPageOpen).not.toHaveBeenCalled()
+  })
+
+  it("a page of a plugin AutoScene withdrew shows the withdrawal in place of the frame", async () => {
+    list.plugins = [hello({ active: false, withdrawn: "It sent export paths to a server." })]
+    show("/x/dev.a.page/main")
+    expect(await screen.findByText("AutoScene withdrew Plugin “Hello page”")).toBeTruthy()
+    expect(screen.getByText("It sent export paths to a server. It is turned off.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Uninstall…" })).toBeTruthy()
+    // The page is neither opened nor said to be merely off.
+    expect(screen.queryByText("This page isn't available")).toBeNull()
+    expect(pluginPageOpen).not.toHaveBeenCalled()
+    cleanup()
+
+    // A project's page of it too.
+    show("/p/p1/x/dev.a.page/clips")
+    expect(await screen.findByText("AutoScene withdrew Plugin “Hello page”")).toBeTruthy()
+    expect(pluginPageOpen).not.toHaveBeenCalled()
+  })
+
+  it("a withdrawn plugin's page offers no reload, and its banner starts where the other banners do", async () => {
+    list.plugins = [hello({ active: false, withdrawn: "It sent export paths to a server." })]
+    show("/x/dev.a.page/main")
+    const banner = (await screen.findByText("AutoScene withdrew Plugin “Hello page”")).closest("[role=status]") as HTMLElement
+    expect(banner.className).not.toContain("mx-auto")
+    fireEvent.pointerDown(await screen.findByRole("button", { name: "Main options" }), { button: 0, ctrlKey: false })
+    const menu = within(await screen.findByRole("menu"))
+    expect(menu.getByRole("menuitem", { name: "Its settings" })).toBeTruthy()
+    expect(menu.queryByRole("menuitem", { name: "Reload the page" })).toBeNull()
   })
 
   it("a project page outside a project isn't found", async () => {

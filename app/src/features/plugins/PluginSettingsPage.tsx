@@ -80,6 +80,9 @@ export function PluginHero({ p }: { p: PluginInfo }) {
   const again = useLoadAgain()
   const loadAgain = () => void again.loadAgain(p)
   const trust = trustLabel(p)
+  // AutoScene took it back: it doesn't run, whatever its switch said.
+  const withdrawn = p.withdrawn != null
+  const dim = !p.enabled || withdrawn
   const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
   const setEnabled = async (on: boolean) => {
     try {
@@ -91,7 +94,7 @@ export function PluginHero({ p }: { p: PluginInfo }) {
   return (
     <>
       <ContextArea menu={<PluginItems kit={contextKit} p={p} settings={false} onLoadAgain={loadAgain} onUninstall={uninstall} />}>
-        <Hero src={picture} blur dimmed={!p.enabled} ambient={ambient} className="min-h-[clamp(320px,44vh,460px)]">
+        <Hero src={picture} blur dimmed={dim} ambient={ambient} className="min-h-[clamp(320px,44vh,460px)]">
           <div className="flex items-end justify-between gap-8">
             <div className="flex min-w-0 items-end gap-7">
               {banner ? (
@@ -99,14 +102,14 @@ export function PluginHero({ p }: { p: PluginInfo }) {
                   src={banner}
                   alt=""
                   draggable={false}
-                  className={cn("picture-edge h-28 w-56 shrink-0 rounded-2xl object-cover shadow-lift", !p.enabled && "opacity-60")}
+                  className={cn("picture-edge h-28 w-56 shrink-0 rounded-2xl object-cover shadow-lift", dim && "opacity-60")}
                 />
               ) : (
                 icon && (
                   <span
                     className={cn(
                       "flex size-28 shrink-0 items-center justify-center rounded-[28px] bg-white/[0.08] shadow-lift ring-1 ring-white/15 backdrop-blur-md",
-                      !p.enabled && "opacity-60",
+                      dim && "opacity-60",
                     )}
                   >
                     <img src={icon} alt="" draggable={false} className="size-16 object-contain" />
@@ -120,7 +123,7 @@ export function PluginHero({ p }: { p: PluginInfo }) {
                     p.name.length > 28 ? "text-5xl" : "text-6xl",
                     // Turned off, the name dims with the picture: one without
                     // a picture says so too, not only by its switch.
-                    p.enabled ? "text-white" : "text-white/60",
+                    dim ? "text-white/60" : "text-white",
                   )}
                 >
                   {p.name}
@@ -137,7 +140,7 @@ export function PluginHero({ p }: { p: PluginInfo }) {
             <div className="flex shrink-0 items-center gap-3 pb-1">
               <label className="flex items-center gap-3 text-sm font-medium text-white/80">
                 Turned on
-                <Switch checked={p.enabled} onCheckedChange={(on) => void setEnabled(on)} />
+                <Switch checked={p.enabled && !withdrawn} disabled={withdrawn} onCheckedChange={(on) => void setEnabled(on)} />
               </label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

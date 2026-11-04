@@ -11,11 +11,12 @@
  * the last check failed), `offline` (the last check failed, the index held
  * still lives; a get fails after two steps, as a download that broke off),
  * `unset` (this build has no catalog keys), `newer` (a later AutoScene
- * checked it), `withdrawn` (the index withdraws `dev.example.leaky`), `full`
+ * checked it), `withdrawn` (the index withdraws `dev.example.leaky`, which is
+ * installed then, and the start-up check tells of it), `full`
  * (a get finds the drive full).
  */
 import type { CatalogPlugin, CatalogView, PluginReview } from "@/bindings"
-import { inspectCatalogPackage, mockPlugin } from "./plugins"
+import { LEAKY_ID, LEAKY_REASON, inspectCatalogPackage, mockPlugin } from "./plugins"
 
 type MockCatalog = "living" | "expired" | "offline" | "unset" | "newer" | "withdrawn" | "full"
 
@@ -82,7 +83,23 @@ const ENTRIES: Entry[] = [
   }),
 ]
 
-const WITHDRAWN = [{ id: "dev.example.leaky", reason: "It sent export paths to a server." }]
+const WITHDRAWN = [{ id: LEAKY_ID, reason: LEAKY_REASON }]
+
+/**
+ * What the index still lists of the withdrawn plugin, every version of it
+ * withdrawn: the real catalog lists it while it is installed, with nothing
+ * that runs here (`withdrawn` mode only; not to be got).
+ */
+const LEAKY_ENTRY = entry({
+  id: LEAKY_ID,
+  name: "Leaky Export",
+  summary: "Writes a list of each export's clips beside them, and posts it to a server.",
+  version: "1.0.2",
+  permissions: ["exports:read", "network"],
+  hosts: ["hooks.example.com"],
+  icon: icon("#d9534f"),
+  author: "Example Dev",
+})
 
 function mode(): MockCatalog {
   const asked = new URLSearchParams(window.location.search).get("mockCatalog")
@@ -114,7 +131,8 @@ function offer(e: Entry): CatalogPlugin {
     update: p != null && newer(e.version, p.version),
     addsPermissions: adds(e.permissions, p?.permissions ?? []),
     addsHosts: adds(e.hosts, p?.networkHosts ?? []),
-    runsHere: true,
+    // Nothing of the withdrawn plugin is offered to run.
+    runsHere: e.id !== LEAKY_ID,
     needsNewerApp: false,
   }
 }
@@ -138,8 +156,18 @@ export function catalogList(daily: boolean): CatalogView {
       error: m === "expired" ? `The catalog ran out on ${new Date(published + 30 * DAY).toISOString().slice(0, 10)}.` : m === "offline" ? UNREACHABLE : null,
       needsNewerApp: m === "newer",
     },
-    plugins: living ? ENTRIES.map(offer) : [],
+    plugins: living ? [...ENTRIES, ...(m === "withdrawn" ? [LEAKY_ENTRY] : [])].map(offer) : [],
   }
+}
+
+/**
+ * The check AutoScene makes when it starts: under `?mockCatalog=withdrawn`
+ * it tells of the withdrawal (once; "Check now" has nothing new to tell then).
+ */
+export function catalogAtStart(): string[] {
+  if (mode() !== "withdrawn" || told) return []
+  told = true
+  return WITHDRAWN.map((w) => w.id)
 }
 
 /**

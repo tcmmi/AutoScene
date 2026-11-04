@@ -9,6 +9,7 @@ import { type MenuKit, contextKit, dropdownKit } from "@/components/ui/menu-acti
 import { TruncatedText } from "@/components/ui/tooltip"
 import { useAppActions } from "@/lib/actions"
 import { copyText } from "@/lib/os"
+import { usePlugins } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { getsPlugin, usePluginReview } from "@/state/plugin-review"
 import { getFromCatalog, updatePlugin } from "./catalog-actions"
@@ -29,10 +30,15 @@ function offerOf(p: CatalogPlugin): "install" | "update" | "installed" | "elsewh
  * name. Under it AutoScene's caption: "Reviewed by AutoScene", who it is by
  * and its version, its summary, and what it may do in one line; then
  * Install…, Update…, or that it is installed. The art opens what the button
- * does, or the plugin's settings once it is installed.
+ * does, or the plugin's settings once it is installed. An installed plugin
+ * AutoScene withdrew says "Withdrawn" in place of "Reviewed by AutoScene"
+ * (the index may still list it, every version withdrawn), and nothing about
+ * where it runs: its banner on Plugins says why.
  */
 export function CatalogCard({ p }: { p: CatalogPlugin }) {
   const offer = offerOf(p)
+  const { data: plugins } = usePlugins()
+  const withdrawn = p.installed != null && plugins?.find((x) => x.id === p.id)?.withdrawn != null
   // Its package is being got, or waits its turn: the button spins, and
   // waits (a second click would only ask again).
   const getting = usePluginReview((s) => getsPlugin(s, p.id))
@@ -79,8 +85,14 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
           </DropdownMenu>
         </div>
         <div className="mt-3 flex min-h-8 items-center justify-between gap-3 pl-0.5">
-          <Badge className="min-w-0 truncate">Reviewed by AutoScene</Badge>
-          <Offer offer={offer} getting={getting} act={act} />
+          {withdrawn ? (
+            <Badge tone="danger" className="min-w-0 truncate">
+              Withdrawn
+            </Badge>
+          ) : (
+            <Badge className="min-w-0 truncate">Reviewed by AutoScene</Badge>
+          )}
+          <Offer offer={offer} withdrawn={withdrawn} getting={getting} act={act} />
         </div>
         <TruncatedText className="mt-1.5 pl-0.5 text-sm text-fg-2">{`By ${p.author} · version ${p.version}`}</TruncatedText>
         {/* The plugin's words, as its review says them: "In its own words". */}
@@ -92,7 +104,19 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
 }
 
 /** The caption's right side: the button that gets it, or where it stands. */
-function Offer({ offer, getting, act }: { offer: ReturnType<typeof offerOf>; getting: boolean; act?: () => void }) {
+function Offer({
+  offer,
+  withdrawn,
+  getting,
+  act,
+}: {
+  offer: ReturnType<typeof offerOf>
+  withdrawn: boolean
+  getting: boolean
+  act?: () => void
+}) {
+  // Withdrawn, only a version to update to is worth a word here.
+  if (withdrawn && offer !== "update") return null
   switch (offer) {
     case "install":
     case "update":

@@ -1,14 +1,17 @@
 import type { Permission, PluginInfo, PluginUpdate, Trust } from "@/bindings"
 
 /**
- * How far a plugin is trusted, as its badge says it. A loaded folder says
- * that first: it is never reviewed. A signature proves no one's name (the
- * key may come in the package), so a signed plugin isn't marked as vouched for.
+ * How far a plugin is trusted, as its badge says it. A plugin AutoScene
+ * withdrew says that before anything: whatever else it is, it doesn't run.
+ * A loaded folder says that next: it is never reviewed. A signature proves
+ * no one's name (the key may come in the package), so a signed plugin isn't
+ * marked as vouched for.
  */
-export function trustLabel(p: Pick<PluginInfo, "trust" | "source">): {
+export function trustLabel(p: Pick<PluginInfo, "trust" | "source"> & Partial<Pick<PluginInfo, "withdrawn">>): {
   label: string
   tone: "neutral" | "danger" | "outline"
 } {
+  if (p.withdrawn != null) return { label: "Withdrawn", tone: "danger" }
   if (p.source === "folder") return { label: "Loaded from a folder", tone: "outline" }
   return TRUST[p.trust]
 }
@@ -17,6 +20,15 @@ const TRUST: Record<Trust, { label: string; tone: "neutral" | "danger" | "outlin
   reviewed: { label: "Reviewed by AutoScene", tone: "neutral" },
   pinned: { label: "Signed, not reviewed", tone: "outline" },
   unreviewed: { label: "Not reviewed", tone: "danger" },
+}
+
+/**
+ * What a withdrawn plugin's banner says under its title: the catalog's
+ * `reason` (AutoScene's words, as a sentence), then what that means.
+ */
+export function withdrawnLine(reason: string): string {
+  const said = reason.trim()
+  return `${said}${/[.!?]$/.test(said) ? "" : "."} It is turned off.`
 }
 
 /**

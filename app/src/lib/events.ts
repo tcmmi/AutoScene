@@ -22,12 +22,12 @@ import { exportsQuery, qk, queryClient } from "./queries"
  * | pack:changed     | pack(pid, cid): its settings (an export keeps them) |
  * | export:changed   | exports(pid)                                       |
  * | plugins:changed  | plugins and every plugin's settings, the catalog; settings when no plugin is named |
- * | catalog:changed  | the catalog, the plugins                           |
+ * | catalog:changed  | the catalog, the plugins; a toast for each plugin it newly withdrew |
  * | catalog:progress | the install review's download (progress only)      |
  * | plugin-page:event | an open plugin page (PluginFrame listens)         |
  * | hardware:changed | hardware (the graphics the analysis runs on)       |
  */
-export function startEventBridge(): () => void {
+export function startEventBridge(where: { goPlugins: () => void }): () => void {
   const unlisten: Promise<() => void>[] = []
 
   unlisten.push(
@@ -93,10 +93,11 @@ export function startEventBridge(): () => void {
       if (payload.pluginId == null) void queryClient.invalidateQueries({ queryKey: qk.settings })
     }),
     events.hardwareChanged.listen(() => void queryClient.invalidateQueries({ queryKey: qk.hardware })),
-    events.catalogChanged.listen(() => {
+    events.catalogChanged.listen(({ payload }) => {
       // A check may offer new versions, and withdraw installed plugins.
       void queryClient.invalidateQueries({ queryKey: qk.catalog })
       void queryClient.invalidateQueries({ queryKey: qk.plugins })
+      void tellWithdrawn(payload.withdrawn, where.goPlugins)
     }),
     events.catalogProgress.listen(({ payload }) => usePluginReview.getState().progress(payload.pluginId, payload.done, payload.total)),
   )
@@ -106,6 +107,31 @@ export function startEventBridge(): () => void {
     .then((jobs) => useActivity.getState().replaceAll(jobs))
 
   return () => unlisten.forEach((p) => void p.then((un) => un()))
+}
+
+/** The plugins whose withdrawal was told of this session: each is told once, however many checks name it. */
+const toldWithdrawn = new Set<string>()
+
+/**
+ * Says that AutoScene withdrew the plugins `ids`, one toast each, in
+ * AutoScene's words: the catalog's reason, read from the plugins as they
+ * stand now. A plugin the list doesn't show as withdrawn gets none: the
+ * toast says no more than the list does.
+ */
+async function tellWithdrawn(ids: string[], goPlugins: () => void) {
+  if (ids.every((id) => toldWithdrawn.has(id))) return
+  let plugins
+  try {
+    plugins = await queryClient.fetchQuery({ queryKey: qk.plugins, queryFn: () => commands.pluginsList(), staleTime: 0 })
+  } catch {
+    return
+  }
+  for (const id of ids) {
+    const p = plugins.find((x) => x.id === id)
+    if (p?.withdrawn == null || toldWithdrawn.has(id)) continue
+    toldWithdrawn.add(id)
+    toast.error(`AutoScene withdrew Plugin “${p.name}”`, { description: p.withdrawn, action: { label: "Show", onClick: goPlugins } })
+  }
 }
 
 /**

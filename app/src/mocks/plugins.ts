@@ -6,7 +6,8 @@
  * hasn't reviewed and one its author signed, as every real package is for
  * now, then a reviewed one and an update of the installed one), a
  * developer's folder to load, and what each run says when it ends. The jobs
- * are the backend's to run.
+ * are the backend's to run. Under `?mockCatalog=withdrawn` a fourth is
+ * installed that AutoScene withdrew (Leaky Export).
  *
  * A page's frame loads from the mock's own origin (`vite.mock-asp.ts`,
  * started with Vite), as the app's asp scheme serves it; its calls are
@@ -300,10 +301,39 @@ const helloService = plugin({
   pages: [{ id: "main", title: "Word count", description: "Counts words in its service.", entry: "ui/index.html", scope: "global", rail: true }],
 })
 
+/**
+ * A plugin the catalog withdrew, installed only under `?mockCatalog=withdrawn`:
+ * it has a global page with no files, which the banner stands in for.
+ */
+export const LEAKY_ID = "dev.example.leaky"
+export const LEAKY_REASON = "It sent export paths to a server."
+
+const leaky = plugin({
+  id: LEAKY_ID,
+  name: "Leaky Export",
+  version: "1.0.2",
+  trust: "reviewed",
+  author: "Example Dev",
+  description: "Writes a list of each export's clips beside them, and posts it to a server.",
+  repository: "https://github.com/example-dev/leaky-export",
+  permissions: ["exports:read", "network"],
+  networkHosts: ["hooks.example.com"],
+  icon: icon("#d9534f"),
+  protocol: 2,
+  runtime: "none",
+  uvScript: false,
+  exportActions: [{ id: "list", title: "List the clips", description: null, afterExport: false }],
+  pages: [{ id: "main", title: "Leaky Export", description: "Lists the clips of an export.", entry: "ui/index.html", scope: "global", rail: true }],
+  withdrawn: LEAKY_REASON,
+})
+
 const installed = new Map<string, MockPlugin>([
   [hello("1.0.0").id, hello("1.0.0")],
   [helloPage.id, helloPage],
   [helloService.id, helloService],
+  ...(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mockCatalog") === "withdrawn"
+    ? ([[leaky.id, leaky]] as const)
+    : []),
 ])
 const tickets = new Map<string, MockPlugin>()
 /** The settings the person changed, by plugin. */
@@ -316,8 +346,13 @@ export function reviewed(p: MockPlugin | undefined): boolean {
 }
 
 function info(p: MockPlugin, allow: boolean): PluginInfo {
-  const blocked = !reviewed(p) && !allow
-  return { ...p, active: p.enabled && p.broken == null && !blocked, blockedReason: blocked && p.broken == null ? NOT_ALLOWED : null }
+  // A withdrawn plugin never runs, and says why itself (`withdrawn`).
+  const blocked = !reviewed(p) && !allow && p.withdrawn == null
+  return {
+    ...p,
+    active: p.enabled && p.broken == null && p.withdrawn == null && !blocked,
+    blockedReason: blocked && p.broken == null ? NOT_ALLOWED : null,
+  }
 }
 
 function get(id: string): MockPlugin {
@@ -548,7 +583,7 @@ const sessions = new Map<string, { pluginId: string; pageId: string; projectId: 
 export function openPage(id: string, pageId: string, projectId: string | null, allow: boolean): PageMount {
   const p = get(id)
   const shown = info(p, allow)
-  if (!shown.active) throw { code: "invalid", message: p.broken ?? shown.blockedReason ?? `${p.name} is turned off.` }
+  if (!shown.active) throw { code: "invalid", message: p.broken ?? p.withdrawn ?? shown.blockedReason ?? `${p.name} is turned off.` }
   const page = p.pages.find((x) => x.id === pageId)
   if (!page) throw { code: "invalid", message: `${p.name} has no such page.` }
   if (page.scope === "project" && !projectId) throw { code: "invalid", message: "Open a project to see this page." }
@@ -907,7 +942,7 @@ export function pluginRun(
 ): { title: string; name: string; message: string } {
   const p = get(id)
   const shown = info(p, allow)
-  if (!shown.active) throw { code: "invalid", message: p.broken ?? shown.blockedReason ?? `${p.name} is turned off.` }
+  if (!shown.active) throw { code: "invalid", message: p.broken ?? p.withdrawn ?? shown.blockedReason ?? `${p.name} is turned off.` }
   const refuse = (message: string) => {
     throw { code: "invalid", message }
   }

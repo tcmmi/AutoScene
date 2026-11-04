@@ -1,9 +1,9 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { Outlet } from "@tanstack/react-router"
 import { NewProjectDialog } from "@/features/library/NewProjectDialog"
 import { InstallReviewDialog } from "@/features/plugins/InstallReviewDialog"
 import { RelinkDialog } from "@/features/project/RelinkDialog"
-import { useGlobalBindings } from "@/lib/actions"
+import { useAppActions, useGlobalBindings } from "@/lib/actions"
 import { installBrowserGuards } from "@/lib/browser-guards"
 import { startEventBridge } from "@/lib/events"
 import { useKeymapSync } from "@/lib/keymap"
@@ -32,7 +32,13 @@ export function AppShell() {
   useKeymapSync()
   useLayerSafetyNet()
   useEffect(() => startUpdateSchedule(), [])
-  useEffect(() => startEventBridge(), [])
+  // The bridge lives as long as the window: it asks for where to go when it needs to.
+  const { goPlugins } = useAppActions()
+  const go = useRef(goPlugins)
+  useEffect(() => {
+    go.current = goPlugins
+  })
+  useEffect(() => startEventBridge({ goPlugins: () => go.current() }), [])
   useEffect(() => installBrowserGuards({ dev: import.meta.env.DEV }), [])
   const railHidden = useUi((s) => s.sidebarCollapsed)
 

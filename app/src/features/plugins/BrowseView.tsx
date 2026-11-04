@@ -1,4 +1,5 @@
 import { ArrowCounterClockwise, ArrowsClockwise, CircleNotch, DownloadSimple, MagnifyingGlass, PuzzlePiece, Warning } from "@/components/icons"
+import { Banner } from "@/components/ui/banner"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Switch } from "@/components/ui/switch"
@@ -77,22 +78,18 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
   return (
     <>
       {status.outOfDate && (
-        <div
-          role="status"
-          className="mb-10 flex max-w-4xl flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-accent-line/50 bg-accent-subtle px-5 py-4"
-        >
-          <Warning weight="fill" className="size-5 shrink-0 text-accent" />
-          <div className="min-w-0 flex-1">
-            <p className="text-md font-medium text-fg-1">The plugin catalog is out of date</p>
-            <p className="text-sm text-fg-2">
-              {since ? `AutoScene couldn't check it since ${since}.` : "AutoScene couldn't check it yet."} Plugins can't be
-              installed from it until it can.
-            </p>
-          </div>
-          <Button disabled={checking} onClick={() => void checkCatalog()}>
-            {checking ? <CircleNotch className="animate-spin" /> : <ArrowCounterClockwise />} Try again
-          </Button>
-        </div>
+        <Banner
+          tone="accent"
+          icon={<Warning weight="fill" />}
+          title="The plugin catalog is out of date"
+          description={`${since ? `AutoScene couldn't check it since ${since}.` : "AutoScene couldn't check it yet."} Plugins can't be installed from it until it can.`}
+          actions={
+            <Button disabled={checking} onClick={() => void checkCatalog()}>
+              {checking ? <CircleNotch className="animate-spin" /> : <ArrowCounterClockwise />} Try again
+            </Button>
+          }
+          className="mb-10 max-w-4xl"
+        />
       )}
 
       <div className="max-w-4xl">

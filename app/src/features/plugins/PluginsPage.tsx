@@ -21,11 +21,15 @@ import { PluginCard } from "@/features/plugins/PluginCard"
 import { allowUnreviewed } from "@/features/plugins/plugin-actions"
 import { FIND_FROM, pluginMatches } from "@/features/plugins/plugin-items"
 import { UninstallDialog } from "@/features/plugins/UninstallDialog"
+import { WithdrawnBanner } from "@/features/plugins/WithdrawnBanner"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
 import { errorMessage } from "@/lib/ipc"
 import { useCatalog, usePlugins, useSettings } from "@/lib/queries"
 
 const ALLOW = "Allow plugins that AutoScene has not reviewed"
+
+/** How many withdrawn plugins get a banner each: the rest are counted. */
+const BANNERS = 3
 
 /** The grid of a project's library, for plugins. */
 const GRID = "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-8"
@@ -37,7 +41,8 @@ type View = "installed" | "browse"
  * as a card with its artwork, the ones the catalog has a newer version of
  * under Updates above the rest, a search from six of them, and who may run
  * code here below them. Browse: what AutoScene's catalog offers
- * (`BrowseView`), with its search while it has cards to find.
+ * (`BrowseView`), with its search while it has cards to find. Plugins
+ * AutoScene withdrew have a banner each at the top of both, offering to go.
  */
 export function PluginsPage() {
   const { data: settings } = useSettings()
@@ -75,6 +80,7 @@ export function PluginsPage() {
   // Update all takes only the updates that ask for nothing new.
   const quiet = [...updates.values()].filter(asksNothingNew)
   const updatingAll = useUpdatingAll((s) => s.updating)
+  const withdrawn = plugins?.filter((p) => p.withdrawn != null) ?? []
   const go = (next: View) => {
     void navigate({ to: "/plugins", search: next === "browse" ? { view: "browse" } : {} })
   }
@@ -161,6 +167,19 @@ export function PluginsPage() {
       </header>
 
       <div className="px-10 pb-16">
+        {withdrawn.length > 0 && (
+          <div className="mb-10 flex max-w-4xl flex-col gap-3">
+            {withdrawn.slice(0, BANNERS).map((p) => (
+              <WithdrawnBanner key={p.id} p={p} onUninstall={() => setRemoving(p)} />
+            ))}
+            {withdrawn.length > BANNERS && (
+              <p className="px-1 text-sm text-fg-2">
+                and {(withdrawn.length - BANNERS).toLocaleString("en-GB")} more {withdrawn.length - BANNERS === 1 ? "plugin" : "plugins"} AutoScene
+                withdrew, marked on {withdrawn.length - BANNERS === 1 ? "its card" : "their cards"} under Installed.
+              </p>
+            )}
+          </div>
+        )}
         {view === "browse" ? (
           <BrowseView query={query} onClear={() => setQuery("")} />
         ) : error && plugins === undefined ? (

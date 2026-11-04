@@ -1034,3 +1034,134 @@ describe("PluginsPage", () => {
     expect((screen.getByRole("textbox", { name: "Find a plugin" }) as HTMLInputElement).value).toBe("")
   })
 })
+
+describe("a withdrawn plugin", () => {
+  const leaky = (o: Partial<PluginInfo> = {}) =>
+    pluginInfo({
+      id: "dev.example.leaky",
+      name: "Leaky Export",
+      withdrawn: "It sent export paths to a server.",
+      active: false,
+      ...o,
+    })
+  /** The banner AutoScene shows for the plugin `name`. */
+  const banner = async (name: string) => (await screen.findByText(`AutoScene withdrew Plugin “${name}”`)).closest("[role=status]") as HTMLElement
+
+  it("shows the withdrawn banner with Uninstall…", async () => {
+    state.plugins = [leaky(), pluginInfo({ id: "dev.a.fine", name: "Fine" })]
+    show()
+    const b = await banner("Leaky Export")
+    // AutoScene's words: the catalog's reason, then what it means.
+    expect(within(b).getByText("It sent export paths to a server. It is turned off.")).toBeTruthy()
+    // Only the withdrawn plugin has one, and none offers Update… without a version to update to.
+    expect(screen.getAllByRole("status")).toHaveLength(1)
+    expect(within(b).queryByRole("button", { name: "Update…" })).toBeNull()
+    // The card says so in place of its trust, and gives the reason.
+    const c = await card("Leaky Export")
+    expect(within(c).getByText("Withdrawn")).toBeTruthy()
+    expect(within(c).queryByText("Reviewed by AutoScene")).toBeNull()
+    expect(within(c).getByText("It sent export paths to a server.")).toBeTruthy()
+    expect(within(await card("Fine")).getByText("Reviewed by AutoScene")).toBeTruthy()
+    // Uninstall… asks first, as the menu's does.
+    fireEvent.click(within(b).getByRole("button", { name: "Uninstall…" }))
+    const dialog = await screen.findByRole("dialog", { name: "Uninstall Leaky Export?" })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Uninstall" }))
+    await waitFor(() => expect(commands.pluginUninstall).toHaveBeenCalledExactlyOnceWith("dev.example.leaky", false))
+  })
+
+  it("a withdrawn plugin can't be turned on", async () => {
+    // Still on in its record: it doesn't run, so its switch says off.
+    state.plugins = [leaky({ enabled: true })]
+    show()
+    const on = await screen.findByRole("switch", { name: "Enable Leaky Export" })
+    expect(on.getAttribute("aria-checked")).toBe("false")
+    expect((on as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(on)
+    expect(commands.pluginSetEnabled).not.toHaveBeenCalled()
+    // It doesn't count as running, and its art is dimmed.
+    expect(screen.getByText("1 plugin · 0 running")).toBeTruthy()
+  })
+
+  it("offers Update… while the catalog has a version that isn't withdrawn", async () => {
+    state.plugins = [leaky()]
+    state.catalog = catalogView([catalogPlugin({ id: "dev.example.leaky", name: "Leaky Export", version: "1.0.5", installed: "1.0.0", update: true })])
+    vi.mocked(commands.catalogGet).mockImplementation(() => new Promise(() => {}))
+    show()
+    const b = await banner("Leaky Export")
+    fireEvent.click(await within(b).findByRole("button", { name: "Update…" }))
+    await screen.findByRole("dialog", { name: "Getting Leaky Export…" })
+    expect(commands.catalogGet).toHaveBeenCalledExactlyOnceWith("dev.example.leaky")
+    // The button waits for the get it asked for.
+    // (The dialog hides the page from the accessibility tree.)
+    expect((within(b).getByRole("button", { name: "Update…", hidden: true }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it("its card gives the withdrawal before a fault of its own", async () => {
+    state.plugins = [leaky({ broken: "Its files are missing. Install it again." })]
+    show()
+    const c = await card("Leaky Export")
+    expect(within(c).getByText("It sent export paths to a server.")).toBeTruthy()
+    expect(within(c).queryByText("Its files are missing. Install it again.")).toBeNull()
+    // Nor does a second banner ask to fix it.
+    expect(screen.getAllByRole("status")).toHaveLength(1)
+  })
+
+  it("shows three banners at most, and counts the rest", async () => {
+    state.plugins = ["one", "two", "three", "four", "five"].map((n) => leaky({ id: `dev.example.${n}`, name: `Leaky ${n}` }))
+    show()
+    await banner("Leaky one")
+    expect(screen.getAllByRole("status")).toHaveLength(3)
+    expect(screen.getByText(/^and 2 more plugins AutoScene withdrew/)).toBeTruthy()
+    // Their cards say so all the same.
+    expect(within(await card("Leaky five")).getByText("Withdrawn")).toBeTruthy()
+  })
+
+  it("Browse says Withdrawn on the card of a plugin the index still lists, every version withdrawn", async () => {
+    state.plugins = [leaky({ enabled: true })]
+    state.catalog = catalogView([
+      catalogPlugin({ id: "dev.example.leaky", name: "Leaky Export", version: "1.0.2", installed: "1.0.2", runsHere: false }),
+      catalogPlugin({ id: "dev.autoscene.poster-maker", name: "Poster Maker" }),
+    ])
+    const { router } = show()
+    await act(() => router.navigate({ to: "/plugins", search: { view: "browse" } }))
+    await card("Poster Maker")
+    const c = within(await card("Leaky Export"))
+    await waitFor(() => expect(c.getByText("Withdrawn")).toBeTruthy())
+    expect(c.queryByText("Reviewed by AutoScene")).toBeNull()
+    // Not "Not for this computer": the banner says why, and nothing is installed again.
+    expect(c.queryByText("Not for this computer")).toBeNull()
+    expect(c.queryByText("Installed")).toBeNull()
+    expect(c.queryByRole("button", { name: /Install…|Update…/ })).toBeNull()
+    // The plugin that is fine keeps its words.
+    expect(within(await card("Poster Maker")).getByText("Reviewed by AutoScene")).toBeTruthy()
+  })
+
+  it("Browse keeps Update… on a withdrawn plugin's card when a version that isn't withdrawn is listed", async () => {
+    state.plugins = [leaky()]
+    state.catalog = catalogView([
+      catalogPlugin({ id: "dev.example.leaky", name: "Leaky Export", version: "1.0.5", installed: "1.0.0", update: true }),
+    ])
+    const { router } = show()
+    await act(() => router.navigate({ to: "/plugins", search: { view: "browse" } }))
+    const c = within(await card("Leaky Export"))
+    await waitFor(() => expect(c.getByText("Withdrawn")).toBeTruthy())
+    expect(c.getByRole("button", { name: "Update…" })).toBeTruthy()
+  })
+
+  it("shows the banner in Browse too", async () => {
+    state.plugins = [leaky()]
+    state.catalog = catalogView([catalogPlugin({ id: "dev.autoscene.poster-maker", name: "Poster Maker" })])
+    const { router } = show()
+    await act(() => router.navigate({ to: "/plugins", search: { view: "browse" } }))
+    await card("Poster Maker")
+    expect(await banner("Leaky Export")).toBeTruthy()
+  })
+
+  it("says nothing of plugins that aren't withdrawn", async () => {
+    state.plugins = [pluginInfo({ id: "dev.a.fine", name: "Fine" })]
+    show()
+    await card("Fine")
+    expect(screen.queryByRole("status")).toBeNull()
+    expect(screen.queryByText("Withdrawn")).toBeNull()
+  })
+})

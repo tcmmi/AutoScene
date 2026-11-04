@@ -33,6 +33,7 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     pluginOpenSource: vi.fn(() => Promise.resolve(true)),
     pluginSettingsSet: vi.fn((_id: string, v: Record<string, unknown>) => Promise.resolve(v)),
     pluginUninstall: vi.fn(() => Promise.resolve(null)),
+    catalogList: vi.fn(() => Promise.resolve({ status: { ready: false }, plugins: [] })),
   },
 }))
 // A page scrolls, which jsdom can't.
@@ -316,6 +317,89 @@ describe("a plugin's settings", () => {
     // It never said the plugin it just removed isn't installed.
     expect(screen.queryByText("This plugin isn't installed")).toBeNull()
     await waitFor(() => expect(queryClient.getQueryData<PluginInfo[]>(qk.plugins)?.map((x) => x.id)).toEqual(["dev.a.two"]))
+  })
+})
+
+describe("a plugin AutoScene withdrew", () => {
+  const leaky = () =>
+    pluginInfo({ id: "dev.example.leaky", name: "Leaky Export", icon: ICON, withdrawn: "It sent export paths to a server.", active: false })
+  /** The banner under the hero. */
+  const banner = async () => (await screen.findByText("AutoScene withdrew Plugin “Leaky Export”")).closest("[role=status]") as HTMLElement
+
+  it("says so under its hero, with its badge, and can't be turned on", async () => {
+    state.plugins = [leaky()]
+    const { container } = show("dev.example.leaky")
+    const b = await banner()
+    expect(within(b).getByText("It sent export paths to a server. It is turned off.")).toBeTruthy()
+    // Its badge says Withdrawn in place of its trust.
+    expect(screen.getByText("Withdrawn")).toBeTruthy()
+    expect(screen.queryByText("Reviewed by AutoScene")).toBeNull()
+    // AutoScene's words are beside the plugin's picture, never on it.
+    expect(drawn(container, ICON).backdrop.concat(drawn(container, ICON).framed).every((img) => !b.contains(img))).toBe(true)
+    // Dimmed, and off for good.
+    expect(drawn(container, ICON).backdrop[0].className).toContain("opacity-60")
+    const on = screen.getByRole("switch", { name: "Turned on" })
+    expect(on.getAttribute("aria-checked")).toBe("false")
+    expect((on as HTMLButtonElement).disabled).toBe(true)
+    // Only this banner: nothing else on the screen asks to be fixed.
+    expect(screen.getAllByRole("status")).toHaveLength(1)
+  })
+
+  it("Uninstall… asks, and once it is gone the screen goes to Plugins", async () => {
+    const user = userEvent.setup()
+    state.plugins = [leaky()]
+    const { router } = show("dev.example.leaky")
+    await user.click(within(await banner()).getByRole("button", { name: "Uninstall…" }))
+    const dialog = await screen.findByRole("dialog", { name: "Uninstall Leaky Export?" })
+    await user.click(within(dialog).getByRole("button", { name: "Uninstall" }))
+    expect(commands.pluginUninstall).toHaveBeenCalledExactlyOnceWith("dev.example.leaky", false)
+    await waitFor(() => expect(router.state.location.pathname).toBe("/plugins"))
+    expect(screen.queryByText("This plugin isn't installed")).toBeNull()
+  })
+
+  it("a withdrawn plugin that is also broken or not allowed has this one banner and no fix", async () => {
+    // Broken, from a folder (which "Load its folder again…" would offer a fix for).
+    state.plugins = [{ ...leaky(), source: "folder", broken: "Its plugin.json is missing." }]
+    state.allow = true
+    show("dev.example.leaky")
+    await banner()
+    expect(screen.getAllByRole("status")).toHaveLength(1)
+    expect(screen.queryByText("Its plugin.json is missing.")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Load its folder again…" })).toBeNull()
+    cleanup()
+
+    // Not allowed (unreviewed, so off by the setting).
+    state.plugins = [{ ...leaky(), enabled: true, blockedReason: BLOCKED }]
+    queryClient.clear()
+    show("dev.example.leaky")
+    await banner()
+    expect(screen.getAllByRole("status")).toHaveLength(1)
+    expect(screen.queryByText(NOT_REVIEWED)).toBeNull()
+    expect(screen.queryByRole("button", { name: "Allow them…" })).toBeNull()
+  })
+
+  it("offers nothing to set up: no after-export switches, and its settings stay still", async () => {
+    state.plugins = [
+      {
+        ...leaky(),
+        exportActions: [{ id: "list", title: "List the clips", description: null, afterExport: true }],
+        settings: [{ key: "on", title: "Post it", description: null, kind: { type: "boolean", default: true } }],
+        pages: [{ id: "main", title: "Leaky Export", description: null, entry: "ui/index.html", scope: "global", rail: false }],
+      },
+    ]
+    show("dev.example.leaky")
+    await banner()
+    expect(screen.queryByText("After every export")).toBeNull()
+    expect(screen.queryByRole("switch", { name: "Run List the clips after every export" })).toBeNull()
+    expect((await screen.findByRole("switch", { name: "Post it" })).hasAttribute("disabled")).toBe(true)
+    expect((screen.getByRole("button", { name: "Open Leaky Export" }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it("a plugin that is not withdrawn has no banner", async () => {
+    state.plugins = [pluginInfo({ id: "dev.a.fine", name: "Fine" })]
+    show("dev.a.fine")
+    await heroName("Fine")
+    expect(screen.queryByText(/AutoScene withdrew/)).toBeNull()
   })
 })
 

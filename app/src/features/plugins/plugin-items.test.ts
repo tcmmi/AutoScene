@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { pluginInfo } from "@/test/plugins"
-import { pluginMatches, pluginPicture, pluginsLit } from "./plugin-items"
+import { pluginMatches, pluginPicture, pluginsLit, trustLabel, withdrawnLine } from "./plugin-items"
 
 describe("finding a plugin", () => {
   const p = pluginInfo({ id: "dev.example.discord-notify", name: "Discord Notify", author: "Example Dev", description: "Posts each export's clip list." })
@@ -47,5 +47,19 @@ describe("the rail's Plugins tile", () => {
     expect(pluginsLit("/")).toBe(false)
     expect(pluginsLit("/settings/general")).toBe(false)
     expect(pluginsLit("/pluginsx")).toBe(false)
+  })
+})
+
+describe("a withdrawn plugin", () => {
+  it("says Withdrawn before any trust, a loaded folder's too", () => {
+    expect(trustLabel({ trust: "reviewed", source: "package", withdrawn: null })).toEqual({ label: "Reviewed by AutoScene", tone: "neutral" })
+    for (const source of ["package", "folder"] as const)
+      expect(trustLabel({ trust: "reviewed", source, withdrawn: "It sent export paths." })).toEqual({ label: "Withdrawn", tone: "danger" })
+  })
+
+  it("its banner gives the catalog's reason as a sentence, then what that means", () => {
+    expect(withdrawnLine("It sent export paths to a server.")).toBe("It sent export paths to a server. It is turned off.")
+    expect(withdrawnLine("  It sent paths  ")).toBe("It sent paths. It is turned off.")
+    expect(withdrawnLine("Is it safe?")).toBe("Is it safe? It is turned off.")
   })
 })

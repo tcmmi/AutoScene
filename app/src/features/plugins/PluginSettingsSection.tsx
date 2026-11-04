@@ -23,6 +23,7 @@ import { useLoadAgain } from "./load-again"
 import { pageLink } from "./page-items"
 import { allowUnreviewed, keepPlugin } from "./plugin-actions"
 import { checkedWhen, permissionLabel } from "./plugin-items"
+import { WithdrawnNotice } from "./WithdrawnBanner"
 
 type Values = Partial<Record<string, SettingValue>>
 type NumberKind = Extract<SettingKind, { type: "number" }>
@@ -77,6 +78,7 @@ export function PluginSettingsSection({ id }: { id: string }) {
 
 function PluginSettings({ p }: { p: PluginInfo }) {
   const { data: values, error: unread } = usePluginSettings(p.id)
+  const { goPlugins } = useAppActions()
   const save = async (key: string, value: SettingValue) => {
     // Shown at once; read again when it couldn't be saved. Not before the
     // others were read: they would show their defaults meanwhile.
@@ -97,6 +99,8 @@ function PluginSettings({ p }: { p: PluginInfo }) {
   }
   return (
     <>
+      {/* Gone, the plugin leaves this screen for Plugins. */}
+      <WithdrawnNotice p={p} onUninstalled={goPlugins} className="mb-8" />
       <Fix p={p} />
 
       {p.settings.length > 0 && (
@@ -116,14 +120,19 @@ function PluginSettings({ p }: { p: PluginInfo }) {
               {s.kind.type === "secret" ? (
                 <SecretSetting p={p} spec={s} placeholder={s.kind.placeholder} />
               ) : (
-                <SettingControl spec={s} value={valueOf(s, values)} ready={values !== undefined} onSave={(v) => void save(s.key, v)} />
+                <SettingControl
+                  spec={s}
+                  value={valueOf(s, values)}
+                  ready={values !== undefined && p.withdrawn == null}
+                  onSave={(v) => void save(s.key, v)} />
               )}
             </SettingRow>
           ))}
         </SettingsGroup>
       )}
 
-      {p.exportActions.length > 0 && (
+      {/* A withdrawn plugin never runs again: nothing here would do anything. */}
+      {p.exportActions.length > 0 && p.withdrawn == null && (
         <SettingsGroup title="After every export" description="Runs by itself each time an export finishes with every clip made.">
           {p.exportActions.map((a) => (
             <SettingRow key={a.id} label={a.title} description={a.description ?? undefined}>
@@ -189,7 +198,8 @@ function Fix({ p }: { p: PluginInfo }) {
   // The backend refuses a folder's review while unreviewed plugins are off.
   const allowed = useSettings().data?.allowUnreviewedPlugins ?? false
   const blocked = p.broken == null && p.enabled && p.blockedReason != null
-  if (p.broken == null && !blocked) return null
+  // The withdrawn banner above says why it doesn't run, and nothing here would change that.
+  if (p.withdrawn != null || (p.broken == null && !blocked)) return null
   return (
     <div
       role="status"
@@ -395,7 +405,7 @@ function SecretSetting({ p, spec, placeholder }: { p: PluginInfo; spec: SettingS
   return (
     <div className="flex items-center gap-3">
       <span className="text-sm text-fg-2">{stored ? "Saved in your system's keychain" : "Not set"}</span>
-      <Button size="sm" variant="ghost" aria-label={`Set ${spec.title}`} onClick={() => setSetting(true)}>
+      <Button size="sm" variant="ghost" aria-label={`Set ${spec.title}`} disabled={p.withdrawn != null} onClick={() => setSetting(true)}>
         Set…
       </Button>
       {stored && (

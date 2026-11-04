@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { type MenuKit, contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { TopBar } from "@/components/ui/topbar"
 import { NotFound } from "@/features/not-found"
+import { WithdrawnNotice } from "@/features/plugins/WithdrawnBanner"
 import { ProjectNav } from "@/features/project/ProjectNav"
 import { useAppActions } from "@/lib/actions"
 import { errorMessage } from "@/lib/ipc"
@@ -28,7 +29,8 @@ type PageParams = { plugin?: string; page?: string; _splat?: string; pid?: strin
  * can't word); everything in the frame under it is the plugin's. A bad
  * link, a page that isn't there, or a project page outside a project isn't
  * found; a page of a plugin that can't run now says why, and so does one
- * whose plugins couldn't be read.
+ * whose plugins couldn't be read. A page of a plugin AutoScene withdrew shows
+ * the withdrawal's banner in place of the frame.
  */
 export function PluginPageView() {
   const { plugin, page, _splat, pid } = useParams({ strict: false }) as PageParams
@@ -70,7 +72,8 @@ function PluginPage({
   const [reloads, setReloads] = useState(0)
   const close = useLeave(pid)
   const reload = () => setReloads((n) => n + 1)
-  const items = (kit: MenuKit) => <PageItems kit={kit} p={p} onReload={reload} onClose={close} />
+  // Its page stays shut when withdrawn: there is nothing to reload.
+  const items = (kit: MenuKit) => <PageItems kit={kit} p={p} onReload={p.withdrawn == null ? reload : undefined} onClose={close} />
   return (
     <div className="flex h-full flex-col">
       <TopBar back={back} title={<PageTitle p={p} pg={pg} />} nav={pid != null ? <ProjectNav pid={pid} /> : undefined}>
@@ -84,7 +87,12 @@ function PluginPage({
           <DropdownMenuContent>{items(dropdownKit)}</DropdownMenuContent>
         </DropdownMenu>
       </TopBar>
-      {p.active ? (
+      {p.withdrawn != null ? (
+        // AutoScene took the plugin back: its page stays shut, and the way out is here.
+        <div className="flex-1 overflow-y-auto px-10 py-10">
+          <WithdrawnNotice p={p} onUninstalled={close} className="max-w-4xl" />
+        </div>
+      ) : p.active ? (
         <PluginFrame
           key={`${p.id}/${pg.id}/${pid ?? ""}/${p.version}/${reloads}`}
           pluginId={p.id}
@@ -116,14 +124,16 @@ function PageTitle({ p, pg }: { p: PluginInfo; pg: PageSpec }) {
 }
 
 /** What can be done with a plugin's page: its ⋯ menu and a right-click on it list the same. */
-function PageItems({ kit, p, onReload, onClose }: { kit: MenuKit; p: PluginInfo; onReload: () => void; onClose: () => void }) {
+function PageItems({ kit, p, onReload, onClose }: { kit: MenuKit; p: PluginInfo; onReload?: () => void; onClose: () => void }) {
   const { goPlugin } = useAppActions()
   const { Item, Separator } = kit
   return (
     <>
-      <Item onSelect={onReload}>
-        <ArrowCounterClockwise /> Reload the page
-      </Item>
+      {onReload && (
+        <Item onSelect={onReload}>
+          <ArrowCounterClockwise /> Reload the page
+        </Item>
+      )}
       <Item onSelect={() => goPlugin(p.id)}>
         <SlidersHorizontal /> Its settings
       </Item>

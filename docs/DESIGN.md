@@ -92,7 +92,8 @@ Rules:
   pill gains a fifth item, More, when plugins add pages to projects; it never grows past five.
 - **Plugin pages** (`features/plugins/PluginPageView.tsx`) fill the view under AutoScene's top bar, whose title
   shows the plugin's icon, the page's title and a "Plugin" badge no plugin can word. What is inside the frame is the
-  plugin's; its ⋯ menu and right-click are AutoScene's.
+  plugin's; its ⋯ menu and right-click are AutoScene's. A page of a plugin AutoScene withdrew has no frame: the red
+  `Banner` (Uninstall…, and Update… when the catalog has a version that isn't withdrawn) takes its place.
 - **Native chrome** per platform: Windows 11 Mica behind the rail with our own caption buttons over the top-right
   corner (`--caption-inset`); macOS vibrancy with the traffic lights over the rail's top (`--traffic-inset`);
   Linux and Windows 10 solid. The material is only claimed where it exists (`detectMaterial`), so nothing turns
@@ -148,7 +149,8 @@ Rules:
   Fast Scan and a warm-white Continue. It never opens over another layer, steps aside for New Project, and the update
   dialog waits for it.
 - **Project overview:** the hero, then shelves (`Section` + `Shelf`) of the cast as portraits and the episodes as
-  stills. Files that can't be found show as a gold banner with Locate folder… here and on Episodes.
+  stills. Files that can't be found show as a gold banner with Locate folder… here and on Episodes (the shared
+  `Banner`, `components/ui/banner.tsx`: gold for what the person can fix, red for what is wrong or was taken away).
 - **Cast:** portrait cards (3:4), Everyone else, hidden characters folded away; Review as the white pill. From six
   characters a row under the title finds someone: a search, All · Named · To review, and the order. Ctrl/⌘-click
   selects cards, Shift-click every one between; a glass bar at the bottom hides them (a toast takes them back).
@@ -198,7 +200,11 @@ Rules:
   search finds one by its name, author, description or id; the allow switch sits below the cards. When the catalog
   has newer versions, they sit above the rest under Updates, each card with Update…, and Update all (n) takes those
   that ask for nothing new; one whose review marks anything New (a permission, host, page or program), or that
-  replaces a loaded folder or a plugin AutoScene hadn't reviewed, opens that review instead.
+  replaces a loaded folder or a plugin AutoScene hadn't reviewed, opens that review instead. A plugin AutoScene
+  withdrew has a red `Banner` at the top of both views (at most three, then "and n more"), "AutoScene withdrew Plugin
+  “name”" with the catalog's reason, Update… while the catalog has a version that isn't withdrawn, and Uninstall….
+  Its card says "Withdrawn" in place of the trust badge, shows the reason under the facts, and its switch is off and
+  can't be turned on; a toast says so once per session when a check withdraws it.
 - **Plugins → Browse:** the catalog first (when it was checked, Check now, and the daily switch; a gold banner when
   it is out of date, and then no cards and no search), then each plugin AutoScene's catalog offers as a card in the
   same art language, its icon as the art (the catalog has no banners) or its name. The caption: "Reviewed by
@@ -210,7 +216,8 @@ Rules:
   framed beside the name, the trust badge, the version and the licence as chips, then "Says it is by …" ("By …"
   only for a package AutoScene reviewed) and what it says it does. On the right the switch and ⋯. Trust text never
   sits on a plugin's own picture. Below, a banner only when something needs fixing, with the control that fixes it
-  (Allow them…, Load its folder again…), then its settings, after every export, pages, what it may use and files.
+  (Allow them…, Load its folder again…; a withdrawn plugin's red banner with Uninstall…, and its badge says "Withdrawn"),
+  then its settings, after every export, pages, what it may use and files.
 - **Settings → Shortcuts:** the keymap first — Keys like in AutoScene · Premiere Pro · DaVinci Resolve as a pill
   (a card under each option lists where its keys differ) and Reset all — then every shortcut by place. A click on
   a key listens for the new one (a gold pill, held modifiers shown, Esc stops); a key another shortcut in reach

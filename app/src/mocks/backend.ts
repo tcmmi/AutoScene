@@ -11,7 +11,7 @@
 import { emit } from "@tauri-apps/api/event"
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks"
 import { isFinished } from "@/state/activity"
-import { catalogCancel, catalogGet, catalogList, catalogRefresh } from "./catalog"
+import { catalogAtStart, catalogCancel, catalogGet, catalogList, catalogRefresh } from "./catalog"
 import {
   castEdit,
   castGet,
@@ -1375,7 +1375,10 @@ const handlers: Record<string, Handler> = {
     })
   },
   // Plugins: one reviewed is installed; each .asp picked offers another (see mocks/plugins.ts).
-  plugins_list: () => pluginsList(allows()),
+  plugins_list: () => {
+    checkAtStart()
+    return pluginsList(allows())
+  },
   plugin_banner: ({ pluginId }) => pluginBanner(String(pluginId)),
   // The browser's confirm stands in for the system's dialog, as for a page's ui.openExternal.
   plugin_open_source: ({ pluginId }) => {
@@ -1522,6 +1525,19 @@ ${url}`
     return o.multiple ? files : files[0]
   },
   "plugin:dialog|save": ({ options }) => (options as { defaultPath?: string } | undefined)?.defaultPath ?? null,
+}
+
+/**
+ * The check AutoScene makes at start tells of a withdrawal (once, and
+ * `?mockCatalog=withdrawn` only) when the window first asks for its
+ * plugins: a moment later it listens.
+ */
+let checkedAtStart = false
+function checkAtStart() {
+  if (checkedAtStart) return
+  checkedAtStart = true
+  const withdrawn = catalogAtStart()
+  if (withdrawn.length > 0) window.setTimeout(() => void emit("catalog:changed", { withdrawn }), 800)
 }
 
 export function installMockBackend() {

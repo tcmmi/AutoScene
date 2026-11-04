@@ -25,6 +25,9 @@
 //! decoded on the GPU where it can, `DECODER=cpu` in software; detectors one
 //! frame at a time); `LOW_CONFIDENCE=<score>` sets the head score below
 //! which a look's neighbours are looked at too.
+//! `ACCEL=<dir>` registers NVIDIA's engine for GeForce RTX cards from that
+//! pack folder (`as_infer::accel`), `CACHE=<dir>` keeps what it (or Core ML)
+//! compiled there between runs, as the app's engine does.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -62,7 +65,13 @@ fn main() {
         })
         .collect();
     let tools = Tools::locate(Some(Path::new(ffmpeg))).unwrap();
-    let rt = Runtime::load(Path::new(ort), true).unwrap();
+    let placement = as_infer::Placement {
+        accel: std::env::var_os("ACCEL").map(PathBuf::from),
+        cache: std::env::var_os("CACHE").map(PathBuf::from),
+        ..as_infer::Placement::default()
+    };
+    let rt = Runtime::load_with(Path::new(ort), &placement).unwrap();
+    println!("NVIDIA's engine: {:?}", rt.accel_state());
     let mut params = Params::anime();
     if let Ok(v) = std::env::var("STRIDE") {
         params.stride = v.parse().expect("STRIDE=<frames>");
@@ -118,10 +127,13 @@ fn main() {
     let mut persons =
         person_model.map(|m| Yolo::load(&rt, &m, size, input("PERSON_INPUT", (1280, 736)), batch).unwrap());
     println!(
-        "anime pass at {size:?}, stride {}, person model {}, Fast Scan {}",
+        "anime pass at {size:?}, stride {}, person model {}, Fast Scan {}; heads on {:?}, persons on {:?}, CCIP on {:?}",
         params.stride,
         persons.is_some(),
-        fast_params.is_some()
+        fast_params.is_some(),
+        heads.device(),
+        persons.as_ref().map(Yolo::device),
+        ccip.device()
     );
     let t0 = Instant::now();
     let mut all = Vec::new();

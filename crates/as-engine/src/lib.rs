@@ -3,8 +3,10 @@
 //!
 //! - A GPU or driver crash never takes the UI down; the job resumes from the
 //!   app's checkpoints in a fresh process.
-//! - `ort` binds one runtime per process (`load-dynamic`), so switching
-//!   runtimes (DirectML ↔ CUDA speed pack) is a restart.
+//! - `ort` binds one runtime per process (`load-dynamic`): NVIDIA's engine
+//!   for GeForce RTX cards loads into it as a plugin (`--accel`), beside
+//!   DirectML. A native crash of the plugin takes only the engine down, and
+//!   the next one starts without it ([`client`]).
 //! - VRAM is freed completely when the engine exits after being idle.
 //!
 //! The app starts its own executable with `--engine` (see [`main_from_args`]);
@@ -16,7 +18,7 @@ pub mod server;
 
 /// The devices an engine finds and opens ([`Engine::hardware`]), and where
 /// its models run ([`Config::placement`]).
-pub use as_infer::{Placement, hardware};
+pub use as_infer::{Placement, accel, hardware};
 pub use client::{Devices, Engine, EngineError, FacesEvent, FacesInput, Launch, Note, ShotsEvent};
 pub use server::{Config, serve};
 
@@ -46,20 +48,24 @@ pub fn args(cfg: &Config) -> Vec<OsString> {
     if let Some(d) = &cfg.placement.cache {
         a.extend(["--cache".into(), d.clone().into()]);
     }
+    if let Some(d) = &cfg.placement.accel {
+        a.extend(["--accel".into(), d.clone().into()]);
+    }
     if let Some(idle) = cfg.idle_exit {
         a.extend(["--idle".into(), idle.as_secs().to_string().into()]);
     }
     a
 }
 
-const USAGE: &str =
-    "usage: autoscene-engine --ort DIR --models DIR [--ffmpeg DIR] [--gpu KEY | --cpu] [--cache DIR] [--idle SECS]";
+const USAGE: &str = "usage: autoscene-engine --ort DIR --models DIR [--ffmpeg DIR] [--gpu KEY | --cpu] [--cache DIR] [--accel DIR] [--idle SECS]";
 
 /// Serve on stdin/stdout. `args`: `--ort DIR --models DIR [--ffmpeg DIR]
-/// [--gpu KEY | --cpu] [--cache DIR] [--idle SECS]`: `--gpu` names a
-/// graphics card by its key (`as_infer::hardware::key`); with neither, the
-/// engine runs on Automatic's. `--cache` keeps compiled models between runs
-/// (`as_infer::cache`). Logs go to stderr. Returns the exit code.
+/// [--gpu KEY | --cpu] [--cache DIR] [--accel DIR] [--idle SECS]`: `--gpu`
+/// names a graphics card by its key (`as_infer::hardware::key`); with
+/// neither, the engine runs on Automatic's. `--cache` keeps compiled models
+/// between runs (`as_infer::cache`). `--accel` names the folder of NVIDIA's
+/// engine for GeForce RTX cards (`as_infer::accel`). Logs go to stderr.
+/// Returns the exit code.
 pub fn main_from_args(args: impl IntoIterator<Item = OsString>) -> i32 {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -96,6 +102,7 @@ fn config(args: impl IntoIterator<Item = OsString>) -> Result<Config, String> {
                 placement.gpu = Choice::from_setting(&key.to_string_lossy());
             }
             Some("--cache") => placement.cache = Some(it.next().map(PathBuf::from).ok_or(USAGE)?),
+            Some("--accel") => placement.accel = Some(it.next().map(PathBuf::from).ok_or(USAGE)?),
             Some("--idle") => idle_exit = it.next().and_then(|s| s.to_str()?.parse().ok()).map(Duration::from_secs),
             _ => return Err(format!("unknown argument {a:?}")),
         }
@@ -132,7 +139,10 @@ mod tests {
             assert_eq!((back.ort_dir, back.models_dir), (cfg.ort_dir, cfg.models_dir));
         }
         let twin = Config {
-            placement: Placement { gpu: Choice::Card { vendor: 0x10DE, device: 0x2204, nth: 1 }, cache: None },
+            placement: Placement {
+                gpu: Choice::Card { vendor: 0x10DE, device: 0x2204, nth: 1 },
+                ..Placement::default()
+            },
             ..base
         };
         let line: Vec<String> = args(&twin).iter().map(|a| a.to_string_lossy().into_owned()).collect();
@@ -151,7 +161,11 @@ mod tests {
             ort_dir: PathBuf::from("ort"),
             models_dir: PathBuf::from("models"),
             ffmpeg_dir: None,
-            placement: Placement { gpu: Choice::Processor, cache: Some(PathBuf::from("data dir/cache")) },
+            placement: Placement {
+                gpu: Choice::Processor,
+                cache: Some(PathBuf::from("data dir/cache")),
+                ..Placement::default()
+            },
             idle_exit: None,
         };
         let line: Vec<String> = args(&kept).iter().map(|a| a.to_string_lossy().into_owned()).collect();
@@ -162,5 +176,22 @@ mod tests {
         assert!(!args(&none).iter().any(|a| a == "--cache"));
         assert_eq!(config(args(&none)).unwrap().placement.cache, None);
         assert!(config(["--ort", "o", "--models", "m", "--cache"].map(OsString::from)).is_err());
+    }
+
+    #[test]
+    fn args_round_trip_nvidias_engine() {
+        let with = Config {
+            ort_dir: PathBuf::from("ort"),
+            models_dir: PathBuf::from("models"),
+            ffmpeg_dir: None,
+            placement: Placement { accel: Some(PathBuf::from("runtimes/nvidia rtx")), ..Placement::default() },
+            idle_exit: None,
+        };
+        let line: Vec<String> = args(&with).iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert!(line.windows(2).any(|w| w == ["--accel", "runtimes/nvidia rtx"]), "{line:?}");
+        assert_eq!(config(args(&with)).unwrap().placement, with.placement);
+        let without = Config { placement: Placement::default(), ..with };
+        assert!(!args(&without).iter().any(|a| a == "--accel"));
+        assert!(config(["--ort", "o", "--models", "m", "--accel"].map(OsString::from)).is_err());
     }
 }

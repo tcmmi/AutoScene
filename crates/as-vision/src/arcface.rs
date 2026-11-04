@@ -7,11 +7,20 @@
 //! The graph's batch dimension is free, so faces are embedded in fixed-size
 //! batches (padded at the end) and the session is planned for exactly that
 //! shape.
+//!
+//! On a GPU provider the session first proves itself against goldens: faces
+//! of the Tears of Steel stills the app ships, aligned, and the vectors ONNX
+//! Runtime's CPU gave them (`tools/model-prep/goldens_arcface.py`,
+//! `fixtures/arcface`). One that misses them moves down its device chain
+//! ([`crate::golden`]); on Core ML a miss is logged until a real Mac says how
+//! far its Neural Engine may bend the embeddings.
 
 use std::path::Path;
 
 use as_infer::onnx::InputShape;
 use as_infer::{Device, InferError, InferResult, Runtime, Session, TensorRef};
+
+use crate::golden::{self, OnCoreMl};
 
 /// Side of the aligned face crop.
 pub const CROP: usize = 112;
@@ -23,6 +32,21 @@ pub const DIM: usize = 512;
 /// Landmark positions of the 112×112 ArcFace template (eyes, nose, mouth corners).
 const TEMPLATE: [[f32; 2]; 5] =
     [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]];
+
+/// The goldens' aligned faces (RGB24) and the raw vectors (little-endian
+/// f32) the CPU gave them.
+pub const GOLDEN_RGB: [&[u8; CROP_BYTES]; 4] = [
+    include_bytes!("../fixtures/arcface/tos_0.rgb"),
+    include_bytes!("../fixtures/arcface/tos_1.rgb"),
+    include_bytes!("../fixtures/arcface/tos_2.rgb"),
+    include_bytes!("../fixtures/arcface/tos_3.rgb"),
+];
+pub const GOLDEN_VEC: [&[u8; DIM * 4]; 4] = [
+    include_bytes!("../fixtures/arcface/tos_0.vec"),
+    include_bytes!("../fixtures/arcface/tos_1.vec"),
+    include_bytes!("../fixtures/arcface/tos_2.vec"),
+    include_bytes!("../fixtures/arcface/tos_3.vec"),
+];
 
 /// One embedding: unit length, plus the length the network gave it (low for
 /// blurry, dark or odd crops — a quality hint).
@@ -45,8 +69,16 @@ pub struct ArcFace {
 
 impl ArcFace {
     /// `batch`: faces per inference call (the last call of a run is padded).
+    /// On anything but the CPU the session first proves itself against the
+    /// goldens ([`golden::proven`]).
     pub fn load(rt: &Runtime, model: &Path, batch: usize) -> InferResult<Self> {
         assert!(batch > 0);
+        let name = model.display().to_string();
+        golden::proven(rt, &name, OnCoreMl::Log, |rt| Self::open(rt, model, batch), Self::device, Self::goldens)
+    }
+
+    /// Load the session on the runtime's preferred device, unchecked.
+    fn open(rt: &Runtime, model: &Path, batch: usize) -> InferResult<Self> {
         let (session, device) = rt.session_shaped(model, InputShape::Fixed(&[batch, 3, CROP, CROP]))?;
         let input = session
             .inputs()
@@ -55,6 +87,14 @@ impl ArcFace {
             .ok_or_else(|| InferError::Model(format!("{}: no input", model.display())))?;
         tracing::info!(device = ?device, batch, "ArcFace ready");
         Ok(Self { session, input, device, batch, x: vec![0.0; batch * 3 * CROP * CROP], spoilt: 0 })
+    }
+
+    /// The worst cosine of the golden faces' embeddings to their stored CPU
+    /// vectors; `None` when they couldn't be embedded.
+    pub fn goldens(&mut self) -> Option<f32> {
+        let faces: Vec<&[u8]> = GOLDEN_RGB.iter().map(|r| &r[..]).collect();
+        let stored: Vec<&[u8]> = GOLDEN_VEC.iter().map(|v| &v[..]).collect();
+        Some(golden::worst(&self.embed(&faces).ok()?, &stored))
     }
 
     pub fn device(&self) -> Device {

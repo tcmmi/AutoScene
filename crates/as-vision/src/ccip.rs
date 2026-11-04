@@ -13,7 +13,7 @@
 //! On a GPU provider the session first proves itself against the CPU
 //! goldens of `tools/anime-bench/goldens.py` (`fixtures/anime/ccip_*`):
 //! low-precision maths would bend every embedding a little, so a session
-//! that misses them is rebuilt on the CPU.
+//! that misses them moves down its device chain ([`crate::golden`]).
 
 use std::path::Path;
 
@@ -21,6 +21,7 @@ use as_infer::onnx::InputShape;
 use as_infer::{Device, InferError, InferResult, Runtime, Session, TensorRef};
 
 use crate::arcface::{Embedding, unit};
+use crate::golden::{self, OnCoreMl};
 
 /// Side of the square crop the embedder reads.
 pub const CROP: usize = 384;
@@ -31,8 +32,6 @@ pub const DIM: usize = 768;
 /// CLIP input normalisation, channel-wise: (v/255 − mean)/std.
 const MEAN: [f32; 3] = [0.48145466, 0.4578275, 0.40821072];
 const STD: [f32; 3] = [0.26862954, 0.2613026, 0.2757771];
-/// How close a session's embeddings must sit to the CPU goldens (cosine).
-const GOLDEN_COSINE: f32 = 0.999;
 
 /// The parity check a non-CPU session runs first: the crops of
 /// `tools/anime-bench/goldens.py` and the vectors its CPU run stored
@@ -57,17 +56,6 @@ fn tables() -> [[f32; 256]; 3] {
     std::array::from_fn(|c| std::array::from_fn(|v| (v as f32 / 255.0 - MEAN[c]) / STD[c]))
 }
 
-/// Cosine similarity of a (unit) embedding to a stored raw vector. Cosine
-/// is scale-invariant: the golden vectors stay unnormalised, and an
-/// embedding that is all zeros — one the session spoilt — matches nothing.
-fn cosine_to_raw(e: &Embedding, raw: &[f32]) -> f32 {
-    let norm = raw.iter().map(|v| v * v).sum::<f32>().sqrt();
-    if !(norm.is_finite() && norm > 0.0) {
-        return 0.0;
-    }
-    e.v.iter().zip(raw).map(|(a, b)| a * b).sum::<f32>() / norm
-}
-
 pub struct Ccip {
     session: Session,
     input: String,
@@ -84,22 +72,13 @@ pub struct Ccip {
 impl Ccip {
     /// `batch`: crops per inference call (the last call of a run is padded).
     /// On anything but the CPU the session first proves itself against the
-    /// golden crops: one that computes them wrong is rebuilt on the CPU,
-    /// and if even that misses, loading fails.
+    /// golden crops: one that computes them wrong is built again further
+    /// down its device chain, and if even the CPU misses, loading fails
+    /// ([`golden::proven`]; Core ML too, as its fp32 programs must hold).
     pub fn load(rt: &Runtime, model: &Path, batch: usize) -> InferResult<Self> {
         assert!(batch > 0);
-        let mut ccip = Self::open(rt, model, batch)?;
-        if ccip.device != Device::Cpu && !ccip.matches_goldens() {
-            tracing::warn!(
-                device = ?ccip.device,
-                "CCIP embeddings don't match the CPU goldens; rebuilding on the CPU"
-            );
-            ccip = Self::open(&rt.on_cpu(), model, batch)?;
-            if !ccip.matches_goldens() {
-                return Err(InferError::Model(format!("{}: embeddings don't match the CPU goldens", model.display())));
-            }
-        }
-        Ok(ccip)
+        let name = model.display().to_string();
+        golden::proven(rt, &name, OnCoreMl::Enforce, |rt| Self::open(rt, model, batch), Self::device, Self::goldens)
     }
 
     /// Load the session on the runtime's preferred device, unchecked.
@@ -114,17 +93,12 @@ impl Ccip {
         Ok(Self { session, input, device, batch, tables: tables(), x: vec![0.0; batch * 3 * CROP * CROP], spoilt: 0 })
     }
 
-    /// Every golden crop embedded within [`GOLDEN_COSINE`] of its stored
-    /// CPU vector.
-    fn matches_goldens(&mut self) -> bool {
+    /// The worst cosine of the golden crops' embeddings to their stored CPU
+    /// vectors; `None` when they couldn't be embedded.
+    fn goldens(&mut self) -> Option<f32> {
         let crops: Vec<&[u8]> = GOLDEN_RGB.iter().map(|r| &r[..]).collect();
-        let Ok(embeddings) = self.embed(&crops) else {
-            return false;
-        };
-        embeddings.iter().zip(&GOLDEN_VEC).all(|(e, bytes)| {
-            let golden: Vec<f32> = bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
-            cosine_to_raw(e, &golden) >= GOLDEN_COSINE
-        })
+        let stored: Vec<&[u8]> = GOLDEN_VEC.iter().map(|v| &v[..]).collect();
+        Some(golden::worst(&self.embed(&crops).ok()?, &stored))
     }
 
     pub fn device(&self) -> Device {
@@ -318,12 +292,12 @@ mod tests {
     #[test]
     fn cosine_to_raw_is_scale_invariant_and_refuses_no_direction() {
         let e = unit(&[3.0, 0.0, -4.0]);
-        assert!((cosine_to_raw(&e, &[6.0, 0.0, -8.0]) - 1.0).abs() < 1e-6);
-        assert!((cosine_to_raw(&e, &[30.0, 0.0, -40.0]) - 1.0).abs() < 1e-6);
-        assert!(cosine_to_raw(&e, &[0.0, 1.0, 0.0]).abs() < 1e-6);
+        assert!((golden::cosine(&e, &[6.0, 0.0, -8.0]) - 1.0).abs() < 1e-6);
+        assert!((golden::cosine(&e, &[30.0, 0.0, -40.0]) - 1.0).abs() < 1e-6);
+        assert!(golden::cosine(&e, &[0.0, 1.0, 0.0]).abs() < 1e-6);
         // Neither a zero stored vector nor a spoilt embedding matches.
-        assert_eq!(cosine_to_raw(&e, &[0.0; 3]), 0.0);
-        assert_eq!(cosine_to_raw(&Embedding { v: vec![0.0; 3], norm: 0.0 }, &[1.0, 2.0, 3.0]), 0.0);
+        assert_eq!(golden::cosine(&e, &[0.0; 3]), 0.0);
+        assert_eq!(golden::cosine(&Embedding { v: vec![0.0; 3], norm: 0.0 }, &[1.0, 2.0, 3.0]), 0.0);
     }
 
     #[test]

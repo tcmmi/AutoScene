@@ -6,6 +6,7 @@
 
 pub mod arcface;
 pub mod ccip;
+pub mod golden;
 pub mod image;
 pub mod person;
 pub mod reid;

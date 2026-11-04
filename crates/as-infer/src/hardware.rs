@@ -373,6 +373,12 @@ pub(crate) fn discover(env: &ort::environment::Environment) -> Hardware {
     }
 }
 
+/// The LUID of the card an ORT device stands for: how a plugin's device for
+/// the card in use is told from its others.
+pub(crate) fn luid_of(device: &ort::device::Device<'_>) -> Option<u64> {
+    raw(&device.hardware_device()).number("LUID")
+}
+
 fn raw(hw: &ort::device::HardwareDevice<'_>) -> RawDevice {
     use std::ffi::{CStr, c_char};
 

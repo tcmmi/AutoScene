@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use as_infer::accel::AccelState;
 use as_infer::hardware::Hardware;
 use as_media::MediaInfo;
 use base64::Engine as _;
@@ -132,11 +133,14 @@ pub struct ModelDevice {
 pub enum Reply {
     /// The runtime is loaded; models run on `device` where they can (each
     /// falls back to the CPU on its own, which every job reports: `Devices`).
-    /// `hardware` names the cards found and the one opened.
+    /// `hardware` names the cards found and the one opened; `accel` says
+    /// what became of NVIDIA's engine (`--accel`).
     Ready {
         device: String,
         #[serde(default)]
         hardware: Hardware,
+        #[serde(default)]
+        accel: AccelState,
     },
     /// Where job `id`'s models run, once they are loaded (before its first
     /// progress): on `preferred` each one it can take, on the CPU the rest.
@@ -178,6 +182,12 @@ pub enum Reply {
     Done {
         id: u64,
     },
+    /// A model of job `id` failed on NVIDIA's engine (`Failed` follows): the
+    /// app counts it against the pack and runs the job again without it.
+    AccelFailed {
+        id: u64,
+        detail: String,
+    },
     Failed {
         id: u64,
         message: String,
@@ -192,7 +202,7 @@ pub enum Reply {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -221,19 +231,40 @@ mod tests {
                 .into(),
         };
         let hardware = Hardware::windows(&[card], Some(&[67624])).chosen(&Choice::Auto);
-        let r = Reply::Ready { device: "GPU (DirectML)".into(), hardware: hardware.clone() };
+        let failed = AccelState::Failed { detail: "loading tensorrt_rtx_1_7.dll: not found".into() };
+        let r = Reply::Ready { device: "GPU (DirectML)".into(), hardware: hardware.clone(), accel: failed.clone() };
         match serde_json::from_str::<Reply>(&serde_json::to_string(&r).unwrap()).unwrap() {
-            Reply::Ready { hardware: back, .. } => {
-                assert_eq!(back, hardware);
+            Reply::Ready { hardware: back, accel, .. } => {
+                assert_eq!((back.clone(), accel), (hardware, failed));
                 assert_eq!((back.using, back.luid()), (Using::Gpu { index: 0 }, Some(67624)));
             }
             other => panic!("{other:?}"),
         }
-        // A line from an engine that named no hardware still reads.
+        // A line from an engine that named no hardware, or knows no NVIDIA
+        // engine, still reads.
         match serde_json::from_str::<Reply>(r#"{"event":"ready","device":"CPU"}"#).unwrap() {
-            Reply::Ready { device, hardware } => assert_eq!((device.as_str(), hardware), ("CPU", Hardware::default())),
+            Reply::Ready { device, hardware, accel } => {
+                assert_eq!((device.as_str(), hardware, accel), ("CPU", Hardware::default(), AccelState::Off))
+            }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn nvidias_engine_reports_how_it_fared() {
+        for (state, line) in [
+            (AccelState::Off, r#"{"state":"off"}"#),
+            (AccelState::Active, r#"{"state":"active"}"#),
+            (AccelState::Unsupported, r#"{"state":"unsupported"}"#),
+            (AccelState::Failed { detail: "x".into() }, r#"{"state":"failed","detail":"x"}"#),
+        ] {
+            assert_eq!(serde_json::to_string(&state).unwrap(), line);
+            assert_eq!(serde_json::from_str::<AccelState>(line).unwrap(), state);
+        }
+        let r = Reply::AccelFailed { id: 5, detail: "inference: CUDA error".into() };
+        let line = serde_json::to_string(&r).unwrap();
+        assert_eq!(line, r#"{"event":"accel_failed","id":5,"detail":"inference: CUDA error"}"#);
+        assert!(matches!(serde_json::from_str::<Reply>(&line).unwrap(), Reply::AccelFailed { id: 5, .. }));
     }
 
     #[test]
@@ -273,7 +304,7 @@ mod tests {
         assert!(matches!(back, Reply::FaceChunk { bodies, .. } if bodies.0 == [1, 0]));
     }
 
-    fn info() -> MediaInfo {
+    pub(crate) fn info() -> MediaInfo {
         serde_json::from_value(serde_json::json!({
             "container": "matroska,webm", "durationSec": null, "startSec": 0.0, "sizeBytes": null, "bitRate": null,
             "video": {

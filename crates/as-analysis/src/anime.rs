@@ -415,6 +415,10 @@ struct Pass<'a, C> {
     current: Option<ShotWork>,
     done_shots: Vec<ShotWork>,
     pending_crops: usize,
+    /// Samples taken in so far, and the heads of theirs embedded (for the
+    /// log: the embedder's share of a pass grows with the heads per sample).
+    samples: usize,
+    crops: usize,
     chunk: u32,
     chunk_start: FrameIdx,
     /// The chunk closes at the first shot starting at or after this frame.
@@ -541,6 +545,8 @@ impl<C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, C> {
             });
         }
         self.pending_crops += found.len();
+        self.samples += 1;
+        self.crops += found.len();
         cur.samples.push((f, found));
         // Embed in full batches as heads pile up; track finished shots.
         if self.pending_crops >= self.ccip.batch() * 4 {
@@ -599,7 +605,10 @@ impl<C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, C> {
         if let Some(c) = self.current.take() {
             self.done_shots.push(c);
         }
-        self.close_chunk(n)
+        self.close_chunk(n)?;
+        let per_sample = self.crops as f64 / self.samples.max(1) as f64;
+        tracing::info!(samples = self.samples, crops = self.crops, per_sample, "anime pass: heads embedded per sample");
+        Ok(())
     }
 }
 
@@ -714,6 +723,8 @@ pub fn face_tracks(
             current: None,
             done_shots: Vec::new(),
             pending_crops: 0,
+            samples: 0,
+            crops: 0,
             chunk,
             chunk_start: resume,
             chunk_goal: resume + chunk,

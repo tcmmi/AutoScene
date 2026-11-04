@@ -6,18 +6,33 @@
 //! A new launch ([`Engine::set_launch`], a graphics card chosen in Settings)
 //! applies from the next job: an idle engine stops at once, and a running
 //! job finishes on its engine, which stops right after it.
+//!
+//! NVIDIA's engine for GeForce RTX cards ([`Launch::accel`]) is a plugin of
+//! someone else's making in the engine's process. An engine started with it
+//! that dies before it is ready counts against it, and so does a job it has
+//! a part in that ends badly: its engine says it is in use, and a model of
+//! the job runs on it (or may, while the engine hasn't said where they run),
+//! and the engine dies under the job or a model fails on it. The next engine
+//! then starts without it for the rest of this session; the job runs again
+//! there, without using up one of its attempts. After [`PACK_FAILURES`] in a
+//! row, across sessions, engines start without it until the person tries
+//! again. A job it has a part in and finishes clears the count. A job it has
+//! no part in (shots, live-action faces) counts neither way: a driver reset
+//! under one is a crash like any other. "Processor only" never starts it.
 
 use std::cell::Cell;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use as_core::CancelToken;
+use as_infer::accel::{self, AccelState};
+use as_infer::computer::Choice;
 use as_infer::hardware::Hardware;
 use as_media::MediaInfo;
 use parking_lot::Mutex;
@@ -54,10 +69,50 @@ impl EngineError {
 }
 
 /// How to start the engine process.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Launch {
     pub program: PathBuf,
     pub args: Vec<OsString>,
+    /// The folder of NVIDIA's engine ([`as_infer::accel`]), passed as
+    /// `--accel` while it works (see the module doc). Never with "Processor
+    /// only": the engine wouldn't use it.
+    pub accel: Option<PathBuf>,
+    /// More environment for the engine process (tests).
+    pub env: Vec<(OsString, OsString)>,
+}
+
+impl Launch {
+    /// Start `program` with `prefix`, then `cfg`'s arguments; its folder of
+    /// NVIDIA's engine goes to [`Launch::accel`], unless the processor alone
+    /// computes.
+    pub fn engine(program: PathBuf, prefix: Vec<OsString>, cfg: &crate::Config) -> Self {
+        let placement = crate::Placement { accel: None, ..cfg.placement.clone() };
+        let mut args = prefix;
+        args.extend(crate::args(&crate::Config { placement, ..cfg.clone() }));
+        let accel = cfg.placement.accel.clone().filter(|_| cfg.placement.gpu != Choice::Processor);
+        Self { program, args, accel, env: Vec::new() }
+    }
+}
+
+/// Failures of NVIDIA's engine in a row after which engines start without
+/// it, until the person tries again ([`pack_failures`]).
+pub const PACK_FAILURES: u32 = 2;
+
+/// How many times in a row NVIDIA's engine in `dir` ended an engine or
+/// failed a model ([`accel::CRASHES`]); 0 when it never did, or since it last
+/// finished a job. Deleting the file is trying again.
+pub fn pack_failures(dir: &Path) -> u32 {
+    std::fs::read_to_string(dir.join(accel::CRASHES)).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+}
+
+fn set_pack_failures(dir: &Path, n: u32) {
+    let file = dir.join(accel::CRASHES);
+    let written = if n == 0 { std::fs::remove_file(&file) } else { std::fs::write(&file, n.to_string()) };
+    if let Err(e) = written
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(error = %e, "couldn't note how NVIDIA's engine fared");
+    }
 }
 
 /// Where a job's models run, as the engine reports it once they are loaded.
@@ -179,6 +234,11 @@ struct Proc {
     device: String,
     /// The launch it was started with ([`Engine::set_launch`] counts them).
     generation: u64,
+    /// The folder of NVIDIA's engine it was started with.
+    pack: Option<PathBuf>,
+    /// It said NVIDIA's engine is in use ([`AccelState::Active`]): it was
+    /// registered and serves the card in use.
+    pack_active: bool,
 }
 
 impl Proc {
@@ -224,6 +284,26 @@ const START_TIMEOUT: Duration = Duration::from_secs(60);
 /// Engine processes a job may go through before it fails.
 const ATTEMPTS: usize = 3;
 
+/// How an engine start went wrong.
+enum StartError {
+    /// It exited, or didn't say it was ready in time.
+    Died(String),
+    Other(EngineError),
+}
+
+/// How a job's engine fared with NVIDIA's engine.
+#[derive(Default)]
+struct PackRun {
+    /// The folder it was started with.
+    dir: Option<PathBuf>,
+    /// NVIDIA's engine had a part in the job: it was in use, and a model of
+    /// the job ran there (or may have, before the engine said where they run).
+    used: bool,
+    /// What ended the job it had a part in: the engine died under it, or a
+    /// model failed on NVIDIA's engine.
+    fault: Option<String>,
+}
+
 /// What [`Engine::watch`] hears about.
 pub enum Note<'a> {
     /// An engine started and named the devices it found and opened.
@@ -246,6 +326,10 @@ pub struct Engine {
     busy: AtomicU64,
     /// What the last engine to start found and opened.
     hardware: Mutex<Option<Hardware>>,
+    /// What became of NVIDIA's engine in the last engine to start.
+    accel: Mutex<Option<AccelState>>,
+    /// NVIDIA's engine failed this session: engines start without it.
+    pack_broken: AtomicBool,
     /// Where the last job's models ran, as its engine last said.
     devices: Mutex<Option<Devices>>,
     watch: OnceLock<Watch>,
@@ -260,8 +344,42 @@ impl Engine {
             pid: AtomicU32::new(0),
             busy: AtomicU64::new(0),
             hardware: Mutex::new(None),
+            accel: Mutex::new(None),
+            pack_broken: AtomicBool::new(false),
             devices: Mutex::new(None),
             watch: OnceLock::new(),
+        }
+    }
+
+    /// What became of NVIDIA's engine in the last engine to start (`None`
+    /// before one started): `Off` also when it started without it.
+    pub fn accel(&self) -> Option<AccelState> {
+        self.accel.lock().clone()
+    }
+
+    /// The folder of NVIDIA's engine the next engine starts with: the
+    /// launch's, unless it failed this session or [`PACK_FAILURES`] times in
+    /// a row.
+    fn pack(&self, launch: &Launch) -> Option<PathBuf> {
+        let dir = launch.accel.as_ref()?;
+        let usable = !self.pack_broken.load(Ordering::Relaxed) && pack_failures(dir) < PACK_FAILURES;
+        usable.then(|| dir.clone())
+    }
+
+    /// NVIDIA's engine in `dir` ended an engine or failed a model: count it,
+    /// and start engines without it for the rest of this session.
+    fn pack_failed(&self, dir: &Path, why: &str) {
+        let n = pack_failures(dir).saturating_add(1);
+        set_pack_failures(dir, n);
+        self.pack_broken.store(true, Ordering::Relaxed);
+        tracing::warn!(failures = n, "NVIDIA's engine failed ({why}); analysis runs without it");
+        self.note(Note::Changed);
+    }
+
+    /// A job finished with NVIDIA's engine in `dir`: its failures in a row end.
+    fn pack_worked(&self, dir: &Path) {
+        if pack_failures(dir) > 0 {
+            set_pack_failures(dir, 0);
         }
     }
 
@@ -486,16 +604,33 @@ impl Engine {
         make: impl Fn(u64) -> Request,
         mut on: impl FnMut(Reply) -> Result<(), String>,
     ) -> Result<(), EngineError> {
-        for attempt in 0..ATTEMPTS {
+        let mut attempt = 0;
+        // A failure of NVIDIA's engine costs no attempt, once per job.
+        let mut without_pack = true;
+        loop {
             let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-            match self.run(make(id), id, cancel, &mut on) {
+            let mut pack = PackRun::default();
+            let r = self.run(make(id), id, cancel, &mut on, &mut pack);
+            match (&r, pack.dir, pack.fault) {
+                (Ok(()), Some(dir), _) if pack.used => self.pack_worked(&dir),
+                (Err(_), Some(dir), Some(why)) if !cancel.is_cancelled() => {
+                    self.pack_failed(&dir, &why);
+                    if without_pack {
+                        without_pack = false;
+                        tracing::warn!("running the job again without NVIDIA's engine");
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+            match r {
                 Err(EngineError::Crashed(why)) if attempt + 1 < ATTEMPTS && !cancel.is_cancelled() => {
+                    attempt += 1;
                     tracing::warn!(%why, "engine went away; resuming in a fresh one");
                 }
                 r => return r,
             }
         }
-        unreachable!("the last attempt always returns")
     }
 
     /// Stop the engine (app shutdown). A running job fails with `Crashed`.
@@ -525,11 +660,14 @@ impl Engine {
         id: u64,
         cancel: &CancelToken,
         on: &mut impl FnMut(Reply) -> Result<(), String>,
+        pack: &mut PackRun,
     ) -> Result<(), EngineError> {
         let mut guard = self.proc.lock();
-        // An engine of an earlier launch never takes a job.
+        // An engine of an earlier launch never takes a job, nor one with
+        // NVIDIA's engine once it failed.
         let launch = self.launch.lock().1;
-        if guard.as_mut().is_some_and(|p| !p.alive() || p.generation != launch) {
+        let broken = self.pack_broken.load(Ordering::Relaxed);
+        if guard.as_mut().is_some_and(|p| !p.alive() || p.generation != launch || (broken && p.pack.is_some())) {
             self.discard(&mut guard);
         }
         // Replies left over from an earlier job are stale; an engine that
@@ -547,8 +685,9 @@ impl Engine {
             *guard = Some(self.start(cancel)?);
         }
         let launch = guard.as_ref().expect("started").generation;
+        pack.dir = guard.as_ref().expect("started").pack.clone();
         self.busy.store(launch, Ordering::Relaxed);
-        let r = self.serve(&mut guard, req, id, cancel, on);
+        let r = self.serve(&mut guard, req, id, cancel, on, pack);
         self.busy.store(0, Ordering::Relaxed);
         // A new launch came while the job ran: its engine stops now that it
         // is idle, so the next job starts one with the new arguments.
@@ -563,7 +702,9 @@ impl Engine {
     }
 
     /// Hand `req` to the engine in `slot` and relay its replies until the
-    /// job ends.
+    /// job ends. `pack` learns whether NVIDIA's engine had a part in the job,
+    /// and what ended the job there, if anything did: the engine died under
+    /// it, or a model failed there.
     fn serve(
         &self,
         slot: &mut Option<Proc>,
@@ -571,12 +712,22 @@ impl Engine {
         id: u64,
         cancel: &CancelToken,
         on: &mut impl FnMut(Reply) -> Result<(), String>,
+        pack: &mut PackRun,
     ) -> Result<(), EngineError> {
         let p = slot.as_mut().expect("started");
+        // Until the engine says where the job's models run: whether one may
+        // run on NVIDIA's engine.
+        let active = p.pack_active;
+        pack.used = active && crate::server::job_may_use_accel(&req);
         if let Err(e) = p.send(&req) {
             self.discard(slot);
+            if pack.used {
+                pack.fault = Some(format!("the engine with it didn't take the job: {e}"));
+            }
             return Err(EngineError::Crashed(format!("sending the job: {e}")));
         }
+        // A model failed on NVIDIA's engine; the job's failure follows.
+        let mut accel_failed: Option<String> = None;
         let mut cancel_sent: Option<Instant> = None;
         let mut handler_error: Option<String> = None;
         loop {
@@ -599,8 +750,15 @@ impl Engine {
                         return Err(match (handler_error, cancelled) {
                             (Some(e), _) => EngineError::saving(e),
                             (None, true) => EngineError::Cancelled,
-                            (None, false) => EngineError::Failed { message, detail },
+                            (None, false) => {
+                                pack.fault = accel_failed;
+                                EngineError::Failed { message, detail }
+                            }
                         });
+                    }
+                    Reply::AccelFailed { id: rid, detail } if rid == id => {
+                        tracing::warn!(id, %detail, "a model failed on NVIDIA's engine");
+                        accel_failed = Some(format!("a model failed on it: {detail}"));
                     }
                     Reply::Fatal { message, detail } => {
                         self.discard(slot);
@@ -614,6 +772,8 @@ impl Engine {
                         if rid == id =>
                     {
                         if let Reply::Devices { preferred, models, .. } = &r {
+                            let nvidia = as_infer::Device::NvRtx.label();
+                            pack.used = active && models.iter().any(|m| m.device == nvidia);
                             self.devices_seen(Devices::new(preferred.clone(), models.clone()));
                         }
                         if handler_error.is_none()
@@ -634,7 +794,12 @@ impl Engine {
                     return Err(match handler_error {
                         Some(e) => EngineError::saving(e),
                         None if cancel.is_cancelled() => EngineError::Cancelled,
-                        None => EngineError::Crashed(format!("exited ({status})")),
+                        None => {
+                            if pack.used {
+                                pack.fault = Some(format!("the engine with it exited under a job ({status})"));
+                            }
+                            EngineError::Crashed(format!("exited ({status})"))
+                        }
                     });
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -642,19 +807,56 @@ impl Engine {
         }
     }
 
+    /// Start an engine, with NVIDIA's engine while it works: one started
+    /// with it that dies before it is ready counts against it, and an engine
+    /// without it starts right away.
     fn start(&self, cancel: &CancelToken) -> Result<Proc, EngineError> {
         let (launch, generation) = self.launch();
+        if let Some(dir) = self.pack(&launch) {
+            match self.spawn(&launch, generation, Some(dir.clone()), cancel) {
+                Ok(p) => return Ok(p),
+                Err(StartError::Died(why)) if !cancel.is_cancelled() => {
+                    self.pack_failed(&dir, &format!("the engine with it ended before it was ready: {why}"));
+                }
+                Err(StartError::Died(_)) => return Err(EngineError::Cancelled),
+                Err(StartError::Other(e)) => return Err(e),
+            }
+        }
+        self.spawn(&launch, generation, None, cancel).map_err(|e| match e {
+            StartError::Died(detail) => EngineError::Start {
+                message: "The analysis engine couldn't start. Details are in the log.".into(),
+                detail,
+            },
+            StartError::Other(e) => e,
+        })
+    }
+
+    /// Start an engine with `launch` (and NVIDIA's engine in `pack`), and
+    /// wait until it is ready.
+    fn spawn(
+        &self,
+        launch: &Launch,
+        generation: u64,
+        pack: Option<PathBuf>,
+        cancel: &CancelToken,
+    ) -> Result<Proc, StartError> {
         let mut cmd = Command::new(&launch.program);
         cmd.args(&launch.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        if let Some(dir) = &pack {
+            cmd.arg("--accel").arg(dir);
+        }
+        cmd.envs(launch.env.iter().map(|(k, v)| (k, v)));
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
-        let mut child = as_media::proc::spawn(&mut cmd).map_err(|e| EngineError::Start {
-            message: "The analysis engine couldn't start. Reinstall AutoScene.".into(),
-            detail: format!("{}: {e}", launch.program.display()),
+        let mut child = as_media::proc::spawn(&mut cmd).map_err(|e| {
+            StartError::Other(EngineError::Start {
+                message: "The analysis engine couldn't start. Reinstall AutoScene.".into(),
+                detail: format!("{}: {e}", launch.program.display()),
+            })
         })?;
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
@@ -679,35 +881,39 @@ impl Engine {
             }
             let _ = tx.send(Msg::Exited);
         });
-        let mut p = Proc { child, stdin, replies: rx, device: String::new(), generation };
+        let mut p = Proc { child, stdin, replies: rx, device: String::new(), generation, pack, pack_active: false };
         let deadline = Instant::now() + START_TIMEOUT;
         loop {
             if cancel.is_cancelled() {
                 p.kill();
-                return Err(EngineError::Cancelled);
+                return Err(StartError::Other(EngineError::Cancelled));
             }
             let left = deadline.saturating_duration_since(Instant::now());
             match p.replies.recv_timeout(left.min(Duration::from_millis(100))) {
-                Ok(Msg::Reply(Reply::Ready { device, hardware })) => {
-                    tracing::info!(%device, pid = p.child.id(), "analysis engine ready on {hardware}");
+                Ok(Msg::Reply(Reply::Ready { device, hardware, accel })) => {
+                    tracing::info!(%device, pid = p.child.id(), ?accel, "analysis engine ready on {hardware}");
                     self.pid.store(p.child.id(), Ordering::Relaxed);
                     p.device = device;
+                    p.pack_active = p.pack.is_some() && accel == AccelState::Active;
                     *self.hardware.lock() = Some(hardware.clone());
+                    *self.accel.lock() = Some(accel);
                     self.note(Note::Ready(&hardware));
                     return Ok(p);
                 }
                 Ok(Msg::Reply(Reply::Fatal { message, detail })) => {
                     p.kill();
-                    return Err(EngineError::Start { message, detail });
+                    return Err(StartError::Other(EngineError::Start { message, detail }));
                 }
                 Ok(Msg::Reply(_)) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) if !left.is_zero() => {}
                 Ok(Msg::Exited) | Err(_) => {
                     p.kill();
-                    return Err(EngineError::Start {
-                        message: "The analysis engine couldn't start. Details are in the log.".into(),
-                        detail: "no ready message".into(),
-                    });
+                    let status = p.child.wait().map(|s| s.to_string()).unwrap_or_else(|e| e.to_string());
+                    return Err(StartError::Died(if left.is_zero() {
+                        "no ready message in time".into()
+                    } else {
+                        format!("no ready message: it exited ({status})")
+                    }));
                 }
             }
         }
@@ -757,6 +963,63 @@ mod tests {
         );
         assert_ne!(all.summary(), fell_back.summary());
         assert_eq!(all.summary(), "arcface-glintr100 on GPU (DirectML), scrfd-10g on GPU (DirectML)");
+    }
+
+    #[test]
+    fn two_failures_in_a_row_turn_the_pack_off_until_try_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let launch = Launch { accel: Some(dir.path().to_path_buf()), ..Launch::default() };
+        let session = Engine::new(launch.clone());
+        assert_eq!(session.pack(&launch).as_deref(), Some(dir.path()), "never failed: used");
+        // It fails once: off for the rest of this session, and counted.
+        session.pack_failed(dir.path(), "exited");
+        assert_eq!((session.pack(&launch), pack_failures(dir.path())), (None, 1));
+        // The next session tries it again; it fails again: off for good.
+        let next = Engine::new(launch.clone());
+        assert!(next.pack(&launch).is_some());
+        next.pack_failed(dir.path(), "a model failed");
+        assert_eq!(pack_failures(dir.path()), 2);
+        assert_eq!(Engine::new(launch.clone()).pack(&launch), None, "two in a row: engines start without it");
+        // Trying again deletes the count.
+        std::fs::remove_file(dir.path().join(accel::CRASHES)).unwrap();
+        let again = Engine::new(launch.clone());
+        assert!(again.pack(&launch).is_some());
+        // A failure, then a job it finishes: the failures in a row end.
+        again.pack_failed(dir.path(), "exited");
+        again.pack_worked(dir.path());
+        assert_eq!(pack_failures(dir.path()), 0);
+        assert!(!dir.path().join(accel::CRASHES).exists());
+        // Without a folder there is nothing to use.
+        let none = Launch::default();
+        assert_eq!(Engine::new(none.clone()).pack(&none), None);
+    }
+
+    #[test]
+    fn a_launch_carries_the_pack_beside_its_arguments() {
+        let cfg = crate::Config {
+            ort_dir: "ort".into(),
+            models_dir: "models".into(),
+            ffmpeg_dir: None,
+            placement: crate::Placement { accel: Some("runtimes/nvidia".into()), ..crate::Placement::default() },
+            idle_exit: None,
+        };
+        let launch = Launch::engine("autoscene".into(), vec!["--engine".into()], &cfg);
+        assert_eq!(launch.accel.as_deref(), Some(Path::new("runtimes/nvidia")));
+        assert_eq!(launch.args.first().map(OsString::as_os_str), Some(std::ffi::OsStr::new("--engine")));
+        // Only the client adds it, while it works.
+        assert!(!launch.args.iter().any(|a| a == "--accel"), "{:?}", launch.args);
+        // A card chosen: it goes along, the engine decides whether it serves it.
+        let card = Choice::Card { vendor: 0x1002, device: 0x73BF, nth: 0 };
+        let chosen =
+            crate::Config { placement: crate::Placement { gpu: card, ..cfg.placement.clone() }, ..cfg.clone() };
+        assert!(Launch::engine("autoscene".into(), Vec::new(), &chosen).accel.is_some());
+        // "Processor only" never uses it, so it never starts with it: a crash
+        // there is never the pack's.
+        let cpu = crate::Config {
+            placement: crate::Placement { gpu: Choice::Processor, ..cfg.placement.clone() },
+            ..cfg.clone()
+        };
+        assert_eq!(Launch::engine("autoscene".into(), Vec::new(), &cpu).accel, None);
     }
 
     #[test]

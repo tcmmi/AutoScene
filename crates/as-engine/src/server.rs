@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -18,9 +19,10 @@ use as_analysis::{
     signals, tracks,
 };
 use as_core::{CancelToken, FrameIndex, FrameRange};
-use as_infer::{Device, Runtime};
+use as_infer::accel::AccelState;
+use as_infer::{Device, InferError, Runtime};
 use as_media::{Source, Tools, frames};
-use as_models::ModelStore;
+use as_models::{ModelStore, ids};
 use as_vision::{ArcFace, Ccip, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo, YuNet};
 use parking_lot::Mutex;
 
@@ -45,6 +47,46 @@ const ANIME_HEAD_INPUT: (usize, usize) = (640, 640);
 /// characters whose heads are too small for the head detector.
 const ANIME_PERSON_INPUT: (usize, usize) = (960, 544);
 
+/// Whether the live-action models (faces and people) may run on NVIDIA's
+/// engine. Off until a run of the real engine shows them faster there with
+/// the identity bench unchanged: on its own, the face detector is no faster
+/// there and drifts more (design-i66_67 §2.4, C4).
+const LIVE_ON_ACCEL: bool = false;
+
+/// Whether model `id` may run on NVIDIA's engine, the live-action models
+/// only when `live` says so. The anime models may: they compute there what
+/// the processor computes, and CCIP proves it against its goldens at every
+/// load. TransNetV2 never does (the engine can't take one of its nodes), nor
+/// does Fast Scan's YuNet and SFace (SFace's embeddings bend there). Where
+/// a model runs no longer depends on which job loaded it first.
+fn may_use_accel(id: &str, live: bool) -> bool {
+    match id {
+        ids::ANIME_HEAD | ids::ANIME_PERSON | ids::ANIME_CCIP => true,
+        ids::SCRFD | ids::ARCFACE | ids::PERSONS | ids::PERSON_REID => live,
+        _ => false,
+    }
+}
+
+/// Whether job `req` may run a model on NVIDIA's engine ([`may_use_accel`]):
+/// anime faces and embeddings, and live-action faces once they are let on
+/// it. Shots and Fast Scan's own faces never do. Until the job's engine
+/// says where its models run, the app counts a death under the job against
+/// NVIDIA's engine only when this says it may have had a part in it.
+pub fn job_may_use_accel(req: &Request) -> bool {
+    match req {
+        Request::Faces(j) => j.anime || (LIVE_ON_ACCEL && !j.fast),
+        Request::Embed(_) => true,
+        Request::Shots(_) | Request::Cancel { .. } | Request::Shutdown => false,
+    }
+}
+
+/// Live-action models that landed on NVIDIA's engine and on another device:
+/// a pass that mixes the two is slower than one on either alone, so the
+/// family is loaded again without it.
+fn split(devices: &[Device]) -> bool {
+    devices.contains(&Device::NvRtx) && devices.iter().any(|d| *d != Device::NvRtx)
+}
+
 /// How the engine finds its runtime, models and tools.
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -63,13 +105,21 @@ pub struct Config {
 
 /// Shared stdout: one reply per line, flushed at once.
 #[derive(Clone)]
-struct Out(Arc<Mutex<Box<dyn Write + Send>>>);
+struct Out {
+    w: Arc<Mutex<Box<dyn Write + Send>>>,
+    /// A model of the running job runs on NVIDIA's engine ([`send_devices`]).
+    on_accel: Arc<AtomicBool>,
+}
 
 impl Out {
+    fn new(w: Box<dyn Write + Send>) -> Self {
+        Self { w: Arc::new(Mutex::new(w)), on_accel: Arc::default() }
+    }
+
     fn send(&self, reply: &Reply) {
         let mut line = serde_json::to_string(reply).expect("replies always serialise");
         line.push('\n');
-        let mut w = self.0.lock();
+        let mut w = self.w.lock();
         // A broken pipe means the app is gone; the reader thread ends the loop.
         let _ = w.write_all(line.as_bytes()).and_then(|()| w.flush());
     }
@@ -85,6 +135,9 @@ fn send_devices(out: &Out, id: u64, rt: &Runtime, models: &[(&str, Device)]) {
     if !on_cpu.is_empty() {
         tracing::warn!(id, ?on_cpu, preferred = ?preferred, "the GPU couldn't take every model; these run on the CPU");
     }
+    if models.iter().any(|(_, d)| *d == Device::NvRtx) {
+        out.on_accel.store(true, Ordering::Relaxed);
+    }
     out.send(&Reply::Devices {
         id,
         preferred: preferred.label().into(),
@@ -95,7 +148,8 @@ fn send_devices(out: &Out, id: u64, rt: &Runtime, models: &[(&str, Device)]) {
 /// Run the engine until stdin closes, a `shutdown` arrives, or it has been
 /// idle for `idle_exit`. Returns the process exit code.
 pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Write + Send + 'static) -> i32 {
-    let out = Out(Arc::new(Mutex::new(Box::new(output))));
+    let out = Out::new(Box::new(output));
+    let crash = crash_hook(&cfg);
     let tools = match Tools::locate(cfg.ffmpeg_dir.as_deref()) {
         Ok(t) => t,
         Err(e) => {
@@ -121,7 +175,17 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
             return 1;
         }
     };
-    out.send(&Reply::Ready { device: rt.preferred_device().label().to_string(), hardware: rt.hardware().clone() });
+    if crash == Some(CrashAt::Start) {
+        std::process::exit(CRASH_EXIT);
+    }
+    // The test hook's crash under a job stands for NVIDIA's engine failing
+    // in use: the engine says it is.
+    let accel = if crash == Some(CrashAt::Job) { AccelState::Active } else { rt.accel_state().clone() };
+    out.send(&Reply::Ready {
+        device: rt.preferred_device().label().to_string(),
+        hardware: rt.hardware().clone(),
+        accel,
+    });
 
     // Jobs queue up here; cancellation needs no queue and is handled at once.
     let (tx, rx) = mpsc::channel::<(Request, CancelToken)>();
@@ -134,6 +198,8 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
 
     let mut models = Models {
         store: ModelStore::new(&cfg.models_dir),
+        plain: rt.without_accel(),
+        live_accel_off: false,
         transnet: None,
         scrfd: Vec::new(),
         arcface: None,
@@ -159,6 +225,10 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
             Err(false) => break,
         };
         let id = job.id().expect("only jobs are queued");
+        if crash == Some(CrashAt::Job) {
+            std::process::exit(CRASH_EXIT);
+        }
+        out.on_accel.store(false, Ordering::Relaxed);
         let run = guarded(|| match job {
             Request::Shots(j) => run_shots(&tools, &rt, &mut models, *j, &cancel, &out),
             Request::Faces(j) => run_faces(&tools, &rt, &mut models, *j, &cancel, &out),
@@ -176,6 +246,11 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
                 if !e.is_cancelled() {
                     tracing::warn!(id, error = %e.detail(), "job failed");
                 }
+                // A model failed while it ran, and some ran on NVIDIA's
+                // engine: the app runs the job again without it.
+                if out.on_accel.load(Ordering::Relaxed) && matches!(e, AnalysisError::Infer(InferError::Run(_))) {
+                    out.send(&Reply::AccelFailed { id, detail: e.detail() });
+                }
                 Reply::Failed { id, message: e.to_string(), detail: e.detail(), cancelled: e.is_cancelled() }
             }
         };
@@ -186,6 +261,32 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
     // reader thread ends with stdin.
     drop(reader);
     0
+}
+
+/// Where a debug build's engine started with NVIDIA's engine exits on
+/// purpose (`AUTOSCENE_TEST_CRASH_WITH_ACCEL`), as a native crash of the
+/// plugin would end it: before it is ready, or at its first job (it then
+/// says NVIDIA's engine is in use, whatever became of it). For the tests of
+/// the app's side, which must start the next engine without it, and only
+/// for a job it may have had a part in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CrashAt {
+    Start,
+    Job,
+}
+
+/// The exit code of [`CrashAt`]'s exits.
+const CRASH_EXIT: i32 = 70;
+
+fn crash_hook(cfg: &Config) -> Option<CrashAt> {
+    if !cfg!(debug_assertions) || cfg.placement.accel.is_none() {
+        return None;
+    }
+    match std::env::var("AUTOSCENE_TEST_CRASH_WITH_ACCEL").ok()?.as_str() {
+        "start" => Some(CrashAt::Start),
+        "job" => Some(CrashAt::Job),
+        _ => None,
+    }
 }
 
 /// Run one job; what it panicked with, if it did. A bug in one job's pre- or
@@ -251,6 +352,12 @@ fn read_requests(
 
 struct Models {
     store: ModelStore,
+    /// The runtime without NVIDIA's engine, for the models never allowed on
+    /// it ([`may_use_accel`]).
+    plain: Runtime,
+    /// The live-action models landed on NVIDIA's engine and elsewhere once:
+    /// they stay off it for this engine's life ([`split`]).
+    live_accel_off: bool,
     transnet: Option<TransNet>,
     /// One face detector per look of the last faces job.
     scrfd: Vec<Scrfd>,
@@ -299,6 +406,43 @@ impl Models {
         }
     }
 
+    /// The runtime model `id` loads from: with NVIDIA's engine where the
+    /// model may use it ([`may_use_accel`]), else without.
+    fn runtime_for<'a>(&'a self, rt: &'a Runtime, id: &str) -> &'a Runtime {
+        if may_use_accel(id, LIVE_ON_ACCEL && !self.live_accel_off) { rt } else { &self.plain }
+    }
+
+    /// The devices of the live-action models loaded now.
+    fn live_devices(&self) -> Vec<Device> {
+        let detectors = self.scrfd.iter().map(Scrfd::device);
+        let embedders = self.arcface.as_ref().map(ArcFace::device);
+        let people = self
+            .persons
+            .as_ref()
+            .map(PpDet::device)
+            .into_iter()
+            .chain(self.person_reid.as_ref().map(PersonReid::device));
+        detectors.chain(embedders).chain(people).collect()
+    }
+
+    /// After the live-action models loaded: when they landed on NVIDIA's
+    /// engine and elsewhere, drop them and keep them off it from now on.
+    /// Returns whether they must be loaded again.
+    fn unsplit_live(&mut self) -> bool {
+        let devices = self.live_devices();
+        if !split(&devices) {
+            return false;
+        }
+        tracing::warn!(
+            ?devices,
+            "the live-action models landed on NVIDIA's engine and elsewhere; loading them without it"
+        );
+        self.live_accel_off = true;
+        self.scrfd.clear();
+        (self.arcface, self.persons, self.person_reid) = (None, None, None);
+        true
+    }
+
     /// The file of model `id`, hashed the first time this engine loads it
     /// (a damaged one loses its marker: the app's next install fetches it).
     fn path(&self, id: &str) -> Result<PathBuf, AnalysisError> {
@@ -315,17 +459,18 @@ impl Models {
         if !self.scrfd.iter().map(Scrfd::frame_size).eq(looks.iter().map(|l| l.size)) {
             let mut old = std::mem::take(&mut self.scrfd);
             old.retain(|d| looks.iter().any(|l| l.size == d.frame_size()));
-            let path = self.path(as_models::ids::SCRFD)?;
+            let path = self.path(ids::SCRFD)?;
             for l in looks {
                 let detector = match old.iter().position(|d| d.frame_size() == l.size) {
                     Some(i) => old.swap_remove(i),
-                    None => Scrfd::load(rt, &path, l.size, DETECT_BATCH)?,
+                    None => Scrfd::load(self.runtime_for(rt, ids::SCRFD), &path, l.size, DETECT_BATCH)?,
                 };
                 self.scrfd.push(detector);
             }
         }
         if self.arcface.is_none() {
-            self.arcface = Some(ArcFace::load(rt, &self.path(as_models::ids::ARCFACE)?, EMBED_BATCH)?);
+            let path = self.path(ids::ARCFACE)?;
+            self.arcface = Some(ArcFace::load(self.runtime_for(rt, ids::ARCFACE), &path, EMBED_BATCH)?);
         }
         Ok(())
     }
@@ -335,11 +480,12 @@ impl Models {
         self.keep(Family::Live);
         if self.yunet.as_ref().is_none_or(|d| d.frame_size() != size) {
             self.yunet = None;
-            let path = self.path(as_models::ids::YUNET)?;
-            self.yunet = Some(YuNet::load(rt, &path, size, FAST_DETECT_BATCH)?);
+            let path = self.path(ids::YUNET)?;
+            self.yunet = Some(YuNet::load(self.runtime_for(rt, ids::YUNET), &path, size, FAST_DETECT_BATCH)?);
         }
         if self.sface.is_none() {
-            self.sface = Some(SFace::load(rt, &self.path(as_models::ids::SFACE)?, FAST_EMBED_BATCH)?);
+            let path = self.path(ids::SFACE)?;
+            self.sface = Some(SFace::load(self.runtime_for(rt, ids::SFACE), &path, FAST_EMBED_BATCH)?);
         }
         Ok(())
     }
@@ -349,12 +495,14 @@ impl Models {
         self.keep(Family::Live);
         if self.persons.as_ref().is_none_or(|d| d.frame_size() != size) {
             self.persons = None;
-            let path = self.path(as_models::ids::PERSONS)?;
+            let path = self.path(ids::PERSONS)?;
+            let rt = self.runtime_for(rt, ids::PERSONS);
             self.persons = Some(PpDet::load(rt, &path, size, PERSON_INPUT, Fit::Pad, Norm::IMAGENET)?);
         }
         if self.person_reid.is_none() {
-            let path = self.path(as_models::ids::PERSON_REID)?;
-            self.person_reid = Some(PersonReid::load(rt, &path, REID_BATCH, Norm::IMAGENET)?);
+            let path = self.path(ids::PERSON_REID)?;
+            self.person_reid =
+                Some(PersonReid::load(self.runtime_for(rt, ids::PERSON_REID), &path, REID_BATCH, Norm::IMAGENET)?);
         }
         Ok(())
     }
@@ -363,7 +511,8 @@ impl Models {
     fn load_ccip(&mut self, rt: &Runtime) -> Result<(), AnalysisError> {
         self.keep(Family::Anime);
         if self.anime_ccip.is_none() {
-            self.anime_ccip = Some(Ccip::load(rt, &self.path(as_models::ids::ANIME_CCIP)?, CCIP_BATCH)?);
+            let path = self.path(ids::ANIME_CCIP)?;
+            self.anime_ccip = Some(Ccip::load(self.runtime_for(rt, ids::ANIME_CCIP), &path, CCIP_BATCH)?);
         }
         Ok(())
     }
@@ -378,21 +527,23 @@ impl Models {
         let stale = |d: &Yolo| d.frame_size() != size || d.batch() != batch;
         if self.anime_heads.as_ref().is_none_or(stale) {
             self.anime_heads = None;
-            let path = self.path(as_models::ids::ANIME_HEAD)?;
-            self.anime_heads = Some(Yolo::load(rt, &path, size, ANIME_HEAD_INPUT, batch)?);
+            let path = self.path(ids::ANIME_HEAD)?;
+            self.anime_heads =
+                Some(Yolo::load(self.runtime_for(rt, ids::ANIME_HEAD), &path, size, ANIME_HEAD_INPUT, batch)?);
         }
         if self.anime_persons.as_ref().is_none_or(stale) {
             self.anime_persons = None;
-            let path = self.path(as_models::ids::ANIME_PERSON)?;
-            self.anime_persons = Some(Yolo::load(rt, &path, size, ANIME_PERSON_INPUT, batch)?);
+            let path = self.path(ids::ANIME_PERSON)?;
+            self.anime_persons =
+                Some(Yolo::load(self.runtime_for(rt, ids::ANIME_PERSON), &path, size, ANIME_PERSON_INPUT, batch)?);
         }
         Ok(())
     }
 
     fn transnet(&mut self, rt: &Runtime) -> Result<&mut TransNet, AnalysisError> {
         if self.transnet.is_none() {
-            let path = self.path(as_models::ids::TRANSNET)?;
-            self.transnet = Some(TransNet::load(rt, &path)?);
+            let path = self.path(ids::TRANSNET)?;
+            self.transnet = Some(TransNet::load(self.runtime_for(rt, ids::TRANSNET), &path)?);
         }
         Ok(self.transnet.as_mut().expect("just loaded"))
     }
@@ -460,11 +611,20 @@ fn run_faces(
         ),
         None => None,
     };
+    let looks = detect_looks(&job.info, &params);
     if known.is_none() {
-        models.load_faces(rt, &detect_looks(&job.info, &params))?;
+        models.load_faces(rt, &looks)?;
     }
     if job.bodies {
         models.load_people(rt, size)?;
+    }
+    if LIVE_ON_ACCEL && models.unsplit_live() {
+        if known.is_none() {
+            models.load_faces(rt, &looks)?;
+        }
+        if job.bodies {
+            models.load_people(rt, size)?;
+        }
     }
     let Models { scrfd, arcface, persons, person_reid, .. } = models;
     let device = match known {
@@ -743,6 +903,80 @@ fn run_embed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn device_chain_puts_nvidia_first_only_where_allowed() {
+        // The anime models, wherever the engine is registered.
+        let anime = [ids::ANIME_HEAD, ids::ANIME_PERSON, ids::ANIME_CCIP];
+        for id in anime {
+            assert!(may_use_accel(id, false) && may_use_accel(id, true), "{id}");
+        }
+        // The live-action models only once they are let on it.
+        let live = [ids::SCRFD, ids::ARCFACE, ids::PERSONS, ids::PERSON_REID];
+        for id in live {
+            assert!(!may_use_accel(id, false) && may_use_accel(id, true), "{id}");
+        }
+        // Never: a node it can't take, and Fast Scan's models.
+        let never = [ids::TRANSNET, ids::YUNET, ids::SFACE];
+        for id in never {
+            assert!(!may_use_accel(id, false) && !may_use_accel(id, true), "{id}");
+        }
+        // A model the store gains is placed on purpose: it has to be one of
+        // these (and pass a parity check on the engine before it is let on).
+        for m in as_models::manifest() {
+            assert!(anime.iter().chain(&live).chain(&never).any(|id| *id == m.id), "where does {} run?", m.id);
+        }
+    }
+
+    #[test]
+    fn only_jobs_with_models_allowed_on_nvidias_engine_may_use_it() {
+        let faces = |anime, fast| {
+            Request::Faces(Box::new(FacesJob {
+                id: 1,
+                path: "a.mp4".into(),
+                info: crate::protocol::tests::info(),
+                index: Blob(Vec::new()),
+                shots: Vec::new(),
+                resume: 0,
+                chunk: 100,
+                bodies: false,
+                known: None,
+                animated: false,
+                fast,
+                anime,
+            }))
+        };
+        // Anime, also with Fast Scan, and the anime embedder for AniList art.
+        assert!(job_may_use_accel(&faces(true, false)));
+        assert!(job_may_use_accel(&faces(true, true)));
+        assert!(job_may_use_accel(&Request::Embed(Box::new(EmbedJob { id: 1, path: "a.png".into() }))));
+        // Live-action faces only once they are let on it; Fast Scan's never.
+        assert_eq!(job_may_use_accel(&faces(false, false)), LIVE_ON_ACCEL);
+        assert!(!job_may_use_accel(&faces(false, true)));
+        // Shots never: TransNetV2 can't run there.
+        let shots = ShotsJob {
+            id: 1,
+            path: "a.mp4".into(),
+            info: crate::protocol::tests::info(),
+            index: Blob(Vec::new()),
+            resume: 0,
+            chunk: 100,
+        };
+        assert!(!job_may_use_accel(&Request::Shots(Box::new(shots))));
+    }
+
+    #[test]
+    fn a_split_live_pass_reloads_on_directml() {
+        use Device::{Cpu, DirectMl, NvRtx};
+        // All on one engine, or none on NVIDIA's: kept.
+        assert!(!split(&[NvRtx, NvRtx, NvRtx]));
+        assert!(!split(&[DirectMl, DirectMl, Cpu]));
+        assert!(!split(&[]));
+        // Its detector on NVIDIA's engine and its embedder elsewhere (the
+        // embedder missed its goldens there, say): loaded again without it.
+        assert!(split(&[NvRtx, NvRtx, DirectMl]));
+        assert!(split(&[NvRtx, Cpu]));
+    }
 
     #[test]
     fn a_job_that_panics_fails_with_its_message() {

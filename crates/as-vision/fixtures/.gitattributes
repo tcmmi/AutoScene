@@ -1,0 +1,3 @@
+# Raw crops and vectors: never text, whatever their first bytes are.
+*.rgb binary
+*.vec binary

@@ -12,8 +12,11 @@
 //! [`computer`] says which graphics the analysis runs on, and whether they are
 //! built for AI work; [`hardware`] which cards ONNX Runtime finds, and opens
 //! the one the person chose ([`Placement`]). On a Mac, Core ML keeps what it
-//! compiled for the next start ([`cache`], [`Placement::cache`]).
+//! compiled for the next start ([`cache`], [`Placement::cache`]). On a
+//! GeForce RTX card, NVIDIA's engine can take the models allowed on it
+//! ([`accel`], [`Placement::accel`]), DirectML the rest.
 
+pub mod accel;
 pub mod cache;
 pub mod computer;
 pub mod hardware;
@@ -61,6 +64,8 @@ impl From<ort::Error> for InferError {
 /// Where a session computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
+    /// NVIDIA's engine for GeForce RTX cards ([`accel`]).
+    NvRtx,
     DirectMl,
     CoreMl,
     Cpu,
@@ -69,6 +74,7 @@ pub enum Device {
 impl Device {
     pub fn label(self) -> &'static str {
         match self {
+            Self::NvRtx => "GPU (TensorRT for RTX)",
             Self::DirectMl => "GPU (DirectML)",
             Self::CoreMl => "Apple Neural Engine / GPU (Core ML)",
             Self::Cpu => "CPU",
@@ -95,12 +101,16 @@ pub struct Placement {
     /// Core ML's under `coreml/` ([`cache`]). `None` compiles them at every
     /// start.
     pub cache: Option<PathBuf>,
+    /// The folder of NVIDIA's engine for GeForce RTX cards ([`accel`]), when
+    /// it is installed and switched on: registered if it serves the card in
+    /// use, for the sessions allowed on it ([`Runtime::without_accel`]).
+    pub accel: Option<PathBuf>,
 }
 
 impl Placement {
     /// Automatic, or the processor only.
     pub fn from_gpu(gpu: bool) -> Self {
-        Self { gpu: if gpu { computer::Choice::Auto } else { computer::Choice::Processor }, cache: None }
+        Self { gpu: if gpu { computer::Choice::Auto } else { computer::Choice::Processor }, ..Self::default() }
     }
 }
 
@@ -222,6 +232,13 @@ pub struct Runtime {
     /// Today's Core ML setup, or the one `coreml_bench` tries.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     coreml: CoreMlTrial,
+    /// NVIDIA's engine, registered with a device for the card in use.
+    accel: Option<Arc<accel::Registered>>,
+    /// What became of the pack [`Placement::accel`] named.
+    accel_state: accel::AccelState,
+    /// Sessions of this runtime may run on NVIDIA's engine
+    /// ([`Runtime::without_accel`]).
+    on_accel: bool,
 }
 
 static LOADED: OnceLock<PathBuf> = OnceLock::new();
@@ -261,12 +278,20 @@ impl Runtime {
             _ => Target::Gpu(hardware.adapter()),
         };
         tracing::info!(runtime = %name(&lib), "onnxruntime loaded; analysis runs on {hardware}");
+        let (accel_state, accel) = match &placement.accel {
+            // Never for the processor only: the pack is for a graphics card.
+            Some(dir) if target != Target::Cpu => register_accel(&env, dir, hardware.gpu()),
+            _ => (accel::AccelState::Off, None),
+        };
         Ok(Self {
             env,
             target,
             hardware: Arc::new(hardware),
             cache: placement.cache.clone(),
             coreml: CoreMlTrial::default(),
+            accel: accel.map(Arc::new),
+            accel_state,
+            on_accel: true,
         })
     }
 
@@ -274,6 +299,18 @@ impl Runtime {
     /// process: there is no second `load`), e.g. to check GPU results.
     pub fn on_cpu(&self) -> Self {
         Self { target: Target::Cpu, ..self.copy() }
+    }
+
+    /// The same runtime with no session on NVIDIA's engine: for the models
+    /// that are never allowed on it, and for one that missed its goldens
+    /// there.
+    pub fn without_accel(&self) -> Self {
+        Self { on_accel: false, ..self.copy() }
+    }
+
+    /// What became of NVIDIA's engine ([`Placement::accel`]).
+    pub fn accel_state(&self) -> &accel::AccelState {
+        &self.accel_state
     }
 
     /// The same runtime, keeping compiled models under `cache` instead
@@ -295,6 +332,9 @@ impl Runtime {
             hardware: Arc::clone(&self.hardware),
             cache: self.cache.clone(),
             coreml: self.coreml,
+            accel: self.accel.clone(),
+            accel_state: self.accel_state.clone(),
+            on_accel: self.on_accel,
         }
     }
 
@@ -303,13 +343,20 @@ impl Runtime {
         &self.hardware
     }
 
-    /// The device sessions will try first.
+    /// The device of the GPU runtime's own provider: the one sessions try
+    /// first, after NVIDIA's engine where it may take them ([`Runtime::devices`]).
     pub fn preferred_device(&self) -> Device {
         match self.target {
             Target::Gpu(_) if cfg!(windows) => Device::DirectMl,
             Target::Gpu(_) if cfg!(target_os = "macos") => Device::CoreMl,
             _ => Device::Cpu,
         }
+    }
+
+    /// The devices a session of this runtime tries, in order.
+    pub fn devices(&self) -> Vec<Device> {
+        let gpu = Some(self.preferred_device()).filter(|d| *d != Device::Cpu);
+        chain(gpu, self.on_accel && self.accel.is_some())
     }
 
     /// The same runtime, but sessions built so CoreML computes in fp32
@@ -351,12 +398,11 @@ impl Runtime {
     }
 
     fn session_from(&self, model: &Path, bytes: Option<&[u8]>, precision: Precision) -> InferResult<(Session, Device)> {
-        let want = self.preferred_device();
-        if want != Device::Cpu {
+        for want in self.devices().into_iter().filter(|d| *d != Device::Cpu) {
             match self.build(model, bytes, want, precision) {
                 Ok(s) => return Ok((s, want)),
                 Err(e) => {
-                    tracing::warn!(model = %name(model), device = ?want, error = %e.detail(), "GPU session failed; using the CPU")
+                    tracing::warn!(model = %name(model), device = ?want, error = %e.detail(), "GPU session failed; trying the next device")
                 }
             }
         }
@@ -370,20 +416,31 @@ impl Runtime {
         if device == Device::CoreMl
             && let Some(root) = &self.cache
         {
-            return self.build_kept(root, model, bytes, precision);
+            let options = cache::describe(&self.coreml.options(precision, None));
+            return self.build_kept(root, cache::COREML, &options, model, bytes, device, precision);
+        }
+        if device == Device::NvRtx
+            && let (Some(root), Some(accel)) = (&self.cache, &self.accel)
+        {
+            // The plugin's build is part of what it compiled.
+            let options = format!("{FALLBACK_OFF}=1;plugin={};", accel.plugin);
+            return self.build_kept(root, cache::TRTRTX, &options, model, bytes, device, precision);
         }
         self.build_in(model, bytes, device, precision, None)
     }
 
-    /// [`Runtime::build`] on Core ML, compiled into the folder of this model,
-    /// shape, runtime and options, or reusing what an earlier start compiled
-    /// there ([`cache::kept`]).
-    #[cfg(target_os = "macos")]
+    /// [`Runtime::build`] compiled into the folder of this model, shape,
+    /// runtime and provider `options` under `family`, or reusing what an
+    /// earlier start compiled there ([`cache::kept`]).
+    #[allow(clippy::too_many_arguments)]
     fn build_kept(
         &self,
         root: &Path,
+        family: &str,
+        options: &str,
         model: &Path,
         bytes: Option<&[u8]>,
+        device: Device,
         precision: Precision,
     ) -> InferResult<Session> {
         let read;
@@ -394,14 +451,12 @@ impl Runtime {
                 &read
             }
         };
-        let key = cache::key(exact, ort::info(), &cache::describe(&self.coreml.options(precision, None)));
-        cache::kept(root, cache::COREML, &key, &name(model), |dir| {
-            self.build_in(model, bytes, Device::CoreMl, precision, dir)
-        })
+        let key = cache::key(exact, ort::info(), options);
+        cache::kept(root, family, &key, &name(model), |dir| self.build_in(model, bytes, device, precision, dir))
     }
 
     /// [`Runtime::build`] without the cache's bookkeeping: `cache` is the
-    /// folder Core ML compiles into.
+    /// folder Core ML or NVIDIA's engine compiles into.
     fn build_in(
         &self,
         model: &Path,
@@ -411,10 +466,30 @@ impl Runtime {
         cache: Option<&Path>,
     ) -> InferResult<Session> {
         #[cfg(not(target_os = "macos"))]
-        let _ = (precision, cache);
+        let _ = precision;
         let err = |e: String| InferError::Model(format!("{}: {e}", model.display()));
         let mut b = Session::builder(&self.env).map_err(|e| err(e.to_string()))?;
         match device {
+            Device::NvRtx => {
+                // The plugin's device for the card in use, never an empty
+                // list (that would build a session on the processor), and
+                // every node on it, or no session at all.
+                let accel = self.accel.as_ref().ok_or_else(|| err("NVIDIA's engine isn't registered".into()))?;
+                let device = self
+                    .env
+                    .devices()
+                    .find(|d| d.ep().is_ok_and(|ep| ep == accel::EP) && hardware::luid_of(d) == Some(accel.luid))
+                    .ok_or_else(|| err("NVIDIA's engine lists no device for this card".into()))?;
+                let options: Vec<(String, String)> = cache
+                    .map(|dir| (accel::RUNTIME_CACHE.to_string(), dir.to_string_lossy().into_owned()))
+                    .into_iter()
+                    .collect();
+                b = b
+                    .with_config_entry(FALLBACK_OFF, "1")
+                    .map_err(|e| err(e.to_string()))?
+                    .with_devices([device], Some(&options))
+                    .map_err(|e| err(e.to_string()))?;
+            }
             #[cfg(windows)]
             Device::DirectMl => {
                 // DirectML needs sequential execution without memory patterns.
@@ -490,6 +565,37 @@ impl Fp32<'_> {
     }
 }
 
+/// The session option that refuses a session with any node left for the
+/// processor.
+const FALLBACK_OFF: &str = "session.disable_cpu_ep_fallback";
+
+/// The devices a session tries, in order: NVIDIA's engine when `accel` (it
+/// is registered, and the session may use it), then the GPU runtime's own
+/// provider (`gpu`), then the processor.
+fn chain(gpu: Option<Device>, accel: bool) -> Vec<Device> {
+    let nvidia = (accel && gpu.is_some()).then_some(Device::NvRtx);
+    nvidia.into_iter().chain(gpu).chain([Device::Cpu]).collect()
+}
+
+/// [`accel::register`] where NVIDIA's engine runs (Windows on x64).
+#[cfg(all(windows, target_arch = "x86_64"))]
+fn register_accel(
+    env: &ort::environment::Environment,
+    dir: &Path,
+    gpu: Option<&hardware::Gpu>,
+) -> (accel::AccelState, Option<accel::Registered>) {
+    accel::register(env, dir, gpu)
+}
+
+#[cfg(not(all(windows, target_arch = "x86_64")))]
+fn register_accel(
+    _: &ort::environment::Environment,
+    _: &Path,
+    _: Option<&hardware::Gpu>,
+) -> (accel::AccelState, Option<accel::Registered>) {
+    (accel::AccelState::Off, None)
+}
+
 /// Just the file name, for the log: full paths name the user (their home
 /// folder), and logs get shared.
 fn name(path: &Path) -> std::borrow::Cow<'_, str> {
@@ -561,5 +667,21 @@ mod tests {
             [CoreMlFormat::NeuralNetwork, CoreMlFormat::MlProgram].map(CoreMlFormat::option),
             ["NeuralNetwork", "MLProgram"]
         );
+    }
+
+    #[test]
+    fn sessions_try_nvidias_engine_first_only_where_it_may_take_them() {
+        use Device::{CoreMl, Cpu, DirectMl, NvRtx};
+        // Registered, and the session may use it: then DirectML, then the processor.
+        assert_eq!(chain(Some(DirectMl), true), [NvRtx, DirectMl, Cpu]);
+        // Not registered, or a model never allowed on it (`without_accel`).
+        assert_eq!(chain(Some(DirectMl), false), [DirectMl, Cpu]);
+        assert_eq!(chain(Some(CoreMl), false), [CoreMl, Cpu]);
+        // The processor only: no graphics card, so no engine for one either.
+        assert_eq!(chain(None, true), [Cpu]);
+        assert_eq!(chain(None, false), [Cpu]);
+        // Logs and project notes tell the engines apart.
+        assert_eq!(NvRtx.label(), "GPU (TensorRT for RTX)");
+        assert_ne!(NvRtx.label(), DirectMl.label());
     }
 }

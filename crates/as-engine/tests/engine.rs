@@ -3,12 +3,14 @@
 //! skips with a note when they're missing.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use as_core::CancelToken;
+use as_engine::client::pack_failures;
 use as_engine::{Config, Engine, EngineError, FacesEvent, FacesInput, Launch, ShotsEvent};
 use as_infer::Placement;
+use as_infer::accel::{self, AccelState};
 use as_infer::computer::{self, Choice, Machine};
 use as_infer::hardware::Using;
 use as_media::{MediaInfo, Tools, build_frame_index, probe};
@@ -41,13 +43,22 @@ fn setup(idle_exit: Option<Duration>) -> Option<(Engine, Media)> {
 
 /// How to start the engine binary on the device `gpu` chooses.
 fn launch(ort_dir: PathBuf, gpu: Choice, idle_exit: Option<Duration>) -> Launch {
-    launch_with(ort_dir, Placement { gpu, cache: None }, idle_exit)
+    launch_with(ort_dir, Placement { gpu, ..Placement::default() }, idle_exit)
 }
 
 /// How to start the engine binary with this placement.
 fn launch_with(ort_dir: PathBuf, placement: Placement, idle_exit: Option<Duration>) -> Launch {
     let cfg = Config { ort_dir, models_dir: models_dir(), ffmpeg_dir: None, placement, idle_exit };
-    Launch { program: PathBuf::from(env!("CARGO_BIN_EXE_autoscene-engine")), args: as_engine::args(&cfg) }
+    Launch::engine(PathBuf::from(env!("CARGO_BIN_EXE_autoscene-engine")), Vec::new(), &cfg)
+}
+
+/// [`launch_with`] Automatic and NVIDIA's engine in `pack`, whose engines
+/// a debug build ends on purpose `crash` (`start`, `job`) when given.
+fn launch_with_pack(ort_dir: PathBuf, pack: &Path, crash: Option<&str>) -> Launch {
+    let placement = Placement { accel: Some(pack.to_path_buf()), ..Placement::default() };
+    let mut launch = launch_with(ort_dir, placement, None);
+    launch.env.extend(crash.map(|at| ("AUTOSCENE_TEST_CRASH_WITH_ACCEL".into(), at.into())));
+    launch
 }
 
 /// Run a shots job and collect its chunks; `on_chunk` sees each chunk start.
@@ -198,7 +209,8 @@ fn an_engine_start_deletes_compiled_models_unused_for_30_days() {
         dir
     };
     let (unused, recent) = (compiled("00000000000000aa", 31), compiled("00000000000000bb", 29));
-    let placement = Placement { gpu: Choice::Processor, cache: Some(cache.path().to_path_buf()) };
+    let placement =
+        Placement { gpu: Choice::Processor, cache: Some(cache.path().to_path_buf()), ..Placement::default() };
     let engine = Engine::new(launch_with(ort, placement, None));
     engine.probe(&CancelToken::new()).unwrap();
     assert!(!unused.exists(), "unused for 31 days: deleted");
@@ -379,6 +391,147 @@ fn face_chunks_tile(engine: &Engine, m: &Media, job: FacesInput) {
         expect = e;
     }
     assert_eq!(expect, m.frames);
+}
+
+/// ONNX Runtime and ffmpeg, or `None` (the test skips, saying why).
+fn runtime_and_tools() -> Option<PathBuf> {
+    let Some(ort) = ort_dir() else {
+        eprintln!("onnxruntime missing; run `cargo xtask fetch-sidecars` (skipping)");
+        return None;
+    };
+    if Tools::locate(None).is_err() {
+        eprintln!("ffmpeg missing (skipping)");
+        return None;
+    }
+    Some(ort)
+}
+
+/// An engine started with NVIDIA's engine that ends before it is ready (as
+/// a native crash of the plugin would end it): the next one starts without
+/// it, at once, and the failure is counted in the pack's folder.
+#[test]
+fn an_engine_that_dies_with_the_pack_restarts_without_it() {
+    let Some(ort) = runtime_and_tools() else { return };
+    let pack = tempfile::tempdir().unwrap();
+    let engine = Engine::new(launch_with_pack(ort, pack.path(), Some("start")));
+    let hw = engine.probe(&CancelToken::new()).expect("an engine without the pack started");
+    assert!(engine.pid().is_some(), "{hw}");
+    assert_eq!(engine.accel(), Some(AccelState::Off), "it runs without NVIDIA's engine");
+    assert_eq!(pack_failures(pack.path()), 1);
+}
+
+/// One that ends under its first job while NVIDIA's engine is in use, and
+/// the job may run a model there (anime): the job runs again without it, and
+/// that costs none of its attempts: two more engines may still go away under
+/// it (each is killed as soon as it says where its models run, long before
+/// it could finish).
+#[test]
+fn an_engine_that_dies_with_the_pack_mid_job_runs_it_again_without_it() {
+    let Some((_, m)) = setup(None) else { return };
+    let store = as_models::ModelStore::new(models_dir());
+    if as_models::ids::ANIME.iter().any(|id| store.installed(id).unwrap().is_none()) {
+        assert!(!models_required(), "anime models missing (run `cargo xtask fetch-models`)");
+        eprintln!("anime models missing; run `cargo xtask fetch-models` (skipping)");
+        return;
+    }
+    let pack = tempfile::tempdir().unwrap();
+    let engine = Engine::new(launch_with_pack(ort_dir().unwrap(), pack.path(), Some("job")));
+    let shots: Vec<(u32, u32)> = (0..m.frames).step_by(50).map(|s| (s, (s + 50).min(m.frames))).collect();
+    let job = FacesInput { anime: true, ..faces_input(&m, shots, false, None) };
+    let (mut engines, mut kills, mut end) = (0, 0, 0);
+    engine
+        .faces(job, &CancelToken::new(), |e| {
+            match e {
+                FacesEvent::Devices { .. } => {
+                    engines += 1;
+                    if kills < 2 {
+                        kills += 1;
+                        kill_hard(engine.pid().unwrap());
+                    }
+                }
+                FacesEvent::Chunk { end: e, .. } => end = e,
+                FacesEvent::Progress(_) => {}
+            }
+            Ok(())
+        })
+        .expect("the job finished: the pack's failure cost no attempt");
+    // The one with the pack ended before it said anything; three without it followed.
+    assert_eq!((engines, kills), (3, 2));
+    assert_eq!(end, m.frames, "it ran to the end");
+    assert_eq!(pack_failures(pack.path()), 1);
+    assert_eq!(engine.accel(), Some(AccelState::Off));
+}
+
+/// An engine with NVIDIA's engine in use that dies under a job none of whose
+/// models may run there (shots): a crash like any other. It costs an
+/// attempt, the pack stays on, and nothing counts against it.
+#[test]
+fn a_death_under_a_job_the_pack_has_no_part_in_is_not_its_failure() {
+    let Some((_, m)) = setup(None) else { return };
+    let pack = tempfile::tempdir().unwrap();
+    let engine = Engine::new(launch_with_pack(ort_dir().unwrap(), pack.path(), Some("job")));
+    let (r, chunks) = collect(&engine, &m, 0, &CancelToken::new(), |_| {});
+    // Every engine started with the pack, and each died at the job.
+    assert!(matches!(r, Err(EngineError::Crashed(_))), "{r:?}");
+    assert!(chunks.is_empty());
+    assert_eq!(engine.accel(), Some(AccelState::Active), "the pack was never turned off");
+    assert_eq!(pack_failures(pack.path()), 0);
+}
+
+/// A pack whose libraries aren't libraries (and the stamp says they are):
+/// the engine says it failed, and runs on as it would without it. Where the
+/// card in use isn't one the pack serves, it never loads at all.
+#[test]
+fn a_broken_accel_folder_leaves_the_engine_on_directml() {
+    let Some(ort) = runtime_and_tools() else { return };
+    let pack = tempfile::tempdir().unwrap();
+    let files: Vec<&str> = accel::PRELOAD.iter().copied().chain([accel::PLUGIN]).collect();
+    for name in &files {
+        std::fs::write(pack.path().join(name), b"MZ not a library").unwrap();
+    }
+    accel::stamp(pack.path(), &files).unwrap();
+    let engine = Engine::new(launch_with_pack(ort, pack.path(), None));
+    let hw = engine.probe(&CancelToken::new()).unwrap();
+    let state = engine.accel().expect("an engine started");
+    if hw.gpu().is_some_and(accel::serves) {
+        assert!(matches!(state, AccelState::Failed { ref detail } if detail.contains("cudart64_13.dll")), "{state:?}");
+    } else {
+        assert_eq!(state, AccelState::Off, "{hw}");
+    }
+    assert_eq!(pack_failures(pack.path()), 0, "a pack that didn't load ended nothing");
+    // Jobs run.
+    let Some((_, m)) = setup(None) else { return };
+    let with_pack = Engine::new(launch_with_pack(ort_dir().unwrap(), pack.path(), None));
+    let (r, chunks) = collect(&with_pack, &m, 0, &CancelToken::new(), |_| {});
+    r.unwrap();
+    assert_eq!(chunks.len(), m.frames.div_ceil(100) as usize);
+}
+
+/// Local only (`AUTOSCENE_ACCEL_DIR`: an installed pack): the passes that
+/// stay on DirectML run beside the registered plugin, time after time.
+#[test]
+fn directml_passes_run_beside_the_registered_pack() {
+    let Some(pack) = std::env::var_os("AUTOSCENE_ACCEL_DIR").map(PathBuf::from) else {
+        eprintln!("AUTOSCENE_ACCEL_DIR unset: no NVIDIA pack to test (skipping)");
+        return;
+    };
+    let Some((_, m)) = setup(None) else { return };
+    let engine = Engine::new(launch_with_pack(ort_dir().unwrap(), &pack, None));
+    let store = as_models::ModelStore::new(models_dir());
+    let fast = as_models::ids::FAST_FACES.iter().all(|id| store.installed(id).unwrap().is_some());
+    let shots: Vec<(u32, u32)> = (0..m.frames).step_by(50).map(|s| (s, (s + 50).min(m.frames))).collect();
+    for round in 0..10 {
+        let (r, _) = collect(&engine, &m, 0, &CancelToken::new(), |_| {});
+        r.unwrap_or_else(|e| panic!("shots, round {round}: {e:?}"));
+        assert_eq!(engine.accel(), Some(AccelState::Active), "round {round}");
+        if fast {
+            let job = FacesInput { fast: true, ..faces_input(&m, shots.clone(), false, None) };
+            engine
+                .faces(job, &CancelToken::new(), |_| Ok(()))
+                .unwrap_or_else(|e| panic!("Fast Scan, round {round}: {e:?}"));
+        }
+    }
+    assert_eq!(pack_failures(&pack), 0);
 }
 
 fn faces_input(m: &Media, shots: Vec<(u32, u32)>, bodies: bool, known: Option<Vec<u8>>) -> FacesInput {

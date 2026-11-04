@@ -100,8 +100,14 @@ impl AppState {
             ort_dir,
             models_dir: paths.models(),
             ffmpeg_dir: bundled_ffmpeg.clone(),
-            // Compiled models (Core ML's, on a Mac) are kept for the next start.
-            placement: as_engine::Placement { cache: Some(paths.cache()), ..Default::default() },
+            // Compiled models (Core ML's, on a Mac; NVIDIA's engine's) are
+            // kept for the next start. NVIDIA's engine is used once its
+            // download finished (see `engine_launch`).
+            placement: as_engine::Placement {
+                cache: Some(paths.cache()),
+                accel: Some(paths.runtimes().join(as_engine::accel::FOLDER)),
+                ..Default::default()
+            },
             idle_exit: Some(as_engine::IDLE_EXIT),
         };
         // The engine is this very executable, and nothing found by name stands
@@ -175,13 +181,13 @@ impl AppState {
 
 /// How to start the engine (this executable with `--engine`) on the
 /// graphics `gpu` names (`AppSettings::gpu`), keeping the rest of its
-/// placement (where compiled models are kept).
+/// placement (where compiled models are kept), with NVIDIA's engine when
+/// its download finished (the engine client stops passing it once it fails,
+/// see `as_engine::client`).
 fn engine_launch((program, cfg): &(PathBuf, as_engine::Config), gpu: &str) -> Launch {
-    let placement = as_engine::Placement { gpu: Choice::from_setting(gpu), ..cfg.placement.clone() };
-    let cfg = as_engine::Config { placement, ..cfg.clone() };
-    let mut args = vec!["--engine".into()];
-    args.extend(as_engine::args(&cfg));
-    Launch { program: program.clone(), args }
+    let accel = cfg.placement.accel.clone().filter(|dir| as_engine::accel::installed(dir));
+    let placement = as_engine::Placement { gpu: Choice::from_setting(gpu), accel, ..cfg.placement.clone() };
+    Launch::engine(program.clone(), vec!["--engine".into()], &as_engine::Config { placement, ..cfg.clone() })
 }
 
 /// The engine opened another device than the app's probe expects, so Fast
@@ -402,6 +408,39 @@ mod tests {
             let cache = paths.cache().to_string_lossy().into_owned();
             assert!(args.windows(2).any(|w| w == ["--cache".to_string(), cache.clone()]), "{gpu:?}: {args:?}");
         }
+    }
+
+    #[test]
+    fn nvidias_engine_is_passed_once_its_download_finished() {
+        let data = std::env::temp_dir().join(format!("autoscene-accel-launch-{}", std::process::id()));
+        let paths = AppPaths::at(&data);
+        let pack = paths.runtimes().join(as_engine::accel::FOLDER);
+        let cfg = as_engine::Config {
+            ort_dir: "ort".into(),
+            models_dir: paths.models(),
+            ffmpeg_dir: None,
+            placement: as_engine::Placement {
+                cache: Some(paths.cache()),
+                accel: Some(pack.clone()),
+                ..Default::default()
+            },
+            idle_exit: Some(as_engine::IDLE_EXIT),
+        };
+        let start = (PathBuf::from("autoscene"), cfg);
+        assert_eq!(engine_launch(&start, "").accel, None, "not downloaded");
+        // A download under way has no stamp yet.
+        std::fs::create_dir_all(&pack).unwrap();
+        assert_eq!(engine_launch(&start, "").accel, None);
+        std::fs::write(pack.join(as_engine::accel::STAMP), "").unwrap();
+        for gpu in ["", "10de:24c9:NVIDIA GeForce RTX 3060 Ti"] {
+            let launch = engine_launch(&start, gpu);
+            assert_eq!(launch.accel.as_deref(), Some(pack.as_path()), "{gpu:?}");
+            // Only the engine client adds it to the arguments, while it works.
+            assert!(!launch.args.iter().any(|a| a == "--accel"), "{:?}", launch.args);
+        }
+        // "Processor only" never uses it, so it never starts with it.
+        assert_eq!(engine_launch(&start, "cpu").accel, None);
+        std::fs::remove_dir_all(&data).unwrap();
     }
 
     #[test]

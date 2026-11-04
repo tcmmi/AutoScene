@@ -1,8 +1,10 @@
-//! Compiled models kept between runs (design-i66_67 §5.1, issue 66).
+//! Compiled models kept between runs (design-i66_67 §5.1, issues 66 and 67).
 //!
 //! Core ML compiles every model it takes before the model's first run, which
 //! a Mac does again at every engine start unless ONNX Runtime is given a
-//! folder to keep the compile in (`ModelCacheDirectory`). ORT names what it
+//! folder to keep the compile in (`ModelCacheDirectory`); NVIDIA's engine
+//! for GeForce RTX cards compiles its kernels for the card the same way
+//! (`nv_runtime_cache_path`, [`TRTRTX`]). ORT names what it
 //! keeps there after the model's path, or, for a model handed over from
 //! memory (every reshaped one), after its input and node names alone: not its
 //! shapes, its weights or ORT's version (`coreml_execution_provider.cc:62-90`,
@@ -34,8 +36,12 @@ use crate::InferResult;
 /// Core ML's compiled models: `<cache>/coreml/<key>/`.
 pub const COREML: &str = "coreml";
 
+/// What NVIDIA's engine compiled for this card (its runtime cache):
+/// `<cache>/trtrtx/<key>/`.
+pub const TRTRTX: &str = "trtrtx";
+
 /// The families [`prune`] looks through.
-const FAMILIES: [&str; 1] = [COREML];
+const FAMILIES: [&str; 2] = [COREML, TRTRTX];
 
 /// Marks a folder finished, and dates its last use.
 pub const USED: &str = ".used";

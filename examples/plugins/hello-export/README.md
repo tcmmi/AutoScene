@@ -20,8 +20,8 @@ cargo install --path crates/as-plugin --features cli --bin asp
 asp pack examples/plugins/hello-export hello-export.asp
 ```
 
-AutoScene hasn't reviewed this package, so turn on **Settings → Plugins →
-Allow plugins that AutoScene has not reviewed** first. Then **Install a
+AutoScene hasn't reviewed this package, so turn on **Plugins → Allow
+plugins that AutoScene has not reviewed** first. Then **Install a
 plugin…** and pick `hello-export.asp`, or **Load a folder…** and pick this
 folder to run it from here while you change it.
 

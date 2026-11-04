@@ -31,8 +31,8 @@ cargo install --path crates/as-plugin --features cli --bin asp
 asp pack examples/plugins/hello-page hello-page.asp
 ```
 
-AutoScene hasn't reviewed this package, so turn on **Settings → Plugins →
-Allow plugins that AutoScene has not reviewed** first. Then **Install a
+AutoScene hasn't reviewed this package, so turn on **Plugins → Allow
+plugins that AutoScene has not reviewed** first. Then **Install a
 plugin…** and pick `hello-page.asp`, or **Load a folder…** and pick this
 folder to change the pages as they run: **Reload the page** in the page's
 ⋯ menu loads your change.

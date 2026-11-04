@@ -54,8 +54,8 @@ cargo install --path crates/as-plugin --features cli --bin asp
 asp pack examples/plugins/discord-notify discord-notify.asp
 ```
 
-Turn on **Settings → Plugins → Allow plugins that AutoScene has not
-reviewed**, then **Install a plugin…** and pick `discord-notify.asp`. In its
+Turn on **Plugins → Allow plugins that AutoScene has not reviewed**,
+then **Install a plugin…** and pick `discord-notify.asp`. In its
 settings, choose **Set…** beside **Webhook URL** and paste the URL, then run
 **Send a test message to Discord** from the palette. Its settings also have
 **After every export**, to post each export once it finishes.

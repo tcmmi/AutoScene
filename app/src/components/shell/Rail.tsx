@@ -148,9 +148,6 @@ export function Rail() {
               <ContextMenuItem onSelect={() => actions.goSettings("updates")}>
                 <ArrowCounterClockwise /> Updates
               </ContextMenuItem>
-              <ContextMenuItem onSelect={actions.goPlugins}>
-                <PuzzlePiece /> Plugins
-              </ContextMenuItem>
               <ContextMenuItem onSelect={actions.checkUpdates}>
                 <DownloadSimple /> Check for updates
               </ContextMenuItem>

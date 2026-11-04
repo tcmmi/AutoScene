@@ -40,15 +40,15 @@ An AutoScene plugin, `{{id}}`, made with `asp init`.
 <!-- {{^program}} -->
 2. Change the page as you like. It may load its own files from `ui/`.
 <!-- {{/program}} -->
-3. In AutoScene, turn on **Settings → Plugins → Allow plugins that
-   AutoScene has not reviewed**. Then choose **Load a folder…** and pick
+3. In AutoScene, open **Plugins** in the rail and turn on **Allow plugins
+   that AutoScene has not reviewed**. Then choose **Load a folder…** and pick
    this folder. AutoScene runs the plugin from here, as its files are now.
 <!-- {{#page}} -->
 4. Open its page from the rail.
 <!-- {{/page}} -->
 <!-- {{#action}} -->
 4. Run it: **Count the clips** is in each export's menu. Right-click the
-   plugin in Settings → Plugins and choose **Show its log** to see what
+   plugin in Plugins and choose **Show its log** to see what
    else it wrote.
 <!-- {{/action}} -->
 5. To share it, pack it from the folder above this one:

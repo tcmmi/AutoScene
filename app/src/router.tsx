@@ -148,6 +148,16 @@ const settingsIndexRoute = createRoute({
   },
 })
 
+// Plugins were a section of Settings; they have their own place now, and an
+// old link goes there.
+const settingsPluginsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/plugins",
+  beforeLoad: () => {
+    throw redirect({ to: "/plugins", replace: true })
+  },
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/$section",
@@ -161,7 +171,7 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 })
 
-const routeTree = rootRoute.addChildren([
+export const routeTree = rootRoute.addChildren([
   libraryRoute,
   pluginsRoute,
   projectRoute.addChildren([
@@ -177,6 +187,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   pluginPageRoute,
   settingsIndexRoute,
+  settingsPluginsRoute,
   settingsRoute,
 ])
 

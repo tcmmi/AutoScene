@@ -75,8 +75,8 @@ that what it does matches what it says.
    and `name`, `author` and `description` with it.
 3. Lock the script: `uv lock --script main.py`. Do it again each time you
    change the `# /// script` block at the top of `main.py`.
-4. In AutoScene, turn on **Settings → Plugins → Allow plugins that
-   AutoScene has not reviewed**. Then **Load a folder…** and pick your
+4. In AutoScene, open **Plugins** in the rail and turn on **Allow plugins
+   that AutoScene has not reviewed**. Then **Load a folder…** and pick your
    folder. AutoScene runs it from there, as its files are, so a change to
    `main.py` counts at the next run.
 5. Run it: **Write a clip list** is in each export's menu, and **Say hello**
@@ -1246,6 +1246,7 @@ or a `runtime.type` it doesn't know (`wasm`, say).
 | `network` | no | `{ "hosts": [...] }`: where it connects, with the `network` permission. |
 | `contributes` | no | Its `exportActions`, `commands`, `settings` and, in version 2, `pages`. |
 | `icon` | no | A `.png` or `.svg` file in the plugin. |
+| `banner` | no | A wide `.png` or `.svg` file in the plugin, best 21:9. |
 | `$schema` | no | Allowed, and not read. |
 
 Texts lose control characters and invisible ones. A name or title longer
@@ -1437,11 +1438,24 @@ value, and never write it to the log.
 ### icon
 
 A `.png` of at most 256 KB, or an `.svg` of at most 64 KB, in the plugin's
-folder. It shows in Settings, in the review and beside its export actions.
-AutoScene shows it as a picture only (an SVG's scripts never run). An
-`icon` that isn't a `.png` or `.svg` path is left out with a warning. One
-that isn't in the package, is too large, or doesn't start as a PNG or an
-SVG file does refuses the package.
+folder. It shows in Plugins, in its settings, in the review and beside its
+export actions. AutoScene shows it as a picture only (an SVG's scripts
+never run). An `icon` that isn't a `.png` or `.svg` path is left out with
+a warning. One that isn't in the package, is too large, or doesn't start
+as a PNG or an SVG file does refuses the package.
+
+### banner
+
+A wide picture, a `.png` of at most 1 MB or an `.svg` of at most 256 KB,
+in the plugin's folder. It shows across the top of the plugin's card in
+Plugins and of its settings, as a picture only (an SVG's scripts never
+run). The card shows it at 21:9. Its settings show a band across its
+middle: 3:1, and wider in a wide window, since that band is at most 224
+pixels high. So make it 21:9, such as 1400×600, with what matters in the
+middle half of its height. A `banner` that isn't a `.png` or `.svg` path
+is left out with a warning. One that isn't in the package, is too large,
+or doesn't start as a PNG or an SVG file does refuses the package. A
+loaded folder's banner that fails these checks isn't shown.
 
 ### What is refused, and what is skipped
 
@@ -1573,7 +1587,7 @@ so far, so every plugin is Pinned or Unreviewed for now. A key a package
 brings along never makes it Reviewed.
 
 A plugin AutoScene hasn't reviewed (Pinned, Unreviewed, or loaded from a
-folder) needs **Settings → Plugins → Allow plugins that AutoScene has not
+folder) needs **Plugins → Allow plugins that AutoScene has not
 reviewed**, which is off until the person turns it on, and then the person
 types its name in the review before it installs. Turning the setting on,
 and each such install, also ask in a dialog of the system's own, which
@@ -1764,7 +1778,7 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
   types to `.autoscene/types/`. `asp pack` leaves `.autoscene` and
   `.vscode` out. The id is `dev.example.<folder>` unless `--id` says
   otherwise, and the name the folder's.
-- **Load the folder** (Settings → Plugins → Load a folder…, while "Allow
+- **Load the folder** (Plugins → Load a folder…, while "Allow
   plugins that AutoScene has not reviewed" is on). AutoScene runs the
   plugin where it is, without a lock or a package: a change to a file
   counts at the next run, and a page's files are served as they are now.
@@ -1789,7 +1803,7 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
   own page without a CSP, but every answer to a page carries the page's,
   in a built app and in development alike. Check how your page behaves in
   an installed AutoScene before you share it.
-- **The log**: right-click the plugin in Settings → Plugins, then **Show its
+- **The log**: right-click the plugin in Plugins, then **Show its
   log**. Its settings name its folder and its log too. Each run
   starts with `--- <time> run <runId> <action>`. The plugin's lines are
   marked `[stdout]`, `[stderr]` and `[<level>]` for its log lines;

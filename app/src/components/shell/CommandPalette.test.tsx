@@ -49,7 +49,7 @@ describe("the command palette's plugin commands", () => {
     cleanup()
 
     // Outside one, only those that need none, with no project.
-    open("/settings/plugins")
+    open("/plugins")
     expect(screen.queryByRole("option", { name: /Run here/ })).toBeNull()
     fireEvent.click(screen.getByRole("option", { name: /Run anywhere/ }))
     await waitFor(() => expect(pluginRun).toHaveBeenCalledTimes(2))

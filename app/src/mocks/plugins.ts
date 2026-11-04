@@ -40,6 +40,8 @@ const icon = (fill: string) =>
 function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | "trust"> & Partial<MockPlugin>): MockPlugin {
   return {
     author: "AutoScene",
+    authorUrl: null,
+    authorAvatar: null,
     license: "MIT",
     repository: null,
     authorKeyId: null,
@@ -61,8 +63,6 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     icon: null,
     color: null,
     banner: null,
-    authorAvatar: null,
-    authorUrl: null,
     logPath: `${DATA}\\logs\\plugins\\${o.id}.log`,
     serviceLogPath: o.runtime === "service" ? `${DATA}\\logs\\plugins\\${o.id}.service.log` : null,
     warnings: [],

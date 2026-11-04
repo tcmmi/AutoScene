@@ -34,8 +34,8 @@ cargo install --path crates/as-plugin --features cli --bin asp
 asp pack examples/plugins/hello-service hello-service.asp
 ```
 
-AutoScene hasn't reviewed this package, so turn on **Settings → Plugins →
-Allow plugins that AutoScene has not reviewed** first. Then **Install a
+AutoScene hasn't reviewed this package, so turn on **Plugins → Allow
+plugins that AutoScene has not reviewed** first. Then **Install a
 plugin…** and pick `hello-service.asp`, or **Load a folder…** and pick this
 folder. Open **Word count** from the rail.
 

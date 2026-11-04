@@ -11,8 +11,9 @@ license.workspace = true
 [dependencies]
 thiserror.workspace = true
 tracing.workspace = true
-# One binary for every ONNX Runtime >= 1.24 (DirectML build 1.24.4, macOS 1.31),
-# loaded from the app's own folder at runtime.
+# One binary for every ONNX Runtime >= 1.24 (the DirectML build 1.24.4 on
+# Windows, 1.31.1 on macOS and Linux), loaded from the app's own folder at
+# runtime.
 ort = { workspace = true, features = ["std", "load-dynamic", "api-24"] }
 
 [target.'cfg(windows)'.dependencies]

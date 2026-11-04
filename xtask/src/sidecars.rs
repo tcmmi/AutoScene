@@ -128,12 +128,12 @@ const BUNDLES: &[Bundle] = &[
     },
     Bundle {
         dir: "onnxruntime",
-        // Microsoft's osx-arm64 build (CPU + CoreML EPs).
+        // Microsoft's osx-arm64 build of ONNX Runtime 1.31.1 (CPU + CoreML EPs).
         archives: &[Archive {
-            url: "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-osx-arm64-1.31.0.tgz",
-            sha256: "1031b36dd3bdaa8d976a6130d9cf2a05e9be320b93ae804f8427b91dc3432afc",
+            url: "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-osx-arm64-1.31.1.tgz",
+            sha256: "2e1344a1926ee50eb25b38153cb6992c3567515aef0e677a1a520a1798896d6f",
             pick: Pick::Files(&[(
-                "onnxruntime-osx-arm64-1.31.0/lib/libonnxruntime.1.31.0.dylib",
+                "onnxruntime-osx-arm64-1.31.1/lib/libonnxruntime.1.31.1.dylib",
                 "libonnxruntime.dylib",
             )]),
         }],
@@ -173,11 +173,11 @@ const BUNDLES: &[Bundle] = &[
     },
     Bundle {
         dir: "onnxruntime",
-        // Microsoft's linux-x64 build (CPU).
+        // Microsoft's linux-x64 build of ONNX Runtime 1.31.1 (CPU).
         archives: &[Archive {
-            url: "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-linux-x64-1.31.0.tgz",
-            sha256: "cc5c72baf5ae5c8238a6841f0897227be2d02826b9cf98eaf02fdefaeeb03a57",
-            pick: Pick::Files(&[("onnxruntime-linux-x64-1.31.0/lib/libonnxruntime.so.1.31.0", "libonnxruntime.so")]),
+            url: "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-linux-x64-1.31.1.tgz",
+            sha256: "c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9",
+            pick: Pick::Files(&[("onnxruntime-linux-x64-1.31.1/lib/libonnxruntime.so.1.31.1", "libonnxruntime.so")]),
         }],
         required: &[("libonnxruntime.so", false)],
         vc_runtime: false,

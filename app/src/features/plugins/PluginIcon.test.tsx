@@ -9,7 +9,8 @@ const SVG = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/200
 
 describe("a plugin's icon", () => {
   it("never renders anything but an img of a data URL", () => {
-    for (const src of [PNG, SVG]) {
+    // A banner's formats too: the same check draws both.
+    for (const src of [PNG, SVG, "data:image/jpeg;base64,/9j/4AAQ", "data:image/webp;base64,UklGRg=="]) {
       const { container } = render(<PluginIcon src={src} />)
       const img = container.querySelector("img")
       expect(img?.getAttribute("src")).toBe(src)

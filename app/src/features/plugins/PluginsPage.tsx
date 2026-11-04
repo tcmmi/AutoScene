@@ -1,86 +1,48 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 import type { PluginInfo, PluginReview } from "@/bindings"
-import {
-  ArrowCounterClockwise,
-  CircleNotch,
-  DotsThree,
-  FolderOpen,
-  GearSix,
-  ListBullets,
-  MagnifyingGlass,
-  Plus,
-  PuzzlePiece,
-  SquaresFour,
-  X,
-} from "@/components/icons"
-import { Badge } from "@/components/ui/badge"
+import { ArrowCounterClockwise, CircleNotch, FolderOpen, MagnifyingGlass, Plus, PuzzlePiece, X } from "@/components/icons"
 import { Button } from "@/components/ui/button"
-import { ContextArea } from "@/components/ui/context-area"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Page } from "@/components/ui/page"
-import { Segmented } from "@/components/ui/segmented"
 import { Switch } from "@/components/ui/switch"
 import { TopBar } from "@/components/ui/topbar"
+import { plural } from "@/features/cast/cast"
 import { InstallReviewDialog } from "@/features/plugins/InstallReviewDialog"
-import { PluginIcon } from "@/features/plugins/PluginIcon"
-import { allowUnreviewed, keepPlugin } from "@/features/plugins/plugin-actions"
-import { hasSettings, reviewedPackage, trustLabel } from "@/features/plugins/plugin-items"
-import { PluginItems } from "@/features/plugins/plugin-menu"
+import { useLoadAgain } from "@/features/plugins/load-again"
+import { PluginCard } from "@/features/plugins/PluginCard"
+import { allowUnreviewed } from "@/features/plugins/plugin-actions"
+import { FIND_FROM, pluginMatches } from "@/features/plugins/plugin-items"
 import { UninstallDialog } from "@/features/plugins/UninstallDialog"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
-import { useAppActions } from "@/lib/actions"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder, pickPluginFile } from "@/lib/media"
-import { qk, queryClient, usePluginBanner, usePlugins, useSettings } from "@/lib/queries"
-import { cn } from "@/lib/utils"
+import { usePlugins, useSettings } from "@/lib/queries"
 
 const ALLOW = "Allow plugins that AutoScene has not reviewed"
 
+/** The grid of a project's library, for plugins. */
+const GRID = "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-8"
+
+/**
+ * Plugins: every installed plugin as a card with its artwork, a search from
+ * six of them, and who may run code here below them.
+ */
 export function PluginsPage() {
   const { data: settings } = useSettings()
-  const { data: plugins, error } = usePlugins()
+  const { data: plugins, error, isFetching, refetch } = usePlugins()
   const allowed = settings?.allowUnreviewedPlugins ?? false
   const [checking, setChecking] = useState<"file" | "folder" | null>(null)
   const [review, setReview] = useState<PluginReview | null>(null)
   const [removing, setRemoving] = useState<PluginInfo | null>(null)
-  const [togglingAll, setTogglingAll] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [search, setSearch] = useState("")
-  const [filter, setFilter] = useState<"all" | "enabled" | "disabled" | "gpu" | "folder">("all")
-  const [layout, setLayout] = useState<"grid" | "list">("grid")
-
-  const counts = useMemo(() => {
-    if (!plugins) return { all: 0, enabled: 0, disabled: 0, gpu: 0, folder: 0 }
-    return {
-      all: plugins.length,
-      enabled: plugins.filter((p) => p.enabled).length,
-      disabled: plugins.filter((p) => !p.enabled).length,
-      gpu: plugins.filter((p) => p.gpu).length,
-      folder: plugins.filter((p) => p.source === "folder").length,
-    }
-  }, [plugins])
-
-  const filteredPlugins = useMemo(() => {
-    if (!plugins) return []
-    const q = search.trim().toLowerCase()
-    return plugins.filter((p) => {
-      if (filter === "enabled" && !p.enabled) return false
-      if (filter === "disabled" && p.enabled) return false
-      if (filter === "gpu" && !p.gpu) return false
-      if (filter === "folder" && p.source !== "folder") return false
-      if (!q) return true
-      return (
-        p.name.toLowerCase().includes(q) ||
-        p.id.toLowerCase().includes(q) ||
-        p.author.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q)
-      )
-    })
-  }, [plugins, search, filter])
+  const [query, setQuery] = useState("")
+  // A card's folder is read again on its own: the header's buttons don't spin for it.
+  const again = useLoadAgain()
+  // The search stays while it narrows, however few plugins are left.
+  const finding = (plugins?.length ?? 0) >= FIND_FROM || query !== ""
+  const shown = plugins?.filter((p) => pluginMatches(p, query))
+  const any = plugins != null && plugins.length > 0
 
   const inspect = async (
     what: "file" | "folder",
@@ -98,434 +60,134 @@ export function PluginsPage() {
       setChecking(null)
     }
   }
+  const install = () => void inspect("file", pickPluginFile, commands.pluginInspect)
+  const loadFolder = () => void inspect("folder", () => pickFolder("Choose the plugin's folder"), commands.pluginInspectFolder)
 
-  const toggleAll = async (targetState: boolean) => {
-    if (!plugins || plugins.length === 0) return
-    const targets = plugins.filter((p) => p.enabled !== targetState)
-    if (targets.length === 0) return
-    setTogglingAll(true)
-    try {
-      await Promise.all(
-        targets.map(async (p) => {
-          keepPlugin(await commands.pluginSetEnabled(p.id, targetState))
-        }),
-      )
-    } catch (e) {
-      toast.error("Couldn't change all plugins", { description: errorMessage(e) })
-    } finally {
-      setTogglingAll(false)
-    }
-  }
-
-  const refreshList = async () => {
-    setRefreshing(true)
-    try {
-      await queryClient.invalidateQueries({ queryKey: qk.plugins })
-    } finally {
-      setTimeout(() => setRefreshing(false), 300)
-    }
-  }
+  const installButton = (
+    <Button variant="primary" size="lg" disabled={checking != null} onClick={install}>
+      {checking === "file" ? <CircleNotch className="animate-spin" /> : <Plus weight="bold" />} Install a plugin…
+    </Button>
+  )
+  const folderButton = allowed && (
+    <Button variant="ghost" size="lg" disabled={checking != null} onClick={loadFolder}>
+      {checking === "folder" ? <CircleNotch className="animate-spin" /> : <FolderOpen />} Load a folder…
+    </Button>
+  )
 
   return (
-    <Page>
-      <TopBar />
-      <div className="mx-auto w-full max-w-6xl px-8 pt-4 pb-16">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="font-bold text-3xl tracking-tight text-fg-1">Plugins</h1>
-            <p className="mt-1 text-md text-fg-2">
-              Extend exports, palette commands, and custom processing models.
+    <Page topbar={<TopBar />}>
+      <header className="flex flex-wrap items-end justify-between gap-6 px-10 pt-10 pb-8">
+        <div>
+          <h1 className="display text-5xl text-fg-1">Plugins</h1>
+          {any && (
+            <p className="mt-2 text-md text-fg-2">
+              {/* What runs, not what is switched on: a broken or blocked one doesn't. */}
+              {plural(plugins.length, "plugin")} · {plugins.filter((p) => p.active).length.toLocaleString("en-GB")} running
             </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {allowed && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={checking != null}
-                onClick={() => void inspect("folder", () => pickFolder("Choose the plugin's folder"), commands.pluginInspectFolder)}
-              >
-                {checking === "folder" ? <CircleNotch className="animate-spin" /> : <FolderOpen />} Load a folder…
-              </Button>
-            )}
-            <Button size="sm" disabled={checking != null} onClick={() => void inspect("file", pickPluginFile, commands.pluginInspect)}>
-              {checking === "file" ? <CircleNotch className="animate-spin" /> : <Plus />} Install a plugin…
-            </Button>
-          </div>
+          )}
         </div>
+        {/* With none installed, the empty state offers these: nothing is there twice. */}
+        {any && (
+          <div className="flex items-center gap-2.5">
+            {folderButton}
+            {installButton}
+          </div>
+        )}
+        {any && finding && (
+          <div role="search" className="basis-full">
+            <div className="relative w-64">
+              <MagnifyingGlass className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-fg-3" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && query) setQuery("")
+                }}
+                placeholder="Find a plugin"
+                aria-label="Find a plugin"
+                className="h-9 w-64 rounded-full pr-9 pl-10 text-sm"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  aria-label="Clear the search"
+                  className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-hover hover:text-fg-1"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </header>
 
-        <SettingsGroup title="Who may run code here">
-          <SettingRow
-            label={ALLOW}
-            description="Unsigned plugins, and ones only their author signed, and plugins loaded from a folder. AutoScene can't check what they do."
-          >
-            <Switch aria-label={ALLOW} checked={allowed} disabled={!settings} onCheckedChange={(on) => void allowUnreviewed(on)} />
-          </SettingRow>
-        </SettingsGroup>
-
-        {error ? (
-          <EmptyState icon={<PuzzlePiece />} tone="danger" title="Couldn't read the plugins" description={errorMessage(error)} />
-        ) : plugins?.length === 0 ? (
+      <div className="px-10 pb-16">
+        {error && plugins === undefined ? (
+          <EmptyState
+            icon={<PuzzlePiece />}
+            tone="danger"
+            title="Couldn't read the plugins"
+            description={errorMessage(error)}
+            actions={
+              <Button disabled={isFetching} onClick={() => void refetch()}>
+                {isFetching ? <CircleNotch className="animate-spin" /> : <ArrowCounterClockwise />} Try again
+              </Button>
+            }
+          />
+        ) : plugins === undefined ? (
+          <div className={GRID}>
+            {Array.from({ length: 3 }, (_, i) => (
+              <div key={i} className="skeleton aspect-[2/1] rounded-2xl" />
+            ))}
+          </div>
+        ) : !any ? (
           <EmptyState
             icon={<PuzzlePiece />}
             title="No plugins yet"
-            description="Install a plugin from its .asp file. One AutoScene hasn't reviewed needs the setting above first. Its actions then show in each export's menu, and its commands in the palette."
+            description={
+              allowed
+                ? "Install a plugin from its .asp file, or load one from its folder. Its actions then show in each export's menu, and its commands in the palette."
+                : "Install a plugin from its .asp file. One AutoScene hasn't reviewed needs the setting below first. Its actions then show in each export's menu, and its commands in the palette."
+            }
+            actions={
+              <>
+                {installButton}
+                {folderButton}
+              </>
+            }
+          />
+        ) : shown?.length === 0 ? (
+          <EmptyState
+            icon={<MagnifyingGlass />}
+            title="Nothing matches"
+            description={`No plugin's name, author, description or id has “${query.trim()}”.`}
+            actions={<Button onClick={() => setQuery("")}>Clear the search</Button>}
           />
         ) : (
-          plugins && (
-            <section className="mt-8 mb-10">
-              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-semibold text-fg-1">Installed</h3>
-                    <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-xs font-medium text-fg-2">
-                      {filteredPlugins.length}
-                    </span>
-                  </div>
-
-                  {plugins.length > 0 && (
-                    <div className="flex items-center gap-1 border-l border-white/[0.08] pl-3">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={togglingAll}
-                        onClick={() => void toggleAll(true)}
-                        className="h-7 px-2 text-xs text-fg-3 hover:text-fg-1"
-                      >
-                        Enable all
-                      </Button>
-                      <span className="text-xs text-white/20">·</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={togglingAll}
-                        onClick={() => void toggleAll(false)}
-                        className="h-7 px-2 text-xs text-fg-3 hover:text-fg-1"
-                      >
-                        Disable all
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label="Refresh plugins list"
-                        disabled={refreshing}
-                        onClick={() => void refreshList()}
-                        className="size-7 p-0 text-fg-3 hover:text-fg-1"
-                      >
-                        <ArrowCounterClockwise className={cn("size-3.5", refreshing && "animate-spin")} />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                {plugins.length > 0 && (
-                  <div className="flex items-center gap-2.5">
-                    <Segmented
-                      value={layout}
-                      onChange={(v) => setLayout(v as "grid" | "list")}
-                      aria-label="Plugin layout"
-                      options={[
-                        { value: "grid", label: <SquaresFour weight="bold" /> },
-                        { value: "list", label: <ListBullets weight="bold" /> },
-                      ]}
-                    />
-                    <div className="relative w-full sm:w-64">
-                      <MagnifyingGlass className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
-                      <Input
-                        type="text"
-                        placeholder="Search plugins…"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="h-8 w-full bg-white/[0.04] pr-8 pl-9 text-xs placeholder:text-fg-3 focus:bg-white/[0.07]"
-                      />
-                      {search && (
-                        <button
-                          type="button"
-                          onClick={() => setSearch("")}
-                          className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded p-0.5 text-fg-3 hover:text-fg-1"
-                        >
-                          <X className="size-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {plugins.length > 0 && (
-                <div className="mb-4 flex flex-wrap items-center gap-1.5">
-                  {(
-                    [
-                      { id: "all" as const, label: "All", count: counts.all },
-                      { id: "enabled" as const, label: "Enabled", count: counts.enabled },
-                      { id: "disabled" as const, label: "Disabled", count: counts.disabled },
-                      ...(counts.gpu > 0 ? [{ id: "gpu" as const, label: "GPU", count: counts.gpu }] : []),
-                      ...(counts.folder > 0 ? [{ id: "folder" as const, label: "Folder", count: counts.folder }] : []),
-                    ]
-                  ).map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setFilter(tab.id)}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors",
-                        filter === tab.id
-                          ? "bg-white/15 text-fg-1 shadow-sm"
-                          : "bg-white/[0.04] text-fg-2 hover:bg-white/[0.08] hover:text-fg-1",
-                      )}
-                    >
-                      <span>{tab.label}</span>
-                      <span
-                        className={cn(
-                          "rounded px-1 text-[10px] tabular-nums",
-                          filter === tab.id ? "bg-white/20 text-fg-1" : "bg-white/[0.06] text-fg-3",
-                        )}
-                      >
-                        {tab.count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {filteredPlugins.length === 0 ? (
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-8 text-center">
-                  <p className="text-sm text-fg-2">No plugins found matching &ldquo;{search || filter}&rdquo;.</p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setSearch("")
-                      setFilter("all")
-                    }}
-                    className="mt-3 text-xs"
-                  >
-                    Clear search and filter
-                  </Button>
-                </div>
-              ) : layout === "grid" ? (
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-                  {filteredPlugins.map((p) => (
-                    <PluginCard key={p.id} p={p} onUninstall={() => setRemoving(p)} />
-                  ))}
-                </div>
-              ) : (
-                <div className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.03]">
-                  {filteredPlugins.map((p) => (
-                    <PluginListItem key={p.id} p={p} onUninstall={() => setRemoving(p)} />
-                  ))}
-                </div>
-              )}
-            </section>
-          )
+          <div className={GRID}>
+            {shown?.map((p) => (
+              // A broken folder is loaded again through its review, the one way to agree to a changed program.
+              <PluginCard key={p.id} p={p} onLoadAgain={() => void again.loadAgain(p)} onUninstall={() => setRemoving(p)} />
+            ))}
+          </div>
         )}
 
+        <div className="mt-14 max-w-4xl">
+          <SettingsGroup title="Who may run code here">
+            <SettingRow
+              label={ALLOW}
+              description="Unsigned plugins, and ones only their author signed, and plugins loaded from a folder. AutoScene can't check what they do."
+            >
+              <Switch aria-label={ALLOW} checked={allowed} disabled={!settings} onCheckedChange={(on) => void allowUnreviewed(on)} />
+            </SettingRow>
+          </SettingsGroup>
+        </div>
+
         <InstallReviewDialog review={review} onClose={() => setReview(null)} />
+        {again.dialog}
         <UninstallDialog p={removing} onClose={() => setRemoving(null)} />
       </div>
     </Page>
-  )
-}
-
-function PluginCard({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void }) {
-  const { goPlugin } = useAppActions()
-  const trust = trustLabel(p)
-  const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
-  const facts = [by, `version ${p.version}`].filter(Boolean).join(", ")
-  const why = p.broken ?? (p.enabled ? p.blockedReason : null)
-  const { data: banner, isError } = usePluginBanner(p)
-  // The art keeps its place while its banner loads; the trust badge and the
-  // facts are never drawn on it.
-  const art = p.bannerHash != null && !isError && banner !== null
-  const setEnabled = async (on: boolean) => {
-    try {
-      keepPlugin(await commands.pluginSetEnabled(p.id, on))
-    } catch (e) {
-      toast.error(on ? "Couldn't turn the plugin on" : "Couldn't turn the plugin off", { description: errorMessage(e) })
-    }
-  }
-
-  return (
-    <ContextArea menu={<PluginItems kit={contextKit} p={p} onUninstall={onUninstall} />}>
-      <div
-        role="group"
-        aria-label={p.name}
-        onClick={(e) => {
-          // Not a click on its own controls, nor one in its ⋯ menu, which
-          // reaches it through the portal.
-          const target = e.target as HTMLElement
-          if (e.currentTarget.contains(target) && !target.closest("button, a, input, [role='switch']")) goPlugin(p.id)
-        }}
-        className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] shadow-sm transition-all duration-200 hover:border-white/20 hover:bg-white/[0.05]"
-      >
-        {art && (
-          <div className="relative aspect-[2/1] w-full overflow-hidden border-b border-white/[0.06] bg-black/40">
-            {banner && (
-              <>
-                <img src={banner} alt="" draggable={false} className="size-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-              </>
-            )}
-          </div>
-        )}
-
-        <div className="flex flex-1 flex-col p-5">
-          <div className="flex items-start gap-3.5">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-fg-1 shadow-sm ring-1 ring-white/10 [&_img]:size-7 [&_svg]:size-6">
-              <PluginIcon src={p.icon} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="truncate font-semibold text-fg-1 text-base leading-snug">{p.name}</h4>
-                <div className="flex items-center gap-1.5">
-                  <Badge tone={trust.tone}>{trust.label}</Badge>
-                  {p.gpu && (
-                    <span className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[11px] font-medium text-accent">
-                      GPU
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="mt-1 flex items-center gap-1.5 text-xs text-fg-3">
-                <span className="shrink-0 rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 font-mono text-[11px] text-fg-3">
-                  v{p.version}
-                </span>
-                <span className="truncate">{by}</span>
-                <span className="hidden opacity-0">{facts}</span>
-              </div>
-            </div>
-          </div>
-
-          {p.description && (
-            <p className="mt-3 text-sm text-fg-2 line-clamp-2 leading-relaxed">
-              {p.description}
-            </p>
-          )}
-
-          {why && <span className="mt-2 block text-xs text-danger">{why}</span>}
-        </div>
-
-        <div className="flex items-center justify-between border-t border-white/[0.06] bg-white/[0.01] px-5 py-3">
-          <div className="flex items-center gap-2">
-            {hasSettings(p) && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => goPlugin(p.id)}
-                className="h-8 gap-1.5 px-3 text-xs text-fg-2 hover:text-fg-1"
-              >
-                <GearSix className="size-3.5" />
-                Settings
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch aria-label={`Enable ${p.name}`} checked={p.enabled} onCheckedChange={(on) => void setEnabled(on)} />
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                aria-label={`${p.name} options`}
-                className="flex size-8 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-white/[0.08] hover:text-fg-1 data-[state=open]:bg-white/[0.08]"
-              >
-                <DotsThree className="size-5" weight="bold" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <PluginItems kit={dropdownKit} p={p} onUninstall={onUninstall} />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </div>
-    </ContextArea>
-  )
-}
-
-function PluginListItem({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void }) {
-  const { goPlugin } = useAppActions()
-  const trust = trustLabel(p)
-  const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
-  const facts = [by, `version ${p.version}`].filter(Boolean).join(", ")
-  const why = p.broken ?? (p.enabled ? p.blockedReason : null)
-  const setEnabled = async (on: boolean) => {
-    try {
-      keepPlugin(await commands.pluginSetEnabled(p.id, on))
-    } catch (e) {
-      toast.error(on ? "Couldn't turn the plugin on" : "Couldn't turn the plugin off", { description: errorMessage(e) })
-    }
-  }
-
-  return (
-    <ContextArea menu={<PluginItems kit={contextKit} p={p} onUninstall={onUninstall} />}>
-      <div
-        role="group"
-        aria-label={p.name}
-        onClick={(e) => {
-          // Not a click on its own controls, nor one in its ⋯ menu, which
-          // reaches it through the portal.
-          const target = e.target as HTMLElement
-          if (e.currentTarget.contains(target) && !target.closest("button, a, input, [role='switch']")) goPlugin(p.id)
-        }}
-        className="group flex min-h-20 items-center justify-between gap-6 px-5 py-4 transition-colors duration-150 hover:bg-white/[0.03]"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-4">
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-fg-1 shadow-sm ring-1 ring-white/10 [&_img]:size-7 [&_svg]:size-6">
-            <PluginIcon src={p.icon} />
-          </span>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h4 className="font-semibold text-fg-1 text-sm leading-snug">{p.name}</h4>
-              <span className="shrink-0 rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-fg-3">
-                v{p.version}
-              </span>
-              <Badge tone={trust.tone}>{trust.label}</Badge>
-              {p.gpu && (
-                <span className="shrink-0 rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                  GPU
-                </span>
-              )}
-            </div>
-
-            {p.description && (
-              <p className="mt-1 line-clamp-1 text-xs text-fg-2">
-                {p.description}
-              </p>
-            )}
-
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-fg-3">
-              <span>{by}</span>
-              <span className="hidden opacity-0">{facts}</span>
-            </div>
-
-            {why && <span className="mt-1 block text-xs text-danger">{why}</span>}
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          {hasSettings(p) && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => goPlugin(p.id)}
-              className="h-8 gap-1.5 px-2.5 text-xs text-fg-2 hover:text-fg-1"
-            >
-              <GearSix className="size-3.5" />
-              Settings
-            </Button>
-          )}
-          <Switch aria-label={`Enable ${p.name}`} checked={p.enabled} onCheckedChange={(on) => void setEnabled(on)} />
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={`${p.name} options`}
-              className="flex size-8 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-white/[0.08] hover:text-fg-1 data-[state=open]:bg-white/[0.08]"
-            >
-              <DotsThree className="size-5" weight="bold" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <PluginItems kit={dropdownKit} p={p} onUninstall={onUninstall} />
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-    </ContextArea>
   )
 }

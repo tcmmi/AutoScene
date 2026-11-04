@@ -18,6 +18,7 @@ const { state } = vi.hoisted(() => ({
 vi.mock("@/lib/ipc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ipc")>()),
   commands: {
+    settingsGet: vi.fn(() => Promise.resolve({ allowUnreviewedPlugins: false })),
     pluginsList: vi.fn(() => Promise.resolve(state.plugin ? [state.plugin] : [])),
     pluginSettingsGet: vi.fn(() => Promise.resolve(state.values)),
     pluginSettingsSet: vi.fn(async (_: string, v: Record<string, SettingValue>) => ({ ...(await state.values), ...v })),

@@ -30,6 +30,7 @@ import { contextKit } from "@/components/ui/menu-actions"
 import { DeleteProjectDialog, ProjectDetailsDialog } from "@/features/library/ProjectDialogs"
 import { NewProjectItems, ProjectItems } from "@/features/library/project-actions"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
+import { pluginsLit } from "@/features/plugins/plugin-items"
 import { type PageItem, pageLink, railPages, railTooltip } from "@/features/plugins/page-items"
 import { useAppActions } from "@/lib/actions"
 import { commands } from "@/lib/ipc"
@@ -138,7 +139,7 @@ export function Rail() {
           to="/plugins"
           icon={<PuzzlePiece />}
           label="Plugins"
-          active={path === "/plugins"}
+          active={pluginsLit(path)}
         />
         <RailLink
           to="/settings/general"

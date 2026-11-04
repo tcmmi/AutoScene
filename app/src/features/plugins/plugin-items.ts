@@ -54,12 +54,30 @@ export function sourceLabel(p: Pick<PluginInfo, "trust" | "source" | "repository
   return reviewedPackage(p) ? "Show its source" : "Show the source it names"
 }
 
-/** What a plugin's icon may be: its PNG or SVG as a base64 `data:` URL (the backend reads and checks the file). */
-const ICON_URL = /^data:image\/(?:png|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/
+/**
+ * What a plugin's picture may be: its icon (PNG or SVG) or its banner (PNG,
+ * JPEG or WebP) as a base64 `data:` URL. The backend reads and checks the file.
+ */
+const PICTURE_URL = /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/
 
-/** `src` while it is a plugin's icon in hand, never a link: else null. */
+/** `src` while it is a plugin's picture in hand, never a link: else null. */
 export function pluginPicture(src: string | null | undefined): string | null {
-  return src != null && ICON_URL.test(src) ? src : null
+  return src != null && PICTURE_URL.test(src) ? src : null
+}
+
+/** From how many installed plugins Plugins offers to find one, as Cast does from six characters. */
+export const FIND_FROM = 6
+
+/**
+ * Whether `p` is a plugin `query` looks for: each of its words is in its
+ * name, what it says it does, its author or its id, whatever the case. An
+ * empty query finds every plugin. A catalog entry is found the same way.
+ */
+export function pluginMatches(p: Pick<PluginInfo, "name" | "description" | "author" | "id">, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return true
+  const text = [p.name, p.description, p.author, p.id].join("\n").toLowerCase()
+  return words.every((w) => text.includes(w))
 }
 
 const PERMISSIONS = new Map<Permission, string>([
@@ -89,14 +107,6 @@ export function checkedWhen(p: Pick<PluginInfo, "runtime" | "pages" | "protocol"
   return null
 }
 
-/**
- * Whether a plugin has something to set on its screen: its settings, its
- * export actions to run after every export, or its pages.
- */
-export function hasSettings(p: Pick<PluginInfo, "settings" | "exportActions" | "pages">): boolean {
-  return p.settings.length > 0 || p.exportActions.length > 0 || p.pages.length > 0
-}
-
 /** An entry a plugin adds to each export's menu. */
 export type ExportActionItem = {
   key: string
@@ -122,3 +132,6 @@ export function exportActionItems(plugins: PluginInfo[] | undefined): ExportActi
       })),
     )
 }
+
+/** Whether the rail's Plugins tile is lit at `path`: a plugin's settings are under Plugins. */
+export const pluginsLit = (path: string) => path === "/plugins" || path.startsWith("/plugins/")

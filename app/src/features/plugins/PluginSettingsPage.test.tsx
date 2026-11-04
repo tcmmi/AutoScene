@@ -11,7 +11,7 @@ import { qk, queryClient } from "@/lib/queries"
 import { pluginInfo } from "@/test/plugins"
 import { PluginSettingsPage } from "./PluginSettingsPage"
 
-const { state } = vi.hoisted(() => ({ state: { plugins: [] as PluginInfo[] } }))
+const { state } = vi.hoisted(() => ({ state: { plugins: [] as PluginInfo[], allow: true } }))
 
 const settings = (allow: boolean): AppSettings => ({
   libraryRoot: "C:\\Library",
@@ -23,6 +23,7 @@ const settings = (allow: boolean): AppSettings => ({
 vi.mock("@/lib/ipc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ipc")>()),
   commands: {
+    settingsGet: vi.fn(() => Promise.resolve(settings(state.allow))),
     pluginsList: vi.fn(() => Promise.resolve(state.plugins)),
     pluginSettingsGet: vi.fn(() => Promise.resolve({})),
     pluginBanner: vi.fn(() => Promise.resolve(null)),
@@ -88,6 +89,7 @@ beforeEach(() => {
   // The router puts each place at its top, which jsdom can't scroll.
   vi.spyOn(window, "scrollTo").mockImplementation(() => {})
   state.plugins = []
+  state.allow = true
 })
 afterEach(cleanup)
 
@@ -240,7 +242,7 @@ describe("a plugin's settings", () => {
     const banner = await screen.findByRole("status")
     expect(within(banner).getByText(broken)).toBeTruthy()
     expect(banner.className).toContain("border-danger")
-    const again = within(banner).getByRole("button", { name: "Load its folder again…" })
+    const again = await within(banner).findByRole("button", { name: "Load its folder again…" })
     await user.click(again)
     // Through its review, the one way to agree to a changed program.
     expect(commands.pluginInspectFolder).toHaveBeenCalledExactlyOnceWith("C:\\AutoScene\\plugins\\dev.a.folder")
@@ -251,6 +253,15 @@ describe("a plugin's settings", () => {
     const said = await screen.findByRole("status")
     expect(within(said).getByText("This plugin needs a newer AutoScene.")).toBeTruthy()
     expect(within(said).queryByRole("button")).toBeNull()
+    cleanup()
+    // While unreviewed plugins are off, the backend refuses a folder's review: no button that could only fail.
+    state.allow = false
+    queryClient.clear()
+    show("dev.a.folder")
+    const off = await screen.findByRole("status")
+    await waitFor(() => expect(queryClient.getQueryState(qk.settings)?.status).toBe("success"))
+    expect(within(off).getByText(broken)).toBeTruthy()
+    expect(within(off).queryByRole("button")).toBeNull()
   })
 
   it("a plugin that isn't installed says so, with Go to Plugins", async () => {

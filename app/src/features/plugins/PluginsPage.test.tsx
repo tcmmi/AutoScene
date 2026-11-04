@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
+import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter, useParams } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { toast } from "sonner"
@@ -13,11 +14,12 @@ import { pluginInfo } from "@/test/plugins"
 import { PluginHero } from "./PluginSettingsPage"
 import { PluginsPage } from "./PluginsPage"
 
-const { state, reveal, openExternalUrl, goPlugin } = vi.hoisted(() => ({
+const { state, reveal, openExternalUrl, goPlugin, copyText } = vi.hoisted(() => ({
   state: { plugins: [] as PluginInfo[], allow: false },
   reveal: vi.fn(),
   openExternalUrl: vi.fn(),
   goPlugin: vi.fn(),
+  copyText: vi.fn(() => Promise.resolve(true)),
 }))
 
 const settings = (allow: boolean): AppSettings => ({
@@ -44,26 +46,76 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
   },
 }))
 vi.mock("@/lib/media", () => ({ pickFolder: vi.fn(() => Promise.resolve("D:\\Plugins\\mine")), pickPluginFile: vi.fn() }))
-vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal, openExternalUrl }))
+vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal, openExternalUrl, copyText }))
 vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn(), goPlugin }) }))
 // The window's menu, around the rows' own entries.
 vi.mock("@/components/ui/page", () => ({ Page: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }))
-vi.mock("@tanstack/react-router", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
-  useCanGoBack: () => false,
-  useRouterState: () => ({ location: { pathname: "/plugins" } }),
-}))
 
-const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>{children}</TooltipProvider>
-  </QueryClientProvider>
-)
+const BANNER = "data:image/jpeg;base64,/9j/4AAQ"
+const ICON = "data:image/svg+xml;base64,PHN2Zy8+"
+
+/** `ui` (Plugins, unless said otherwise) at `/plugins`, in the app's router: a plugin's screen says which it is. */
+function show(ui: React.ReactNode = <PluginsPage />) {
+  const root = createRootRoute({
+    component: () => (
+      <>
+        {ui}
+        <Outlet />
+      </>
+    ),
+  })
+  const plugins = createRoute({ getParentRoute: () => root, path: "/plugins", component: () => null })
+  const plugin = createRoute({
+    getParentRoute: () => root,
+    path: "/plugins/$id",
+    component: function Screen() {
+      const { id } = useParams({ strict: false })
+      return <p>The screen of {id}</p>
+    },
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([plugins, plugin]),
+    history: createMemoryHistory({ initialEntries: ["/plugins"] }),
+  })
+  const view = render(
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <RouterProvider router={router} />
+      </TooltipProvider>
+    </QueryClientProvider>,
+  )
+  return { router, container: view.container, unmount: view.unmount }
+}
+
 const allowSwitch = () => screen.getByRole("switch", { name: "Allow plugins that AutoScene has not reviewed" })
+const card = (name: string) => screen.findByRole("group", { name })
+/** A card's art: the link to its plugin's screen. */
+const art = async (name: string) => within(await card(name)).getByRole("link")
+/** What a ⋯ menu lists. */
+async function entries(name: string) {
+  fireEvent.pointerDown(await screen.findByRole("button", { name: `${name} options` }), { button: 0, ctrlKey: false })
+  const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull())
+  return items
+}
+const six = () => [
+  pluginInfo({ id: "dev.a.alpha", name: "Alpha Tool", author: "Alice", description: "Video helper" }),
+  pluginInfo({ id: "dev.b.beta", name: "Beta Script", author: "Bob", description: "Audio cleaner" }),
+  pluginInfo({ id: "dev.c.gamma", name: "Gamma", author: "Carol", description: "Writes notes" }),
+  pluginInfo({ id: "dev.d.delta", name: "Delta", author: "Dan", description: "Posts to a channel" }),
+  pluginInfo({ id: "dev.e.epsilon", name: "Epsilon", author: "Eve", description: "Checks frames" }),
+  pluginInfo({ id: "dev.f.zeta", name: "Zeta", author: "Fay", description: "Counts words" }),
+]
+const names = () => screen.queryAllByRole("group").map((g) => g.getAttribute("aria-label"))
 
 beforeEach(() => {
   queryClient.clear()
   vi.clearAllMocks()
+  // A review a failed case left unasked must not answer the next one.
+  vi.mocked(commands.pluginInspectFolder).mockReset()
+  // The router puts each place at its top, which jsdom can't scroll.
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {})
   state.plugins = []
   state.allow = false
 })
@@ -84,23 +136,29 @@ describe("PluginsPage", () => {
       // A folder says so first, whatever its trust.
       pluginInfo({ id: "dev.a.folder", name: "Folder One", trust: "unreviewed", source: "folder", enabled: false, active: false }),
     ]
-    render(<PluginsPage />, { wrapper })
-    const row = (name: string) => screen.findByRole("group", { name })
+    show()
     const badges: [string, string][] = [
       ["Reviewed One", "Reviewed by AutoScene"],
       ["Pinned One", "Signed, not reviewed"],
       ["Unreviewed One", "Not reviewed"],
       ["Folder One", "Loaded from a folder"],
     ]
-    for (const [name, badge] of badges) expect(within(await row(name)).getByText(badge)).toBeTruthy()
-    expect(within(await row("Reviewed One")).getByText("By AutoScene, version 1.0.0")).toBeTruthy()
+    for (const [name, badge] of badges) expect(within(await card(name)).getByText(badge)).toBeTruthy()
+    // Visible words, not a hidden copy for screen readers.
+    const facts = within(await card("Reviewed One")).getByText("By AutoScene · version 1.0.0")
+    expect(facts.className).not.toMatch(/hidden|opacity-0|sr-only/)
     // Only AutoScene's review stands behind the name a plugin gives its author.
-    expect(within(await row("Pinned One")).getByText("Says it is by Someone, version 1.0.0")).toBeTruthy()
+    expect(within(await card("Pinned One")).getByText("Says it is by Someone · version 1.0.0")).toBeTruthy()
     // Why one that is turned on doesn't run; nothing for one turned off.
-    expect(within(await row("Unreviewed One")).getByText(/You can allow them in Plugins/)).toBeTruthy()
+    // In the card's own words: the backend's sends people to Plugins, where they are.
+    expect(within(await card("Unreviewed One")).getByText("Doesn't run until the setting below allows it.")).toBeTruthy()
+    expect(screen.queryByText(/You can allow them in Plugins/)).toBeNull()
+    expect(within(await card("Folder One")).queryByText(/setting below/)).toBeNull()
     const folder = screen.getByRole("switch", { name: "Enable Folder One" })
     expect(folder.getAttribute("aria-checked")).toBe("false")
     expect(screen.getByRole("switch", { name: "Enable Reviewed One" }).getAttribute("aria-checked")).toBe("true")
+    // What runs: the blocked one and the one turned off don't.
+    expect(screen.getByText("4 plugins · 2 running")).toBeTruthy()
 
     // Turned on, the list shows what the backend gave back.
     vi.mocked(commands.pluginSetEnabled).mockResolvedValue({ ...state.plugins[3], enabled: true })
@@ -109,13 +167,352 @@ describe("PluginsPage", () => {
     expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.a.folder", true)
   })
 
-  it("says so when no plugin is installed", async () => {
-    render(<PluginsPage />, { wrapper })
+  it("the trust badge and the facts sit under the art, not on it", async () => {
+    let answer: (url: string | null) => void = () => {}
+    vi.mocked(commands.pluginBanner).mockReturnValue(new Promise((done) => (answer = done)))
+    state.plugins = [
+      pluginInfo({ id: "dev.a.art", name: "Art", trust: "unreviewed", author: "someone", bannerHash: "a1", icon: ICON }),
+      pluginInfo({ id: "dev.a.broken", name: "Broken", source: "folder", broken: "Its plugin.json can't be read." }),
+    ]
+    show()
+    const link = await art("Art")
+    const caption = [
+      within(await card("Art")).getByText("Not reviewed"),
+      within(await card("Art")).getByText("Says it is by someone · version 1.0.0"),
+      screen.getByRole("switch", { name: "Enable Art" }),
+    ]
+    // Its icon shows until its banner is in hand, in the same place.
+    expect(link.querySelector(`img[src="${ICON}"]`)).not.toBeNull()
+    act(() => answer(BANNER))
+    await waitFor(() => expect(link.querySelector(`img[src="${BANNER}"]`)).not.toBeNull())
+    expect(await art("Art")).toBe(link)
+    for (const el of caption) expect(link.contains(el)).toBe(false)
+    // On the art only its name: nothing the host vouches for on the plugin's pixels.
+    expect(link.textContent).toBe("Art")
+    // Why one doesn't run is under it too.
+    const why = within(await card("Broken")).getByText("Its plugin.json can't be read.")
+    expect((await art("Broken")).contains(why)).toBe(false)
+  })
+
+  it("says so when no plugin is installed, with one Install a plugin…", async () => {
+    show()
     expect(await screen.findByText("No plugins yet")).toBeTruthy()
+    expect(screen.getAllByRole("button", { name: "Install a plugin…" })).toHaveLength(1)
+    expect(screen.queryByRole("textbox", { name: "Find a plugin" })).toBeNull()
+    // The setting it needs is still there, below.
+    expect(allowSwitch()).toBeTruthy()
+    cleanup()
+    queryClient.clear()
+
+    state.allow = true
+    show()
+    expect(await screen.findByText("No plugins yet")).toBeTruthy()
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Load a folder…" })).toHaveLength(1))
+    expect(screen.getAllByRole("button", { name: "Install a plugin…" })).toHaveLength(1)
+  })
+
+  it("finds a plugin by its name, author or description from six plugins", async () => {
+    const user = userEvent.setup()
+    state.plugins = six()
+    show()
+    const find = await screen.findByRole("textbox", { name: "Find a plugin" })
+    expect(names()).toHaveLength(6)
+    await user.type(find, "alpha")
+    expect(names()).toEqual(["Alpha Tool"])
+    await user.clear(find)
+    await user.type(find, "BOB")
+    expect(names()).toEqual(["Beta Script"])
+    await user.clear(find)
+    await user.type(find, "channel")
+    expect(names()).toEqual(["Delta"])
+    // Each word, wherever it is: an author and a word of what it does.
+    await user.clear(find)
+    await user.type(find, "carol notes")
+    expect(names()).toEqual(["Gamma"])
+    await user.clear(find)
+    await user.type(find, "dev.f")
+    expect(names()).toEqual(["Zeta"])
+    // Escape clears it.
+    await user.keyboard("{Escape}")
+    expect((find as HTMLInputElement).value).toBe("")
+    expect(names()).toHaveLength(6)
+    // Nothing found says so, and clears the search.
+    await user.type(find, "nothing like it")
+    expect(names()).toEqual([])
+    const nothing = screen.getByText("Nothing matches").parentElement!
+    await user.click(within(nothing).getByRole("button", { name: "Clear the search" }))
+    expect(names()).toHaveLength(6)
+  })
+
+  it("keeps the search while it narrows, though fewer than six are left", async () => {
+    const user = userEvent.setup()
+    state.plugins = six()
+    show()
+    const find = await screen.findByRole("textbox", { name: "Find a plugin" })
+    await user.type(find, "a")
+    // One is uninstalled meanwhile: five are left, and the search stays.
+    state.plugins = six().slice(1)
+    await act(() => queryClient.invalidateQueries({ queryKey: qk.plugins }))
+    await waitFor(() => expect(names()).not.toContain("Alpha Tool"))
+    expect(screen.getByRole("textbox", { name: "Find a plugin" })).toBe(find)
+    expect((find as HTMLInputElement).value).toBe("a")
+    // Cleared, it goes: there are fewer than six.
+    await user.click(screen.getByRole("button", { name: "Clear the search" }))
+    expect(screen.queryByRole("textbox", { name: "Find a plugin" })).toBeNull()
+    expect(names()).toHaveLength(5)
+  })
+
+  it("shows no search under six plugins", async () => {
+    state.plugins = six().slice(0, 5)
+    show()
+    expect(await card("Alpha Tool")).toBeTruthy()
+    expect(names()).toHaveLength(5)
+    expect(screen.queryByRole("textbox", { name: "Find a plugin" })).toBeNull()
+    expect(screen.queryByRole("search")).toBeNull()
+  })
+
+  it("a card opens its plugin", async () => {
+    const user = userEvent.setup()
+    state.plugins = [
+      pluginInfo({ id: "dev.a.alpha", name: "Alpha Tool" }),
+      pluginInfo({ id: "dev.a.bare", name: "Bare" }),
+    ]
+    const { router } = show()
+    await user.click(await art("Bare"))
+    await waitFor(() => expect(router.state.location.pathname).toBe("/plugins/dev.a.bare"))
+    expect(await screen.findByText("The screen of dev.a.bare")).toBeTruthy()
+    // Its switch and its ⋯ are their own, not the card's.
+    await act(() => router.navigate({ to: "/plugins" }))
+    vi.mocked(commands.pluginSetEnabled).mockResolvedValueOnce({ ...state.plugins[0], enabled: false })
+    await user.click(screen.getByRole("switch", { name: "Enable Alpha Tool" }))
+    await waitFor(() => expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.a.alpha", false))
+    await user.click(screen.getByRole("button", { name: "Alpha Tool options" }))
+    expect(await screen.findByRole("menu")).toBeTruthy()
+    expect(router.state.location.pathname).toBe("/plugins")
+    await user.click(screen.getByRole("menuitem", { name: "Its settings" }))
+    expect(goPlugin).toHaveBeenCalledExactlyOnceWith("dev.a.alpha")
+  })
+
+  it("a plugin without a banner shows its icon as its artwork", async () => {
+    state.plugins = [pluginInfo({ id: "dev.a.icon", name: "Icon", icon: ICON })]
+    show()
+    const link = await art("Icon")
+    const icons = [...link.querySelectorAll<HTMLImageElement>(`img[src="${ICON}"]`)]
+    // Blurred into the backdrop, and sharp on glass beside the name.
+    expect(icons).toHaveLength(2)
+    expect(icons.filter((img) => img.closest("[aria-hidden]") && img.className.includes("blur"))).toHaveLength(1)
+    expect(icons.filter((img) => !img.closest("[aria-hidden]"))).toHaveLength(1)
+    expect(link.textContent).toBe("Icon")
+    expect(commands.pluginBanner).not.toHaveBeenCalled()
+  })
+
+  it("a plugin without banner or icon shows its name as its artwork", async () => {
+    state.plugins = [pluginInfo({ id: "dev.a.plain", name: "A plain plugin with a longer name" })]
+    show()
+    const link = await art("A plain plugin with a longer name")
+    // The name once, set large; no picture and no glyph.
+    expect(within(link).getAllByText("A plain plugin with a longer name")).toHaveLength(1)
+    expect(within(link).getByText("A plain plugin with a longer name").className).toMatch(/display/)
+    expect(link.querySelector("img, svg")).toBeNull()
+  })
+
+  it("a banner that isn't a picture's data URL isn't drawn", async () => {
+    const answers = new Map([
+      ["dev.a.link", "https://example.com/banner.png"],
+      ["dev.a.html", "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=="],
+      // A banner is never an SVG: one could hold markup.
+      ["dev.a.svg", ICON],
+      ["dev.a.quoted", `${BANNER}"><script>alert(1)</script>`],
+    ])
+    vi.mocked(commands.pluginBanner).mockImplementation((id) => Promise.resolve(answers.get(id) ?? null))
+    state.plugins = [...answers.keys()].map((id, i) => pluginInfo({ id, name: id, bannerHash: `h${i}` }))
+    const { container } = show()
+    for (const id of answers.keys())
+      await waitFor(() => expect(queryClient.getQueryState(qk.pluginBanner(id, `h${[...answers.keys()].indexOf(id)}`))?.status).toBe("success"))
+    await act(() => new Promise((done) => setTimeout(done, 0)))
+    expect(container.querySelectorAll("img")).toHaveLength(0)
+    expect(container.innerHTML).not.toContain("example.com")
+    expect(container.innerHTML).not.toContain("alert")
+    // Each shows its name as its artwork instead.
+    for (const id of answers.keys()) expect((await art(id)).textContent).toBe(id)
+  })
+
+  it("a plugin turned off shows dimmed and its switch off", async () => {
+    state.plugins = [
+      pluginInfo({ id: "dev.a.on", name: "On", icon: ICON }),
+      pluginInfo({ id: "dev.a.off", name: "Off", icon: ICON, enabled: false, active: false }),
+    ]
+    show()
+    const dimmed = (link: HTMLElement) => link.querySelector(".opacity-60") != null
+    expect(dimmed(await art("Off"))).toBe(true)
+    expect(dimmed(await art("On"))).toBe(false)
+    expect(screen.getByRole("switch", { name: "Enable Off" }).getAttribute("aria-checked")).toBe("false")
+    expect(screen.getByRole("switch", { name: "Enable On" }).getAttribute("aria-checked")).toBe("true")
+    expect(screen.getByText("2 plugins · 1 running")).toBeTruthy()
+  })
+
+  it("a working folder plugin's menu checks its folder for changes", async () => {
+    const user = userEvent.setup()
+    state.plugins = [pluginInfo({ id: "dev.me.mine", name: "Mine", trust: "unreviewed", source: "folder" })]
+    show()
+    expect(await entries("Mine")).toEqual([
+      "Its settings",
+      "Show its folder",
+      "Show its log",
+      "Copy its id",
+      "Check its folder for changes",
+      "Uninstall…",
+    ])
+    await waitFor(() => expect(commands.pluginsList).toHaveBeenCalledTimes(1))
+    const done = vi.spyOn(toast, "success")
+    const failed = vi.spyOn(toast, "error")
+    const check = async () => {
+      await user.click(screen.getByRole("button", { name: "Mine options" }))
+      await user.click(await screen.findByRole("menuitem", { name: "Check its folder for changes" }))
+    }
+    // The list reads its plugin.json anew, and says so when nothing changed.
+    await check()
+    await waitFor(() => expect(done).toHaveBeenLastCalledWith("Its folder is as it was"))
+    expect(commands.pluginsList).toHaveBeenCalledTimes(2)
+    expect(commands.pluginInspectFolder).not.toHaveBeenCalled()
+    // A change says it was read.
+    state.plugins = [{ ...state.plugins[0], version: "1.1.0" }]
+    await check()
+    await waitFor(() => expect(done).toHaveBeenLastCalledWith("Read the changes in its folder"))
+    // A list that can't be read says why, not nothing.
+    const unreadable = { code: "io", message: "The plugins folder can't be read." }
+    vi.mocked(commands.pluginsList).mockRejectedValueOnce(unreadable).mockRejectedValueOnce(unreadable)
+    await check()
+    await waitFor(
+      () => expect(failed).toHaveBeenCalledExactlyOnceWith("Couldn't check its folder", { description: "The plugins folder can't be read." }),
+      { timeout: 5000 },
+    )
+    expect(done).toHaveBeenCalledTimes(2)
+  })
+
+  it("a broken folder plugin's menu loads its folder again", async () => {
+    const user = userEvent.setup()
+    state.allow = true
+    state.plugins = [
+      pluginInfo({
+        id: "dev.me.mine",
+        name: "Mine",
+        trust: "unreviewed",
+        source: "folder",
+        folder: "D:\\Plugins\\mine",
+        broken: "Its program changed since it was loaded.",
+      }),
+    ]
+    const review: PluginReview = {
+      ticketId: "t",
+      plugin: state.plugins[0],
+      update: null,
+      needsUnreviewed: true,
+      allowed: true,
+      uvMissing: false,
+      catalog: null,
+    }
+    let read: (r: PluginReview) => void = () => {}
+    vi.mocked(commands.pluginInspectFolder).mockReturnValueOnce(new Promise((resolve) => (read = resolve)))
+    show()
+    // Once the setting is in: the entry shows only while unreviewed plugins are allowed.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Load a folder…" })).toBeTruthy())
+    const items = await entries("Mine")
+    expect(items).toContain("Load its folder again…")
+    expect(items).not.toContain("Check its folder for changes")
+    await user.click(screen.getByRole("button", { name: "Mine options" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Load its folder again…" }))
+    // Through its review, the one way to agree to a changed program.
+    await waitFor(() => expect(commands.pluginInspectFolder).toHaveBeenCalledExactlyOnceWith("D:\\Plugins\\mine"))
+    // The header's buttons weren't pressed: they neither spin nor wait.
+    const load = screen.getByRole("button", { name: "Load a folder…" })
+    expect(load.querySelector(".animate-spin")).toBeNull()
+    expect((load as HTMLButtonElement).disabled).toBe(false)
+    act(() => read(review))
+    expect(await screen.findByRole("dialog")).toBeTruthy()
+    // A package that is broken has no folder to load.
+    cleanup()
+    state.plugins = [pluginInfo({ id: "dev.a.pkg", name: "Pkg", broken: "Needs a newer AutoScene." })]
+    queryClient.clear()
+    show()
+    const pkg = await entries("Pkg")
+    expect(pkg).not.toContain("Load its folder again…")
+    expect(pkg).not.toContain("Check its folder for changes")
+  })
+
+  it("offers no Load its folder again… while unreviewed plugins are off", async () => {
+    // The backend refuses a folder's review then: the entry could only fail.
+    state.plugins = [
+      pluginInfo({ id: "dev.me.mine", name: "Mine", trust: "unreviewed", source: "folder", broken: "Its program changed since it was loaded." }),
+    ]
+    show()
+    await waitFor(() => expect((allowSwitch() as HTMLButtonElement).disabled).toBe(false))
+    expect(await entries("Mine")).toEqual(["Its settings", "Show its folder", "Show its log", "Copy its id", "Uninstall…"])
+    // The hero's menu agrees.
+    cleanup()
+    queryClient.clear()
+    show(<PluginHero p={state.plugins[0]} />)
+    // The menu reads the setting as it opens.
+    await entries("Mine")
+    await waitFor(() => expect(queryClient.getQueryState(qk.settings)?.status).toBe("success"))
+    expect(await entries("Mine")).toEqual(["Show its folder", "Show its log", "Copy its id", "Uninstall…"])
+  })
+
+  it("a broken folder's hero loads its folder again through its review", async () => {
+    const user = userEvent.setup()
+    state.allow = true
+    const p = pluginInfo({
+      id: "dev.me.mine",
+      name: "Mine",
+      trust: "unreviewed",
+      source: "folder",
+      folder: "D:\\Plugins\\mine",
+      broken: "Its program changed since it was loaded.",
+    })
+    state.plugins = [p]
+    vi.mocked(commands.pluginInspectFolder).mockResolvedValueOnce({
+      ticketId: "t",
+      plugin: p,
+      update: null,
+      needsUnreviewed: true,
+      allowed: true,
+      uvMissing: false,
+      catalog: null,
+    })
+    show(<PluginHero p={p} />)
+    await entries("Mine")
+    await waitFor(() => expect(queryClient.getQueryState(qk.settings)?.status).toBe("success"))
+    expect(await entries("Mine")).toContain("Load its folder again…")
+    await user.click(screen.getByRole("button", { name: "Mine options" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Load its folder again…" }))
+    await waitFor(() => expect(commands.pluginInspectFolder).toHaveBeenCalledExactlyOnceWith("D:\\Plugins\\mine"))
+    expect(await screen.findByRole("dialog")).toBeTruthy()
+  })
+
+  it("copies a plugin's id", async () => {
+    const user = userEvent.setup()
+    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
+    show()
+    await user.click(await screen.findByRole("button", { name: "One options" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Copy its id" }))
+    expect(copyText).toHaveBeenCalledExactlyOnceWith("dev.a.one", "plugin id")
+  })
+
+  it("shows Try again when the plugins can't be read", async () => {
+    const user = userEvent.setup()
+    vi.mocked(commands.pluginsList).mockRejectedValueOnce({ code: "io", message: "The plugins folder can't be read." })
+    vi.mocked(commands.pluginsList).mockRejectedValueOnce({ code: "io", message: "The plugins folder can't be read." })
+    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
+    show()
+    expect(await screen.findByText("Couldn't read the plugins", undefined, { timeout: 5000 })).toBeTruthy()
+    expect(screen.getByText("The plugins folder can't be read.")).toBeTruthy()
+    await user.click(screen.getByRole("button", { name: "Try again" }))
+    expect(await card("One")).toBeTruthy()
+    expect(screen.queryByText("Couldn't read the plugins")).toBeNull()
   })
 
   it("leaves the question about unreviewed plugins to AutoScene's own dialog", async () => {
-    render(<PluginsPage />, { wrapper })
+    show()
     await waitFor(() => expect((allowSwitch() as HTMLButtonElement).disabled).toBe(false))
     // The person said no there: it stays off.
     vi.mocked(commands.pluginsAllowUnreviewed).mockResolvedValueOnce(settings(false))
@@ -139,17 +536,10 @@ describe("PluginsPage", () => {
 
   it("offers a plugin's actions in its ⋯ menu too", async () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
-    render(<PluginsPage />, { wrapper })
-    const trigger = await screen.findByRole("button", { name: "One options" })
-    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
-    const menu = await screen.findByRole("menu")
-    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent?.trim())).toEqual([
-      "Its settings",
-      "Show its folder",
-      "Show its log",
-      "Uninstall…",
-    ])
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Uninstall…" }))
+    show()
+    expect(await entries("One")).toEqual(["Its settings", "Show its folder", "Show its log", "Copy its id", "Uninstall…"])
+    fireEvent.pointerDown(await screen.findByRole("button", { name: "One options" }), { button: 0, ctrlKey: false })
+    fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Uninstall…" }))
     expect(await screen.findByRole("dialog", { name: "Uninstall One?" })).toBeTruthy()
   })
 
@@ -157,7 +547,7 @@ describe("PluginsPage", () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
     let done: (v: null) => void = () => {}
     vi.mocked(commands.pluginUninstall).mockReturnValueOnce(new Promise((resolve) => (done = resolve)))
-    render(<PluginsPage />, { wrapper })
+    show()
     fireEvent.pointerDown(await screen.findByRole("button", { name: "One options" }), { button: 0, ctrlKey: false })
     fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Uninstall…" }))
     const dialog = await screen.findByRole("dialog")
@@ -172,9 +562,10 @@ describe("PluginsPage", () => {
 
   it("spins the button whose choice is being checked", async () => {
     state.allow = true
+    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
     let checked: (r: PluginReview) => void = () => {}
     vi.mocked(commands.pluginInspectFolder).mockReturnValueOnce(new Promise((resolve) => (checked = resolve)))
-    render(<PluginsPage />, { wrapper })
+    show()
     const load = await screen.findByRole("button", { name: /Load a folder/ })
     fireEvent.click(load)
     await waitFor(() => expect(load.querySelector(".animate-spin")).not.toBeNull())
@@ -185,16 +576,15 @@ describe("PluginsPage", () => {
 
   it("uninstalls a plugin, and what it kept only when asked", async () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" }), pluginInfo({ id: "dev.a.two", name: "Two" })]
-    render(
+    show(
       <AppMenu>
         <div>
           <PluginsPage />
         </div>
       </AppMenu>,
-      { wrapper },
     )
     const uninstall = async (name: string) => {
-      fireEvent.contextMenu(await screen.findByRole("group", { name }), { clientX: 40, clientY: 40 })
+      fireEvent.contextMenu(await card(name), { clientX: 40, clientY: 40 })
       fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Uninstall…" }))
       return screen.findByRole("dialog")
     }
@@ -212,7 +602,8 @@ describe("PluginsPage", () => {
   })
 
   it("hides Load a folder while unreviewed plugins are off", async () => {
-    render(<PluginsPage />, { wrapper })
+    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
+    show()
     expect(await screen.findByRole("button", { name: "Install a plugin…" })).toBeTruthy()
     await waitFor(() => expect((allowSwitch() as HTMLButtonElement).disabled).toBe(false))
     expect(screen.queryByRole("button", { name: "Load a folder…" })).toBeNull()
@@ -220,45 +611,14 @@ describe("PluginsPage", () => {
     queryClient.clear()
 
     state.allow = true
-    render(<PluginsPage />, { wrapper })
+    show()
     expect(await screen.findByRole("button", { name: "Load a folder…" })).toBeTruthy()
-  })
-
-  it("filters plugins by search text and filter tabs", async () => {
-    state.plugins = [
-      pluginInfo({ id: "dev.a.alpha", name: "Alpha Tool", author: "Alice", description: "Video helper", enabled: true, gpu: true }),
-      pluginInfo({ id: "dev.b.beta", name: "Beta Script", author: "Bob", description: "Audio cleaner", enabled: false, gpu: false }),
-    ]
-    render(<PluginsPage />, { wrapper })
-    expect(await screen.findByRole("group", { name: "Alpha Tool" })).toBeTruthy()
-    expect(screen.getByRole("group", { name: "Beta Script" })).toBeTruthy()
-
-    // Search query
-    const input = screen.getByPlaceholderText("Search plugins…")
-    fireEvent.change(input, { target: { value: "alpha" } })
-    expect(screen.getByRole("group", { name: "Alpha Tool" })).toBeTruthy()
-    expect(screen.queryByRole("group", { name: "Beta Script" })).toBeNull()
-
-    // Clear search
-    fireEvent.change(input, { target: { value: "" } })
-    expect(screen.getByRole("group", { name: "Alpha Tool" })).toBeTruthy()
-    expect(screen.getByRole("group", { name: "Beta Script" })).toBeTruthy()
-
-    // Filter tab: Disabled
-    fireEvent.click(screen.getByRole("button", { name: /Disabled/ }))
-    expect(screen.queryByRole("group", { name: "Alpha Tool" })).toBeNull()
-    expect(screen.getByRole("group", { name: "Beta Script" })).toBeTruthy()
-
-    // Filter tab: GPU
-    fireEvent.click(screen.getByRole("button", { name: /GPU/ }))
-    expect(screen.getByRole("group", { name: "Alpha Tool" })).toBeTruthy()
-    expect(screen.queryByRole("group", { name: "Beta Script" })).toBeNull()
   })
 
   it("opens plugin folder and log via ⋯ menu items", async () => {
     const user = userEvent.setup()
     state.plugins = [pluginInfo({ id: "dev.a.alpha", name: "Alpha Tool", folder: "/path/to/folder", logPath: "/path/to/log.txt" })]
-    render(<PluginsPage />, { wrapper })
+    show()
     const trigger = await screen.findByRole("button", { name: "Alpha Tool options" })
     await user.click(trigger)
     await user.click(await screen.findByRole("menuitem", { name: "Show its folder" }))
@@ -269,72 +629,9 @@ describe("PluginsPage", () => {
     expect(reveal).toHaveBeenCalledWith("/path/to/log.txt")
   })
 
-  it("enables and disables all plugins via bulk action buttons", async () => {
-    state.plugins = [
-      pluginInfo({ id: "dev.a.alpha", name: "Alpha", enabled: false }),
-      pluginInfo({ id: "dev.b.beta", name: "Beta", enabled: true }),
-    ]
-    vi.mocked(commands.pluginSetEnabled).mockImplementation((id, on) =>
-      Promise.resolve(pluginInfo({ id, name: id, enabled: on })),
-    )
-    render(<PluginsPage />, { wrapper })
-
-    // Enable all
-    fireEvent.click(await screen.findByRole("button", { name: "Enable all" }))
-    await waitFor(() => expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.a.alpha", true))
-
-    // Disable all
-    fireEvent.click(screen.getByRole("button", { name: "Disable all" }))
-    await waitFor(() => expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.b.beta", false))
-  })
-
-  // Each plugin has its screen, its files and what it may use at least.
-  it("a card opens its plugin's settings under Plugins", async () => {
-    const user = userEvent.setup()
-    state.plugins = [
-      pluginInfo({
-        id: "dev.a.alpha",
-        name: "Alpha Tool",
-        description: "Has a setting.",
-        settings: [{ key: "opt", title: "Option", description: "Test desc", kind: { type: "boolean", default: false } }],
-      }),
-      pluginInfo({ id: "dev.a.bare", name: "Bare", description: "Sets nothing." }),
-    ]
-    render(<PluginsPage />, { wrapper })
-    await user.click(await screen.findByText("Has a setting."))
-    await user.click(screen.getByText("Sets nothing."))
-    expect(goPlugin.mock.calls).toEqual([["dev.a.alpha"], ["dev.a.bare"]])
-    // Its switch is the switch's, not the card's.
-    vi.mocked(commands.pluginSetEnabled).mockResolvedValueOnce({ ...state.plugins[1], enabled: false })
-    await user.click(screen.getByRole("switch", { name: "Enable Bare" }))
-    await waitFor(() => expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.a.bare", false))
-    await user.click(screen.getByRole("button", { name: "Bare options" }))
-    await user.click(await screen.findByRole("menuitem", { name: "Its settings" }))
-    expect(goPlugin.mock.calls).toEqual([["dev.a.alpha"], ["dev.a.bare"], ["dev.a.bare"]])
-  })
-
-  it("keeps a banner's place while it loads, and draws neither trust nor facts on it", async () => {
-    const art = "data:image/jpeg;base64,/9j/4AAQ"
-    let answer: (url: string | null) => void = () => {}
-    vi.mocked(commands.pluginBanner).mockReturnValue(new Promise((done) => (answer = done)))
-    state.plugins = [pluginInfo({ id: "dev.a.art", name: "Art", trust: "unreviewed", author: "someone", bannerHash: "a1" })]
-    render(<PluginsPage />, { wrapper })
-    const card = await screen.findByRole("group", { name: "Art" })
-    const slot = card.firstElementChild!
-    expect(slot.querySelector("img")).toBeNull()
-    const facts = [within(card).getByText("Not reviewed"), within(card).getByText("Says it is by someone"), within(card).getByText("v1.0.0")]
-    act(() => answer(art))
-    await waitFor(() => expect(slot.querySelector("img")?.getAttribute("src")).toBe(art))
-    // The same place, and nothing the host vouches for on the plugin's pixels.
-    expect(card.firstElementChild).toBe(slot)
-    for (const fact of facts) expect(slot.contains(fact)).toBe(false)
-    expect(slot.textContent).toBe("")
-  })
-
   // A guard for good: a picture fetched from a link would tell its host who
   // looked, and when, and could make a claim look checked.
   it("no picture on the plugin screens comes from the internet", async () => {
-    const art = "data:image/jpeg;base64,/9j/4AAQ"
     // Its plugin.json may name its author's GitHub page: only its own files show.
     state.plugins = [
       pluginInfo({
@@ -342,7 +639,7 @@ describe("PluginsPage", () => {
         name: "Art",
         author: "someone",
         repository: "https://github.com/someone/art",
-        icon: "data:image/svg+xml;base64,PHN2Zy8+",
+        icon: ICON,
         bannerHash: "a1",
         settings: [{ key: "on", title: "On", description: null, kind: { type: "boolean", default: true } }],
       }),
@@ -350,17 +647,16 @@ describe("PluginsPage", () => {
       pluginInfo({ id: "dev.a.link", name: "Link", author: "someone", repository: "https://github.com/someone/link", bannerHash: "b2" }),
     ]
     vi.mocked(commands.pluginBanner).mockImplementation((id) =>
-      Promise.resolve(id === "dev.a.art" ? art : "https://github.com/someone.png"),
+      Promise.resolve(id === "dev.a.art" ? BANNER : "https://github.com/someone.png"),
     )
-    const { container } = render(
+    const { container } = show(
       <>
         <PluginsPage />
         <PluginHero p={state.plugins[0]} />
       </>,
-      { wrapper },
     )
     // The banner on its card, and blurred and framed in its settings' hero.
-    await waitFor(() => expect(container.querySelectorAll(`img[src="${art}"]`)).toHaveLength(3))
+    await waitFor(() => expect(container.querySelectorAll(`img[src="${BANNER}"]`)).toHaveLength(3))
     await waitFor(() => expect(queryClient.getQueryState(qk.pluginBanner("dev.a.link", "b2"))?.status).toBe("success"))
     await act(() => new Promise((done) => setTimeout(done, 0)))
     const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src"))
@@ -375,24 +671,23 @@ describe("PluginsPage", () => {
     const user = userEvent.setup()
     const p = pluginInfo({ id: "dev.a.mine", name: "Mine", trust: "unreviewed", repository: "https://gitlab.com/a/b" })
     state.plugins = [p]
-    const page = render(<PluginsPage />, { wrapper })
+    const page = show()
     await user.click(await screen.findByRole("button", { name: "Mine options" }))
     await user.click(await screen.findByRole("menuitem", { name: "Show the source it names" }))
     await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledWith("dev.a.mine"))
     page.unmount()
     // Its settings say the same, in their ⋯ (the card's list without
     // Its settings) and in their right-click.
-    const settings = render(
+    const settings = show(
       <AppMenu>
         <div>
           <PluginHero p={p} />
         </div>
       </AppMenu>,
-      { wrapper },
     )
     await user.click(await screen.findByRole("button", { name: "Mine options" }))
     const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
-    expect(items).toEqual(["Show the source it names", "Show its folder", "Show its log", "Uninstall…"])
+    expect(items).toEqual(["Show the source it names", "Show its folder", "Show its log", "Copy its id", "Uninstall…"])
     await user.click(screen.getByRole("menuitem", { name: "Show the source it names" }))
     await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledTimes(2))
     fireEvent.contextMenu(screen.getByRole("heading", { name: "Mine" }), { clientX: 40, clientY: 40 })
@@ -411,18 +706,18 @@ describe("PluginsPage", () => {
     const user = userEvent.setup()
     const error = vi.spyOn(toast, "error")
     state.plugins = [pluginInfo({ id: "dev.a.mine", name: "Mine", repository: "https://gitlab.com/a/b" })]
-    render(<PluginsPage />, { wrapper })
-    const show = async () => {
+    show()
+    const open = async () => {
       await user.click(await screen.findByRole("button", { name: "Mine options" }))
       await user.click(await screen.findByRole("menuitem", { name: "Show its source" }))
     }
     vi.mocked(commands.pluginOpenSource).mockResolvedValueOnce(false)
-    await show()
+    await open()
     await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledTimes(1))
     await act(() => new Promise((done) => setTimeout(done, 0)))
     expect(error).not.toHaveBeenCalled()
     vi.mocked(commands.pluginOpenSource).mockRejectedValueOnce({ code: "io", message: "AutoScene couldn't open the link." })
-    await show()
+    await open()
     await waitFor(() =>
       expect(error).toHaveBeenCalledExactlyOnceWith("Couldn't open the link", { description: "AutoScene couldn't open the link." }),
     )
@@ -438,15 +733,8 @@ describe("PluginsPage", () => {
       pluginInfo({ id: "dev.a.pinned", name: "Pinned", trust: "pinned", repository }),
       pluginInfo({ id: "dev.a.folder", name: "Folder", source: "folder", repository }),
     ]
-    render(<PluginsPage />, { wrapper })
-    const entries = async (name: string) => {
-      await user.click(await screen.findByRole("button", { name: `${name} options` }))
-      const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
-      await user.keyboard("{Escape}")
-      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull())
-      return items
-    }
-    expect(await entries("Reviewed")).toEqual(["Its settings", "Show its source", "Show its folder", "Show its log", "Uninstall…"])
+    show()
+    expect(await entries("Reviewed")).toEqual(["Its settings", "Show its source", "Show its folder", "Show its log", "Copy its id", "Uninstall…"])
     expect((await entries("Pinned"))[1]).toBe("Show the source it names")
     expect((await entries("Folder"))[1]).toBe("Show the source it names")
     await user.click(await screen.findByRole("button", { name: "Reviewed options" }))
@@ -458,16 +746,14 @@ describe("PluginsPage", () => {
   it("no source entry without a repository", async () => {
     const user = userEvent.setup()
     state.plugins = [pluginInfo({ id: "dev.a.plain", name: "Plain", trust: "unreviewed" })]
-    const page = render(<PluginsPage />, { wrapper })
-    await user.click(await screen.findByRole("button", { name: "Plain options" }))
-    const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
-    expect(items).toEqual(["Its settings", "Show its folder", "Show its log", "Uninstall…"])
+    const page = show()
+    expect(await entries("Plain")).toEqual(["Its settings", "Show its folder", "Show its log", "Copy its id", "Uninstall…"])
     page.unmount()
     // Nor does the ⋯ of its settings.
-    render(<PluginHero p={state.plugins[0]} />, { wrapper })
+    show(<PluginHero p={state.plugins[0]} />)
     await user.click(await screen.findByRole("button", { name: "Plain options" }))
     const ownItems = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
-    expect(ownItems).toEqual(["Show its folder", "Show its log", "Uninstall…"])
+    expect(ownItems).toEqual(["Show its folder", "Show its log", "Copy its id", "Uninstall…"])
     expect(screen.queryByText(/source/)).toBeNull()
     expect(commands.pluginOpenSource).not.toHaveBeenCalled()
   })

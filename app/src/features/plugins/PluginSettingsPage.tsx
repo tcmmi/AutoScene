@@ -16,6 +16,7 @@ import { useAmbientOf } from "@/lib/ambient"
 import { commands, errorMessage } from "@/lib/ipc"
 import { usePluginBanner, usePlugins } from "@/lib/queries"
 import { cn } from "@/lib/utils"
+import { useLoadAgain } from "./load-again"
 import { PluginSettingsSection } from "./PluginSettingsSection"
 import { keepPlugin } from "./plugin-actions"
 import { pluginPicture, reviewedPackage, trustLabel } from "./plugin-items"
@@ -76,6 +77,8 @@ export function PluginHero({ p }: { p: PluginInfo }) {
   const navigate = useNavigate()
   const [removing, setRemoving] = useState(false)
   const uninstall = () => setRemoving(true)
+  const again = useLoadAgain()
+  const loadAgain = () => void again.loadAgain(p)
   const trust = trustLabel(p)
   const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
   const setEnabled = async (on: boolean) => {
@@ -87,7 +90,7 @@ export function PluginHero({ p }: { p: PluginInfo }) {
   }
   return (
     <>
-      <ContextArea menu={<PluginItems kit={contextKit} p={p} settings={false} onUninstall={uninstall} />}>
+      <ContextArea menu={<PluginItems kit={contextKit} p={p} settings={false} onLoadAgain={loadAgain} onUninstall={uninstall} />}>
         <Hero src={picture} blur dimmed={!p.enabled} ambient={ambient} className="min-h-[clamp(320px,44vh,460px)]">
           <div className="flex items-end justify-between gap-8">
             <div className="flex min-w-0 items-end gap-7">
@@ -143,15 +146,16 @@ export function PluginHero({ p }: { p: PluginInfo }) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <PluginItems kit={dropdownKit} p={p} settings={false} onUninstall={uninstall} />
+                  <PluginItems kit={dropdownKit} p={p} settings={false} onLoadAgain={loadAgain} onUninstall={uninstall} />
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
           </div>
         </Hero>
       </ContextArea>
-      {/* Outside the right-click area, which a right-click in it would reach
-          through its portal. Gone, it leaves for Plugins. */}
+      {/* Outside the right-click area, which a right-click in them would reach
+          through their portal. Gone, it leaves for Plugins. */}
+      {again.dialog}
       <UninstallDialog p={removing ? p : null} onClose={() => setRemoving(false)} onUninstalled={() => navigate({ to: "/plugins" })} />
     </>
   )

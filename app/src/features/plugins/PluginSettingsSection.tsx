@@ -2,7 +2,7 @@ import type * as React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
-import type { PluginInfo, PluginReview, SettingKind, SettingSpec, SettingValue } from "@/bindings"
+import type { PluginInfo, SettingKind, SettingSpec, SettingValue } from "@/bindings"
 import { AppWindow, ArrowCounterClockwise, CircleNotch, FolderOpen, GraphicsCard, PuzzlePiece, ShieldCheck } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
@@ -17,9 +17,9 @@ import { useAppActions } from "@/lib/actions"
 import { commands, errorMessage } from "@/lib/ipc"
 import { reveal } from "@/lib/os"
 import { isMac } from "@/lib/platform"
-import { qk, queryClient, usePluginSettings, usePlugins } from "@/lib/queries"
+import { qk, queryClient, usePluginSettings, usePlugins, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
-import { InstallReviewDialog } from "./InstallReviewDialog"
+import { useLoadAgain } from "./load-again"
 import { pageLink } from "./page-items"
 import { allowUnreviewed, keepPlugin } from "./plugin-actions"
 import { checkedWhen, permissionLabel } from "./plugin-items"
@@ -185,20 +185,11 @@ function PluginSettings({ p }: { p: PluginInfo }) {
  * this screen already is), on a calm banner. Broken is a fault, in red.
  */
 function Fix({ p }: { p: PluginInfo }) {
-  const [checking, setChecking] = useState(false)
-  const [review, setReview] = useState<PluginReview | null>(null)
+  const { checking, loadAgain, dialog } = useLoadAgain()
+  // The backend refuses a folder's review while unreviewed plugins are off.
+  const allowed = useSettings().data?.allowUnreviewedPlugins ?? false
   const blocked = p.broken == null && p.enabled && p.blockedReason != null
   if (p.broken == null && !blocked) return null
-  const loadAgain = async () => {
-    setChecking(true)
-    try {
-      setReview(await commands.pluginInspectFolder(p.folder))
-    } catch (e) {
-      toast.error("Couldn't open the plugin", { description: errorMessage(e) })
-    } finally {
-      setChecking(false)
-    }
-  }
   return (
     <div
       role="status"
@@ -214,14 +205,15 @@ function Fix({ p }: { p: PluginInfo }) {
           Allow them…
         </Button>
       ) : (
-        p.source === "folder" && (
-          <Button size="sm" variant="ghost" disabled={checking} onClick={() => void loadAgain()}>
+        p.source === "folder" &&
+        allowed && (
+          <Button size="sm" variant="ghost" disabled={checking} onClick={() => void loadAgain(p)}>
             {checking && <CircleNotch className="animate-spin" />}
             Load its folder again…
           </Button>
         )
       )}
-      <InstallReviewDialog review={review} onClose={() => setReview(null)} />
+      {dialog}
     </div>
   )
 }

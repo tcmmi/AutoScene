@@ -81,7 +81,8 @@ Rules:
   "web link"), text not selectable outside fields and paths.
 - **Rail** (76px, `components/shell/Rail.tsx`) on the window's left edge, on the native material where there is
   one: the mark, Library, each recent project as its picture (gold ring when open), New project, and at the bottom
-  Search (`Ctrl/⌘ K`), Activity (a ring fills as work runs) and Settings. `Ctrl/⌘ B` hides it. Under Library sit up
+  Search (`Ctrl/⌘ K`), Activity (a ring fills as work runs), Plugins (lit on Plugins and on a plugin's settings) and
+  Settings. `Ctrl/⌘ B` hides it. Under Library sit up
   to four plugin page tiles, each with the plugin's icon, AutoScene's plugin mark in its corner and a tooltip that
   starts with "Plugin"; the other pages are in the palette.
 - **Top bar** (56px, `components/ui/topbar.tsx`) per view: back and title on the left, a project's sections
@@ -181,6 +182,15 @@ Rules:
     Shift+Z for the whole episode) and scrolls with the wheel; zoomed in, a thin overview of the episode shows the
     part in view.
   - Only the timecode, the playhead and the glow follow every video frame; shots and lanes are drawn on canvases.
+- **Plugins:** every installed plugin as a 2:1 card in the Library's grid. The art is the plugin's banner with its
+  name on the dark bottom; else its icon blurred into a backdrop, the sharp icon on glass and the name; else its name
+  set large as the picture (no glyph: two such plugins differ by their names). The caption under the art is
+  AutoScene's: the trust badge, "Says it is by …" ("By …" only for a package AutoScene reviewed) and the version,
+  the switch; then why it doesn't run, when it is broken (red) or not allowed (calm, pointing at the setting below).
+  A plugin turned off is dimmed. The title's line counts the plugins and how many run. ⋯ shows on hover and lists what
+  the right-click does; a broken loaded folder offers Load its folder again… only while unreviewed plugins are
+  allowed. Install a plugin… is the white pill (Load a folder… beside it while unreviewed plugins are allowed); from
+  six plugins a search finds one by its name, author, description or id; the allow switch sits below the cards.
 - **A plugin's settings** (`/plugins/<id>`, "Its settings" in menus; Settings lists only the app's own sections): its
   picture as the hero, always blurred (the banner, else the icon, else the fallback), the sharp banner or icon
   framed beside the name, the trust badge, the version and the licence as chips, then "Says it is by …" ("By …"

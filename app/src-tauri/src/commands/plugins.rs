@@ -1,11 +1,12 @@
-//! Plugins (Settings → Plugins): what is installed, installing it after a
-//! review, uninstalling, turning plugins and their after-export actions on
-//! or off, their settings and secrets, whether plugins AutoScene hasn't
-//! reviewed may run, running their actions, and opening, closing and
-//! answering their pages. Each change emits `plugins:changed`; runs report
-//! as jobs, and an open page hears of its plugin's changes through
-//! `plugin-page:event`. A page's frame calls nothing itself: the app's page
-//! hands its calls on with the session it holds ([`plugin_page_call`]).
+//! Plugins (Settings → Plugins): what is installed and each one's banner,
+//! installing it after a review, uninstalling, turning plugins and their
+//! after-export actions on or off, their settings and secrets, whether
+//! plugins AutoScene hasn't reviewed may run, running their actions, and
+//! opening, closing and answering their pages. Each change emits
+//! `plugins:changed`; runs report as jobs, and an open page hears of its
+//! plugin's changes through `plugin-page:event`. A page's frame calls
+//! nothing itself: the app's page hands its calls on with the session it
+//! holds ([`plugin_page_call`]).
 //!
 //! The page can't say yes alone to code AutoScene hasn't reviewed: turning
 //! the setting on, and installing such a plugin, each ask the person in a
@@ -45,6 +46,17 @@ pub async fn plugins_list(state: State<'_, AppState>) -> AppResult<Vec<PluginInf
         Ok(host.store.list()?.iter().map(|p| info(p, &host.store, allow)).collect())
     })
     .await
+}
+
+/// A plugin's banner as a `data:` URL, read and checked again as its icon
+/// is: none when it has no banner, or one that is no longer the picture its
+/// package listed. The list gives only its hash (`PluginInfo.bannerHash`).
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_banner(state: State<'_, AppState>, plugin_id: String) -> AppResult<Option<String>> {
+    let id = PluginId::parse(&plugin_id)?;
+    let host = host(&state)?;
+    blocking(move || Ok(host.store.banner_data_url(&host.store.get(&id)?))).await
 }
 
 /// One change of whether plugins AutoScene hasn't reviewed may run at a

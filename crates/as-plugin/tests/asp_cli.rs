@@ -503,6 +503,89 @@ fn pack_and_verify_warn_as_autoscene_would() {
     );
 }
 
+/// The start of a PNG of `w`×`h`: its signature and IHDR.
+fn png(w: u32, h: u32) -> Vec<u8> {
+    let mut b = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+    b.extend(w.to_be_bytes().into_iter().chain(h.to_be_bytes()));
+    b.extend([8, 2, 0, 0, 0]);
+    b
+}
+
+/// The start of a baseline JPEG of `w`×`h`.
+fn jpeg(w: u16, h: u16) -> Vec<u8> {
+    let mut b = b"\xFF\xD8\xFF\xC0\0\x11\x08".to_vec();
+    b.extend(h.to_be_bytes().into_iter().chain(w.to_be_bytes()));
+    b.extend([3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
+    b
+}
+
+/// A uv plugin of manifest version 2 in `dir`, with its banner `path` of `bytes`.
+fn with_banner(dir: &Path, path: &str, bytes: &[u8]) -> PathBuf {
+    let src = uv_plugin(dir);
+    fs::create_dir_all(src.join("art")).unwrap();
+    fs::write(src.join(path), bytes).unwrap();
+    edit_manifest(&src, |v| {
+        v["manifestVersion"] = json!(2);
+        v["banner"] = json!(path);
+    });
+    src
+}
+
+#[test]
+fn pack_refuses_a_banner_it_doesnt_list() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = with_banner(&place("hello"), "art/banner.jpg", &jpeg(1200, 600));
+    let out = place("hello.asp");
+    assert_eq!(asp(&["pack", text(&src), text(&out)]).warnings(), "");
+    assert_eq!(asp(&["verify", text(&out)]).ok(), "dev.autoscene.hello-export 1.2.0: Unreviewed\n");
+    assert!(entries(&out).contains_key("art/banner.jpg"));
+
+    // Not in the folder (nor in its package), too large, or not what it says.
+    let refused = |bytes: Option<Vec<u8>>| {
+        match bytes {
+            Some(bytes) => fs::write(src.join("art/banner.jpg"), bytes).unwrap(),
+            None => fs::remove_file(src.join("art/banner.jpg")).unwrap(),
+        }
+        let err = asp(&["pack", text(&src), text(&place("refused.asp"))]).failed(1);
+        assert_eq!(names(tmp.path()), ["hello", "hello.asp"]);
+        err
+    };
+    let mut big = jpeg(1200, 600);
+    big.resize((512 << 10) + 1, 0);
+    assert_eq!(refused(Some(big)), "asp: The plugin's banner is larger than 512 KB.\n");
+    assert_eq!(refused(Some(png(1200, 600))), "asp: The plugin's banner art/banner.jpg isn't a JPEG image.\n");
+    assert_eq!(refused(None), "asp: The plugin package is missing its banner, art/banner.jpg.\n");
+}
+
+#[test]
+fn pack_warns_of_a_small_or_misshapen_banner() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let cases: [(&str, Vec<u8>, &[&str]); 4] = [
+        ("art/banner.jpg", jpeg(1200, 600), &[]),
+        ("art/banner.jpg", jpeg(800, 400), &["warning: The banner is 800×400. Cards show it soft below 1200×600."]),
+        ("art/banner.png", png(1200, 900), &["warning: The banner is 1200×900. Cards crop it to 2:1."]),
+        (
+            "art/banner.png",
+            png(600, 600),
+            &[
+                "warning: The banner is 600×600. Cards show it soft below 1200×600.",
+                "warning: The banner is 600×600. Cards crop it to 2:1.",
+            ],
+        ),
+    ];
+    for (i, (path, bytes, warnings)) in cases.into_iter().enumerate() {
+        let src = with_banner(&place(&format!("hello{i}")), path, &bytes);
+        let out = place(&format!("hello{i}.asp"));
+        assert_eq!(asp(&["pack", text(&src), text(&out)]).warnings().lines().collect::<Vec<_>>(), warnings);
+        // verify says the same of the package.
+        let verified = asp(&["verify", text(&out)]);
+        assert_eq!(verified.err.lines().collect::<Vec<_>>(), warnings);
+        verified.ok();
+    }
+}
+
 #[test]
 fn a_plugin_that_runs_no_program_packs_with_its_pages() {
     let tmp = tempfile::tempdir().unwrap();

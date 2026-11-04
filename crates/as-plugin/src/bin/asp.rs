@@ -36,22 +36,24 @@
 //!
 //! `pack` and `verify` check each platform the plugin runs on as AutoScene
 //! does there, warn of one it can't run on, and fail when it runs on none.
-//! A plugin made for another AutoScene than the one asp comes with gets a
-//! warning, not an error. A package is unpacked as AutoScene would before
-//! it takes the place of the output, so one AutoScene would refuse is never
-//! written. Errors exit with 1, wrong arguments with 2.
+//! They check the icon and the banner as AutoScene does, and warn of a
+//! banner that cards would show soft or crop. A plugin made for another
+//! AutoScene than the one asp comes with gets a warning, not an error. A
+//! package is unpacked as AutoScene would before it takes the place of the
+//! output, so one AutoScene would refuse is never written. Errors exit with
+//! 1, wrong arguments with 2.
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs::{self, File};
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use as_plugin::keys::REVIEW_KEYS;
 use as_plugin::manifest::{self, Parsed};
-use as_plugin::package::{self, AUTHOR_KEY, LOCK, MANIFEST, SIG, file_in};
+use as_plugin::package::{self, AUTHOR_KEY, LOCK, MANIFEST, MAX_BANNER, PictureFormat, SIG, file_in};
 use as_plugin::trust::{self, Keys, Trust, Verdict};
 use as_plugin::{FilesLock, Launch, LockedFile, Manifest, PluginError, Unpacked, current_platform};
 use base64::Engine as _;
@@ -237,12 +239,8 @@ fn pack(dir: &Path, out: &Path) -> Result<(), Failure> {
     }
     check_platforms(m, &lock)?;
     package::check_pages(dir, Some(&lock), &m.pages).map_err(plugin_at(dir))?;
-    if let Some(icon) = &m.icon {
-        package::check_icon(dir, &lock, icon).map_err(plugin_at(dir))?;
-    }
-    if let Some(banner) = &m.banner {
-        package::check_banner(dir, &lock, banner).map_err(plugin_at(dir))?;
-    }
+    package::check_pictures(dir, &lock, m).map_err(plugin_at(dir))?;
+    warn_of_banner(dir, m)?;
     let mut lock_bytes = serde_json::to_vec_pretty(&lock).expect("a files.lock is JSON");
     lock_bytes.push(b'\n');
     save(out, dir, &lock, &lock_bytes, &[])?;
@@ -309,6 +307,26 @@ fn check_platforms(m: &Manifest, lock: &FilesLock) -> Result<(), Failure> {
     }
 }
 
+/// Warns of a banner that cards show soft (smaller than 960×480) or crop
+/// (its sides more than 10% off 2:1), as its header says. Never refuses
+/// one: AutoScene shows it either way.
+fn warn_of_banner(dir: &Path, m: &Manifest) -> Result<(), Failure> {
+    let Some(banner) = &m.banner else { return Ok(()) };
+    let path = file_in(dir, banner);
+    let mut bytes = Vec::new();
+    File::open(&path).and_then(|f| f.take(MAX_BANNER).read_to_end(&mut bytes)).map_err(at(&path))?;
+    let Some((w, h)) = PictureFormat::of(banner).and_then(|f| package::picture_size(f, &bytes)) else {
+        return Ok(());
+    };
+    if w < 960 || h < 480 {
+        warn(&format!("The banner is {w}×{h}. Cards show it soft below 1200×600."));
+    }
+    if (f64::from(w) / f64::from(h) / 2.0 - 1.0).abs() > 0.1 {
+        warn(&format!("The banner is {w}×{h}. Cards crop it to 2:1."));
+    }
+    Ok(())
+}
+
 /// Signs the package `input` with the secret key file `key`, and writes it
 /// with the signature and the author's key to `out` (which may be `input`).
 fn sign(input: &Path, key: &Path, out: &Path) -> Result<(), Failure> {
@@ -346,12 +364,8 @@ fn verify(path: &Path, review: &[&OsString]) -> Result<(), Failure> {
     let m = &parsed.manifest;
     check_platforms(m, &unpacked.lock)?;
     package::check_pages(&dir, Some(&unpacked.lock), &m.pages)?;
-    if let Some(icon) = &m.icon {
-        package::check_icon(&dir, &unpacked.lock, icon)?;
-    }
-    if let Some(banner) = &m.banner {
-        package::check_banner(&dir, &unpacked.lock, banner)?;
-    }
+    package::check_pictures(&dir, &unpacked.lock, m)?;
+    warn_of_banner(&dir, m)?;
     let (sig, author_key) = (unpacked.signature.as_deref(), unpacked.author_key.as_deref());
     let verdict = trust::judge(&keys, &unpacked.lock_bytes, sig, author_key, m, None)?;
     println!("{} {}: {}", m.id, m.version, trust_text(&verdict));

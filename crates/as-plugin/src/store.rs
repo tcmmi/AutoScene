@@ -64,7 +64,10 @@ use crate::manifest::{
     self, Manifest, Parsed, Permission, PluginId, RuntimeKind, SettingKind, SettingSpec, SettingValue,
     current_platform, invalid, shown,
 };
-use crate::package::{self, FilesLock, LOCK, LOCK_VERSION, LockedFile, MANIFEST, MAX_LOCK_BYTES, Unpacked, file_in};
+use crate::package::{
+    self, FilesLock, LOCK, LOCK_VERSION, LockedFile, MANIFEST, MAX_LOCK_BYTES, Picture, PictureFormat, Unpacked,
+    file_in,
+};
 use crate::protocol::{ActionContext, AppContext, PluginContext, RunMessage, ServeMessage, ToolPaths};
 use crate::runtime::RunSpec;
 use crate::secrets::{self, SecretStore};
@@ -388,7 +391,7 @@ impl Store {
 
     /// Unpacks the package `archive` and checks it for this AutoScene: its
     /// manifest, the files its command starts on this computer, its pages,
-    /// its icon and its signature, and that it may replace the installed
+    /// its icon and banner, and its signature, and that it may replace the installed
     /// version. A package that fails leaves no folder.
     pub fn stage(&self, archive: &Path) -> PluginResult<Ticket> {
         let id = Uuid::now_v7();
@@ -408,12 +411,7 @@ impl Store {
             package::check_launch(&unpacked.lock, &m.launch()?, current_platform())?;
         }
         package::check_pages(staged, Some(&unpacked.lock), &m.pages)?;
-        if let Some(icon) = &m.icon {
-            package::check_icon(staged, &unpacked.lock, icon)?;
-        }
-        if let Some(banner) = &m.banner {
-            package::check_banner(staged, &unpacked.lock, banner)?;
-        }
+        package::check_pictures(staged, &unpacked.lock, &m)?;
         let previous = self.record(&m.id)?;
         let Unpacked { lock, lock_bytes, signature, author_key } = unpacked;
         let pin = previous.as_ref().and_then(|p| p.author_key.as_ref());
@@ -940,51 +938,70 @@ impl Store {
     /// The icon of `p` as a `data:` URL, while it is the picture its
     /// package listed (a loaded folder's: a picture of an icon's size).
     pub fn icon_data_url(&self, p: &Installed) -> Option<String> {
-        let icon = p.manifest.as_ref()?.icon.as_deref()?;
-        let path = file_in(&p.dir, icon);
-        let lock = match &p.record.lock_sha256 {
-            Some(sha256) => installed_lock(&p.dir, sha256).ok()?,
-            None => {
-                let size = fs::symlink_metadata(&path).ok().filter(|f| f.is_file())?.len();
-                let listed = LockedFile { path: icon.to_owned(), size, sha256: String::new(), exec: false };
-                FilesLock { lock_version: LOCK_VERSION, files: vec![listed] }
-            }
-        };
-        package::check_icon(&p.dir, &lock, icon).ok()?;
-        let listed = lock.files.iter().find(|f| f.path == icon)?;
-        let mut bytes = Vec::new();
-        File::open(&path).ok()?.take(listed.size + 1).read_to_end(&mut bytes).ok()?;
-        let hashed = p.record.lock_sha256.is_none() || package::sha256_hex(&bytes) == listed.sha256;
-        if bytes.len() as u64 != listed.size || !hashed {
-            return None;
-        }
-        let kind = if icon.to_ascii_lowercase().ends_with(".svg") { "image/svg+xml" } else { "image/png" };
-        Some(format!("data:{kind};base64,{}", STANDARD.encode(&bytes)))
+        self.picture_data_url(p, p.manifest.as_ref()?.icon.as_deref()?, Picture::Icon)
     }
 
-    /// The banner of `p` as a `data:` URL, while it is the picture its
-    /// package listed (a loaded folder's: a picture of a banner's size).
+    /// The banner of `p` as a `data:` URL, as [`Store::icon_data_url`] reads
+    /// its icon. Read only when it is shown: a list carries its
+    /// [`Store::banner_hash`].
     pub fn banner_data_url(&self, p: &Installed) -> Option<String> {
+        self.picture_data_url(p, p.manifest.as_ref()?.banner.as_deref()?, Picture::Banner)
+    }
+
+    /// The `picture` of `p` at the package path `path` as a `data:` URL,
+    /// while it is the picture its package listed: its size and SHA-256
+    /// those of its `files.lock`. A loaded folder's has no lock: a sound
+    /// picture, as it is now, a plain file in plain folders. None for a path
+    /// a package may not name ([`package::check_path`]).
+    pub fn picture_data_url(&self, p: &Installed, path: &str, picture: Picture) -> Option<String> {
+        package::check_path(path).ok()?;
+        let format = PictureFormat::of(path)?;
+        let bytes = self.picture_bytes(p, path, picture)?;
+        Some(format!("data:{};base64,{}", format.mime(), STANDARD.encode(&bytes)))
+    }
+
+    /// What tells one banner of `p` from another, without its bytes: the
+    /// SHA-256 its package's `files.lock` lists, once the banner passes
+    /// [`package::check_picture`], or a loaded folder's banner's SHA-256 as
+    /// it is now (a file of at most [`package::MAX_BANNER`]). A new version
+    /// or a changed file gives a new one.
+    pub fn banner_hash(&self, p: &Installed) -> Option<String> {
         let banner = p.manifest.as_ref()?.banner.as_deref()?;
-        let path = file_in(&p.dir, banner);
+        match p.record.lock_sha256 {
+            Some(_) => Some(self.listed_picture(p, banner, Picture::Banner)?.sha256),
+            None => Some(package::sha256_hex(&self.picture_bytes(p, banner, Picture::Banner)?)),
+        }
+    }
+
+    /// The bytes of the `picture` of `p` at `path`, while they are the ones
+    /// [`Store::listed_picture`] lists and a sound picture.
+    fn picture_bytes(&self, p: &Installed, path: &str, picture: Picture) -> Option<Vec<u8>> {
+        let listed = self.listed_picture(p, path, picture)?;
+        let mut bytes = Vec::new();
+        File::open(file_in(&p.dir, path)).ok()?.take(listed.size + 1).read_to_end(&mut bytes).ok()?;
+        let hashed = p.record.lock_sha256.is_none() || package::sha256_hex(&bytes) == listed.sha256;
+        let sound = package::picture_bytes_ok(picture, PictureFormat::of(path)?, &bytes);
+        (bytes.len() as u64 == listed.size && hashed && sound).then_some(bytes)
+    }
+
+    /// The `files.lock` entry of the `picture` of `p` at `path`, once it
+    /// passes [`package::check_picture`]. A loaded folder's is made from the
+    /// file as it is, without a hash, while it is a plain file in plain
+    /// folders: no link on the way leads out of the folder, as for its pages.
+    fn listed_picture(&self, p: &Installed, path: &str, picture: Picture) -> Option<LockedFile> {
         let lock = match &p.record.lock_sha256 {
             Some(sha256) => installed_lock(&p.dir, sha256).ok()?,
             None => {
-                let size = fs::symlink_metadata(&path).ok().filter(|f| f.is_file())?.len();
-                let listed = LockedFile { path: banner.to_owned(), size, sha256: String::new(), exec: false };
+                if !package::plain_file(&p.dir, path) {
+                    return None;
+                }
+                let size = fs::symlink_metadata(file_in(&p.dir, path)).ok().filter(|f| f.is_file())?.len();
+                let listed = LockedFile { path: path.to_owned(), size, sha256: String::new(), exec: false };
                 FilesLock { lock_version: LOCK_VERSION, files: vec![listed] }
             }
         };
-        package::check_banner(&p.dir, &lock, banner).ok()?;
-        let listed = lock.files.iter().find(|f| f.path == banner)?;
-        let mut bytes = Vec::new();
-        File::open(&path).ok()?.take(listed.size + 1).read_to_end(&mut bytes).ok()?;
-        let hashed = p.record.lock_sha256.is_none() || package::sha256_hex(&bytes) == listed.sha256;
-        if bytes.len() as u64 != listed.size || !hashed {
-            return None;
-        }
-        let kind = if banner.to_ascii_lowercase().ends_with(".svg") { "image/svg+xml" } else { "image/png" };
-        Some(format!("data:{kind};base64,{}", STANDARD.encode(&bytes)))
+        package::check_picture(&p.dir, &lock, path, picture).ok()?;
+        lock.files.into_iter().find(|f| f.path == path)
     }
 
     /// The registry's rows, by id. A key whose end is no plugin id is no
@@ -2236,9 +2253,11 @@ mod tests {
         m["icon"] = json!("icon.png");
         let mut wrong_icon = files(&m);
         wrong_icon.push(("icon.png".into(), b"GIF89a".to_vec()));
+        let wrong_banner = with_banner("art.jpg", b"\x89PNG\r\n\x1a\n");
         for (files, why) in [
             (no_lock, "The plugin package is missing main.py.lock, which its command needs."),
             (wrong_icon, "The plugin's icon icon.png isn't a PNG image."),
+            (wrong_banner, "The plugin's banner art.jpg isn't a JPEG image."),
         ] {
             let e = store.stage(&place.package(&files, None, false)).unwrap_err();
             assert_eq!(e.to_string(), why);
@@ -2367,6 +2386,145 @@ mod tests {
         assert_eq!(store.icon_data_url(&p).as_deref(), Some("data:image/svg+xml;base64,PHN2Zy8+"));
         fs::write(dev.join("icon.svg"), b"not a picture").unwrap();
         assert_eq!(store.icon_data_url(&p), None);
+    }
+
+    /// [`hello`] in manifest version 2, with the banner `path` of `bytes`.
+    fn with_banner(path: &str, bytes: &[u8]) -> Files {
+        let mut m = manifest(ID, "1.0.0");
+        m["manifestVersion"] = json!(2);
+        m["banner"] = json!(path);
+        let mut files = files(&m);
+        files.push((path.into(), bytes.to_vec()));
+        files
+    }
+
+    #[test]
+    fn the_icon_reads_as_before() {
+        let place = Place::new();
+        let store = place.store();
+        let mut m = manifest(ID, "1.0.0");
+        m["manifestVersion"] = json!(2);
+        m["icon"] = json!("icon.svg");
+        m["banner"] = json!("art.png");
+        // A banner the size of no icon.
+        let mut art = b"\x89PNG\r\n\x1a\n".to_vec();
+        art.resize(package::MAX_ICON_PNG as usize + 1, 0);
+        let mut both = files(&m);
+        both.push(("icon.svg".into(), b"<svg/>".to_vec()));
+        both.push(("art.png".into(), art.clone()));
+        let p = install(&store, &place.package(&both, None, false)).unwrap();
+        assert_eq!(store.icon_data_url(&p).as_deref(), Some("data:image/svg+xml;base64,PHN2Zy8+"));
+        assert_eq!(store.picture_data_url(&p, "icon.svg", Picture::Icon), store.icon_data_url(&p));
+        // Each picture by its own rules: an SVG is no banner, and the
+        // banner is too large for an icon.
+        assert_eq!(store.picture_data_url(&p, "icon.svg", Picture::Banner), None);
+        assert_eq!(store.picture_data_url(&p, "art.png", Picture::Icon), None);
+        let banner = format!("data:image/png;base64,{}", STANDARD.encode(&art));
+        assert_eq!(store.banner_data_url(&p), Some(banner));
+    }
+
+    #[test]
+    fn the_banner_shows_only_while_its_bytes_match_the_lock() {
+        let place = Place::new();
+        let store = place.store();
+        let jpeg = b"\xFF\xD8\xFF\xE0 art";
+        let p = install(&store, &place.package(&with_banner("art.jpg", jpeg), None, false)).unwrap();
+        let shown = format!("data:image/jpeg;base64,{}", STANDARD.encode(jpeg));
+        assert_eq!(store.banner_data_url(&p).as_ref(), Some(&shown));
+        // Bytes of its size, but not the listed ones.
+        fs::write(p.dir.join("art.jpg"), b"\xFF\xD8\xFF\xE0 Art").unwrap();
+        assert_eq!(store.banner_data_url(&p), None);
+        fs::write(p.dir.join("art.jpg"), jpeg).unwrap();
+        assert_eq!(store.banner_data_url(&p), Some(shown));
+        // A plugin without one has none.
+        store.uninstall(&id(), false).unwrap();
+        let p = install(&store, &place.unsigned("1.0.0")).unwrap();
+        assert_eq!((store.banner_data_url(&p), store.banner_hash(&p)), (None, None));
+
+        // A loaded folder's, as it is, while it is a banner's size.
+        store.uninstall(&id(), false).unwrap();
+        let webp = b"RIFF\x04\0\0\0WEBPVP8X";
+        let dev = place.folder("hello-export", &with_banner("art.webp", webp));
+        let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        let shown = format!("data:image/webp;base64,{}", STANDARD.encode(webp));
+        assert_eq!(store.banner_data_url(&p), Some(shown));
+        let mut big = webp.to_vec();
+        big.resize(package::MAX_BANNER as usize + 1, 0);
+        fs::write(dev.join("art.webp"), &big).unwrap();
+        assert_eq!(store.banner_data_url(&p), None);
+        assert_eq!(store.banner_hash(&p), None);
+    }
+
+    #[test]
+    fn the_banner_hash_is_the_locks_and_changes_with_a_folders_file() {
+        let place = Place::new();
+        let store = place.store();
+        let png = b"\x89PNG\r\n\x1a\nart";
+        let p = install(&store, &place.package(&with_banner("art.png", png), None, false)).unwrap();
+        let listed = package::sha256_hex(png);
+        assert_eq!(store.banner_hash(&p).as_ref(), Some(&listed));
+        // Its file changed: the hash stays the lock's, and its picture is gone.
+        fs::write(p.dir.join("art.png"), b"\x89PNG\r\n\x1a\nArt").unwrap();
+        assert_eq!(store.banner_hash(&p), Some(listed));
+        assert_eq!(store.banner_data_url(&p), None);
+
+        // A loaded folder's: its file's, as it is now.
+        store.uninstall(&id(), false).unwrap();
+        let dev = place.folder("hello-export", &with_banner("art.png", png));
+        let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        assert_eq!(store.banner_hash(&p), Some(package::sha256_hex(png)));
+        let new = b"\x89PNG\r\n\x1a\nnew art";
+        fs::write(dev.join("art.png"), new).unwrap();
+        assert_eq!(store.banner_hash(&p), Some(package::sha256_hex(new)));
+        fs::write(dev.join("art.png"), b"GIF89a").unwrap();
+        assert_eq!(store.banner_hash(&p), None);
+    }
+
+    #[test]
+    fn a_folders_picture_is_never_read_through_a_link_or_from_outside_it() {
+        let place = Place::new();
+        let store = place.store();
+        let png = b"\x89PNG\r\n\x1a\nart";
+        let mut files = with_banner("art/banner.png", png);
+        let banner = files.pop().unwrap();
+        let dev = place.folder("hello-export", &files);
+        fs::create_dir(dev.join("art")).unwrap();
+        fs::write(dev.join(&banner.0), &banner.1).unwrap();
+        let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        assert_eq!(store.banner_hash(&p), Some(package::sha256_hex(png)));
+
+        // Its art folder became a link to one outside it, with the same file.
+        let elsewhere = place.tmp.path().join("elsewhere");
+        fs::create_dir(&elsewhere).unwrap();
+        fs::write(elsewhere.join("banner.png"), png).unwrap();
+        fs::remove_dir_all(dev.join("art")).unwrap();
+        link_folder(&elsewhere, &dev.join("art"));
+        assert!(fs::read(dev.join("art/banner.png")).is_ok());
+        assert_eq!((store.banner_data_url(&p), store.banner_hash(&p)), (None, None));
+        // Nor a path no package may name, to a picture beside the folder.
+        fs::write(place.tmp.path().join("beside.png"), png).unwrap();
+        assert_eq!(store.picture_data_url(&p, "../beside.png", Picture::Banner), None);
+    }
+
+    /// Links `link` to the folder `target`: a symlink on Linux and macOS, a
+    /// junction on Windows, which needs no administrator (its symlinks do).
+    fn link_folder(target: &Path, link: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+        #[cfg(windows)]
+        {
+            // mklink takes a "/" in a path for an option.
+            let (link, target): (PathBuf, PathBuf) = (link.components().collect(), target.components().collect());
+            let made = std::process::Command::new("cmd")
+                .arg("/C")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .output()
+                .unwrap();
+            assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        }
     }
 
     #[test]

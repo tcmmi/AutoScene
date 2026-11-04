@@ -17,7 +17,6 @@ import {
   SlidersHorizontal,
   SquaresFour,
   Trash,
-  User,
   X,
 } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
@@ -41,7 +40,7 @@ import { useAppActions } from "@/lib/actions"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder, pickPluginFile } from "@/lib/media"
 import { openExternalUrl, reveal } from "@/lib/os"
-import { qk, queryClient, usePlugins, useSettings } from "@/lib/queries"
+import { qk, queryClient, usePluginBanner, usePlugins, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 
 const ALLOW = "Allow plugins that AutoScene has not reviewed"
@@ -380,11 +379,10 @@ function PluginCard({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void
   const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
   const facts = [by, `version ${p.version}`].filter(Boolean).join(", ")
   const why = p.broken ?? (p.enabled ? p.blockedReason : null)
-  const avatarUrl =
-    p.authorAvatar ??
-    (p.authorUrl?.includes("github.com/")
-      ? `${p.authorUrl.replace(/\/$/, "")}.png`
-      : undefined)
+  const { data: banner, isError } = usePluginBanner(p)
+  // The art keeps its place while its banner loads; the trust badge and the
+  // facts are never drawn on it.
+  const art = p.bannerHash != null && !isError && banner !== null
   const setEnabled = async (on: boolean) => {
     try {
       keepPlugin(await commands.pluginSetEnabled(p.id, on))
@@ -408,83 +406,39 @@ function PluginCard({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void
           hasSettings(p) && "cursor-pointer",
         )}
       >
-        {p.banner && (
-          <div className="relative aspect-[21/9] w-full overflow-hidden border-b border-white/[0.06] bg-black/40">
-            <img src={p.banner} alt="" draggable={false} className="size-full object-cover transition-transform duration-300 group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-            <div className="absolute top-3 right-3 flex items-center gap-1.5">
-              <Badge tone={trust.tone}>{trust.label}</Badge>
-              {p.gpu && (
-                <span className="rounded border border-accent/40 bg-black/60 px-1.5 py-0.5 text-[11px] font-medium text-accent backdrop-blur-md">
-                  GPU
-                </span>
-              )}
-            </div>
+        {art && (
+          <div className="relative aspect-[2/1] w-full overflow-hidden border-b border-white/[0.06] bg-black/40">
+            {banner && (
+              <>
+                <img src={banner} alt="" draggable={false} className="size-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+              </>
+            )}
           </div>
         )}
 
         <div className="flex flex-1 flex-col p-5">
           <div className="flex items-start gap-3.5">
-            <span
-              style={p.color ? { backgroundColor: p.color } : undefined}
-              className={cn(
-                "flex size-11 shrink-0 items-center justify-center rounded-xl shadow-sm ring-1 ring-white/10 [&_img]:size-7 [&_svg]:size-6",
-                p.color ? "text-fg-1" : "bg-white/[0.08] text-fg-1",
-              )}
-            >
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-fg-1 shadow-sm ring-1 ring-white/10 [&_img]:size-7 [&_svg]:size-6">
               <PluginIcon src={p.icon} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <h4 className="truncate font-semibold text-fg-1 text-base leading-snug">{p.name}</h4>
-                {!p.banner && (
-                  <div className="flex items-center gap-1.5">
-                    <Badge tone={trust.tone}>{trust.label}</Badge>
-                    {p.gpu && (
-                      <span className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[11px] font-medium text-accent">
-                        GPU
-                      </span>
-                    )}
-                  </div>
-                )}
-                {p.banner && (
-                  <span className="shrink-0 rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 font-mono text-[11px] text-fg-3">
-                    v{p.version}
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  <Badge tone={trust.tone}>{trust.label}</Badge>
+                  {p.gpu && (
+                    <span className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[11px] font-medium text-accent">
+                      GPU
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="mt-1 flex items-center gap-1.5 text-xs text-fg-3">
-                {!p.banner && (
-                  <span className="shrink-0 rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 font-mono text-[11px] text-fg-3">
-                    v{p.version}
-                  </span>
-                )}
-                {p.author && (
-                  avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt=""
-                      loading="lazy"
-                      className="size-3.5 shrink-0 rounded-full border border-white/10 bg-white/5 object-cover"
-                      onError={(e) => (e.currentTarget.style.display = "none")}
-                    />
-                  ) : (
-                    <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full bg-white/10 text-fg-3">
-                      <User className="size-2" />
-                    </span>
-                  )
-                )}
-                {p.authorUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => void openExternalUrl(p.authorUrl!)}
-                    className="truncate font-medium text-fg-2 hover:text-fg-1 hover:underline"
-                  >
-                    {by}
-                  </button>
-                ) : (
-                  <span className="truncate">{by}</span>
-                )}
+                <span className="shrink-0 rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 font-mono text-[11px] text-fg-3">
+                  v{p.version}
+                </span>
+                <span className="truncate">{by}</span>
                 <span className="hidden opacity-0">{facts}</span>
               </div>
             </div>
@@ -539,11 +493,6 @@ function PluginListItem({ p, onUninstall }: { p: PluginInfo; onUninstall: () => 
   const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
   const facts = [by, `version ${p.version}`].filter(Boolean).join(", ")
   const why = p.broken ?? (p.enabled ? p.blockedReason : null)
-  const avatarUrl =
-    p.authorAvatar ??
-    (p.authorUrl?.includes("github.com/")
-      ? `${p.authorUrl.replace(/\/$/, "")}.png`
-      : undefined)
   const setEnabled = async (on: boolean) => {
     try {
       keepPlugin(await commands.pluginSetEnabled(p.id, on))
@@ -568,13 +517,7 @@ function PluginListItem({ p, onUninstall }: { p: PluginInfo; onUninstall: () => 
         )}
       >
         <div className="flex min-w-0 flex-1 items-center gap-4">
-          <span
-            style={p.color ? { backgroundColor: p.color } : undefined}
-            className={cn(
-              "flex size-11 shrink-0 items-center justify-center rounded-xl shadow-sm ring-1 ring-white/10 [&_img]:size-7 [&_svg]:size-6",
-              p.color ? "text-fg-1" : "bg-white/[0.08] text-fg-1",
-            )}
-          >
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-fg-1 shadow-sm ring-1 ring-white/10 [&_img]:size-7 [&_svg]:size-6">
             <PluginIcon src={p.icon} />
           </span>
 
@@ -599,32 +542,7 @@ function PluginListItem({ p, onUninstall }: { p: PluginInfo; onUninstall: () => 
             )}
 
             <div className="mt-1 flex items-center gap-1.5 text-xs text-fg-3">
-              {p.author && (
-                avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt=""
-                    loading="lazy"
-                    className="size-3.5 shrink-0 rounded-full border border-white/10 bg-white/5 object-cover"
-                    onError={(e) => (e.currentTarget.style.display = "none")}
-                  />
-                ) : (
-                  <span className="flex size-3.5 shrink-0 items-center justify-center rounded-full bg-white/10 text-fg-3">
-                    <User className="size-2" />
-                  </span>
-                )
-              )}
-              {p.authorUrl ? (
-                <button
-                  type="button"
-                  onClick={() => void openExternalUrl(p.authorUrl!)}
-                  className="font-medium text-fg-2 hover:text-fg-1 hover:underline"
-                >
-                  {by}
-                </button>
-              ) : (
-                <span>{by}</span>
-              )}
+              <span>{by}</span>
               <span className="hidden opacity-0">{facts}</span>
             </div>
 

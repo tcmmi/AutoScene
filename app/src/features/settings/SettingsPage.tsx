@@ -75,7 +75,6 @@ export function SettingsPage() {
                       key={p.id}
                       section={`plugin.${p.id}`}
                       current={section}
-                      color={p.color}
                       isPlugin
                       icon={<PluginIcon src={p.icon} />}
                     >
@@ -107,14 +106,12 @@ function NavLink({
   section,
   current,
   icon,
-  color,
   isPlugin,
   children,
 }: {
   section: SettingsSection | PluginSection
   current: string
   icon: React.ReactNode
-  color?: string | null
   isPlugin?: boolean
   children: React.ReactNode
 }) {
@@ -129,17 +126,12 @@ function NavLink({
       )}
     >
       <span
-        style={color ? { backgroundColor: color } : undefined}
         className={cn(
           "flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors [&_svg]:size-4",
           isPlugin
             ? here
-              ? color
-                ? "text-fg-1 ring-1 ring-white/20"
-                : "bg-white/[0.12] text-fg-1 ring-1 ring-white/10"
-              : color
-                ? "text-fg-2 group-hover:text-fg-1"
-                : "bg-[#2a2a2a] text-fg-2 group-hover:text-fg-1"
+              ? "bg-white/[0.12] text-fg-1 ring-1 ring-white/10"
+              : "bg-[#2a2a2a] text-fg-2 group-hover:text-fg-1"
             : here
               ? "bg-accent text-on-accent"
               : "bg-white/[0.07] text-fg-2 group-hover:text-fg-1",

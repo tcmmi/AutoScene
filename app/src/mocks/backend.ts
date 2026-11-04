@@ -47,6 +47,7 @@ import {
   openPage,
   pageCall,
   pagesOf,
+  pluginBanner,
   pluginRun,
   pluginValues,
   pluginsList,
@@ -1169,6 +1170,7 @@ const handlers: Record<string, Handler> = {
   },
   // Plugins: one reviewed is installed; each .asp picked offers another (see mocks/plugins.ts).
   plugins_list: () => pluginsList(allows()),
+  plugin_banner: ({ pluginId }) => pluginBanner(String(pluginId)),
   plugins_allow_unreviewed: ({ on }) => {
     const before = allows()
     settings = { ...settings, allowUnreviewedPlugins: Boolean(on) }

@@ -33,7 +33,7 @@ use zip::result::ZipError;
 use zip::{CompressionMethod, ExtraField, ZipArchive};
 
 use crate::error::{PluginError, PluginResult};
-use crate::manifest::{Launch, PageSpec, Twice, invalid, shown};
+use crate::manifest::{Launch, Manifest, PageSpec, Twice, invalid, shown};
 
 /// The largest package file.
 pub const MAX_PACKAGE_BYTES: u64 = 1 << 30;
@@ -64,10 +64,9 @@ pub const MAX_KEY_BYTES: u64 = 1 << 10;
 pub const MAX_ICON_PNG: u64 = 256 << 10;
 /// The largest `.svg` icon.
 pub const MAX_ICON_SVG: u64 = 64 << 10;
-/// The largest `.png` banner.
-pub const MAX_BANNER_PNG: u64 = 1024 << 10;
-/// The largest `.svg` banner.
-pub const MAX_BANNER_SVG: u64 = 256 << 10;
+/// The largest banner: a 1200×600 picture fits as a JPEG or WebP, and as a
+/// PNG of flat art.
+pub const MAX_BANNER: u64 = 512 << 10;
 /// The `lockVersion` this AutoScene reads and writes.
 pub const LOCK_VERSION: u32 = 1;
 pub const LOCK: &str = "files.lock";
@@ -295,58 +294,251 @@ pub(crate) fn plain_file(dir: &Path, path: &str) -> bool {
     true
 }
 
-/// Checks the plugin's icon, the `.png` or `.svg` package path `icon`, in
-/// the folder `dir` that holds the files of `lock`: it is listed, no larger
-/// than [`MAX_ICON_PNG`] or [`MAX_ICON_SVG`], and starts as its kind does
-/// (PNG's signature; SVG text with `<svg` or `<?xml`).
-pub fn check_icon(dir: &Path, lock: &FilesLock, icon: &str) -> PluginResult<()> {
-    let svg = icon.to_ascii_lowercase().ends_with(".svg");
-    let (kind, max) = if svg { ("SVG", MAX_ICON_SVG) } else { ("PNG", MAX_ICON_PNG) };
-    let Some(f) = lock.files.iter().find(|f| f.path == icon) else {
-        return Err(invalid(format!("The plugin package is missing its icon, {}.", shown(icon))));
+/// A picture a plugin shows: its icon, or its banner (manifest version 2),
+/// the wide art of its card and its settings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Picture {
+    Icon,
+    Banner,
+}
+
+/// The format of a picture, as its file's extension names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PictureFormat {
+    Png,
+    Jpeg,
+    Webp,
+    Svg,
+}
+
+impl Picture {
+    /// Whether it may be in `format`: an icon is a PNG or an SVG, a banner a
+    /// PNG, JPEG or WebP (art gains nothing from SVG's XML).
+    pub fn allows(self, format: PictureFormat) -> bool {
+        match self {
+            Self::Icon => matches!(format, PictureFormat::Png | PictureFormat::Svg),
+            Self::Banner => matches!(format, PictureFormat::Png | PictureFormat::Jpeg | PictureFormat::Webp),
+        }
+    }
+
+    /// The largest file of it in `format`.
+    pub fn max_bytes(self, format: PictureFormat) -> u64 {
+        match (self, format) {
+            (Self::Icon, PictureFormat::Svg) => MAX_ICON_SVG,
+            (Self::Icon, _) => MAX_ICON_PNG,
+            (Self::Banner, _) => MAX_BANNER,
+        }
+    }
+
+    /// What a message calls it.
+    fn word(self) -> &'static str {
+        match self {
+            Self::Icon => "icon",
+            Self::Banner => "banner",
+        }
+    }
+
+    /// The extensions it may have, as a message lists them.
+    fn extensions(self) -> &'static str {
+        match self {
+            Self::Icon => ".png or .svg",
+            Self::Banner => ".png, .jpg or .webp",
+        }
+    }
+}
+
+impl PictureFormat {
+    /// The format the extension of the package path `path` names, in any
+    /// case: `.png`, `.jpg` or `.jpeg`, `.webp`, `.svg`.
+    pub fn of(path: &str) -> Option<Self> {
+        let (_, ext) = path.rsplit_once('.')?;
+        [("png", Self::Png), ("jpg", Self::Jpeg), ("jpeg", Self::Jpeg), ("webp", Self::Webp), ("svg", Self::Svg)]
+            .into_iter()
+            .find_map(|(known, format)| ext.eq_ignore_ascii_case(known).then_some(format))
+    }
+
+    /// Its media type, as a `data:` URL names it.
+    pub fn mime(self) -> &'static str {
+        match self {
+            Self::Png => "image/png",
+            Self::Jpeg => "image/jpeg",
+            Self::Webp => "image/webp",
+            Self::Svg => "image/svg+xml",
+        }
+    }
+
+    /// What a message calls it.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Png => "PNG",
+            Self::Jpeg => "JPEG",
+            Self::Webp => "WebP",
+            Self::Svg => "SVG",
+        }
+    }
+
+    /// Whether `bytes`, the start of a file, start as this format does: the
+    /// PNG signature, JPEG's `FF D8 FF`, WebP's `RIFF????WEBP`, SVG text with
+    /// `<svg` or `<?xml` (after a byte order mark and white space).
+    fn starts(self, bytes: &[u8]) -> bool {
+        match self {
+            Self::Png => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+            Self::Jpeg => bytes.starts_with(b"\xFF\xD8\xFF"),
+            Self::Webp => bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(&b"WEBP"[..]),
+            Self::Svg => {
+                let text = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes).trim_ascii_start();
+                text.starts_with(b"<svg") || text.starts_with(b"<?xml")
+            }
+        }
+    }
+}
+
+/// Checks the plugin's `picture`, the package path `path`, in the folder
+/// `dir` that holds the files of `lock`: its extension names a format the
+/// picture may be in, and it is listed, no larger than
+/// [`Picture::max_bytes`], and starts as its format does.
+pub fn check_picture(dir: &Path, lock: &FilesLock, path: &str, picture: Picture) -> PluginResult<()> {
+    let word = picture.word();
+    let Some(format) = PictureFormat::of(path).filter(|f| picture.allows(*f)) else {
+        return Err(invalid(format!("The plugin's {word} {} must be a {} file.", shown(path), picture.extensions())));
     };
+    let Some(f) = lock.files.iter().find(|f| f.path == path) else {
+        return Err(invalid(format!("The plugin package is missing its {word}, {}.", shown(path))));
+    };
+    let max = picture.max_bytes(format);
     if f.size > max {
-        return Err(invalid(format!("The plugin's icon is larger than {}.", size_text(max))));
+        return Err(invalid(format!("The plugin's {word} is larger than {}.", size_text(max))));
     }
     let mut start = Vec::new();
-    File::open(file_in(dir, icon))?.take(256).read_to_end(&mut start)?;
-    let text = start.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&start).trim_ascii_start();
-    let fits = if svg {
-        text.starts_with(b"<svg") || text.starts_with(b"<?xml")
-    } else {
-        start.starts_with(b"\x89PNG\r\n\x1a\n")
-    };
-    if !fits {
-        return Err(invalid(format!("The plugin's icon {} isn't a {kind} image.", shown(icon))));
+    File::open(file_in(dir, path))?.take(256).read_to_end(&mut start)?;
+    if !format.starts(&start) {
+        return Err(invalid(format!("The plugin's {word} {} isn't a {} image.", shown(path), format.name())));
     }
     Ok(())
 }
 
-/// Checks the plugin's banner, the `.png` or `.svg` package path `banner`, in
-/// the folder `dir` that holds the files of `lock`: it is listed, no larger
-/// than [`MAX_BANNER_PNG`] or [`MAX_BANNER_SVG`], and starts as its kind does
-/// (PNG's signature; SVG text with `<svg` or `<?xml`).
-pub fn check_banner(dir: &Path, lock: &FilesLock, banner: &str) -> PluginResult<()> {
-    let svg = banner.to_ascii_lowercase().ends_with(".svg");
-    let (kind, max) = if svg { ("SVG", MAX_BANNER_SVG) } else { ("PNG", MAX_BANNER_PNG) };
-    let Some(f) = lock.files.iter().find(|f| f.path == banner) else {
-        return Err(invalid(format!("The plugin package is missing its banner, {}.", shown(banner))));
-    };
-    if f.size > max {
-        return Err(invalid(format!("The plugin's banner is larger than {}.", size_text(max))));
-    }
-    let mut start = Vec::new();
-    File::open(file_in(dir, banner))?.take(256).read_to_end(&mut start)?;
-    let text = start.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&start).trim_ascii_start();
-    let fits = if svg {
-        text.starts_with(b"<svg") || text.starts_with(b"<?xml")
-    } else {
-        start.starts_with(b"\x89PNG\r\n\x1a\n")
-    };
-    if !fits {
-        return Err(invalid(format!("The plugin's banner {} isn't a {kind} image.", shown(banner))));
+/// Checks the plugin's icon, the `.png` or `.svg` package path `icon`, in
+/// the folder `dir` that holds the files of `lock` ([`check_picture`]).
+pub fn check_icon(dir: &Path, lock: &FilesLock, icon: &str) -> PluginResult<()> {
+    check_picture(dir, lock, icon, Picture::Icon)
+}
+
+/// Checks the pictures the manifest `m` names, its icon and its banner, in
+/// the folder `dir` that holds the files of `lock` ([`check_picture`]).
+pub fn check_pictures(dir: &Path, lock: &FilesLock, m: &Manifest) -> PluginResult<()> {
+    for (path, picture) in [(&m.icon, Picture::Icon), (&m.banner, Picture::Banner)] {
+        if let Some(path) = path {
+            check_picture(dir, lock, path, picture)?;
+        }
     }
     Ok(())
+}
+
+/// Whether `bytes` are a sound `picture` in `format`: a format the picture
+/// may be in, no larger than [`Picture::max_bytes`], and starting as that
+/// format does. What [`check_picture`] checks of a package's file, for
+/// bytes in hand.
+pub fn picture_bytes_ok(picture: Picture, format: PictureFormat, bytes: &[u8]) -> bool {
+    picture.allows(format) && bytes.len() as u64 <= picture.max_bytes(format) && format.starts(bytes)
+}
+
+/// The width and height of a picture in `format`, from the header `bytes`
+/// start with: PNG's IHDR, JPEG's start of frame, WebP's VP8, VP8L or VP8X
+/// chunk. None for an SVG, and for a header cut short or not understood.
+pub fn picture_size(format: PictureFormat, bytes: &[u8]) -> Option<(u32, u32)> {
+    let size = match format {
+        PictureFormat::Png => png_size(bytes),
+        PictureFormat::Jpeg => jpeg_size(bytes),
+        PictureFormat::Webp => webp_size(bytes),
+        PictureFormat::Svg => None,
+    };
+    size.filter(|&(w, h)| w > 0 && h > 0)
+}
+
+/// The signature, then the IHDR chunk: its length and name, then the width
+/// and the height.
+fn png_size(b: &[u8]) -> Option<(u32, u32)> {
+    if !PictureFormat::Png.starts(b) || b.get(12..16)? != b"IHDR" {
+        return None;
+    }
+    Some((be32(b, 16)?, be32(b, 20)?))
+}
+
+/// The segments after the start of the image, up to the first start of a
+/// frame: its length, precision, height and width.
+fn jpeg_size(b: &[u8]) -> Option<(u32, u32)> {
+    if !PictureFormat::Jpeg.starts(b) {
+        return None;
+    }
+    let mut at = 2;
+    loop {
+        // A marker: FF (maybe more FF to fill), then its code.
+        if *b.get(at)? != 0xFF {
+            return None;
+        }
+        while *b.get(at)? == 0xFF {
+            at += 1;
+        }
+        let code = b[at];
+        at += 1;
+        match code {
+            // Markers without a segment.
+            0x01 | 0xD0..=0xD7 => {}
+            // The image's data, or its end, with no frame before it.
+            0xD9 | 0xDA => return None,
+            // SOF0 to SOF15; C4, C8 and CC are other segments.
+            0xC0..=0xCF if !matches!(code, 0xC4 | 0xC8 | 0xCC) => {
+                return Some((u32::from(be16(b, at + 5)?), u32::from(be16(b, at + 3)?)));
+            }
+            _ => at += usize::from(be16(b, at)?),
+        }
+    }
+}
+
+/// The first chunk after `RIFF????WEBP`: lossy `VP8 ` (a frame tag, the
+/// start code, then 14 bits each of width and height), lossless `VP8L` (its
+/// signature, then 14 bits each of width and height less one) or extended
+/// `VP8X` (flags, then 24 bits each of the canvas's width and height less
+/// one).
+fn webp_size(b: &[u8]) -> Option<(u32, u32)> {
+    if !PictureFormat::Webp.starts(b) {
+        return None;
+    }
+    let data = b.get(20..)?;
+    match b.get(12..16)? {
+        b"VP8 " => {
+            if data.get(3..6)? != b"\x9D\x01\x2A" {
+                return None;
+            }
+            Some((u32::from(le16(data, 6)? & 0x3FFF), u32::from(le16(data, 8)? & 0x3FFF)))
+        }
+        b"VP8L" => {
+            if *data.first()? != 0x2F {
+                return None;
+            }
+            let bits = u32::from_le_bytes(data.get(1..5)?.try_into().ok()?);
+            Some(((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1))
+        }
+        b"VP8X" => Some((le24(data, 4)? + 1, le24(data, 7)? + 1)),
+        _ => None,
+    }
+}
+
+fn be16(b: &[u8], at: usize) -> Option<u16> {
+    Some(u16::from_be_bytes(b.get(at..at + 2)?.try_into().ok()?))
+}
+
+fn be32(b: &[u8], at: usize) -> Option<u32> {
+    Some(u32::from_be_bytes(b.get(at..at + 4)?.try_into().ok()?))
+}
+
+fn le16(b: &[u8], at: usize) -> Option<u16> {
+    Some(u16::from_le_bytes(b.get(at..at + 2)?.try_into().ok()?))
+}
+
+fn le24(b: &[u8], at: usize) -> Option<u32> {
+    let [x, y, z]: [u8; 3] = b.get(at..at + 3)?.try_into().ok()?;
+    Some(u32::from_le_bytes([x, y, z, 0]))
 }
 
 /// Whether `size` bytes packed into `packed` are packed tighter than a
@@ -992,6 +1184,112 @@ mod tests {
         let lock = lock_of(&[("icon.svg", MAX_ICON_SVG + 1, false)]);
         let Err(e) = check_icon(dir.path(), &lock, "icon.svg") else { panic!() };
         assert_eq!(e.to_string(), "The plugin's icon is larger than 64 KB.");
+    }
+
+    /// The start of a PNG of `w`×`h`: its signature and IHDR.
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut b = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+        b.extend(w.to_be_bytes().into_iter().chain(h.to_be_bytes()));
+        b.extend([8, 2, 0, 0, 0]);
+        b
+    }
+
+    /// The start of a JPEG of `w`×`h`: its start, a JFIF segment, a Huffman
+    /// table and fill bytes, then the start of frame `sof`.
+    fn jpeg(sof: u8, w: u16, h: u16) -> Vec<u8> {
+        let mut b = b"\xFF\xD8\xFF\xE0\0\x10JFIF\0\x01\x02\0\0\x01\0\x01\0\0\xFF\xC4\0\x03\0\xFF\xFF".to_vec();
+        b.extend([sof, 0, 0x11, 8]);
+        b.extend(h.to_be_bytes().into_iter().chain(w.to_be_bytes()));
+        b.extend([3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
+        b
+    }
+
+    /// A WebP of one `chunk` holding `data`.
+    fn webp(chunk: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut b = b"RIFF".to_vec();
+        b.extend((12 + data.len() as u32).to_le_bytes());
+        b.extend(b"WEBP".iter().chain(chunk));
+        b.extend((data.len() as u32).to_le_bytes());
+        b.extend(data);
+        b
+    }
+
+    #[test]
+    fn a_banner_is_a_png_jpeg_or_webp_its_package_lists() {
+        let dir = tempfile::tempdir().unwrap();
+        let lossless = webp(b"VP8L", &[0x2F, 0xAF, 0xC4, 0x95, 0]);
+        let banners = [
+            ("banner.png", png(1200, 600)),
+            ("banner.jpg", jpeg(0xC0, 1200, 600)),
+            ("banner.webp", lossless.clone()),
+            ("fake.webp", png(1200, 600)),
+            // A RIFF file, but a sound's.
+            ("wave.webp", b"RIFF\x04\0\0\0WAVEfmt ".to_vec()),
+            ("fake.jpg", b"\xFF\xD8".to_vec()),
+        ];
+        let mut listed = Vec::new();
+        for (name, bytes) in &banners {
+            fs::write(dir.path().join(name), bytes).unwrap();
+            listed.push((*name, bytes.len() as u64, false));
+        }
+        listed.push(("big.jpg", MAX_BANNER + 1, false));
+        listed.push(("banner.svg", 6, false));
+        let lock = lock_of(&listed);
+        let check = |banner: &str| match check_picture(dir.path(), &lock, banner, Picture::Banner) {
+            Ok(()) => String::new(),
+            Err(e) => e.to_string(),
+        };
+        for ok in ["banner.png", "banner.jpg", "banner.webp"] {
+            assert_eq!(check(ok), "", "{ok}");
+        }
+        assert_eq!(check("fake.webp"), "The plugin's banner fake.webp isn't a WebP image.");
+        assert_eq!(check("wave.webp"), "The plugin's banner wave.webp isn't a WebP image.");
+        assert_eq!(check("fake.jpg"), "The plugin's banner fake.jpg isn't a JPEG image.");
+        assert_eq!(check("gone.png"), "The plugin package is missing its banner, gone.png.");
+        assert_eq!(check("big.jpg"), "The plugin's banner is larger than 512 KB.");
+        assert_eq!(check("banner.svg"), "The plugin's banner banner.svg must be a .png, .jpg or .webp file.");
+
+        // Bytes in hand, by the same rules.
+        use PictureFormat::*;
+        assert!(picture_bytes_ok(Picture::Banner, Jpeg, &jpeg(0xC0, 1200, 600)));
+        assert!(picture_bytes_ok(Picture::Banner, Webp, &lossless));
+        assert!(!picture_bytes_ok(Picture::Banner, Webp, &png(1200, 600)));
+        assert!(!picture_bytes_ok(Picture::Banner, Webp, b"RIFF\x04\0\0\0WAVEfmt "));
+        assert!(!picture_bytes_ok(Picture::Banner, Svg, b"<svg/>"));
+        assert!(!picture_bytes_ok(Picture::Icon, Jpeg, &jpeg(0xC0, 64, 64)));
+        let mut big = png(1200, 600);
+        big.resize(MAX_BANNER as usize, 0);
+        assert!(picture_bytes_ok(Picture::Banner, Png, &big));
+        big.push(0);
+        assert!(!picture_bytes_ok(Picture::Banner, Png, &big));
+        assert!(!picture_bytes_ok(Picture::Icon, Png, &big[..MAX_ICON_PNG as usize + 1]));
+    }
+
+    #[test]
+    fn picture_size_reads_png_jpeg_and_webp_headers() {
+        use PictureFormat::*;
+        assert_eq!(picture_size(Png, &png(1200, 600)), Some((1200, 600)));
+        // Baseline and progressive JPEG; C4, C8 and CC are no frames.
+        assert_eq!(picture_size(Jpeg, &jpeg(0xC0, 1200, 600)), Some((1200, 600)));
+        assert_eq!(picture_size(Jpeg, &jpeg(0xC2, 800, 400)), Some((800, 400)));
+        assert_eq!(picture_size(Jpeg, &jpeg(0xCC, 800, 400)), None);
+        // Lossy, with its scale bits set; lossless; extended.
+        let lossy = [&[0x50, 0x09, 0, 0x9D, 0x01, 0x2A][..], &(1200u16 | 0x4000).to_le_bytes(), &600u16.to_le_bytes()];
+        assert_eq!(picture_size(Webp, &webp(b"VP8 ", &lossy.concat())), Some((1200, 600)));
+        // 1199 and 599 in 14 bits each.
+        let lossless = webp(b"VP8L", &[0x2F, 0xAF, 0xC4, 0x95, 0]);
+        assert_eq!(picture_size(Webp, &lossless), Some((1200, 600)));
+        let extended = webp(b"VP8X", &[0x10, 0, 0, 0, 0x7F, 0x07, 0, 0x37, 0x04, 0]);
+        assert_eq!(picture_size(Webp, &extended), Some((1920, 1080)));
+
+        // Cut short, another format's, or an SVG: no size.
+        assert_eq!(picture_size(Png, &png(1200, 600)[..20]), None);
+        assert_eq!(picture_size(Jpeg, &jpeg(0xC0, 1200, 600)[..30]), None);
+        assert_eq!(picture_size(Webp, &extended[..28]), None);
+        assert_eq!(picture_size(Webp, &webp(b"VP8 ", &[0x50, 0x09, 0, 0, 0, 0, 0, 0, 0, 0])), None);
+        assert_eq!(picture_size(Jpeg, &png(1200, 600)), None);
+        assert_eq!(picture_size(Png, &png(0, 600)), None);
+        assert_eq!(picture_size(Svg, b"<svg width='1200' height='600'/>"), None);
     }
 
     #[test]

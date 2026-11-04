@@ -239,6 +239,12 @@ export const commands = {
 	/**  Every installed plugin, by id (also the broken ones). */
 	pluginsList: () => __TAURI_INVOKE<PluginInfo[]>("plugins_list"),
 	/**
+	 *  A plugin's banner as a `data:` URL, read and checked again as its icon
+	 *  is: none when it has no banner, or one that is no longer the picture its
+	 *  package listed. The list gives only its hash (`PluginInfo.bannerHash`).
+	 */
+	pluginBanner: (pluginId: string) => __TAURI_INVOKE<string | null>("plugin_banner", { pluginId }),
+	/**
 	 *  Let plugins AutoScene hasn't reviewed be installed and run, or not
 	 *  (`settings_update` never changes it, so a save from a copy of the
 	 *  settings made before can't turn it back). On, it asks the person first
@@ -1452,10 +1458,6 @@ export type PluginInfo = {
 	description: string,
 	/**  Its author's name. */
 	author: string,
-	/**  An optional link to the author's profile or website. */
-	authorUrl: string | null,
-	/**  An optional URL to the author's avatar. */
-	authorAvatar: string | null,
 	license: string | null,
 	/**  An `https://` link. */
 	repository: string | null,
@@ -1507,10 +1509,12 @@ export type PluginInfo = {
 	secretsSet: string[],
 	/**  A `data:` URL of its icon (PNG or SVG), when it has a sound one. */
 	icon: string | null,
-	/**  An optional hex brand/accent color (e.g. `#2a2a2a`). */
-	color: string | null,
-	/**  A `data:` URL of its banner (PNG or SVG), when it has a sound one. */
-	banner: string | null,
+	/**
+	 *  What tells its banner from another, when it has one: the SHA-256 of
+	 *  its file. The list never carries the picture: `plugin_banner` gives
+	 *  it, once for each hash.
+	 */
+	bannerHash: string | null,
 	/**  Where its runs write their log. */
 	logPath: string,
 	/**  Where its service writes its log, when it runs one. */

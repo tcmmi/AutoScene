@@ -1,5 +1,5 @@
 import { QueryClient, useQuery } from "@tanstack/react-query"
-import { commands, type CharacterId, type FaceTrackItem, type MediaId, type ProjectId, type TrackFilter } from "./ipc"
+import { commands, type CharacterId, type FaceTrackItem, type MediaId, type PluginInfo, type ProjectId, type TrackFilter } from "./ipc"
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,6 +42,9 @@ export const qk = {
   plugins: ["plugins"] as const,
   // Under the plugins: `plugins:changed` refreshes both.
   pluginSettings: (id: string) => ["plugins", id, "settings"] as const,
+  // Outside the plugins: `plugins:changed` fires on every settings save, and
+  // a banner is up to 512 KB. Another picture comes with another hash.
+  pluginBanner: (id: string, hash: string | null) => ["pluginBanner", id, hash] as const,
 }
 
 export function useAppInfo() {
@@ -154,6 +157,26 @@ export function usePlugins() {
 /** A plugin's settings: the person's value of each, else its default. */
 export function usePluginSettings(id: string) {
   return useQuery({ queryKey: qk.pluginSettings(id), queryFn: () => commands.pluginSettingsGet(id) })
+}
+
+/** What a plugin's banner may be: its PNG, JPEG or WebP as a base64 `data:` URL (the backend reads and checks the file). */
+const BANNER_URL = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/
+
+/** `url` while it is a banner in hand. One function, so a query checks each answer once. */
+const pictureOnly = (url: string | null) => (url != null && BANNER_URL.test(url) ? url : null)
+
+/**
+ * A plugin's banner as a `data:` URL: fetched once for each of its hashes,
+ * never without one, and only ever a picture in hand, never a link.
+ */
+export function usePluginBanner(p: Pick<PluginInfo, "id" | "bannerHash">) {
+  return useQuery({
+    queryKey: qk.pluginBanner(p.id, p.bannerHash),
+    queryFn: () => commands.pluginBanner(p.id),
+    enabled: p.bannerHash != null,
+    staleTime: Infinity,
+    select: pictureOnly,
+  })
 }
 
 type Refetchable = { isError: boolean; error: unknown; data?: unknown; refetch: () => unknown }

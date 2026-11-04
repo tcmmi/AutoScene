@@ -1,7 +1,7 @@
 /**
  * Mock plugins for the browser backend, shaped like `plugins.rs`: three
- * reviewed plugins installed (Hello Export, Hello page with its pages, and
- * Hello service, whose page's service counts words),
+ * reviewed plugins installed (Hello Export with its banner, Hello page with
+ * its pages, and Hello service, whose page's service counts words),
  * packages to install (each .asp picked offers the next: one AutoScene
  * hasn't reviewed and one its author signed, as every real package is for
  * now, then a reviewed one and an update of the installed one), a
@@ -37,11 +37,40 @@ const NOT_ALLOWED = "Plugins that AutoScene has not reviewed are turned off in S
 const icon = (fill: string) =>
   `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${fill}"/><circle cx="12" cy="12" r="4" fill="#0b0b0c"/></svg>`)}`
 
+/**
+ * Hello Export's banner, as `plugin_banner` gives a package's JPEG: wide art,
+ * drawn once when it is first shown.
+ */
+let helloArt: string | null = null
+
+function drawArt(): string {
+  const [w, h] = [1200, 600]
+  const canvas = document.createElement("canvas")
+  Object.assign(canvas, { width: w, height: h })
+  const g = canvas.getContext("2d")
+  if (!g) return ""
+  const ground = g.createLinearGradient(0, 0, w, h)
+  ground.addColorStop(0, "#3b2a10")
+  ground.addColorStop(1, "#0b0b0c")
+  g.fillStyle = ground
+  g.fillRect(0, 0, w, h)
+  for (const [x, y, r, a] of [
+    [880, 170, 300, 0.55],
+    [260, 480, 220, 0.3],
+    [640, 320, 110, 0.85],
+  ]) {
+    const glow = g.createRadialGradient(x, y, 0, x, y, r)
+    glow.addColorStop(0, `rgba(224, 180, 92, ${a})`)
+    glow.addColorStop(1, "rgba(224, 180, 92, 0)")
+    g.fillStyle = glow
+    g.fillRect(0, 0, w, h)
+  }
+  return canvas.toDataURL("image/jpeg", 0.85)
+}
+
 function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | "trust"> & Partial<MockPlugin>): MockPlugin {
   return {
     author: "AutoScene",
-    authorUrl: null,
-    authorAvatar: null,
     license: "MIT",
     repository: null,
     authorKeyId: null,
@@ -61,8 +90,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     pages: [],
     secretsSet: [],
     icon: null,
-    color: null,
-    banner: null,
+    bannerHash: null,
     logPath: `${DATA}\\logs\\plugins\\${o.id}.log`,
     serviceLogPath: o.runtime === "service" ? `${DATA}\\logs\\plugins\\${o.id}.service.log` : null,
     warnings: [],
@@ -116,6 +144,7 @@ const hello = (version: string, more: Partial<MockPlugin> = {}) =>
     repository: "https://github.com/tcmmi/autoscene",
     permissions: ["exports:read", "exports:write"],
     icon: icon("#e0b45c"),
+    bannerHash: "5d1c0e7a",
     exportActions: [{ id: "hello", title: "Say hello", description: "Writes hello.txt beside the export.", afterExport: false }],
     commands: [{ id: "greet", title: "Say hello to the project", description: null, needsProject: true }],
     settings: HELLO_SETTINGS,
@@ -250,7 +279,11 @@ const helloPage = plugin({
   ],
 })
 
-/** The example service plugin (examples/plugins/hello-service), which the mock serves: its service counts words. */
+/**
+ * The example service plugin (examples/plugins/hello-service), which the mock
+ * serves: its service counts words. Unlike the example, which has an icon,
+ * it has no icon and no banner here, so the plain look shows too.
+ */
 const helloService = plugin({
   id: "dev.autoscene.hello-service",
   name: "Hello service",
@@ -258,7 +291,6 @@ const helloService = plugin({
   trust: "reviewed",
   description: "A page in the rail whose service counts the words you give it, and says so. An example plugin.",
   repository: "https://github.com/tcmmi/AutoScene",
-  icon: icon("#c5905f"),
   runtime: "service",
   protocol: 2,
   pages: [{ id: "main", title: "Word count", description: "Counts words in its service.", entry: "ui/index.html", scope: "global", rail: true }],
@@ -292,6 +324,13 @@ function get(id: string): MockPlugin {
 
 export function mockPlugin(id: string): MockPlugin | undefined {
   return installed.get(id)
+}
+
+/** The banner of the installed plugin `id`, as a `data:` URL: none without one. */
+export function pluginBanner(id: string): string | null {
+  if (get(id).bannerHash == null) return null
+  helloArt ??= drawArt()
+  return helloArt
 }
 
 export function pluginsList(allow: boolean): PluginInfo[] {

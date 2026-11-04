@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { AppSettings, PluginInfo, PluginReview } from "@/bindings"
@@ -9,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { pluginInfo } from "@/test/plugins"
+import { PluginSettingsSection } from "./PluginSettingsSection"
 import { PluginsPage } from "./PluginsPage"
 
 const { state, reveal } = vi.hoisted(() => ({ state: { plugins: [] as PluginInfo[], allow: false }, reveal: vi.fn() }))
@@ -30,6 +31,8 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     pluginUninstall: vi.fn(() => Promise.resolve(null)),
     pluginInspectFolder: vi.fn(),
     pluginDiscard: vi.fn(() => Promise.resolve(null)),
+    pluginSettingsGet: vi.fn(() => Promise.resolve({})),
+    pluginBanner: vi.fn(() => Promise.resolve(null)),
     revealPath: vi.fn(() => Promise.resolve()),
   },
 }))
@@ -288,5 +291,61 @@ describe("PluginsPage", () => {
     render(<PluginsPage />, { wrapper })
     const card = await screen.findByRole("group", { name: "Alpha Tool" })
     expect(card.className).toContain("cursor-pointer")
+  })
+
+  it("keeps a banner's place while it loads, and draws neither trust nor facts on it", async () => {
+    const art = "data:image/jpeg;base64,/9j/4AAQ"
+    let answer: (url: string | null) => void = () => {}
+    vi.mocked(commands.pluginBanner).mockReturnValue(new Promise((done) => (answer = done)))
+    state.plugins = [pluginInfo({ id: "dev.a.art", name: "Art", trust: "unreviewed", author: "someone", bannerHash: "a1" })]
+    render(<PluginsPage />, { wrapper })
+    const card = await screen.findByRole("group", { name: "Art" })
+    const slot = card.firstElementChild!
+    expect(slot.querySelector("img")).toBeNull()
+    const facts = [within(card).getByText("Not reviewed"), within(card).getByText("Says it is by someone"), within(card).getByText("v1.0.0")]
+    act(() => answer(art))
+    await waitFor(() => expect(slot.querySelector("img")?.getAttribute("src")).toBe(art))
+    // The same place, and nothing the host vouches for on the plugin's pixels.
+    expect(card.firstElementChild).toBe(slot)
+    for (const fact of facts) expect(slot.contains(fact)).toBe(false)
+    expect(slot.textContent).toBe("")
+  })
+
+  // A guard for good: a picture fetched from a link would tell its host who
+  // looked, and when, and could make a claim look checked.
+  it("no picture on the plugin screens comes from the internet", async () => {
+    const art = "data:image/jpeg;base64,/9j/4AAQ"
+    // Its plugin.json may name its author's GitHub page: only its own files show.
+    state.plugins = [
+      pluginInfo({
+        id: "dev.a.art",
+        name: "Art",
+        author: "someone",
+        repository: "https://github.com/someone/art",
+        icon: "data:image/svg+xml;base64,PHN2Zy8+",
+        bannerHash: "a1",
+        settings: [{ key: "on", title: "On", description: null, kind: { type: "boolean", default: true } }],
+      }),
+      // A banner answered with a link isn't shown.
+      pluginInfo({ id: "dev.a.link", name: "Link", author: "someone", repository: "https://github.com/someone/link", bannerHash: "b2" }),
+    ]
+    vi.mocked(commands.pluginBanner).mockImplementation((id) =>
+      Promise.resolve(id === "dev.a.art" ? art : "https://github.com/someone.png"),
+    )
+    const { container } = render(
+      <>
+        <PluginsPage />
+        <PluginSettingsSection id="dev.a.art" />
+      </>,
+      { wrapper },
+    )
+    // The banner on its card and in its settings, beside the icons.
+    await waitFor(() => expect(container.querySelectorAll(`img[src="${art}"]`)).toHaveLength(2))
+    await waitFor(() => expect(queryClient.getQueryState(qk.pluginBanner("dev.a.link", "b2"))?.status).toBe("success"))
+    await act(() => new Promise((done) => setTimeout(done, 0)))
+    const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src"))
+    expect(sources.length).toBeGreaterThan(2)
+    for (const src of sources) expect(src).toMatch(/^data:/)
+    expect(container.innerHTML).not.toContain("someone.png")
   })
 })

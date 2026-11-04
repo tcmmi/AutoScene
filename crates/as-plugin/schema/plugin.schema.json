@@ -71,15 +71,10 @@
       "type": "string",
       "pattern": "\\.([pP][nN][gG]|[sS][vV][gG])$"
     },
-    "color": {
-      "description": "Its accent color: a hex color such as #2a2a2a.",
-      "type": "string",
-      "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
-    },
     "banner": {
-      "description": "A wide .png or .svg file in the plugin, such as banner.png.",
+      "description": "With manifestVersion 2: wide art, a .png, .jpg or .webp file of at most 512 KB in the plugin, best 2:1 (1200x600).",
       "type": "string",
-      "pattern": "\\.([pP][nN][gG]|[sS][vV][gG])$"
+      "pattern": "\\.([pP][nN][gG]|[jJ][pP][eE]?[gG]|[wW][eE][bB][pP])$"
     }
   },
   "additionalProperties": false,
@@ -88,6 +83,7 @@
       "if": { "required": ["manifestVersion"], "properties": { "manifestVersion": { "const": 1 } } },
       "then": {
         "properties": {
+          "banner": false,
           "runtime": { "properties": { "type": { "const": "process" } } },
           "contributes": {
             "properties": {
@@ -159,8 +155,7 @@
       "required": ["name"],
       "properties": {
         "name": { "$ref": "#/$defs/label", "maxLength": 60 },
-        "url": { "description": "An https:// link.", "$ref": "#/$defs/link" },
-        "avatar": { "description": "An https:// link to their picture.", "$ref": "#/$defs/link" }
+        "url": { "description": "An https:// link.", "$ref": "#/$defs/link" }
       },
       "additionalProperties": false
     },

@@ -1246,7 +1246,7 @@ or a `runtime.type` it doesn't know (`wasm`, say).
 | `network` | no | `{ "hosts": [...] }`: where it connects, with the `network` permission. |
 | `contributes` | no | Its `exportActions`, `commands`, `settings` and, in version 2, `pages`. |
 | `icon` | no | A `.png` or `.svg` file in the plugin. |
-| `banner` | no | A wide `.png` or `.svg` file in the plugin, best 21:9. |
+| `banner` | no | With `"manifestVersion": 2`: wide art, a `.png`, `.jpg` or `.webp` file in the plugin. |
 | `$schema` | no | Allowed, and not read. |
 
 Texts lose control characters and invisible ones. A name or title longer
@@ -1446,16 +1446,27 @@ as a PNG or an SVG file does refuses the package.
 
 ### banner
 
-A wide picture, a `.png` of at most 1 MB or an `.svg` of at most 256 KB,
-in the plugin's folder. It shows across the top of the plugin's card in
-Plugins and of its settings, as a picture only (an SVG's scripts never
-run). The card shows it at 21:9. Its settings show a band across its
-middle: 3:1, and wider in a wide window, since that band is at most 224
-pixels high. So make it 21:9, such as 1400×600, with what matters in the
-middle half of its height. A `banner` that isn't a `.png` or `.svg` path
-is left out with a warning. One that isn't in the package, is too large,
-or doesn't start as a PNG or an SVG file does refuses the package. A
-loaded folder's banner that fails these checks isn't shown.
+Wide art for the plugin's card in Plugins and the top of its settings: a
+`.png`, `.jpg` (or `.jpeg`) or `.webp` file of at most 512 KB in the
+plugin's folder, in a manifest of `"manifestVersion": 2`. Make it 2:1,
+1200×600: PNG for flat art, JPEG or WebP for pictures. `asp pack` and
+`asp verify` warn of one smaller than 960×480 ("The banner is 800×400.
+Cards show it soft below 1200×600.") and of one whose sides are more than
+10% off 2:1 ("The banner is 1200×900. Cards crop it to 2:1."). AutoScene
+shows it either way.
+
+A version 1 manifest's banner is left out with the warning "Left out the
+banner: it needs "manifestVersion": 2.", and one that isn't a `.png`,
+`.jpg` or `.webp` path (an SVG, a GIF) with "Left out the banner: it must
+be a .png, .jpg or .webp file in the plugin." One that isn't in the
+package, is too large, or doesn't start as its format does (the PNG
+signature, JPEG's `FF D8 FF`, WebP's `RIFF` and `WEBP`) refuses the
+package.
+
+A plugin's pictures are its own files, checked against its `files.lock`
+each time they show (a loaded folder's: as they are now, never through a
+link). AutoScene loads none from the internet: not its author's picture,
+and no colour or art from a link.
 
 ### What is refused, and what is skipped
 
@@ -1466,9 +1477,10 @@ object, a `plugin.json` over 256 KB. What a later AutoScene may add is
 skipped with a warning, so a plugin made for one still installs in an
 older one: an unknown field, contribution kind or setting type, a page of
 a scope this AutoScene doesn't know, a platform this AutoScene doesn't
-know, and in a version 1 manifest `pages` and secret settings. A higher
-`manifestVersion` or `engines.protocol`, or a `runtime.type` other than
-`process`, `service` and `none`, needs a newer AutoScene.
+know, and in a version 1 manifest `pages`, `banner` and secret settings,
+which need `"manifestVersion": 2`. A higher `manifestVersion` or
+`engines.protocol`, or a `runtime.type` other than `process`, `service`
+and `none`, needs a newer AutoScene.
 
 The review lists the warnings under "Skipped in its plugin.json", and so
 do the plugin's settings.
@@ -1546,8 +1558,9 @@ asp pack <plugin-folder> <out.asp>
 `files.lock`, `files.lock.minisig` or `author.pub` at its top. It refuses
 a folder that holds a link, a file a package can't name, or a secret key
 (`asp.key`, or any file that is a minisign secret key), and a package
-written into the plugin's own folder. It checks the manifest, the icon and
-each page's file, and checks the plugin for each platform it runs on as
+written into the plugin's own folder. It checks the manifest, the icon,
+the banner (and warns of one cards would show soft or crop) and each
+page's file, and checks the plugin for each platform it runs on as
 AutoScene would there: it warns of each platform the plugin can't run on,
 and fails when that is all of them. It warns of what its manifest's
 version skips (pages or a secret setting in version 1, say). A plugin made

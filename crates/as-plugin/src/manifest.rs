@@ -18,11 +18,13 @@
 //! [`crate::pages`]), the runtime type `none`, of a plugin that runs no
 //! program and has only pages, and `service`, of a plugin whose program
 //! speaks protocol 2 and also keeps running while one of its pages is open
-//! ([`crate::service`]). A version 1 manifest reads as it always did: its
-//! pages and secret settings are skipped with a warning that names version
-//! 2, and a runtime type only version 2 has is refused with that hint. In
-//! version 2, a network host that names this computer or its network, or an
-//! address, gets a warning: `net.fetch` never reaches it ([`crate::net`]).
+//! ([`crate::service`]), and a banner, the plugin's wide art (a picture in
+//! its package, [`crate::package::Picture`]). A version 1 manifest reads as
+//! it always did: its pages, secret settings and banner are skipped with a
+//! warning that names version 2, and a runtime type only version 2 has is
+//! refused with that hint. In version 2, a network host that names this
+//! computer or its network, or an address, gets a warning: `net.fetch` never
+//! reaches it ([`crate::net`]).
 //!
 //! No shell reads a command: its arguments are fixed, and handed to the
 //! program as they are. The program is a file in the plugin's own folder,
@@ -51,7 +53,7 @@ use specta::Type;
 
 use crate::error::{PluginError, PluginResult};
 use crate::net;
-use crate::package::{check_path, reserved};
+use crate::package::{Picture, PictureFormat, check_path, reserved};
 
 /// The newest manifest version this AutoScene reads.
 pub const MANIFEST_VERSION: u32 = 2;
@@ -96,7 +98,7 @@ const NOT_PROGRAMS: &str = "uv uvx py pyw node deno bun perl ruby php osascript 
 /// toward the uv form.
 const SCRIPTS: [&str; 5] = [".bat", ".cmd", ".ps1", ".sh", ".py"];
 const UV_FORM: &str = r#"["uv", "run", "--script", "--locked", "<script>.py"]"#;
-const TOP_KEYS: [&str; 18] = [
+const TOP_KEYS: [&str; 17] = [
     "$schema",
     "manifestVersion",
     "id",
@@ -113,7 +115,6 @@ const TOP_KEYS: [&str; 18] = [
     "network",
     "contributes",
     "icon",
-    "color",
     "banner",
 ];
 
@@ -228,9 +229,8 @@ pub struct Manifest {
     pub pages: Vec<PageSpec>,
     /// A `.png` or `.svg` in the package (whether it's there is checked at install).
     pub icon: Option<String>,
-    /// An optional hex brand/accent color (e.g. `#2a2a2a`).
-    pub color: Option<String>,
-    /// A `.png` or `.svg` wide banner in the package.
+    /// Its wide art (manifest version 2): a `.png`, `.jpg` or `.webp` in the
+    /// package, checked at install as the icon is.
     pub banner: Option<String>,
 }
 
@@ -240,8 +240,6 @@ pub struct Author {
     pub name: String,
     /// An `https://` link.
     pub url: Option<String>,
-    /// An optional `https://` avatar URL or local image path.
-    pub avatar: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
@@ -556,12 +554,8 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     let description = root.required_label("description", 300, &mut w)?;
     let author = {
         let a = root.required_object("author")?;
-        a.warn_unknown(&["name", "url", "avatar"], &mut w);
-        Author {
-            name: a.required_label("name", 60, &mut w)?,
-            url: a.link("url", &mut w)?,
-            avatar: a.link("avatar", &mut w)?,
-        }
+        a.warn_unknown(&["name", "url"], &mut w);
+        Author { name: a.required_label("name", 60, &mut w)?, url: a.link("url", &mut w)? }
     };
     let license = root.label("license", 60, &mut w)?;
     let repository = root.link("repository", &mut w)?;
@@ -768,41 +762,27 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     }
 
     let icon = match root.text("icon")? {
-        Some(p) if check_path(p).is_ok() && (ends_with_any_case(p, ".png") || ends_with_any_case(p, ".svg")) => {
-            Some(p.to_owned())
-        }
+        Some(p) if check_path(p).is_ok() && picture_in(p, Picture::Icon) => Some(p.to_owned()),
         Some(_) => {
             w.push("Left out the icon: it must be a .png or .svg file in the plugin.".into());
             None
         }
         None => None,
     };
-
-    let color = match root.text("color")? {
-        Some(c) => {
-            let hex = c.trim();
-            let valid = (hex.len() == 4 || hex.len() == 7 || hex.len() == 9)
-                && hex.starts_with('#')
-                && hex[1..].chars().all(|ch| ch.is_ascii_hexdigit());
-            if valid {
-                Some(hex.to_ascii_lowercase())
-            } else {
-                w.push(format!("Left out the color: {c} isn't a hex color like #2a2a2a."));
-                None
-            }
-        }
-        None => None,
-    };
-
-    let banner = match root.text("banner")? {
-        Some(p) if check_path(p).is_ok() && (ends_with_any_case(p, ".png") || ends_with_any_case(p, ".svg")) => {
-            Some(p.to_owned())
-        }
-        Some(_) => {
-            w.push("Left out the banner: it must be a .png or .svg file in the plugin.".into());
+    // Version 1 skips it, whatever it holds, as AutoScene 1.0 does.
+    let banner = match root.get("banner") {
+        Some(_) if manifest_version < 2 => {
+            w.push(r#"Left out the banner: it needs "manifestVersion": 2."#.into());
             None
         }
-        None => None,
+        _ => match root.text("banner")? {
+            Some(p) if check_path(p).is_ok() && picture_in(p, Picture::Banner) => Some(p.to_owned()),
+            Some(_) => {
+                w.push("Left out the banner: it must be a .png, .jpg or .webp file in the plugin.".into());
+                None
+            }
+            None => None,
+        },
     };
     root.warn_unknown(&TOP_KEYS, &mut w);
 
@@ -830,7 +810,6 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         settings,
         pages,
         icon,
-        color,
         banner,
     };
     Ok(Parsed { manifest, warnings: w })
@@ -1201,6 +1180,11 @@ pub(crate) fn cut(s: &str, max: usize) -> String {
     out
 }
 
+/// Whether the package path `path` names a format `picture` may be in.
+fn picture_in(path: &str, picture: Picture) -> bool {
+    PictureFormat::of(path).is_some_and(|f| picture.allows(f))
+}
+
 /// Whether `s` ends in `suffix`, in any case.
 fn ends_with_any_case(s: &str, suffix: &str) -> bool {
     s.len() >= suffix.len() && s.as_bytes()[s.len() - suffix.len()..].eq_ignore_ascii_case(suffix.as_bytes())
@@ -1486,10 +1470,7 @@ mod tests {
         assert_eq!(p.warnings, Vec::<String>::new());
         let m = p.manifest;
         assert_eq!(m.id.as_str(), "dev.autoscene.hello-export");
-        assert_eq!(
-            m.author,
-            Author { name: "AutoScene".into(), url: Some("https://autoscene.app".into()), avatar: None }
-        );
+        assert_eq!(m.author, Author { name: "AutoScene".into(), url: Some("https://autoscene.app".into()) });
         assert_eq!(m.permissions, [Permission::ExportsRead]);
         assert_eq!(m.export_actions[0].id, "hello");
         assert!(m.commands[0].needs_project);
@@ -1718,6 +1699,60 @@ mod tests {
             json!({"type": "secret", "placeholder": "https://…"}),
             "as the settings page reads it"
         );
+    }
+
+    /// [`plugin`] in manifest version 2, with `banner`.
+    fn with_banner(banner: Value) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["banner"] = banner;
+        })
+    }
+
+    #[test]
+    fn a_banner_in_a_version_1_manifest_is_left_out_with_a_word() {
+        // Whatever it holds, as AutoScene 1.0 skips a key it doesn't know.
+        for banner in [json!("art/banner.jpg"), json!(42)] {
+            let p = with(|v| v["banner"] = banner.clone()).unwrap();
+            assert_eq!(p.manifest.banner, None);
+            assert_eq!(p.warnings, [r#"Left out the banner: it needs "manifestVersion": 2."#]);
+        }
+        let p = with_banner(json!("art/banner.jpg")).unwrap();
+        assert_eq!((p.manifest.banner.as_deref(), p.warnings.len()), (Some("art/banner.jpg"), 0));
+    }
+
+    #[test]
+    fn a_banner_of_another_type_is_left_out_with_a_word() {
+        for other in ["art/banner.svg", "art/banner.gif", "banner", "../banner.png", r"art\banner.png"] {
+            let p = with_banner(json!(other)).unwrap();
+            assert_eq!(p.manifest.banner, None, "{other}");
+            assert_eq!(p.warnings, ["Left out the banner: it must be a .png, .jpg or .webp file in the plugin."]);
+        }
+        for ok in ["banner.png", "art/Banner.JPG", "art/banner.jpeg", "art/banner.webp"] {
+            assert_eq!(with_banner(json!(ok)).unwrap().manifest.banner.as_deref(), Some(ok));
+        }
+        assert_eq!(message(with_banner(json!(42))), "The plugin's banner must be text.");
+    }
+
+    #[test]
+    fn colour_and_author_avatar_are_keys_this_autoscene_doesnt_know() {
+        let p = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["color"] = json!("#2a2a2a");
+            v["author"]["avatar"] = json!("https://github.com/someone.png");
+        })
+        .unwrap();
+        assert_eq!(
+            p.warnings,
+            [
+                "Ignored author.avatar, which this AutoScene doesn't know.",
+                "Ignored color, which this AutoScene doesn't know.",
+            ]
+        );
+        // Nothing of them reaches what the app reads.
+        let read = serde_json::to_value(&p.manifest).unwrap();
+        assert_eq!(read["author"], json!({"name": "AutoScene", "url": "https://autoscene.app"}));
+        assert_eq!(read.get("color"), None);
     }
 
     /// A version 2 manifest of a plugin that runs no program, with `pages`.
@@ -2302,6 +2337,33 @@ mod tests {
             v["contributes"]["pages"][0]["scope"] = json!(scope);
             assert_eq!(kind_name(json!(reads(&v, scope).pages[0].scope)), *scope);
         }
+    }
+
+    #[test]
+    fn the_schema_allows_a_banner_only_from_version_2() {
+        let schema: Value = serde_json::from_str(include_str!("../schema/plugin.schema.json")).unwrap();
+        // Version 1 may not name one (the parser leaves it out with a word).
+        let v1 = schema["allOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["if"]["properties"]["manifestVersion"]["const"] == 1)
+            .unwrap();
+        assert_eq!(v1["then"]["properties"]["banner"], json!(false));
+        // Its type is what the parser takes, and no colour or avatar is named.
+        let pattern = schema["properties"]["banner"]["pattern"].as_str().unwrap();
+        for kind in ["[pP][nN][gG]", "[jJ][pP][eE]?[gG]", "[wW][eE][bB][pP]"] {
+            assert!(pattern.contains(kind), "{kind}");
+        }
+        assert!(!pattern.contains("[sS][vV][gG]"));
+        for ok in [".png", ".PNG", ".jpg", ".jpeg", ".JpG", ".webp"] {
+            assert!(picture_in(&format!("art/banner{ok}"), Picture::Banner), "{ok}");
+        }
+        for bad in [".svg", ".gif"] {
+            assert!(!picture_in(&format!("art/banner{bad}"), Picture::Banner), "{bad}");
+        }
+        assert!(schema["properties"].get("color").is_none());
+        assert!(schema["$defs"]["author"]["properties"].get("avatar").is_none());
     }
 
     #[test]

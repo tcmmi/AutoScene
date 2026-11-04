@@ -1,0 +1,56 @@
+# Written by `cargo xtask pin-uv 0.13.7`. Don't edit by hand.
+version = "0.13.7"
+
+[[pin]]
+platform = "windows-x86_64"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-pc-windows-msvc.zip"
+archive_size = 15236317
+archive_sha256 = "0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021"
+member = "uv.exe"
+size = 31803184
+sha256 = "1791d7a9ed5b6df13ccf80f102e025c333010d96326b4ff0262aa3b578835c5a"
+
+[[pin]]
+platform = "windows-aarch64"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-aarch64-pc-windows-msvc.zip"
+archive_size = 15538425
+archive_sha256 = "505d9e65e7692bac3ddf98c66754aa26c5050c409c184af30a881a0a72cc85e3"
+member = "uv.exe"
+size = 30741296
+sha256 = "b1633856a68112cbfd9e81225066c986fecac4355bba4623eafd20d95f29b56f"
+
+[[pin]]
+platform = "macos-aarch64"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-aarch64-apple-darwin.tar.gz"
+archive_size = 14347867
+archive_sha256 = "81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731"
+member = "uv-aarch64-apple-darwin/uv"
+size = 27864912
+sha256 = "0f333833a6d011710d3edc0e45b55d3d934aef15bb83a25b29848c241ac513b4"
+
+[[pin]]
+platform = "macos-x86_64"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-apple-darwin.tar.gz"
+archive_size = 17026382
+archive_sha256 = "20c47e4c1f630b8abaff8c291fa9b9aa300fef92c4fbff95adf198b55287cda7"
+member = "uv-x86_64-apple-darwin/uv"
+size = 38143840
+sha256 = "b345904c70c5bb715cda5a58cb74b6c53158346e806258e270a774fdaa3d7739"
+
+[[pin]]
+platform = "linux-x86_64"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz"
+archive_size = 16671812
+archive_sha256 = "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83"
+member = "uv-x86_64-unknown-linux-gnu/uv"
+size = 37512936
+sha256 = "4b5e59bc557ff2cd70934beb59d0eaa92820702853d49f0066b50aa11a8f0c52"
+
+[[pin]]
+platform = "linux-aarch64"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-aarch64-unknown-linux-gnu.tar.gz"
+archive_size = 15896996
+archive_sha256 = "71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc"
+member = "uv-aarch64-unknown-linux-gnu/uv"
+size = 31924696
+sha256 = "553b3a3a31484ef9e4f220085ca672cc71c851f92a92d984646a9d1c814b02c3"

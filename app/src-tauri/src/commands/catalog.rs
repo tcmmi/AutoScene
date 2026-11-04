@@ -43,7 +43,7 @@ pub async fn catalog_get(app: AppHandle, state: State<'_, AppState>, plugin_id: 
         let download = host.catalog.begin(&host.store, &id)?;
         let allow = lib.allows_unreviewed_plugins()?;
         let ticket = catalog::get(&app, &host, &download)?;
-        let review = review(&ticket, &host.store, allow);
+        let review = review(&ticket, &host, allow);
         // Cancelled while the review was made: thrown away.
         if download.end() {
             host.store.discard(ticket);

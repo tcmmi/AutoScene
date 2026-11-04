@@ -95,6 +95,7 @@ const review = (): PluginReview => ({
   needsUnreviewed: false,
   allowed: false,
   uvMissing: false,
+  uvBytes: 15236317,
   catalog: null,
 })
 // Under an open dialog too, which hides the rest from a screen reader.

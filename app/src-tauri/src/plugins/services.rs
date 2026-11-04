@@ -9,7 +9,9 @@
 //! A service starts once for all its plugin's pages, on a thread of its
 //! own: one that asks while it starts waits for that start and fails with
 //! it, or gives up once its own time is over while the start goes on for
-//! the others. It is claimed under the busy lock, where a change of its
+//! the others. A uv script gets AutoScene's uv first ([`PluginHost`]'s
+//! `uv_for`), which its pages hear; its program's time to get ready counts
+//! from its start. It is claimed under the busy lock, where a change of its
 //! plugin is marked and where the pages close that its plugin may no longer
 //! show: a change refuses its start, and a page that closed starts none. A
 //! stop waits for a start on its way, which ends its program, and for
@@ -26,6 +28,7 @@
 //! still wait for the analysis.
 
 use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -33,7 +36,8 @@ use as_core::CancelToken;
 use as_plugin::pages::Mount;
 use as_plugin::service::{ProcessService, STOP_GRACE};
 use as_plugin::{
-    CallCode, CallError, Installed, OnEvent, PluginError, PluginId, PluginResult, Service, ServiceEvent, Trust,
+    CallCode, CallError, HostCalls, Installed, OnEvent, PluginError, PluginId, PluginResult, Service, ServiceEvent,
+    ServiceSpec, Trust,
 };
 use parking_lot::{Condvar, Mutex};
 use tauri::{AppHandle, Manager};
@@ -58,12 +62,14 @@ const WAIT_TICK: Duration = Duration::from_millis(100);
 /// How a plugin's service starts: its program (the app's [`ProgramStart`]),
 /// or a test's stand-in.
 pub trait StartService: Send + Sync {
-    /// Starts the service of `p` for `host`, telling `events` how it goes,
-    /// until `cancel` fires: the service once it is ready.
+    /// Starts the service of `p` for `host`, a uv script through `uv`,
+    /// telling `events` how it goes, until `cancel` fires: the service once
+    /// it is ready.
     fn start(
         &self,
         host: &Arc<PluginHost>,
         p: &Installed,
+        uv: Option<PathBuf>,
         events: OnEvent,
         cancel: &CancelToken,
     ) -> PluginResult<Arc<dyn Service>>;
@@ -210,7 +216,14 @@ impl Services {
                 service.stop(Duration::ZERO);
                 CallError::from(PluginError::Cancelled)
             }
-            Err(e) => CallError::from(&e),
+            // Why, for the log: the page hears it in a sentence only (a
+            // download's reason, a crash's output). A stop is no failure.
+            Err(e) => {
+                if !matches!(e, PluginError::Cancelled | PluginError::Closed) {
+                    log::warn!("{id}'s service couldn't start: {}", e.detail());
+                }
+                CallError::from(&e)
+            }
         };
         let mut inner = self.inner.lock();
         if ours(&inner.slots).is_some() {
@@ -488,8 +501,30 @@ impl PluginHost {
             // it is now: its page may have opened before. The setting going
             // off stops it and closes its pages itself.
             let started = host.store.get(&plugin).and_then(|p| {
-                runnable(&p, true)?;
-                host.services.start.start(&host, &p, events, &cancel)
+                let launch = runnable(&p, true)?.launch();
+                // Its pages hear that it gets uv, not how far: a stage is all they show.
+                let got = std::cell::Cell::new(false);
+                let getting = |stage: &str, fraction: Option<f64>| {
+                    if fraction.is_none() {
+                        got.set(true);
+                        events(ServiceEvent::Progress { stage: stage.into(), fraction });
+                    }
+                };
+                // One that can't start on this computer says so as it starts.
+                let uv = match &launch {
+                    Ok(launch) => host.uv_for(launch, &cancel, &getting)?,
+                    Err(_) => None,
+                };
+                // uv is here: from now it starts (uv getting Python and the
+                // packages, then its program), and its pages say just that.
+                if got.get() {
+                    host.tell_service(
+                        &plugin,
+                        start,
+                        PageEvent::ServiceState { state: ServiceStatus::Starting, message: None },
+                    );
+                }
+                host.services.start.start(&host, &p, uv, events, &cancel)
             });
             host.settle(&plugin, start, started);
         });
@@ -600,15 +635,32 @@ impl StartService for ProgramStart {
         &self,
         host: &Arc<PluginHost>,
         p: &Installed,
+        uv: Option<PathBuf>,
         events: OnEvent,
         cancel: &CancelToken,
     ) -> PluginResult<Arc<dyn Service>> {
         let state = self.0.state::<AppState>();
         let tools = state.tools().map_err(|e| PluginError::Invalid(e.message))?;
         let calls = AppCalls::service(state.library.clone(), host.clone(), p)?;
-        let spec = host.store.serve_spec(p, &tools.ffmpeg, &tools.ffprobe, &tools.version, Arc::new(calls))?;
+        let spec = serve_spec(host, p, &tools.ffmpeg, &tools.ffprobe, &tools.version, Arc::new(calls), uv)?;
         Ok(ProcessService::start(spec, events, cancel)?)
     }
+}
+
+/// The service of `p` as [`ProgramStart`] starts it: the store's
+/// [`as_plugin::Store::serve_spec`], through `uv` when it is a uv script.
+fn serve_spec(
+    host: &PluginHost,
+    p: &Installed,
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    ffmpeg_version: &str,
+    calls: Arc<dyn HostCalls>,
+    uv: Option<PathBuf>,
+) -> PluginResult<ServiceSpec> {
+    let mut spec = host.store.serve_spec(p, ffmpeg, ffprobe, ffmpeg_version, calls)?;
+    spec.uv = uv;
+    Ok(spec)
 }
 
 /// A start or a request refused, said as `message`.
@@ -618,16 +670,18 @@ fn failed(message: &str) -> CallError {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use as_jobs::{Class, JobRunner};
     use as_plugin::RequestContext;
     use serde_json::{Value, json};
 
+    use super::super::GETTING_UV;
     use super::super::catalog::tests::{Key, NOW, Served, index, withdrawal};
     use super::super::pages;
-    use super::super::tests::{CATALOG_AT, Heard, closed, host_cataloged, host_starting};
+    use super::super::tests::{
+        CATALOG_AT, FakeUv, Heard, TEST_UV, closed, host_cataloged, host_getting_uv, host_starting,
+    };
     use super::*;
 
     /// A service that answers each request with its method, counts the
@@ -681,6 +735,8 @@ mod tests {
         made: Arc<Mutex<Vec<Arc<Fake>>>>,
         /// Where each start told how it went.
         events: Arc<Mutex<Vec<OnEvent>>>,
+        /// The uv each start was given.
+        uv: Arc<Mutex<Vec<Option<PathBuf>>>>,
     }
 
     impl StartService for Starter {
@@ -688,10 +744,12 @@ mod tests {
             &self,
             _: &Arc<PluginHost>,
             _: &Installed,
+            uv: Option<PathBuf>,
             events: OnEvent,
             cancel: &CancelToken,
         ) -> PluginResult<Arc<dyn Service>> {
             self.asked.fetch_add(1, Ordering::SeqCst);
+            self.uv.lock().push(uv);
             self.events.lock().push(events.clone());
             let until = Instant::now() + self.delay;
             while Instant::now() < until && !cancel.is_cancelled() {
@@ -742,6 +800,20 @@ mod tests {
         let p = host.store.get(id).unwrap();
         let page = p.manifest.as_ref().unwrap().pages[0].clone();
         host.pages.open(&p, as_plugin::Grants::of(&p).unwrap(), &page, None).unwrap().0
+    }
+
+    /// Answers no call.
+    struct Refused;
+
+    impl HostCalls for Refused {
+        fn call(
+            &self,
+            _: as_plugin::HostMethod,
+            _: &serde_json::value::RawValue,
+            _: &CancelToken,
+        ) -> Result<Value, CallError> {
+            Err(CallError::new(CallCode::Invalid, "No calls here."))
+        }
     }
 
     /// What `heard` told the page `session` of its service's state.
@@ -1225,6 +1297,70 @@ mod tests {
         // The next asks again.
         host.service(&pages[0], None).err().unwrap();
         assert_eq!(crashing.asked.load(Ordering::SeqCst), 2);
+        alone(&host);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_uv_service_gets_uv_before_it_starts() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-service-uv-{}", std::process::id()));
+        let (starter, uv) = (Starter::default(), FakeUv::missing(false));
+        let (lib, host, heard) = host_getting_uv(&tmp, starter.clone(), uv.clone());
+        let id = served(&host, &lib, &tmp, "dev.a.service");
+        let page = pages::open(&host, &lib, &id, "main", None).unwrap();
+        wait_for(|| host.services.running(&id).is_some());
+        // Got once, and given to the start: its program starts through it.
+        assert_eq!(uv.got.load(Ordering::SeqCst), 1);
+        assert_eq!(*starter.uv.lock(), [Some(PathBuf::from(TEST_UV))]);
+        // Its page heard it get uv as it started, then that it is ready.
+        wait_for(|| states(&heard, &page.session).last() == Some(&ServiceStatus::Ready));
+        let said: Vec<_> = heard
+            .lock()
+            .iter()
+            .filter_map(|e| match &e.event {
+                PageEvent::ServiceState { state: ServiceStatus::Starting, message } => Some(message.clone()),
+                _ => None,
+            })
+            .collect();
+        // Once uv is here, "Getting uv" is no longer what it does.
+        assert_eq!(said, [None, Some(GETTING_UV.to_owned()), None]);
+        // Its program starts through that uv.
+        let p = host.store.get(&id).unwrap();
+        let spec = serve_spec(
+            &host,
+            &p,
+            Path::new("ffmpeg"),
+            Path::new("ffprobe"),
+            "9.0",
+            Arc::new(Refused),
+            Some(TEST_UV.into()),
+        );
+        assert_eq!(spec.unwrap().uv, Some(PathBuf::from(TEST_UV)));
+        // The next start finds it here, and says nothing of it.
+        heard.lock().clear();
+        host.services.stop(&id, STOP_GRACE);
+        let m = host.pages.get(&page.session).unwrap();
+        host.service(&m, None).unwrap();
+        assert_eq!(uv.got.load(Ordering::SeqCst), 1);
+        assert_eq!(starter.uv.lock().len(), 2);
+        let starting = heard
+            .lock()
+            .iter()
+            .any(|e| matches!(&e.event, PageEvent::ServiceState { state: ServiceStatus::Starting, message: Some(_) }));
+        assert!(!starting);
+        host.shutdown();
+        alone(&host);
+        drop((host, lib));
+
+        // When uv doesn't come, its program never starts, and the page hears why.
+        let tmp2 = tmp.join("failing");
+        let (lib, host, _) = host_getting_uv(&tmp2, starter.clone(), FakeUv::missing(true));
+        let id = served(&host, &lib, &tmp2, "dev.a.service");
+        let m = page_of(&host, &id);
+        let e = host.service(&m, None).err().unwrap();
+        assert_eq!(e.message, "AutoScene couldn't get uv. Check the internet connection, then try again.");
+        assert_eq!(starter.asked.load(Ordering::SeqCst), 2);
         alone(&host);
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();

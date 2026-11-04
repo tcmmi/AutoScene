@@ -180,7 +180,7 @@ pub async fn plugin_inspect(state: State<'_, AppState>, path: String) -> AppResu
     blocking(move || {
         let allow = lib.allows_unreviewed_plugins()?;
         let ticket = host.store.stage(Path::new(&path))?;
-        let review = review(&ticket, &host.store, allow);
+        let review = review(&ticket, &host, allow);
         host.keep(ticket);
         Ok(review)
     })
@@ -200,7 +200,7 @@ pub async fn plugin_inspect_folder(state: State<'_, AppState>, path: String) -> 
             return Err(PluginError::NotAllowed.into());
         }
         let ticket = host.store.stage_folder(Path::new(&path))?;
-        let review = review(&ticket, &host.store, true);
+        let review = review(&ticket, &host, true);
         host.keep(ticket);
         Ok(review)
     })

@@ -336,12 +336,18 @@ function Permissions({ review }: { review: PluginReview }) {
  * What AutoScene starts to run it, and what that fetches on its own: marked
  * new when the installed version runs no program. A service keeps its
  * program running while its page is open, marked new when the installed
- * version didn't.
+ * version didn't. A uv script that comes before AutoScene's own uv says that
+ * its first run (a service's first start) gets it, and how much that is.
  */
 function Runs({ review }: { review: PluginReview }) {
   const p = review.plugin
   const startsProgram = review.update?.startsProgram ?? false
   const becomesService = review.update?.becomesService ?? false
+  const first = p.runtime === "service" ? "first start" : "first run"
+  // As AutoScene's other downloads say their size.
+  const getsUv = review.uvMissing
+    ? ` AutoScene gets uv (${formatBytes(review.uvBytes ?? 0, 0)}, from github.com/astral-sh/uv), and uv downloads`
+    : ", uv downloads"
   return (
     <section>
       <h3 className="text-sm font-medium text-fg-2">How it runs</h3>
@@ -349,7 +355,7 @@ function Runs({ review }: { review: PluginReview }) {
         {p.runtime === "none"
           ? "Runs no program. Its pages run in a sandbox."
           : p.uvScript
-            ? "A Python script that uv runs. On its first run, uv downloads Python (if this computer has none) and the packages the script names."
+            ? `A Python script that uv runs. On its ${first}${getsUv} Python (if this computer has none) and the packages the script names.`
             : "A program in its folder."}
         {startsProgram && <Badge tone="accent">New</Badge>}
       </p>
@@ -359,9 +365,6 @@ function Runs({ review }: { review: PluginReview }) {
           {becomesService ? "Now keeps its program running while its page is open." : "Keeps its program running while its page is open."}
           {becomesService && <Badge tone="accent">New</Badge>}
         </p>
-      )}
-      {review.uvMissing && (
-        <p className="mt-1.5 text-sm text-danger">uv isn't installed, so it can't run yet. Install it from docs.astral.sh/uv.</p>
       )}
     </section>
   )

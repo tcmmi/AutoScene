@@ -20,6 +20,7 @@ const LICENSES: { name: string; license: string; url: string }[] = [
   { name: "Geist Mono", license: "SIL Open Font License 1.1", url: "https://vercel.com/font" },
   { name: "Radix UI", license: "MIT", url: "https://www.radix-ui.com" },
   { name: "Phosphor Icons", license: "MIT", url: "https://phosphoricons.com" },
+  { name: "uv", license: "MIT / Apache-2.0", url: "https://github.com/astral-sh/uv" },
 ]
 
 const BY_3 = { license: "CC BY 3.0", licenseUrl: "https://creativecommons.org/licenses/by/3.0/" }

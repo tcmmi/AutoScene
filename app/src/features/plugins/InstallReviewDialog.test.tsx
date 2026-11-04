@@ -39,6 +39,7 @@ const review = (o: Partial<PluginReview> = {}): PluginReview => ({
   needsUnreviewed: true,
   allowed: true,
   uvMissing: false,
+  uvBytes: 15236317,
   catalog: null,
   ...o,
 })
@@ -237,18 +238,29 @@ describe("the install review", () => {
     expect(commands.pluginDiscard).not.toHaveBeenCalled()
   })
 
-  it("says how it runs, and that uv is missing", () => {
+  it("says how it runs", () => {
     show(review())
     expect(screen.getByText(/A Python script that uv runs\. On its first run, uv downloads Python/)).toBeTruthy()
-    expect(screen.queryByText(/uv isn't installed/)).toBeNull()
-    cleanup()
-
-    show(review({ uvMissing: true }))
-    expect(screen.getByText("uv isn't installed, so it can't run yet. Install it from docs.astral.sh/uv.")).toBeTruthy()
+    expect(screen.queryByText(/AutoScene gets uv/)).toBeNull()
     cleanup()
 
     show(review({ plugin: { ...discord, uvScript: false } }))
     expect(screen.getByText("A program in its folder.")).toBeTruthy()
+  })
+
+  it("says AutoScene gets uv", () => {
+    show(review({ uvMissing: true }))
+    const words =
+      "A Python script that uv runs. On its first run AutoScene gets uv (15 MB, from github.com/astral-sh/uv), and uv downloads Python (if this computer has none) and the packages the script names."
+    expect(screen.getByText(words)).toBeTruthy()
+    // Said once, and nobody installs it by hand any more.
+    expect(screen.getAllByText(/first run/)).toHaveLength(1)
+    expect(screen.queryByText(/docs\.astral\.sh/)).toBeNull()
+    cleanup()
+
+    // As AutoScene's other downloads say their size; a service's is its first start.
+    show(review({ uvMissing: true, uvBytes: 400_000, plugin: { ...discord, runtime: "service" } }))
+    expect(screen.getByText(/^A Python script that uv runs\. On its first start AutoScene gets uv \(391 KB, /)).toBeTruthy()
   })
 
   it("says a plugin that runs no program is its pages, and when an update starts one", () => {

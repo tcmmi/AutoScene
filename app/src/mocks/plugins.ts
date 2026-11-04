@@ -409,7 +409,9 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
       }
     : null
   const needsUnreviewed = !reviewed(next)
-  return { ticketId, plugin: info(next, allow), update, needsUnreviewed, allowed: !needsUnreviewed || allow, uvMissing: false, catalog }
+  // As on a computer where no uv script has run yet: AutoScene's uv comes with the first.
+  const uv = { uvMissing: next.uvScript, uvBytes: 15236317 }
+  return { ticketId, plugin: info(next, allow), update, needsUnreviewed, allowed: !needsUnreviewed || allow, ...uv, catalog }
 }
 
 /** What AutoScene's catalog says of a plugin it offers, as `catalog_get` reads it from the package. */

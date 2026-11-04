@@ -52,6 +52,7 @@ beforeEach(() => {
     needsUnreviewed: false,
     allowed: true,
     uvMissing: false,
+    uvBytes: 15236317,
   }))
 })
 
@@ -126,7 +127,7 @@ describe("dropping files on the window", () => {
     drag("drop", [String.raw`D:\Notify.asp`])
     expect(toast.loading).toHaveBeenCalledExactlyOnceWith("Reading Notify.asp\u2026")
     expect(toast.dismiss).not.toHaveBeenCalled()
-    read({ ticketId: "t1", plugin: pluginInfo({ id: "dev.a.notify", name: "Notify" }), update: null, needsUnreviewed: false, allowed: true, uvMissing: false })
+    read({ ticketId: "t1", plugin: pluginInfo({ id: "dev.a.notify", name: "Notify" }), update: null, needsUnreviewed: false, allowed: true, uvMissing: false, uvBytes: 15236317 })
     await waitFor(() => expect(toast.dismiss).toHaveBeenCalledWith("tid"))
   })
 

@@ -19,6 +19,7 @@ const review = (ticketId: string): PluginReview => ({
   needsUnreviewed: false,
   allowed: true,
   uvMissing: false,
+  uvBytes: 15236317,
   catalog: null,
 })
 

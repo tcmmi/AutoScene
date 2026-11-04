@@ -80,6 +80,8 @@ impl Served {
             log_path: self.log(),
             ffmpeg: self.dir.path().join("tools").join("ffmpeg"),
             ffprobe: self.dir.path().join("tools").join("ffprobe"),
+            // A program: no uv runs.
+            uv: None,
             ready_wait: self.ready_wait,
             message: ServeMessage {
                 protocol: 2,
@@ -477,15 +479,19 @@ fn a_cancelled_start_starts_nothing_or_ends_it() {
 }
 
 /// The example service (`examples/plugins/hello-service`), as AutoScene
-/// starts it: it needs uv, which may fetch Python first.
+/// starts it: through AutoScene's own uv, got once into the temporary
+/// folder's `autoscene-test-runtimes`, which may fetch Python first.
 #[test]
-#[ignore = "runs uv, which may download Python"]
+#[ignore = "downloads AutoScene's uv, which may download Python"]
 fn the_example_service_counts_words() {
     let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins/hello-service");
+    let runtimes = std::env::temp_dir().join("autoscene-test-runtimes");
+    let uv = as_plugin::uv::install(&runtimes, &CancelToken::new(), |_, _| {}).unwrap();
     let s = Served::new("serve");
     let spec = ServiceSpec {
         dir: example.clone(),
         launch: Launch::UvScript { script: "main.py".into() },
+        uv: Some(uv),
         ready_wait: as_plugin::service::READY_WAIT,
         ..s.spec()
     };
@@ -506,4 +512,6 @@ fn the_example_service_counts_words() {
     assert!(log.contains("[failed] r2 Give it some text to count. (Traceback"), "{log}");
     // Its folder stays as it is: no bytecode of the module it imports.
     assert!(!example.join("__pycache__").exists());
+    // What uv fetched stays beside it, in AutoScene's runtimes.
+    assert!(runtimes.join("uv-cache").is_dir());
 }

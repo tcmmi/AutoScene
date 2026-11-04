@@ -88,7 +88,11 @@ pub struct ServiceSpec {
     pub log_path: PathBuf,
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
-    /// How long it may take to say it is ready ([`READY_WAIT`]).
+    /// AutoScene's uv ([`crate::uv`]), which the host got for a uv script
+    /// before the start: without it, the script doesn't start.
+    pub uv: Option<PathBuf>,
+    /// How long it may take to say it is ready ([`READY_WAIT`]), from the
+    /// start of its program.
     pub ready_wait: Duration,
     pub message: ServeMessage,
     /// The host's answers to its calls.
@@ -181,9 +185,9 @@ impl ProcessService {
         if cancel.is_cancelled() {
             return Err(PluginError::Cancelled);
         }
-        let ServiceSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, ready_wait, mut message, calls } =
+        let ServiceSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, uv, ready_wait, mut message, calls } =
             spec;
-        let mut cmd = runtime::command(&name, &dir, &launch, runtime::find_uv)?;
+        let mut cmd = runtime::command(&name, &dir, &launch, || uv)?;
         let id = message.plugin.id.clone();
         let data_dir = runtime::prepare(&mut cmd, &data_dir, &ffmpeg, &ffprobe, &id, message.protocol)?;
         cmd.env("AUTOSCENE_MODE", "service");

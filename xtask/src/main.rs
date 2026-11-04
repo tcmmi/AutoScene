@@ -4,12 +4,15 @@
 //!   frame barcodes and a truth JSON (see `fixtures.rs`).
 //! - `fetch-sidecars [--root DIR]` — download the pinned, checksum-verified
 //!   ffmpeg/ffprobe and ONNX Runtime builds the app bundles (see `sidecars.rs`).
+//! - `pin-uv <version>` — pin the uv release uv-script plugins download, into
+//!   `crates/as-plugin/uv.toml` (see `uv.rs`).
 //! - `fetch-models [--dir DIR] [--only ID,ID…]` — download every AI model in
 //!   `models/manifest.toml`, or only the ones named, into `fixtures/models`
 //!   for tests.
 
 mod fixtures;
 mod sidecars;
+mod uv;
 
 use std::path::PathBuf;
 
@@ -45,10 +48,15 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        "pin-uv" => {
+            let version = rest.first().context("usage: cargo xtask pin-uv <version>")?;
+            uv::pin(version, &workspace_root()).context("pinning uv")
+        }
         "" | "help" | "--help" => {
             println!("cargo xtask fixtures [--out DIR] [--ffmpeg PATH]");
             println!("cargo xtask fetch-sidecars [--root DIR]");
             println!("cargo xtask fetch-models [--dir DIR] [--only ID,ID…]");
+            println!("cargo xtask pin-uv <version>");
             Ok(())
         }
         other => bail!("unknown task '{other}' (try `cargo xtask help`)"),

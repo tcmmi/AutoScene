@@ -47,6 +47,10 @@
 //! turning it off, the setting going off for one AutoScene hasn't reviewed,
 //! and quitting ([`PluginHost::shutdown`]).
 //!
+//! A uv script runs through AutoScene's own uv ([`as_plugin::uv`]): the
+//! first run or service start that needs it gets it ([`GetUv`]), and says
+//! so ([`GETTING_UV`]).
+//!
 //! AutoScene's catalog says which plugins it reviewed and which it withdrew
 //! ([`catalog`]). It is read before the window opens and checked at start
 //! and every day; a plugin it newly withdraws stops as one turned off does
@@ -59,12 +63,12 @@ pub mod services;
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use as_api::{ExportSummary, JobKind};
-use as_core::{AppPaths, ExportId, JobId, ProjectId};
+use as_core::{AppPaths, CancelToken, ExportId, JobId, ProjectId};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::net::{Transport, UreqTransport};
 use as_plugin::pages::{Mount, Pages};
@@ -73,8 +77,8 @@ use as_plugin::service::STOP_GRACE;
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
     ActionContext, ActionKind, Approval, Caller, CommandSpec, Extra, Grants, HostCalls, HostMethod, Installed, Launch,
-    Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record, RuntimeKind, SettingSpec,
-    Source, Store, Ticket, Trigger, Trust, package, runtime,
+    Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record, RunSpec, RuntimeKind,
+    SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -103,8 +107,34 @@ const WAIT_TICK: Duration = Duration::from_millis(50);
 /// more: a page can't fill Activity.
 const MAX_PAGE_RUNS: usize = 16;
 
+/// What a run, or a service's start, says while it gets uv.
+pub const GETTING_UV: &str = "Getting uv";
+
 /// Tells the app's page what became of one of its open plugin pages.
 pub type PageEvents = Box<dyn Fn(PluginPageEvent) + Send + Sync>;
+
+/// Where the uv of uv scripts comes from: AutoScene's own ([`ManagedUv`]),
+/// or a test's stand-in.
+pub trait GetUv: Send + Sync {
+    /// uv, while it is here and still the pinned file.
+    fn installed(&self) -> Option<PathBuf>;
+    /// Gets uv (at once when it is here): `progress(done, total)` as its
+    /// bytes come; `cancel` ends it.
+    fn install(&self, cancel: &CancelToken, progress: &mut dyn FnMut(u64, u64)) -> PluginResult<PathBuf>;
+}
+
+/// AutoScene's own uv, pinned, kept in the data folder's `runtimes`.
+pub struct ManagedUv(pub PathBuf);
+
+impl GetUv for ManagedUv {
+    fn installed(&self) -> Option<PathBuf> {
+        as_plugin::uv::installed(&self.0)
+    }
+
+    fn install(&self, cancel: &CancelToken, progress: &mut dyn FnMut(u64, u64)) -> PluginResult<PathBuf> {
+        as_plugin::uv::install(&self.0, cancel, progress)
+    }
+}
 
 /// The plugins of this app, and what they are doing.
 pub struct PluginHost {
@@ -141,6 +171,8 @@ pub struct PluginHost {
     pub beats: pages::Heartbeats,
     /// The plugins' services, which run while their pages are open.
     pub services: Services,
+    /// Where uv scripts' uv comes from.
+    uv: Box<dyn GetUv>,
 }
 
 /// The plugins in use: by a run, or by an install, update or uninstall.
@@ -292,8 +324,11 @@ pub struct PluginReview {
     pub needs_unreviewed: bool,
     /// It may be installed now (reviewed, or the setting is on).
     pub allowed: bool,
-    /// It is a uv script, and uv isn't installed: it won't run until it is.
+    /// It is a uv script, and AutoScene's uv isn't here yet: its first run
+    /// gets it.
     pub uv_missing: bool,
+    /// What getting uv downloads at most, in bytes.
+    pub uv_bytes: f64,
     /// Where AutoScene's catalog says the plugin was built from, when the
     /// catalog reviewed it.
     pub catalog: Option<ReviewCatalog>,
@@ -365,7 +400,8 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
             let catalog = CatalogHost::builtin(paths, library.shared_db());
             store.set_catalog(Arc::new(catalog.load()));
             let start = Box::new(services::ProgramStart(app.clone()));
-            let host = Arc::new(PluginHost::new(store, catalog, pages, page_events, start));
+            let uv = Box::new(ManagedUv(paths.runtimes()));
+            let host = Arc::new(PluginHost::new(store, catalog, pages, page_events, start, uv));
             pages::watch(app.clone(), Arc::downgrade(&host));
             services::reap(Arc::downgrade(&host));
             Some(host)
@@ -388,15 +424,17 @@ pub fn host(state: &AppState) -> AppResult<Arc<PluginHost>> {
 impl PluginHost {
     /// The host of `store`, judged by `catalog`, with no page open yet in
     /// `pages`, whose open pages hear what becomes of them through
-    /// `page_events`, and whose services start through `start`.
+    /// `page_events`, whose services start through `start`, and whose uv
+    /// scripts get uv from `uv`.
     pub fn new(
         store: Store,
         catalog: CatalogHost,
         pages: Pages,
         page_events: PageEvents,
         start: Box<dyn StartService>,
+        uv: Box<dyn GetUv>,
     ) -> Self {
-        Self::reaching(store, catalog, pages, page_events, Box::new(UreqTransport::new()), start)
+        Self::reaching(store, catalog, pages, page_events, Box::new(UreqTransport::new()), (start, uv))
     }
 
     /// [`PluginHost::new`], whose plugins' `net.fetch` calls go to `net`.
@@ -406,7 +444,7 @@ impl PluginHost {
         pages: Pages,
         page_events: PageEvents,
         net: Box<dyn Transport>,
-        start: Box<dyn StartService>,
+        (start, uv): (Box<dyn StartService>, Box<dyn GetUv>),
     ) -> Self {
         Self {
             store,
@@ -422,7 +460,46 @@ impl PluginHost {
             page_limits: calls::PageLimits::default(),
             beats: pages::Heartbeats::default(),
             services: Services::new(start),
+            uv,
         }
+    }
+
+    /// The uv a program of `launch` starts through: none but for a uv
+    /// script, which gets AutoScene's own, at once when it is here. When
+    /// it isn't, it comes now, as `report` hears ([`GETTING_UV`], and how
+    /// far once its bytes come), until `cancel` fires. Two that need it at
+    /// once get it once: the second waits for the first.
+    fn uv_for(
+        &self,
+        launch: &Launch,
+        cancel: &CancelToken,
+        report: &dyn Fn(&str, Option<f64>),
+    ) -> PluginResult<Option<PathBuf>> {
+        if !matches!(launch, Launch::UvScript { .. }) {
+            return Ok(None);
+        }
+        if let Some(uv) = self.uv.installed() {
+            return Ok(Some(uv));
+        }
+        report(GETTING_UV, None);
+        let mut progress = |done: u64, total: u64| report(GETTING_UV, Some(done as f64 / total.max(1) as f64));
+        self.uv.install(cancel, &mut progress).map(Some)
+    }
+
+    /// A run of `action` of `p`, as [`Store::run_spec`] makes it, through
+    /// AutoScene's uv when it is a uv script ([`PluginHost::uv_for`]: got
+    /// now when it isn't here, as `report` hears, until `cancel` fires).
+    fn run_spec(
+        &self,
+        p: &Installed,
+        action: ActionContext,
+        (ffmpeg, ffprobe, ffmpeg_version): (&Path, &Path, &str),
+        cancel: &CancelToken,
+        report: &dyn Fn(&str, Option<f64>),
+    ) -> PluginResult<RunSpec> {
+        let mut spec = self.store.run_spec(p, action, ffmpeg, ffprobe, ffmpeg_version)?;
+        spec.uv = self.uv_for(&spec.launch, cancel, report)?;
+        Ok(spec)
     }
 
     /// Keeps `t` for [`PluginHost::take`] under its id, and drops the
@@ -854,8 +931,10 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
     }
 }
 
-/// `t` for the review dialog, with `allow_unreviewed` the setting.
-pub fn review(t: &Ticket, store: &Store, allow_unreviewed: bool) -> PluginReview {
+/// `t` for the review dialog of `host`, with `allow_unreviewed` the
+/// setting.
+pub fn review(t: &Ticket, host: &PluginHost, allow_unreviewed: bool) -> PluginReview {
+    let store = &host.store;
     let needs_unreviewed = t.verdict.trust != Trust::Reviewed;
     let plugin = info(&as_installed(t), store, allow_unreviewed);
     // The installed version as it is now: the pages a loaded folder's
@@ -867,7 +946,8 @@ pub fn review(t: &Ticket, store: &Store, allow_unreviewed: bool) -> PluginReview
         update: t.previous.as_ref().map(|previous| update(previous, before.as_ref(), &t.manifest)),
         needs_unreviewed,
         allowed: !needs_unreviewed || allow_unreviewed,
-        uv_missing: plugin.uv_script && runtime::find_uv().is_none(),
+        uv_missing: plugin.uv_script && host.uv.installed().is_none(),
+        uv_bytes: as_plugin::uv::download_bytes() as f64,
         catalog: t.approval.as_ref().map(ReviewCatalog::from),
         plugin,
     }
@@ -1057,8 +1137,9 @@ fn run(
     let p = startable(&host.store, &state.library, key, trigger, gpu)?;
     let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
     let action = ActionContext { kind: key.kind, id: key.action.clone(), trigger };
-    let mut spec =
-        host.store.run_spec(&p, action, &tools.ffmpeg, &tools.ffprobe, &tools.version).map_err(plugin_job_error)?;
+    let tools_at = (tools.ffmpeg.as_path(), tools.ffprobe.as_path(), tools.version.as_str());
+    let report = |stage: &str, f: Option<f64>| ctx.report(stage, f);
+    let mut spec = host.run_spec(&p, action, tools_at, &ctx.cancel, &report).map_err(plugin_job_error)?;
     add_context(&mut spec.message, &*state.library, key, input).map_err(job_error)?;
     let calls = calls_for(&state.library, host, &p, key, spec.protocol).map_err(plugin_job_error)?;
     spec.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
@@ -1255,7 +1336,6 @@ fn unreviewed_runs(runs: &[(JobId, PluginId)], reviewed: impl Fn(&PluginId) -> b
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc;
     use std::thread;
@@ -1351,21 +1431,32 @@ mod tests {
     }
 
     fn host_with(tmp: &Path, net: impl Transport + 'static, page_events: PageEvents) -> (Library, Arc<PluginHost>) {
-        host_of(tmp, net, page_events, Box::new(NoStart), Arc::new(as_plugin::MemorySecrets::default()), None)
+        let secrets = Arc::new(as_plugin::MemorySecrets::default());
+        host_of(tmp, net, page_events, (Box::new(NoStart), FakeUv::here()), secrets, None)
     }
 
     /// [`host_in`], whose secrets `secrets` keeps.
     pub(super) fn host_keeping(tmp: &Path, secrets: Arc<dyn as_plugin::SecretStore>) -> (Library, Arc<PluginHost>) {
-        host_of(tmp, UreqTransport::new(), Box::new(|_: PluginPageEvent| {}), Box::new(NoStart), secrets, None)
+        let page_events = Box::new(|_: PluginPageEvent| {});
+        host_of(tmp, UreqTransport::new(), page_events, (Box::new(NoStart), FakeUv::here()), secrets, None)
     }
 
     /// [`host_hearing`], whose services start through `start`.
     pub(super) fn host_starting(tmp: &Path, start: impl StartService + 'static) -> (Library, Arc<PluginHost>, Heard) {
+        host_getting_uv(tmp, start, FakeUv::here())
+    }
+
+    /// [`host_starting`], whose uv scripts get uv from `uv`.
+    pub(super) fn host_getting_uv(
+        tmp: &Path,
+        start: impl StartService + 'static,
+        uv: Arc<FakeUv>,
+    ) -> (Library, Arc<PluginHost>, Heard) {
         let heard = Heard::default();
         let keep = heard.clone();
         let page_events = Box::new(move |e: PluginPageEvent| keep.lock().push(e));
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
-        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, Box::new(start), secrets, None);
+        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, (Box::new(start), uv), secrets, None);
         (lib, host, heard)
     }
 
@@ -1383,7 +1474,8 @@ mod tests {
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
         let fetch: Arc<dyn catalog::Fetch> = Arc::new(served.clone());
         let checked = Some((key.keys(), fetch));
-        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, Box::new(start), secrets, checked);
+        let started = (Box::new(start) as Box<dyn StartService>, FakeUv::here());
+        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, started, secrets, checked);
         (lib, host, heard)
     }
 
@@ -1391,7 +1483,7 @@ mod tests {
         tmp: &Path,
         net: impl Transport + 'static,
         page_events: PageEvents,
-        start: Box<dyn StartService>,
+        (start, uv): (Box<dyn StartService>, Arc<FakeUv>),
         secrets: Arc<dyn as_plugin::SecretStore>,
         checked: Option<(as_plugin::CatalogKeys, Arc<dyn catalog::Fetch>)>,
     ) -> (Library, Arc<PluginHost>) {
@@ -1409,11 +1501,58 @@ mod tests {
         let shelf: Arc<dyn catalog::GetPackage> = Arc::new(Arc::new(catalog::tests::Shelf::default()));
         let catalog = CatalogHost::new(&paths, lib.shared_db(), keys, urls, fetch, shelf);
         let pages = Pages::new(Arc::new(MemoryKit::default()), Vec::new());
-        (lib, Arc::new(PluginHost::reaching(store, catalog, pages, page_events, Box::new(net), start)))
+        let host = PluginHost::reaching(store, catalog, pages, page_events, Box::new(net), (start, Box::new(uv)));
+        (lib, Arc::new(host))
     }
 
     /// Where a test's catalog is served.
     pub(super) const CATALOG_AT: &str = "https://catalog.example/";
+
+    /// The uv the tests' uv scripts are said to start through: AutoScene's
+    /// uv never runs in them.
+    pub(super) const TEST_UV: &str = "runtimes/uv-test/uv";
+
+    /// AutoScene's uv as a test has it: here already, else got (once, until
+    /// it is here), unless its download fails.
+    #[derive(Default)]
+    pub(super) struct FakeUv {
+        here: Mutex<Option<PathBuf>>,
+        fails: bool,
+        /// How often it was got.
+        pub(super) got: std::sync::atomic::AtomicUsize,
+    }
+
+    impl FakeUv {
+        /// Here already, as most tests have it.
+        pub(super) fn here() -> Arc<Self> {
+            Arc::new(Self { here: Mutex::new(Some(TEST_UV.into())), ..Self::default() })
+        }
+
+        /// Not here yet; its download `fails`, or it comes.
+        pub(super) fn missing(fails: bool) -> Arc<Self> {
+            Arc::new(Self { fails, ..Self::default() })
+        }
+    }
+
+    impl GetUv for Arc<FakeUv> {
+        fn installed(&self) -> Option<PathBuf> {
+            self.here.lock().clone()
+        }
+
+        fn install(&self, cancel: &CancelToken, progress: &mut dyn FnMut(u64, u64)) -> PluginResult<PathBuf> {
+            if cancel.is_cancelled() {
+                return Err(PluginError::Cancelled);
+            }
+            progress(0, 4);
+            if self.fails {
+                return Err(PluginError::Download { what: "uv".into(), detail: "connection refused".into() });
+            }
+            progress(4, 4);
+            self.got.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            *self.here.lock() = Some(TEST_UV.into());
+            Ok(TEST_UV.into())
+        }
+    }
 
     /// No service starts in the tests that don't start one.
     pub(super) struct NoStart;
@@ -1423,6 +1562,7 @@ mod tests {
             &self,
             _: &Arc<PluginHost>,
             _: &Installed,
+            _: Option<PathBuf>,
             _: as_plugin::OnEvent,
             _: &as_core::CancelToken,
         ) -> PluginResult<Arc<dyn as_plugin::Service>> {
@@ -1696,7 +1836,7 @@ mod tests {
         // The store's verdict gives the approval (its tests check that); a
         // folder is never reviewed, so its ticket stands in for a package's.
         let mut t = folder(&host, &tmp, &manifest("dev.a.reviewed", false));
-        assert!(review(&t, &host.store, true).catalog.is_none());
+        assert!(review(&t, &host, true).catalog.is_none());
         let commit = "c".repeat(40);
         t.approval = Some(Approval {
             published: 1_790_000_000,
@@ -1704,7 +1844,7 @@ mod tests {
             commit: commit.clone(),
             path: "plugins/reviewed".into(),
         });
-        let shown = serde_json::to_value(review(&t, &host.store, true).catalog).unwrap();
+        let shown = serde_json::to_value(review(&t, &host, true).catalog).unwrap();
         let catalog = serde_json::json!({
             "published": 1_790_000_000_000.0,
             "repository": "https://github.com/tcmmi/autoscene-plugins",
@@ -1840,13 +1980,12 @@ mod tests {
         // Two plugins loaded from their folders, so neither is reviewed.
         let ids = ["dev.a.one", "dev.a.two"].map(|id| {
             let t = folder(&host, &tmp, &manifest(id, false));
-            let shown = review(&t, &host.store, false);
+            let shown = review(&t, &host, false);
             assert!(shown.needs_unreviewed && !shown.allowed && shown.update.is_none());
-            // A uv script: the review says what uv fetches, and whether uv is there.
-            assert!(shown.plugin.uv_script);
+            // A uv script: the review says what uv fetches. AutoScene's uv is here.
+            assert!(shown.plugin.uv_script && !shown.uv_missing);
             // A process plugin's runs have a log; it runs no service to have one.
             assert_eq!(shown.plugin.service_log_path, None);
-            assert_eq!(shown.uv_missing, runtime::find_uv().is_none());
             assert_eq!(
                 (shown.plugin.source, shown.plugin.folder.as_str()),
                 (PluginSource::Folder, tmp.join(id).to_str().unwrap())
@@ -2251,6 +2390,71 @@ mod tests {
         let removed = key(&p.record.id, ActionKind::ExportAction, "post", Some(summary.id), Some(ExportId::new()));
         assert!(matches!(add_context(&mut message, &lib, &removed, None), Err(ProjectError::NotFound(_))));
         drop((host, project, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_uv_script_gets_uv_before_it_runs() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-uv-run-{}", std::process::id()));
+        let uv = FakeUv::missing(false);
+        let (lib, host, _) = host_getting_uv(&tmp, NoStart, uv.clone());
+        let p = host.store.commit(folder(&host, &tmp, &manifest("dev.a.uv", false)), true, true).unwrap();
+        let action = ActionContext { kind: ActionKind::Command, id: "hello".into(), trigger: Trigger::Palette };
+        let spec = host.store.run_spec(&p, action.clone(), Path::new("ffmpeg"), Path::new("ffprobe"), "9.0").unwrap();
+        assert!(matches!(spec.launch, Launch::UvScript { .. }) && spec.uv.is_none());
+        let heard = Mutex::new(Vec::new());
+        let report = |stage: &str, f: Option<f64>| heard.lock().push((stage.to_owned(), f));
+        // Not here yet: the run gets it before it starts, says so, and its
+        // program starts through it.
+        let cancel = CancelToken::new();
+        let tools = (Path::new("ffmpeg"), Path::new("ffprobe"), "9.0");
+        let run = |action: &ActionContext| host.run_spec(&p, action.clone(), tools, &cancel, &report).unwrap();
+        assert_eq!(run(&action).uv, Some(PathBuf::from(TEST_UV)));
+        let getting = |f| (GETTING_UV.to_owned(), f);
+        assert_eq!(*heard.lock(), [getting(None), getting(Some(0.0)), getting(Some(1.0))]);
+        // Here, the next run starts through it at once, without a word.
+        heard.lock().clear();
+        assert_eq!(run(&action).uv, Some(PathBuf::from(TEST_UV)));
+        assert!(heard.lock().is_empty());
+        assert_eq!(uv.got.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // A program needs none.
+        let program = Launch::Exe { program: "bin/tool".into(), args: Vec::new() };
+        assert_eq!(host.uv_for(&program, &cancel, &report).unwrap(), None);
+        drop((host, lib));
+
+        // A download that fails fails the run in its words; a cancel cancels it.
+        let (lib, host, _) = host_getting_uv(&tmp.join("failing"), NoStart, FakeUv::missing(true));
+        let failed = plugin_job_error(host.uv_for(&spec.launch, &cancel, &report).unwrap_err());
+        let words = "AutoScene couldn't get uv. Check the internet connection, then try again.";
+        assert!(matches!(&failed, JobError::Failed(m) if m == words), "{failed:?}");
+        cancel.cancel();
+        let cancelled = plugin_job_error(host.uv_for(&spec.launch, &cancel, &report).unwrap_err());
+        assert!(matches!(cancelled, JobError::Cancelled), "{cancelled:?}");
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_review_says_uv_will_be_got() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-uv-review-{}", std::process::id()));
+        let uv = FakeUv::missing(false);
+        let (lib, host, _) = host_getting_uv(&tmp, NoStart, uv.clone());
+        let t = folder(&host, &tmp, &manifest("dev.a.uv", false));
+        let shown = review(&t, &host, true);
+        assert!(shown.plugin.uv_script && shown.uv_missing);
+        // What it downloads at most: uv's archive for this computer, about 15 MB.
+        assert_eq!(shown.uv_bytes, as_plugin::uv::download_bytes() as f64);
+        assert!((10e6..30e6).contains(&shown.uv_bytes), "{}", shown.uv_bytes);
+        let sent = serde_json::to_value(&shown).unwrap();
+        assert_eq!(
+            (&sent["uvMissing"], &sent["uvBytes"]),
+            (&serde_json::json!(true), &serde_json::json!(shown.uv_bytes))
+        );
+        // Once it is here, nothing is got.
+        uv.install(&CancelToken::new(), &mut |_, _| {}).unwrap();
+        assert!(!review(&t, &host, true).uv_missing);
+        host.store.discard(t);
+        drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

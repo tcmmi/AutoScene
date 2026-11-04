@@ -51,6 +51,9 @@ as-models.workspace = true
 # net.fetch (src/net.rs).
 ureq.workspace = true
 url.workspace = true
+# AutoScene's uv: its pins (uv.toml, src/uv.rs). The tests read the example
+# plugins' scripts and locks with it too (tests/asp_cli.rs).
+toml.workspace = true
 minisign = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 
@@ -59,5 +62,6 @@ minisign.workspace = true
 tempfile.workspace = true
 # The store's tests make library.db refuse a write.
 rusqlite.workspace = true
-# The example plugins' scripts and locks (tests/asp_cli.rs).
-toml.workspace = true
+# A uv archive, as its release packs it (src/uv.rs).
+tar.workspace = true
+flate2.workspace = true

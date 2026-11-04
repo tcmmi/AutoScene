@@ -16,7 +16,8 @@
 //!
 //! A run ([`runtime`]) starts the plugin's program and speaks the protocol
 //! ([`protocol`]) with it over its stdin and stdout; what else it writes
-//! goes to its log ([`log`]). From protocol 2 a plugin may call AutoScene
+//! goes to its log ([`log`]). A Python script runs through AutoScene's own
+//! uv, which comes pinned, the first time one needs it ([`uv`]). From protocol 2 a plugin may call AutoScene
 //! for its project, its exports and its settings, keep a little state
 //! ([`page_state`]), and reach the hosts it names on the internet
 //! ([`net`]); each call is checked against what the plugin may use
@@ -48,6 +49,7 @@ pub mod secrets;
 pub mod service;
 pub mod store;
 pub mod trust;
+pub mod uv;
 
 pub use calls::{CallCode, CallError, Caller, Grants, HostCalls, HostMethod};
 pub use catalog::{Catalog, CatalogKeys, CatalogState};

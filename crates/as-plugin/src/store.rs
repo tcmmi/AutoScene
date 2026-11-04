@@ -900,7 +900,7 @@ impl Store {
     /// `ffmpeg_version`) and each of its settings, as [`Store::values`] gives
     /// them. The run speaks the protocol the plugin declared. The project and
     /// the export it runs on are the host's to add, and so are the answers to
-    /// its calls. A broken plugin can't run.
+    /// its calls and a uv script's uv. A broken plugin can't run.
     pub fn run_spec(
         &self,
         p: &Installed,
@@ -940,6 +940,7 @@ impl Store {
             log_path: self.log_path(id),
             ffmpeg: ffmpeg.into(),
             ffprobe: ffprobe.into(),
+            uv: None,
             protocol: m.engines.protocol,
             calls: None,
             message,
@@ -952,7 +953,7 @@ impl Store {
     /// `calls` answering its calls, and a serve line with a new id that
     /// names what a run line does but a task. Only a plugin whose runtime is
     /// a service has one, and it speaks protocol 2; a broken plugin has
-    /// none.
+    /// none. A uv script's uv is the host's to get.
     pub fn serve_spec(
         &self,
         p: &Installed,
@@ -991,6 +992,7 @@ impl Store {
             log_path: self.service_log_path(id),
             ffmpeg: ffmpeg.into(),
             ffprobe: ffprobe.into(),
+            uv: None,
             ready_wait: READY_WAIT,
             message,
             calls,

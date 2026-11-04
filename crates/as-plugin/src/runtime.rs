@@ -2,8 +2,9 @@
 //! protocol ([`crate::protocol`]).
 //!
 //! The program starts by its path in the plugin's folder (a uv script's
-//! too), in the plugin's data folder, with only the environment variables
-//! of [`allowed_env`] and a few the run sets. It starts as the root of an
+//! too, through the uv the host got: AutoScene's own, [`crate::uv`]), in
+//! the plugin's data folder, with only the environment variables of
+//! [`allowed_env`] and a few the run sets. It starts as the root of an
 //! [`as_media::proc::Tree`], so everything it starts ends with it. Its
 //! stdin is written and its stdout and stderr are read on threads of their
 //! own from the start, so a plugin that floods a pipe or never reads its
@@ -122,6 +123,9 @@ pub struct RunSpec {
     pub log_path: PathBuf,
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
+    /// AutoScene's uv ([`crate::uv`]), which the host got for a uv script:
+    /// without it, the script doesn't start.
+    pub uv: Option<PathBuf>,
     /// The protocol its plugin declared (`engines.protocol`), which the run
     /// speaks: an older plugin gets the run it always got.
     pub protocol: u32,
@@ -150,8 +154,8 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
     }
-    let RunSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, protocol, calls, mut message } = spec;
-    let mut cmd = command(&name, &dir, &launch, find_uv)?;
+    let RunSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, uv, protocol, calls, mut message } = spec;
+    let mut cmd = command(&name, &dir, &launch, || uv)?;
     let id = message.plugin.id.clone();
     let data_dir = prepare(&mut cmd, &data_dir, &ffmpeg, &ffprobe, &id, protocol)?;
     message.protocol = protocol;
@@ -236,12 +240,13 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
     decide(name, status, cancel_at, heard)
 }
 
-/// Readies `cmd`, a plugin's program, to start in its data folder
-/// `data_dir` (made when it isn't there) with only the environment
-/// variables of [`allowed_env`] and those AutoScene sets for every plugin,
-/// and its three pipes. Gives the data folder as an absolute path. Python
-/// writes no bytecode beside a module it imports: the plugin's folder stays
-/// as it was installed.
+/// Readies `cmd`, a plugin's program as [`command`] made it, to start in
+/// its data folder `data_dir` (made when it isn't there) with only the
+/// environment variables of [`allowed_env`], those [`command`] set for its
+/// program, and those AutoScene sets for every plugin, and its three pipes.
+/// Gives the data folder as an absolute path. Python writes no bytecode
+/// beside a module it imports: the plugin's folder stays as it was
+/// installed.
 pub(crate) fn prepare(
     cmd: &mut Command,
     data_dir: &Path,
@@ -252,9 +257,11 @@ pub(crate) fn prepare(
 ) -> PluginResult<PathBuf> {
     fs::create_dir_all(data_dir)?;
     let data_dir = std::path::absolute(data_dir)?;
+    let own: Vec<_> = cmd.get_envs().filter_map(|(name, value)| Some((name.to_owned(), value?.to_owned()))).collect();
     cmd.current_dir(&data_dir)
         .env_clear()
         .envs(env::vars_os().filter(|(name, _)| allowed_env(name)))
+        .envs(own)
         .env("AUTOSCENE_FFMPEG", ffmpeg)
         .env("AUTOSCENE_FFPROBE", ffprobe)
         .env("AUTOSCENE_PLUGIN_DATA", &data_dir)
@@ -376,47 +383,6 @@ const PREFIXES: &[&str] = &["CUDA_PATH"];
 #[cfg(unix)]
 const PREFIXES: &[&str] = &["CUDA_PATH", "LC_", "XDG_"];
 
-#[cfg(windows)]
-const UV: &str = "uv.exe";
-#[cfg(unix)]
-const UV: &str = "uv";
-
-/// Where uv is: on the PATH (its absolute folders, but the Store's app
-/// aliases), else in a folder its installers use. Apps started from the
-/// macOS Dock or Finder don't get the shell's PATH, so the folders matter.
-pub fn find_uv() -> Option<PathBuf> {
-    let home = |var: &str| env::var_os(var).map(PathBuf::from).filter(|p| p.is_absolute());
-    #[cfg(windows)]
-    let folders = {
-        let (profile, local) = (home("USERPROFILE"), home("LOCALAPPDATA"));
-        [
-            profile.as_ref().map(|p| p.join(".local").join("bin")),
-            profile.as_ref().map(|p| p.join(".cargo").join("bin")),
-            local.map(|p| p.join("Microsoft").join("WinGet").join("Links")),
-        ]
-    };
-    #[cfg(unix)]
-    let folders = {
-        let home = home("HOME");
-        [
-            home.as_ref().map(|p| p.join(".local").join("bin")),
-            home.as_ref().map(|p| p.join(".cargo").join("bin")),
-            Some(PathBuf::from("/opt/homebrew/bin")),
-            Some(PathBuf::from("/usr/local/bin")),
-        ]
-    };
-    find_uv_in(env::var_os("PATH").as_deref(), folders.into_iter().flatten())
-}
-
-fn find_uv_in(path: Option<&OsStr>, folders: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
-    let on_path = path
-        .into_iter()
-        .flat_map(env::split_paths)
-        .filter(|d| d.is_absolute() && !d.to_string_lossy().to_ascii_lowercase().contains("windowsapps"));
-    // One not marked to run is skipped, as a shell skips it.
-    on_path.chain(folders).map(|d| d.join(UV)).find(|f| f.is_file() && runnable(f))
-}
-
 /// Whether the file may be run: on Linux and macOS, whether it is marked to.
 #[cfg(unix)]
 fn runnable(file: &Path) -> bool {
@@ -431,8 +397,11 @@ fn runnable(_: &Path) -> bool {
 
 /// The command that starts `launch` from the plugin's folder `dir`, by its
 /// absolute path: neither the PATH nor the run's folder decides what runs.
-/// `uv` finds uv, for a script. Its errors say what is wrong, not what to
-/// do: only the host knows whether the plugin can be reinstalled.
+/// `uv` gives the uv the host got, for a script ([`crate::uv`]): uv keeps
+/// what it fetches (the script's packages, a Python) in the folders beside
+/// its own, and reads no configuration file of the person's, which could
+/// change where packages come from. Its errors say what is wrong, not what
+/// to do: only the host knows whether the plugin can be reinstalled.
 pub(crate) fn command(
     name: &str,
     dir: &Path,
@@ -457,9 +426,15 @@ pub(crate) fn command(
             Ok(cmd)
         }
         Launch::UvScript { .. } => {
-            let uv = uv().ok_or(PluginError::UvMissing)?;
-            let mut cmd = Command::new(uv);
+            let uv = std::path::absolute(uv().ok_or(PluginError::UvMissing)?)?;
+            let mut cmd = Command::new(&uv);
             cmd.args(["run", "--script", "--locked"]).arg(entry()?);
+            // `<runtimes>/uv-<version>/uv`: what it fetches goes to `<runtimes>`.
+            if let Some(runtimes) = uv.parent().and_then(Path::parent) {
+                cmd.env("UV_CACHE_DIR", runtimes.join(crate::uv::CACHE))
+                    .env("UV_PYTHON_INSTALL_DIR", runtimes.join(crate::uv::PYTHONS));
+            }
+            cmd.env("UV_NO_CONFIG", "1");
             Ok(cmd)
         }
     }
@@ -1123,24 +1098,59 @@ mod tests {
         let launch = Launch::UvScript { script: "main.py".into() };
         let e = command("Hello", dir.path(), &launch, || None).unwrap_err();
         assert!(matches!(e, PluginError::UvMissing), "{e:?}");
-        assert_eq!(
-            e.to_string(),
-            "This plugin needs uv, which isn't installed. Install it from docs.astral.sh/uv, then try again."
-        );
+        assert_eq!(e.to_string(), "This plugin needs uv, and AutoScene couldn't get it.");
+    }
+
+    /// AutoScene's uv in `runtimes`, as [`crate::uv`] keeps it.
+    fn managed_uv(runtimes: &Path) -> PathBuf {
+        crate::uv::dir(runtimes).join(if cfg!(windows) { "uv.exe" } else { "uv" })
     }
 
     #[test]
-    fn uv_scripts_start_through_uv_by_their_path() {
+    fn uv_scripts_start_through_the_given_uv() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("src")).unwrap();
         fs::write(dir.path().join("src").join("main.py"), "print()").unwrap();
-        let uv = dir.path().join("tools").join(UV);
+        let uv = managed_uv(&dir.path().join("runtimes"));
         let launch = Launch::UvScript { script: "src/main.py".into() };
         let cmd = command("Hello", dir.path(), &launch, || Some(uv.clone())).unwrap();
         assert_eq!(cmd.get_program(), uv.as_os_str());
         let script = dir.path().join("src").join("main.py");
         let args: Vec<_> = cmd.get_args().collect();
         assert_eq!(args, [OsStr::new("run"), OsStr::new("--script"), OsStr::new("--locked"), script.as_os_str()]);
+    }
+
+    #[test]
+    fn uv_keeps_its_cache_and_pythons_in_autoscene() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("main.py"), "print()").unwrap();
+        let runtimes = dir.path().join("runtimes");
+        let launch = Launch::UvScript { script: "main.py".into() };
+        let mut cmd = command("Hello", dir.path(), &launch, || Some(managed_uv(&runtimes))).unwrap();
+        let id = PluginId::parse("dev.a.hello").unwrap();
+        let (ffmpeg, ffprobe) = (Path::new("ffmpeg"), Path::new("ffprobe"));
+        prepare(&mut cmd, &dir.path().join("data"), ffmpeg, ffprobe, &id, 2).unwrap();
+        let envs: std::collections::BTreeMap<_, _> =
+            cmd.get_envs().filter_map(|(k, v)| Some((k.to_str()?.to_owned(), v?.to_owned()))).collect();
+        // Set after every other variable was cleared: they reach uv.
+        assert_eq!(envs["UV_CACHE_DIR"], runtimes.join("uv-cache").as_os_str());
+        assert_eq!(envs["UV_PYTHON_INSTALL_DIR"], runtimes.join("uv-python").as_os_str());
+        assert_eq!(envs["UV_NO_CONFIG"], "1");
+        assert_eq!(envs["AUTOSCENE_PLUGIN_ID"], "dev.a.hello");
+        // The person's own uv settings never do.
+        assert!(!allowed_env(OsStr::new("UV_INDEX_URL")) && !allowed_env(OsStr::new("UV_CACHE_DIR")));
+        // A program is no uv script: none of them.
+        fs::create_dir(dir.path().join("bin")).unwrap();
+        fs::write(dir.path().join("bin").join("tool"), "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dir.path().join("bin").join("tool"), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let launch = Launch::Exe { program: "bin/tool".into(), args: Vec::new() };
+        let mut cmd = command("Hello", dir.path(), &launch, || Some(managed_uv(&runtimes))).unwrap();
+        prepare(&mut cmd, &dir.path().join("data"), ffmpeg, ffprobe, &id, 2).unwrap();
+        assert!(!cmd.get_envs().any(|(k, _)| k.to_string_lossy().starts_with("UV_")));
     }
 
     #[test]
@@ -1169,46 +1179,6 @@ mod tests {
             command("Hello", dir.path(), &launch, || Some(program.clone())),
             Err(PluginError::Invalid(_))
         ));
-    }
-
-    #[test]
-    fn uv_is_looked_for_on_the_path_then_in_its_install_folders() {
-        let dir = tempfile::tempdir().unwrap();
-        let folder = |name: &str, with_uv: bool| {
-            let d = dir.path().join(name);
-            fs::create_dir_all(&d).unwrap();
-            if with_uv {
-                fs::write(d.join(UV), "").unwrap();
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    fs::set_permissions(d.join(UV), fs::Permissions::from_mode(0o755)).unwrap();
-                }
-            }
-            d
-        };
-        let empty = folder("empty", false);
-        let store = folder("Microsoft/WindowsApps", true);
-        let on_path = folder("on-path", true);
-        let installed = folder("installed", true);
-        let path = env::join_paths([&store, Path::new("relative"), &empty, &on_path]).unwrap();
-        assert_eq!(find_uv_in(Some(&path), [installed.clone()]), Some(on_path.join(UV)));
-        let path = env::join_paths([&store, &empty]).unwrap();
-        assert_eq!(find_uv_in(Some(&path), [empty.clone(), installed.clone()]), Some(installed.join(UV)));
-        assert_eq!(find_uv_in(None, [empty.clone()]), None);
-        #[cfg(unix)]
-        {
-            // A uv not marked to run is skipped, as a shell skips it.
-            use std::os::unix::fs::PermissionsExt;
-            let stale = folder("stale", true);
-            fs::set_permissions(stale.join(UV), fs::Permissions::from_mode(0o644)).unwrap();
-            let path = env::join_paths([&stale, &on_path]).unwrap();
-            assert_eq!(find_uv_in(Some(&path), [installed.clone()]), Some(on_path.join(UV)));
-            assert_eq!(find_uv_in(None, [stale, installed.clone()]), Some(installed.join(UV)));
-        }
-        // A uv that is a folder is no uv.
-        fs::create_dir(empty.join(UV)).unwrap();
-        assert_eq!(find_uv_in(None, [empty]), None);
     }
 
     #[test]

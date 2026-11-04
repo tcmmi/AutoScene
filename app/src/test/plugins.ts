@@ -104,6 +104,7 @@ export function catalogReview(plugin: PluginInfo, update: Partial<PluginUpdate> 
     needsUnreviewed: false,
     allowed: true,
     uvMissing: false,
+    uvBytes: null,
     catalog: {
       published: Date.UTC(2026, 10, 3, 9),
       repository: "https://github.com/tcmmi/AutoScene",

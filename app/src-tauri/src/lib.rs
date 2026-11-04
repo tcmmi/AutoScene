@@ -334,6 +334,7 @@ The log is in {}",
             // Resume interrupted indexing and previews; locate ffmpeg and probe
             // the hardware off the UI thread so the first job starts warm.
             let checks = handle.clone();
+            let runtimes = paths.runtimes();
             std::thread::spawn(move || {
                 // What this computer analyses on (its log line names it), so
                 // the probe never meets the first click.
@@ -342,6 +343,8 @@ The log is in {}",
                 if let Err(e) = handle.state::<state::AppState>().models.prune() {
                     log::warn!("removing unused models: {}", e.detail());
                 }
+                // A uv of an older AutoScene; what it fetched for plugins stays.
+                as_plugin::uv::prune(&runtimes);
                 work::recover_all(&handle);
                 if let Ok(tools) = handle.state::<state::AppState>().tools() {
                     let _ = tools.caps();

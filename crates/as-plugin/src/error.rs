@@ -22,7 +22,8 @@ pub enum PluginError {
     NotFound(String),
     #[error("{0} is running. Wait for it to finish, or stop it in Activity.")]
     Busy(String),
-    #[error("This plugin needs uv, which isn't installed. Install it from docs.astral.sh/uv, then try again.")]
+    /// A uv script, and the host has no uv for it ([`crate::uv`]).
+    #[error("This plugin needs uv, and AutoScene couldn't get it.")]
     UvMissing,
     /// The plugin's own error line; or why a `net.fetch` got no answer, with
     /// what the connection said as `detail` (which `net` logs; never the

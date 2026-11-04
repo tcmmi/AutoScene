@@ -83,6 +83,8 @@ impl Plugin {
             log_path: self.log(),
             ffmpeg: self.dir.path().join("tools").join("ffmpeg"),
             ffprobe: self.dir.path().join("tools").join("ffprobe"),
+            // A program: no uv runs.
+            uv: None,
             protocol: self.protocol,
             calls: self.calls.clone(),
             message: self.message.clone(),

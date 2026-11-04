@@ -1803,8 +1803,13 @@ export type PluginReview = {
 	needsUnreviewed: boolean,
 	/**  It may be installed now (reviewed, or the setting is on). */
 	allowed: boolean,
-	/**  It is a uv script, and uv isn't installed: it won't run until it is. */
+	/**
+	 *  It is a uv script, and AutoScene's uv isn't here yet: its first run
+	 *  gets it.
+	 */
 	uvMissing: boolean,
+	/**  What getting uv downloads at most, in bytes. */
+	uvBytes: number | null,
 	/**
 	 *  Where AutoScene's catalog says the plugin was built from, when the
 	 *  catalog reviewed it.

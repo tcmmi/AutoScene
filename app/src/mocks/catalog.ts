@@ -1,8 +1,9 @@
 /**
  * AutoScene's plugin catalog for the browser backend, shaped like
- * `plugins/catalog.rs`: an index of three reviewed plugins (Poster Maker,
+ * `plugins/catalog.rs`: an index of four reviewed plugins (Poster Maker,
  * new; Hello Export 1.1.0, an update that asks for the network and
- * discord.com; Discord Notify 1.0.1), checked an hour ago. What each offers
+ * discord.com; Discord Notify 1.0.1; and Big Model, whose first run
+ * downloads 312 MB from huggingface.co, checked an hour ago. What each offers
  * is worked out against the mock's installed plugins when it is shown.
  * Getting one (`catalog_get`) takes a quarter of a second, in five steps of
  * `catalog:progress`, and gives its review; `catalog_cancel` ends it.
@@ -16,7 +17,7 @@
  * (a get finds the drive full).
  */
 import type { CatalogPlugin, CatalogView, PluginReview } from "@/bindings"
-import { LEAKY_ID, LEAKY_REASON, inspectCatalogPackage, mockPlugin } from "./plugins"
+import { BIG_ID, LEAKY_ID, LEAKY_REASON, inspectCatalogPackage, mockPlugin } from "./plugins"
 
 type MockCatalog = "living" | "expired" | "offline" | "unset" | "newer" | "withdrawn" | "full"
 
@@ -85,6 +86,19 @@ const ENTRIES: Entry[] = [
     hosts: ["discord.com"],
     sizeBytes: 21_904,
   }),
+  entry({
+    id: BIG_ID,
+    name: "Big Model",
+    summary: "Separates a clip's voices from its music with a model of its own.",
+    version: "1.0.0",
+    permissions: ["exports:read", "exports:write"],
+    hosts: [],
+    icon: icon("#9b8cf0"),
+    author: "Example Dev",
+    gpu: true,
+    // 312 MiB, from the host its plugin.json names (plugins.ts).
+    resourceBytes: 327_155_712,
+  }),
 ]
 
 const WITHDRAWN = [{ id: LEAKY_ID, reason: LEAKY_REASON }]
@@ -138,7 +152,7 @@ function offer(e: Entry): CatalogPlugin {
     // Nothing of the withdrawn plugin is offered to run.
     runsHere: e.id !== LEAKY_ID,
     needsNewerApp: false,
-    // No mock plugin names large files.
+    // Only Big Model names large files, and it comes from one host: nothing is "added" before it is installed.
     addsResourceHosts: [],
   }
 }

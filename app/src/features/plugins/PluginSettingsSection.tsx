@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils"
 import { useLoadAgain } from "./load-again"
 import { pageLink } from "./page-items"
 import { allowUnreviewed, keepPlugin } from "./plugin-actions"
-import { checkedWhen, permissionLabel } from "./plugin-items"
+import { checkedWhen, downloadSize, permissionLabel } from "./plugin-items"
 import { WithdrawnNotice } from "./WithdrawnBanner"
 
 type Values = Partial<Record<string, SettingValue>>
@@ -166,6 +166,12 @@ function PluginSettings({ p }: { p: PluginInfo }) {
               <FolderOpen /> Reveal
             </Button>
           </SettingRow>
+        )}
+        {(p.resourceBytes ?? 0) > 0 && (
+          <SettingRow
+            label="Downloaded files"
+            description={`${downloadSize(p.resourceBytes ?? 0)}. AutoScene keeps them in its cache and removes them with the plugin.`}
+          />
         )}
       </SettingsGroup>
 

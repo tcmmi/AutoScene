@@ -1,4 +1,5 @@
-import type { Permission, PluginInfo, PluginUpdate, Trust } from "@/bindings"
+import type { Permission, PluginInfo, PluginReview, PluginUpdate, Trust } from "@/bindings"
+import { formatBytes } from "@/lib/format"
 
 /**
  * How far a plugin is trusted, as its badge says it. A plugin AutoScene
@@ -48,6 +49,47 @@ export function trustLine(p: Pick<PluginInfo, "trust" | "source">, update?: Pick
     case "unreviewed":
       return "Nobody AutoScene knows signed it, and AutoScene has not reviewed it."
   }
+}
+
+/** "a", "a and b", "a, b and c". */
+export function joinWords(items: string[]): string {
+  if (items.length < 2) return items.join("")
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
+}
+
+/** When a program first needs what it downloads: its first run, or a service's first start. */
+export const firstTime = (runtime: string) => (runtime === "service" ? "first start" : "first run")
+
+/** When a program next needs what it downloads: its next run, or a service's next start (an update's files). */
+export const nextTime = (runtime: string) => (runtime === "service" ? "next start" : "next run")
+
+/**
+ * A size as a download review says it: whole units below a gigabyte ("312
+ * MB"), one digit from there ("1.5 GB", "3 GB"), so a big download is never
+ * rounded down by half a unit.
+ */
+export function downloadSize(bytes: number): string {
+  if (bytes < 1024 ** 3) return formatBytes(bytes, 0)
+  return formatBytes(bytes, 1).replace(".0 ", " ")
+}
+
+/**
+ * What a review says of the large files a plugin names, none when it names
+ * none: how much its first run still downloads and from where, and that
+ * AutoScene checks each file by its hash. When AutoScene keeps them all
+ * already (an update that names the same files), only where they come from.
+ * An update's plugin has run before: it downloads at its next run.
+ */
+export function resourceLine(
+  r: Pick<PluginReview, "resourceBytes" | "resourceHosts">,
+  runtime: string,
+  update = false,
+): string | null {
+  const bytes = r.resourceBytes ?? 0
+  const from = r.resourceHosts.length > 0 ? ` from ${joinWords(r.resourceHosts)}` : ""
+  if (bytes > 0) return `It downloads ${downloadSize(bytes)}${from} at its ${update ? nextTime(runtime) : firstTime(runtime)}. AutoScene keeps the files in its cache and checks each one by its hash.`
+  if (r.resourceHosts.length > 0) return `The large files it names come${from}. AutoScene already has them, and checks each one by its hash.`
+  return null
 }
 
 /** Whether AutoScene stands behind what a plugin says of itself, its author's name too: only its review does. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { catalogPlugin, catalogReview, catalogView, pluginInfo } from "@/test/plugins"
-import { asksNothingNew, catalogAsks, catalogLine, catalogMatches, oneClick, stuckSince, updatesOf } from "./catalog-items"
+import { asksNothingNew, catalogAsks, catalogDownloads, catalogLine, catalogMatches, catalogNewHosts, oneClick, stuckSince, updatesOf } from "./catalog-items"
 
 const mine = pluginInfo({ id: "dev.a.mine", name: "Mine" })
 
@@ -21,6 +21,12 @@ describe("catalog items", () => {
     expect(oneClick(catalogReview(mine, { trustBefore: "unreviewed" }))).toBe(false)
     expect(oneClick(catalogReview(mine, { trustBefore: "pinned" }))).toBe(false)
     expect(oneClick({ ...catalogReview(mine, {}), uvMissing: true })).toBe(false)
+  })
+
+  it("oneClick: an update with a new download host is never one click", () => {
+    expect(oneClick(catalogReview(mine, { addedResourceHosts: ["huggingface.co"] }))).toBe(false)
+    // A larger download from hosts the installed version names stays one click: the files' hashes are what was reviewed.
+    expect(oneClick({ ...catalogReview(mine, {}), resourceBytes: 3 * 1024 ** 3, resourceHosts: ["huggingface.co"] })).toBe(true)
   })
 
   it("catalogMatches: each word in its name, summary, author or id", () => {
@@ -45,6 +51,27 @@ describe("catalog items", () => {
     expect(updatesOf(undefined)).toEqual([])
     expect(asksNothingNew(list[2])).toBe(true)
     expect(asksNothingNew({ ...list[2], addsHosts: ["discord.com"] })).toBe(false)
+  })
+
+  it("asksNothingNew: an update with a new download host is left out of Update all", () => {
+    const update = catalogPlugin({ id: "dev.a.model", name: "Model", installed: "0.9.0", update: true, resourceBytes: 327_155_712 })
+    expect(asksNothingNew(update)).toBe(true)
+    expect(asksNothingNew({ ...update, addsResourceHosts: ["huggingface.co"] })).toBe(false)
+  })
+
+  it("catalogNewHosts: an update says the host that is new, none when there is none", () => {
+    expect(catalogNewHosts({ addsResourceHosts: ["huggingface.co"] })).toBe("Downloads from a new host: huggingface.co")
+    expect(catalogNewHosts({ addsResourceHosts: ["a.example", "b.example"] })).toBe("Downloads from new hosts: a.example and b.example")
+    expect(catalogNewHosts({ addsResourceHosts: [] })).toBeNull()
+  })
+
+  it("catalogDownloads: what its first run downloads, none when it names no files", () => {
+    expect(catalogDownloads(catalogPlugin({ id: "dev.a.model", name: "Model", resourceBytes: 327_155_712 }))).toBe("Downloads 312 MB at its first run")
+    expect(catalogDownloads(catalogPlugin({ id: "dev.a.model", name: "Model", resourceBytes: 5 * 1024 ** 2, runtime: "service" }))).toBe(
+      "Downloads 5 MB at its first start",
+    )
+    expect(catalogDownloads(catalogPlugin({ id: "dev.a.plain", name: "Plain" }))).toBeNull()
+    expect(catalogDownloads({ resourceBytes: null, runtime: "process" })).toBeNull()
   })
 
   it("catalogAsks: what it may do in one line", () => {

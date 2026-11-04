@@ -328,6 +328,18 @@ const leaky = plugin({
   withdrawn: LEAKY_REASON,
 })
 
+/**
+ * A plugin whose program needs a model's weights, offered by the catalog:
+ * its plugin.json names 312 MiB of files, which its first run gets from
+ * huggingface.co. Here they arrive with the install, so its settings can
+ * say what they take.
+ */
+export const BIG_ID = "dev.example.big-model"
+const LARGE_FILES = new Map([[`${BIG_ID}@1.0.0`, { bytes: 327_155_712, hosts: ["huggingface.co"] }]])
+
+/** The large files a version's plugin.json names: the same object for the same version, as the same hashes. */
+const largeOf = (p: Pick<MockPlugin, "id" | "version">) => LARGE_FILES.get(`${p.id}@${p.version}`)
+
 const installed = new Map<string, MockPlugin>([
   [hello("1.0.0").id, hello("1.0.0")],
   [helloPage.id, helloPage],
@@ -407,14 +419,20 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
         addedPages: p.pages.filter((x) => !previous.pages.some((y) => y.id === x.id)).map((x) => x.id),
         startsProgram: previous.runtime === "none" && p.runtime !== "none",
         becomesService: previous.runtime !== "service" && p.runtime === "service",
-        addedResourceHosts: [],
+        // Hosts its files come from that the installed version's plugin.json doesn't name, downloaded or not.
+        addedResourceHosts: (largeOf(p)?.hosts ?? []).filter((h) => !(largeOf(previous)?.hosts ?? []).includes(h)),
       }
     : null
   const needsUnreviewed = !reviewed(next)
   // As on a computer where no uv script has run yet: AutoScene's uv comes with the first.
   const uv = { uvMissing: next.uvScript, uvBytes: 15236317 }
-  // No mock plugin names large files.
-  const files = { resourceBytes: 0, resourceHosts: [] }
+  // What is still to get: all the files it names, unless the installed version names the same ones and has them.
+  const large = largeOf(p)
+  const haveThem = previous != null && largeOf(previous) === large && (previous.resourceBytes ?? 0) > 0
+  const files = {
+    resourceBytes: haveThem ? 0 : (large?.bytes ?? 0),
+    resourceHosts: large?.hosts ?? [],
+  }
   return {
     ticketId,
     plugin: info(next, allow),
@@ -484,8 +502,9 @@ export function installPlugin(ticketId: string, allow: boolean, accept: boolean)
   tickets.delete(ticketId)
   if (!reviewed(p) && !allow) throw { code: "invalid", message: NOT_ALLOWED }
   if (!reviewed(p) && !accept) throw { code: "invalid", message: "Confirm that you want to install it." }
-  installed.set(p.id, p)
-  return info(p, allow)
+  const kept = { ...p, resourceBytes: largeOf(p)?.bytes ?? p.resourceBytes }
+  installed.set(p.id, kept)
+  return info(kept, allow)
 }
 
 export function discardTicket(ticketId: string) {

@@ -16,7 +16,7 @@ import { catalogDay } from "./catalog-items"
 import { PluginIcon } from "./PluginIcon"
 import { allowUnreviewed } from "./plugin-actions"
 import { MAX_RAIL_PAGES } from "./page-items"
-import { checkedWhen, permissionLabel, reviewedPackage, trustLabel, trustLine } from "./plugin-items"
+import { checkedWhen, firstTime, joinWords, permissionLabel, resourceLine, reviewedPackage, trustLabel, trustLine } from "./plugin-items"
 
 /**
  * A plugin package (or folder) checked for install, before the person says
@@ -337,13 +337,18 @@ function Permissions({ review }: { review: PluginReview }) {
  * new when the installed version runs no program. A service keeps its
  * program running while its page is open, marked new when the installed
  * version didn't. A uv script that comes before AutoScene's own uv says that
- * its first run (a service's first start) gets it, and how much that is.
+ * its first run (a service's first start) gets it, and how much that is. The
+ * large files it names say how much its first run (an update's next run)
+ * downloads and from where, a host the installed version didn't name marked
+ * new on the line under.
  */
 function Runs({ review }: { review: PluginReview }) {
   const p = review.plugin
   const startsProgram = review.update?.startsProgram ?? false
   const becomesService = review.update?.becomesService ?? false
-  const first = p.runtime === "service" ? "first start" : "first run"
+  const first = firstTime(p.runtime)
+  const files = resourceLine(review, p.runtime, review.update != null)
+  const newFileHosts = review.update?.addedResourceHosts ?? []
   // As AutoScene's other downloads say their size.
   const getsUv = review.uvMissing
     ? ` AutoScene gets uv (${formatBytes(review.uvBytes ?? 0, 0)}, from github.com/astral-sh/uv), and uv downloads`
@@ -365,6 +370,17 @@ function Runs({ review }: { review: PluginReview }) {
           {becomesService ? "Now keeps its program running while its page is open." : "Keeps its program running while its page is open."}
           {becomesService && <Badge tone="accent">New</Badge>}
         </p>
+      )}
+      {files && (
+        <>
+          <p className="mt-1.5 text-md text-fg-1">{files}</p>
+          {newFileHosts.length > 0 && (
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-2">
+              <Badge tone="accent">New</Badge>
+              The installed version names no files from {joinWords(newFileHosts)}.
+            </p>
+          )}
+        </>
       )}
     </section>
   )

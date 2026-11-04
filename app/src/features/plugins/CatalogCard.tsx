@@ -13,7 +13,7 @@ import { usePlugins } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { getsPlugin, usePluginReview } from "@/state/plugin-review"
 import { getFromCatalog, updatePlugin } from "./catalog-actions"
-import { catalogAsks } from "./catalog-items"
+import { catalogAsks, catalogDownloads, catalogNewHosts } from "./catalog-items"
 import { PluginArt } from "./PluginArt"
 
 /** What a catalog entry offers here: to install, to update, nothing more, or why not. */
@@ -33,12 +33,17 @@ function offerOf(p: CatalogPlugin): "install" | "update" | "installed" | "elsewh
  * does, or the plugin's settings once it is installed. An installed plugin
  * AutoScene withdrew says "Withdrawn" in place of "Reviewed by AutoScene"
  * (the index may still list it, every version withdrawn), and nothing about
- * where it runs: its banner on Plugins says why.
+ * where it runs: its banner on Plugins says why. A plugin that names large
+ * files says what its first run downloads, when it is to be installed. An
+ * update says only the new host its files come from, when it brings one: the
+ * review states the size, and the files may be here already.
  */
 export function CatalogCard({ p }: { p: CatalogPlugin }) {
   const offer = offerOf(p)
   const { data: plugins } = usePlugins()
   const withdrawn = p.installed != null && plugins?.find((x) => x.id === p.id)?.withdrawn != null
+  // An install says how much its first run downloads. An update says only the host that is new: the review knows what is still to get.
+  const downloads = withdrawn ? null : offer === "install" ? catalogDownloads(p) : offer === "update" ? catalogNewHosts(p) : null
   // Its package is being got, or waits its turn: the button spins, and
   // waits (a second click would only ask again).
   const getting = usePluginReview((s) => getsPlugin(s, p.id))
@@ -98,6 +103,7 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
         {/* The plugin's words, as its review says them: "In its own words". */}
         {p.summary && <p className="mt-1.5 line-clamp-2 pl-0.5 text-sm text-fg-1">{p.summary}</p>}
         <TruncatedText className="mt-1 pl-0.5 text-sm text-fg-3">{catalogAsks(p)}</TruncatedText>
+        {downloads && <TruncatedText className="mt-1 pl-0.5 text-sm text-fg-3">{downloads}</TruncatedText>}
       </div>
     </ContextArea>
   )

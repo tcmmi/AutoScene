@@ -966,6 +966,39 @@ describe("PluginsPage", () => {
     expect(screen.queryByRole("dialog")).toBeNull()
   })
 
+  it("Update all skips an update with a new download host", async () => {
+    const quiet = pluginInfo({ id: "dev.a.quiet", name: "Quiet" })
+    const model = pluginInfo({ id: "dev.a.model", name: "Model" })
+    state.plugins = [quiet, model]
+    state.catalog = catalogView([
+      catalogPlugin({ id: quiet.id, name: quiet.name, version: "2.0.0", installed: "1.0.0", update: true }),
+      // Known hosts: a larger download alone stays quiet.
+      catalogPlugin({ id: "dev.a.known", name: "Known", version: "2.0.0", installed: "1.0.0", update: true, resourceBytes: 3 * 1024 ** 3 }),
+      catalogPlugin({
+        id: model.id,
+        name: model.name,
+        version: "2.0.0",
+        installed: "1.0.0",
+        update: true,
+        resourceBytes: 327_155_712,
+        addsResourceHosts: ["huggingface.co"],
+      }),
+    ])
+    state.plugins.push(pluginInfo({ id: "dev.a.known", name: "Known" }))
+    vi.mocked(commands.catalogGet).mockImplementation((id) => {
+      const p = state.plugins.find((x) => x.id === id)!
+      return Promise.resolve(catalogReview({ ...p, version: "2.0.0" }, {}))
+    })
+    vi.mocked(commands.pluginInstall).mockImplementation((ticket) =>
+      Promise.resolve({ ...state.plugins.find((p) => ticket === `t-${p.id}`)!, version: "2.0.0" }),
+    )
+    show()
+    fireEvent.click(await screen.findByRole("button", { name: "Update all (2)" }))
+    await waitFor(() => expect(commands.pluginInstall).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(commands.catalogGet).mock.calls.map(([id]) => id)).toEqual(["dev.a.quiet", "dev.a.known"])
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
   it("Update all stops at a review that asks for more after all", async () => {
     const quiet = ["dev.a.one", "dev.a.two"].map((id, i) => pluginInfo({ id, name: `Quiet ${i + 1}` }))
     state.plugins = quiet

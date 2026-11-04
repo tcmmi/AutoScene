@@ -82,6 +82,25 @@ describe("a plugin's settings", () => {
     expect(reveal.mock.calls).toEqual([[state.plugin!.folder], [state.plugin!.logPath]])
   })
 
+  it("says what its downloaded files take, when it has some", async () => {
+    show({ resourceBytes: 327_155_712 })
+    await screen.findByText("Its folder")
+    expect(screen.getByText("Downloaded files")).toBeTruthy()
+    expect(screen.getByText("312 MB. AutoScene keeps them in its cache and removes them with the plugin.")).toBeTruthy()
+    // Revealing is for its folder and logs: nothing more to reveal for the files.
+    expect(screen.getAllByRole("button", { name: "Reveal" })).toHaveLength(2)
+    cleanup()
+
+    // None got yet, or it names none: no row.
+    for (const resourceBytes of [0, null]) {
+      queryClient.clear()
+      show({ resourceBytes })
+      await screen.findByText("Its folder")
+      expect(screen.queryByText("Downloaded files")).toBeNull()
+      cleanup()
+    }
+  })
+
   it("saves a number within its bounds", async () => {
     show({ settings: [number("clips", "Clips", { min: 1, integer: true }), number("pause", "Pause", { max: 2 })] }, { clips: 3 })
     const clips = (await screen.findByRole("textbox", { name: "Clips" })) as HTMLInputElement

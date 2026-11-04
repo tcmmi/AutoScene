@@ -345,6 +345,59 @@ describe("the install review", () => {
     expect(screen.queryByText(/keeps its program running/i)).toBeNull()
   })
 
+  it("a plugin that downloads files says how much and from where", () => {
+    show(review({ resourceBytes: 327_155_712, resourceHosts: ["huggingface.co", "cdn.example.com"] }))
+    expect(
+      screen.getByText(
+        "It downloads 312 MB from huggingface.co and cdn.example.com at its first run. AutoScene keeps the files in its cache and checks each one by its hash.",
+      ),
+    ).toBeTruthy()
+    // A first install has nothing to compare: no host is new.
+    expect(screen.queryByText("New")).toBeNull()
+    cleanup()
+
+    // A service gets its files at its first start, and a plugin that names none says nothing.
+    show(review({ resourceBytes: 5_242_880, resourceHosts: ["huggingface.co"], plugin: { ...discord, runtime: "service" } }))
+    expect(screen.getByText(/^It downloads 5 MB from huggingface\.co at its first start\./)).toBeTruthy()
+    cleanup()
+    show(review())
+    expect(screen.queryByText(/It downloads/)).toBeNull()
+    expect(screen.queryByText(/by its hash/)).toBeNull()
+  })
+
+  it("a new download host is marked New", () => {
+    const update: PluginUpdate = {
+      fromVersion: "0.2.0",
+      trustBefore: "unreviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: [],
+      addedPages: [],
+      startsProgram: false,
+      becomesService: false,
+      addedResourceHosts: ["cdn.example.com"],
+    }
+    show(review({ update, resourceBytes: 1_000_000, resourceHosts: ["huggingface.co", "cdn.example.com"] }))
+    // An update's plugin has run: its files come at its next run. The badge marks the host, on the line that names it.
+    const line = screen.getByText(/^It downloads 977 KB from huggingface\.co and cdn\.example\.com at its next run\./)
+    expect(within(line).queryByText("New")).toBeNull()
+    const host = screen.getByText("The installed version names no files from cdn.example.com.")
+    expect(within(host).getByText("New")).toBeTruthy()
+    cleanup()
+
+    // An update from the hosts the installed version names: nothing is new.
+    show(review({ update: { ...update, addedResourceHosts: [] }, resourceBytes: 1_000_000, resourceHosts: ["huggingface.co"] }))
+    expect(screen.getByText(/^It downloads 977 KB from huggingface\.co at its next run/)).toBeTruthy()
+    expect(screen.queryByText("New")).toBeNull()
+    expect(screen.queryByText(/names no files/)).toBeNull()
+    cleanup()
+
+    // Files AutoScene keeps already: where they come from, and no download.
+    show(review({ update: { ...update, addedResourceHosts: [] }, resourceBytes: 0, resourceHosts: ["huggingface.co"] }))
+    expect(screen.getByText(/^The large files it names come from huggingface\.co\. AutoScene already has them/)).toBeTruthy()
+    expect(screen.queryByText(/It downloads/)).toBeNull()
+  })
+
   it("names each secret it keeps in the keychain", () => {
     const settings = [
       { key: "webhook", title: "Webhook address", description: null, kind: { type: "secret" as const, placeholder: null } },

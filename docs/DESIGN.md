@@ -199,9 +199,10 @@ Rules:
   allowed): the catalog is the way in, so with nothing installed Browse plugins is the white pill. From six plugins a
   search finds one by its name, author, description or id; the allow switch sits below the cards. When the catalog
   has newer versions, they sit above the rest under Updates, each card with Update…, and Update all (n) takes those
-  that ask for nothing new; one whose review marks anything New (a permission, host, page or program), or that
-  replaces a loaded folder or a plugin AutoScene hadn't reviewed, opens that review instead. A plugin AutoScene
-  withdrew has a red `Banner` at the top of both views (at most three, then "and n more"), "AutoScene withdrew Plugin
+  that ask for nothing new; one whose review marks anything New (a permission, host, page or program, or a host its
+  large files come from), or that replaces a loaded folder or a plugin AutoScene hadn't reviewed, opens that review
+  instead (a larger download from hosts it already named stays quiet: the files' hashes are what was reviewed). A
+  plugin AutoScene withdrew has a red `Banner` at the top of both views (at most three, then "and n more"), "AutoScene withdrew Plugin
   “name”" with the catalog's reason, Update… while the catalog has a version that isn't withdrawn, and Uninstall….
   Its card says "Withdrawn" in place of the trust badge, shows the reason under the facts, and its switch is off and
   can't be turned on; a toast says so once per session when a check withdraws it.
@@ -209,8 +210,13 @@ Rules:
   it is out of date, and then no cards and no search), then each plugin AutoScene's catalog offers as a card in the
   same art language, its icon as the art (the catalog has no banners) or its name. The caption: "Reviewed by
   AutoScene", "By … · version …", its summary, what it may do in one line, and Install… or Update… (or Installed,
-  Not for this computer, Needs a newer AutoScene). No white pill: each card installs its own. While a package comes,
-  the review dialog shows how far, with Cancel; the review then says where the catalog built it from.
+  Not for this computer, Needs a newer AutoScene); a plugin that names large files adds "Downloads 312 MB at its
+  first run" under it, while it is to be installed (an update says only "Downloads from a new host: …", when its
+  files come from one: the review knows what is still to get). No white pill: each card installs its own. While a package comes, the review dialog shows how far, with Cancel; the review
+  then says where the catalog built it from and, under "How it runs", how much a plugin's first run downloads and from
+  which hosts ("It downloads 312 MB from huggingface.co at its first run…", an update's "at its next run"), a host
+  the installed version didn't name on a line of its own under it, with the New badge before the sentence. A
+  plugin's settings list "Downloaded files" with their size in the Files group once it has some.
 - **A plugin's settings** (`/plugins/<id>`, "Its settings" in menus; Settings lists only the app's own sections): its
   picture as the hero, always blurred (the banner, else the icon, else the fallback), the sharp banner or icon
   framed beside the name, the trust badge, the version and the licence as chips, then "Says it is by …" ("By …"

@@ -153,7 +153,7 @@ fn indented(text: &str) -> String {
 }
 
 /// `t` in UTC, to the second, as ISO 8601: `2026-11-02T09:30:00Z`.
-fn utc(t: SystemTime) -> String {
+pub(crate) fn utc(t: SystemTime) -> String {
     let secs = t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let (days, day_secs) = ((secs / 86_400) as i64, secs % 86_400);
     // Days to a civil date (Howard Hinnant's algorithm), in eras of 400

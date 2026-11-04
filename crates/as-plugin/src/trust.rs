@@ -170,7 +170,7 @@ fn read_key(base64: &str) -> PluginResult<(PublicKey, AuthorKey)> {
 
 /// The key id of the key that made `sig`, a signature [`Signature::decode`]
 /// reads, as minisign shows it.
-fn signer_id(sig: &str) -> String {
+pub(crate) fn signer_id(sig: &str) -> String {
     let raw = sig.lines().nth(1).and_then(|line| STANDARD.decode(line.trim()).ok()).filter(|raw| raw.len() == 74);
     raw.map_or_else(|| "unknown".into(), |raw| key_id_of(&raw))
 }

@@ -44,6 +44,10 @@ pub enum PluginError {
     /// The page that asked was closed, or never opened.
     #[error("This page was closed.")]
     Closed,
+    /// What is wrong with the catalog, as a sentence ("This catalog is older
+    /// than the one AutoScene has.").
+    #[error("{0}")]
+    Catalog(String),
     #[error("{}", .0.user_message())]
     Db(#[from] as_db::DbError),
     #[error("{}", as_core::io_message(.0))]

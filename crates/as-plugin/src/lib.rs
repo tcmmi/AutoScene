@@ -6,6 +6,8 @@
 //! package ([`package`]): a zip whose `files.lock` lists and hashes each of
 //! its files. Who signed that list decides the plugin's trust ([`trust`]):
 //! AutoScene's review, its author's pinned key, or nobody AutoScene knows.
+//! AutoScene's plugin catalog ([`catalog`]) is a signed index of the
+//! versions it reviewed, by the hash of their lock, and of those it withdrew.
 //! The installed plugins, and what the person set for them, are kept by
 //! [`store`]; the values of secret settings by the system's keychain
 //! ([`secrets`]).
@@ -28,6 +30,7 @@
 //! not: a process plugin runs with the person's user rights.
 
 pub mod calls;
+pub mod catalog;
 pub mod error;
 pub mod keys;
 pub mod log;
@@ -44,7 +47,9 @@ pub mod store;
 pub mod trust;
 
 pub use calls::{CallCode, CallError, Caller, Grants, HostCalls, HostMethod};
+pub use catalog::{Catalog, CatalogKeys, CatalogState};
 pub use error::{PluginError, PluginResult};
+pub use keys::KeyRole;
 pub use manifest::{
     ActionSpec, Author, CommandSpec, Engines, Launch, Manifest, PageScope, PageSpec, Parsed, Permission, PluginId,
     Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue, current_platform,

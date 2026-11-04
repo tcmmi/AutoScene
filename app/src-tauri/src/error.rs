@@ -96,7 +96,8 @@ impl From<PluginError> for AppError {
             | PluginError::KeyChanged { .. }
             | PluginError::NotAllowed
             | PluginError::UvMissing
-            | PluginError::Denied(_) => ErrorCode::Invalid,
+            | PluginError::Denied(_)
+            | PluginError::Catalog(_) => ErrorCode::Invalid,
         };
         match (&e, code) {
             (PluginError::BadSignature(_) | PluginError::KeyChanged { .. } | PluginError::Keychain { .. }, _) => {
@@ -134,6 +135,7 @@ mod tests {
             PluginError::NotAllowed,
             PluginError::UvMissing,
             PluginError::Denied("A run reads only the project it runs in.".into()),
+            PluginError::Catalog("This catalog is older than the one AutoScene has.".into()),
         ];
         for e in invalid {
             let words = e.to_string();

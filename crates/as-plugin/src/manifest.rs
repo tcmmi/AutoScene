@@ -77,7 +77,7 @@ pub const PLATFORMS: [&str; 6] =
 const MAX_ARGS: usize = 16;
 const MAX_ARG_CHARS: usize = 256;
 const MAX_HOSTS: usize = 16;
-const MAX_PLATFORMS: usize = 16;
+pub(crate) const MAX_PLATFORMS: usize = 16;
 const MAX_OPTIONS: usize = 32;
 /// The longest value a select's option may have.
 const MAX_VALUE_CHARS: usize = 200;
@@ -447,7 +447,7 @@ impl Manifest {
 
     /// Whether `app` is an AutoScene this plugin works with (see [`parse`]).
     pub fn requirement_met(&self, app: &Version) -> PluginResult<()> {
-        check_requirement(&requirement(&self.engines.autoscene)?, app)
+        check_requirement(&requirement_for(&self.engines.autoscene)?, app)
     }
 
     /// The keys of its secret settings.
@@ -539,7 +539,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         _ => return Err(invalid(r#"The plugin's runtime needs "type": "process"."#)),
     };
     let autoscene = engines.required_text("autoscene")?;
-    let req = requirement(autoscene)?;
+    let req = requirement_for(autoscene)?;
     if let Some(app) = app {
         check_requirement(&req, app)?;
     }
@@ -815,10 +815,26 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     Ok(Parsed { manifest, warnings: w })
 }
 
-fn requirement(text: &str) -> PluginResult<VersionReq> {
+/// Reads a version requirement such as `>=1.0.0, <2` (a plugin's
+/// `engines.autoscene`, the catalog's engines and withdrawals; `*` is any
+/// version).
+pub(crate) fn requirement_for(text: &str) -> PluginResult<VersionReq> {
     VersionReq::parse(text).map_err(|_| {
         invalid(r#"The plugin's engines.autoscene isn't a version requirement: use commas between the parts, as in ">=1.0.0, <2"."#)
     })
+}
+
+/// Whether `v` meets `req`, with pre-releases cleared on both sides, as
+/// [`check_requirement`] reads a requirement.
+pub(crate) fn version_matches(req: &VersionReq, v: &Version) -> bool {
+    unmet(req, v).is_empty()
+}
+
+/// The parts of `req` that `v` doesn't meet, with pre-releases cleared on
+/// both sides.
+fn unmet<'a>(req: &'a VersionReq, v: &Version) -> Vec<&'a Comparator> {
+    let v = Version { pre: Prerelease::EMPTY, build: BuildMetadata::EMPTY, ..v.clone() };
+    req.comparators.iter().filter(|c| !Comparator { pre: Prerelease::EMPTY, ..(*c).clone() }.matches(&v)).collect()
 }
 
 /// Refuses an `app` that doesn't meet `req`, with pre-releases cleared on
@@ -826,13 +842,9 @@ fn requirement(text: &str) -> PluginResult<VersionReq> {
 /// only against a comparator naming a pre-release of 1.0.3 itself. A plugin
 /// made for later versions needs a newer AutoScene; one made for earlier
 /// versions only (`<1.0.0`) says so instead.
-fn check_requirement(req: &VersionReq, app: &Version) -> PluginResult<()> {
+pub(crate) fn check_requirement(req: &VersionReq, app: &Version) -> PluginResult<()> {
+    let failed = unmet(req, app);
     let app = Version { pre: Prerelease::EMPTY, build: BuildMetadata::EMPTY, ..app.clone() };
-    let failed: Vec<&Comparator> = req
-        .comparators
-        .iter()
-        .filter(|c| !Comparator { pre: Prerelease::EMPTY, ..(*c).clone() }.matches(&app))
-        .collect();
     if failed.is_empty() {
         return Ok(());
     }
@@ -1118,12 +1130,12 @@ pub fn plain_link(url: &str) -> bool {
 
 /// A host name as the network permission names it: lowercase labels of 1
 /// to 63 letters, digits and dashes, joined by dots; no port, no scheme.
-fn is_host(h: &str) -> bool {
+pub(crate) fn is_host(h: &str) -> bool {
     h.len() <= 253 && h.split('.').all(|label| is_label(label, 63))
 }
 
 /// A platform key such as `windows-x86_64`, also one a later AutoScene adds.
-fn is_platform(p: &str) -> bool {
+pub(crate) fn is_platform(p: &str) -> bool {
     !p.is_empty()
         && p.len() <= 40
         && p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"-_".contains(&b))

@@ -287,6 +287,15 @@ Rules:
     engine names ONNX Runtime with its version and, once downloaded, TensorRT for RTX with NVIDIA's licence and
     its Acknowledgements.
 
+- **Settings → Discord:** one switch, Show on Discord, off until the person turns it on, then the two statuses people
+  would see (in an episode, in a scenepack) as plain cards in AutoScene's own look, not a copy of Discord's, under
+  "What people see", or "What people would see" while it is off. Once it is on, Names lists Project, Episode or file and
+  Character: each off by default, and without one the status says what the person is doing ("Reviewing an episode", in
+  a movie "Reviewing a file"), never on what. Names kept from before stay listed while it is off: turning it on sends
+  them at once, so they can be checked and changed first. There is nothing else to set: the wording, the picture and
+  the link are fixed. Discord not running shows nothing. Discord's mark is `brand/DiscordMark.tsx`, unaltered and only in colour,
+  black or white, so it is white in the section list and black on the open section's gold.
+
 ## Copy
 
 - Plain, confident, editor vocabulary: shot, cut, scene, cast, pack, export, handles, timecode.

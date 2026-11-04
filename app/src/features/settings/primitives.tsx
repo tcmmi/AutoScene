@@ -28,18 +28,23 @@ export function SettingsGroup({
   )
 }
 
-/** A setting: what it is on the left (after `leading`, a picture), its controls on the right. */
+/**
+ * A setting: what it is on the left (after `leading`, a picture), its controls
+ * on the right, and `below` them what needs the row's whole width.
+ */
 export function SettingRow({
   label,
   description,
   leading,
   children,
+  below,
   className,
 }: {
   label: React.ReactNode
   description?: React.ReactNode
   leading?: React.ReactNode
   children?: React.ReactNode
+  below?: React.ReactNode
   className?: string
 }) {
   const text = (
@@ -49,7 +54,7 @@ export function SettingRow({
     </div>
   )
   return (
-    <div className={cn("flex min-h-16 items-center justify-between gap-6 px-5 py-4", className)}>
+    <div className={cn("flex min-h-16 items-center justify-between gap-x-6 gap-y-4 px-5 py-4", below && "flex-wrap", className)}>
       {leading ? (
         <div className="flex min-w-0 items-center gap-4">
           {leading}
@@ -59,6 +64,7 @@ export function SettingRow({
         text
       )}
       {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
+      {below && <div className="w-full">{below}</div>}
     </div>
   )
 }

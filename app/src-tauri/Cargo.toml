@@ -53,7 +53,8 @@ serde_json.workspace = true
 specta.workspace = true
 specta-serde.workspace = true
 specta-util.workspace = true
-tokio.workspace = true
+# Discord's local pipe or socket (discord.rs).
+tokio = { workspace = true, features = ["net"] }
 log = "0.4.34"
 # Bridge `tracing` events from library crates into tauri-plugin-log.
 tracing = { workspace = true, features = ["log"] }
@@ -80,9 +81,12 @@ sha2.workspace = true
 tempfile.workspace = true
 # The catalog's tests pack the packages it offers.
 zip.workspace = true
+# The Discord tests run its waits on a clock of their own.
+tokio = { workspace = true, features = ["test-util"] }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-# A plugin page's saved file is marked as a download (plugins/calls.rs).
+[target.'cfg(unix)'.dependencies]
+# A plugin page's saved file is marked as a download on macOS
+# (plugins/calls.rs); a Discord socket must be this person's (discord.rs).
 libc.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

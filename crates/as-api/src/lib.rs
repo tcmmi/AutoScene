@@ -129,7 +129,7 @@ pub struct AppSettings {
     /// unless switched off. Applies from the next analysis.
     #[serde(default = "yes")]
     pub nvidia_acceleration: bool,
-    /// Discord Rich Presence settings.
+    /// What Discord may show. Everything off until the person turns it on.
     #[serde(default)]
     pub discord_rpc: DiscordRpcSettings,
 }
@@ -138,73 +138,21 @@ fn yes() -> bool {
     true
 }
 
-/// User configuration for Discord Rich Presence.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
+/// What AutoScene may tell Discord (`app/src-tauri/src/discord.rs`). All off
+/// by default: nothing goes to Discord until `enabled`, and a name only with
+/// its own switch as well.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", default)]
 pub struct DiscordRpcSettings {
-    #[serde(default)]
+    /// Shows that the person is working in AutoScene on their profile.
     pub enabled: bool,
-    #[serde(default = "default_discord_client_id")]
-    pub client_id: String,
-    #[serde(default = "default_true")]
-    pub show_timer: bool,
-    #[serde(default = "default_true")]
-    pub show_buttons: bool,
-    #[serde(default = "default_true")]
+    /// The project's title in place of "Working on a project".
     pub show_project: bool,
-    #[serde(default = "default_true")]
+    /// The open episode's or file's name in place of "Reviewing an episode"
+    /// or "Reviewing a file".
     pub show_episode: bool,
-    #[serde(default = "default_true")]
+    /// The open character's name in place of "Making a scenepack".
     pub show_character: bool,
-    #[serde(default = "default_true")]
-    pub show_progress: bool,
-    #[serde(default = "default_true")]
-    pub show_counts: bool,
-    #[serde(default = "default_template_project")]
-    pub template_project: String,
-    #[serde(default = "default_template_scenepack")]
-    pub template_scenepack: String,
-    #[serde(default = "default_template_export")]
-    pub template_export: String,
-}
-
-fn default_discord_client_id() -> String {
-    "1567208524940058695".into()
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_template_project() -> String {
-    "Project: {project}".into()
-}
-
-fn default_template_scenepack() -> String {
-    "Building Scenepack: {character}".into()
-}
-
-fn default_template_export() -> String {
-    "Exporting: {project} ({progress}%)".into()
-}
-
-impl Default for DiscordRpcSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            client_id: default_discord_client_id(),
-            show_timer: true,
-            show_buttons: true,
-            show_project: true,
-            show_episode: true,
-            show_character: true,
-            show_progress: true,
-            show_counts: true,
-            template_project: default_template_project(),
-            template_scenepack: default_template_scenepack(),
-            template_export: default_template_export(),
-        }
-    }
 }
 
 /// The keys the person chose: an editor's keys to start from, and their own

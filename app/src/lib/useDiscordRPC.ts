@@ -1,168 +1,65 @@
-import { useEffect, useRef } from "react"
-import { useMatches } from "@tanstack/react-router"
-import type { DiscordActivityPayload, DiscordButton, DiscordRpcSettings } from "@/bindings"
+import { useEffect } from "react"
+import { useParams, useRouterState } from "@tanstack/react-router"
+import type { DiscordDoing } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { mediaTitle } from "@/lib/media"
-import { isTauri } from "@/lib/platform"
 import { useCast, useMediaList, useProject, useSettings } from "@/lib/queries"
-import { useJobs } from "@/state/activity"
+import { useActivity } from "@/state/activity"
 
-const DEFAULT_CLIENT_ID = "1567208524940058695"
-const APP_URL = "https://github.com/tcmmi/AutoScene"
-const SESSION_START = Math.floor(Date.now() / 1000)
+type Jobs = ReturnType<typeof useActivity.getState>
 
-function renderTemplate(
-  template: string,
-  vars: Record<string, string | number | undefined | null>,
-): string {
-  let res = template
-  for (const [k, v] of Object.entries(vars)) {
-    res = res.replaceAll(`{${k}}`, v != null ? String(v) : "")
-  }
-  return res.trim().replace(/^•\s*|\s*•$/g, "").trim()
+/** The export running now. */
+function runningExport(s: Jobs) {
+  return s.order.map((id) => s.jobs[id]).find((j) => j?.kind === "export" && j.state === "running")
 }
 
 /**
- * Native Discord Rich Presence updater hook.
- * Monitors router navigation, current project/character/media data, active jobs,
- * and user preferences to push live presence to the Discord desktop client.
+ * Tells the app what is on screen, for the person's status on Discord
+ * (`src-tauri/src/discord.rs` decides what of it goes out). While that is off
+ * this reads and says nothing, and a name is told only with its own switch on.
  */
 export function useDiscordRPC() {
-  const { data: settings } = useSettings()
-  const jobs = useJobs()
-  const matches = useMatches()
+  const { data: settings, dataUpdatedAt: saved } = useSettings()
+  const show = settings?.discordRpc
+  const on = show?.enabled === true
+  const route = useParams({ strict: false })
+  const packing = useRouterState({ select: (s) => s.location.pathname.endsWith("/pack") })
 
-  // Track session start timestamp
-  const startedRef = useRef(false)
+  // One value each, not the job: a tick that changes none of them renders nothing.
+  const exporting = useActivity((s) => on && runningExport(s) !== undefined)
+  const exported = useActivity((s) => (on ? runningExport(s)?.projectId : undefined))
+  const progress = useActivity((s) => (on ? runningExport(s)?.progress : undefined))
 
-  const rpc: Required<DiscordRpcSettings> = {
-    enabled: settings?.discordRpc?.enabled ?? true,
-    clientId: settings?.discordRpc?.clientId || DEFAULT_CLIENT_ID,
-    showTimer: settings?.discordRpc?.showTimer ?? true,
-    showButtons: settings?.discordRpc?.showButtons ?? true,
-    showProject: settings?.discordRpc?.showProject ?? true,
-    showEpisode: settings?.discordRpc?.showEpisode ?? true,
-    showCharacter: settings?.discordRpc?.showCharacter ?? true,
-    showProgress: settings?.discordRpc?.showProgress ?? true,
-    showCounts: settings?.discordRpc?.showCounts ?? true,
-    templateProject: settings?.discordRpc?.templateProject || "{project} • {episode}",
-    templateScenepack: settings?.discordRpc?.templateScenepack || "Scenepack: {character} ({count} clips)",
-    templateExport: settings?.discordRpc?.templateExport || "Exporting {item} • {progress}%",
-  }
+  const pid = exported ?? route.pid
+  const watching = !exporting && !!route.mid
+  const wantsProject = on && show?.showProject === true && !!pid
+  // The player needs the project with its title's switch off too, for its kind.
+  const { data: opened } = useProject(pid ?? "", wantsProject || (on && watching))
 
-  // Find route params
-  const currentMatch = matches[matches.length - 1]
-  const params = (currentMatch?.params ?? {}) as Record<string, string | undefined>
-  const pid = params.pid
-  const mid = params.mid
-  const cid = params.cid
+  let doing: DiscordDoing = "idle"
+  if (exporting) doing = "export"
+  else if (route.cid && packing) doing = "character"
+  // Until the kind is known, "in a project" is true for both.
+  else if (watching && opened) doing = opened.kind === "movie" ? "file" : "episode"
+  else if (route.pid) doing = "project"
 
-  // Fetch contextual project data
-  const { data: project } = useProject(pid ?? "")
-  const { data: mediaList } = useMediaList(pid ?? "")
-  const { data: cast } = useCast(pid ?? "")
+  // A query that stops keeps its data, so each name below asks these again.
+  const wantsEpisode = on && show?.showEpisode === true && (doing === "episode" || doing === "file")
+  const wantsCharacter = on && show?.showCharacter === true && doing === "character"
+  const { data: media } = useMediaList(pid ?? "", wantsEpisode)
+  const { data: cast } = useCast(pid ?? "", wantsCharacter)
 
-  // Start / stop Discord RPC worker thread
+  const project = (wantsProject && opened?.title) || null
+  const shown = wantsEpisode ? media?.find((m) => m.id === route.mid) : undefined
+  const episode = shown ? mediaTitle(shown) : null
+  const character = (wantsCharacter && cast?.characters.find((c) => c.id === route.cid)?.label) || null
+  const percent = exporting && progress != null ? Math.round(progress * 100) : null
+
+  // Again after each save: one that ended the connection on the way forgot
+  // what this said, and the switch had moved before it.
   useEffect(() => {
-    if (!isTauri) return
-
-    if (rpc.enabled) {
-      commands.discordRpcStart(rpc.clientId).catch(() => {})
-      startedRef.current = true
-    } else if (startedRef.current) {
-      commands.discordRpcStop().catch(() => {})
-      startedRef.current = false
-    }
-
-    return () => {
-      // Don't stop immediately on component remounts in dev, only on app shutdown (handled by Rust)
-    }
-  }, [rpc.enabled, rpc.clientId])
-
-  // Update Discord activity state
-  useEffect(() => {
-    if (!isTauri || !rpc.enabled) return
-
-    // Check if an export job is currently running
-    const activeExport = jobs.find((j) => j.kind === "export" && j.state === "running")
-
-    let details: string | null = null
-    let state: string | null = null
-
-    const buttons: DiscordButton[] = rpc.showButtons
-      ? [{ label: "Get AutoScene", url: APP_URL }]
-      : []
-
-    if (activeExport && rpc.showProgress) {
-      const progress = activeExport.progress != null ? Math.round(activeExport.progress * 100) : 0
-      details = renderTemplate(rpc.templateExport, {
-        item: activeExport.title || "Project",
-        progress,
-      })
-      state = project?.title && rpc.showProject ? project.title : "Rendering"
-    } else if (pid && project) {
-      const activeMedia = mediaList?.find((m) => m.id === mid)
-      const activeChar = cast?.characters.find((c) => c.id === cid)
-
-      const projectName = rpc.showProject ? project.title : "AutoScene"
-      const episodeName = rpc.showEpisode && activeMedia ? mediaTitle(activeMedia) : undefined
-
-      if (cid && activeChar && rpc.showCharacter) {
-        details = projectName
-        const clipCount = rpc.showCounts ? (activeChar.shots ?? 0) : undefined
-        state = renderTemplate(rpc.templateScenepack, {
-          character: activeChar.label || "Character",
-          count: clipCount,
-        })
-      } else if (mid && activeMedia) {
-        details = renderTemplate(rpc.templateProject, {
-          project: projectName,
-          episode: episodeName,
-        })
-        state = "Timeline editing"
-      } else {
-        details = renderTemplate(rpc.templateProject, {
-          project: projectName,
-          episode: episodeName,
-        })
-        state = "Managing project"
-      }
-    } else {
-      details = "Organizing Library"
-      state = "Browsing projects"
-    }
-
-    const payload: DiscordActivityPayload = {
-      details: details || "Editing in AutoScene",
-      state: state || null,
-      startTimestamp: rpc.showTimer ? SESSION_START : null,
-      largeImage: "as-logo",
-      largeText: "AutoScene",
-      smallImage: null,
-      smallText: null,
-      buttons,
-    }
-
-    commands.discordRpcUpdate(payload).catch(() => {})
-  }, [
-    rpc.enabled,
-    rpc.showTimer,
-    rpc.showButtons,
-    rpc.showProject,
-    rpc.showEpisode,
-    rpc.showCharacter,
-    rpc.showCounts,
-    rpc.showProgress,
-    rpc.templateProject,
-    rpc.templateScenepack,
-    rpc.templateExport,
-    project,
-    mediaList,
-    cast,
-    pid,
-    mid,
-    cid,
-    jobs,
-    matches,
-  ])
+    if (!on) return
+    // A status that didn't get through isn't worth telling anyone about.
+    commands.discordView({ doing, project, episode, character, percent }).catch(() => {})
+  }, [on, saved, doing, project, episode, character, percent])
 }

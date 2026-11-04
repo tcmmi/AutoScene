@@ -133,9 +133,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::plugins::plugin_page_close,
             commands::plugins::plugin_page_call,
             commands::plugins::plugin_page_heartbeat,
-            commands::discord::discord_rpc_start,
-            commands::discord::discord_rpc_update,
-            commands::discord::discord_rpc_stop,
+            commands::discord::discord_view,
+            commands::discord::discord_preview,
             commands::jobs::jobs_list,
             commands::jobs::job_cancel,
             commands::jobs::jobs_clear_finished,
@@ -350,7 +349,11 @@ The log is in {}",
             let handle = app.handle().clone();
             // Reads the plugin catalog held, before the window opens.
             app.manage(state::AppState::new(&handle, library, &paths));
-            app.manage(discord::DiscordRpcManager::new());
+            app.manage(discord::Presence::default());
+            // Off, as it starts for everyone, this starts nothing.
+            if let Ok(chosen) = app.state::<state::AppState>().library.discord_rpc() {
+                app.state::<discord::Presence>().configure(&chosen);
+            }
             // After the state: the page calls commands as soon as it loads.
             window::create_main(app)?;
             if !cfg!(debug_assertions)
@@ -391,7 +394,7 @@ The log is in {}",
             // Never leave ffmpeg processes running after the window closes.
             tauri::RunEvent::Exit => {
                 state::shutdown_work(app);
-                if let Some(discord) = app.try_state::<discord::DiscordRpcManager>() {
+                if let Some(discord) = app.try_state::<discord::Presence>() {
                     discord.stop();
                 }
             }

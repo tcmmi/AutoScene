@@ -4,7 +4,7 @@ use std::path::Path;
 
 use as_api::{AppSettings, ContentKind, ImportCandidate, JobInfo, NewProject, ProjectKind, ProjectSummary};
 use as_core::ProjectId;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 
 use crate::commands::media::stop_jobs;
@@ -185,6 +185,7 @@ pub async fn settings_update(
     let state = state.inner().clone();
     let lib = state.library.clone();
     let before = lib.finds_bodies();
+    let handle = app.clone();
     let (checked_before, saved, launch_changed) = blocking(move || {
         // Only a new library folder is checked: every other change sends
         // back the one in use.
@@ -199,6 +200,11 @@ pub async fn settings_update(
         let launch_changed = (&saved.gpu, saved.nvidia_acceleration) != (&before.0, before.1);
         if launch_changed {
             state.relaunch();
+        }
+        // The only place that starts or ends the status on Discord: it may
+        // wait for its thread, here off the UI thread.
+        if let Some(discord) = handle.try_state::<crate::discord::Presence>() {
+            discord.configure(&saved.discord_rpc);
         }
         Ok((checked, saved, launch_changed))
     })

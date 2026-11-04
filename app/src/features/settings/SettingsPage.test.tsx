@@ -43,6 +43,7 @@ describe("Settings", () => {
     const nav = screen.getByRole("navigation", { name: "Settings" })
     expect(within(nav).getAllByRole("link").map((l) => l.textContent)).toEqual([
       "General",
+      "Discord",
       "Shortcuts",
       "Updates",
       "About",

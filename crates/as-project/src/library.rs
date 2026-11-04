@@ -232,12 +232,10 @@ impl Library {
         Ok(self.db.setting(KEY_ALLOW_UNREVIEWED)?.as_deref() == Some("1"))
     }
 
-    /// Discord Rich Presence settings.
+    /// What the person lets Discord show. Off, also for what can't be read.
     pub fn discord_rpc(&self) -> ProjectResult<as_api::DiscordRpcSettings> {
-        let Some(json) = self.db.setting(KEY_DISCORD_RPC)? else {
-            return Ok(as_api::DiscordRpcSettings::default());
-        };
-        Ok(serde_json::from_str(&json).unwrap_or_default())
+        let saved = self.db.setting(KEY_DISCORD_RPC)?;
+        Ok(saved.and_then(|json| serde_json::from_str(&json).ok()).unwrap_or_default())
     }
 
     /// Lets plugins AutoScene has not reviewed be installed and run, or
@@ -356,8 +354,8 @@ impl Library {
         self.set_nvidia_acceleration(s.nvidia_acceleration)?;
         self.db.set_setting(KEY_ANILIST, if s.anilist { "1" } else { "0" })?;
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
-        let discord_json = serde_json::to_string(&s.discord_rpc).unwrap_or_default();
-        self.db.set_setting(KEY_DISCORD_RPC, &discord_json)?;
+        let discord = serde_json::to_string(&s.discord_rpc).map_err(|e| ProjectError::Invalid(e.to_string()))?;
+        self.db.set_setting(KEY_DISCORD_RPC, &discord)?;
         // `allow_unreviewed_plugins` stays: see `set_allows_unreviewed_plugins`.
         // Fast Scan's default too: see `set_scan_default`.
         self.db.set_setting(KEY_CATALOG_CHECKS, if s.plugin_catalog_checks { "1" } else { "0" })?;
@@ -1078,6 +1076,28 @@ mod tests {
         lib.update_settings(&AppSettings { find_bodies: true, ..lib.settings().unwrap() }).unwrap();
         assert!(lib.project(film.id).unwrap().finds_bodies());
         assert!(!lib.project(anime.id).unwrap().finds_bodies());
+    }
+
+    #[test]
+    fn discord_is_off_until_chosen_and_for_what_cant_be_read() {
+        let (_dir, lib) = lib();
+        let off = as_api::DiscordRpcSettings::default();
+        assert_eq!(lib.discord_rpc().unwrap(), off, "a fresh library");
+        assert!(!off.enabled && !off.show_project && !off.show_episode && !off.show_character);
+
+        let chosen = as_api::DiscordRpcSettings { enabled: true, show_episode: true, ..off.clone() };
+        lib.update_settings(&AppSettings { discord_rpc: chosen.clone(), ..lib.settings().unwrap() }).unwrap();
+        assert_eq!(lib.discord_rpc().unwrap(), chosen);
+        assert_eq!(lib.settings().unwrap().discord_rpc, chosen);
+
+        // What can't be read turns it off, never on.
+        for garbage in ["not json", "", "[]", r#"{"enabled":"yes"}"#] {
+            lib.db.set_setting(KEY_DISCORD_RPC, garbage).unwrap();
+            assert_eq!(lib.discord_rpc().unwrap(), off, "{garbage}");
+        }
+        // Part of it, or fields an older build wrote: a name stays off unless saved on.
+        lib.db.set_setting(KEY_DISCORD_RPC, r#"{"enabled":true,"clientId":"1","showTimer":true}"#).unwrap();
+        assert_eq!(lib.discord_rpc().unwrap(), as_api::DiscordRpcSettings { enabled: true, ..off });
     }
 
     #[test]

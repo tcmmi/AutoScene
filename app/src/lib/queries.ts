@@ -1,5 +1,5 @@
-import { QueryClient, useQuery } from "@tanstack/react-query"
-import { commands, type CharacterId, type FaceTrackItem, type MediaId, type PluginInfo, type ProjectId, type TrackFilter } from "./ipc"
+import { QueryClient, keepPreviousData, useQuery } from "@tanstack/react-query"
+import { commands, type CharacterId, type DiscordRpcSettings, type FaceTrackItem, type MediaId, type PluginInfo, type ProjectId, type TrackFilter } from "./ipc"
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,6 +17,7 @@ export const qk = {
   appInfo: ["appInfo"] as const,
   settings: ["settings"] as const,
   scanDefaults: ["scanDefaults"] as const,
+  discordPreview: (show: DiscordRpcSettings) => ["discordPreview", show] as const,
   hardware: ["hardware"] as const,
   mediaTools: ["mediaTools"] as const,
   presets: ["exportPresets"] as const,
@@ -74,6 +75,18 @@ export function useSettings() {
 }
 
 /**
+ * What Settings shows as the person's status. While a switch's answer is on
+ * its way the last one stays: the same two samples, so the page doesn't jump.
+ */
+export function useDiscordPreview(show: DiscordRpcSettings) {
+  return useQuery({
+    queryKey: qk.discordPreview(show),
+    queryFn: () => commands.discordPreview(show),
+    placeholderData: keepPreviousData,
+  })
+}
+
+/**
  * The scan new projects start with, and why. Read afresh wherever it is shown:
  * a choice in Settings or the faceless-people switch changes it.
  */
@@ -102,12 +115,12 @@ export function useProjects() {
   return useQuery({ queryKey: qk.projects, queryFn: () => commands.projectsList() })
 }
 
-export function useProject(id: ProjectId) {
-  return useQuery({ queryKey: qk.project(id), queryFn: () => commands.projectGet(id) })
+export function useProject(id: ProjectId, enabled = true) {
+  return useQuery({ queryKey: qk.project(id), queryFn: () => commands.projectGet(id), enabled })
 }
 
-export function useMediaList(pid: ProjectId) {
-  return useQuery({ queryKey: qk.media(pid), queryFn: () => commands.mediaList(pid) })
+export function useMediaList(pid: ProjectId, enabled = true) {
+  return useQuery({ queryKey: qk.media(pid), queryFn: () => commands.mediaList(pid), enabled })
 }
 
 export function useFrameMap(pid: ProjectId, mid: MediaId, enabled: boolean) {
@@ -136,8 +149,8 @@ export function useExportDir(pid: ProjectId) {
 }
 
 /** The project's characters and where face analysis stands. */
-export function useCast(pid: ProjectId) {
-  return useQuery({ queryKey: qk.cast(pid), queryFn: () => commands.castGet(pid) })
+export function useCast(pid: ProjectId, enabled = true) {
+  return useQuery({ queryKey: qk.cast(pid), queryFn: () => commands.castGet(pid), enabled })
 }
 
 /** Names from AniList waiting for a yes, and whether the look-up runs (the

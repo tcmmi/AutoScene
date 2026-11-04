@@ -438,18 +438,17 @@ export const commands = {
 	 *  and is asked about once it stops ([`pages::watch`]).
 	 */
 	pluginPageHeartbeat: (session: string) => __TAURI_INVOKE<null>("plugin_page_heartbeat", { session }),
-	discordRpcStart: (clientId: string | null) => __TAURI_INVOKE<null>("discord_rpc_start", { clientId }),
-	discordRpcUpdate: (activity: {
-	details: string | null,
-	state: string | null,
-	startTimestamp: number | null,
-	largeImage: string | null,
-	largeText: string | null,
-	smallImage: string | null,
-	smallText: string | null,
-	buttons: DiscordButton[],
-} | null) => __TAURI_INVOKE<null>("discord_rpc_update", { activity }),
-	discordRpcStop: () => __TAURI_INVOKE<null>("discord_rpc_stop"),
+	/**
+	 *  What is on screen now, for the person's status on Discord. Does nothing
+	 *  while that is off, and the names in it go no further than their switches
+	 *  let them.
+	 */
+	discordView: (view: DiscordView) => __TAURI_INVOKE<void>("discord_view", { view }),
+	/**
+	 *  What the status looks like with the switches `show`, for Settings: in an
+	 *  episode, in a scenepack.
+	 */
+	discordPreview: (show: DiscordRpcSettings) => __TAURI_INVOKE<DiscordLines[]>("discord_preview", { show }),
 	/**  Newest first. Live updates arrive as `job:changed` / `job:progress`. */
 	jobsList: () => __TAURI_INVOKE<JobInfo[]>("jobs_list"),
 	jobCancel: (jobId: JobId) => __TAURI_INVOKE<void>("job_cancel", { jobId }),
@@ -770,7 +769,7 @@ export type AppSettings = {
 	 *  unless switched off. Applies from the next analysis.
 	 */
 	nvidiaAcceleration?: boolean,
-	/**  Discord Rich Presence settings. */
+	/**  What Discord may show. Everything off until the person turns it on. */
 	discordRpc?: DiscordRpcSettings,
 };
 
@@ -1073,36 +1072,54 @@ export type ContentKind =
 /**  Anime / 2D animation (heads, character art). */
 "anime" | "mixed";
 
-export type DiscordActivityPayload = {
-	details: string | null,
+export type DiscordDoing = 
+/**  Not in a project: the library, Plugins, Settings. */
+"idle" | 
+/**  In a project, on none of the places below. */
+"project" | 
+/**  In the player, in a series. */
+"episode" | 
+/**  In the player, in a movie: those have files, not episodes. */
+"file" | 
+/**  Making a scenepack. Only looking at a character is `Project`. */
+"character" | "export";
+
+/**  The two lines of the status under AutoScene's name. */
+export type DiscordLines = {
+	details: string,
 	state: string | null,
-	startTimestamp: number | null,
-	largeImage: string | null,
-	largeText: string | null,
-	smallImage: string | null,
-	smallText: string | null,
-	buttons: DiscordButton[],
 };
 
-export type DiscordButton = {
-	label: string,
-	url: string,
-};
-
-/**  User configuration for Discord Rich Presence. */
+/**
+ *  What AutoScene may tell Discord (`app/src-tauri/src/discord.rs`). All off
+ *  by default: nothing goes to Discord until `enabled`, and a name only with
+ *  its own switch as well.
+ */
 export type DiscordRpcSettings = {
+	/**  Shows that the person is working in AutoScene on their profile. */
 	enabled?: boolean,
-	clientId?: string,
-	showTimer?: boolean,
-	showButtons?: boolean,
+	/**  The project's title in place of "Working on a project". */
 	showProject?: boolean,
+	/**
+	 *  The open episode's or file's name in place of "Reviewing an episode"
+	 *  or "Reviewing a file".
+	 */
 	showEpisode?: boolean,
+	/**  The open character's name in place of "Making a scenepack". */
 	showCharacter?: boolean,
-	showProgress?: boolean,
-	showCounts?: boolean,
-	templateProject?: string,
-	templateScenepack?: string,
-	templateExport?: string,
+};
+
+/**
+ *  What the person is doing, as the window sees it. Names are the person's
+ *  own data, and none of them is sent unless its switch is on.
+ */
+export type DiscordView = {
+	doing: DiscordDoing,
+	project: string | null,
+	episode: string | null,
+	character: string | null,
+	/**  How far the export is, while `doing` is `Export` and it is known. */
+	percent: number | null,
 };
 
 export type DnxProfile = 

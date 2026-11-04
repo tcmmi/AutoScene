@@ -57,7 +57,7 @@ use wasmtime::component::Component;
 use wasmtime::{Engine, Store, UpdateDeadline};
 
 pub use self::cache::{keep_only, remove};
-pub use self::imports::{WASI_PATCH, WORLD_MINOR};
+pub use self::imports::{WASI_PATCH, WORLD_MINOR, too_new};
 pub use self::net::{Dial, Net, NetLimits, Resolve};
 use crate::Permission;
 pub use crate::calls::Grants;
@@ -226,7 +226,18 @@ pub fn prepare(path: &Path, sha256: Option<&str>, cache: &Path, m: &Manifest) ->
 /// The checks of [`prepare`] on `bytes`, without keeping the code: for
 /// `asp`. `m` is none for a component checked on its own.
 pub fn check(bytes: &[u8], m: Option<&Manifest>) -> PluginResult<Checked> {
-    compiled(engine::engine()?, bytes, m).map(|(_, checked)| checked)
+    check_listed(bytes, m).1
+}
+
+/// [`check`], with what the component imports beside its result, also when
+/// the check refused it (none when it didn't compile): for `asp`, which
+/// names an import that needs a newer AutoScene ([`too_new`]).
+pub fn check_listed(bytes: &[u8], m: Option<&Manifest>) -> (Vec<String>, PluginResult<Checked>) {
+    let loaded = engine::engine().and_then(|engine| Ok((engine, loaded(engine, bytes)?)));
+    match loaded {
+        Ok((engine, component)) => (import_names(engine, &component), checked(engine, &component, m)),
+        Err(e) => (Vec::new(), Err(e)),
+    }
 }
 
 /// Compiles `bytes` and checks them as a plugin's component: one this
@@ -234,13 +245,20 @@ pub fn check(bytes: &[u8], m: Option<&Manifest>) -> PluginResult<Checked> {
 /// warnings for `m`), links against it, and exports `run`. Nothing of it
 /// runs.
 fn compiled(engine: &Engine, bytes: &[u8], m: Option<&Manifest>) -> PluginResult<(Component, Checked)> {
+    let component = loaded(engine, bytes)?;
+    let checked = checked(engine, &component, m)?;
+    Ok((component, checked))
+}
+
+/// `bytes` compiled, when they are a component this wasmtime can compile.
+fn loaded(engine: &Engine, bytes: &[u8]) -> PluginResult<Component> {
     if bytes.len() as u64 > MAX_COMPONENT_BYTES {
         return Err(PluginError::Invalid("The plugin's component is larger than 64 MB.".into()));
     }
     if !is_component(bytes) {
         return Err(PluginError::Invalid(NOT_A_COMPONENT.into()));
     }
-    let component = Component::new(engine, bytes).map_err(|e| {
+    Component::new(engine, bytes).map_err(|e| {
         let text = format!("{e:#}");
         tracing::debug!(error = %text, "a plugin's component doesn't compile");
         // wasmtime is built without the async component model: a component
@@ -250,11 +268,20 @@ fn compiled(engine: &Engine, bytes: &[u8], m: Option<&Manifest>) -> PluginResult
         } else {
             PluginError::Invalid(format!("The plugin's component doesn't load: {}", first_line(&text)))
         }
-    })?;
-    let names: Vec<String> = component.component_type().imports(engine).map(|(name, _)| name.to_owned()).collect();
+    })
+}
+
+/// What `component` imports, as `ns:pkg/interface@version`.
+fn import_names(engine: &Engine, component: &Component) -> Vec<String> {
+    component.component_type().imports(engine).map(|(name, _)| name.to_owned()).collect()
+}
+
+/// The checks of [`compiled`] past compiling: imports, link and `run`.
+fn checked(engine: &Engine, component: &Component, m: Option<&Manifest>) -> PluginResult<Checked> {
+    let names = import_names(engine, component);
     let warnings = imports::check(names.iter().map(String::as_str), m)?;
-    pre(engine, &component)?;
-    Ok((component, Checked { imports: names, warnings }))
+    pre(engine, component)?;
+    Ok(Checked { imports: names, warnings })
 }
 
 /// `component` linked against what AutoScene offers, with its `run` found:

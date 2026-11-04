@@ -1567,9 +1567,9 @@ asp pack <plugin-folder> <out.asp>
 ```
 
 `asp pack` lists every file in the folder, but the version control folders
-(`.git`, `.hg`, `.svn`), `.DS_Store` and `Thumbs.db`, and the editor folders
-`asp init` writes (`.autoscene`, `.vscode`), at any depth, and a
-`files.lock`, `files.lock.minisig` or `author.pub` at its top. It refuses
+(`.git`, `.hg`, `.svn`) and `.gitignore`, `.DS_Store` and `Thumbs.db`, and
+the editor folders `asp init` writes (`.autoscene`, `.vscode`), at any
+depth, and a `files.lock`, `files.lock.minisig` or `author.pub` at its top. It refuses
 a folder that holds a link, a file a package can't name, or a secret key
 (`asp.key`, or any file that is a minisign secret key), and a package
 written into the plugin's own folder. It checks the manifest, the icon,

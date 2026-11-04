@@ -1,0 +1,14 @@
+{
+  "$schema": "../.autoscene/plugin.schema.json",
+  "manifestVersion": 2,
+  "id": "{{id}}",
+  "version": "0.1.0",
+  "name": "{{name}}",
+  "description": "A command that says hello, from AutoScene's sandbox.",
+  "author": { "name": "Your name" },
+  "engines": { "autoscene": "{{autoscene}}", "protocol": 2 },
+  "runtime": { "type": "wasm", "component": "plugin.wasm" },
+  "contributes": {
+    "commands": [{ "id": "hello", "title": "Say hello", "description": "Says which plugin it is." }]
+  }
+}

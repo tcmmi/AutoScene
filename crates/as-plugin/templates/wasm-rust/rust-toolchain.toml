@@ -1,0 +1,8 @@
+# The Rust this plugin is built with, so every build gives the same
+# component. rustup fetches it, and the WebAssembly target, on the first
+# cargo build here.
+[toolchain]
+channel = "1.99.1"
+targets = ["wasm32-wasip2"]
+components = ["rustfmt", "clippy"]
+profile = "minimal"

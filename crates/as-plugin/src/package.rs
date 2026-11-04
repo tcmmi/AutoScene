@@ -88,10 +88,11 @@ const MAX_LISTING_BYTES: u64 = 8 << 20;
 /// that long).
 const TAIL_BYTES: u64 = 128 << 10;
 /// What `asp pack` leaves out of a plugin folder, at any depth: version
-/// control, the files Windows and macOS leave in folders, and the editor
-/// files `asp init` writes (`plugin.json`'s schema and the SDK's types in
-/// `.autoscene`, the editor's settings in `.vscode`).
-const LEFT_OUT: [&str; 7] = [".git", ".hg", ".svn", ".DS_Store", "Thumbs.db", ".autoscene", ".vscode"];
+/// control (with git's `.gitignore`, which `asp init --wasm` writes in the
+/// plugin's folder), the files Windows and macOS leave in folders, and the
+/// editor files `asp init` writes (`plugin.json`'s schema and the SDK's
+/// types in `.autoscene`, the editor's settings in `.vscode`).
+const LEFT_OUT: [&str; 8] = [".git", ".gitignore", ".hg", ".svn", ".DS_Store", "Thumbs.db", ".autoscene", ".vscode"];
 
 /// `files.lock`: every file of a plugin.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

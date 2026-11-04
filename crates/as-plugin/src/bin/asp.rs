@@ -5,7 +5,8 @@
 //! asp pack <plugin-folder> <out.asp>
 //! asp sign <in.asp> --key <asp.key> [--out <out.asp>]
 //! asp verify <in.asp> [--catalog <index.json> [--online-key <RW…>]… [--offline-key <RW…>]…]
-//! asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
+//! asp init <dir> [--page | --service | --action | --wasm <rust|python>] [--id <id>] [--name <name>]
+//! asp check <plugin.wasm | plugin-folder | in.asp>
 //! asp catalog new <index.json>
 //! asp catalog add <index.json> <pkg.asp> --url <https://…>… --repo <https://github.com/o/r> --commit <40 hex>
 //!                 [--path <dir>] --author <name> [--author-key <RW…>]
@@ -22,12 +23,19 @@
 //! - `init` makes a plugin to start from in `<dir>`, a new or empty folder,
 //!   from the templates in `crates/as-plugin/templates`: a page in the rail
 //!   (`--page`, the default), a page and the service it asks (`--service`),
-//!   or a program with an export action (`--action`). Each gets
+//!   a program with an export action (`--action`), or a WebAssembly plugin
+//!   in Rust or Python with a command (`--wasm`), whose source sits beside
+//!   the plugin's folder `plugin/` with `wit/plugin.wit`. Each gets
 //!   `plugin.json`'s schema in `.autoscene/` and a `.vscode/settings.json`
 //!   that checks `plugin.json` against it; a page also gets the SDK's types
 //!   in `.autoscene/types/`. `pack` leaves both folders out. Its id is
 //!   `--id`, or `dev.example.` and the folder's name; its name is `--name`,
 //!   or the folder's.
+//! - `check` checks a WebAssembly component as AutoScene does before it
+//!   runs it, and lists what it imports: a plugin folder's or a package's,
+//!   against its `plugin.json` (a package's also against its `files.lock`,
+//!   as AutoScene installs it), or a `.wasm` file on its own. An import
+//!   that needs a newer AutoScene is named, with what this one offers.
 //! - `keygen` makes an author's minisign key pair in `<dir>`: `asp.key`, the
 //!   secret key, locked with a password it asks for (`--unencrypted` leaves
 //!   that out, for CI), and `author.pub`, the public key's base64 line. It
@@ -68,7 +76,9 @@
 //! `pack` and `verify` check each platform the plugin runs on as AutoScene
 //! does there, warn of one it can't run on, and fail when it runs on none.
 //! They check the icon and the banner as AutoScene does, and warn of a
-//! banner that cards would show soft or crop. A plugin made for another
+//! banner that cards would show soft or crop. They check a WebAssembly
+//! plugin's component as `check` does (`catalog add` too), and `verify`
+//! says it runs in a sandbox. A plugin made for another
 //! AutoScene than the one asp comes with gets a warning, not an error. A
 //! package is unpacked as AutoScene would before it takes the place of the
 //! output, so one AutoScene would refuse is never written. Errors exit with
@@ -87,9 +97,12 @@ use as_plugin::catalog::{
 };
 use as_plugin::keys::FIRST_EPOCH;
 use as_plugin::manifest::{self, Parsed};
-use as_plugin::package::{self, AUTHOR_KEY, LOCK, MANIFEST, MAX_BANNER, PictureFormat, SIG, file_in};
+use as_plugin::package::{
+    self, AUTHOR_KEY, LOCK, MANIFEST, MAX_BANNER, MAX_COMPONENT_BYTES, PictureFormat, SIG, file_in,
+};
 use as_plugin::store;
 use as_plugin::trust::{self, Trust, Verdict};
+use as_plugin::wasm;
 use as_plugin::{
     FilesLock, KeyRole, Launch, LockedFile, Manifest, PluginError, RuntimeKind, Unpacked, current_platform,
 };
@@ -109,7 +122,8 @@ usage: asp keygen <dir> [--force] [--unencrypted]
        asp pack <plugin-folder> <out.asp>
        asp sign <in.asp> --key <asp.key> [--out <out.asp>]
        asp verify <in.asp> [--catalog <index.json> [--online-key <RW…>]… [--offline-key <RW…>]…]
-       asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
+       asp init <dir> [--page | --service | --action | --wasm <rust|python>] [--id <id>] [--name <name>]
+       asp check <plugin.wasm | plugin-folder | in.asp>
        asp catalog new <index.json>
        asp catalog add <index.json> <pkg.asp> --url <https://…>… --repo <https://github.com/o/r>
                        --commit <40 hex> [--path <dir>] --author <name> [--author-key <RW…>]
@@ -141,6 +155,14 @@ const TYPES: [(&str, &str); 6] = [
 ];
 /// A day, in seconds.
 const DAY: u64 = 86_400;
+/// The world a WebAssembly plugin is built against, which `init --wasm`
+/// writes beside its source.
+const WIT: &str = include_str!("../../wit/plugin.wit");
+/// The template of a Rust WebAssembly plugin's `Cargo.lock`: its crate,
+/// `{{crate}}`, and the packages it depends on.
+const RUST_LOCK: &str = include_str!("../../templates/wasm-rust/Cargo.lock");
+/// What `check` says of each import that does nothing without a permission.
+const NEEDS: [(&str, &str); 1] = [("wasi:http/", "network")];
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -184,17 +206,28 @@ fn run(args: &[OsString]) -> Result<(), Failure> {
             verify(&a.paths[0], index, &keys)
         }
         "init" => {
-            let a = Args::read(rest, 1, &["--page", "--service", "--action"], &["--id", "--name"])?;
+            let a = Args::read(rest, 1, &["--page", "--service", "--action"], &["--id", "--name", "--wasm"])?;
             let forms = [("--page", Form::Page), ("--service", Form::Service), ("--action", Form::Action)];
-            let chosen: Vec<Form> = forms.into_iter().filter(|(s, _)| a.has(s)).map(|(_, form)| form).collect();
+            let mut chosen: Vec<Form> = forms.into_iter().filter(|(s, _)| a.has(s)).map(|(_, form)| form).collect();
+            for language in a.values("--wasm") {
+                chosen.push(match language.to_str() {
+                    Some("rust") => Form::WasmRust,
+                    Some("python") => Form::WasmPython,
+                    _ => return Err(usage("--wasm takes rust or python")),
+                });
+            }
             let form = match chosen[..] {
                 [] => Form::Page,
                 [form] => form,
-                _ => return Err(usage("choose one of --page, --service and --action")),
+                _ => return Err(usage("choose one of --page, --service, --action and --wasm")),
             };
             init(&a.paths[0], form, a.value("--id"), a.value("--name"))
         }
         "catalog" => catalog_command(rest),
+        "check" => {
+            let a = Args::read(rest, 1, &[], &[])?;
+            check(&a.paths[0])
+        }
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             Ok(())
@@ -292,6 +325,15 @@ fn mark_to_run(m: &Manifest, lock: &mut FilesLock) -> Vec<String> {
 
 /// Packs the plugin folder `dir` into the package `out`, unsigned.
 fn pack(dir: &Path, out: &Path) -> Result<(), Failure> {
+    if let Some(plugin) = made_beside(dir) {
+        return Err(failed(format!(
+            "{} has no plugin.json. The plugin asp init made is in {}: asp pack {} {}",
+            dir.display(),
+            plugin.display(),
+            path_word(&plugin),
+            path_word(out)
+        )));
+    }
     // asp writes beside the package as it works, and a package in its own
     // folder would land in its next version.
     if let (Ok(dir), Ok(beside)) = (dir.canonicalize(), folder_of(out).canonicalize())
@@ -305,10 +347,18 @@ fn pack(dir: &Path, out: &Path) -> Result<(), Failure> {
     let parsed = read_manifest(&manifest::read_file(&path).map_err(at(&path))?)?;
     warn_all(&parsed.warnings);
     let m = &parsed.manifest;
+    if m.is_sandboxed() && !m.platforms.is_empty() {
+        warn(
+            "platforms limits where AutoScene installs it, though a WebAssembly plugin runs the same on every platform.",
+        );
+    }
     for marked in mark_to_run(m, &mut lock) {
         warn(&format!("{marked} may run on this computer, so the package marks it to run too."));
     }
     check_platforms(m, &lock)?;
+    if m.is_sandboxed() {
+        warn_all(&check_component(dir, m)?.checked.warnings);
+    }
     package::check_pages(dir, Some(&lock), &m.pages).map_err(plugin_at(dir))?;
     package::check_pictures(dir, &lock, m).map_err(plugin_at(dir))?;
     warn_of_banner(dir, m)?;
@@ -437,6 +487,9 @@ fn verify(path: &Path, index: Option<&Path>, keys: &[(KeyRole, &OsString)]) -> R
     let lock = Some(unpacked.lock_bytes.as_slice());
     let (verdict, _) = store::verdict(m, lock, sig, author_key, None, &catalog, catalog::now())?;
     println!("{} {}: {}", m.id, m.version, trust_text(&verdict));
+    if m.is_sandboxed() {
+        println!("Runs in a sandbox.");
+    }
     Ok(())
 }
 
@@ -1353,6 +1406,137 @@ fn date(secs: u64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// Checks the WebAssembly component at `path` (a plugin folder, a package
+/// or a `.wasm` file) as AutoScene does before it runs it, and says what it
+/// imports. A folder's or a package's is checked against its `plugin.json`.
+fn check(path: &Path) -> Result<(), Failure> {
+    let folder = path.is_dir();
+    let package = !folder && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("asp"));
+    if !folder && !package {
+        let shown = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+        show(&component_at(path, shown, None)?);
+        return Ok(());
+    }
+    let scratch = tempfile::tempdir()?;
+    let (dir, parsed, lock) = if package {
+        let dir = scratch.path().join("plugin");
+        let (unpacked, parsed) = open(path, &dir)?;
+        (dir, parsed, Some(unpacked.lock))
+    } else {
+        if let Some(plugin) = made_beside(path) {
+            return Err(failed(format!(
+                "{} has no plugin.json. The plugin asp init made is in {}: asp check {}",
+                path.display(),
+                plugin.display(),
+                path_word(&plugin)
+            )));
+        }
+        let file = path.join(MANIFEST);
+        (path.to_path_buf(), read_manifest(&manifest::read_file(&file).map_err(at(&file))?)?, None)
+    };
+    warn_all(&parsed.warnings);
+    let m = &parsed.manifest;
+    if !m.is_sandboxed() {
+        return Err(failed(format!(
+            "{} isn't a WebAssembly plugin: asp check checks a plugin whose runtime.type is wasm.",
+            m.name
+        )));
+    }
+    // A package is checked as AutoScene installs it: its files.lock names
+    // the component, which isn't marked to run.
+    if let Some(lock) = &lock {
+        check_platforms(m, lock)?;
+    }
+    show(&check_component(&dir, m)?);
+    Ok(())
+}
+
+/// The plugin folder `plugin/` in `dir`, when `dir` has no `plugin.json`
+/// and that folder has one: `asp init --wasm` puts a plugin's source beside
+/// it, so the folder asp init made is easy to name in its place.
+fn made_beside(dir: &Path) -> Option<PathBuf> {
+    let plugin = dir.join("plugin");
+    (!dir.join(MANIFEST).exists() && plugin.join(MANIFEST).is_file()).then_some(plugin)
+}
+
+/// A component `check` looked at.
+struct Component {
+    /// Its path in the plugin, or its file name.
+    shown: String,
+    size: u64,
+    checked: wasm::Checked,
+}
+
+/// The component of the WebAssembly plugin `m` in its folder `dir`, checked
+/// against `m`.
+fn check_component(dir: &Path, m: &Manifest) -> Result<Component, Failure> {
+    let Some(shown) = m.runtime.component.clone() else {
+        return Err(failed("The plugin's runtime names no component."));
+    };
+    let path = file_in(dir, &shown);
+    if !path.is_file() {
+        return Err(failed(format!("{} isn't there: build the plugin's component first.", path.display())));
+    }
+    component_at(&path, shown, Some(m))
+}
+
+/// The component at `path`, checked as AutoScene checks it before a run
+/// ([`wasm::check`]): against the manifest `m`, when given. An import that
+/// needs a newer AutoScene is named, with what this one offers. Nothing of
+/// it runs.
+fn component_at(path: &Path, shown: String, m: Option<&Manifest>) -> Result<Component, Failure> {
+    let mut bytes = Vec::new();
+    File::open(path).map_err(at(path))?.take(MAX_COMPONENT_BYTES + 1).read_to_end(&mut bytes).map_err(at(path))?;
+    let checked = match wasm::check_listed(&bytes, m) {
+        (_, Ok(checked)) => checked,
+        // Which import needs a newer AutoScene, and what this one offers.
+        (imports, Err(e @ PluginError::TooNew(_))) => {
+            return Err(imports.iter().find_map(|name| wasm::too_new(name)).map_or_else(|| e.into(), failed));
+        }
+        (_, Err(e)) => return Err(e.into()),
+    };
+    Ok(Component { shown, size: bytes.len() as u64, checked })
+}
+
+/// Says what `check` found: the world and size of the component, what it
+/// imports (with the permission an import needs to do anything), and the
+/// warnings.
+fn show(c: &Component) {
+    let mut imports: Vec<&str> = c.checked.imports.iter().map(String::as_str).collect();
+    imports.sort_unstable();
+    // The newest minor of the world it imports; a component that imports
+    // none of it still fits 1.0, whose run it exports.
+    let minor = imports
+        .iter()
+        .filter_map(|name| name.strip_prefix("autoscene:plugin/")?.split_once('@'))
+        .filter_map(|(_, version)| Version::parse(version).ok())
+        .map(|v| v.minor)
+        .max()
+        .unwrap_or(0);
+    println!("{}: a WebAssembly component of autoscene:plugin@1.{minor} ({})", c.shown, size_text(c.size));
+    println!("{}", if imports.is_empty() { "imports: none" } else { "imports:" });
+    let needs = |name: &str| NEEDS.iter().find(|(prefix, _)| name.starts_with(prefix)).map(|(_, p)| *p);
+    let width = imports.iter().filter(|n| needs(n).is_some()).map(|n| n.chars().count()).max().unwrap_or(0);
+    for name in imports {
+        match needs(name) {
+            Some(permission) => println!("  {name:<width$}   needs \"{permission}\""),
+            None => println!("  {name}"),
+        }
+    }
+    warn_all(&c.checked.warnings);
+}
+
+/// A file's size as `check` gives it: whole KB (rounded up) below 1 MB,
+/// else MB rounded to one decimal (1 KB = 1024 bytes).
+fn size_text(bytes: u64) -> String {
+    if bytes < 1 << 20 {
+        format!("{} KB", bytes.div_ceil(1 << 10))
+    } else {
+        let tenths = (bytes * 10 + (1 << 19)) >> 20;
+        format!("{}.{} MB", tenths / 10, tenths % 10)
+    }
+}
+
 /// Reviewed, Pinned (key <id>) or Unreviewed.
 fn trust_text(verdict: &Verdict) -> String {
     match (verdict.trust, &verdict.author_key) {
@@ -1372,6 +1556,12 @@ enum Form {
     Service,
     /// A program of protocol 2 with one export action.
     Action,
+    /// A WebAssembly component in Rust with one command, its source beside
+    /// the plugin's folder `plugin/`.
+    WasmRust,
+    /// A WebAssembly component in Python (componentize-py) with one
+    /// command, its source beside the plugin's folder `plugin/`.
+    WasmPython,
 }
 
 impl Form {
@@ -1380,6 +1570,17 @@ impl Form {
             Self::Page => "a page",
             Self::Service => "a page and its service",
             Self::Action => "an export action",
+            Self::WasmRust => "a WebAssembly plugin in Rust",
+            Self::WasmPython => "a WebAssembly plugin in Python",
+        }
+    }
+
+    /// The path of its `plugin.json`: a WebAssembly plugin's source sits
+    /// beside its folder, which is what AutoScene loads and asp packs.
+    fn manifest(self) -> &'static str {
+        match self {
+            Self::WasmRust | Self::WasmPython => "plugin/plugin.json",
+            _ => MANIFEST,
         }
     }
 
@@ -1389,23 +1590,59 @@ impl Form {
             Self::Page => &["page"],
             Self::Service => &["page", "program", "service"],
             Self::Action => &["program", "action"],
+            Self::WasmRust | Self::WasmPython => &[],
         }
     }
 
     /// Its files, by their path in the plugin: the templates [`fill`]
     /// makes them of, and those it gets as they are.
     fn files(self) -> Vec<(&'static str, Template)> {
+        let editor = [
+            (".autoscene/plugin.schema.json", Template::Copy(SCHEMA)),
+            (".vscode/settings.json", Template::Copy(include_str!("../../templates/vscode-settings.json"))),
+        ];
         let manifest = match self {
             Self::Page => include_str!("../../templates/plugin.page.json"),
             Self::Service => include_str!("../../templates/plugin.service.json"),
             Self::Action => include_str!("../../templates/plugin.action.json"),
+            Self::WasmRust => {
+                return [
+                    ("plugin/plugin.json", Template::Fill(include_str!("../../templates/wasm-rust/plugin.json"))),
+                    ("plugin/.gitignore", Template::Copy(include_str!("../../templates/wasm-rust/plugin-gitignore"))),
+                    ("README.md", Template::Fill(include_str!("../../templates/wasm-rust/README.md"))),
+                    ("Cargo.toml", Template::Fill(include_str!("../../templates/wasm-rust/Cargo.toml"))),
+                    ("Cargo.lock", Template::Fill(RUST_LOCK)),
+                    (
+                        "rust-toolchain.toml",
+                        Template::Copy(include_str!("../../templates/wasm-rust/rust-toolchain.toml")),
+                    ),
+                    ("src/lib.rs", Template::Copy(include_str!("../../templates/wasm-rust/src/lib.rs"))),
+                    (".gitignore", Template::Copy(include_str!("../../templates/wasm-rust/gitignore"))),
+                    ("wit/plugin.wit", Template::Copy(WIT)),
+                ]
+                .into_iter()
+                .chain(editor)
+                .collect();
+            }
+            Self::WasmPython => {
+                return [
+                    ("plugin/plugin.json", Template::Fill(include_str!("../../templates/wasm-python/plugin.json"))),
+                    ("plugin/.gitignore", Template::Copy(include_str!("../../templates/wasm-python/plugin-gitignore"))),
+                    ("README.md", Template::Fill(include_str!("../../templates/wasm-python/README.md"))),
+                    ("app.py", Template::Copy(include_str!("../../templates/wasm-python/app.py"))),
+                    (".gitignore", Template::Copy(include_str!("../../templates/wasm-python/gitignore"))),
+                    ("wit/plugin.wit", Template::Copy(WIT)),
+                ]
+                .into_iter()
+                .chain(editor)
+                .collect();
+            }
         };
         let mut files = vec![
             (MANIFEST, Template::Fill(manifest)),
             ("README.md", Template::Fill(include_str!("../../templates/README.md"))),
-            (".autoscene/plugin.schema.json", Template::Copy(SCHEMA)),
-            (".vscode/settings.json", Template::Copy(include_str!("../../templates/vscode-settings.json"))),
         ];
+        files.extend(editor);
         let blocks = self.blocks();
         if blocks.contains(&"page") {
             files.push(("ui/index.html", Template::Fill(include_str!("../../templates/ui/index.html"))));
@@ -1468,6 +1705,10 @@ fn init(dir: &Path, form: Form, id: Option<&OsString>, name: Option<&OsString>) 
     let app = app();
     let autoscene = format!(">={}.{}.0, <{}", app.major, app.minor, app.major + 1);
     let dir_name = folder.as_deref().unwrap_or("<plugin-folder>");
+    // A WebAssembly plugin's crate, named for the id's last part, and the
+    // file cargo builds of it.
+    let crate_name = crate_name(id.as_str().rsplit('.').next().unwrap_or_default());
+    let wasm_file = format!("{}.wasm", crate_name.replace('-', "_"));
 
     let files: Vec<(&str, String)> = form
         .files()
@@ -1487,13 +1728,16 @@ fn init(dir: &Path, form: Form, id: Option<&OsString>, name: Option<&OsString>) 
                     ("autoscene", text(&autoscene)),
                     ("dir", text(&shell_word(dir_name))),
                     ("package", text(&shell_word(&format!("{dir_name}.asp")))),
+                    ("crate", text(&crate_name)),
+                    ("wasm", text(&wasm_file)),
                 ];
                 let filled = fill(template, form.blocks(), &values);
                 (path, filled)
             }
         })
         .collect();
-    let (_, plugin_json) = files.iter().find(|(path, _)| *path == MANIFEST).expect("every form has a plugin.json");
+    let (_, plugin_json) =
+        files.iter().find(|(path, _)| *path == form.manifest()).expect("every form has a plugin.json");
     warn_all(&read_manifest(plugin_json.as_bytes())?.warnings);
 
     for (path, text) in &files {
@@ -1506,6 +1750,24 @@ fn init(dir: &Path, form: Form, id: Option<&OsString>, name: Option<&OsString>) 
     }
     println!("Made {name} ({id}) in {}: {}. Its README.md says what comes next.", dir.display(), form.what());
     Ok(())
+}
+
+/// The name of a Rust WebAssembly plugin's crate for `last`, its id's last
+/// part: `last`, or `plugin-` and `last` when a crate name can't start like
+/// it or a package in the template's `Cargo.lock` has its name (cargo
+/// reads `-` and `_` alike there). Another crate of that name would make
+/// the lock wrong, and `cargo build --locked` would refuse it.
+fn crate_name(last: &str) -> String {
+    let same = |a: &str, b: &str| a.replace('-', "_") == b.replace('-', "_");
+    let taken = RUST_LOCK
+        .lines()
+        .filter_map(|line| line.strip_prefix("name = \"")?.strip_suffix('"'))
+        .any(|package| same(package, last));
+    if last.starts_with(|c: char| c.is_ascii_lowercase()) && !taken {
+        last.to_owned()
+    } else {
+        format!("plugin-{last}")
+    }
 }
 
 /// The part of a default id a folder's name gives: lowercase letters and
@@ -1594,10 +1856,20 @@ fn unpack_checked(path: &Path, into: &Path) -> Result<(Unpacked, Parsed), Failur
     warn_all(&parsed.warnings);
     let m = &parsed.manifest;
     check_platforms(m, &unpacked.lock)?;
+    if m.is_sandboxed() {
+        warn_all(&check_component(into, m)?.checked.warnings);
+    }
     package::check_pages(into, Some(&unpacked.lock), &m.pages)?;
     package::check_pictures(into, &unpacked.lock, m)?;
     warn_of_banner(into, m)?;
     Ok((unpacked, parsed))
+}
+
+/// `path` as one word of a command line: in double quotes when it holds
+/// a space.
+fn path_word(path: &Path) -> String {
+    let shown = path.display().to_string();
+    if shown.contains(char::is_whitespace) { format!("\"{shown}\"") } else { shown }
 }
 
 /// Unpacks the package `path` into the new folder `into` and reads its
@@ -1949,5 +2221,48 @@ mod tests {
         let mut left: Vec<_> = fs::read_dir(tmp.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
         left.sort();
         assert_eq!(left, ["plugin", "plugin.asp"]);
+    }
+
+    #[test]
+    fn a_crate_is_never_named_like_a_package_in_its_lock() {
+        for (last, named) in [
+            ("hello-rust", "hello-rust"),
+            ("2d-tools", "plugin-2d-tools"),
+            // Packages in the template's Cargo.lock, with - and _ alike.
+            ("log", "plugin-log"),
+            ("serde", "plugin-serde"),
+            ("serde-json", "plugin-serde-json"),
+            ("wit-bindgen", "plugin-wit-bindgen"),
+            ("wit_bindgen", "plugin-wit_bindgen"),
+            // Only a whole name counts.
+            ("logger", "logger"),
+            ("serde-tools", "serde-tools"),
+        ] {
+            assert_eq!(crate_name(last), named, "{last}");
+        }
+        // The template names its own crate only as a placeholder.
+        assert!(RUST_LOCK.contains("name = \"{{crate}}\"\n"));
+        assert!(RUST_LOCK.contains("name = \"wit-bindgen\"\n"));
+    }
+
+    #[test]
+    fn a_size_is_rounded_to_what_check_shows() {
+        for (bytes, shown) in [
+            (0, "0 KB"),
+            (1, "1 KB"),
+            (1024, "1 KB"),
+            (1025, "2 KB"),
+            ((1 << 20) - 1, "1024 KB"),
+            (1 << 20, "1.0 MB"),
+            // 1.05 MB is 1,101,004.8 bytes.
+            (1_101_004, "1.0 MB"),
+            (1_101_005, "1.1 MB"),
+            // What the Python template builds: 17.49 MB.
+            (18_335_930, "17.5 MB"),
+            ((10 << 20) - 1, "10.0 MB"),
+            (MAX_COMPONENT_BYTES, "64.0 MB"),
+        ] {
+            assert_eq!(size_text(bytes), shown, "{bytes}");
+        }
     }
 }

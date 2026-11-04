@@ -1,0 +1,26 @@
+[package]
+name = "{{crate}}"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# A folder of its own: built for wasm32-wasip2, never as part of another
+# workspace.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# The bindings for wit/plugin.wit.
+wit-bindgen = "=0.63.0"
+# For WASI 0.2 beyond what std reaches, such as wasi:http for a request
+# (with the network permission), add:
+# wasip2 = "=2.0.1"
+
+# A small component that builds the same, byte for byte, every time.
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1

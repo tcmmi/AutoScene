@@ -639,6 +639,9 @@ fn pack_leaves_out_the_editor_files() {
         "lib/.VSCode/launch.json",
         "lib/.autoscene",
         ".autoscene.json",
+        // What asp init --wasm writes in a plugin's folder, for git.
+        ".gitignore",
+        "lib/.GITIGNORE",
     ] {
         let file = src.join(path);
         fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -1288,22 +1291,17 @@ fn catalog_add_takes_the_entry_from_the_package() {
 
 #[test]
 fn catalog_add_lists_a_webassembly_plugin_on_every_platform() {
+    let Some(guest) = guest() else { return };
     let tmp = tempfile::tempdir().unwrap();
     let place = |name: &str| tmp.path().join(name);
-    let component: &[u8] = b"\0asm\x0d\x00\x01\x00";
-    let wasm = folder(&place("wasm"), json!({}), &[("plugin.wasm", component)]);
-    edit_manifest(&wasm, |v| {
-        v["manifestVersion"] = json!(2);
-        v["engines"]["protocol"] = json!(2);
-        v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
-    });
+    let wasm = wasm_plugin(&place("wasm"), &guest, |_| {});
     let cat = CiCatalog::new(&place("site"), &place("online"));
 
     // A component runs wherever AutoScene does, also on a platform a later
     // AutoScene adds: it is listed as running on all.
     let everywhere = place("everywhere.asp");
-    asp(&["pack", text(&wasm), text(&everywhere)]).ok();
-    cat.add(&everywhere).ok();
+    let packed = asp(&["pack", text(&wasm), text(&everywhere)]).warnings();
+    assert_eq!(cat.add(&everywhere).warnings(), packed, "add checks the component as pack does");
     let entry = &cat.json()["plugins"][0];
     assert_eq!((&entry["runtime"], &entry["platforms"]), (&json!("wasm"), &json!([])));
     assert_eq!((&entry["uvScript"], &entry["gpu"]), (&json!(false), &json!(false)));
@@ -1314,8 +1312,8 @@ fn catalog_add_lists_a_webassembly_plugin_on_every_platform() {
         v["platforms"] = json!(["linux-x86_64", "windows-x86_64"]);
     });
     let named = place("named.asp");
-    asp(&["pack", text(&wasm), text(&named)]).ok();
-    cat.add(&named).ok();
+    asp(&["pack", text(&wasm), text(&named)]).warnings();
+    cat.add(&named).warnings();
     let entry = &cat.json()["plugins"][1];
     assert_eq!((&entry["runtime"], &entry["platforms"]), (&json!("wasm"), &json!(["windows-x86_64", "linux-x86_64"])));
 }
@@ -1966,7 +1964,7 @@ fn init_makes_a_plugin_that_packs_and_parses() {
             RuntimeKind::None => (1, true, false, true, false, false),
             RuntimeKind::Service => (1, false, true, true, true, false),
             RuntimeKind::Process => (0, false, false, false, false, true),
-            // No form of asp init makes a WebAssembly plugin yet.
+            // init --wasm has tests of its own.
             RuntimeKind::Wasm => unreachable!("{folder} is a WebAssembly plugin"),
         };
         assert_eq!(says, says_for, "{folder}");
@@ -2058,7 +2056,7 @@ fn init_never_writes_into_a_folder_that_has_files() {
         (vec!["--name", " "], 1, named),
         (vec!["--name", &long], 1, named),
         (vec!["--name", "Line\nbreak"], 1, named),
-        (vec!["--page", "--action"], 2, "asp: choose one of --page, --service and --action\n"),
+        (vec!["--page", "--action"], 2, "asp: choose one of --page, --service, --action and --wasm\n"),
     ] {
         let mut all = vec!["init", text(&new)];
         all.extend(&args);
@@ -2211,4 +2209,457 @@ fn the_catalog_example_in_the_docs_checks_out() {
     let verified = cat.verify(&[]).ok();
     assert!(verified.starts_with(&format!("{}: epoch 1, number 8, ", cat.index.display())), "{verified}");
     assert!(verified.ends_with("\n2 plugin versions and 1 withdrawal.\n"), "{verified}");
+}
+
+/// The test guest (`cargo xtask wasm-guests`); none (the test skips) when
+/// it wasn't built.
+fn guest() -> Option<Vec<u8>> {
+    as_testkit::fixture_file("wasm/guest.wasm").map(|path| fs::read(path).unwrap())
+}
+
+/// A component written as text.
+fn component(wat: &str) -> Vec<u8> {
+    wat::parse_str(wat).unwrap()
+}
+
+/// A WebAssembly plugin folder `dir` with `component` as its plugin.wasm
+/// and a command; `edit` changes its plugin.json first.
+fn wasm_plugin(dir: &Path, component: &[u8], edit: impl FnOnce(&mut Value)) -> PathBuf {
+    let mut manifest = json!({
+        "manifestVersion": 2,
+        "id": "dev.autoscene.hello-wasm",
+        "version": "1.0.0",
+        "name": "Hello Wasm",
+        "description": "Says hello from the sandbox.",
+        "author": {"name": "AutoScene"},
+        "engines": {"autoscene": ">=1.0.0, <2", "protocol": 2},
+        "runtime": {"type": "wasm", "component": "plugin.wasm"},
+        "contributes": {"commands": [{"id": "hello", "title": "Say hello"}]}
+    });
+    edit(&mut manifest);
+    fs::create_dir_all(dir).unwrap();
+    fs::write(dir.join("plugin.json"), serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    fs::write(dir.join("plugin.wasm"), component).unwrap();
+    dir.to_path_buf()
+}
+
+/// Checks what `asp init --wasm` wrote in `dir`: `own` and the editor's
+/// files, each template filled in, the crate's `wit/plugin.wit` and schema,
+/// and a `plugin/plugin.json` AutoScene reads without a word: a WebAssembly
+/// plugin `id` named `name`, with a command. Without its component it
+/// neither packs nor checks, and says why. Gives its README.
+fn wasm_init_parses(dir: &Path, own: &[&str], id: &str, name: &str) -> String {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files: Vec<String> = own.iter().map(|f| f.to_string()).chain(EDITOR_FILES.map(String::from)).collect();
+    files.sort();
+    assert_eq!(files_in(dir), files);
+    let same =
+        |file: &str, original: PathBuf| assert_eq!(fs::read(dir.join(file)).unwrap(), fs::read(original).unwrap());
+    same("wit/plugin.wit", crate_dir.join("wit/plugin.wit"));
+    same(".autoscene/plugin.schema.json", crate_dir.join("schema/plugin.schema.json"));
+    for file in own {
+        let filled = fs::read_to_string(dir.join(file)).unwrap();
+        assert!(!filled.contains("{{"), "{file} has a marker or placeholder left:\n{filled}");
+    }
+    let vscode: Value = serde_json::from_slice(&fs::read(dir.join(".vscode/settings.json")).unwrap()).unwrap();
+    assert_eq!(vscode["json.schemas"][0]["fileMatch"], json!(["/plugin.json"]));
+
+    let plugin = dir.join("plugin");
+    let bytes = fs::read(plugin.join("plugin.json")).unwrap();
+    // The schema it names is the one beside the source.
+    let schema = serde_json::from_slice::<Value>(&bytes).unwrap()["$schema"].as_str().unwrap().to_owned();
+    assert_eq!(fs::read(plugin.join(schema)).unwrap(), fs::read(crate_dir.join("schema/plugin.schema.json")).unwrap());
+    let app = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+    let parsed = manifest::parse(&bytes, &app).unwrap();
+    assert_eq!(parsed.warnings, Vec::<String>::new());
+    let m = parsed.manifest;
+    assert_eq!((m.id.as_str(), m.name.as_str(), m.version.as_str()), (id, name, "0.1.0"));
+    assert_eq!((m.manifest_version, m.engines.protocol, m.runtime.kind), (2, 2, RuntimeKind::Wasm));
+    assert_eq!(m.runtime.component.as_deref(), Some("plugin.wasm"));
+    let commands: Vec<(&str, &str)> = m.commands.iter().map(|c| (c.id.as_str(), c.title.as_str())).collect();
+    assert_eq!(commands, [("hello", "Say hello")]);
+    assert!(m.permissions.is_empty() && m.export_actions.is_empty() && m.pages.is_empty());
+    // The component it builds stays out of version control.
+    assert!(fs::read_to_string(plugin.join(".gitignore")).unwrap().lines().any(|l| l == "plugin.wasm"));
+
+    let out = dir.join("plugin.asp");
+    let err = asp(&["pack", text(&plugin), text(&out)]).failed(1);
+    assert!(err.contains("The plugin package is missing plugin.wasm, which its runtime needs."), "{err}");
+    assert!(!out.exists());
+    let err = asp(&["check", text(&plugin)]).failed(1);
+    let missing = plugin.join("plugin.wasm");
+    assert_eq!(err, format!("asp: {} isn't there: build the plugin's component first.\n", missing.display()));
+    // The folder asp init made isn't the plugin's: asp names the one that is.
+    let word = |p: &Path| if text(p).contains(' ') { format!(r#""{}""#, p.display()) } else { text(p).to_owned() };
+    let made =
+        format!("asp: {} has no plugin.json. The plugin asp init made is in {}", dir.display(), plugin.display());
+    let err = asp(&["check", text(dir)]).failed(1);
+    assert_eq!(err, format!("{made}: asp check {}\n", word(&plugin)));
+    let err = asp(&["pack", text(dir), text(&out)]).failed(1);
+    assert_eq!(err, format!("{made}: asp pack {} {}\n", word(&plugin), word(&out)));
+    assert!(!out.exists());
+    fs::read_to_string(dir.join("README.md")).unwrap()
+}
+
+#[test]
+fn init_writes_a_rust_plugin_that_parses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let own = [
+        ".gitignore",
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "plugin/.gitignore",
+        "plugin/plugin.json",
+        "rust-toolchain.toml",
+        "src/lib.rs",
+        "wit/plugin.wit",
+    ];
+    // Its crate is named for the id's last part, with a word before a digit
+    // a crate name can't start with.
+    let named = ["--id", "dev.me.2d-tools", "--name", "2D Tools"];
+    for (folder, args, id, name, krate) in [
+        ("Hello Rust", &[][..], "dev.example.hello-rust", "Hello Rust", "hello-rust"),
+        ("two", &named[..], "dev.me.2d-tools", "2D Tools", "plugin-2d-tools"),
+        // Not a package its Cargo.lock holds: cargo build --locked would refuse that lock.
+        ("log", &[][..], "dev.example.log", "log", "plugin-log"),
+    ] {
+        let dir = tmp.path().join(folder);
+        let mut all = vec!["init", text(&dir), "--wasm", "rust"];
+        all.extend(args);
+        let said = asp(&all).ok();
+        let made = "a WebAssembly plugin in Rust. Its README.md says what comes next.";
+        assert_eq!(said, format!("Made {name} ({id}) in {}: {made}\n", dir.display()));
+        let readme = wasm_init_parses(&dir, &own, id, name);
+        let read = |file: &str| fs::read_to_string(dir.join(file)).unwrap();
+
+        // A crate of its own, with the test guest's pin and release
+        // profile (they move together), and a lock that fits it.
+        let cargo: toml::Value = toml::from_str(&read("Cargo.toml")).unwrap();
+        let guest: toml::Value =
+            toml::from_str(&fs::read_to_string(crate_dir.join("tests/guest/Cargo.toml")).unwrap()).unwrap();
+        assert_eq!(cargo["package"]["name"].as_str(), Some(krate));
+        assert!(cargo.get("workspace").is_some(), "a workspace of its own");
+        assert_eq!(cargo["lib"]["crate-type"], toml::Value::Array(vec!["cdylib".into()]));
+        assert_eq!(cargo["dependencies"]["wit-bindgen"], guest["dependencies"]["wit-bindgen"]);
+        assert_eq!(cargo["profile"], guest["profile"]);
+        let lock: toml::Value = toml::from_str(&read("Cargo.lock")).unwrap();
+        let packages = lock["package"].as_array().unwrap();
+        let package = |name: &str| packages.iter().find(|p| p["name"].as_str() == Some(name)).unwrap();
+        let mut named: Vec<&str> = packages.iter().map(|p| p["name"].as_str().unwrap()).collect();
+        named.sort_unstable();
+        let all = named.len();
+        named.dedup();
+        assert_eq!(named.len(), all, "a package name twice in its Cargo.lock");
+        let deps = package(krate)["dependencies"].as_array().unwrap();
+        let deps: Vec<&str> = deps.iter().map(|d| d.as_str().unwrap()).collect();
+        let wants: Vec<&str> = cargo["dependencies"].as_table().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(deps, wants);
+        let pin = cargo["dependencies"]["wit-bindgen"].as_str().unwrap().trim_start_matches('=');
+        assert_eq!(package("wit-bindgen")["version"].as_str(), Some(pin));
+        // A stable Rust that builds wasm32-wasip2 (1.82 or later).
+        let toolchain: toml::Value = toml::from_str(&read("rust-toolchain.toml")).unwrap();
+        let channel = Version::parse(toolchain["toolchain"]["channel"].as_str().unwrap()).unwrap();
+        assert!(channel >= Version::new(1, 82, 0) && channel.pre.is_empty(), "{channel}");
+        assert_eq!(toolchain["toolchain"]["targets"], toml::Value::Array(vec!["wasm32-wasip2".into()]));
+        assert!(read("src/lib.rs").contains(r#"wit_bindgen::generate!({ world: "plugin", path: "wit" });"#));
+
+        // The README builds, copies and packs this crate's component.
+        let wasm = format!("target/wasm32-wasip2/release/{}.wasm", krate.replace('-', "_"));
+        assert!(readme.starts_with(&format!("# {name}\n\nAn AutoScene plugin, `{id}`, made")), "{readme}");
+        for step in [
+            "`cargo build --release --target wasm32-wasip2`".to_owned(),
+            format!("`Copy-Item {wasm} plugin/plugin.wasm`"),
+            format!("`cp {wasm} plugin/plugin.wasm`"),
+            "`asp check plugin`".to_owned(),
+            format!(
+                "`asp pack plugin {}`",
+                if folder.contains(' ') { format!(r#""{folder}.asp""#) } else { format!("{folder}.asp") }
+            ),
+        ] {
+            assert!(readme.contains(&step), "{step}\n{readme}");
+        }
+    }
+}
+
+#[test]
+fn init_writes_a_python_plugin_that_parses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("clip-words");
+    let said = asp(&["init", text(&dir), "--wasm", "python"]).ok();
+    let made = "a WebAssembly plugin in Python. Its README.md says what comes next.";
+    assert_eq!(said, format!("Made clip-words (dev.example.clip-words) in {}: {made}\n", dir.display()));
+    let own = [".gitignore", "README.md", "app.py", "plugin/.gitignore", "plugin/plugin.json", "wit/plugin.wit"];
+    let readme = wasm_init_parses(&dir, &own, "dev.example.clip-words", "clip-words");
+    let app = fs::read_to_string(dir.join("app.py")).unwrap();
+    assert!(app.contains("class WitWorld(wit_world.WitWorld):\n    def run(self, request"), "{app}");
+    assert!(app.contains(r#"if request.action.id == "hello":"#), "{app}");
+    for step in [
+        "`uv tool run --from componentize-py==0.25.1 componentize-py -d wit -w plugin componentize app -o plugin/plugin.wasm`",
+        "A Python plugin can't use the network in this version of AutoScene.",
+        "`asp check plugin`",
+        "`asp pack plugin clip-words.asp`",
+    ] {
+        assert!(readme.contains(step), "{step}\n{readme}");
+    }
+}
+
+#[test]
+fn init_refuses_a_folder_that_is_not_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let taken = place("taken");
+    fs::create_dir(&taken).unwrap();
+    fs::write(taken.join("notes.txt"), b"mine").unwrap();
+    let start = "asp init makes a plugin in a new folder, or an empty one.";
+    for language in ["rust", "python"] {
+        let err = asp(&["init", text(&taken), "--wasm", language]).failed(1);
+        assert_eq!(err, format!("asp: {} has files in it. {start}\n", taken.display()));
+    }
+    assert_eq!(files_in(&taken), ["notes.txt"]);
+    assert_eq!(fs::read(taken.join("notes.txt")).unwrap(), b"mine");
+
+    // A language asp has no template for, or two forms: nothing is made.
+    let new = place("new");
+    let two = "asp: choose one of --page, --service, --action and --wasm\n";
+    let language = "asp: --wasm takes rust or python\n";
+    for (args, err) in [
+        (&["--wasm", "go"][..], language),
+        (&["--wasm", "Rust"], language),
+        (&["--wasm"], "asp: --wasm needs a value\n"),
+        (&["--wasm", "rust", "--service"], two),
+        (&["--wasm", "rust", "--wasm", "python"], two),
+    ] {
+        let mut all = vec!["init", text(&new)];
+        all.extend(args);
+        let said = asp(&all).failed(2);
+        assert!(said.starts_with(err), "{args:?}: {said}");
+        assert!(!new.exists(), "{args:?}");
+    }
+
+    // An empty folder takes one.
+    let empty = place("empty");
+    fs::create_dir(&empty).unwrap();
+    asp(&["init", text(&empty), "--wasm", "python"]).ok();
+    assert!(files_in(&empty).contains(&"app.py".to_owned()));
+    assert_eq!(names(tmp.path()), ["empty", "taken"]);
+}
+
+/// What asp says of a component built against a newer world.
+const NEWER_WORLD: &str = "asp: autoscene:plugin/host@1.1.0 needs a newer AutoScene: this one offers \
+                           autoscene:plugin up to 1.0. Build it against the wit/plugin.wit that asp init \
+                           writes, or wait for a newer AutoScene.\n";
+/// What asp says of a component built with a newer WASI.
+const NEWER_WASI: &str = "asp: wasi:cli/environment@0.2.19 needs a newer AutoScene: this one offers WASI up \
+                          to 0.2.12. Build it with an older toolchain, or wait for a newer AutoScene.\n";
+
+/// A package `out` made by hand of the plugin folder `dir`, with the
+/// files.lock `edit` makes of the folder's: what someone other than asp
+/// may pack, which asp pack would refuse.
+fn forged(dir: &Path, out: &Path, edit: impl FnOnce(&mut as_plugin::FilesLock)) {
+    let mut lock = package::lock_folder(dir).unwrap();
+    edit(&mut lock);
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(fs::File::create(out).unwrap());
+    for f in &lock.files {
+        zip.start_file(f.path.as_str(), stored).unwrap();
+        zip.write_all(&fs::read(dir.join(&f.path)).unwrap()).unwrap();
+    }
+    zip.start_file(LOCK, stored).unwrap();
+    zip.write_all(&serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
+    zip.finish().unwrap();
+}
+
+#[test]
+fn verify_and_check_refuse_a_package_autoscene_would_refuse() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let package = place("forged.asp");
+    // A component AutoScene won't run, which asp pack would refuse.
+    for (wat, said) in [
+        ("(component)", "asp: The plugin's component doesn't fit this AutoScene: "),
+        (
+            r#"(component (import "example:thing/api@1.0.0" (instance)))"#,
+            "asp: The plugin uses example:thing/api@1.0.0, which AutoScene doesn't offer.\n",
+        ),
+        (r#"(component (import "autoscene:plugin/host@1.1.0" (instance)))"#, NEWER_WORLD),
+        (r#"(component (import "wasi:cli/environment@0.2.19" (instance)))"#, NEWER_WASI),
+    ] {
+        let dir = wasm_plugin(&place("wrong"), &component(wat), |_| {});
+        forged(&dir, &package, |_| {});
+        for command in ["verify", "check"] {
+            let err = asp(&[command, text(&package)]).failed(1);
+            assert!(err.starts_with(said), "{command} {wat}: {err}");
+        }
+    }
+
+    // A package is checked as AutoScene installs it: a component marked to
+    // run, or one its files.lock doesn't name, is refused by both alike.
+    let dir = wasm_plugin(&place("hello"), &component("(component)"), |_| {});
+    let marked = "The plugin's files.lock marks plugin.wasm to run. A component isn't a program: remove its exec flag.";
+    let missing = "The plugin package is missing plugin.wasm, which its runtime needs.";
+    for (mark, why) in [(true, marked), (false, missing)] {
+        forged(&dir, &package, |lock| {
+            if mark {
+                lock.files.iter_mut().filter(|f| f.path == "plugin.wasm").for_each(|f| f.exec = true);
+            } else {
+                lock.files.retain(|f| f.path != "plugin.wasm");
+            }
+        });
+        for command in ["verify", "check"] {
+            let err = asp(&[command, text(&package)]).failed(1);
+            // Said once, for every platform.
+            let (warning, failure) = err.split_once('\n').unwrap();
+            assert!(
+                warning.starts_with("warning: It won't run on ") && warning.ends_with(&format!(": {why}")),
+                "{err}"
+            );
+            assert!(warning.contains(&format!("{} (this computer)", current_platform())), "{err}");
+            assert_eq!(failure, "asp: The plugin runs on none of its platforms.\n", "{command}");
+        }
+    }
+}
+
+#[test]
+fn check_lists_imports_and_refuses_unknown_ones() {
+    let Some(guest) = guest() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+
+    // A component on its own: its world, its size and what it imports,
+    // sorted, with the permission an import needs. Without a manifest,
+    // there is nothing to compare: no warning.
+    let file = place("guest.wasm");
+    fs::write(&file, &guest).unwrap();
+    let bare = asp(&["check", text(&file)]);
+    assert_eq!((bare.code, bare.err.as_str()), (Some(0), ""));
+    let kb = guest.len().div_ceil(1024);
+    let head = format!("guest.wasm: a WebAssembly component of autoscene:plugin@1.0 ({kb} KB)\nimports:\n");
+    assert!(bare.out.starts_with(&head), "{}", bare.out);
+    let imports: Vec<&str> = bare.out.lines().skip(2).collect();
+    for line in [
+        "  autoscene:plugin/host@1.0.0",
+        "  wasi:filesystem/preopens@0.2.12",
+        r#"  wasi:http/outgoing-handler@0.2.12   needs "network""#,
+        r#"  wasi:http/types@0.2.12              needs "network""#,
+    ] {
+        assert!(imports.contains(&line), "{line}\n{}", bare.out);
+    }
+    let mut sorted = imports.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(imports, sorted);
+
+    // In a plugin's folder and in its package, against its plugin.json,
+    // which asks for the network it uses: the same, without a word.
+    let dir = wasm_plugin(&place("hello"), &guest, |m| {
+        m["permissions"] = json!(["network"]);
+        m["network"] = json!({"hosts": ["discord.com"]});
+    });
+    let package = place("hello.asp");
+    assert_eq!(asp(&["pack", text(&dir), text(&package)]).warnings(), "");
+    for path in [&dir, &package] {
+        let run = asp(&["check", text(path)]);
+        assert_eq!((run.code, run.err.as_str()), (Some(0), ""), "{}", path.display());
+        assert_eq!(run.out.replacen("plugin.wasm:", "guest.wasm:", 1), bare.out, "{}", path.display());
+    }
+    let verified = asp(&["verify", text(&package)]).ok();
+    assert_eq!(verified, "dev.autoscene.hello-wasm 1.0.0: Unreviewed\nRuns in a sandbox.\n");
+
+    // What AutoScene doesn't offer, or offers only in a newer version, is
+    // refused alike on its own, in a folder and when it is packed.
+    for (wat, said) in [
+        (
+            r#"(component (import "example:thing/api@1.0.0" (instance)))"#,
+            "asp: The plugin uses example:thing/api@1.0.0, which AutoScene doesn't offer.\n",
+        ),
+        (r#"(component (import "autoscene:plugin/host@1.1.0" (instance)))"#, NEWER_WORLD),
+        (r#"(component (import "wasi:cli/environment@0.2.19" (instance)))"#, NEWER_WASI),
+    ] {
+        let wrong = component(wat);
+        let file = place("wrong.wasm");
+        fs::write(&file, &wrong).unwrap();
+        assert_eq!(asp(&["check", text(&file)]).failed(1), said, "{wat}");
+        let dir = wasm_plugin(&place("wrong"), &wrong, |_| {});
+        assert_eq!(asp(&["check", text(&dir)]).failed(1), said, "{wat}");
+        let out = place("wrong.asp");
+        assert_eq!(asp(&["pack", text(&dir), text(&out)]).failed(1), said, "{wat}");
+        assert!(!out.exists(), "{wat}");
+    }
+
+    // A plugin that runs no component has nothing to check.
+    let process = uv_plugin(&place("uv"));
+    let err = asp(&["check", text(&process)]).failed(1);
+    let not = "asp: Hello Export isn't a WebAssembly plugin: asp check checks a plugin whose runtime.type is wasm.\n";
+    assert_eq!(err, not);
+}
+
+#[test]
+fn check_warns_about_http_without_network() {
+    let Some(guest) = guest() else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let warning = "warning: It imports wasi:http but doesn't ask for network: every request it makes is refused.\n";
+    let dir = wasm_plugin(&place("hello"), &guest, |_| {});
+
+    // check, pack and verify say it alike, and still go on.
+    let checked = asp(&["check", text(&dir)]);
+    assert_eq!((checked.code, checked.err.as_str()), (Some(0), warning));
+    assert!(checked.out.contains(r#"  wasi:http/outgoing-handler@0.2.12   needs "network""#), "{}", checked.out);
+    let package = place("hello.asp");
+    assert_eq!(asp(&["pack", text(&dir), text(&package)]).warnings(), warning);
+    let verified = asp(&["verify", text(&package)]);
+    assert_eq!((verified.code, verified.err.as_str()), (Some(0), warning));
+    assert_eq!(verified.out, "dev.autoscene.hello-wasm 1.0.0: Unreviewed\nRuns in a sandbox.\n");
+    let checked = asp(&["check", text(&package)]);
+    assert_eq!((checked.code, checked.err.as_str()), (Some(0), warning));
+
+    // platforms only narrows where it installs: pack says so.
+    edit_manifest(&dir, |m| m["platforms"] = json!([current_platform()]));
+    let platforms = "warning: platforms limits where AutoScene installs it, \
+                     though a WebAssembly plugin runs the same on every platform.\n";
+    assert_eq!(asp(&["pack", text(&dir), text(&package)]).warnings(), format!("{platforms}{warning}"));
+}
+
+#[test]
+fn pack_refuses_precompiled_code() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let dir = wasm_plugin(&place("hello"), &component("(component)"), |_| {});
+    let out = place("hello.asp");
+    fs::write(&out, b"the old package").unwrap();
+    // AutoScene compiles a component itself, and loads no code a package
+    // brings compiled: by any name in any case, at any depth.
+    for file in ["plugin.cwasm", "code/Plugin.CWASM"] {
+        let path = dir.join(file);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"compiled").unwrap();
+        let err = asp(&["pack", text(&dir), text(&out)]).failed(1);
+        let said = "Ship the .wasm file: AutoScene compiles it itself.";
+        assert_eq!(err, format!("asp: The package holds precompiled code ({file}). {said}\n"));
+        fs::remove_file(&path).unwrap();
+    }
+    assert_eq!(fs::read(&out).unwrap(), b"the old package");
+}
+
+#[test]
+fn pack_refuses_a_component_that_does_not_load() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let out = place("hello.asp");
+    let not_one = "asp: The plugin's component isn't a WebAssembly component. \
+                   Build it for wasm32-wasip2 or with componentize-py.";
+    for (bytes, said) in [
+        (component("(module)"), not_one),
+        (b"\0asm\x0d\x00\x01\x00 cut short".to_vec(), "asp: The plugin's component doesn't load: "),
+        (component("(component)"), "asp: The plugin's component doesn't fit this AutoScene: "),
+    ] {
+        let dir = wasm_plugin(&place("hello"), &bytes, |_| {});
+        let err = asp(&["pack", text(&dir), text(&out)]).failed(1);
+        assert!(err.starts_with(said), "{err}");
+        assert!(!out.exists(), "{said}");
+        let err = asp(&["check", text(&dir)]).failed(1);
+        assert!(err.starts_with(said), "{err}");
+    }
 }

@@ -26,31 +26,7 @@ const WORLD: [&str; 2] = ["types", "host"];
 pub(crate) fn check<'a>(names: impl Iterator<Item = &'a str>, m: Option<&Manifest>) -> PluginResult<Vec<String>> {
     let mut http = false;
     for name in names {
-        let not_offered = || PluginError::Invalid(format!("The plugin uses {name}, which AutoScene doesn't offer."));
-        let (path, version) = name.split_once('@').ok_or_else(not_offered)?;
-        let (package, interface) = path.split_once('/').ok_or_else(not_offered)?;
-        let version = Version::parse(version).map_err(|_| not_offered())?;
-        match package.split_once(':').ok_or_else(not_offered)? {
-            ("autoscene", "plugin") => {
-                if version.major != 1 || version.minor > WORLD_MINOR {
-                    return Err(PluginError::TooNew("world".into()));
-                }
-                if !WORLD.contains(&interface) || !version.pre.is_empty() {
-                    return Err(not_offered());
-                }
-            }
-            ("wasi", wasi) if WASI.contains(&wasi) => {
-                if version.major > 0 || version.minor > 2 || (version.minor == 2 && version.patch > WASI_PATCH) {
-                    return Err(PluginError::TooNew("wasi".into()));
-                }
-                // 0.1 and the release candidates of 0.2 are not what wasmtime links.
-                if version.minor < 2 || !version.pre.is_empty() {
-                    return Err(not_offered());
-                }
-                http |= wasi == "http";
-            }
-            _ => return Err(not_offered()),
-        }
+        http |= offered(name)?;
     }
     let Some(m) = m else { return Ok(Vec::new()) };
     let network = m.permissions.contains(&Permission::Network);
@@ -61,6 +37,51 @@ pub(crate) fn check<'a>(names: impl Iterator<Item = &'a str>, m: Option<&Manifes
         (false, true) => vec!["It asks for network but can't make requests.".into()],
         _ => Vec::new(),
     })
+}
+
+/// Checks the import `name`: whether AutoScene offers it, and whether it is
+/// wasi:http.
+fn offered(name: &str) -> PluginResult<bool> {
+    let not_offered = || PluginError::Invalid(format!("The plugin uses {name}, which AutoScene doesn't offer."));
+    let (path, version) = name.split_once('@').ok_or_else(not_offered)?;
+    let (package, interface) = path.split_once('/').ok_or_else(not_offered)?;
+    let version = Version::parse(version).map_err(|_| not_offered())?;
+    match package.split_once(':').ok_or_else(not_offered)? {
+        ("autoscene", "plugin") => {
+            if version.major != 1 || version.minor > WORLD_MINOR {
+                return Err(PluginError::TooNew("world".into()));
+            }
+            if !WORLD.contains(&interface) || !version.pre.is_empty() {
+                return Err(not_offered());
+            }
+            Ok(false)
+        }
+        ("wasi", wasi) if WASI.contains(&wasi) => {
+            if version.major > 0 || version.minor > 2 || (version.minor == 2 && version.patch > WASI_PATCH) {
+                return Err(PluginError::TooNew("wasi".into()));
+            }
+            // 0.1 and the release candidates of 0.2 are not what wasmtime links.
+            if version.minor < 2 || !version.pre.is_empty() {
+                return Err(not_offered());
+            }
+            Ok(wasi == "http")
+        }
+        _ => Err(not_offered()),
+    }
+}
+
+/// Why the import `name` needs a newer AutoScene, for the plugin's author:
+/// what this one offers, and what to do. None when it doesn't need one.
+pub fn too_new(name: &str) -> Option<String> {
+    let (offers, todo) = match offered(name) {
+        Err(PluginError::TooNew(what)) if what == "world" => (
+            format!("autoscene:plugin up to 1.{WORLD_MINOR}"),
+            "Build it against the wit/plugin.wit that asp init writes",
+        ),
+        Err(PluginError::TooNew(_)) => (format!("WASI up to 0.2.{WASI_PATCH}"), "Build it with an older toolchain"),
+        _ => return None,
+    };
+    Some(format!("{name} needs a newer AutoScene: this one offers {offers}. {todo}, or wait for a newer AutoScene."))
 }
 
 #[cfg(test)]
@@ -144,5 +165,29 @@ mod tests {
         assert!(warned(&http, true).is_empty());
         // Python always imports sockets; they are refused, and nothing is said.
         assert!(warned(&STD, false).is_empty());
+    }
+
+    #[test]
+    fn what_needs_a_newer_autoscene_is_named_for_its_author() {
+        assert_eq!(
+            too_new("wasi:cli/environment@0.2.19").as_deref(),
+            Some(
+                "wasi:cli/environment@0.2.19 needs a newer AutoScene: this one offers WASI up to 0.2.12. \
+                 Build it with an older toolchain, or wait for a newer AutoScene."
+            )
+        );
+        assert_eq!(
+            too_new("autoscene:plugin/host@1.1.0").as_deref(),
+            Some(
+                "autoscene:plugin/host@1.1.0 needs a newer AutoScene: this one offers autoscene:plugin up to 1.0. \
+                 Build it against the wit/plugin.wit that asp init writes, or wait for a newer AutoScene."
+            )
+        );
+        // A newer major of either is newer too.
+        assert!(too_new("wasi:cli/environment@1.0.0").is_some_and(|s| s.contains("WASI up to 0.2.12")));
+        assert!(too_new("autoscene:plugin/host@2.0.0").is_some_and(|s| s.contains("autoscene:plugin up to 1.0")));
+        for fine_or_unknown in ["wasi:cli/environment@0.2.12", "example:thing/api@1.0.0", "run"] {
+            assert_eq!(too_new(fine_or_unknown), None, "{fine_or_unknown}");
+        }
     }
 }

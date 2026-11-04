@@ -180,7 +180,7 @@ function JobRow({ job: j }: { job: JobInfo }) {
   return (
     <ContextArea menu={menu}>
       <li
-        onClick={open}
+        onClick={canOpen ? open : undefined}
         tabIndex={canOpen ? 0 : undefined}
         role={canOpen ? "link" : undefined}
         onKeyDown={(e) => {

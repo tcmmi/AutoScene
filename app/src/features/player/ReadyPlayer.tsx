@@ -324,9 +324,11 @@ export function ReadyPlayer({
     <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <ContextArea menu={playerMenu}>
-          {/* The stage is the picture's size container: it fills it at its own shape. */}
+          {/* The stage is the picture's size container: it fills it at its own shape. A click plays
+              or pauses, but the arrow stays, as over the frame in every player: a hand would sit
+              over the picture for the whole film. */}
           <div
-            className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-6 pt-4 pb-3 [container-type:size]"
+            className="relative flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden px-6 pt-4 pb-3 [container-type:size]"
             onClick={toggle}
           >
             <Ambilight video={videoRef} store={store} />

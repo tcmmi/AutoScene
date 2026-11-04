@@ -182,7 +182,7 @@ function EpisodeRow({
           }}
           className={cn(
             "group grid grid-cols-[176px_minmax(0,1fr)_auto] items-center gap-5 rounded-2xl p-2.5 pr-4 transition-colors focus-visible:bg-white/[0.04] focus-visible:outline-none @3xl:grid-cols-[192px_minmax(0,1fr)_200px_190px_auto]",
-            ready && "hover:bg-white/[0.04]",
+            ready && "cursor-pointer hover:bg-white/[0.04]",
           )}
         >
           <Artwork path={m.posterSmall ?? m.poster} className="aspect-video rounded-xl picture-edge" imgClassName={cn(!ready && "opacity-40 grayscale")}>
@@ -230,13 +230,14 @@ function EpisodeRow({
                 ))}
               </div>
             )}
-            {/* Narrow windows: the state under the name. */}
-            <div className="mt-2.5 @3xl:hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Narrow windows: the state under the name. Here and in the cells below, a click
+                beside the row's own controls does nothing: the arrow, not the row's hand. */}
+            <div className="mt-2.5 cursor-default @3xl:hidden" onClick={(e) => e.stopPropagation()}>
               <StatusCell media={m} projectId={projectId} />
             </div>
           </div>
 
-          <div className="hidden @3xl:block" onClick={(e) => e.stopPropagation()}>
+          <div className="hidden cursor-default @3xl:block" onClick={(e) => e.stopPropagation()}>
             {audio.length > 1 ? (
               <Select
                 size="sm"
@@ -251,11 +252,11 @@ function EpisodeRow({
             )}
           </div>
 
-          <div className="hidden @3xl:block" onClick={(e) => e.stopPropagation()}>
+          <div className="hidden cursor-default @3xl:block" onClick={(e) => e.stopPropagation()}>
             <StatusCell media={m} projectId={projectId} />
           </div>
 
-          <div onClick={(e) => e.stopPropagation()}>
+          <div className="cursor-default" onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label={`${m.fileName} options`}

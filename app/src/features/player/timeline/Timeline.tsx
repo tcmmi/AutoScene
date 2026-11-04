@@ -405,7 +405,7 @@ function Overview({
   const release = () => (drag.current = null)
   return (
     <div
-      className="absolute inset-x-0 top-0 h-2.5 touch-none rounded-full bg-white/[0.06] select-none"
+      className="absolute inset-x-0 top-0 h-2.5 cursor-pointer touch-none rounded-full bg-white/[0.06] select-none"
       onPointerDown={(e) => {
         // Only the main button pans: a right-click opens the menu, nothing else.
         if (e.button !== 0) return
@@ -715,7 +715,7 @@ function Shots({
     <ContextArea menu={menu} onContextMenu={(e) => setMenuShot(indexAt(e.clientX).i)}>
       <div
         ref={ref}
-        className="relative h-[16px] rounded-md select-none"
+        className={cn("relative h-[16px] rounded-md select-none", hovered && "cursor-pointer")}
         role="group"
         aria-label="Shots"
         onPointerMove={(e) => setHover(indexAt(e.clientX))}
@@ -879,7 +879,7 @@ function LaneRow({
         </span>
         <div
           ref={ref}
-          className="relative h-[20px] rounded-lg group-hover:bg-white/[0.03]"
+          className={cn("relative h-[20px] rounded-lg group-hover:bg-white/[0.03]", hover && "cursor-pointer")}
           onPointerMove={(e) => setHover(spanAt(e.clientX))}
           onPointerLeave={() => setHover(null)}
           onClick={(e) => {

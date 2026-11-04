@@ -192,12 +192,13 @@ function OpenTextMenu({ opened }: { opened: OpenedTextMenu }) {
       role="menu"
       aria-label="Edit"
       data-state="open"
-      // Clicks in the menu never take the focus from the field.
+      // Clicks in the menu never take the focus from the field. The arrow, as over every menu:
+      // these handlers do nothing else.
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={(e) => e.preventDefault()}
       onContextMenu={(e) => e.preventDefault()}
       style={{ left: pos?.left ?? at.x, top: pos?.top ?? at.y, visibility: pos ? "visible" : "hidden" }}
-      className={cn(menuSurface, "fixed z-[70] animate-pop-in")}
+      className={cn(menuSurface, "fixed z-[70] animate-pop-in cursor-default")}
     >
       {items.map((entry, i) =>
         entry.kind === "separator" ? (

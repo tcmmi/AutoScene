@@ -5,6 +5,9 @@
     "typescript",
     "oxc"
   ],
+  "jsPlugins": [
+    "./src/lint/click-target.ts"
+  ],
   "ignorePatterns": [
     "src/bindings.ts",
     "dist",
@@ -13,6 +16,7 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/immutability": "off",
+    "autoscene/click-target": "error",
     "react/only-export-components": [
       "warn",
       {

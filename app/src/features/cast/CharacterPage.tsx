@@ -824,6 +824,7 @@ function Maybe({
                               }
                             }}
                             aria-label={`Face${m?.label ? ` in ${m.label}` : ""}`}
+                            // Opens on a double-click, like a file in a list: the arrow; its Yes / Not buttons show the hand.
                             className="block size-full cursor-default outline-none"
                           >
                             <img src={assetUrl(t.thumb)} alt="" loading="lazy" className="size-full object-cover" />

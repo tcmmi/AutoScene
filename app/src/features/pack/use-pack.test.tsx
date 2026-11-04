@@ -33,6 +33,7 @@ const clip = (start: number, included: boolean, manual: boolean | null = null, b
   byRules,
   reason: included ? null : manual === false ? "removed" : "short",
   manual,
+  filter: null,
 })
 /** The picks of one click, as the backend gets them. */
 const picks = (...groups: [number[], boolean | null][]) =>
@@ -42,10 +43,12 @@ const preview = (clips: PackClip[], stamp: string, shape = "two shots"): PackPre
   totals: totalsOf(clips, () => 24),
   stamp,
   shape,
+  filters: [],
+  unchecked: 0,
 })
 /** The backend's answer to a pick: the choices of `p`. */
 const choicesOf = (p: PackPreview): PackChoices => ({
-  choices: p.clips.map(({ included, byRules, reason, manual }) => ({ included, byRules, reason, manual })),
+  choices: p.clips.map(({ included, byRules, reason, manual, filter }) => ({ included, byRules, reason, manual, filter })),
   totals: p.totals,
   stamp: p.stamp,
   shape: p.shape,

@@ -75,9 +75,14 @@
 //! ([`catalog`]). It is read before the window opens and checked at start
 //! and every day; a plugin it newly withdraws stops as one turned off does
 //! ([`PluginHost::stop_withdrawn`]).
+//!
+//! A plugin's shot filters judge a character's shots for their scenepack,
+//! an episode per run, in a chain of runs that lets other runs in between
+//! ([`filters`]).
 
 pub mod calls;
 pub mod catalog;
+pub mod filters;
 pub mod opened;
 pub mod pages;
 pub mod services;
@@ -89,7 +94,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use as_api::{ExportStatus, ExportSummary, JobInfo, JobKind, JobState};
-use as_core::{AppPaths, CancelToken, ExportId, JobId, ProjectId};
+use as_core::{AppPaths, CancelToken, CharacterId, ExportId, JobId, ProjectId};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::net::{Transport, UreqTransport};
 use as_plugin::pages::{Mount, Pages};
@@ -294,6 +299,8 @@ pub struct PluginHost {
     /// Each event run that waits, with its job and what it will be told:
     /// an event that comes meanwhile is told by it too.
     told: Mutex<Vec<(RunKey, JobId, EventContext)>>,
+    /// The shot filters' checks that failed or were stopped.
+    pub checks: filters::Checks,
 }
 
 /// The plugins in use: by a run, or by an install, update or uninstall.
@@ -319,6 +326,9 @@ struct RunKey {
     /// The SHA-256 of what a page handed the run (its JSON), if it handed
     /// it anything: the same action with other input is another run.
     input_sha256: Option<String>,
+    /// The character whose shots a shot filter checks: a check of one
+    /// character's waits beside another's. None for every other kind.
+    character_id: Option<CharacterId>,
 }
 
 impl RunKey {
@@ -339,6 +349,7 @@ impl RunKey {
             project_id,
             export_id,
             input_sha256: input.map(|v| package::sha256_hex(v.to_string().as_bytes())),
+            character_id: None,
         }
     }
 }
@@ -642,6 +653,7 @@ impl PluginHost {
             resources,
             batches: Batches::default(),
             told: Mutex::default(),
+            checks: filters::Checks::default(),
         }
     }
 
@@ -981,9 +993,23 @@ impl PluginHost {
         spec: JobSpec,
         work: impl FnOnce(&JobCtx) -> JobResult + Send + 'static,
     ) -> Option<JobId> {
+        self.submit_after(jobs, None, key, spec, work)
+    }
+
+    /// [`PluginHost::submit`], as the next run of the job `current` (the
+    /// run it is part of, which is ending): `current` no longer counts as
+    /// the same run, in the same step, so nothing else queues it between.
+    fn submit_after(
+        &self,
+        jobs: &JobRunner,
+        current: Option<JobId>,
+        key: RunKey,
+        spec: JobSpec,
+        work: impl FnOnce(&JobCtx) -> JobResult + Send + 'static,
+    ) -> Option<JobId> {
         let mut runs = self.runs.lock();
         let live: HashSet<JobId> = jobs.jobs().into_iter().filter(|j| !j.state.is_finished()).map(|j| j.id).collect();
-        runs.retain(|job, _| live.contains(job));
+        runs.retain(|job, _| live.contains(job) && Some(*job) != current);
         // An event's run is deduped where it is told ([`PluginHost::tell`]):
         // one that runs already doesn't keep the next from waiting.
         let same: Vec<JobId> = match key.kind {
@@ -993,6 +1019,18 @@ impl PluginHost {
         let job = jobs.submit_unless(|j| same.contains(&j.id), spec, work)?;
         runs.insert(job, key);
         Some(job)
+    }
+
+    /// Whether the run `key` waits or runs, as `jobs` has them now.
+    fn is_queued(&self, jobs: &JobRunner, key: &RunKey) -> bool {
+        let live: HashSet<JobId> = jobs.jobs().into_iter().filter(|j| !j.state.is_finished()).map(|j| j.id).collect();
+        self.runs.lock().iter().any(|(job, k)| k == key && live.contains(job))
+    }
+
+    /// The work of `job` is over, whatever the job runner says of it yet:
+    /// it no longer counts as its run.
+    fn release(&self, job: JobId) {
+        self.runs.lock().remove(&job);
     }
 
     /// Queues on `jobs` the run `key`, started by `trigger`, as
@@ -1396,7 +1434,7 @@ fn takes(p: &Installed, trigger: Trigger) -> PluginResult<()> {
         Trigger::Page => {
             as_plugin::calls::check(HostMethod::ActionsRun, &Caller::Page { project: None }, &Grants::of(p)?)
         }
-        Trigger::Menu | Trigger::AfterExport | Trigger::Palette | Trigger::Event => Ok(()),
+        Trigger::Menu | Trigger::AfterExport | Trigger::Palette | Trigger::Event | Trigger::Pack => Ok(()),
     }
 }
 
@@ -1418,6 +1456,14 @@ fn action_title(
     let is_command = || m.commands.iter().any(|c| c.id == action);
     let is_export_action = || m.export_actions.iter().any(|a| a.id == action);
     match kind {
+        // Only the scenepack builder starts one (see filters).
+        ActionKind::ShotFilter => {
+            let f = m.shot_filters.iter().find(|f| f.id == action).ok_or_else(no_such)?;
+            if project_id.is_none() || export_id.is_some() {
+                return refused("A shot filter checks a character's scenepack.");
+            }
+            Ok(f.title.clone())
+        }
         ActionKind::ExportAction => {
             let Some(a) = m.export_actions.iter().find(|a| a.id == action) else {
                 return if is_command() { refused("A command doesn't run on an export.") } else { Err(no_such()) };

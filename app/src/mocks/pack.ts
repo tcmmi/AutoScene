@@ -108,7 +108,21 @@ export function packPreview(pid: string, cid: string, spec: PackSpec, media: Med
     const end = Math.min(frames, shot.end + spec.handles)
     const pick = manual.get(`${shot.mediaId}:${shot.start}`)
     return {
-      clip: { shot, start, end, size, quality, coverage: 1, others, score, included: false, byRules: rule == null, reason: rule, manual: pick ?? null },
+      clip: {
+        shot,
+        start,
+        end,
+        size,
+        quality,
+        coverage: 1,
+        others,
+        score,
+        included: false,
+        byRules: rule == null,
+        reason: rule,
+        manual: pick ?? null,
+        filter: null,
+      },
       rule,
       seconds: (end - start) / fps,
       tenths: Math.round(seconds * 10),
@@ -151,13 +165,16 @@ export function packPreview(pid: string, cid: string, spec: PackSpec, media: Med
     },
     stamp: taken.map((c) => `${c.clip.shot.mediaId}:${c.clip.start}-${c.clip.end}`).join("|"),
     shape: cands.map(({ clip: c }) => `${c.shot.mediaId}:${c.shot.start}:${c.start}-${c.end}:${c.score}`).join("|"),
+    // No mock plugin filters shots yet.
+    filters: [],
+    unchecked: 0,
   }
 }
 
 /** What a pick answers (the backend's `pack_choices`): the pack's choices, in its order. */
 export function packChoices(preview: PackPreview): PackChoices {
   return {
-    choices: preview.clips.map(({ included, byRules, reason, manual }) => ({ included, byRules, reason, manual })),
+    choices: preview.clips.map(({ included, byRules, reason, manual, filter }) => ({ included, byRules, reason, manual, filter })),
     totals: preview.totals,
     stamp: preview.stamp,
     shape: preview.shape,

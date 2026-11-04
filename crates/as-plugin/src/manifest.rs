@@ -38,6 +38,12 @@
 //! rather than warned. This AutoScene reads such a plugin but doesn't run
 //! it yet: [`crate::store`] answers that it needs a newer AutoScene.
 //!
+//! Version 2 also has shot filters ([`ShotFilterSpec`]): chips of the
+//! scenepack builder whose program judges a character's shots. Only a
+//! program of protocol 2 that says it reads the project may add them; a
+//! WebAssembly plugin can't read the episodes, and is refused. A version 1
+//! manifest skips them with a warning.
+//!
 //! No shell reads a command: its arguments are fixed, and handed to the
 //! program as they are. The program is a file in the plugin's own folder,
 //! started by its path there ([`Launch::entry_in`]) and never looked up on
@@ -82,6 +88,12 @@ pub const MAX_SECRETS: usize = 8;
 pub const MAX_PAGES: usize = 4;
 /// The most events a plugin may wait for.
 pub const MAX_EVENTS: usize = 4;
+/// The most shot filters a plugin may add, and the longest a filter's
+/// title (a chip) and its reason (a card's pill) may be.
+pub const MAX_SHOT_FILTERS: usize = 4;
+pub const MAX_FILTER_LABEL: usize = 24;
+/// The highest revision a shot filter may have.
+pub const MAX_FILTER_REVISION: u32 = 65535;
 /// The memory a WebAssembly plugin's run may use in all, in MB (1 MB = 1
 /// MiB), when it doesn't say; and the least and most it may ask for.
 pub const DEFAULT_MEMORY_MB: u32 = 512;
@@ -267,6 +279,8 @@ pub struct Manifest {
     pub network_hosts: Vec<String>,
     pub export_actions: Vec<ActionSpec>,
     pub commands: Vec<CommandSpec>,
+    /// Its filters for a character's scenepack (manifest version 2).
+    pub shot_filters: Vec<ShotFilterSpec>,
     pub settings: Vec<SettingSpec>,
     /// Its pages (manifest version 2); whether their files are there is
     /// checked at install.
@@ -455,6 +469,29 @@ pub struct CommandSpec {
     pub description: Option<String>,
     /// Offered only while a project is open, and run with it.
     pub needs_project: bool,
+}
+
+/// A filter a plugin adds to the scenepack builder (manifest version 2): a
+/// chip that leaves out the shots its program says no to, one episode of a
+/// character at a time ([`crate::protocol::ShotsContext`]). Each shot it
+/// leaves out says why with `reason`, the manifest's own words: a plugin
+/// writes nothing onto a shot's card.
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotFilterSpec {
+    pub id: String,
+    /// The chip's label, at most 24 characters.
+    pub title: String,
+    pub description: Option<String>,
+    /// The pill of a shot it leaves out ("No speech"), at most 24 characters.
+    pub reason: String,
+    /// The keys of the plugin's settings its verdicts depend on: those it
+    /// names, or every one when it names none. A change of one of them
+    /// asks for its verdicts again; a change of another doesn't.
+    pub settings: Vec<String>,
+    /// Raised by the author when a version judges shots differently: its
+    /// verdicts are asked for again. A new version alone keeps them.
+    pub revision: u32,
 }
 
 /// A page a plugin adds: one of its files, which AutoScene shows full screen
@@ -908,7 +945,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     }
 
     let (mut export_actions, mut commands_out, mut settings) = (Vec::new(), Vec::new(), Vec::new());
-    let (mut pages, mut events) = (Vec::new(), Vec::new());
+    let (mut pages, mut events, mut shot_filters) = (Vec::new(), Vec::new(), Vec::new());
     if let Some(c) = root.object("contributes")? {
         for key in c.map.keys() {
             match key.as_str() {
@@ -916,11 +953,13 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
                 "pages" if manifest_version < 2 => {
                     w.push(r#"Skipped contributes.pages: pages need "manifestVersion": 2."#.into());
                 }
-                "pages" => {}
                 "events" if manifest_version < 2 => {
                     w.push(r#"Skipped contributes.events: events need "manifestVersion": 2."#.into());
                 }
-                "events" => {}
+                "shotFilters" if manifest_version < 2 => {
+                    w.push(r#"Skipped contributes.shotFilters: shot filters need "manifestVersion": 2."#.into());
+                }
+                "pages" | "events" | "shotFilters" => {}
                 key => w.push(format!("Skipped contributes.{}, which this AutoScene doesn't know.", shown(key))),
             }
         }
@@ -1016,6 +1055,21 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
                 )));
             }
         }
+        // A version 1 manifest's filters were skipped above, whatever they hold.
+        let listed = if manifest_version >= 2 { c.list("shotFilters")? } else { &[] };
+        if !listed.is_empty() {
+            check_filtering(kind, protocol, &permissions)?;
+        }
+        if listed.len() > MAX_SHOT_FILTERS {
+            return Err(invalid(format!("The plugin adds more than {MAX_SHOT_FILTERS} shot filters.")));
+        }
+        // A setting of a type this AutoScene skipped is still the plugin's.
+        let named: Vec<&str> = specs.iter().filter_map(|s| s.get("key")?.as_str()).collect();
+        for (i, f) in listed.iter().enumerate() {
+            let f = object(f, format!("contributes.shotFilters[{i}]"))?;
+            shot_filters.push(shot_filter(&f, &settings, &named, &mut w)?);
+        }
+        unique(shot_filters.iter().map(|f| f.id.as_str()), "contributes.shotFilters", "id")?;
     }
 
     // A plugin that runs no program is its pages.
@@ -1081,6 +1135,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         network_hosts,
         export_actions,
         commands: commands_out,
+        shot_filters,
         settings,
         pages,
         events,
@@ -1089,6 +1144,64 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         resources,
     };
     Ok(Parsed { manifest, warnings: w })
+}
+
+/// Whether a plugin of runtime `kind`, speaking `protocol` and asking for
+/// `permissions`, may filter shots: its program reads the episodes, so it
+/// is a program (not a component in the sandbox, which can't), it speaks
+/// protocol 2 (verdicts are its lines), and it says it reads the project.
+fn check_filtering(kind: RuntimeKind, protocol: u32, permissions: &[Permission]) -> PluginResult<()> {
+    match kind {
+        RuntimeKind::Wasm => Err(invalid("A WebAssembly plugin can't read episodes, so it can't filter shots.")),
+        RuntimeKind::None => Err(invalid("Shot filters need a program, and runtime.type none runs none.")),
+        _ if protocol < 2 => Err(invalid(r#"A shot filter speaks protocol 2: set "engines": {"protocol": 2}."#)),
+        _ if !permissions.contains(&Permission::ProjectRead) => {
+            Err(invalid(r#"A shot filter reads the project: add "project:read" to permissions."#))
+        }
+        RuntimeKind::Process | RuntimeKind::Service => Ok(()),
+    }
+}
+
+/// A shot filter `f`, of a plugin with the settings `settings` (and the
+/// keys `named` its plugin.json gives, read or skipped). The settings it
+/// names must be the plugin's; left out, it depends on each of them.
+fn shot_filter(f: &Obj, settings: &[SettingSpec], named: &[&str], w: &mut Vec<String>) -> PluginResult<ShotFilterSpec> {
+    f.warn_unknown(&["id", "title", "description", "reason", "settings", "revision"], w);
+    let id = f.contribution_id()?;
+    let title = f.required_label("title", MAX_FILTER_LABEL, w)?;
+    let description = f.label("description", 200, w)?;
+    let reason = f.required_label("reason", MAX_FILTER_LABEL, w)?;
+    let keys = match f.get("settings") {
+        None => settings.iter().map(|s| s.key.clone()).collect(),
+        Some(_) => {
+            let mut keys: Vec<String> = Vec::new();
+            for (i, key) in f.list("settings")?.iter().enumerate() {
+                let at = format!("{}[{i}]", f.at("settings"));
+                let Some(key) = key.as_str() else {
+                    return Err(invalid(format!("The plugin's {at} must be text.")));
+                };
+                if !named.contains(&key) {
+                    return Err(invalid(format!(
+                        "The plugin's {at} names \"{}\", which isn't one of its settings.",
+                        shown(key)
+                    )));
+                }
+                // One it skipped is no value a run gets, so nothing depends on it.
+                if settings.iter().any(|s| s.key == key) && !keys.iter().any(|k| k == key) {
+                    keys.push(key.to_owned());
+                }
+            }
+            keys
+        }
+    };
+    let revision = match f.whole("revision")? {
+        None => 1,
+        Some(r @ 1..=0xFFFF) => r as u32,
+        Some(_) => {
+            return Err(invalid(format!("The plugin's {} must be from 1 to {MAX_FILTER_REVISION}.", f.at("revision"))));
+        }
+    };
+    Ok(ShotFilterSpec { id, title, description, reason, settings: keys, revision })
 }
 
 /// The `component` of a WebAssembly plugin's `runtime`: a `.wasm` file in
@@ -3087,6 +3200,10 @@ mod tests {
             (&contributes["settings"]["maxContains"], MAX_SECRETS),
             (&contributes["pages"]["maxItems"], MAX_PAGES),
             (&contributes["events"]["maxItems"], MAX_EVENTS),
+            (&contributes["shotFilters"]["maxItems"], MAX_SHOT_FILTERS),
+            (&defs["shotFilter"]["properties"]["title"]["maxLength"], MAX_FILTER_LABEL),
+            (&defs["shotFilter"]["properties"]["reason"]["maxLength"], MAX_FILTER_LABEL),
+            (&defs["shotFilter"]["properties"]["revision"]["maximum"], MAX_FILTER_REVISION as usize),
             (&schema["properties"]["platforms"]["maxItems"], MAX_PLATFORMS),
             (&defs["network"]["properties"]["hosts"]["maxItems"], MAX_HOSTS),
             (&defs["commandLine"]["maxItems"], MAX_ARGS),
@@ -3157,11 +3274,11 @@ mod tests {
 
         // A plugin with an object of each kind the schema describes: version
         // 2, a program of protocol 2, the network, a select setting, a page,
-        // an event.
+        // an event, a shot filter.
         let mut full = plugin();
         full["manifestVersion"] = json!(2);
         full["engines"]["protocol"] = json!(2);
-        full["permissions"] = json!(["exports:read", "network"]);
+        full["permissions"] = json!(["exports:read", "network", "project:read"]);
         full["network"] = json!({"hosts": ["discord.com"]});
         let options = json!([{"value": "a", "label": "A"}]);
         full["contributes"]["settings"] =
@@ -3170,6 +3287,7 @@ mod tests {
         full["resources"] = json!([resource("model.onnx")]);
         full["contributes"]["events"] = json!([{"id": "done", "title": "Done", "on": "analysisFinished"}]);
         full["contributes"]["exportActions"][0]["afterFailed"] = json!(true);
+        full["contributes"]["shotFilters"] = json!([{"id": "speaks", "title": "Speaks", "reason": "No speech"}]);
         let reads = |v: &Value, what: &str| {
             let p = read(v).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             assert_eq!(p.warnings, Vec::<String>::new(), "{what}");
@@ -3192,6 +3310,7 @@ mod tests {
             ("page", "/contributes/pages/0"),
             ("resource", "/resources/0"),
             ("event", "/contributes/events/0"),
+            ("shotFilter", "/contributes/shotFilters/0"),
         ];
         // Every object the schema describes is here, but a setting, whose
         // keys depend on its type, and the limits, which only a WebAssembly
@@ -3225,6 +3344,7 @@ mod tests {
         let mut sandboxed = full.clone();
         sandboxed["runtime"] = json!({"type": "wasm", "component": "plugin.wasm", "limits": {}});
         sandboxed["contributes"].as_object_mut().unwrap().remove("events");
+        sandboxed["contributes"].as_object_mut().unwrap().remove("shotFilters");
         assert_eq!(reads(&sandboxed, "wasm").runtime.limits, Some(WasmLimits::default()));
         for (at, properties) in [("/runtime", &defs["runtime"]["properties"]), ("/runtime/limits", wasm_limits)] {
             for key in keys(properties) {
@@ -3288,10 +3408,13 @@ mod tests {
                 c.remove("exportActions");
                 c.remove("commands");
                 c.remove("events");
+                c.remove("shotFilters");
             }
             if runtime == "wasm" {
                 v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
-                v["contributes"].as_object_mut().unwrap().remove("events");
+                let c = v["contributes"].as_object_mut().unwrap();
+                c.remove("events");
+                c.remove("shotFilters");
             }
             assert_eq!(kind_name(json!(reads(&v, runtime).runtime.kind)), *runtime);
         }
@@ -3477,6 +3600,144 @@ mod tests {
 
     /// A version 2 manifest of a WebAssembly plugin with its component
     /// `plugin.wasm`, changed by `edit`.
+    /// A version 2 plugin of protocol 2 that reads the project, with the
+    /// shot filters `filters` and the settings `sensitivity` and `webhook`.
+    fn filtering(filters: Value) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["engines"]["protocol"] = json!(2);
+            v["permissions"] = json!(["project:read"]);
+            v["contributes"]["settings"] = json!([
+                {"key": "sensitivity", "type": "number", "title": "Sensitivity", "default": 0.5},
+                {"key": "webhook", "type": "string", "title": "Webhook"},
+                {"key": "later", "type": "hologram", "title": "Later"}
+            ]);
+            v["contributes"]["shotFilters"] = filters;
+        })
+    }
+
+    fn speaks() -> Value {
+        json!({"id": "speaks", "title": "Speaks", "description": "Keeps the shots where they talk.",
+               "reason": "No speech", "settings": ["sensitivity"], "revision": 3})
+    }
+
+    #[test]
+    fn a_shot_filter_reads_the_project_and_speaks_protocol_2() {
+        let m = filtering(json!([speaks()])).unwrap().manifest;
+        assert_eq!(
+            m.shot_filters,
+            [ShotFilterSpec {
+                id: "speaks".into(),
+                title: "Speaks".into(),
+                description: Some("Keeps the shots where they talk.".into()),
+                reason: "No speech".into(),
+                settings: vec!["sensitivity".into()],
+                revision: 3,
+            }]
+        );
+        // Left out: every setting it has, and revision 1; none: none.
+        let plain = filtering(json!([{"id": "speaks", "title": "Speaks", "reason": "No speech"}])).unwrap().manifest;
+        let f = &plain.shot_filters[0];
+        assert_eq!(
+            (f.settings.clone(), f.revision, f.description.clone()),
+            (vec!["sensitivity".into(), "webhook".into()], 1, None)
+        );
+        let none = filtering(json!([{"id": "speaks", "title": "Speaks", "reason": "No speech", "settings": []}]));
+        assert!(none.unwrap().manifest.shot_filters[0].settings.is_empty());
+        // A service filters shots too.
+        let service = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["engines"]["protocol"] = json!(2);
+            v["permissions"] = json!(["project:read", "exports:read"]);
+            v["runtime"]["type"] = json!("service");
+            v["contributes"]["shotFilters"] = json!([{"id": "speaks", "title": "Speaks", "reason": "No speech"}]);
+        });
+        assert_eq!(service.unwrap().manifest.shot_filters[0].id, "speaks");
+
+        // Protocol 2, the project:read permission and a program, or it is refused.
+        let refused = |edit: &dyn Fn(&mut Value)| {
+            message(with(|v| {
+                v["manifestVersion"] = json!(2);
+                v["engines"]["protocol"] = json!(2);
+                v["permissions"] = json!(["project:read"]);
+                v["contributes"]["shotFilters"] = json!([speaks()]);
+                v["contributes"]["settings"] = json!([{"key": "sensitivity", "type": "boolean", "title": "Sensitive"}]);
+                edit(v);
+            }))
+        };
+        assert_eq!(
+            refused(&|v| v["engines"]["protocol"] = json!(1)),
+            r#"A shot filter speaks protocol 2: set "engines": {"protocol": 2}."#
+        );
+        assert_eq!(
+            refused(&|v| v["permissions"] = json!(["exports:read"])),
+            r#"A shot filter reads the project: add "project:read" to permissions."#
+        );
+        assert_eq!(
+            refused(&|v| {
+                v["runtime"] = json!({"type": "none"});
+                v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}],
+                                          "shotFilters": [{"id": "speaks", "title": "Speaks", "reason": "No speech"}]});
+            }),
+            "Shot filters need a program, and runtime.type none runs none."
+        );
+        // Their limits.
+        let five: Vec<Value> = (0..5).map(|i| json!({"id": format!("f{i}"), "title": "F", "reason": "R"})).collect();
+        assert_eq!(message(filtering(json!(five))), "The plugin adds more than 4 shot filters.");
+        let twice = json!([{"id": "a", "title": "A", "reason": "R"}, {"id": "a", "title": "B", "reason": "R"}]);
+        assert!(message(filtering(twice)).contains("contributes.shotFilters"));
+        let p = filtering(json!([{"id": "a", "title": "A title that is too long for a chip", "reason": "R"}])).unwrap();
+        assert_eq!((p.manifest.shot_filters[0].title.chars().count(), p.warnings.len()), (24, 2));
+        assert!(message(filtering(json!([{"id": "a", "title": "A"}]))).contains("reason is missing"));
+        for revision in [json!(0), json!(65536), json!(-1), json!(1.5)] {
+            assert!(
+                message(filtering(json!([{"id": "a", "title": "A", "reason": "R", "revision": revision}])))
+                    .contains("revision")
+            );
+        }
+        let top = filtering(json!([{"id": "a", "title": "A", "reason": "R", "revision": 65535}])).unwrap();
+        assert_eq!(top.manifest.shot_filters[0].revision, MAX_FILTER_REVISION);
+
+        // A version 1 manifest skips them, whatever they hold.
+        let v1 = with(|v| v["contributes"]["shotFilters"] = json!([{"id": "BAD"}])).unwrap();
+        assert!(v1.manifest.shot_filters.is_empty());
+        assert!(
+            v1.warnings.iter().any(|w| w.contains(r#"shot filters need "manifestVersion": 2"#)),
+            "{:?}",
+            v1.warnings
+        );
+    }
+
+    #[test]
+    fn a_wasm_plugin_has_no_shot_filter() {
+        let w = wasm(|v| {
+            v["engines"]["protocol"] = json!(2);
+            v["permissions"] = json!(["project:read"]);
+            v["contributes"]["shotFilters"] = json!([speaks()]);
+            v["contributes"]["settings"] = json!([{"key": "sensitivity", "type": "boolean", "title": "Sensitive"}]);
+        });
+        assert_eq!(message(w), "A WebAssembly plugin can't read episodes, so it can't filter shots.");
+        // Without filters it reads as before.
+        assert!(wasm(|v| v["contributes"]["shotFilters"] = json!([])).unwrap().manifest.shot_filters.is_empty());
+    }
+
+    #[test]
+    fn a_filter_names_only_settings_that_exist() {
+        let named = |settings: Value| {
+            filtering(json!([{"id": "speaks", "title": "Speaks", "reason": "No speech", "settings": settings}]))
+        };
+        assert_eq!(
+            message(named(json!(["sensitivity", "loudness"]))),
+            r#"The plugin's contributes.shotFilters[0].settings[1] names "loudness", which isn't one of its settings."#
+        );
+        assert_eq!(message(named(json!([3]))), "The plugin's contributes.shotFilters[0].settings[0] must be text.");
+        assert!(message(named(json!("sensitivity"))).contains("must be a list"));
+        // Named twice, it counts once; one of a type this AutoScene skipped is
+        // its plugin's, and no run gets its value.
+        let m = named(json!(["webhook", "later", "sensitivity", "webhook"])).unwrap().manifest;
+        assert_eq!(m.shot_filters[0].settings, ["webhook", "sensitivity"]);
+    }
+
     fn wasm(edit: impl FnOnce(&mut Value)) -> PluginResult<Parsed> {
         with(|v| {
             v["manifestVersion"] = json!(2);

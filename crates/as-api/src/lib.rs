@@ -1067,6 +1067,11 @@ pub struct PackSpec {
     pub limit: Option<u32>,
     /// Extra frames before and after each shot (within the episode).
     pub handles: u32,
+    /// Plugins' shot filters turned on (`<pluginId>/<filterId>`): each
+    /// leaves out the shots its plugin says no to. One of a plugin that
+    /// isn't active is ignored.
+    #[serde(default)]
+    pub plugin_filters: Vec<String>,
 }
 
 impl Default for PackSpec {
@@ -1082,6 +1087,7 @@ impl Default for PackSpec {
             order: PackOrder::Episodes,
             limit: None,
             handles: 0,
+            plugin_filters: Vec::new(),
         }
     }
 }
@@ -1104,6 +1110,8 @@ pub enum PackReason {
     Limit,
     /// Dropped by hand.
     Removed,
+    /// A plugin's shot filter said no ([`PackClip::filter`] names which).
+    Plugin,
 }
 
 /// A shot of a pack, picked or not.
@@ -1131,6 +1139,9 @@ pub struct PackClip {
     pub reason: Option<PackReason>,
     /// Picked (`true`) or dropped (`false`) by hand.
     pub manual: Option<bool>,
+    /// The plugin filter that leaves it out (an index into
+    /// [`PackPreview::filters`]), picked back in by hand or not.
+    pub filter: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -1153,6 +1164,46 @@ pub struct PackPreview {
     pub stamp: String,
     /// Names its clips, in order, as they are apart from their [`PackChoice`]s.
     pub shape: String,
+    /// The plugins' shot filters it can show: every one of an active
+    /// plugin, and those its spec turns on whose plugin isn't (`off`).
+    pub filters: Vec<PackFilter>,
+    /// Shots a filter turned on hasn't judged yet (with its settings as
+    /// they are): they are in the pack until it has.
+    pub unchecked: u32,
+}
+
+/// A plugin's shot filter, as the scenepack builder shows it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PackFilter {
+    /// `<pluginId>/<filterId>`, as [`PackSpec::plugin_filters`] names it.
+    pub key: String,
+    pub title: String,
+    pub description: Option<String>,
+    /// What a shot it leaves out says.
+    pub reason: String,
+    /// Its plugin's name.
+    pub plugin: String,
+    /// The character's shots it has judged with its settings as they are,
+    /// of those it can (in episodes whose files are there).
+    pub checked: u32,
+    pub total: u32,
+    pub state: PackFilterState,
+}
+
+/// What a plugin's shot filter is doing for a character.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum PackFilterState {
+    /// Nothing runs: what it judged is in the pack.
+    Ready,
+    /// A check of the character's shots waits or runs.
+    Checking,
+    /// Its last check failed or was stopped: it starts again on Try again,
+    /// or once its settings change.
+    Failed,
+    /// Its plugin isn't active: the pack ignores it.
+    Off,
 }
 
 /// Whether a shot is in its pack, and why: the part of a [`PackClip`] that
@@ -1164,6 +1215,8 @@ pub struct PackChoice {
     pub by_rules: bool,
     pub reason: Option<PackReason>,
     pub manual: Option<bool>,
+    /// See [`PackClip::filter`].
+    pub filter: Option<u32>,
 }
 
 /// A pack after shots were picked: every clip's choice, in the pack's

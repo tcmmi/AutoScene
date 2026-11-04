@@ -1,6 +1,7 @@
 //! Scenepacks: a character's shots, filtered and picked by hand, exported in
 //! one go. The pack is made from the analysis each time (as_project::pack),
-//! so the grid, the plan and the export can't disagree.
+//! so the grid, the plan and the export can't disagree: with the verdicts
+//! of the plugins' shot filters as they are then (plugins::filters).
 
 use as_api::{
     ExportPlan, ExportSummary, PackChoices, PackExportRequest, PackNaming, PackPicks, PackPreview, PackSpec, PackState,
@@ -14,6 +15,7 @@ use tauri_specta::Event;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::{ExportChanged, PackChanged};
 use crate::paths;
+use crate::plugins::filters::{self, Checking};
 use crate::state::{AppState, allow_asset_tree, blocking};
 use crate::work;
 
@@ -52,10 +54,11 @@ pub async fn pack_preview(
     character_id: CharacterId,
     spec: PackSpec,
 ) -> AppResult<PackPreview> {
-    let lib = state.library.clone();
+    let (lib, source) = (state.library.clone(), filters::Source::of(&state));
     let (preview, faces) = blocking(move || {
+        let filters = source.filters(project_id, character_id, &spec)?;
         let p = lib.project(project_id)?;
-        Ok((p.pack_preview(character_id, &spec)?, p.faces_dir()))
+        Ok((p.pack_preview(character_id, &spec, &filters)?, p.faces_dir()))
     })
     .await?;
     // The grid shows the shots' sprites and faces.
@@ -76,13 +79,14 @@ pub async fn pack_override(
     picks: Vec<PackPicks>,
     spec: PackSpec,
 ) -> AppResult<PackChoices> {
-    let lib = state.library.clone();
+    let (lib, source) = (state.library.clone(), filters::Source::of(&state));
     blocking(move || {
+        let filters = source.filters(project_id, character_id, &spec)?;
         let p = lib.project(project_id)?;
         for pick in &picks {
             p.set_pack_overrides(character_id, &pick.shots, pick.include)?;
         }
-        Ok(p.pack_choices(character_id, &spec)?)
+        Ok(p.pack_choices(character_id, &spec, &filters)?)
     })
     .await
 }
@@ -97,14 +101,36 @@ pub async fn pack_plan(
     spec: PackSpec,
     naming: PackNaming,
 ) -> AppResult<ExportPlan> {
-    let (lib, tools) = (state.library.clone(), state.tools().ok());
+    let (lib, tools, source) = (state.library.clone(), state.tools().ok(), filters::Source::of(&state));
     blocking(move || {
+        let filters = source.filters(project_id, character_id, &spec)?;
         // Sized for the encoders an export would use (found once, in about a second).
         let none = Caps::default();
         let caps = tools.as_deref().map_or(&none, |t| t.caps());
-        Ok(lib.project(project_id)?.pack_plan(character_id, &spec, &naming, &builtin_presets(), caps)?)
+        let p = lib.project(project_id)?;
+        Ok(p.pack_plan(character_id, &spec, &filters, &naming, &builtin_presets(), caps)?)
     })
     .await
+}
+
+/// Ask a plugin's shot filter `filter` (`<pluginId>/<filterId>`) for its
+/// verdicts on the shots of the pack `spec` makes that it hasn't judged:
+/// `true` while its check waits or runs. One that failed with the settings
+/// it has now starts only `again` (the person's Try again). Verdicts arrive
+/// an episode at a time, with a `pack:changed` once each run is over; the
+/// check shows in Activity.
+#[tauri::command]
+#[specta::specta]
+pub async fn pack_filter_check(
+    app: AppHandle,
+    project_id: ProjectId,
+    character_id: CharacterId,
+    filter: String,
+    spec: PackSpec,
+    again: bool,
+) -> AppResult<bool> {
+    let ck = Checking::of(&app)?;
+    blocking(move || filters::queue_check(&ck, project_id, character_id, &filter, &spec, again)).await
 }
 
 /// Export a character's pack: exactly what the preview with `req.stamp`
@@ -127,11 +153,16 @@ pub async fn pack_export(
     if let Some(dir) = req.out_dir.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
         paths::check(dir)?;
     }
-    let lib = state.library.clone();
+    let (lib, source) = (state.library.clone(), filters::Source::of(&state));
     let (project, summary) = blocking(move || {
+        // Not while a filter it turns on checks shots: the pack is still changing.
+        let filters = source.filters(project_id, character_id, &req.spec)?;
+        if let Some(why) = filters::export_waits(&filters, &req.spec) {
+            return Err(AppError::new(ErrorCode::Invalid, why));
+        }
         let project = lib.project(project_id)?;
         let default_dir = lib.default_export_dir(&lib.summary(project_id)?)?;
-        let (request, out_dir) = project.pack_export_request(character_id, &req, &default_dir)?;
+        let (request, out_dir) = project.pack_export_request(character_id, &req, &filters, &default_dir)?;
         let summary = project.create_export(&request, preset, &out_dir)?;
         Ok((project, summary))
     })

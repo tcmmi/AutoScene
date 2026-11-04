@@ -297,6 +297,7 @@ impl Run {
             project: None,
             export: None,
             input: None,
+            shots: None,
         };
         WasmSpec {
             name: "Test Guest".into(),

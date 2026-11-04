@@ -40,6 +40,8 @@ export const REASONS: Record<PackReason, string> = {
   faceless: "No face",
   limit: "Past the limit",
   removed: "Taken out",
+  // A filter's own words, when the card knows which filter (`filter`).
+  plugin: "Plugin filter",
 }
 
 /** Lengths to keep, in seconds. */
@@ -164,10 +166,12 @@ export const fits = (p: PackPreview, a: PackChoices) => p.shape === a.shape && p
 export function withChoices(p: PackPreview, a: PackChoices): PackPreview {
   let changed = false
   const clips = p.clips.map((c, i) => {
-    const { included, byRules, reason, manual } = a.choices[i]
-    if (c.included === included && c.byRules === byRules && c.reason === reason && c.manual === manual) return c
+    const { included, byRules, reason, manual, filter } = a.choices[i]
+    if (c.included === included && c.byRules === byRules && c.reason === reason && c.manual === manual && c.filter === filter) {
+      return c
+    }
     changed = true
-    return { ...c, included, byRules, reason, manual }
+    return { ...c, included, byRules, reason, manual, filter }
   })
   return { ...p, clips: changed ? clips : p.clips, totals: a.totals, stamp: a.stamp }
 }

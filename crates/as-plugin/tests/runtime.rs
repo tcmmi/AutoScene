@@ -22,9 +22,9 @@ use as_plugin::runtime::{
 };
 use as_plugin::scratch;
 use as_plugin::{
-    ActionContext, ActionKind, AppContext, CallCode, CallError, Caller, Grants, HostCalls, HostMethod, Launch,
-    MemorySecrets, PluginContext, PluginError, PluginId, PluginResult, RunMessage, SettingValue, Store, ToolPaths,
-    Trigger, current_platform,
+    ActionContext, ActionKind, AppContext, CallCode, CallError, Caller, CharacterContext, EpisodeContext, FaceBox,
+    Grants, HostCalls, HostMethod, Launch, MemorySecrets, PluginContext, PluginError, PluginId, PluginResult,
+    RunMessage, SettingValue, ShotContext, ShotsContext, Store, ToolPaths, Trigger, current_platform,
 };
 use semver::Version;
 use serde_json::value::RawValue;
@@ -91,6 +91,7 @@ impl Plugin {
             resources: self.resources.clone(),
             protocol: self.protocol,
             calls: self.calls.clone(),
+            verdicts: None,
             message: self.message.clone(),
         }
     }
@@ -143,6 +144,7 @@ fn message() -> RunMessage {
         project: None,
         export: None,
         input: None,
+        shots: None,
     }
 }
 
@@ -604,6 +606,75 @@ fn non_json_lines_go_to_the_log() {
     // Only the host starts a line with `---` or `[host]`.
     assert_eq!(log.lines().filter(|l| l.starts_with("---")).count(), 1, "{log}");
     assert_eq!(log.lines().filter(|l| l.starts_with("[host]")).count(), 1, "{log}");
+}
+
+#[test]
+fn verdicts_reach_their_sink_and_odd_ones_the_log() {
+    let shot = |start: u64, face_height: f32| ShotContext {
+        key: format!("m1:{start}"),
+        media_id: "m1".into(),
+        start,
+        end: start + 100,
+        face_height,
+        faceless: false,
+        face: Some(FaceBox { frame: start + 10, x: 0.4, y: 0.2, w: 0.1, h: face_height }),
+    };
+    let mut p = Plugin::new("filter");
+    p.protocol = 2;
+    p.message.action = ActionContext { kind: ActionKind::ShotFilter, id: "speaks".into(), trigger: Trigger::Pack };
+    p.message.shots = Some(ShotsContext {
+        character: CharacterContext { id: "c1".into(), name: "Walter".into() },
+        episodes: vec![EpisodeContext {
+            media_id: "m1".into(),
+            path: "/media/S01E01.mkv".into(),
+            fps: Some("24000/1001".into()),
+            frames: Some(2400),
+        }],
+        shots: vec![shot(0, 0.3), shot(100, 0.1), shot(200, 0.5)],
+    });
+    let judged = |p: &Plugin, sink: bool| {
+        let got = Arc::new(Mutex::new(Vec::new()));
+        let mut spec = p.spec();
+        if sink {
+            let keep = got.clone();
+            spec.verdicts = Some(Box::new(move |shot: &str, kept| keep.lock().unwrap().push((shot.to_owned(), kept))));
+        }
+        let result = runtime::run(spec, &CancelToken::new(), &|_, _| {}).unwrap();
+        (result, got.lock().unwrap().clone())
+    };
+    // Each shot it was sent, in the order it said them; a later word counts too.
+    let (result, got) = judged(&p, true);
+    assert_eq!(result.as_deref(), Some("Checked 3 shots."));
+    let said = |v: &[(&str, bool)]| v.iter().map(|(s, k)| (s.to_string(), *k)).collect::<Vec<_>>();
+    assert_eq!(got, said(&[("m1:0", true), ("m1:100", false), ("m1:200", true), ("m1:0", false)]));
+    // One it wasn't sent goes to the log, and only it.
+    let log = p.log_text();
+    assert!(
+        log.contains(
+            "[verdict] elsewhere:1 false: a shot it wasn't sent, ignored
+"
+        ),
+        "{log}"
+    );
+    assert_eq!(log.matches("[verdict]").count(), 1, "{log}");
+
+    // Without a sink, or outside a shot filter's run, every verdict is the log's.
+    for kind in [ActionKind::ShotFilter, ActionKind::Command] {
+        let mut q = Plugin::new("filter");
+        (q.protocol, q.message.shots) = (2, p.message.shots.clone());
+        q.message.action = ActionContext { kind, id: "speaks".into(), trigger: Trigger::Pack };
+        let (result, got) = judged(&q, kind == ActionKind::Command);
+        assert_eq!((result.as_deref(), got), (Some("Checked 3 shots."), Vec::new()));
+        let log = q.log_text();
+        assert!(
+            log.contains(
+                "[verdict] m1:100 false: not a shot filter's run, ignored
+"
+            ),
+            "{log}"
+        );
+        assert_eq!(log.matches("[verdict]").count(), 5, "{log}");
+    }
 }
 
 #[test]

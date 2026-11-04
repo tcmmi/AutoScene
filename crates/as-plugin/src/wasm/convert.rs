@@ -72,7 +72,9 @@ pub(crate) fn guest_path(root: &Path, guest_root: &str, host: &str) -> Option<St
 /// `message` as the world's request, its folders as `mounts` gives them:
 /// an event's run as an `event-request` for `on-event`, any other as a
 /// `run-request` for `run`. Its protocol is the one the plugin declared,
-/// and a setting `grants` names a secret is left out.
+/// and a setting `grants` names a secret is left out. A shot filter's run
+/// has no request: a component can't read the episodes it judges, and its
+/// manifest can't name a filter ([`crate::manifest`]).
 pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) -> PluginResult<Request> {
     let settings = message
         .settings
@@ -123,10 +125,15 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
             },
         }));
     }
+    // Every kind and trigger has its case in the 1.0 world; one that a
+    // later protocol adds needs a newer world (or a function of its own),
+    // never a case that a 1.0 plugin doesn't know.
+    let no_filter = || PluginError::Invalid("A WebAssembly plugin can't filter shots.".into());
     let kind = match message.action.kind {
         ActionKind::ExportAction => wit::ActionKind::ExportAction,
         ActionKind::Command => wit::ActionKind::Command,
         ActionKind::Event => return Err(no_event()),
+        ActionKind::ShotFilter => return Err(no_filter()),
     };
     let trigger = match message.action.trigger {
         Trigger::Menu => wit::Trigger::Menu,
@@ -134,6 +141,7 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
         Trigger::Palette => wit::Trigger::Palette,
         Trigger::Page => wit::Trigger::Page,
         Trigger::Event => return Err(no_event()),
+        Trigger::Pack => return Err(no_filter()),
     };
     let in_export = |path: &str| mounts.export.as_deref().and_then(|root| guest_path(root, "/export", path));
     Ok(Request::Run(wit::RunRequest {
@@ -254,6 +262,7 @@ mod tests {
                 ],
             }),
             input: None,
+            shots: None,
         }
     }
 
@@ -377,6 +386,9 @@ mod tests {
             m.action.trigger = trigger;
             assert_eq!(format!("{:?}", run(request(&m, &Mounts::default(), &g)).action.trigger), wit);
         }
+        // A shot filter's run is never a component's.
+        m.action = ActionContext { kind: ActionKind::ShotFilter, id: "speaks".into(), trigger: Trigger::Pack };
+        assert!(matches!(request(&m, &Mounts::default(), &g), Err(PluginError::Invalid(_))));
     }
 
     #[test]

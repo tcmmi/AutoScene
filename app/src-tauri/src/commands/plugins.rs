@@ -465,6 +465,10 @@ pub async fn plugin_run(
         ActionKind::Event => {
             return Err(AppError::new(ErrorCode::Invalid, "An event runs by itself, once it is turned on."));
         }
+        // A check runs from the scenepack builder (`pack_filter_check`).
+        ActionKind::ShotFilter => {
+            return Err(AppError::new(ErrorCode::Invalid, "A shot filter checks shots from the scenepack builder."));
+        }
     };
     blocking(move || plugins::queue_run(&app, &id, kind, &action_id, trigger, project_id, export_id, None)).await
 }

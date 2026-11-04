@@ -97,6 +97,7 @@
               "pages": false,
               "events": false,
               "exportActions": { "items": { "properties": { "afterFailed": false } } },
+              "shotFilters": false,
               "settings": { "items": { "properties": { "type": { "not": { "const": "secret" } } } } }
             }
           }
@@ -127,7 +128,7 @@
           "runtime": { "properties": { "command": false, "gpu": false, "component": false, "limits": false } },
           "contributes": {
             "required": ["pages"],
-            "properties": { "exportActions": false, "commands": false, "events": false, "pages": { "minItems": 1 } }
+            "properties": { "exportActions": false, "commands": false, "events": false, "shotFilters": false, "pages": { "minItems": 1 } }
           }
         }
       }
@@ -148,7 +149,8 @@
       },
       "then": {
         "properties": {
-          "runtime": { "required": ["component"], "properties": { "command": false, "gpu": { "const": false } } }
+          "runtime": { "required": ["component"], "properties": { "command": false, "gpu": { "const": false } } },
+          "contributes": { "properties": { "shotFilters": false } }
         }
       }
     },
@@ -159,6 +161,19 @@
       },
       "then": {
         "properties": { "engines": { "properties": { "protocol": { "const": 2 } } } }
+      }
+    },
+    {
+      "if": {
+        "required": ["contributes"],
+        "properties": { "contributes": { "required": ["shotFilters"], "properties": { "shotFilters": { "minItems": 1 } } } }
+      },
+      "then": {
+        "required": ["permissions"],
+        "properties": {
+          "engines": { "properties": { "protocol": { "const": 2 } } },
+          "permissions": { "contains": { "const": "project:read" } }
+        }
       }
     },
     {
@@ -363,6 +378,12 @@
           "type": "array",
           "maxItems": 4,
           "items": { "$ref": "#/$defs/event" }
+        },
+        "shotFilters": {
+          "description": "Filters of the scenepack builder (manifest version 2): the program judges a character's shots, an episode at a time, and the pack leaves out those it says no to. Needs engines.protocol 2 and the project:read permission; a WebAssembly plugin can't have them.",
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/shotFilter" }
         }
       },
       "additionalProperties": false
@@ -391,6 +412,30 @@
         "on": {
           "description": "What it waits for. analysisFinished: a project's episodes are all analysed.",
           "enum": ["analysisFinished"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "shotFilter": {
+      "type": "object",
+      "required": ["id", "title", "reason"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "title": { "description": "Its chip in the scenepack builder.", "$ref": "#/$defs/label", "maxLength": 24 },
+        "description": { "type": "string", "maxLength": 200 },
+        "reason": { "description": "What a shot it leaves out says, such as No speech.", "$ref": "#/$defs/label", "maxLength": 24 },
+        "settings": {
+          "description": "The keys of the settings its verdicts depend on: a change of one asks for them again. Left out: all of them.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        },
+        "revision": {
+          "description": "Raise it when a new version judges shots differently: their verdicts are asked for again.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 1
         }
       },
       "additionalProperties": false

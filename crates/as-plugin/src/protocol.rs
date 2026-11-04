@@ -24,6 +24,10 @@
 //! the same id, until a [`HostMessage::Stop`]. It may emit events for its
 //! open pages, and call AutoScene as a run does.
 //!
+//! Version 2 also has shot filters: a run of `kind: "shotFilter"` gets the
+//! shots of one character in one episode ([`ShotsContext`]) and says of
+//! each whether the scenepack keeps it ([`PluginMessage::Verdict`]).
+//!
 //! Fields added later are `#[serde(default)]` when read and left out while
 //! empty when written, so an older plugin's lines still read and an older
 //! plugin's run line stays as it was.
@@ -185,6 +189,76 @@ pub struct RunMessage {
     /// only); left out of every other run's line.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event: Option<EventContext>,
+    /// The shots a shot filter judges (protocol 2, `kind: "shotFilter"`
+    /// only): one episode's, of one character.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shots: Option<ShotsContext>,
+}
+
+/// What a shot filter's run judges: shots of one character in one episode.
+/// It answers with a [`PluginMessage::Verdict`] for each, by its `key`.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotsContext {
+    /// Whose shots they are: the verdicts are this character's ("does
+    /// Walter speak here", not "does anyone").
+    pub character: CharacterContext,
+    /// The episode they are in (one per run).
+    pub episodes: Vec<EpisodeContext>,
+    pub shots: Vec<ShotContext>,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CharacterContext {
+    pub id: String,
+    pub name: String,
+}
+
+/// An episode a shot filter reads.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EpisodeContext {
+    pub media_id: String,
+    /// Its file.
+    pub path: String,
+    /// Its frame rate as a fraction (`24000/1001`), if known.
+    pub fps: Option<String>,
+    /// How many frames it has, if known.
+    pub frames: Option<u64>,
+}
+
+/// A shot of the character, in frames of its episode.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotContext {
+    /// What its verdict names: `<mediaId>:<start>`.
+    pub key: String,
+    pub media_id: String,
+    /// Its first frame.
+    pub start: u64,
+    /// The frame after its last one.
+    pub end: u64,
+    /// The biggest the character's face is in it, as a share of the frame
+    /// height (as big as their body suggests in a shot without it).
+    pub face_height: f32,
+    /// Their face doesn't show in it: their body does.
+    pub faceless: bool,
+    /// Where the character's clearest face in it is, in the frame it is
+    /// clearest in; `null` in a shot without their face.
+    pub face: Option<FaceBox>,
+}
+
+/// A face's box in one frame, as shares of the frame's width and height
+/// from its top left corner.
+#[derive(Clone, Copy, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FaceBox {
+    pub frame: u64,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
 /// A service's start: its context, as a run's line has it, without a task.
@@ -281,6 +355,9 @@ pub enum ActionKind {
     /// One of its events (`contributes.events`), which AutoScene starts by
     /// itself: never from a menu, the palette or a page.
     Event,
+    /// A shot filter of the scenepack builder (protocol 2), which judges
+    /// the shots of [`RunMessage::shots`].
+    ShotFilter,
 }
 
 /// What started a run.
@@ -300,6 +377,9 @@ pub enum Trigger {
     /// What one of its events waits for happened, with the event turned on.
     /// Its run gets what happened as `event`.
     Event,
+    /// A scenepack shown with one of the plugin's shot filters on, whose
+    /// shots lack its verdicts.
+    Pack,
 }
 
 /// What happened, for a run of an event.
@@ -403,6 +483,10 @@ pub enum PluginMessage {
         #[serde(default)]
         detail: Option<String>,
     },
+    /// A shot filter's word on one shot of its run (by the shot's `key`):
+    /// whether the pack keeps it. Outside a shot filter's run, or for a
+    /// shot the run wasn't sent, it goes to the log and counts for nothing.
+    Verdict { shot: String, keep: bool },
 }
 
 impl PluginMessage {
@@ -682,6 +766,7 @@ mod tests {
             export: None,
             input: None,
             event: None,
+            shots: None,
         }
     }
 
@@ -1010,6 +1095,8 @@ mod tests {
         assert_eq!(serde_json::to_string(&Trigger::Page).unwrap(), r#""page""#);
         assert_eq!(serde_json::to_string(&Trigger::Event).unwrap(), r#""event""#);
         assert_eq!(serde_json::to_string(&ActionKind::Event).unwrap(), r#""event""#);
+        assert_eq!(serde_json::to_string(&ActionKind::ShotFilter).unwrap(), r#""shotFilter""#);
+        assert_eq!(serde_json::to_string(&Trigger::Pack).unwrap(), r#""pack""#);
         assert_eq!(serde_json::from_str::<Trigger>(r#""menu""#).unwrap(), Trigger::Menu);
         assert_eq!(serde_json::from_str::<ActionKind>(r#""command""#).unwrap(), ActionKind::Command);
     }
@@ -1044,6 +1131,79 @@ mod tests {
             PluginMessage::Error { message: "No webhook.".into(), detail: None }
         );
         assert_eq!(read("\u{FEFF}{\"type\":\"result\"}"), PluginMessage::Result { message: None });
+    }
+
+    #[test]
+    fn a_verdict_line_reads_as_the_guide_shows() {
+        let read = |line: &str| PluginMessage::read(line);
+        assert_eq!(
+            read(r#"{"type":"verdict","shot":"m1:1200","keep":false}"#),
+            Some(PluginMessage::Verdict { shot: "m1:1200".into(), keep: false })
+        );
+        assert_eq!(
+            read(r#"{"keep":true,"later":1,"type":"verdict","shot":"m1:0"}"#),
+            Some(PluginMessage::Verdict { shot: "m1:0".into(), keep: true })
+        );
+        for line in [
+            r#"{"type":"verdict","shot":"m1:0"}"#,
+            r#"{"type":"verdict","keep":true}"#,
+            r#"{"type":"verdict","shot":1200,"keep":true}"#,
+            r#"{"type":"verdict","shot":"m1:0","keep":"yes"}"#,
+        ] {
+            assert_eq!(read(line), None, "{line}");
+        }
+
+        // The run line of a shot filter: its kind and trigger, and the shots
+        // of one character in one episode, after what every run line has.
+        let mut message = run();
+        message.protocol = 2;
+        message.action = ActionContext { kind: ActionKind::ShotFilter, id: "speaks".into(), trigger: Trigger::Pack };
+        message.shots = Some(ShotsContext {
+            character: CharacterContext { id: "c1".into(), name: "Walter".into() },
+            episodes: vec![EpisodeContext {
+                media_id: "m1".into(),
+                path: "D:\\Breaking Bad\\S01E01.mkv".into(),
+                fps: Some("24000/1001".into()),
+                frames: Some(83136),
+            }],
+            shots: vec![
+                ShotContext {
+                    key: "m1:1200".into(),
+                    media_id: "m1".into(),
+                    start: 1200,
+                    end: 1450,
+                    face_height: 0.25,
+                    faceless: false,
+                    face: Some(FaceBox { frame: 1310, x: 0.5, y: 0.25, w: 0.125, h: 0.25 }),
+                },
+                ShotContext {
+                    key: "m1:2000".into(),
+                    media_id: "m1".into(),
+                    start: 2000,
+                    end: 2100,
+                    face_height: 0.5,
+                    faceless: true,
+                    face: None,
+                },
+            ],
+        });
+        let line = HostMessage::Run(Box::new(message)).line();
+        assert!(
+            line.ends_with(
+                &[
+                    r#""action":{"kind":"shotFilter","id":"speaks","trigger":"pack"},"project":null,"export":null,"#,
+                    r#""shots":{"character":{"id":"c1","name":"Walter"},"#,
+                    r#""episodes":[{"mediaId":"m1","path":"D:\\Breaking Bad\\S01E01.mkv","fps":"24000/1001","frames":83136}],"#,
+                    r#""shots":[{"key":"m1:1200","mediaId":"m1","start":1200,"end":1450,"faceHeight":0.25,"faceless":false,"#,
+                    r#""face":{"frame":1310,"x":0.5,"y":0.25,"w":0.125,"h":0.25}},"#,
+                    r#"{"key":"m1:2000","mediaId":"m1","start":2000,"end":2100,"faceHeight":0.5,"faceless":true,"face":null}]}}"#,
+                ]
+                .concat()
+            ),
+            "{line}"
+        );
+        // Any other run line has none.
+        assert!(!HostMessage::Run(Box::new(run())).line().contains("shots"));
     }
 
     #[test]

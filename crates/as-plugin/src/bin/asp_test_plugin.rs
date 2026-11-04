@@ -31,6 +31,24 @@ fn main() {
             send(json!({"type": "result", "message": "Posted 12 clips."}));
         }
         "quiet" => read_run(),
+        // A shot filter: keeps the shots with a face at least 0.2 tall, says
+        // something of a shot it wasn't sent, and changes its mind on the
+        // first one.
+        "filter" => {
+            read_run();
+            let run: Value = serde_json::from_str(&first).expect("run line");
+            let shots = run["shots"]["shots"].as_array().cloned().unwrap_or_default();
+            for shot in &shots {
+                let keep = shot["faceHeight"].as_f64().unwrap_or(0.0) >= 0.2;
+                send(json!({"type": "verdict", "shot": shot["key"], "keep": keep}));
+            }
+            send(json!({"type": "verdict", "shot": "elsewhere:1", "keep": false}));
+            send(json!({"type": "progress", "fraction": 1.0, "stage": "Listening"}));
+            if let Some(shot) = shots.first() {
+                send(json!({"type": "verdict", "shot": shot["key"], "keep": false}));
+            }
+            send(json!({"type": "result", "message": format!("Checked {} shots.", shots.len())}));
+        }
         "echo" => {
             read_run();
             fs::write("run.json", &first).expect("run.json");

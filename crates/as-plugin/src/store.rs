@@ -1160,6 +1160,7 @@ impl Store {
             resources: None,
             protocol: m.engines.protocol,
             calls: None,
+            verdicts: None,
             message,
         })
     }
@@ -1237,6 +1238,7 @@ impl Store {
             project: None,
             export: None,
             input: None,
+            shots: None,
         })
     }
 

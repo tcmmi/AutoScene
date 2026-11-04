@@ -18,6 +18,7 @@ use as_core::{AppPaths, ProjectId, Rational};
 use as_db::{IngestRecord, NewTrack};
 
 use super::*;
+use crate::verdicts::PluginFilter;
 
 const EPISODES: usize = 60;
 /// Shots of the character in each episode; a sixth of its shots are others'.
@@ -199,7 +200,7 @@ fn measure(project: &Project, c: CharacterId) {
     let naming = PackNaming::default();
     let spec = PackSpec::default();
     let best = PackSpec { order: PackOrder::Best, limit: Some(200), ..PackSpec::default() };
-    let v = project.pack_preview(c, &spec).unwrap();
+    let v = project.pack_preview(c, &spec, &PluginFilters::NONE).unwrap();
     let media: Vec<MediaId> = project.media_list().unwrap().iter().map(|m| m.id).collect();
     let episodes: std::collections::HashSet<_> = v.clips.iter().map(|c| c.shot.media_id).collect();
     println!("pack: {} shots, {} taken, {} episodes", v.clips.len(), v.totals.clips, episodes.len());
@@ -207,16 +208,16 @@ fn measure(project: &Project, c: CharacterId) {
     row("media(id)", ms(201, || project.media(some).unwrap()));
     row("ready_source(id)", ms(201, || project.ready_source(some).unwrap()));
     row("pack_state", ms(21, || project.pack_state(c).unwrap()));
-    row("pack_preview (episodes)", ms(11, || project.pack_preview(c, &spec).unwrap()));
+    row("pack_preview (episodes)", ms(11, || project.pack_preview(c, &spec, &PluginFilters::NONE).unwrap()));
     row("  pack_rows", ms(11, || project.db().pack_rows(c).unwrap()));
     row("  media_list (counted)", ms(11, || project.media_list().unwrap()));
     row("  media_list_uncounted", ms(11, || project.media_list_uncounted().unwrap()));
     let rows = project.db().pack_rows(c).unwrap();
     row("  shots_of", ms(11, || shots_of(c, &rows, &[])));
-    row("pack_preview (best, limit 200)", ms(11, || project.pack_preview(c, &best).unwrap()));
-    row("pack_preview + its JSON", ms(11, || json(&project.pack_preview(c, &spec).unwrap())));
-    row("pack_choices + its JSON", ms(11, || json(&project.pack_choices(c, &spec).unwrap())));
-    row("pack_plan", ms(11, || project.pack_plan(c, &spec, &naming, &presets, &caps).unwrap()));
+    row("pack_preview (best, limit 200)", ms(11, || project.pack_preview(c, &best, &PluginFilters::NONE).unwrap()));
+    row("pack_preview + its JSON", ms(11, || json(&project.pack_preview(c, &spec, &PluginFilters::NONE).unwrap())));
+    row("pack_choices + its JSON", ms(11, || json(&project.pack_choices(c, &spec, &PluginFilters::NONE).unwrap())));
+    row("pack_plan", ms(11, || project.pack_plan(c, &spec, &PluginFilters::NONE, &naming, &presets, &caps).unwrap()));
     let key = |i: usize| PackKey { media_id: v.clips[i].shot.media_id, shot: v.clips[i].shot.start };
     row(
         "set_pack_overrides (1 shot)",
@@ -235,9 +236,9 @@ fn measure(project: &Project, c: CharacterId) {
         }) / 2.0,
     );
     let sizes = (
-        json(&project.pack_preview(c, &spec).unwrap()),
-        json(&project.pack_choices(c, &spec).unwrap()),
-        json(&project.pack_plan(c, &spec, &naming, &presets, &caps).unwrap()),
+        json(&project.pack_preview(c, &spec, &PluginFilters::NONE).unwrap()),
+        json(&project.pack_choices(c, &spec, &PluginFilters::NONE).unwrap()),
+        json(&project.pack_plan(c, &spec, &PluginFilters::NONE, &naming, &presets, &caps).unwrap()),
     );
     println!("JSON: preview {:.0} kB, choices {:.0} kB, plan {:.1} kB", kb(sizes.0), kb(sizes.1), kb(sizes.2));
     // A click as the builder makes it: the pick answered with the pack's
@@ -246,18 +247,53 @@ fn measure(project: &Project, c: CharacterId) {
         "a click: pick + choices + plan",
         ms(5, || {
             project.set_pack_overrides(c, &[key(10)], Some(false)).unwrap();
-            json(&project.pack_choices(c, &spec).unwrap());
-            json(&project.pack_plan(c, &spec, &naming, &presets, &caps).unwrap());
+            json(&project.pack_choices(c, &spec, &PluginFilters::NONE).unwrap());
+            json(&project.pack_plan(c, &spec, &PluginFilters::NONE, &naming, &presets, &caps).unwrap());
             project.set_pack_overrides(c, &[key(10)], None).unwrap();
         }),
     );
     println!("  bytes per click: {:.0} kB", kb(sizes.1 + sizes.2));
+    // A plugin's shot filter turned on, with its verdicts on every shot (a
+    // third of them left out): what reading them adds to a preview.
+    let speaks = "dev.bench.speech/speaks";
+    let filters = PluginFilters(vec![PluginFilter {
+        key: speaks.into(),
+        title: "Speaks".into(),
+        description: None,
+        reason: "No speech".into(),
+        plugin: "Speech Filter".into(),
+        basis: "bench".into(),
+        state: PackFilterState::Ready,
+    }]);
+    let mut by: HashMap<MediaId, Vec<(FrameIdx, bool)>> = HashMap::new();
+    for (i, clip) in v.clips.iter().enumerate() {
+        by.entry(clip.shot.media_id).or_default().push((clip.shot.start, i % 3 != 0));
+    }
+    for (m, given) in &by {
+        project.keep_verdicts(speaks, c, *m, "bench", given).unwrap();
+    }
+    let on = PackSpec { plugin_filters: vec![speaks.into()], ..PackSpec::default() };
+    let plain = ms(11, || project.pack_preview(c, &spec, &PluginFilters::NONE).unwrap());
+    let filtered = ms(11, || project.pack_preview(c, &on, &filters).unwrap());
+    row("pack_preview with one filter's verdicts", filtered);
+    println!(
+        "  {:+.1} % over the plain preview ({plain:.2} ms; {} verdict rows)",
+        (filtered / plain - 1.0) * 100.0,
+        by.len()
+    );
+    row("  and its choices + JSON", ms(11, || json(&project.pack_choices(c, &on, &filters).unwrap())));
     // Many picks (every other shot), under a limit too.
     let half: Vec<PackKey> = (0..n).step_by(2).map(key).collect();
     project.set_pack_overrides(c, &half, Some(true)).unwrap();
-    row(&format!("pack_preview with {} picks", half.len()), ms(11, || project.pack_preview(c, &spec).unwrap()));
+    row(
+        &format!("pack_preview with {} picks", half.len()),
+        ms(11, || project.pack_preview(c, &spec, &PluginFilters::NONE).unwrap()),
+    );
     let limited = PackSpec { limit: Some(n as u32 / 4), ..best.clone() };
-    row(&format!("  and a limit of {}", n / 4), ms(11, || project.pack_preview(c, &limited).unwrap()));
+    row(
+        &format!("  and a limit of {}", n / 4),
+        ms(11, || project.pack_preview(c, &limited, &PluginFilters::NONE).unwrap()),
+    );
     project.set_pack_overrides(c, &half, None).unwrap();
 
     // Exports: one file, then a file per clip; each run after earlier ones.
@@ -272,8 +308,11 @@ fn measure(project: &Project, c: CharacterId) {
             stamp: v.stamp.clone(),
         };
         let what = if merge { "one file" } else { "a file per clip" };
-        row(&format!("pack_export_request ({what})"), ms(3, || project.pack_export_request(c, &req, &out).unwrap()));
-        let (request, dir) = project.pack_export_request(c, &req, &out).unwrap();
+        row(
+            &format!("pack_export_request ({what})"),
+            ms(3, || project.pack_export_request(c, &req, &PluginFilters::NONE, &out).unwrap()),
+        );
+        let (request, dir) = project.pack_export_request(c, &req, &PluginFilters::NONE, &out).unwrap();
         let runs = times(3, || project.create_export(&request, preset.clone(), &dir).unwrap());
         let runs: Vec<String> = runs.iter().map(|t| format!("{t:.0}")).collect();
         println!("create_export ({} clips, {what}): {} ms, run after run", request.clips.len(), runs.join(" / "));

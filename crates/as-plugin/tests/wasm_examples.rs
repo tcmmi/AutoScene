@@ -130,6 +130,7 @@ impl Run {
                 clips: vec![clip("Walt 1", "S01E01", 240, 480), clip("Jesse 1", "S01E02", 1000, 1012)],
             }),
             input: None,
+            shots: None,
         };
         if let Some(episodes) = self.event {
             message.action = ActionContext { kind: ActionKind::Event, id: self.action.into(), trigger: Trigger::Event };

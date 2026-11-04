@@ -20,7 +20,9 @@ pub use cast::{
 };
 pub use library::LibraryDb;
 pub use pack::PackRow;
-pub use project::{IngestRecord, NewExportItem, NewMedia, ProjectDb, ProjectStats, Relinked, episode_label};
+pub use project::{
+    IngestRecord, NewExportItem, NewMedia, ProjectDb, ProjectStats, Relinked, VERDICTS_PREFIX, episode_label,
+};
 
 use std::path::Path;
 

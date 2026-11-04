@@ -478,12 +478,53 @@ fn export_item_row(r: &Row) -> DbResult<ExportItem> {
     })
 }
 
+/// Where plugins' shot filters keep their verdicts: one meta row per
+/// filter, character and episode, keyed
+/// `plugin_verdicts:<pluginId>/<filterId>/<characterId>/<mediaId>`
+/// (`as_project::verdicts`). Meta rows keep the schema as it is, so an
+/// older AutoScene still opens the project.
+pub const VERDICTS_PREFIX: &str = "plugin_verdicts:";
+
 fn clear_shots(tx: &rusqlite::Transaction, id: MediaId) -> DbResult<()> {
     tx.execute("DELETE FROM shot_signals WHERE media_id = ?1", [id.to_string()])?;
     tx.execute("DELETE FROM segments WHERE media_id = ?1", [id.to_string()])?;
     tx.execute("UPDATE media SET shots = 'pending', shots_error = NULL WHERE id = ?1", [id.to_string()])?;
+    // Verdicts name shots by their first frame: the shots they name are gone.
+    clear_verdicts(tx, id)?;
     // Tracks belong to shots.
     crate::cast::clear_faces(tx, id)
+}
+
+/// Deletes the verdict rows of the media `id`, of every filter and
+/// character (the keys that end in `/<id>`).
+fn clear_verdicts(tx: &rusqlite::Transaction, id: MediaId) -> DbResult<()> {
+    let (from, to) = prefix_range(VERDICTS_PREFIX);
+    tx.execute(
+        "DELETE FROM meta WHERE key >= ?1 AND key < ?2 AND substr(key, -length(?3)) = ?3",
+        params![from, to, format!("/{id}")],
+    )?;
+    Ok(())
+}
+
+/// The keys that start with `prefix`, as a range of the primary key: from
+/// it, to the first text after all of them (SQLite compares the UTF-8
+/// bytes, so code point order): `prefix` with its last character one
+/// higher.
+fn prefix_range(prefix: &str) -> (String, String) {
+    let mut end: Vec<char> = prefix.chars().collect();
+    while let Some(last) = end.pop() {
+        let next = match last {
+            '\u{D7FF}' => Some('\u{E000}'),
+            c => char::from_u32(u32::from(c) + 1),
+        };
+        if let Some(next) = next {
+            end.push(next);
+            return (prefix.to_owned(), end.into_iter().collect());
+        }
+    }
+    // Only the last characters there are: nothing sorts after them but
+    // longer texts of them, which a prefix this odd never names.
+    (prefix.to_owned(), format!("{prefix}\u{10FFFF}\u{10FFFF}"))
 }
 
 impl ProjectDb {
@@ -536,6 +577,52 @@ impl ProjectDb {
             )?;
             Ok(())
         })
+    }
+
+    /// The meta rows whose keys start with `prefix`, in key order: read
+    /// through the primary key's index, not the whole table.
+    pub fn meta_range(&self, prefix: &str) -> DbResult<Vec<(String, String)>> {
+        let (from, to) = prefix_range(prefix);
+        self.0.read(|c| {
+            let mut st = c.prepare("SELECT key, value FROM meta WHERE key >= ?1 AND key < ?2 ORDER BY key")?;
+            let rows = st.query_map([from, to], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+    }
+
+    /// Changes the meta row `key`, which speaks of the shots of the media
+    /// `media`, in one step: `change` gets its value (none without a row)
+    /// and gives the new one. Nothing written between the read and the
+    /// write is lost. Nothing is written once the media is gone or its
+    /// shots are being found again (`false`): the row would outlive the
+    /// shots it names.
+    pub fn update_media_meta(
+        &self,
+        key: &str,
+        media: MediaId,
+        change: impl FnOnce(Option<String>) -> String,
+    ) -> DbResult<bool> {
+        self.0.write(|tx| {
+            let ready = tx
+                .query_row("SELECT 1 FROM media WHERE id = ?1 AND shots = 'ready'", [media.to_string()], |_| Ok(()))
+                .optional()?
+                .is_some();
+            if !ready {
+                return Ok(false);
+            }
+            let now = tx.query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)).optional()?;
+            tx.execute(
+                "INSERT INTO meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [key, change(now).as_str()],
+            )?;
+            Ok(true)
+        })
+    }
+
+    /// Deletes what plugins' shot filters said of the shots of the media
+    /// `id` ([`VERDICTS_PREFIX`]): it was removed.
+    pub fn delete_verdicts(&self, id: MediaId) -> DbResult<()> {
+        self.0.write(|tx| clear_verdicts(tx, id))
     }
 
     // -- media --------------------------------------------------------------
@@ -1472,6 +1559,70 @@ pub(crate) mod tests {
 
         // A media removed meanwhile isn't found again.
         assert!(!db.relink_media(MediaId::new(), "/v/x.mkv", "x.mkv", 1, None, Relinked::Copy).unwrap());
+    }
+
+    #[test]
+    fn meta_range_reads_only_its_prefix() {
+        let db = ProjectDb::memory();
+        for key in [
+            "plugin_verdicts:dev.a.speech/speaks/c1/m1",
+            "plugin_verdicts:dev.a.speech/speaks/c1/m2",
+            "plugin_verdicts:dev.a.speech/speaks/c10/m1",
+            "plugin_verdicts:dev.a.speech/speaks/c2/m1",
+            "plugin_verdicts:dev.a.speech/speaks-loud/c1/m1",
+            "plugin_verdicts:dev.a.speech/speaks/c1",
+            "plugin_verdicts:dev.a.speech/speaks/c1/\u{10FFFF}",
+            "picked_cover:c1",
+            "plugin_verdicts;",
+        ] {
+            db.set_meta(key, key).unwrap();
+        }
+        let keys = |prefix: &str| db.meta_range(prefix).unwrap().into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+        assert_eq!(
+            keys("plugin_verdicts:dev.a.speech/speaks/c1/"),
+            [
+                "plugin_verdicts:dev.a.speech/speaks/c1/m1",
+                "plugin_verdicts:dev.a.speech/speaks/c1/m2",
+                "plugin_verdicts:dev.a.speech/speaks/c1/\u{10FFFF}",
+            ]
+        );
+        assert_eq!(keys("plugin_verdicts:dev.a.speech/speaks/c2/"), ["plugin_verdicts:dev.a.speech/speaks/c2/m1"]);
+        assert!(keys("plugin_verdicts:dev.a.other/").is_empty());
+        assert_eq!(keys(VERDICTS_PREFIX).len(), 7);
+        // Each row with its value.
+        let (key, value) = &db.meta_range("picked_cover:").unwrap()[0];
+        assert_eq!((key.as_str(), value.as_str()), ("picked_cover:c1", "picked_cover:c1"));
+    }
+
+    #[test]
+    fn resetting_an_episode_s_shots_drops_its_verdicts() {
+        use crate::cast::tests::ready_media;
+        let db = ProjectDb::memory();
+        let (a, b) = (ready_media(&db, "/v/a.mkv"), ready_media(&db, "/v/b.mkv"));
+        let row = |filter: &str, c: &str, m: MediaId| format!("{VERDICTS_PREFIX}dev.a.speech/{filter}/{c}/{m}");
+        let rows = [row("speaks", "c1", a), row("speaks", "c2", a), row("loud", "c1", a), row("speaks", "c1", b)];
+        for key in &rows {
+            assert!(db.update_media_meta(key, a, |now| format!("{}+", now.unwrap_or_default())).unwrap());
+        }
+        db.set_meta(&format!("picked_cover:{a}"), "7").unwrap();
+        // Changed in one step, from what it was.
+        assert!(db.update_media_meta(&rows[0], a, |now| format!("{}+", now.unwrap_or_default())).unwrap());
+        assert_eq!(db.meta(&rows[0]).unwrap().as_deref(), Some("++"));
+
+        // Its shots found again: every filter's and every character's rows
+        // of it go, the other episode's and other rows stay.
+        db.reset_shots(a).unwrap();
+        let left: Vec<String> = db.meta_range(VERDICTS_PREFIX).unwrap().into_iter().map(|(k, _)| k).collect();
+        assert_eq!(left, [rows[3].clone()]);
+        assert_eq!(db.meta(&format!("picked_cover:{a}")).unwrap().as_deref(), Some("7"));
+        // Until its shots are found, nothing is written of them.
+        assert!(!db.update_media_meta(&rows[0], a, |_| "late".into()).unwrap());
+        assert_eq!(db.meta(&rows[0]).unwrap(), None);
+        // Nor of a media that is gone; one removed loses its rows.
+        let gone = MediaId::new();
+        assert!(!db.update_media_meta(&row("speaks", "c1", gone), gone, |_| "x".into()).unwrap());
+        db.delete_verdicts(b).unwrap();
+        assert!(db.meta_range(VERDICTS_PREFIX).unwrap().is_empty());
     }
 
     #[test]

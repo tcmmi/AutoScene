@@ -1349,6 +1349,8 @@ const handlers: Record<string, Handler> = {
     const file = n.merge ? packFileName(p.id, cid, p.title, n) : null
     return packPlan(names.slice(0, 3), preview, BYTES_PER_FRAME, folder, file)
   },
+  // No mock plugin has a shot filter: there is nothing to check.
+  pack_filter_check: () => false,
   pack_export: ({ projectId, characterId, req }) => {
     const p = find(projectId)
     const r = req as PackExportRequest

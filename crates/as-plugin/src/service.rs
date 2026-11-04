@@ -589,6 +589,10 @@ impl Serving {
                 let detail = detail.map(|d| format!(" ({d})")).unwrap_or_default();
                 self.talk.log.line("failed", &format!("{message}{detail}"));
             }
+            // A shot filter's word counts in a filter's run alone.
+            Msg::Plugin(PluginMessage::Verdict { shot, keep }) => {
+                self.talk.log.line("verdict", &format!("{} {keep}: not a shot filter's run, ignored", shown(&shot)));
+            }
             Msg::Service(ServiceMessage::Ready) => match self.ready.take() {
                 Some(ready) => {
                     // What it said of its start before is over.

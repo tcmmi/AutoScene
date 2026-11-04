@@ -10,17 +10,23 @@
 //! Picking shots changes only their [`PackChoice`]s, never which shots a
 //! pack has or their order: the grid takes the choices alone after a pick
 //! ([`Project::pack_choices`]), while the pack's `shape` is the one it shows.
+//!
+//! Plugins' shot filters ([`PluginFilters`], from the app) leave out the
+//! shots their plugin said no to ([`crate::verdicts`]), as AutoScene's own
+//! filters do, before the limit. A shot none has judged yet stays in, and
+//! counts as unchecked; a pick by hand wins over a verdict too. Only shots
+//! the pack's own filters take are judged: the ones a check sends.
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use as_analysis::bodies::{dets_from_bytes, face_height_of};
 use as_api::{
     CharacterShot, ClipRequest, ExportPlan, ExportRequest, MediaItem, MediaStatus, PackChoice, PackChoices, PackClip,
-    PackExportRequest, PackKey, PackNaming, PackOrder, PackPreview, PackReason, PackSpec, PackState, PackTotals,
-    PresetSize, ShotGroup, ShotSize,
+    PackExportRequest, PackFilter, PackFilterState, PackKey, PackNaming, PackOrder, PackPreview, PackReason, PackSpec,
+    PackState, PackTotals, PresetSize, ShotGroup, ShotSize,
 };
 use as_core::{CharacterId, FrameIdx, FrameIndex, FrameRange, MediaId, Rational};
 use as_db::{PackBodyRow, PackRow};
@@ -32,6 +38,7 @@ use crate::bodies::{showing_of, spans_of};
 use crate::cast::track_id;
 use crate::naming::{NameParts, check_template, clip_timecode, render_file_name, render_name, safe_component};
 use crate::project::{apart_sentence, episode_name, lossless_note};
+use crate::verdicts::{Judgement, PluginFilters};
 use crate::{Project, ProjectError, ProjectResult};
 
 // What makes a good clip, for "best first" and the limit. The weights add up
@@ -71,6 +78,45 @@ struct Made {
     pack: PackPreview,
     /// The episodes it was made from.
     sources: HashMap<MediaId, Source>,
+    /// For each of its plugins' filters (in [`PackPreview::filters`]'
+    /// order): the shots the pack's own filters take that it hasn't judged
+    /// on its basis now, in (media, start) order; none for one that's off.
+    lacking: Vec<Vec<(MediaId, FrameIdx)>>,
+}
+
+/// What a shot filter's run judges: one episode's shots of a character,
+/// those the pack takes by its own filters that the filter hasn't judged.
+pub struct FilterCheck {
+    pub character: CharacterId,
+    /// The character's name.
+    pub name: String,
+    pub media: MediaId,
+    /// The episode's file, frame rate and frames.
+    pub path: String,
+    pub fps: Option<Rational>,
+    pub frames: Option<u32>,
+    pub shots: Vec<CheckShot>,
+}
+
+/// A shot a filter's run judges.
+pub struct CheckShot {
+    pub start: FrameIdx,
+    pub end: FrameIdx,
+    /// See [`CharacterShot::face_height`].
+    pub face_height: f32,
+    pub faceless: bool,
+    /// The character's clearest face in it: its frame and its box (x1, y1,
+    /// x2, y2 as shares of the frame); none without their face.
+    pub face: Option<(FrameIdx, [f32; 4])>,
+}
+
+/// What the plugins' filters said, for one pack: each filter's verdicts
+/// (none for one that is off), and those that apply (the spec's, on), in
+/// the spec's order.
+struct Judged<'a> {
+    filters: &'a PluginFilters,
+    all: Vec<Option<Judgement>>,
+    on: Vec<usize>,
 }
 
 /// An episode a pack can cut from, with its frame grid.
@@ -109,17 +155,93 @@ impl Project {
         Ok(())
     }
 
-    /// Every shot of the character, the ones `spec` (and the hand picks)
-    /// take marked, in the pack's order.
-    pub fn pack_preview(&self, c: CharacterId, spec: &PackSpec) -> ProjectResult<PackPreview> {
-        Ok(self.make_pack(c, spec)?.pack)
+    /// Every shot of the character, the ones `spec` (with the plugins'
+    /// `filters`, and the hand picks) take marked, in the pack's order.
+    pub fn pack_preview(&self, c: CharacterId, spec: &PackSpec, filters: &PluginFilters) -> ProjectResult<PackPreview> {
+        Ok(self.make_pack(c, spec, filters)?.pack)
     }
 
     /// The pack `spec` makes as picks leave it: each clip's choice, in the
     /// pack's order. The rest is its preview's while the `shape` is the same.
-    pub fn pack_choices(&self, c: CharacterId, spec: &PackSpec) -> ProjectResult<PackChoices> {
-        let PackPreview { clips, totals, stamp, shape } = self.make_pack(c, spec)?.pack;
+    pub fn pack_choices(&self, c: CharacterId, spec: &PackSpec, filters: &PluginFilters) -> ProjectResult<PackChoices> {
+        let PackPreview { clips, totals, stamp, shape, .. } = self.make_pack(c, spec, filters)?.pack;
         Ok(PackChoices { choices: clips.iter().map(choice_of).collect(), totals, stamp, shape })
+    }
+
+    /// The name `c` goes by, as a check of their shots says it.
+    pub fn character_label(&self, c: CharacterId) -> ProjectResult<String> {
+        self.db().character_label(c)?.ok_or_else(gone)
+    }
+
+    /// The episode a check of the plugin filter `filter` for `c`'s pack
+    /// `spec` goes on with after `after` (from the first when none): the
+    /// first, in project order, with shots the pack's own filters take that
+    /// `filter` hasn't judged on its basis now.
+    pub fn filter_next(
+        &self,
+        c: CharacterId,
+        spec: &PackSpec,
+        filters: &PluginFilters,
+        filter: &str,
+        after: Option<MediaId>,
+    ) -> ProjectResult<Option<MediaId>> {
+        let Some((i, _)) = filters.find(filter) else { return Ok(None) };
+        let made = self.make_pack(c, spec, filters)?;
+        let order: HashMap<MediaId, u32> = made.sources.values().map(|s| (s.media.id, s.media.position)).collect();
+        let from = after.and_then(|m| order.get(&m)).copied();
+        Ok(made.lacking[i]
+            .iter()
+            .filter_map(|(m, _)| Some((*order.get(m)?, *m)))
+            .filter(|(at, _)| from.is_none_or(|from| *at > from))
+            .min()
+            .map(|(_, m)| m))
+    }
+
+    /// What a check of the plugin filter `filter` judges in `media` for
+    /// `c`'s pack `spec`: the shots of it the pack's own filters take that
+    /// `filter` hasn't judged on its basis now, with the episode and the
+    /// character. None when there are none (or the filter is off).
+    pub fn filter_shots(
+        &self,
+        c: CharacterId,
+        spec: &PackSpec,
+        filters: &PluginFilters,
+        filter: &str,
+        media: MediaId,
+    ) -> ProjectResult<Option<FilterCheck>> {
+        let Some((i, _)) = filters.find(filter) else { return Ok(None) };
+        let mut made = self.make_pack(c, spec, filters)?;
+        let wanted: HashSet<FrameIdx> = made.lacking[i].iter().filter(|(m, _)| *m == media).map(|(_, s)| *s).collect();
+        let Some(source) = made.sources.remove(&media).filter(|_| !wanted.is_empty()) else { return Ok(None) };
+        let mut clips: Vec<&PackClip> =
+            made.pack.clips.iter().filter(|x| x.shot.media_id == media && wanted.contains(&x.shot.start)).collect();
+        clips.sort_by_key(|x| x.shot.start);
+        // The character's clearest face in each shot: the clearest moment of
+        // their clearest track there.
+        let tracks: Vec<i64> = clips.iter().filter(|x| !x.shot.faceless).map(|x| i64::from(x.shot.track_id)).collect();
+        let boxes: HashMap<i64, (FrameIdx, [f32; 4])> = self
+            .db()
+            .track_dets(&tracks)?
+            .into_iter()
+            .filter_map(|(id, _, dets)| {
+                let dets = as_analysis::tracks::dets_from_bytes(&dets)?;
+                let d = as_analysis::tracks::clearest(&dets)?;
+                Some((id, (d.frame, d.bbox)))
+            })
+            .collect();
+        let shots = clips
+            .iter()
+            .map(|x| CheckShot {
+                start: x.shot.start,
+                end: x.shot.end,
+                face_height: x.shot.face_height,
+                faceless: x.shot.faceless,
+                face: if x.shot.faceless { None } else { boxes.get(&i64::from(x.shot.track_id)).copied() },
+            })
+            .collect();
+        let name = self.character_label(c)?;
+        let MediaItem { path, fps, frames, .. } = source.media;
+        Ok(Some(FilterCheck { character: c, name, media, path, fps, frames, shots }))
     }
 
     /// The first names the pack's files (or chapters) get, in its order; the
@@ -129,6 +251,7 @@ impl Project {
         &self,
         c: CharacterId,
         spec: &PackSpec,
+        filters: &PluginFilters,
         naming: &PackNaming,
         presets: &[ExportPreset],
         caps: &Caps,
@@ -136,7 +259,7 @@ impl Project {
         // The file's name first: the dialog shows its problem under it.
         let label = self.db().character_label(c)?.ok_or_else(gone)?;
         let file = self.pack_file_name(&label, naming)?;
-        let made = self.make_pack(c, spec)?;
+        let made = self.make_pack(c, spec, filters)?;
         let clips = self.named_clips(c, &made, naming)?;
         let mut sized = Vec::with_capacity(clips.len());
         let mut joined = Vec::with_capacity(clips.len());
@@ -192,10 +315,11 @@ impl Project {
         &self,
         c: CharacterId,
         req: &PackExportRequest,
+        filters: &PluginFilters,
         default_dir: &Path,
     ) -> ProjectResult<(ExportRequest, PathBuf)> {
         check_template(&req.naming.template).map_err(|e| ProjectError::Invalid(e.to_string()))?;
-        let made = self.make_pack(c, &req.spec)?;
+        let made = self.make_pack(c, &req.spec, filters)?;
         if made.pack.stamp != req.stamp {
             return Err(ProjectError::Invalid("The pack changed meanwhile. Check it and export again.".into()));
         }
@@ -277,7 +401,22 @@ impl Project {
         Ok(out)
     }
 
-    fn make_pack(&self, c: CharacterId, spec: &PackSpec) -> ProjectResult<Made> {
+    fn make_pack(&self, c: CharacterId, spec: &PackSpec, filters: &PluginFilters) -> ProjectResult<Made> {
+        // Only a filter that isn't off is read: the pack ignores the others.
+        let mut all = Vec::with_capacity(filters.0.len());
+        for f in &filters.0 {
+            all.push(match f.state {
+                PackFilterState::Off => None,
+                _ => Some(self.judgement(&f.key, c, &f.basis)?),
+            });
+        }
+        let mut on: Vec<usize> = Vec::new();
+        for key in &spec.plugin_filters {
+            if let Some((i, _)) = filters.find(key).filter(|(i, _)| all[*i].is_some() && !on.contains(i)) {
+                on.push(i);
+            }
+        }
+        let judged = Judged { filters, all, on };
         let rows = self.db().pack_rows(c)?;
         let bodies = self.shown_bodies(|db| db.pack_bodies(c))?;
         let overrides = self.db().pack_overrides(c)?;
@@ -294,8 +433,9 @@ impl Project {
             sources.insert(media.id, Source { media, index });
         }
         let shots = shots_of(c, &rows, &bodies);
-        let pack = make(spec, &shots, &sources, &order, &overrides, |s| self.character_shot(s, cover.as_deref()));
-        Ok(Made { pack, sources })
+        let shot = |s: &Shot| self.character_shot(s, cover.as_deref());
+        let (pack, lacking) = make(spec, &shots, &sources, &order, &overrides, &judged, shot);
+        Ok(Made { pack, sources, lacking })
     }
 
     /// The small picture of a character's own face (for shots without it).
@@ -547,20 +687,22 @@ fn tenths(frames: u32, fps: Rational) -> i64 {
 
 /// A clip's choice: whether it is in, and why.
 fn choice_of(c: &PackClip) -> PackChoice {
-    PackChoice { included: c.included, by_rules: c.by_rules, reason: c.reason, manual: c.manual }
+    PackChoice { included: c.included, by_rules: c.by_rules, reason: c.reason, manual: c.manual, filter: c.filter }
 }
 
 /// The pack itself — its clips, totals, stamp and shape: pure, so every rule
 /// is tested without a database. `shots` are in (media, start) order, as
-/// [`shots_of`] makes them; `shot` makes a card's shot.
+/// [`shots_of`] makes them; `shot` makes a card's shot. Also, for each of
+/// the plugins' filters, the shots it has yet to judge (see [`Made`]).
 fn make(
     spec: &PackSpec,
     shots: &[Shot],
     sources: &HashMap<MediaId, Source>,
     order: &HashMap<MediaId, usize>,
     overrides: &[(MediaId, FrameIdx, bool)],
+    judged: &Judged,
     shot: impl Fn(&Shot) -> CharacterShot,
-) -> PackPreview {
+) -> (PackPreview, Vec<Vec<(MediaId, FrameIdx)>>) {
     debug_assert!(shots.is_sorted_by_key(|s| (s.media, s.start)));
     // Picks by hand: on the shot that starts there, or — when shots were
     // found again since — on the shot that now holds that frame (the last
@@ -584,6 +726,10 @@ fn make(
         on_screen: i64,
     }
     let mut cands: Vec<Cand> = Vec::with_capacity(shots.len());
+    // Per plugin filter: the shots it judged on its basis now, and those it could.
+    let mut checked = vec![(0u32, 0u32); judged.all.len()];
+    let mut lacking = vec![Vec::new(); judged.all.len()];
+    let mut unchecked = 0;
     for s in shots {
         let source = sources.get(&s.media);
         let index = source.and_then(|x| x.index.as_ref());
@@ -614,6 +760,26 @@ fn make(
         } else {
             None
         };
+        // The plugins' filters judge what AutoScene's own take; the first
+        // filter turned on that says no names the shot's reason.
+        let mut filter = None;
+        if rule.is_none() {
+            let mut unjudged = false;
+            for (i, j) in judged.all.iter().enumerate() {
+                let Some(j) = j else { continue };
+                checked[i].1 += 1;
+                if j.current(s.media, s.start) {
+                    checked[i].0 += 1;
+                } else {
+                    lacking[i].push((s.media, s.start));
+                    unjudged |= judged.on.contains(&i);
+                }
+            }
+            unchecked += u32::from(unjudged);
+            filter =
+                judged.on.iter().copied().find(|&i| judged.all[i].as_ref().is_some_and(|j| j.drops(s.media, s.start)));
+        }
+        let rule = rule.or(filter.map(|_| PackReason::Plugin));
         let (start, end) = match index {
             Some(i) => (s.start.saturating_sub(spec.handles), (s.end + spec.handles).min(i.len())),
             None => (s.start, s.end),
@@ -632,6 +798,7 @@ fn make(
             by_rules: rule.is_none(),
             reason: rule,
             manual: manual.get(&(s.media, s.start)).copied(),
+            filter: filter.map(|i| i as u32),
         };
         let on_screen = index.map_or(0, |i| tenths(s.on_screen.min(s.end - s.start), i.nominal_fps));
         cands.push(Cand { clip, rule, seconds_with_handles, on_screen });
@@ -693,6 +860,10 @@ fn make(
 
     let mut totals = PackTotals { clips: 0, frames: 0.0, seconds: 0.0 };
     let (mut stamp, mut shape) = (Fnv::new(), Fnv::new());
+    // A clip's filter is a place in this list.
+    for f in &judged.filters.0 {
+        shape.text(&f.key);
+    }
     for cand in &cands {
         shape.clip(&cand.clip);
         if cand.clip.included {
@@ -705,7 +876,24 @@ fn make(
         }
     }
     let clips = cands.into_iter().map(|x| x.clip).collect();
-    PackPreview { clips, totals, stamp: stamp.hex(), shape: shape.hex() }
+    let filters = judged
+        .filters
+        .0
+        .iter()
+        .zip(checked)
+        .map(|(f, (checked, total))| PackFilter {
+            key: f.key.clone(),
+            title: f.title.clone(),
+            description: f.description.clone(),
+            reason: f.reason.clone(),
+            plugin: f.plugin.clone(),
+            checked,
+            total,
+            state: f.state,
+        })
+        .collect();
+    let pack = PackPreview { clips, totals, stamp: stamp.hex(), shape: shape.hex(), filters, unchecked };
+    (pack, lacking)
 }
 
 /// FNV-1a: a short fingerprint of what a pack takes (its stamp), or of its
@@ -761,6 +949,7 @@ mod tests {
     use super::*;
     use crate::analysis::tests::project_with_media;
     use crate::cast::tests::seen;
+    use crate::verdicts::PluginFilter;
 
     const FRAMES: u32 = 2400;
 
@@ -823,7 +1012,7 @@ mod tests {
     }
 
     fn preview(p: &Pack, spec: &PackSpec) -> PackPreview {
-        p.project.pack_preview(p.walter, spec).unwrap()
+        p.project.pack_preview(p.walter, spec, &PluginFilters::NONE).unwrap()
     }
 
     fn starts(v: &PackPreview, included: bool) -> Vec<FrameIdx> {
@@ -978,7 +1167,8 @@ mod tests {
             out_dir: None,
             stamp: stamp.into(),
         };
-        let (request, dir) = p.project.pack_export_request(p.walter, &req(&spec, &v.stamp), &out).unwrap();
+        let (request, dir) =
+            p.project.pack_export_request(p.walter, &req(&spec, &v.stamp), &PluginFilters::NONE, &out).unwrap();
         let shown: Vec<_> = v.clips.iter().filter(|c| c.included).map(|c| (c.shot.media_id, c.start, c.end)).collect();
         let exported: Vec<_> = request.clips.iter().map(|c| (c.media_id, c.start, c.end)).collect();
         assert_eq!(exported, shown);
@@ -993,11 +1183,11 @@ mod tests {
         assert_eq!(p.project.pack_state(p.walter).unwrap().spec, spec);
         // A pack that changed since it was shown isn't exported.
         let other = PackSpec { solo: true, ..spec.clone() };
-        assert!(p.project.pack_export_request(p.walter, &req(&other, &v.stamp), &out).is_err());
+        assert!(p.project.pack_export_request(p.walter, &req(&other, &v.stamp), &PluginFilters::NONE, &out).is_err());
         // Nor is a template that can't name files.
         let mut bad = req(&spec, &v.stamp);
         bad.naming.template = "{series} {nme}".into();
-        assert!(p.project.pack_export_request(p.walter, &bad, &out).is_err());
+        assert!(p.project.pack_export_request(p.walter, &bad, &PluginFilters::NONE, &out).is_err());
 
         // Queued as asked: a clip each, so named.
         let preset = as_export::builtin_presets().into_iter().find(|x| x.id == "h264-edit").unwrap();
@@ -1012,9 +1202,10 @@ mod tests {
         // A pick since the pack was shown: refused too, until the grid has
         // the pack as the pick left it.
         p.project.set_pack_overrides(p.walter, &[PackKey { media_id: p.media, shot: 50 }], Some(false)).unwrap();
-        assert!(p.project.pack_export_request(p.walter, &req(&spec, &v.stamp), &out).is_err());
-        let now = p.project.pack_choices(p.walter, &spec).unwrap();
-        let (request, _) = p.project.pack_export_request(p.walter, &req(&spec, &now.stamp), &out).unwrap();
+        assert!(p.project.pack_export_request(p.walter, &req(&spec, &v.stamp), &PluginFilters::NONE, &out).is_err());
+        let now = p.project.pack_choices(p.walter, &spec, &PluginFilters::NONE).unwrap();
+        let (request, _) =
+            p.project.pack_export_request(p.walter, &req(&spec, &now.stamp), &PluginFilters::NONE, &out).unwrap();
         assert_eq!(request.clips.len(), 2);
     }
 
@@ -1027,7 +1218,7 @@ mod tests {
         assert_eq!((starts(&before, true), clip(&before, 290).reason), (vec![0, 50], Some(PackReason::Limit)));
         p.project.set_pack_overrides(p.walter, &[PackKey { media_id: p.media, shot: 50 }], Some(false)).unwrap();
         let after = preview(&p, &spec);
-        let choices = p.project.pack_choices(p.walter, &spec).unwrap();
+        let choices = p.project.pack_choices(p.walter, &spec, &PluginFilters::NONE).unwrap();
         // The same shots in the same order: their choices are all that changed
         // — the dropped shot's, and the next one's the limit lets in.
         assert_eq!((after.shape.as_str(), choices.shape.as_str()), (before.shape.as_str(), before.shape.as_str()));
@@ -1043,12 +1234,12 @@ mod tests {
         p.project.set_pack_overrides(p.walter, &[PackKey { media_id: p.media, shot: 50 }], Some(false)).unwrap();
         let picked = preview(&p, &best);
         assert_eq!((picked.shape.as_str(), starts(&picked, true)), (ranked.shape.as_str(), vec![0]));
-        let choices = p.project.pack_choices(p.walter, &best).unwrap().choices;
+        let choices = p.project.pack_choices(p.walter, &best, &PluginFilters::NONE).unwrap().choices;
         assert_eq!(choices, picked.clips.iter().map(choice_of).collect::<Vec<_>>());
         // More than picks — other handles, someone hidden in the cast — is another shape.
         assert_ne!(preview(&p, &with(|s| (s.limit, s.handles) = (Some(2), 2))).shape, before.shape);
         p.project.cast_edit(&CastEdit::SetHidden { character_id: p.jesse, hidden: true }).unwrap();
-        assert_ne!(p.project.pack_choices(p.walter, &spec).unwrap().shape, before.shape);
+        assert_ne!(p.project.pack_choices(p.walter, &spec, &PluginFilters::NONE).unwrap().shape, before.shape);
     }
 
     /// One 24 fps episode where every shot of Walter scores 1 (a clear face
@@ -1076,13 +1267,13 @@ mod tests {
     #[test]
     fn of_shots_that_score_alike_the_longest_then_the_closest_is_best() {
         let (_dir, project, walter) = perfect();
-        let v = project.pack_preview(walter, &with(|s| s.order = PackOrder::Best)).unwrap();
+        let v = project.pack_preview(walter, &with(|s| s.order = PackOrder::Best), &PluginFilters::NONE).unwrap();
         assert!(v.clips.iter().all(|c| c.score == v.clips[0].score), "every shot scores the same");
         // On screen longest first; of two as long, the one the face is
         // bigger in; the shortest last — not simply the earliest first.
         assert_eq!(v.clips.iter().map(|c| c.shot.start).collect::<Vec<_>>(), [97, 0, 193, 241]);
         // A limit keeps the same ones, in whatever order the grid shows them.
-        let v = project.pack_preview(walter, &with(|s| s.limit = Some(2))).unwrap();
+        let v = project.pack_preview(walter, &with(|s| s.limit = Some(2)), &PluginFilters::NONE).unwrap();
         assert_eq!((starts(&v, true), clip(&v, 193).reason), (vec![0, 97], Some(PackReason::Limit)));
     }
 
@@ -1099,7 +1290,7 @@ mod tests {
             stamp: v.stamp.clone(),
         };
         assert!(req.naming.merge && req.naming.folder, "one file by default; the folder waits for a file per clip");
-        let (request, dir) = p.project.pack_export_request(p.walter, &req, &out).unwrap();
+        let (request, dir) = p.project.pack_export_request(p.walter, &req, &PluginFilters::NONE, &out).unwrap();
         assert_eq!(request.merge.as_deref(), Some("Show_Walter_scenepack"));
         assert_eq!(dir, out, "one file needs no folder of its own");
         // The clips' names are the file's chapters.
@@ -1109,17 +1300,27 @@ mod tests {
         );
         let plan = p
             .project
-            .pack_plan(p.walter, &req.spec, &req.naming, &as_export::builtin_presets(), &Caps::default())
+            .pack_plan(
+                p.walter,
+                &req.spec,
+                &PluginFilters::NONE,
+                &req.naming,
+                &as_export::builtin_presets(),
+                &Caps::default(),
+            )
             .unwrap();
         assert_eq!((plan.file.as_deref(), plan.folder.as_deref()), (Some("Show_Walter_scenepack"), Some("Walter")));
         assert_eq!(plan.names.len(), 3);
         // A file name can't use what only names a shot.
         req.naming.file = "{series} {tc}".into();
-        let err = p.project.pack_export_request(p.walter, &req, &out).unwrap_err();
+        let err = p.project.pack_export_request(p.walter, &req, &PluginFilters::NONE, &out).unwrap_err();
         assert!(err.to_string().contains("names a shot"), "{err}");
         // With the shots' names broken too, the file's problem comes first.
         req.naming.template = "{series} {nme}".into();
-        let err = p.project.pack_plan(p.walter, &req.spec, &req.naming, &[], &Caps::default()).unwrap_err();
+        let err = p
+            .project
+            .pack_plan(p.walter, &req.spec, &PluginFilters::NONE, &req.naming, &[], &Caps::default())
+            .unwrap_err();
         assert!(err.to_string().contains("names a shot"), "{err}");
         // Settings saved before there was a choice load with one file.
         let naming: PackNaming = with_defaults(r#"{"template":"{character} {index}","folder":false}"#);
@@ -1141,13 +1342,266 @@ mod tests {
         assert_eq!(spec, PackSpec::default());
     }
 
+    const SPEAKS: &str = "dev.a.speech/speaks";
+
+    /// The filter "Speaks" of the plugin "Speech Filter", its verdicts
+    /// judged on `basis` now, doing `state`.
+    fn speaks(basis: &str, state: PackFilterState) -> PluginFilters {
+        PluginFilters(vec![PluginFilter {
+            key: SPEAKS.into(),
+            title: "Speaks".into(),
+            description: Some("Keeps the shots where they talk.".into()),
+            reason: "No speech".into(),
+            plugin: "Speech Filter".into(),
+            basis: basis.into(),
+            state,
+        }])
+    }
+
+    /// The pack's spec with "Speaks" on.
+    fn on() -> PackSpec {
+        with(|s| s.plugin_filters = vec![SPEAKS.into()])
+    }
+
+    fn judge(p: &Pack, c: CharacterId, basis: &str, verdicts: &[(FrameIdx, bool)]) {
+        assert!(p.project.keep_verdicts(SPEAKS, c, p.media, basis, verdicts).unwrap());
+    }
+
+    fn filtered(p: &Pack, spec: &PackSpec, filters: &PluginFilters) -> PackPreview {
+        p.project.pack_preview(p.walter, spec, filters).unwrap()
+    }
+
+    #[test]
+    fn a_drop_verdict_leaves_a_shot_out_with_its_filter() {
+        let p = pack();
+        let filters = speaks("b1", PackFilterState::Ready);
+        judge(&p, p.walter, "b1", &[(50, false), (0, true), (290, true)]);
+        let v = filtered(&p, &on(), &filters);
+        assert_eq!(starts(&v, true), [0, 290]);
+        let c = clip(&v, 50);
+        assert_eq!((c.reason, c.filter, c.by_rules, c.manual), (Some(PackReason::Plugin), Some(0), false, None));
+        assert_eq!((clip(&v, 0).filter, clip(&v, 48).reason), (None, Some(PackReason::Tiny)));
+        assert_eq!(
+            v.filters,
+            [PackFilter {
+                key: SPEAKS.into(),
+                title: "Speaks".into(),
+                description: Some("Keeps the shots where they talk.".into()),
+                reason: "No speech".into(),
+                plugin: "Speech Filter".into(),
+                checked: 3,
+                total: 3,
+                state: PackFilterState::Ready,
+            }]
+        );
+        assert_eq!(v.unchecked, 0);
+        // Its choice names the filter too.
+        let choices = p.project.pack_choices(p.walter, &on(), &filters).unwrap();
+        let at = v.clips.iter().position(|c| c.shot.start == 50).unwrap();
+        assert_eq!(choices.choices[at].filter, Some(0));
+
+        // The chip off: the shot is in, and the filter still says what it judged.
+        let off = filtered(&p, &PackSpec::default(), &filters);
+        assert_eq!((starts(&off, true), off.filters[0].checked), (vec![0, 50, 290], 3));
+        assert_ne!(off.stamp, v.stamp);
+        // A limit keeps the best of what the filters take, the plugin's too.
+        let v = filtered(&p, &with(|s| (s.plugin_filters, s.limit) = (vec![SPEAKS.into()], Some(1))), &filters);
+        assert_eq!((starts(&v, true), clip(&v, 50).reason), (vec![0], Some(PackReason::Plugin)));
+
+        // An export takes what was shown; without the verdicts, the pack changed.
+        let out = p.dir.path().join("Exports");
+        let req = PackExportRequest {
+            spec: on(),
+            naming: PackNaming { merge: false, ..PackNaming::default() },
+            preset_id: "h264-edit".into(),
+            out_dir: None,
+            stamp: filtered(&p, &on(), &filters).stamp,
+        };
+        let (request, _) = p.project.pack_export_request(p.walter, &req, &filters, &out).unwrap();
+        assert_eq!(request.clips.iter().map(|c| c.start).collect::<Vec<_>>(), [0, 290]);
+        assert!(p.project.pack_export_request(p.walter, &req, &PluginFilters::NONE, &out).is_err());
+    }
+
+    #[test]
+    fn a_hand_pick_beats_a_verdict() {
+        let p = pack();
+        let filters = speaks("b1", PackFilterState::Ready);
+        judge(&p, p.walter, "b1", &[(50, false)]);
+        let key = PackKey { media_id: p.media, shot: 50 };
+        p.project.set_pack_overrides(p.walter, &[key], Some(true)).unwrap();
+        let c = clip(&filtered(&p, &on(), &filters), 50).clone();
+        assert_eq!((c.included, c.reason, c.by_rules, c.manual, c.filter), (true, None, false, Some(true), Some(0)));
+        // Handed back to the filters: the verdict counts again.
+        p.project.set_pack_overrides(p.walter, &[key], None).unwrap();
+        let c = clip(&filtered(&p, &on(), &filters), 50).clone();
+        assert_eq!((c.included, c.reason, c.manual), (false, Some(PackReason::Plugin), None));
+        // A keep doesn't undo a drop by hand.
+        judge(&p, p.walter, "b1", &[(0, true)]);
+        p.project.set_pack_overrides(p.walter, &[PackKey { media_id: p.media, shot: 0 }], Some(false)).unwrap();
+        assert_eq!(clip(&filtered(&p, &on(), &filters), 0).reason, Some(PackReason::Removed));
+    }
+
+    #[test]
+    fn shots_without_a_verdict_stay_in_and_count_as_unchecked() {
+        let p = pack();
+        let filters = speaks("b1", PackFilterState::Ready);
+        judge(&p, p.walter, "b1", &[(0, true)]);
+        let v = filtered(&p, &on(), &filters);
+        assert_eq!(starts(&v, true), [0, 50, 290]);
+        assert_eq!((v.unchecked, v.filters[0].checked, v.filters[0].total), (2, 1, 3));
+        // Only shots the pack's own filters take are counted: the flash cut too, once it is taken.
+        let all = with(|s| (s.plugin_filters, s.skip_tiny) = (vec![SPEAKS.into()], false));
+        let v = filtered(&p, &all, &filters);
+        assert_eq!((v.unchecked, v.filters[0].total), (3, 4));
+        // The chip off: nothing it lacks counts against the pack.
+        assert_eq!(filtered(&p, &PackSpec::default(), &filters).unchecked, 0);
+
+        // A check goes on with the episode, and sends the shots it lacks.
+        let next = |after| p.project.filter_next(p.walter, &on(), &filters, SPEAKS, after).unwrap();
+        assert_eq!((next(None), next(Some(p.media))), (Some(p.media), None));
+        let check = p.project.filter_shots(p.walter, &on(), &filters, SPEAKS, p.media).unwrap().unwrap();
+        assert_eq!((check.character, check.name.as_str(), check.media), (p.walter, "Walter", p.media));
+        let episode = p.project.media(p.media).unwrap();
+        assert_eq!((check.path, check.fps, check.frames), (episode.path, Some(Rational::new(24, 1)), Some(FRAMES)));
+        let shots: Vec<_> = check.shots.iter().map(|s| (s.start, s.end, s.faceless)).collect();
+        assert_eq!(shots, [(50, 290, false), (290, 410, false)]);
+        // With the box of Walter's clearest face in it.
+        let (frame, b) = check.shots[0].face.unwrap();
+        assert!((50..290).contains(&frame) && (b[3] - b[1] - 0.5).abs() < 1e-6, "{frame} {b:?}");
+        assert!((check.shots[0].face_height - 0.5).abs() < 1e-6);
+        // Unknown filters judge nothing.
+        assert!(p.project.filter_shots(p.walter, &on(), &filters, "dev.a.other/x", p.media).unwrap().is_none());
+
+        judge(&p, p.walter, "b1", &[(50, true), (290, false)]);
+        let v = filtered(&p, &on(), &filters);
+        assert_eq!((v.unchecked, v.filters[0].checked, starts(&v, true)), (0, 3, vec![0, 50]));
+        assert_eq!(next(None), None);
+        assert!(p.project.filter_shots(p.walter, &on(), &filters, SPEAKS, p.media).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_check_goes_through_the_episodes_in_their_order() {
+        // Added as 03, 01, 02: their ids run in another order than the episodes.
+        let names = ["Show S01E03.mkv", "Show S01E01.mkv", "Show S01E02.mkv"];
+        let (_dir, project, ids) = crate::analysis::tests::project_with_episodes(&names, FRAMES);
+        let (e3, e1, e2) = (ids[0], ids[1], ids[2]);
+        assert!(e3 < e1 && e1 < e2, "ids in the order the files were added");
+        let position = |m| project.media(m).unwrap().position;
+        assert!(position(e1) < position(e2) && position(e2) < position(e3));
+        for m in [e1, e2, e3] {
+            project.db().store_segments(m, &shots(290)).unwrap();
+            project.store_face_chunk(m, 0, FRAMES, &tracks::encode(&faces(290)), &[], &[]).unwrap();
+            project.finish_faces(m).unwrap();
+        }
+        let tracks: Vec<u32> = project
+            .cast_tracks(TrackFilter::Unassigned)
+            .unwrap()
+            .iter()
+            .filter(|t| (t.face_height - 0.2).abs() > 0.01)
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(tracks.len(), 12);
+        let walter =
+            project.cast_edit(&CastEdit::NewCharacter { tracks, name: Some("Walter".into()) }).unwrap().unwrap();
+        let filters = speaks("b1", PackFilterState::Ready);
+        let next = |after| project.filter_next(walter, &on(), &filters, SPEAKS, after).unwrap();
+        // In episode order, each after the one before, and none after the last.
+        assert_eq!((next(None), next(Some(e1)), next(Some(e2)), next(Some(e3))), (Some(e1), Some(e2), Some(e3), None));
+        // An episode judged is passed over, from the start and after the one before it.
+        let judge =
+            |m| assert!(project.keep_verdicts(SPEAKS, walter, m, "b1", &[(0, true), (50, true), (290, true)]).unwrap());
+        judge(e2);
+        assert_eq!((next(None), next(Some(e1))), (Some(e1), Some(e3)));
+        // A check goes on after its episode, never back to an earlier one that still lacks verdicts.
+        assert_eq!(next(Some(e3)), None);
+        // Its episode removed meanwhile: it goes on with the first that lacks them.
+        project.remove_media(e2).unwrap();
+        assert_eq!(next(Some(e2)), Some(e1));
+        judge(e1);
+        judge(e3);
+        assert_eq!(next(None), None);
+    }
+
+    #[test]
+    fn a_filter_of_a_plugin_that_isn_t_active_is_ignored() {
+        let p = pack();
+        judge(&p, p.walter, "b1", &[(50, false)]);
+        let off = speaks("b1", PackFilterState::Off);
+        let v = filtered(&p, &on(), &off);
+        assert_eq!((starts(&v, true), v.unchecked), (vec![0, 50, 290], 0));
+        assert_eq!((v.filters[0].state, v.filters[0].checked, v.filters[0].total), (PackFilterState::Off, 0, 0));
+        assert_eq!(p.project.filter_next(p.walter, &on(), &off, SPEAKS, None).unwrap(), None);
+        // One the app doesn't list (its plugin is gone) is ignored too.
+        let gone = with(|s| s.plugin_filters = vec!["dev.a.gone/speaks".into()]);
+        let v = filtered(&p, &gone, &PluginFilters::NONE);
+        assert_eq!((starts(&v, true), v.unchecked, v.filters.len()), (vec![0, 50, 290], 0, 0));
+        // Checking or failed, it still applies.
+        for state in [PackFilterState::Checking, PackFilterState::Failed] {
+            assert_eq!(starts(&filtered(&p, &on(), &speaks("b1", state)), true), [0, 290]);
+        }
+    }
+
+    #[test]
+    fn stale_verdicts_apply_until_new_ones_come() {
+        let p = pack();
+        judge(&p, p.walter, "b1", &[(50, false), (290, true)]);
+        // A new setting: the old word stands, and every shot counts as unchecked.
+        let now = speaks("b2", PackFilterState::Ready);
+        let v = filtered(&p, &on(), &now);
+        assert_eq!((starts(&v, true), v.unchecked, v.filters[0].checked), (vec![0, 290], 3, 0));
+        // New verdicts replace the old ones shot by shot.
+        judge(&p, p.walter, "b2", &[(290, false)]);
+        let v = filtered(&p, &on(), &now);
+        assert_eq!((starts(&v, true), v.unchecked, v.filters[0].checked), (vec![0], 2, 1));
+        judge(&p, p.walter, "b2", &[(50, true), (0, true)]);
+        let v = filtered(&p, &on(), &now);
+        assert_eq!((starts(&v, true), v.unchecked, v.filters[0].checked), (vec![0, 50], 0, 3));
+    }
+
+    #[test]
+    fn two_characters_in_one_shot_get_their_own_verdicts() {
+        let p = pack();
+        let filters = speaks("b1", PackFilterState::Ready);
+        // Walter doesn't speak in shot 0; Jesse, with him there, isn't judged yet.
+        judge(&p, p.walter, "b1", &[(0, false)]);
+        let jesse = |p: &Pack| p.project.pack_preview(p.jesse, &on(), &filters).unwrap();
+        let v = jesse(&p);
+        assert_eq!((starts(&v, true), v.unchecked), (vec![0], 1));
+        judge(&p, p.jesse, "b1", &[(0, true)]);
+        assert_eq!((starts(&jesse(&p), true), jesse(&p).unchecked), (vec![0], 0));
+        assert_eq!(clip(&filtered(&p, &on(), &filters), 0).reason, Some(PackReason::Plugin));
+        // A check of Jesse's shots sends his alone.
+        judge(&p, p.jesse, "b2", &[]);
+        let now = speaks("b2", PackFilterState::Ready);
+        let check = p.project.filter_shots(p.jesse, &on(), &now, SPEAKS, p.media).unwrap().unwrap();
+        assert_eq!((check.name.as_str(), check.shots.len(), check.shots[0].start), ("Jesse", 1, 0));
+    }
+
+    #[test]
+    fn an_old_spec_without_plugin_filters_reads() {
+        let spec: PackSpec = with_defaults(r#"{"solo":true,"limit":3}"#);
+        assert_eq!(spec, PackSpec { solo: true, limit: Some(3), ..PackSpec::default() });
+        assert!(spec.plugin_filters.is_empty());
+        // As serde reads one from an older app.
+        let old = r#"{"minSec":null,"maxSec":null,"sizes":[],"solo":false,"skipTiny":true,"media":[],"order":"episodes","limit":null,"handles":0}"#;
+        assert_eq!(serde_json::from_str::<PackSpec>(old).unwrap(), PackSpec::default());
+        // Kept and read back with them.
+        let p = pack();
+        let state = PackState { spec: on(), naming: PackNaming::default() };
+        p.project.save_pack_state(p.walter, &state).unwrap();
+        assert_eq!(p.project.pack_state(p.walter).unwrap().spec.plugin_filters, [SPEAKS]);
+    }
+
     #[test]
     fn a_plan_names_and_sizes_the_pack() {
         let p = pack();
         let naming =
             PackNaming { template: "{character} {index}".into(), folder: true, merge: false, ..PackNaming::default() };
         let presets = as_export::builtin_presets();
-        let plan = p.project.pack_plan(p.walter, &PackSpec::default(), &naming, &presets, &Caps::default()).unwrap();
+        let plan = p
+            .project
+            .pack_plan(p.walter, &PackSpec::default(), &PluginFilters::NONE, &naming, &presets, &Caps::default())
+            .unwrap();
         assert_eq!(plan.names, ["Walter_001", "Walter_002", "Walter_003"]);
         assert_eq!((plan.file, plan.folder.as_deref()), (None, Some("Walter")));
         assert!(plan.sizes.iter().all(|s| s.bytes > 0.0));

@@ -32,11 +32,19 @@ const clip = (start: number, more: Partial<PackClip> = {}): PackClip => {
     byRules,
     reason: included ? null : manual === false ? "removed" : "short",
     manual,
+    filter: null,
     ...more,
   }
 }
 
-const preview = (clips: PackClip[]): PackPreview => ({ clips, totals: totalsOf(clips, () => 24), stamp: "s", shape: "a" })
+const preview = (clips: PackClip[]): PackPreview => ({
+  clips,
+  totals: totalsOf(clips, () => 24),
+  stamp: "s",
+  shape: "a",
+  filters: [],
+  unchecked: 0,
+})
 
 describe("picks", () => {
   it("picks by hand only against the filters, and hands back where they agree", () => {
@@ -93,9 +101,9 @@ describe("picks", () => {
     const p = preview([clip(0), clip(100), clip(200, { byRules: false })])
     const answer = (shape: string): PackChoices => ({
       choices: [
-        { included: false, byRules: true, reason: "removed", manual: false },
-        { included: true, byRules: true, reason: null, manual: null },
-        { included: true, byRules: false, reason: null, manual: true },
+        { included: false, byRules: true, reason: "removed", manual: false, filter: null },
+        { included: true, byRules: true, reason: null, manual: null, filter: null },
+        { included: true, byRules: false, reason: null, manual: true, filter: null },
       ],
       totals: { clips: 2, frames: 96, seconds: 4 },
       stamp: "after",

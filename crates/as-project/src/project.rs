@@ -514,6 +514,8 @@ impl Project {
         let m = self.media(id)?;
         self.db.remove_media(id)?;
         let _ = self.db.delete_meta(&crate::cast::source_changed_key(id));
+        // What plugins' shot filters said of its shots.
+        let _ = self.db.delete_verdicts(id);
         for pass in crate::analysis::Pass::ALL {
             let _ = self.db.delete_meta(&pass.devices_key(id));
         }

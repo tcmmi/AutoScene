@@ -497,7 +497,7 @@ mod tests {
         assert!(project.character_shots(jesse).unwrap().iter().all(|s| !s.faceless));
 
         // The pack: the shot without his face behind the one with it, and a filter for it.
-        let preview = |spec: &PackSpec| project.pack_preview(walter, spec).unwrap();
+        let preview = |spec: &PackSpec| project.pack_preview(walter, spec, &crate::PluginFilters::NONE).unwrap();
         let best = preview(&PackSpec { order: PackOrder::Best, ..PackSpec::default() });
         assert_eq!(best.clips.iter().map(|c| (c.shot.start, c.included)).collect::<Vec<_>>(), [(0, true), (200, true)]);
         let skip = preview(&PackSpec { skip_faceless: true, ..PackSpec::default() });

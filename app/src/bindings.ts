@@ -268,6 +268,15 @@ export const commands = {
 	 *  events, results as `export:changed`.
 	 */
 	packExport: (projectId: ProjectId, characterId: CharacterId, req: PackExportRequest) => __TAURI_INVOKE<ExportSummary>("pack_export", { projectId, characterId, req }),
+	/**
+	 *  Ask a plugin's shot filter `filter` (`<pluginId>/<filterId>`) for its
+	 *  verdicts on the shots of the pack `spec` makes that it hasn't judged:
+	 *  `true` while its check waits or runs. One that failed with the settings
+	 *  it has now starts only `again` (the person's Try again). Verdicts arrive
+	 *  an episode at a time, with a `pack:changed` once each run is over; the
+	 *  check shows in Activity.
+	 */
+	packFilterCheck: (projectId: ProjectId, characterId: CharacterId, filter: string, spec: PackSpec, again: boolean) => __TAURI_INVOKE<boolean>("pack_filter_check", { projectId, characterId, filter, spec, again }),
 	/**  Every installed plugin, by id (also the broken ones). */
 	pluginsList: () => __TAURI_INVOKE<PluginInfo[]>("plugins_list"),
 	/**
@@ -461,7 +470,12 @@ export type ActionKind = "exportAction" | "command" |
  *  One of its events (`contributes.events`), which AutoScene starts by
  *  itself: never from a menu, the palette or a page.
  */
-"event";
+"event" | 
+/**
+ *  A shot filter of the scenepack builder (protocol 2), which judges
+ *  the shots of [`RunMessage::shots`].
+ */
+"shotFilter";
 
 /**  Analysis results of a media changed (shots or faces found, or reset). */
 export type AnalysisChanged = {
@@ -1458,8 +1472,11 @@ export type NewProject = {
 };
 
 /**
- *  A character's pack settings changed: an export keeps the ones it was
- *  made with. (Picks by hand answer the grid that made them instead.)
+ *  A character's pack changed: its settings (an export keeps the ones it
+ *  was made with), or a run of a plugin's shot filter on an episode of its
+ *  shots is over (once per run, when its verdicts are kept and its check
+ *  reads what comes next: checking, ready or failed). (Picks by hand answer
+ *  the grid that made them instead.)
  */
 export type PackChanged = {
 	projectId: ProjectId,
@@ -1475,6 +1492,8 @@ export type PackChoice = {
 	byRules: boolean,
 	reason: PackReason | null,
 	manual: boolean | null,
+	/**  See [`PackClip::filter`]. */
+	filter: number | null,
 };
 
 /**
@@ -1511,6 +1530,11 @@ export type PackClip = {
 	reason: PackReason | null,
 	/**  Picked (`true`) or dropped (`false`) by hand. */
 	manual: boolean | null,
+	/**
+	 *  The plugin filter that leaves it out (an index into
+	 *  [`PackPreview::filters`]), picked back in by hand or not.
+	 */
+	filter: number | null,
 };
 
 export type PackExportRequest = {
@@ -1525,6 +1549,39 @@ export type PackExportRequest = {
 	/**  The preview's stamp: the export is refused if the pack changed since. */
 	stamp: string,
 };
+
+/**  A plugin's shot filter, as the scenepack builder shows it. */
+export type PackFilter = {
+	/**  `<pluginId>/<filterId>`, as [`PackSpec::plugin_filters`] names it. */
+	key: string,
+	title: string,
+	description: string | null,
+	/**  What a shot it leaves out says. */
+	reason: string,
+	/**  Its plugin's name. */
+	plugin: string,
+	/**
+	 *  The character's shots it has judged with its settings as they are,
+	 *  of those it can (in episodes whose files are there).
+	 */
+	checked: number,
+	total: number,
+	state: PackFilterState,
+};
+
+/**  What a plugin's shot filter is doing for a character. */
+export type PackFilterState = 
+/**  Nothing runs: what it judged is in the pack. */
+"ready" | 
+/**  A check of the character's shots waits or runs. */
+"checking" | 
+/**
+ *  Its last check failed or was stopped: it starts again on Try again,
+ *  or once its settings change.
+ */
+"failed" | 
+/**  Its plugin isn't active: the pack ignores it. */
+"off";
 
 /**  A shot of a pack, by its media and first frame. */
 export type PackKey = {
@@ -1576,6 +1633,16 @@ export type PackPreview = {
 	stamp: string,
 	/**  Names its clips, in order, as they are apart from their [`PackChoice`]s. */
 	shape: string,
+	/**
+	 *  The plugins' shot filters it can show: every one of an active
+	 *  plugin, and those its spec turns on whose plugin isn't (`off`).
+	 */
+	filters: PackFilter[],
+	/**
+	 *  Shots a filter turned on hasn't judged yet (with its settings as
+	 *  they are): they are in the pack until it has.
+	 */
+	unchecked: number,
 };
 
 /**  Why a shot is left out of a pack. */
@@ -1587,7 +1654,9 @@ export type PackReason =
 /**  Past the limit. */
 "limit" | 
 /**  Dropped by hand. */
-"removed";
+"removed" | 
+/**  A plugin's shot filter said no ([`PackClip::filter`] names which). */
+"plugin";
 
 /**
  *  Which of a character's shots go into their scenepack. (Filters saved by
@@ -1616,6 +1685,12 @@ export type PackSpec = {
 	limit: number | null,
 	/**  Extra frames before and after each shot (within the episode). */
 	handles: number,
+	/**
+	 *  Plugins' shot filters turned on (`<pluginId>/<filterId>`): each
+	 *  leaves out the shots its plugin says no to. One of a plugin that
+	 *  isn't active is ignored.
+	 */
+	pluginFilters?: string[],
 };
 
 /**  A character's pack settings, as last used. */

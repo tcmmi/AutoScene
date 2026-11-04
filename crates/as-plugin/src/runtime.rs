@@ -41,11 +41,15 @@
 //! and how it was answered, never its params or its result, not even of a
 //! call too long or broken to be one.
 //!
+//! A shot filter's run hands each verdict on a shot it was sent to its
+//! [`VerdictSink`]; a verdict on any other shot, or in any other run, goes
+//! to the log and counts for nothing.
+//!
 //! A plugin's service ([`crate::service`]) starts, is heard and answers its
 //! calls with the same pieces: its command and environment, its pipes, and
 //! what a run and a service hear alike (`Talk`).
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::ffi::OsStr;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::panic::{self, AssertUnwindSafe};
@@ -66,7 +70,9 @@ use crate::calls::{CallCode, CallError, HostCalls, HostMethod};
 use crate::error::{PluginError, PluginResult};
 use crate::log::PluginLog;
 use crate::manifest::{Launch, PluginId, clean, cut, shown};
-use crate::protocol::{Call, CallHead, CallId, HostMessage, PluginMessage, Reply, RunMessage, ServiceMessage};
+use crate::protocol::{
+    ActionKind, Call, CallHead, CallId, HostMessage, PluginMessage, Reply, RunMessage, ServiceMessage,
+};
 use crate::scratch::Scratch;
 
 /// How long a plugin may take to stop after the cancel line.
@@ -140,7 +146,23 @@ pub struct RunSpec {
     /// refused. A plugin of protocol 1 makes none: a line like a call is
     /// output for its log, as it always was.
     pub calls: Option<Arc<dyn HostCalls>>,
+    /// Where a shot filter's run hands its verdicts (with `message.shots`
+    /// and `kind: "shotFilter"`); without it, every verdict line goes to
+    /// the log.
+    pub verdicts: Option<VerdictSink>,
     pub message: RunMessage,
+}
+
+/// What a shot filter's run said of a shot it was sent: the shot's key
+/// (`<mediaId>:<start>`) and whether the pack keeps it. A later word on the
+/// same shot comes too, and counts instead.
+pub type VerdictSink = Box<dyn FnMut(&str, bool) + Send>;
+
+/// A shot filter's run: the keys of the shots it was sent, and where their
+/// verdicts go.
+struct Judging {
+    keys: HashSet<String>,
+    sink: VerdictSink,
 }
 
 /// Runs a plugin's action to its end: the message of its result line, if
@@ -163,8 +185,28 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
     }
-    let RunSpec { name, dir, launch, data_dir, log_path, ffmpeg, ffprobe, uv, resources, protocol, calls, mut message } =
-        spec;
+    let RunSpec {
+        name,
+        dir,
+        launch,
+        data_dir,
+        log_path,
+        ffmpeg,
+        ffprobe,
+        uv,
+        resources,
+        protocol,
+        calls,
+        verdicts,
+        mut message,
+    } = spec;
+    // Only a shot filter's run is sent shots, and only its verdicts count.
+    let judging = match (verdicts, &message.shots) {
+        (Some(sink), Some(shots)) if message.action.kind == ActionKind::ShotFilter => {
+            Some(Judging { keys: shots.shots.iter().map(|s| s.key.clone()).collect(), sink })
+        }
+        _ => None,
+    };
     let mut cmd = command(&name, &dir, &launch, || uv)?;
     let id = message.plugin.id.clone();
     let (data_dir, resources) = prepare(&mut cmd, (&data_dir, resources.as_deref()), &ffmpeg, &ffprobe, &id, protocol)?;
@@ -193,7 +235,7 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
 
     let shown = sanitize(&name, MAX_STAGE_CHARS);
     let talk = Talk::new(log, to_plugin, load, calls, MAX_CALL_LINE_BYTES, "This run was cancelled.");
-    let mut heard = Heard { name: &shown, report, outcome: None, talk };
+    let mut heard = Heard { name: &shown, report, outcome: None, talk, judging };
     heard.talk.send(HostMessage::Run(Box::new(message)).line());
     let mut cancel_at: Option<Instant> = None;
     // The tree's status when the run had to end it, else None once it ended.
@@ -562,6 +604,8 @@ struct Heard<'a> {
     /// The first result or error line; later ones go to the log only.
     outcome: Option<Outcome>,
     talk: Talk,
+    /// What it judges, when it is a shot filter's run.
+    judging: Option<Judging>,
 }
 
 impl Heard<'_> {
@@ -592,6 +636,15 @@ impl Heard<'_> {
                 let detail = detail.map(|d| sanitize(&d, MAX_DETAIL_CHARS)).filter(|d| !d.is_empty());
                 self.said(Said::Failed { message, detail });
             }
+            Msg::Plugin(PluginMessage::Verdict { shot, keep }) => match &mut self.judging {
+                Some(j) if j.keys.contains(&shot) => (j.sink)(&shot, keep),
+                Some(_) => {
+                    self.talk.log.line("verdict", &format!("{} {keep}: a shot it wasn't sent, ignored", shown(&shot)))
+                }
+                None => {
+                    self.talk.log.line("verdict", &format!("{} {keep}: not a shot filter's run, ignored", shown(&shot)))
+                }
+            },
             // A service's alone: a run's readers never send them.
             _ => {}
         }
@@ -1376,7 +1429,7 @@ mod tests {
         let log = PluginLog::open(&log_path, "run-1", "post").unwrap();
         let calls = Some(Calls::new(host.clone(), tx));
         let talk = Talk::new(log, to_plugin, load.clone(), calls, MAX_CALL_LINE_BYTES, "This run was cancelled.");
-        let mut heard = Heard { name: "Test Plugin", report: &report, outcome: None, talk };
+        let mut heard = Heard { name: "Test Plugin", report: &report, outcome: None, talk, judging: None };
         let ended = heard.talk.calls.as_ref().unwrap().ended.clone();
         // Its program ended; a process it left holds its stdout and writes a call.
         heard.talk.end_calls();

@@ -232,6 +232,7 @@ fn run(kind: ActionKind, id: &str, trigger: Trigger) -> RunMessage {
         project: None,
         export: None,
         input: None,
+        shots: None,
     }
 }
 

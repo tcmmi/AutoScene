@@ -232,6 +232,16 @@ pub(crate) mod tests {
 
     /// A project with one media "indexed" as `frames` frames at 24 fps.
     pub(crate) fn project_with_media(frames: u32) -> (tempfile::TempDir, std::sync::Arc<Project>, MediaId) {
+        let (dir, project, ids) = project_with_episodes(&["Show - 01.mkv"], frames);
+        (dir, project, ids[0])
+    }
+
+    /// A series of the files `names`, added in that order, each "indexed"
+    /// as `frames` frames at 24 fps; their ids in that order.
+    pub(crate) fn project_with_episodes(
+        names: &[&str],
+        frames: u32,
+    ) -> (tempfile::TempDir, std::sync::Arc<Project>, Vec<MediaId>) {
         let dir = tempfile::tempdir().unwrap();
         let lib = crate::Library::open(&AppPaths::at(dir.path().join("data"))).unwrap();
         lib.update_settings(&AppSettings {
@@ -247,16 +257,26 @@ pub(crate) mod tests {
             plugin_catalog_checks: true,
         })
         .unwrap();
-        let file = dir.path().join("Show - 01.mkv");
-        std::fs::write(&file, b"x").unwrap();
-        let (_, project, ids) = lib
+        let files: Vec<String> = names
+            .iter()
+            .map(|name| {
+                let file = dir.path().join(name);
+                std::fs::write(&file, b"x").unwrap();
+                file.display().to_string()
+            })
+            .collect();
+        // One at a time: each is added after the one before.
+        let (_, project, mut ids) = lib
             .create_project(&NewProject {
                 title: "Show".into(),
                 kind: ProjectKind::Series,
                 content: ContentKind::Live,
-                files: vec![file.display().to_string()],
+                files: files[..1].to_vec(),
             })
             .unwrap();
+        for file in &files[1..] {
+            ids.extend(lib.add_media(&project, std::slice::from_ref(file), ProjectKind::Series).unwrap());
+        }
         let index = FrameIndex::cfr(Rational::new(1, 24), Rational::new(24, 1), 0, frames);
         let rec = as_db::IngestRecord {
             info: info(),
@@ -271,8 +291,10 @@ pub(crate) mod tests {
             index_blob: index.to_bytes(),
             audio_ordinal: None,
         };
-        project.db().record_ingest(ids[0], &rec).unwrap();
-        (dir, project, ids[0])
+        for id in &ids {
+            project.db().record_ingest(*id, &rec).unwrap();
+        }
+        (dir, project, ids)
     }
 
     #[test]

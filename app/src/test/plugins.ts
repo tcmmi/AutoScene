@@ -25,6 +25,7 @@ export function pluginInfo(o: Partial<PluginInfo> & Pick<PluginInfo, "id" | "nam
     commands: [],
     settings: [],
     runtime: "process",
+    sandbox: null,
     protocol: 1,
     pages: [],
     secretsSet: [],
@@ -102,6 +103,7 @@ export function catalogReview(plugin: PluginInfo, update: Partial<PluginUpdate> 
       addedPages: [],
       startsProgram: false,
       becomesService: false,
+      leavesSandbox: false,
       addedResourceHosts: [],
       ...update,
     },
@@ -111,6 +113,7 @@ export function catalogReview(plugin: PluginInfo, update: Partial<PluginUpdate> 
     uvBytes: null,
     resourceBytes: 0,
     resourceHosts: [],
+    componentWarnings: [],
     catalog: {
       published: Date.UTC(2026, 10, 3, 9),
       repository: "https://github.com/tcmmi/AutoScene",

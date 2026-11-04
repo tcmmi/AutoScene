@@ -30,6 +30,14 @@
 //! folder is loaded where it is ([`Store::stage_folder`]) and is never
 //! removed.
 //!
+//! A WebAssembly plugin's component is compiled when it is checked, and its
+//! code kept in its own folder under `cache/plugin-code/<id>`
+//! ([`Store::cache_dir`]), outside every folder a plugin sees: once the row
+//! names a version, only that version's code stays, an uninstall takes it,
+//! and the next open sweeps what nothing installed uses. A loaded folder
+//! that no longer runs in the sandbox, or that starts to, waits to be loaded
+//! again, as any whose runtime changed.
+//!
 //! What AutoScene reviewed is what its catalog lists ([`Store::set_catalog`],
 //! [`verdict`]): a package whose lock the living index lists, for its plugin
 //! and version, installs as Reviewed. A version the catalog withdrew doesn't
@@ -83,6 +91,8 @@ use crate::runtime::RunSpec;
 use crate::secrets::{self, SecretStore};
 use crate::service::{READY_WAIT, ServiceSpec};
 use crate::trust::{self, AuthorKey, Trust, Verdict};
+#[cfg(feature = "wasm")]
+use crate::wasm::{self, Limits, WasmSpec};
 
 /// The [`Record`] version this AutoScene reads and writes. A row of another
 /// is a later AutoScene's: listed as needing it, and never written over.
@@ -221,7 +231,12 @@ impl Installed {
 pub struct Ticket {
     pub id: Uuid,
     pub manifest: Manifest,
+    /// What its plugin.json says that this AutoScene skipped.
     pub warnings: Vec<String>,
+    /// What the check of a WebAssembly plugin's component found that may
+    /// surprise its author: an import it can't use, a permission it can't
+    /// use. Nothing was skipped: the component runs as it is.
+    pub component_warnings: Vec<String>,
     /// The trust it gets, and the author key it is pinned to after.
     pub verdict: Verdict,
     /// What the catalog says of it, when it reviewed it: checked again at
@@ -238,6 +253,9 @@ pub struct Ticket {
     pub staged: Option<PathBuf>,
     /// The record of the version it replaces.
     pub previous: Option<Record>,
+    /// A WebAssembly plugin's code, compiled when it was checked, in its
+    /// folder of [`Store::cache_dir`]: the one code [`Store::commit`] keeps.
+    pub compiled: Option<PathBuf>,
     pub created: Instant,
 }
 
@@ -255,11 +273,46 @@ pub struct Approval {
     pub path: String,
 }
 
+/// Which compiled code of an installed plugin is in use
+/// ([`Store::sweep_code`]).
+enum CodeInUse {
+    /// None: it runs no component, or is broken.
+    None,
+    /// A package's: the code of the component of this SHA-256, as its lock
+    /// lists it.
+    Component(String),
+    /// A loaded folder's: its newest code.
+    Newest,
+}
+
+impl CodeInUse {
+    /// Whether the file `name` in its code folder may be its code.
+    fn may_be(&self, name: &str) -> bool {
+        match self {
+            Self::None => false,
+            Self::Component(sha256) => name.starts_with(&format!("{sha256}-")) && name.ends_with(".cwasm"),
+            Self::Newest => name.ends_with(".cwasm"),
+        }
+    }
+}
+
+/// How the name of code this AutoScene's engine compiled ends
+/// (`-<engine>.cwasm`); none without the sandbox, or when its engine can't
+/// be made.
+fn own_code_end() -> Option<String> {
+    #[cfg(feature = "wasm")]
+    return wasm::own_code_end();
+    #[cfg(not(feature = "wasm"))]
+    None
+}
+
 /// The plugins installed in one app data folder.
 pub struct Store {
     root: PathBuf,
     data: PathBuf,
     logs: PathBuf,
+    /// `cache/plugin-code`: WebAssembly plugins' compiled code.
+    code: PathBuf,
     /// Where the large files plugins name are kept ([`crate::resources`]).
     resources: PathBuf,
     db: Arc<LibraryDb>,
@@ -285,9 +338,10 @@ impl Store {
     /// Opens the plugins of `paths` (registered in `db`, with their secrets
     /// in `secrets`) for the AutoScene of version `app`, with no catalog yet,
     /// and moves into `.trash` what an install or uninstall that never
-    /// finished left: staged folders, versions a row no longer names, and
-    /// folders of plugins without a row. A plugin whose row a later
-    /// AutoScene wrote keeps its folder as it is. Moving is quick; removing
+    /// finished left: staged folders, versions a row no longer names,
+    /// folders of plugins without a row, and compiled code nothing installed
+    /// uses. A plugin whose row a later AutoScene wrote keeps its folder as
+    /// it is. Moving is quick; removing
     /// them, and what `.trash` held, is [`Store::remove_leftovers`]'s, which
     /// a package's 4096 files can keep busy for a second. So is an extra row
     /// left from before (AutoScene 1.0 uninstalled its plugin, or installed
@@ -303,6 +357,7 @@ impl Store {
             root: paths.plugins(),
             data: paths.plugin_data(),
             logs: paths.plugin_logs(),
+            code: paths.plugin_code(),
             resources: paths.plugin_resources(),
             db,
             catalog: RwLock::new(Arc::new(Catalog::none())),
@@ -315,7 +370,7 @@ impl Store {
         };
         *store.orphans.lock() = store.orphaned_extras()?;
         let (staging, trash) = (store.root.join(STAGING), store.root.join(TRASH));
-        for dir in [&staging, &trash] {
+        for dir in [&staging, &trash, &store.code] {
             // The store's own folders: a file in their place goes.
             if fs::symlink_metadata(dir).is_ok_and(|f| !f.is_dir()) {
                 remove_all(dir)?;
@@ -327,6 +382,7 @@ impl Store {
             leftovers.extend(store.move_away(&entry?.path()));
         }
         leftovers.extend(store.sweep()?);
+        leftovers.extend(store.sweep_code());
         *store.leftovers.lock() = leftovers;
         Ok(store)
     }
@@ -396,6 +452,65 @@ impl Store {
         Ok(moved)
     }
 
+    /// Moves into `.trash` the compiled code nothing installed uses, and
+    /// gives where it went: in `cache/plugin-code/`, each folder whose name
+    /// is no plugin with a row this AutoScene reads, and in the folder of
+    /// one, each file but the code of the component it runs. Of a package,
+    /// that is code of the component its lock lists; of a loaded folder,
+    /// which a developer rebuilds often, the newest. Code of this
+    /// AutoScene's engine goes before another's. A plugin that runs no
+    /// component, or is broken, keeps none. What can't be read stays.
+    fn sweep_code(&self) -> Vec<PathBuf> {
+        let Ok(entries) = fs::read_dir(&self.code) else { return Vec::new() };
+        let rows: BTreeMap<PluginId, String> = self.rows().unwrap_or_default().into_iter().collect();
+        let mut moved = Vec::new();
+        for entry in entries.flatten() {
+            let id = entry.file_name().to_str().and_then(|name| PluginId::parse(name).ok());
+            let record = id.and_then(|id| read_row(&id, rows.get(&id)?));
+            let (Some(record), true) = (record, entry.file_type().is_ok_and(|f| f.is_dir())) else {
+                moved.extend(self.move_away(&entry.path()));
+                continue;
+            };
+            let in_use = self.code_in_use(&self.load(record));
+            if matches!(in_use, CodeInUse::None) {
+                moved.extend(self.move_away(&entry.path()));
+                continue;
+            }
+            let Ok(files) = fs::read_dir(entry.path()) else { continue };
+            let files: Vec<_> = files.flatten().collect();
+            // Of the files that may be its code, one this AutoScene's engine
+            // compiled, the newest of them: another engine's is another
+            // AutoScene's (an older one, or a beta sharing this data
+            // folder), however new, and this one can't load it.
+            let own = own_code_end();
+            let newest = files
+                .iter()
+                .filter(|f| f.file_type().is_ok_and(|t| t.is_file()) && in_use.may_be(&f.file_name().to_string_lossy()))
+                .max_by_key(|f| {
+                    let mine = own.as_deref().is_some_and(|end| f.file_name().to_string_lossy().ends_with(end));
+                    (mine, f.metadata().and_then(|m| m.modified()).ok())
+                })
+                .map(fs::DirEntry::file_name);
+            for file in files {
+                if Some(file.file_name()) != newest {
+                    moved.extend(self.move_away(&file.path()));
+                }
+            }
+        }
+        moved
+    }
+
+    /// Which compiled code of `p` is in use.
+    fn code_in_use(&self, p: &Installed) -> CodeInUse {
+        let Some(Ok(Launch::Wasm { component })) = p.manifest.as_ref().map(Manifest::launch) else {
+            return CodeInUse::None;
+        };
+        let Some(sha256) = &p.record.lock_sha256 else { return CodeInUse::Newest };
+        let listed =
+            installed_lock(&p.dir, sha256).ok().and_then(|l| l.files.into_iter().find(|f| f.path == component));
+        listed.map_or(CodeInUse::None, |f| CodeInUse::Component(f.sha256))
+    }
+
     /// The plugins whose extra row is left from before ([`orphaned`]).
     fn orphaned_extras(&self) -> PluginResult<Vec<PluginId>> {
         let rows: BTreeMap<PluginId, String> = self.rows()?.into_iter().collect();
@@ -438,7 +553,9 @@ impl Store {
     /// manifest, the files its command starts on this computer, its pages,
     /// its icon and banner, its trust (the catalog's, or its signature's),
     /// and that it may replace the installed version. A version the catalog
-    /// withdrew is refused. A package that fails leaves no folder.
+    /// withdrew is refused. Last, a WebAssembly plugin's component is
+    /// compiled and checked, and its code kept ([`Ticket::compiled`]). A
+    /// package that fails leaves no folder, and no code.
     pub fn stage(&self, archive: &Path) -> PluginResult<Ticket> {
         let id = Uuid::now_v7();
         let staged = self.root.join(STAGING).join(id.simple().to_string());
@@ -453,10 +570,9 @@ impl Store {
     fn check_package(&self, id: Uuid, staged: &Path, unpacked: Unpacked) -> PluginResult<Ticket> {
         let bytes = manifest::read_file(&staged.join(MANIFEST))?;
         let Parsed { manifest: m, warnings } = manifest::parse(&bytes, &self.app)?;
-        if m.runs_program() {
-            let launch = m.launch()?;
-            package::check_launch(&unpacked.lock, &launch, current_platform())?;
-            waits_for_the_sandbox(&launch)?;
+        let launch = if m.runs_program() { Some(m.launch()?) } else { None };
+        if let Some(launch) = &launch {
+            package::check_launch(&unpacked.lock, launch, current_platform())?;
         }
         package::check_pages(staged, Some(&unpacked.lock), &m.pages)?;
         package::check_pictures(staged, &unpacked.lock, &m)?;
@@ -469,12 +585,15 @@ impl Store {
         if let Some(p) = &previous {
             check_update(p, &m, verdict.trust, Some(&package::sha256_hex(&lock_bytes)))?;
         }
+        let mut component_warnings = Vec::new();
+        let compiled = self.compile(&m, staged, launch.as_ref(), Some(&lock), &mut component_warnings)?;
         // The id's random end: two installs of one version get two folders.
         let folder = format!("{}+{}", m.version, &id.simple().to_string()[24..]);
         Ok(Ticket {
             id,
             manifest: m,
             warnings,
+            component_warnings,
             verdict,
             approval,
             lock: Some(lock),
@@ -484,6 +603,7 @@ impl Store {
             source: Source::Package { folder },
             staged: Some(staged.to_path_buf()),
             previous,
+            compiled,
             created: Instant::now(),
         })
     }
@@ -491,7 +611,8 @@ impl Store {
     /// Checks the plugin in the developer's folder `dir` for this AutoScene,
     /// to load it where it is: it has no lock, so it is Unreviewed, and its
     /// files are read as they are each time. A version the catalog withdrew
-    /// is refused here too.
+    /// is refused here too. A WebAssembly plugin's component is compiled as
+    /// a package's is.
     pub fn stage_folder(&self, dir: &Path) -> PluginResult<Ticket> {
         let dir = std::path::absolute(dir)?;
         if !dir.is_dir() {
@@ -517,9 +638,6 @@ impl Store {
                 )));
             }
         }
-        if let Some(launch) = &launch {
-            waits_for_the_sandbox(launch)?;
-        }
         package::check_pages(&dir, None, &m.pages)?;
         let previous = self.record(&m.id)?;
         let pin = previous.as_ref().and_then(|p| p.author_key.as_ref());
@@ -534,10 +652,13 @@ impl Store {
         if let Some(p) = &previous {
             check_update(p, &m, verdict.trust, None)?;
         }
+        let mut component_warnings = Vec::new();
+        let compiled = self.compile(&m, &dir, launch.as_ref(), None, &mut component_warnings)?;
         Ok(Ticket {
             id: Uuid::now_v7(),
             manifest: m,
             warnings,
+            component_warnings,
             verdict,
             approval,
             lock: None,
@@ -547,8 +668,46 @@ impl Store {
             source: Source::Folder { path: path.to_owned() },
             staged: None,
             previous,
+            compiled,
             created: Instant::now(),
         })
+    }
+
+    /// Compiles the component of the WebAssembly plugin of `m` in its folder
+    /// `dir`, checks what it imports and exports, and keeps its code in
+    /// [`Store::cache_dir`], beside the code there: the install keeps only
+    /// the code of the version it installs. A package's component must be
+    /// the one its `lock` lists. What the check found that may surprise its
+    /// author goes to `warnings`. Gives the code's file; none for a plugin
+    /// whose `launch` runs no component. An AutoScene without the sandbox
+    /// refuses it: it needs a newer one.
+    fn compile(
+        &self,
+        m: &Manifest,
+        dir: &Path,
+        launch: Option<&Launch>,
+        lock: Option<&FilesLock>,
+        warnings: &mut Vec<String>,
+    ) -> PluginResult<Option<PathBuf>> {
+        let Some(Launch::Wasm { component }) = launch else { return Ok(None) };
+        #[cfg(feature = "wasm")]
+        {
+            let sha256 = match lock {
+                Some(lock) => match lock.files.iter().find(|f| f.path == *component) {
+                    Some(listed) => Some(listed.sha256.as_str()),
+                    None => return Err(invalid(format!("The plugin package is missing {}.", shown(component)))),
+                },
+                None => None,
+            };
+            let (checked, file) = wasm::prepare(&file_in(dir, component), sha256, &self.cache_dir(&m.id), m)?;
+            warnings.extend(checked.warnings);
+            Ok(Some(file))
+        }
+        #[cfg(not(feature = "wasm"))]
+        {
+            let _ = (m, dir, component, lock, warnings);
+            Err(PluginError::TooNew("runtime".into()))
+        }
     }
 
     /// Installs the plugin of `t`. One AutoScene hasn't reviewed needs
@@ -651,7 +810,7 @@ impl Store {
             }
             return Err(e);
         }
-        // The row names the new version: the one before can go.
+        // The row names the new version: the one before can go, and its code.
         match (previous.map(|p| p.source), &dir) {
             (Some(Source::Package { .. }), None) => self.throw_away(&plugin_dir),
             (Some(Source::Package { folder }), Some(dir)) if plugin_dir.join(&folder) != *dir => {
@@ -659,6 +818,7 @@ impl Store {
             }
             _ => {}
         }
+        self.keep_code(&m.id, t.compiled.as_deref());
         Ok(self.load(record))
     }
 
@@ -693,9 +853,9 @@ impl Store {
     /// Uninstalls `id` (also one whose row a later AutoScene wrote): its
     /// rows go in one transaction (its pinned author key with them, so
     /// installing it again is a first install), then its secrets,
-    /// best-effort, and its installed files. A loaded folder is the
-    /// developer's and stays where it is. `delete_data` also removes what it
-    /// kept ([`Store::data_dir`]).
+    /// best-effort, and its installed files and compiled code. A loaded
+    /// folder is the developer's and stays where it is. `delete_data` also
+    /// removes what it kept ([`Store::data_dir`]).
     pub fn uninstall(&self, id: &PluginId, delete_data: bool) -> PluginResult<()> {
         let _changing = self.changing.lock();
         let Some(row) = self.db.setting(&row_key(id))? else { return Err(not_found(id)) };
@@ -711,6 +871,7 @@ impl Store {
         self.db.write_settings(&[(&row_key(id), None), (&settings_key(id), None), (&extra_key(id), None)])?;
         self.forget_secrets(id, &secrets);
         self.throw_away(&self.root.join(id.as_str()));
+        self.keep_code(id, None);
         if delete_data {
             self.throw_away(&self.data_dir(id));
         }
@@ -910,6 +1071,26 @@ impl Store {
         self.logs.join(format!("{id}.service.log"))
     }
 
+    /// Where the compiled code of the WebAssembly plugin `id` is kept
+    /// (`cache/plugin-code/<id>`): never under a folder a plugin sees.
+    pub fn cache_dir(&self, id: &PluginId) -> PathBuf {
+        self.code.join(id.as_str())
+    }
+
+    /// Keeps, of the compiled code of `id`, only the file `compiled` (the
+    /// code of the version just installed); none keeps none. Best-effort:
+    /// what stays is swept at the next open ([`Store::sweep_code`]). An
+    /// AutoScene without the sandbox compiles nothing to keep.
+    fn keep_code(&self, id: &PluginId, compiled: Option<&Path>) {
+        #[cfg(feature = "wasm")]
+        match compiled.and_then(Path::file_name).and_then(|name| name.to_str()) {
+            Some(keep) => wasm::keep_only(&self.cache_dir(id), keep),
+            None => wasm::remove(&self.cache_dir(id)),
+        }
+        #[cfg(not(feature = "wasm"))]
+        let _ = (id, compiled);
+    }
+
     /// A run of `action` of `p`, as [`crate::runtime::run`] takes it: its
     /// command from its folder, started in [`Store::data_dir`] and logged to
     /// [`Store::log_path`], and a run line with a new run id that names the
@@ -928,34 +1109,18 @@ impl Store {
         ffmpeg_version: &str,
     ) -> PluginResult<RunSpec> {
         let m = manifest_of(p)?;
-        let id = &p.record.id;
-        let data_dir = self.data_dir(id);
-        let message = RunMessage {
-            protocol: m.engines.protocol,
-            run_id: Uuid::now_v7().to_string(),
-            plugin: PluginContext {
-                id: id.clone(),
-                version: p.record.version.clone(),
-                data_dir: data_dir.to_string_lossy().into_owned(),
-                resources_dir: None,
-            },
-            app: AppContext { version: self.app.to_string(), platform: current_platform().into() },
-            tools: ToolPaths {
-                ffmpeg: ffmpeg.to_string_lossy().into_owned(),
-                ffprobe: ffprobe.to_string_lossy().into_owned(),
-                ffmpeg_version: ffmpeg_version.into(),
-            },
-            settings: merged(&m.settings, &self.stored_values(id)?.unwrap_or_default()),
-            action,
-            project: None,
-            export: None,
-            input: None,
+        let tools = ToolPaths {
+            ffmpeg: ffmpeg.to_string_lossy().into_owned(),
+            ffprobe: ffprobe.to_string_lossy().into_owned(),
+            ffmpeg_version: ffmpeg_version.into(),
         };
+        let message = self.run_message(p, m, action, tools)?;
+        let id = &p.record.id;
         Ok(RunSpec {
             name: m.name.clone(),
             dir: p.dir.clone(),
             launch: m.launch()?,
-            data_dir,
+            data_dir: self.data_dir(id),
             log_path: self.log_path(id),
             ffmpeg: ffmpeg.into(),
             ffprobe: ffprobe.into(),
@@ -964,6 +1129,77 @@ impl Store {
             protocol: m.engines.protocol,
             calls: None,
             message,
+        })
+    }
+
+    /// A run of `action` of the WebAssembly plugin `p`, as
+    /// [`crate::wasm::run`] takes it: its component from its folder (a
+    /// package's by the SHA-256 its lock lists), its code kept in
+    /// [`Store::cache_dir`], what it may use by its grants
+    /// ([`Grants::of`](crate::calls::Grants::of): what the person agreed to
+    /// that its manifest still asks for) and its limits, and a run as
+    /// [`Store::run_spec`] makes it, without FFmpeg, which it can't start.
+    /// The values of its secrets are the host's to add. A broken plugin
+    /// can't run, nor one that isn't a WebAssembly plugin.
+    #[cfg(feature = "wasm")]
+    pub fn wasm_spec(&self, p: &Installed, action: ActionContext) -> PluginResult<WasmSpec> {
+        let m = manifest_of(p)?;
+        let Launch::Wasm { component } = m.launch()? else {
+            return Err(invalid(format!("{} isn't a WebAssembly plugin.", m.name)));
+        };
+        let grants = crate::calls::Grants::of(p)?;
+        let component_sha256 = match &p.record.lock_sha256 {
+            Some(sha256) => {
+                let lock = installed_lock(&p.dir, sha256).map_err(invalid)?;
+                let listed = lock.files.into_iter().find(|f| f.path == component);
+                Some(listed.ok_or_else(|| invalid(CHANGED))?.sha256)
+            }
+            None => None,
+        };
+        let id = &p.record.id;
+        Ok(WasmSpec {
+            name: m.name.clone(),
+            component: file_in(&p.dir, &component),
+            component_sha256,
+            cache: self.cache_dir(id),
+            data_dir: self.data_dir(id),
+            log_path: self.log_path(id),
+            grants,
+            limits: Limits::of(m.runtime.limits.unwrap_or_default()),
+            secrets: BTreeMap::new(),
+            message: self.run_message(p, m, action, ToolPaths::default())?,
+        })
+    }
+
+    /// The run line of `action` of `p` (whose manifest is `m`), with a new
+    /// run id, naming the plugin, this AutoScene, the tools `tools` and each
+    /// of its settings, as [`Store::values`] gives them, in the protocol it
+    /// declared. The project and the export it runs on are the host's to
+    /// add.
+    fn run_message(
+        &self,
+        p: &Installed,
+        m: &Manifest,
+        action: ActionContext,
+        tools: ToolPaths,
+    ) -> PluginResult<RunMessage> {
+        let id = &p.record.id;
+        Ok(RunMessage {
+            protocol: m.engines.protocol,
+            run_id: Uuid::now_v7().to_string(),
+            plugin: PluginContext {
+                id: id.clone(),
+                version: p.record.version.clone(),
+                data_dir: self.data_dir(id).to_string_lossy().into_owned(),
+                resources_dir: None,
+            },
+            app: AppContext { version: self.app.to_string(), platform: current_platform().into() },
+            tools,
+            settings: merged(&m.settings, &self.stored_values(id)?.unwrap_or_default()),
+            action,
+            project: None,
+            export: None,
+            input: None,
         })
     }
 
@@ -1242,8 +1478,9 @@ impl Store {
                     true => Ok(parsed),
                     false => Err(RUNTIME_CHANGED.to_owned()),
                 });
-                // One a newer AutoScene installed to run in the sandbox waits
-                // for it, as at install ([`waits_for_the_sandbox`]).
+                // Without the sandbox, one a newer AutoScene installed to run
+                // in it waits for it, as at install ([`Store::compile`]).
+                #[cfg(not(feature = "wasm"))]
                 let read = read.and_then(|parsed| match parsed.manifest.is_sandboxed() {
                     false => Ok(parsed),
                     true => Err(NEWER.into()),
@@ -1514,17 +1751,6 @@ fn allowed(trust: Trust, allow_unreviewed: bool, accept_unreviewed: bool) -> Plu
         _ if !allow_unreviewed => Err(PluginError::NotAllowed),
         _ if !accept_unreviewed => Err(invalid("Confirm that you want to install it.")),
         _ => Ok(()),
-    }
-}
-
-/// Refuses a plugin that runs in the sandbox, which this AutoScene reads
-/// but can't run yet: it needs a newer one. Its manifest and component were
-/// checked first, so a package or folder without its component, or with
-/// one marked to run, says that instead.
-fn waits_for_the_sandbox(launch: &Launch) -> PluginResult<()> {
-    match launch {
-        Launch::Wasm { .. } => Err(PluginError::TooNew("runtime".into())),
-        Launch::Exe { .. } | Launch::UvScript { .. } => Ok(()),
     }
 }
 
@@ -2106,6 +2332,8 @@ mod tests {
         assert_eq!(place.plugins(), holding(&p), "its files stay");
     }
 
+    /// Without the sandbox (the feature `wasm`), as AutoScene 1.1 is.
+    #[cfg(not(feature = "wasm"))]
     #[test]
     fn a_wasm_package_waits_for_a_newer_autoscene() {
         let place = Place::new();
@@ -2142,6 +2370,288 @@ mod tests {
         let p = store.get(&id()).unwrap();
         assert_eq!((p.broken.as_deref(), p.manifest.is_none()), (Some(NEWER), true));
         assert!(crate::calls::Grants::of(&p).is_err());
+    }
+
+    /// The test guest's component (`cargo xtask wasm-guests`); none (the
+    /// test skips) when it wasn't built.
+    #[cfg(feature = "wasm")]
+    fn guest() -> Option<Vec<u8>> {
+        Some(fs::read(as_testkit::fixture_file("wasm/guest.wasm")?).unwrap())
+    }
+
+    /// `component` with a custom section named `name` at its end: another
+    /// component (another SHA-256), which compiles and runs as it does.
+    #[cfg(feature = "wasm")]
+    fn other(component: &[u8], name: &str) -> Vec<u8> {
+        let payload = [&[name.len() as u8][..], name.as_bytes()].concat();
+        [component, &[0, payload.len() as u8], &payload].concat()
+    }
+
+    /// The files of the WebAssembly plugin `id` of `version` whose
+    /// component is `component`: it reads the export (see [`manifest`]).
+    #[cfg(feature = "wasm")]
+    fn wasm_plugin(id: &str, version: &str, component: &[u8]) -> Files {
+        let mut m = manifest(id, version);
+        m["manifestVersion"] = json!(2);
+        m["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
+        vec![("plugin.json".into(), serde_json::to_vec_pretty(&m).unwrap()), ("plugin.wasm".into(), component.to_vec())]
+    }
+
+    /// What the code folder of `id` holds, by name, sorted; none when it
+    /// isn't there.
+    #[cfg(feature = "wasm")]
+    fn code(store: &Store, id: &str) -> Option<Vec<String>> {
+        let entries = fs::read_dir(store.cache_dir(&PluginId::parse(id).unwrap())).ok()?;
+        let mut names: Vec<String> = entries.map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        Some(names)
+    }
+
+    #[cfg(feature = "wasm")]
+    fn hello_action() -> ActionContext {
+        ActionContext { kind: ActionKind::ExportAction, id: "hello".into(), trigger: Trigger::Menu }
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn a_wasm_package_is_compiled_when_it_is_checked() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        let t = store.stage(&place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        // The test guest imports wasi:http and doesn't ask for network: the
+        // check says so apart from what its plugin.json had skipped.
+        assert_eq!(
+            (t.warnings.as_slice(), t.component_warnings.as_slice()),
+            (
+                &[][..],
+                &["It imports wasi:http but doesn't ask for network: every request it makes is refused.".to_owned()][..]
+            )
+        );
+        // Its code is kept where no plugin looks, by its component's hash.
+        let compiled = t.compiled.clone().expect("its code");
+        let name = compiled.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with(&format!("{}-", package::sha256_hex(&guest))) && name.ends_with(".cwasm"), "{name}");
+        assert_eq!(compiled.parent(), Some(place.paths.plugin_code().join(ID).as_path()));
+        assert!(compiled.is_file());
+        let p = store.commit(t, true, true).unwrap();
+        assert_eq!((p.broken.as_deref(), p.extra.agreed_runtime()), (None, RuntimeKind::Wasm));
+        assert_eq!(code(&store, ID).unwrap(), [name]);
+
+        // A run of it: its component as its lock lists it, what it agreed
+        // to, its limits, and no FFmpeg.
+        let spec = store.wasm_spec(&p, hello_action()).unwrap();
+        assert_eq!(spec.component, p.dir.join("plugin.wasm"));
+        assert_eq!(spec.component_sha256, Some(package::sha256_hex(&guest)));
+        assert_eq!((&spec.cache, &spec.data_dir), (&store.cache_dir(&id()), &store.data_dir(&id())));
+        assert_eq!(spec.limits, Limits::of(crate::manifest::WasmLimits::default()));
+        assert_eq!(
+            (spec.grants.runtime, spec.grants.permissions.clone()),
+            (RuntimeKind::Wasm, vec![Permission::ExportsRead])
+        );
+        assert!(spec.secrets.is_empty());
+        assert_eq!((spec.message.tools.ffmpeg.as_str(), spec.message.action.id.as_str()), ("", "hello"));
+        // It runs on the code kept at its check: nothing is compiled again.
+        let reports = Mutex::new(Vec::new());
+        let said = wasm::run(spec, &as_core::CancelToken::new(), &|stage, _| reports.lock().push(stage.to_owned()));
+        assert!(said.is_ok(), "{said:?}");
+        assert!(!reports.lock().iter().any(|r| r.starts_with("Getting")), "{:?}", reports.lock());
+        assert!(store.data_dir(&id()).join("hello.txt").is_file());
+
+        // A program's run is no WebAssembly run.
+        let process = install(&store, &place.unsigned("1.1.0")).unwrap();
+        let Err(e) = store.wasm_spec(&process, hello_action()) else { panic!("a program ran in the sandbox") };
+        assert_eq!(e.to_string(), "Hello Export isn't a WebAssembly plugin.");
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn a_wasm_package_that_does_not_load_leaves_no_files() {
+        let place = Place::new();
+        let store = place.store();
+        // A component's header and nothing that loads; a core module.
+        let damaged = [&b"\0asm\x0d\x00\x01\x00"[..], &[0xff, 0x01]].concat();
+        let module = b"\0asm\x01\x00\x00\x00".to_vec();
+        for (component, says) in
+            [(&damaged, "The plugin's component doesn't load"), (&module, "The plugin's component isn't")]
+        {
+            let files = wasm_plugin(ID, "1.0.0", component);
+            let staged = store.stage(&place.package(&files, None, false));
+            assert!(matches!(&staged, Err(PluginError::Invalid(why)) if why.starts_with(says)), "{staged:?}");
+            assert_eq!(place.plugins(), [".staging", ".trash"], "the staged package is gone");
+            let loaded = store.stage_folder(&place.folder(&format!("dev-{}", Uuid::now_v7().simple()), &files));
+            assert!(matches!(&loaded, Err(PluginError::Invalid(why)) if why.starts_with(says)), "{loaded:?}");
+            assert_eq!(code(&store, ID), None, "no code is kept");
+        }
+        assert!(store.list().unwrap().is_empty());
+
+        // A package or folder without its component says so first.
+        let plugin_json = wasm_plugin(ID, "1.0.0", b"")[0].clone();
+        let Err(e) = store.stage(&place.package(&vec![plugin_json.clone()], None, false)) else { panic!() };
+        assert_eq!(e.to_string(), "The plugin package is missing plugin.wasm, which its runtime needs.");
+        let Err(e) = store.stage_folder(&place.folder("no-component", &vec![plugin_json])) else { panic!() };
+        assert_eq!(e.to_string(), "The plugin folder is missing plugin.wasm, which its runtime needs.");
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn an_update_keeps_only_the_new_compiled_plugin() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        let first = code(&store, ID).unwrap();
+        let t = store.stage(&place.package(&wasm_plugin(ID, "1.1.0", &other(&guest, "v2")), None, false)).unwrap();
+        // Until the person agrees, the installed version's code stays.
+        assert_eq!(code(&store, ID).unwrap().len(), 2);
+        let compiled = t.compiled.clone().unwrap();
+        let p = store.commit(t, true, true).unwrap();
+        assert_eq!(code(&store, ID).unwrap(), [compiled.file_name().unwrap().to_string_lossy()]);
+        assert_ne!(code(&store, ID).unwrap(), first);
+        assert_eq!(
+            store.wasm_spec(&p, hello_action()).unwrap().component_sha256,
+            Some(package::sha256_hex(&other(&guest, "v2")))
+        );
+
+        // An update that leaves the sandbox keeps none.
+        install(&store, &place.unsigned("1.2.0")).unwrap();
+        assert_eq!(code(&store, ID), None);
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn uninstalling_drops_the_compiled_plugin() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        assert_eq!(code(&store, ID).unwrap().len(), 1);
+        store.uninstall(&id(), false).unwrap();
+        assert_eq!(code(&store, ID), None);
+        assert_eq!(place.plugins(), [".staging", ".trash"]);
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn leftover_compiled_plugins_are_swept() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        // A package, a review of its update that was closed, and what a
+        // save or an older AutoScene left beside its code.
+        install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        let kept = code(&store, ID).unwrap();
+        store.discard(
+            store.stage(&place.package(&wasm_plugin(ID, "1.1.0", &other(&guest, "v2")), None, false)).unwrap(),
+        );
+        let mine = store.cache_dir(&id());
+        let older_engine = mine.join(format!("{}-0123456789abcdef.cwasm", package::sha256_hex(&guest)));
+        fs::write(&older_engine, b"old").unwrap();
+        // Newer than its code, as a beta sharing this data folder leaves
+        // it: still not this AutoScene's.
+        let later = std::time::SystemTime::now() + Duration::from_secs(86_400);
+        File::options().write(true).open(&older_engine).unwrap().set_modified(later).unwrap();
+        fs::write(mine.join(".0190f0e8a3b47c1d.part"), b"part").unwrap();
+        fs::create_dir(mine.join("stray")).unwrap();
+        assert_eq!(code(&store, ID).unwrap().len(), 5);
+        // A loaded folder, with another engine's code of an earlier build,
+        // newer than its own.
+        let loaded = "dev.autoscene.loaded";
+        let dev = place.folder("loaded", &wasm_plugin(loaded, "1.0.0", &guest));
+        store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        let newest = code(&store, loaded).unwrap();
+        let rebuilt = store
+            .cache_dir(&PluginId::parse(loaded).unwrap())
+            .join(format!("{}-0123456789abcdef.cwasm", "a".repeat(64)));
+        fs::write(&rebuilt, b"before").unwrap();
+        File::options().write(true).open(&rebuilt).unwrap().set_modified(later).unwrap();
+        // A program with code left from when it ran in the sandbox, a
+        // plugin without a row, and a file that is no plugin's.
+        let program = "dev.autoscene.program";
+        install(&store, &place.package(&files(&manifest(program, "1.0.0")), None, false)).unwrap();
+        for dir in [program, "dev.autoscene.gone"] {
+            fs::create_dir_all(place.paths.plugin_code().join(dir)).unwrap();
+            fs::write(
+                place.paths.plugin_code().join(dir).join(format!("{}-0123456789abcdef.cwasm", "b".repeat(64))),
+                b"x",
+            )
+            .unwrap();
+        }
+        fs::write(place.paths.plugin_code().join("stray.cwasm"), b"x").unwrap();
+
+        let store = place.store();
+        store.remove_leftovers();
+        assert_eq!(code(&store, ID).unwrap(), kept);
+        assert_eq!(code(&store, loaded).unwrap(), newest);
+        assert_eq!(code(&store, program), None);
+        let mut left: Vec<String> = fs::read_dir(place.paths.plugin_code())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, [ID, loaded]);
+        assert_eq!(fs::read_dir(place.paths.plugins().join(TRASH)).unwrap().count(), 0);
+        // What stays runs.
+        let p = store.get(&id()).unwrap();
+        assert!(
+            wasm::run(store.wasm_spec(&p, hello_action()).unwrap(), &as_core::CancelToken::new(), &|_, _| {}).is_ok()
+        );
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn a_loaded_folder_that_leaves_the_sandbox_is_broken_until_loaded_again() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        let dev = place.folder("hello-wasm", &wasm_plugin(ID, "1.0.0", &guest));
+        let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        assert_eq!((p.broken.as_deref(), p.extra.agreed_runtime()), (None, RuntimeKind::Wasm));
+        assert_eq!(code(&store, ID).unwrap().len(), 1);
+
+        // Its plugin.json now starts a program, with the person's rights.
+        for (path, bytes) in hello("1.0.0") {
+            fs::write(dev.join(path), bytes).unwrap();
+        }
+        let p = store.get(&id()).unwrap();
+        assert_eq!((p.broken.as_deref(), p.manifest.is_none()), (Some(RUNTIME_CHANGED), true));
+        assert!(store.wasm_spec(&p, hello_action()).is_err());
+        assert!(crate::calls::Grants::of(&p).is_err());
+
+        // Loaded again, the person agreed to that; its code goes.
+        let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        assert_eq!((p.broken.as_deref(), p.extra.agreed_runtime()), (None, RuntimeKind::Process));
+        assert_eq!(code(&store, ID), None);
+        // And back into the sandbox: the same.
+        for (path, bytes) in wasm_plugin(ID, "1.0.0", &guest) {
+            fs::write(dev.join(path), bytes).unwrap();
+        }
+        assert_eq!(store.get(&id()).unwrap().broken.as_deref(), Some(RUNTIME_CHANGED));
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn grants_never_exceed_what_was_agreed() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        let mut files = wasm_plugin(ID, "1.0.0", &guest);
+        let dev = place.folder("hello-wasm", &files);
+        store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        // Its plugin.json asks for more after the person agreed.
+        let mut m: Value = serde_json::from_slice(&files[0].1).unwrap();
+        m["permissions"] = json!(["exports:read", "exports:write", "project:read", "network"]);
+        m["network"] = json!({"hosts": ["discord.com"]});
+        files[0].1 = serde_json::to_vec_pretty(&m).unwrap();
+        fs::write(dev.join("plugin.json"), &files[0].1).unwrap();
+        let p = store.get(&id()).unwrap();
+        assert_eq!(p.broken, None);
+        assert_eq!(p.manifest.as_ref().unwrap().permissions.len(), 4);
+        let spec = store.wasm_spec(&p, hello_action()).unwrap();
+        assert_eq!(spec.grants.permissions, [Permission::ExportsRead]);
+        assert!(spec.grants.hosts.is_empty());
+        // A loaded folder's component is hashed at its run.
+        assert_eq!(spec.component_sha256, None);
     }
 
     #[test]

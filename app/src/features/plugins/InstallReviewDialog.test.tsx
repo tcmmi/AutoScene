@@ -43,6 +43,7 @@ const review = (o: Partial<PluginReview> = {}): PluginReview => ({
   resourceBytes: 0,
   resourceHosts: [],
   catalog: null,
+  componentWarnings: [],
   ...o,
 })
 
@@ -163,6 +164,7 @@ describe("the install review", () => {
       addedPages: [],
       startsProgram: false,
       becomesService: false,
+      leavesSandbox: false,
       addedResourceHosts: [],
     }
     show(review({ update }))
@@ -213,6 +215,7 @@ describe("the install review", () => {
           addedPages: [],
           startsProgram: false,
           becomesService: false,
+          leavesSandbox: false,
           addedResourceHosts: [],
         },
       }),
@@ -296,6 +299,7 @@ describe("the install review", () => {
       addedPages: ["clips"],
       startsProgram: false,
       becomesService: false,
+      leavesSandbox: false,
       addedResourceHosts: [],
     }
     // By its id: another page may have the same title.
@@ -333,6 +337,7 @@ describe("the install review", () => {
       addedPages: [],
       startsProgram: false,
       becomesService: true,
+      leavesSandbox: false,
       addedResourceHosts: [],
     }
     show(review({ plugin: counter, update }))
@@ -375,6 +380,7 @@ describe("the install review", () => {
       addedPages: [],
       startsProgram: false,
       becomesService: false,
+      leavesSandbox: false,
       addedResourceHosts: ["cdn.example.com"],
     }
     show(review({ update, resourceBytes: 1_000_000, resourceHosts: ["huggingface.co", "cdn.example.com"] }))
@@ -430,6 +436,7 @@ describe("the install review", () => {
       addedPages: [],
       startsProgram: false,
       becomesService: false,
+      leavesSandbox: false,
       addedResourceHosts: [],
     }
     show(review({ plugin: signed, update }))
@@ -441,6 +448,129 @@ describe("the install review", () => {
     // Only a reviewed package's author is AutoScene's word.
     show(review({ plugin: { ...discord, trust: "reviewed" }, needsUnreviewed: false }))
     expect(screen.getByText("Author")).toBeTruthy()
+  })
+
+  /** Clip List, a WebAssembly plugin: it may change the export's folder, in AutoScene's sandbox. */
+  const clipList = pluginInfo({
+    id: "dev.autoscene.clip-list",
+    name: "Clip List",
+    trust: "unreviewed",
+    runtime: "wasm",
+    uvScript: false,
+    sandbox: { memoryMb: 512, minutes: 30 },
+    permissions: ["exports:write"],
+    exportActions: [{ id: "list", title: "Write the clip list", description: null, afterExport: false }],
+  })
+
+  it("says a WebAssembly plugin runs in a sandbox and its permissions are enforced", () => {
+    show(review({ plugin: clipList }))
+    expect(screen.getByText("It runs in a sandbox. It sees only its own folder and what is listed here.")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "What it may do (enforced)" })).toBeTruthy()
+    expect(screen.getByText("Reads, changes and deletes files in the export's folder")).toBeTruthy()
+    expect(screen.getByText("It can't start programs or see your other files.")).toBeTruthy()
+    expect(screen.getByText("Not limited: how much it writes.")).toBeTruthy()
+    expect(screen.getByText("A WebAssembly plugin. AutoScene checked and compiled it.")).toBeTruthy()
+    // None of what a program's review says, and never "safe".
+    expect(screen.queryByText("It runs with your user rights: it can read, change and send anything you can.")).toBeNull()
+    expect(screen.queryByRole("heading", { name: /not enforced|says it does/ })).toBeNull()
+    expect(screen.queryByText("Changes or adds files beside the exported clips")).toBeNull()
+    expect(document.body.textContent?.toLowerCase()).not.toMatch(/\bsafe/)
+    cleanup()
+
+    // One that names nothing more says so.
+    show(review({ plugin: { ...clipList, permissions: [] } }))
+    expect(screen.getByText("It asks for nothing more.")).toBeTruthy()
+  })
+
+  it("lists the only sites a sandboxed plugin may reach", () => {
+    const update: PluginUpdate = {
+      fromVersion: "1.0.0",
+      trustBefore: "unreviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: ["hooks.example.com"],
+      addedPages: [],
+      startsProgram: false,
+      becomesService: false,
+      leavesSandbox: false,
+      addedResourceHosts: [],
+    }
+    const posting = { ...clipList, permissions: ["exports:read", "network"] as PluginInfo["permissions"], networkHosts: ["discord.com", "hooks.example.com"] }
+    show(review({ plugin: posting, update }))
+    const sites = screen.getByText("Talks to these sites, over https only:").closest("li")
+    expect(sites).toBeTruthy()
+    expect(within(sites as HTMLElement).getByText("discord.com")).toBeTruthy()
+    expect(within(sites as HTMLElement).getByText("New: hooks.example.com")).toBeTruthy()
+    expect(screen.getByText("Reads the files in the export's folder")).toBeTruthy()
+    expect(screen.getByText("Not limited: what it sends to those sites, and how much it writes.")).toBeTruthy()
+  })
+
+  it("says a sandboxed plugin that names no site reaches none", () => {
+    show(review({ plugin: { ...clipList, permissions: ["network"] } }))
+    expect(screen.getByText("May use the network, but names no site: every request is refused.")).toBeTruthy()
+    expect(screen.queryByText("Talks to these sites, over https only:")).toBeNull()
+    expect(screen.getByText("Not limited: how much it writes.")).toBeTruthy()
+    expect(screen.queryByText(/what it sends to those sites/)).toBeNull()
+  })
+
+  it("lists what the check of its component noticed apart from what its plugin.json skipped", () => {
+    const noticed = "It imports wasi:http but doesn't ask for network: every request it makes is refused."
+    show(review({ plugin: clipList, componentWarnings: [noticed] }))
+    const section = screen.getByRole("heading", { name: "Noticed in its component" }).closest("section")
+    expect(within(section as HTMLElement).getByText(noticed)).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Skipped in its plugin.json" })).toBeNull()
+    cleanup()
+    // Nothing noticed, no heading.
+    show(review({ plugin: clipList }))
+    expect(screen.queryByRole("heading", { name: "Noticed in its component" })).toBeNull()
+  })
+
+  it("shows a sandboxed plugin's limits", () => {
+    show(review({ plugin: clipList }))
+    expect(screen.getByText("It may use up to 512 MB of memory. A run stops after 30 minutes.")).toBeTruthy()
+    cleanup()
+    show(review({ plugin: { ...clipList, sandbox: { memoryMb: 64, minutes: 60 } } }))
+    expect(screen.getByText("It may use up to 64 MB of memory. A run stops after 1 hour.")).toBeTruthy()
+  })
+
+  it("warns when an update leaves the sandbox", () => {
+    const update: PluginUpdate = {
+      fromVersion: "1.0.0",
+      trustBefore: "unreviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: [],
+      addedPages: [],
+      startsProgram: false,
+      becomesService: false,
+      leavesSandbox: true,
+      addedResourceHosts: [],
+    }
+    show(review({ plugin: discord, update }))
+    const warning = screen.getByText("The installed version ran in a sandbox. This version runs with your user rights.")
+    expect(warning.className).toContain("text-danger")
+    // The program's review, word for word.
+    expect(screen.getByText("It runs with your user rights: it can read, change and send anything you can.")).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "What it says it does (not enforced)" })).toBeTruthy()
+    cleanup()
+    // An update that stays in it says nothing of the kind.
+    show(review({ plugin: clipList, update: { ...update, leavesSandbox: false } }))
+    expect(screen.queryByText(/ran in a sandbox/)).toBeNull()
+  })
+
+  it("still needs the name typed for an unreviewed sandboxed plugin", async () => {
+    show(review({ plugin: clipList }))
+    expect(screen.getByText("Not reviewed")).toBeTruthy()
+    expect(install().disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText("Type Clip List to install it"), { target: { value: "Clip List" } })
+    expect(install().disabled).toBe(false)
+    fireEvent.click(install())
+    await waitFor(() => expect(commands.pluginInstall).toHaveBeenCalledExactlyOnceWith("t1", true))
+    cleanup()
+    // The setting off: it stays off for a sandboxed plugin too.
+    show(review({ plugin: clipList, allowed: false }))
+    expect(screen.queryByRole("textbox")).toBeNull()
+    expect(install().disabled).toBe(true)
   })
 
   it("drops the review when it is closed", async () => {

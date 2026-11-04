@@ -162,8 +162,14 @@ fn install_question(t: &Ticket) -> (String, String, &'static str) {
         Source::Folder { path } => format!("\nFolder: {path}"),
         Source::Package { .. } => String::new(),
     };
+    // A WebAssembly plugin can't do what a program can: the question says
+    // what is true of it, as the review does.
+    let runs = match m.is_sandboxed() {
+        true => "It runs in a sandbox: it sees only its own folder and what it asks for.",
+        false => "It runs with your user rights: it can read, change and send anything you can.",
+    };
     let text = format!(
-        "AutoScene has not reviewed it. It runs with your user rights: it can read, change and send anything you can.\n\n\
+        "AutoScene has not reviewed it. {runs}\n\n\
          Id: {}\nVersion: {}\nSays it is by: {}\n{signed}{place}",
         m.id, m.version, m.author.name
     );

@@ -456,6 +456,7 @@ describe("PluginsPage", () => {
       resourceBytes: 0,
       resourceHosts: [],
       catalog: null,
+      componentWarnings: [],
     }
     let read: (r: PluginReview) => void = () => {}
     vi.mocked(commands.pluginInspectFolder).mockReturnValueOnce(new Promise((resolve) => (read = resolve)))
@@ -527,6 +528,7 @@ describe("PluginsPage", () => {
       resourceBytes: 0,
       resourceHosts: [],
       catalog: null,
+      componentWarnings: [],
     })
     show(<PluginHero p={p} />)
     await entries("Mine")
@@ -619,7 +621,7 @@ describe("PluginsPage", () => {
     fireEvent.click(load)
     await waitFor(() => expect(load.querySelector(".animate-spin")).not.toBeNull())
     expect(screen.getByRole("button", { name: /Install from a file/ }).querySelector(".animate-spin")).toBeNull()
-    checked({ ticketId: "t", plugin: pluginInfo({ id: "dev.me.mine", name: "Mine" }), update: null, needsUnreviewed: true, allowed: true, uvMissing: false, uvBytes: 15236317, resourceBytes: 0, resourceHosts: [], catalog: null })
+    checked({ ticketId: "t", plugin: pluginInfo({ id: "dev.me.mine", name: "Mine" }), update: null, needsUnreviewed: true, allowed: true, uvMissing: false, uvBytes: 15236317, resourceBytes: 0, resourceHosts: [], catalog: null, componentWarnings: [] })
     await waitFor(() => expect(load.querySelector(".animate-spin")).toBeNull())
   })
 
@@ -644,6 +646,7 @@ describe("PluginsPage", () => {
       resourceBytes: 0,
       resourceHosts: [],
       catalog: null,
+      componentWarnings: [],
     })
     fireEvent.click(install)
     expect(await screen.findByRole("heading", { name: "Install Notify?" })).toBeTruthy()
@@ -662,6 +665,28 @@ describe("PluginsPage", () => {
     expect(install.querySelector(".animate-spin")).not.toBeNull()
     act(() => useInstallFlow.setState({ checking: null, busy: false }))
     expect((install as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it("marks sandboxed plugins", async () => {
+    state.plugins = [
+      pluginInfo({ id: "dev.a.boxed", name: "Boxed", trust: "unreviewed", runtime: "wasm", uvScript: false, sandbox: { memoryMb: 512, minutes: 30 } }),
+      pluginInfo({ id: "dev.a.program", name: "Program" }),
+    ]
+    show()
+    const boxed = within(await card("Boxed")).getByText("Sandboxed")
+    // In AutoScene's caption, beside its trust, never on the plugin's art.
+    expect(within(await card("Boxed")).getByText("Not reviewed").parentElement).toBe(boxed.parentElement)
+    expect((await art("Boxed")).contains(boxed)).toBe(false)
+    expect(within(await card("Program")).queryByText("Sandboxed")).toBeNull()
+    cleanup()
+
+    // And among the facts on its screen.
+    show(<PluginHero p={state.plugins[0]} />)
+    expect(await screen.findByText("Sandboxed")).toBeTruthy()
+    cleanup()
+    show(<PluginHero p={state.plugins[1]} />)
+    await screen.findByText("version 1.0.0")
+    expect(screen.queryByText("Sandboxed")).toBeNull()
   })
 
   it("uninstalls a plugin, and what it kept only when asked", async () => {

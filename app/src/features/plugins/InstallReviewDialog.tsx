@@ -1,7 +1,7 @@
 import type * as React from "react"
 import { useId, useState } from "react"
 import { toast } from "sonner"
-import type { PageSpec, PluginInfo, PluginReview, PluginUpdate, ReviewCatalog } from "@/bindings"
+import type { PageSpec, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, ReviewCatalog } from "@/bindings"
 import { CircleNotch, ShieldCheck } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -16,12 +16,12 @@ import { catalogDay } from "./catalog-items"
 import { PluginIcon } from "./PluginIcon"
 import { allowUnreviewed } from "./plugin-actions"
 import { MAX_RAIL_PAGES } from "./page-items"
-import { checkedWhen, firstTime, joinWords, permissionLabel, resourceLine, reviewedPackage, trustLabel, trustLine } from "./plugin-items"
+import { checkedWhen, firstTime, joinWords, limitsLine, permissionLabel, resourceLine, reviewedPackage, trustLabel, trustLine } from "./plugin-items"
 
 /**
  * A plugin package (or folder) checked for install, before the person says
- * yes: who stands behind it, what it says it does, how it runs and what it
- * adds. One AutoScene hasn't reviewed needs the setting (which can be turned
+ * yes: who stands behind it, what it says it does (or, in AutoScene's
+ * sandbox, what it may do), how it runs and what it adds. One AutoScene hasn't reviewed needs the setting (which can be turned
  * on here), its name typed, and the person's yes in the dialog AutoScene
  * then shows outside the page. Closed without installing, the review goes,
  * and the files it unpacked. It shows what `usePluginReview` holds, from
@@ -180,6 +180,9 @@ function ReviewForm({
           <p className="text-sm text-fg-1">{trustLine(p, review.update)}</p>
           {review.catalog && <Built catalog={review.catalog} />}
           {review.update && <Before update={review.update} p={p} />}
+          {review.update?.leavesSandbox && (
+            <p className="text-sm text-danger">The installed version ran in a sandbox. This version runs with your user rights.</p>
+          )}
         </div>
 
         {/* The plugin's words, not AutoScene's. */}
@@ -199,6 +202,18 @@ function ReviewForm({
             <h3 className="text-sm font-medium text-fg-2">Skipped in its plugin.json</h3>
             <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-fg-2">
               {p.warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* What the check of its component found: nothing was skipped, it runs as it is. */}
+        {review.componentWarnings.length > 0 && (
+          <section>
+            <h3 className="text-sm font-medium text-fg-2">Noticed in its component</h3>
+            <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-fg-2">
+              {review.componentWarnings.map((w, i) => (
                 <li key={i}>{w}</li>
               ))}
             </ul>
@@ -299,10 +314,12 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * What the plugin says it does, with what an update adds marked: a
  * program's claim, which AutoScene checks only when its pages or its
  * program ask it for something; or what AutoScene checks for a plugin that
- * runs none, which is its pages.
+ * runs none, which is its pages. A plugin in AutoScene's sandbox says what
+ * it may do instead ([`Sandboxed`]).
  */
 function Permissions({ review }: { review: PluginReview }) {
   const p = review.plugin
+  if (p.sandbox) return <Sandboxed review={review} sandbox={p.sandbox} />
   const added = review.update?.addedPermissions ?? []
   const newHosts = review.update?.addedHosts ?? []
   const hosts = p.networkHosts.filter((h) => !newHosts.includes(h))
@@ -328,6 +345,45 @@ function Permissions({ review }: { review: PluginReview }) {
         {p.gpu && <li>Uses the graphics card: its runs wait while an analysis runs</li>}
       </ul>
       {checked && <p className="mt-1.5 text-sm text-fg-2">{checked}</p>}
+    </section>
+  )
+}
+
+/**
+ * What a WebAssembly plugin may do in AutoScene's sandbox, with what an
+ * update adds marked: walls AutoScene keeps, not the plugin's word. Then
+ * what it can't do, its limits, and what the sandbox doesn't limit. It never
+ * says "safe".
+ */
+function Sandboxed({ review, sandbox }: { review: PluginReview; sandbox: PluginSandbox }) {
+  const p = review.plugin
+  const added = review.update?.addedPermissions ?? []
+  const newHosts = review.update?.addedHosts ?? []
+  const hosts = p.networkHosts.filter((h) => !newHosts.includes(h))
+  // What it sends is unlimited only where it may send it.
+  const network = p.permissions.includes("network") && p.networkHosts.length > 0
+  return (
+    <section>
+      <p className="mb-3 text-md text-fg-1">It runs in a sandbox. It sees only its own folder and what is listed here.</p>
+      <h3 className="text-sm font-medium text-fg-2">What it may do (enforced)</h3>
+      <ul className="mt-1.5 flex flex-col gap-1.5 text-md text-fg-1">
+        {p.permissions.map((perm) => (
+          <li key={perm} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {permissionLabel(perm, { hosts: p.networkHosts })}
+            {added.includes(perm) && <Badge tone="accent">New</Badge>}
+            {perm === "network" && hosts.length > 0 && <span className="text-sm text-fg-2">{hosts.join(", ")}</span>}
+            {perm === "network" && newHosts.length > 0 && (
+              <span className="text-sm text-accent">New: {newHosts.join(", ")}</span>
+            )}
+          </li>
+        ))}
+        {p.permissions.length === 0 && <li className="text-fg-2">It asks for nothing more.</li>}
+      </ul>
+      <div className="mt-1.5 flex flex-col gap-1 text-sm text-fg-2">
+        <p>It can't start programs or see your other files.</p>
+        <p>{limitsLine(sandbox)}</p>
+        <p>{network ? "Not limited: what it sends to those sites, and how much it writes." : "Not limited: how much it writes."}</p>
+      </div>
     </section>
   )
 }
@@ -359,7 +415,9 @@ function Runs({ review }: { review: PluginReview }) {
       <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-md text-fg-1">
         {p.runtime === "none"
           ? "Runs no program. Its pages run in a sandbox."
-          : p.uvScript
+          : p.sandbox
+            ? "A WebAssembly plugin. AutoScene checked and compiled it."
+            : p.uvScript
             ? `A Python script that uv runs. On its ${first}${getsUv} Python (if this computer has none) and the packages the script names.`
             : "A program in its folder."}
         {startsProgram && <Badge tone="accent">New</Badge>}

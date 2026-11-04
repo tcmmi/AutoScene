@@ -281,9 +281,15 @@ impl Grants {
         self.runtime == RuntimeKind::Service
     }
 
-    /// Whether its pages may start its runs: its program speaks protocol 2.
+    /// Whether its pages may start its runs: its program speaks protocol 2,
+    /// or it is a WebAssembly plugin, whose world has a page's trigger and
+    /// input from its first version.
     pub fn takes_page_runs(&self) -> bool {
-        matches!(self.runtime, RuntimeKind::Process | RuntimeKind::Service) && self.protocol >= 2
+        match self.runtime {
+            RuntimeKind::Process | RuntimeKind::Service => self.protocol >= 2,
+            RuntimeKind::Wasm => true,
+            RuntimeKind::None => false,
+        }
     }
 
     pub fn has(&self, p: Permission) -> bool {
@@ -1023,10 +1029,12 @@ mod tests {
                 }
             }
         }
-        // Page runs need a program that speaks protocol 2.
+        // Page runs need a program that speaks protocol 2, or a WebAssembly
+        // plugin of any protocol.
         assert!(Grants { protocol: 2, ..grants(&[]) }.takes_page_runs());
         assert!(!Grants { protocol: 1, ..grants(&[]) }.takes_page_runs());
         assert!(!Grants { runtime: RuntimeKind::None, ..grants(&[]) }.takes_page_runs());
+        assert!(Grants { runtime: RuntimeKind::Wasm, protocol: 1, ..grants(&[]) }.takes_page_runs());
         assert!(!grants(&[]).service() && all().service());
     }
 

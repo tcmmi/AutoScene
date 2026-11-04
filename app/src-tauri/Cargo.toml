@@ -41,7 +41,8 @@ as-export.workspace = true
 as-jobs.workspace = true
 as-media.workspace = true
 as-models.workspace = true
-as-plugin.workspace = true
+# WebAssembly plugins run in the app's sandbox (wasmtime).
+as-plugin = { workspace = true, features = ["wasm"] }
 as-project.workspace = true
 base64.workspace = true
 parking_lot.workspace = true
@@ -69,6 +70,8 @@ tauri-plugin-single-instance = "=3.0.0-alpha.2"
 tauri-plugin-window-state = "=3.0.0-alpha.2"
 
 [dev-dependencies]
+# The WebAssembly plugin tests run the sandbox's test guest.
+as-testkit.workspace = true
 # The catalog's tests sign the indexes they serve.
 minisign.workspace = true
 # The catalog's tests make writing its row fail, with a trigger.

@@ -408,10 +408,15 @@ own folder and what is listed here.", heads the list "What it may do
 (enforced)", and adds "It can't start programs or see your other files.",
 the plugin's limits ("It may use up to 512 MB of memory. A run stops after
 30 minutes.") and "Not limited: what it sends to those sites, and how much
-it writes." Under how it runs it says "A WebAssembly plugin. AutoScene
-checked and compiled it." Settings → Plugins marks it **Sandboxed**. An
-update that leaves the sandbox says so in red: "The installed version ran
-in a sandbox. This version runs with your user rights."
+it writes." (without `network`: "Not limited: how much it writes."). With
+`network` but no `network.hosts` it says "May use the network, but names
+no site: every request is refused." Under how it runs it says "A
+WebAssembly plugin. AutoScene checked and compiled it." Plugins marks it **Sandboxed**, on its card and on its screen, and its
+settings say "It runs in a sandbox. AutoScene enforces these." under what
+it may use. An update that leaves the sandbox for a program or a service
+says so in red: "The installed version ran in a sandbox. This version runs
+with your user rights." (one of pages only runs no program: its pages run
+in their own sandbox).
 
 **What the sandbox doesn't limit:**
 
@@ -513,6 +518,8 @@ imports:
 It warns of a component that imports wasi:http without the network
 permission ("It imports wasi:http but doesn't ask for network: every
 request it makes is refused.") and of the permission without the import.
+The review lists these under "Noticed in its component", apart from what
+its `plugin.json` skipped.
 It fails, with exit code 1, on what AutoScene would refuse: a file that
 isn't a component ("Build it for wasm32-wasip2 or with componentize-py."),
 one larger than 64 MB, one that imports what AutoScene doesn't offer or
@@ -1820,7 +1827,8 @@ secret settings, which need `"manifestVersion": 2`. A higher
 `process`, `service`, `none` and `wasm`, needs a newer AutoScene.
 
 The review lists the warnings under "Skipped in its plugin.json", and so
-do the plugin's settings.
+do the plugin's settings. What the check of a WebAssembly plugin's
+component notices is listed apart, under "Noticed in its component".
 
 ## Packages
 

@@ -704,8 +704,18 @@ fn a_component_is_prepared_once_for_its_code() {
         checked.warnings,
         ["It imports wasi:http but doesn't ask for network: every request it makes is refused."]
     );
-    let left: Vec<PathBuf> = fs::read_dir(&code).unwrap().map(|e| e.unwrap().path()).collect();
-    assert_eq!(left, [file]);
+    // Beside the code there, which may be the installed version's: the
+    // store keeps only the new code once the person agreed to it.
+    let left = || {
+        let mut left: Vec<PathBuf> = fs::read_dir(&code).unwrap().map(|e| e.unwrap().path()).collect();
+        left.sort();
+        left
+    };
+    let mut both = vec![file.clone(), code.join("older.cwasm")];
+    both.sort();
+    assert_eq!(left(), both);
+    wasm::keep_only(&code, &file.file_name().unwrap().to_string_lossy());
+    assert_eq!(left(), [file]);
     let wrong = wasm::prepare(&g.component, Some(&sha256_hex(b"other")), &code, &wasm_manifest(true));
     assert!(matches!(wrong, Err(PluginError::Invalid(_))), "{wrong:?}");
     assert!(wasm::check(&bytes, Some(&wasm_manifest(true))).unwrap().warnings.is_empty());

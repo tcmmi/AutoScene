@@ -25,12 +25,13 @@ const NOT_ALLOWED = "Doesn't run until the setting below allows it."
 /**
  * A plugin as its artwork, in the language of a project's card: the art opens
  * its settings, ⋯ shows on hover. Under the art, AutoScene's caption: how far
- * it trusts the plugin, who the plugin says it is by and its version, and its
- * switch; then why it doesn't run, when it is broken or not allowed. None of
- * that is ever drawn on the plugin's own pixels. When the catalog offers a
- * newer version (`update`), Update… sits before the switch. A plugin AutoScene
- * withdrew says "Withdrawn" in place of its trust, with the catalog's reason
- * under it, and its switch is off and can't be turned on.
+ * it trusts the plugin and whether it runs in the sandbox, who the plugin
+ * says it is by and its version, and its switch; then why it doesn't run,
+ * when it is broken or not allowed. None of that is ever drawn on the
+ * plugin's own pixels. When the catalog offers a newer version (`update`),
+ * Update… sits before the switch. A plugin AutoScene withdrew says
+ * "Withdrawn" in place of its trust, with the catalog's reason under it, and
+ * its switch is off and can't be turned on.
  */
 export function PluginCard({
   p,
@@ -97,9 +98,16 @@ export function PluginCard({
         </div>
         {/* The facts have a line of their own: beside the badge, three cards to a row would cut them. */}
         <div className="mt-3 flex items-center justify-between gap-3 pl-0.5">
-          <Badge tone={trust.tone} className="min-w-0 truncate">
-            {trust.label}
-          </Badge>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Badge tone={trust.tone} className="min-w-0 truncate">
+              {trust.label}
+            </Badge>
+            {p.sandbox && (
+              <Badge tone="outline" className="shrink-0">
+                Sandboxed
+              </Badge>
+            )}
+          </div>
           {update && (
             <Button size="sm" className="ml-auto" disabled={getting} onClick={onUpdate}>
               {getting ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />} Update…

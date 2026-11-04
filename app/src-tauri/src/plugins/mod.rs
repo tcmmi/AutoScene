@@ -26,12 +26,19 @@
 //! project, its export and its settings, and reach the hosts it names on
 //! the internet ([`calls`]).
 //!
+//! A WebAssembly plugin runs in AutoScene's sandbox instead of as a program
+//! ([`as_plugin::wasm`]): it gets what its grants give it, the values of its
+//! secrets read before it starts (no keychain call happens while it runs),
+//! and never FFmpeg, so a run of it doesn't wait for the app's tools. Its
+//! runs are jobs as a program's are: Stop, turning it off, uninstalling it
+//! and the setting going off cancel it, and it is ended 5 seconds later.
+//!
 //! A page of such a plugin may start its actions (`actions.run`): each is
 //! queued as the person's own runs are, shown in Activity and stopped with
 //! them, in the project the page is open in, and gets what the page handed
 //! it as its `input`. The same run with the same input waits once. Only a
-//! program of protocol 2 is started by a page: one of protocol 1 would read
-//! a trigger it doesn't know.
+//! program of protocol 2, or a WebAssembly plugin, is started by a page: a
+//! program of protocol 1 would read a trigger it doesn't know.
 //!
 //! A plugin's pages open in a frame of the app's page, each as a session
 //! the `asp` scheme serves ([`pages`]). A page opens only while its plugin
@@ -70,7 +77,7 @@ pub mod pages;
 pub mod services;
 
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,6 +90,7 @@ use as_plugin::pages::{Mount, Pages};
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage};
 use as_plugin::service::STOP_GRACE;
 use as_plugin::store::RECORD_VERSION;
+use as_plugin::wasm;
 use as_plugin::{
     ActionContext, ActionKind, Approval, Caller, CommandSpec, Extra, Grants, HostCalls, HostMethod, Installed, Launch,
     Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record, Resource, Resources,
@@ -348,7 +356,8 @@ pub struct PluginInfo {
     /// Why AutoScene withdrew its version, in the catalog's words: it
     /// doesn't run, whatever else it is.
     pub withdrawn: Option<String>,
-    /// What it says it does: declared by its author, not enforced.
+    /// What it says it does: declared by its author, and enforced only for
+    /// a plugin that runs in the sandbox (`sandbox`).
     pub permissions: Vec<Permission>,
     pub network_hosts: Vec<String>,
     /// It uses the GPU, so its runs wait for the analysis.
@@ -360,8 +369,12 @@ pub struct PluginInfo {
     pub export_actions: Vec<PluginExportAction>,
     pub commands: Vec<CommandSpec>,
     pub settings: Vec<SettingSpec>,
-    /// How it runs: a program for each run, or none (it has only pages).
+    /// How it runs: a program for each run, a WebAssembly component in
+    /// AutoScene's sandbox, or none (it has only pages).
     pub runtime: RuntimeKind,
+    /// What a run may use, when it runs in AutoScene's sandbox (a
+    /// WebAssembly plugin): its permissions are then enforced.
+    pub sandbox: Option<PluginSandbox>,
     /// The protocol its program speaks (`engines.protocol`), which its
     /// pages see too.
     pub protocol: u32,
@@ -384,6 +397,17 @@ pub struct PluginInfo {
     /// What the large files its `plugin.json` names take on the disk now,
     /// in bytes (by their sizes; 0 for one that names none or got none yet).
     pub resource_bytes: f64,
+}
+
+/// What a run of a plugin in AutoScene's sandbox may use before it is
+/// stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSandbox {
+    /// The memory of all its memories together, in MB.
+    pub memory_mb: u32,
+    /// How long a run may take, in minutes.
+    pub minutes: u32,
 }
 
 /// Where a plugin's files are.
@@ -436,6 +460,10 @@ pub struct PluginReview {
     /// Where AutoScene's catalog says the plugin was built from, when the
     /// catalog reviewed it.
     pub catalog: Option<ReviewCatalog>,
+    /// What the check of a WebAssembly plugin's component found that may
+    /// surprise its author (its plugin.json's skipped parts are the
+    /// plugin's `warnings`).
+    pub component_warnings: Vec<String>,
 }
 
 /// What AutoScene's catalog says of a plugin it reviewed.
@@ -483,6 +511,10 @@ pub struct PluginUpdate {
     /// It keeps its program running while its page is open, and the
     /// installed version, as the person agreed to it, doesn't.
     pub becomes_service: bool,
+    /// The installed version, as the person agreed to it, runs in the
+    /// sandbox, and this one runs a program outside it: with their user
+    /// rights. One of pages only isn't said to: its pages run in theirs.
+    pub leaves_sandbox: bool,
     /// Hosts its large files come from that the installed version's
     /// `plugin.json` doesn't name (all of them when that can't be read).
     pub added_resource_hosts: Vec<String>,
@@ -1092,6 +1124,7 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
         commands: m.map(|m| m.commands.clone()).unwrap_or_default(),
         settings: m.map(|m| m.settings.clone()).unwrap_or_default(),
         runtime: m.map_or_else(|| p.extra.agreed_runtime(), |m| m.runtime.kind),
+        sandbox: m.and_then(sandbox),
         protocol: m.map_or(1, |m| m.engines.protocol),
         pages: m.map(|m| m.pages.clone()).unwrap_or_default(),
         secrets_set: p.secrets_stored(),
@@ -1104,6 +1137,12 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
         warnings: p.warnings.clone(),
         resource_bytes: store.resource_bytes(p) as f64,
     }
+}
+
+/// What a run of the plugin of `m` may use, when it runs in the sandbox.
+fn sandbox(m: &Manifest) -> Option<PluginSandbox> {
+    let limits = m.is_sandboxed().then(|| m.runtime.limits.unwrap_or_default())?;
+    Some(PluginSandbox { memory_mb: limits.memory_mb, minutes: limits.minutes })
 }
 
 /// `t` for the review dialog of `host`, with `allow_unreviewed` the
@@ -1126,6 +1165,7 @@ pub fn review(t: &Ticket, host: &PluginHost, allow_unreviewed: bool) -> PluginRe
         resource_bytes: host.resources.to_get(&t.manifest.id, &t.manifest.resources) as f64,
         resource_hosts: t.manifest.resource_hosts(),
         catalog: t.approval.as_ref().map(ReviewCatalog::from),
+        component_warnings: t.component_warnings.clone(),
         plugin,
     }
 }
@@ -1196,6 +1236,7 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
         // Only by what the person agreed to: one whose row is gone isn't
         // said to change how it runs.
         becomes_service: before.is_some() && agreed != RuntimeKind::Service && m.runtime.kind == RuntimeKind::Service,
+        leaves_sandbox: before.is_some() && agreed == RuntimeKind::Wasm && m.runs_program() && !m.is_sandboxed(),
         added_resource_hosts: m.resource_hosts().into_iter().filter(|h| !fetched_from.contains(h)).collect(),
     }
 }
@@ -1206,7 +1247,7 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
 /// one. `input` is what a page handed it, and comes only with
 /// `Trigger::Page`. None when the same run waits or runs already. A plugin
 /// that isn't active is refused, and so is a run from a page of one whose
-/// program doesn't speak protocol 2.
+/// program doesn't speak protocol 2 (a WebAssembly plugin takes it).
 #[allow(clippy::too_many_arguments)]
 pub fn queue_run(
     app: &AppHandle,
@@ -1229,9 +1270,9 @@ pub fn queue_run(
 }
 
 /// Whether `p` takes a run that `trigger` started: one from a page only
-/// while its program speaks protocol 2, as its page's call was checked,
-/// with the plugin as it is now. A protocol 1 program would read a trigger
-/// it doesn't know.
+/// while its program speaks protocol 2 or it is a WebAssembly plugin, as
+/// its page's call was checked, with the plugin as it is now. A protocol 1
+/// program would read a trigger it doesn't know.
 fn takes(p: &Installed, trigger: Trigger) -> PluginResult<()> {
     match trigger {
         Trigger::Page => {
@@ -1300,8 +1341,8 @@ fn job_spec(m: &Manifest, title: &str, project_id: Option<ProjectId>, export_id:
 }
 
 /// The queued run `key`, started by `trigger` with `input`, now it starts;
-/// `gpu` is whether it waited as analysis. A plugin of protocol 2 gets its
-/// calls answered.
+/// `gpu` is whether it waited as analysis. A program of protocol 2 gets its
+/// calls answered; a WebAssembly plugin runs in the sandbox.
 fn run(
     app: &AppHandle,
     host: &Arc<PluginHost>,
@@ -1316,21 +1357,70 @@ fn run(
     let _running = host.hold(ctx, &key.plugin)?;
     let state = app.state::<AppState>();
     let p = startable(&host.store, &state.library, key, trigger, gpu)?;
-    let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
     let action = ActionContext { kind: key.kind, id: key.action.clone(), trigger };
-    let tools_at = (tools.ffmpeg.as_path(), tools.ffprobe.as_path(), tools.version.as_str());
-    let report = |stage: &str, f: Option<f64>| ctx.report(stage, f);
-    let mut spec = host.run_spec(&p, action, tools_at, &ctx.cancel, &report).map_err(plugin_job_error)?;
-    add_context(&mut spec.message, &*state.library, key, input).map_err(job_error)?;
-    let calls = calls_for(&state.library, host, &p, key, spec.protocol).map_err(plugin_job_error)?;
-    spec.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
-    ctx.stage(&format!("Starting {}", spec.name));
-    if let Some(message) =
-        runtime::run(spec, &ctx.cancel, &|stage, f| ctx.report(stage, f)).map_err(plugin_job_error)?
-    {
+    let said = if sandboxed(&p) {
+        let spec = wasm_spec_for(&host.store, &*state.library, &p, key, action, input)?;
+        ctx.stage(&format!("Starting {}", spec.name));
+        wasm::run(spec, &ctx.cancel, &|stage, f| ctx.report(stage, f))
+    } else {
+        let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
+        let tools_at = (tools.ffmpeg.as_path(), tools.ffprobe.as_path(), tools.version.as_str());
+        let report = |stage: &str, f: Option<f64>| ctx.report(stage, f);
+        let mut spec = host.run_spec(&p, action, tools_at, &ctx.cancel, &report).map_err(plugin_job_error)?;
+        add_context(&mut spec.message, &*state.library, key, input).map_err(job_error)?;
+        let calls = calls_for(&state.library, host, &p, key, spec.protocol).map_err(plugin_job_error)?;
+        spec.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
+        ctx.stage(&format!("Starting {}", spec.name));
+        runtime::run(spec, &ctx.cancel, &|stage, f| ctx.report(stage, f))
+    };
+    if let Some(message) = said.map_err(plugin_job_error)? {
         ctx.message(&message);
     }
     Ok(())
+}
+
+/// Whether a run of `p` runs in the sandbox: it is a WebAssembly plugin,
+/// whose run needs no FFmpeg.
+fn sandboxed(p: &Installed) -> bool {
+    p.manifest.as_ref().and_then(|m| m.launch().ok()).is_some_and(|l| !needs_tools(&l))
+}
+
+/// The run `key` of the WebAssembly plugin `p`, of `action`, with `input`
+/// from its page: what [`Store::wasm_spec`] gives, with the values of its
+/// set secrets and what it runs on, as `places` has them now.
+fn wasm_spec_for(
+    store: &Store,
+    places: &dyn calls::Places,
+    p: &Installed,
+    key: &RunKey,
+    action: ActionContext,
+    input: Option<Value>,
+) -> Result<wasm::WasmSpec, JobError> {
+    let mut spec = store.wasm_spec(p, action).map_err(plugin_job_error)?;
+    spec.secrets = secret_values(store, &p.record.id, &spec.grants.secrets).map_err(plugin_job_error)?;
+    add_context(&mut spec.message, places, key, input).map_err(job_error)?;
+    Ok(spec)
+}
+
+/// Whether a run that starts as `launch` needs the app's FFmpeg: a program
+/// does; a WebAssembly component can't start one, so a broken FFmpeg never
+/// stops it.
+fn needs_tools(launch: &Launch) -> bool {
+    !matches!(launch, Launch::Wasm { .. })
+}
+
+/// The values of the secret settings `keys` of the plugin `id` that are
+/// set, by key: read from the keychain once, before a WebAssembly plugin's
+/// run starts, which asks for them while it runs. A keychain that refuses
+/// fails the run, as it fails a page's `secrets.get`.
+fn secret_values(store: &Store, id: &PluginId, keys: &[String]) -> PluginResult<BTreeMap<String, String>> {
+    let mut values = BTreeMap::new();
+    for key in keys {
+        if let Some(value) = store.secret(id, key)? {
+            values.insert(key.clone(), value);
+        }
+    }
+    Ok(values)
 }
 
 /// The answers to the calls of the run `key` of `p`, whose plugin speaks
@@ -2283,6 +2373,147 @@ mod tests {
         before.extra = Extra::agreed(RuntimeKind::Service);
         assert!(!update(&previous, Some(&before), &service).becomes_service, "it served already");
         assert!(!update(&previous, None, &service).becomes_service, "its row gone");
+    }
+
+    /// The `plugin.json` of the WebAssembly plugin `id`, with `limits`.
+    fn wasm_manifest(id: &str, limits: Option<serde_json::Value>) -> serde_json::Value {
+        let mut m = manifest(id, false);
+        m["manifestVersion"] = serde_json::json!(2);
+        m["runtime"] = serde_json::json!({"type": "wasm", "component": "plugin.wasm"});
+        if let Some(limits) = limits {
+            m["runtime"]["limits"] = limits;
+        }
+        m
+    }
+
+    /// The WebAssembly plugin `id` of `trust`, as the person agreed to it.
+    fn wasm_plugin(id: &str, trust: Trust, limits: Option<serde_json::Value>) -> Installed {
+        let mut p = plugin(id, trust, false);
+        let m = wasm_manifest(id, limits).to_string();
+        p.manifest = Some(as_plugin::manifest::parse_for_any_app(m.as_bytes()).unwrap().manifest);
+        p.extra = Extra::agreed(RuntimeKind::Wasm);
+        p
+    }
+
+    #[test]
+    fn a_wasm_run_never_waits_for_the_gpu() {
+        let (project, export) = (Some(ProjectId::new()), Some(ExportId::new()));
+        let p = wasm_plugin("dev.a.boxed", Trust::Reviewed, None);
+        let m = p.manifest.as_ref().unwrap();
+        // A WebAssembly plugin can't ask for the GPU: its runs are plugin jobs.
+        let mut gpu = wasm_manifest("dev.a.boxed", None);
+        gpu["runtime"]["gpu"] = serde_json::json!(true);
+        assert!(as_plugin::manifest::parse_for_any_app(gpu.to_string().as_bytes()).is_err());
+        assert!(!m.runtime.gpu);
+        let spec = job_spec(m, "Post", project, export);
+        assert_eq!((spec.kind, spec.class, spec.media_id), (JobKind::Plugin, Class::Plugin, None));
+    }
+
+    #[test]
+    fn a_wasm_run_needs_no_ffmpeg() {
+        assert!(!needs_tools(&Launch::Wasm { component: "plugin.wasm".into() }));
+        assert!(needs_tools(&Launch::UvScript { script: "main.py".into() }));
+        assert!(needs_tools(&Launch::Exe { program: "bin/tool.exe".into(), args: Vec::new() }));
+    }
+
+    #[test]
+    fn a_wasm_plugin_says_it_is_sandboxed_and_its_limits() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-sandbox-info-{}", std::process::id()));
+        let (_lib, host) = host_in(&tmp);
+        let boxed = info(&wasm_plugin("dev.a.boxed", Trust::Unreviewed, None), &host.store, true);
+        assert_eq!(boxed.runtime, RuntimeKind::Wasm);
+        assert_eq!(boxed.sandbox, Some(PluginSandbox { memory_mb: 512, minutes: 30 }));
+        // It runs no uv script and no service, and its pages may start its runs.
+        assert!(!boxed.uv_script && boxed.service_log_path.is_none());
+        let limited =
+            wasm_plugin("dev.a.small", Trust::Reviewed, Some(serde_json::json!({"memoryMb": 64, "minutes": 2})));
+        assert_eq!(info(&limited, &host.store, false).sandbox, Some(PluginSandbox { memory_mb: 64, minutes: 2 }));
+        assert!(takes(&limited, Trigger::Page).is_ok());
+        // A program isn't, whatever it says; nor is a broken plugin, which doesn't run.
+        assert_eq!(info(&plugin("dev.a.program", Trust::Reviewed, false), &host.store, true).sandbox, None);
+        let mut broken = wasm_plugin("dev.a.broken", Trust::Reviewed, None);
+        (broken.manifest, broken.broken) = (None, Some(as_plugin::store::MISSING.into()));
+        assert_eq!(info(&broken, &host.store, true).sandbox, None);
+        // The app's page reads it by these names.
+        let json = serde_json::to_value(&boxed).unwrap();
+        assert_eq!(json["sandbox"], serde_json::json!({"memoryMb": 512, "minutes": 30}));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn an_update_that_leaves_the_sandbox_says_so() {
+        let previous = plugin("dev.a.boxed", Trust::Unreviewed, false).record;
+        let before = wasm_plugin("dev.a.boxed", Trust::Unreviewed, None);
+        let program = plugin("dev.a.boxed", Trust::Unreviewed, false).manifest.unwrap();
+        let sandboxed = before.manifest.clone().unwrap();
+        let u = update(&previous, Some(&before), &program);
+        assert!(u.leaves_sandbox);
+        assert!(!u.starts_program && !u.becomes_service);
+        // Staying in it, or never in it, says nothing; nor one whose row is gone.
+        assert!(!update(&previous, Some(&before), &sandboxed).leaves_sandbox);
+        let mut process = before.clone();
+        process.extra = Extra::agreed(RuntimeKind::Process);
+        assert!(!update(&previous, Some(&process), &program).leaves_sandbox);
+        assert!(!update(&previous, None, &program).leaves_sandbox);
+        // By what the person agreed to, also while the installed version is broken.
+        let mut broken = before.clone();
+        broken.manifest = None;
+        assert!(update(&previous, Some(&broken), &program).leaves_sandbox);
+        // A plugin of pages only runs no program outside it: its pages run
+        // in their own sandbox, as the review says.
+        let pages =
+            page_only("dev.a.boxed", serde_json::json!([{"id": "main", "title": "Main", "entry": "ui/main.html"}]));
+        let pages = as_plugin::manifest::parse_for_any_app(pages.to_string().as_bytes()).unwrap().manifest;
+        let u = update(&previous, Some(&before), &pages);
+        assert!(!u.leaves_sandbox && !u.starts_program);
+        // A service leaves it.
+        let mut service =
+            page_only("dev.a.boxed", serde_json::json!([{"id": "main", "title": "Main", "entry": "ui/main.html"}]));
+        service["runtime"] = serde_json::json!({"type": "service", "command": {"*": UV}});
+        let service = as_plugin::manifest::parse_for_any_app(service.to_string().as_bytes()).unwrap().manifest;
+        assert!(update(&previous, Some(&before), &service).leaves_sandbox);
+        let u = update(&previous, Some(&before), &program);
+        assert_eq!(serde_json::to_value(&u).unwrap()["leavesSandbox"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn a_wasm_run_gets_its_set_secrets_and_what_it_runs_on() {
+        // The test guest (`cargo xtask wasm-guests`): its component is checked and compiled at load.
+        let Some(guest) = as_testkit::fixture_file("wasm/guest.wasm") else { return };
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-wasm-spec-{}", std::process::id()));
+        let secrets = Arc::new(as_plugin::MemorySecrets::default());
+        let (lib, host) = host_keeping(&tmp, secrets.clone());
+        let mut m = wasm_manifest("dev.a.keeper", None);
+        m["contributes"]["settings"] = serde_json::json!([
+            {"key": "token", "type": "secret", "title": "Token"},
+            {"key": "spare", "type": "secret", "title": "Spare"}
+        ]);
+        let dir = tmp.join("dev.a.keeper");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(&guest, dir.join("plugin.wasm")).unwrap();
+        std::fs::write(dir.join("plugin.json"), m.to_string()).unwrap();
+        let p = host.store.commit(host.store.stage_folder(&dir).unwrap(), true, true).unwrap();
+        let id = p.record.id.clone();
+        host.store.secret_set(&id, "token", "s3cret").unwrap();
+        let p = host.store.get(&id).unwrap();
+        assert!(sandboxed(&p));
+
+        let input = serde_json::json!({"from": "its page"});
+        let run = RunKey::new(&id, ActionKind::ExportAction, "post", None, None, Some(&input));
+        let action = ActionContext { kind: ActionKind::ExportAction, id: "post".into(), trigger: Trigger::Page };
+        let spec = wasm_spec_for(&host.store, &lib, &p, &run, action, Some(input.clone())).unwrap();
+        // Only the secrets that are set, by key, read before it starts.
+        assert_eq!(spec.secrets, BTreeMap::from([("token".into(), "s3cret".into())]));
+        // No FFmpeg, which it can't start; what its page handed it.
+        assert_eq!((spec.message.tools.ffmpeg.as_str(), spec.message.tools.ffprobe.as_str()), ("", ""));
+        assert_eq!(spec.message.input, Some(input));
+        assert_eq!(spec.message.action.id, "post");
+        // A key that isn't its secret is refused.
+        assert!(secret_values(&host.store, &id, &["greeting".to_owned()]).is_err());
+        // A program runs outside it.
+        assert!(!sandboxed(&plugin("dev.a.program", Trust::Reviewed, false)));
+        drop((host, lib));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

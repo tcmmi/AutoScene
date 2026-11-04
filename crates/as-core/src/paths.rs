@@ -6,6 +6,7 @@
 //! | default library (project folders) | `Documents\AutoScene Library` | `~/Documents/AutoScene Library` |
 //! | plugins, what they keep, their logs | app data `plugins`, `plugin-data`, `logs\plugins` | app data `plugins`, `plugin-data`, `logs/plugins` |
 //! | plugin packages from the catalog, while they download | app data `cache\plugin-downloads` | app data `cache/plugin-downloads` |
+//! | WebAssembly plugins' compiled code | app data `cache\plugin-code` | app data `cache/plugin-code` |
 //! | the large files plugins name, a folder per plugin id | app data `cache\plugin-resources` | app data `cache/plugin-resources` |
 //! | updater override | `~/.autoscene/updates.json` | same |
 //!
@@ -82,6 +83,13 @@ impl AppPaths {
     pub fn plugin_downloads(&self) -> PathBuf {
         self.cache().join("plugin-downloads")
     }
+    /// WebAssembly plugins' compiled code, a folder per plugin id. Never
+    /// under a folder a plugin sees, nor under [`AppPaths::plugins`], whose
+    /// package folders are checked against their locks.
+    pub fn plugin_code(&self) -> PathBuf {
+        self.cache().join("plugin-code")
+    }
+
     /// The large files plugins name in their `plugin.json` (`resources`),
     /// a folder per plugin id, each file checked by its hash. Kept while an
     /// installed version names them.

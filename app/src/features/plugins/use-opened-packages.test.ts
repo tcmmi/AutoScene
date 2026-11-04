@@ -43,6 +43,7 @@ const review = (path: string): PluginReview => ({
   resourceBytes: null,
   resourceHosts: [],
   catalog: null,
+  componentWarnings: [],
 })
 
 const store = () => usePluginReview.getState()

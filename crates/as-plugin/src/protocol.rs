@@ -242,8 +242,9 @@ pub struct AppContext {
     pub platform: String,
 }
 
-/// The app's FFmpeg, which a plugin may run itself.
-#[derive(Clone, Debug, Serialize, Type)]
+/// The app's FFmpeg, which a plugin may run itself. None for a
+/// WebAssembly plugin ([`Default`]), which starts no program.
+#[derive(Clone, Debug, Default, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolPaths {
     pub ffmpeg: String,

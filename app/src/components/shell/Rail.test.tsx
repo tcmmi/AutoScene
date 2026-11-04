@@ -99,6 +99,7 @@ const review = (): PluginReview => ({
   resourceBytes: 0,
   resourceHosts: [],
   catalog: null,
+  componentWarnings: [],
 })
 // Under an open dialog too, which hides the rest from a screen reader.
 const tile = () => screen.getByRole("link", { name: "Plugins", hidden: true })

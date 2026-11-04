@@ -616,6 +616,7 @@ dependencies = [
  "as-models",
  "as-plugin",
  "as-project",
+ "as-testkit",
  "base64 0.23.1",
  "libc",
  "log",

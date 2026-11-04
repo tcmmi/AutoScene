@@ -130,6 +130,7 @@ export function PluginHero({ p }: { p: PluginInfo }) {
                 </h1>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <Badge tone={trust.tone === "danger" ? "danger" : "media"}>{trust.label}</Badge>
+                  {p.sandbox && <Badge tone="media">Sandboxed</Badge>}
                   <Badge tone="media">version {p.version}</Badge>
                   {p.license && <Badge tone="media">{p.license}</Badge>}
                   {by && <span className="pl-1 text-sm text-white/70">{by}</span>}

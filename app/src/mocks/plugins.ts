@@ -4,10 +4,11 @@
  * its pages, and Hello service, whose page's service counts words),
  * packages to install (each .asp picked offers the next: one AutoScene
  * hasn't reviewed and one its author signed, as every real package is for
- * now, then a reviewed one and an update of the installed one), a
- * developer's folder to load, and what each run says when it ends. The jobs
- * are the backend's to run. Under `?mockCatalog=withdrawn` a fourth is
- * installed that AutoScene withdrew (Leaky Export).
+ * now, then a reviewed one, an update of the installed one, and a
+ * WebAssembly plugin that runs in the sandbox), a developer's folder to
+ * load, and what each run says when it ends. The jobs are the backend's to
+ * run. Under `?mockCatalog=withdrawn` a fourth is installed that AutoScene
+ * withdrew (Leaky Export).
  *
  * A page's frame loads from the mock's own origin (`vite.mock-asp.ts`,
  * started with Vite), as the app's asp scheme serves it; its calls are
@@ -89,6 +90,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     commands: [],
     settings: [],
     runtime: "process",
+    sandbox: null,
     protocol: 1,
     pages: [],
     secretsSet: [],
@@ -237,6 +239,26 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
       description: "Writes a short note beside each export, and can send it on. An example of what plugins can do.",
     }),
   },
+  {
+    path: String.raw`C:\Plugins\clip-list.asp`,
+    plugin: plugin({
+      id: "dev.autoscene.clip-list",
+      name: "Clip List",
+      version: "1.0.0",
+      trust: "unreviewed",
+      description: "Saves a list of an export's clips in its folder, from AutoScene's sandbox. An example plugin in Python.",
+      repository: "https://github.com/tcmmi/AutoScene",
+      runtime: "wasm",
+      sandbox: { memoryMb: 512, minutes: 30 },
+      uvScript: false,
+      protocol: 2,
+      permissions: ["exports:write"],
+      icon: icon("#c58f5f"),
+      exportActions: [
+        { id: "list", title: "Save a clip list", description: "Saves each clip's name, episode and frames in the export's folder.", afterExport: false },
+      ],
+    }),
+  },
 ]
 
 /** The developer's folder "Load a folder…" picks. */
@@ -264,6 +286,7 @@ const MESSAGES = new Map([
   ["dev.autoscene.shot-notes whats-new", "Shot Notes 1.2 names each clip's episode."],
   ["dev.example.discord-notify post", "Posted the clip list to Discord."],
   ["dev.someone.frame-guard check", "No frame was dropped or repeated."],
+  ["dev.autoscene.clip-list list", "Saved the list of 3 clips."],
 ])
 
 /** The example page-only plugin (examples/plugins/hello-page), which the mock serves. */
@@ -433,6 +456,7 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
         becomesService: previous.runtime !== "service" && p.runtime === "service",
         // Hosts its files come from that the installed version's plugin.json doesn't name, downloaded or not.
         addedResourceHosts: (largeOf(p)?.hosts ?? []).filter((h) => !(largeOf(previous)?.hosts ?? []).includes(h)),
+        leavesSandbox: previous.runtime === "wasm" && (p.runtime === "process" || p.runtime === "service"),
       }
     : null
   const needsUnreviewed = !reviewed(next)
@@ -454,6 +478,7 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
     ...uv,
     ...files,
     catalog,
+    componentWarnings: [],
   }
 }
 
@@ -749,7 +774,9 @@ function missing(method: HostMethod, p: MockPlugin): string | null {
     case "service.request":
       return p.runtime === "service" ? null : `${method} needs a plugin that runs a service.`
     case "actions.run":
-      return (p.runtime === "process" || p.runtime === "service") && p.protocol >= 2 ? null : `${method} needs a plugin whose program speaks protocol 2.`
+      return p.runtime === "wasm" || ((p.runtime === "process" || p.runtime === "service") && p.protocol >= 2)
+        ? null
+        : `${method} needs a plugin whose program speaks protocol 2.`
     default:
       return null
   }

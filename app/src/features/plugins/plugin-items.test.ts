@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { pluginInfo } from "@/test/plugins"
-import { downloadSize, firstTime, joinWords, nextTime, pluginMatches, pluginPicture, pluginsLit, resourceLine, trustLabel, withdrawnLine } from "./plugin-items"
+import { checkedWhen, downloadSize, firstTime, joinWords, limitsLine, nextTime, permissionLabel, pluginMatches, pluginPicture, pluginsLit, resourceLine, trustLabel, withdrawnLine } from "./plugin-items"
 
 describe("finding a plugin", () => {
   const p = pluginInfo({ id: "dev.example.discord-notify", name: "Discord Notify", author: "Example Dev", description: "Posts each export's clip list." })
@@ -108,5 +108,33 @@ describe("what a plugin downloads", () => {
     expect(joinWords(["a", "b", "c"])).toBe("a, b and c")
     expect(firstTime("service")).toBe("first start")
     for (const kind of ["process", "none", "wasm"]) expect(firstTime(kind)).toBe("first run")
+  })
+})
+
+describe("a sandboxed plugin's permissions", () => {
+  it("sandboxed permissions say what they allow", () => {
+    const sandbox = { hosts: ["discord.com"] }
+    expect(permissionLabel("exports:read", sandbox)).toBe("Reads the files in the export's folder")
+    expect(permissionLabel("exports:write", sandbox)).toBe("Reads, changes and deletes files in the export's folder")
+    expect(permissionLabel("project:read", sandbox)).toBe("Reads the project's folder")
+    expect(permissionLabel("network", sandbox)).toBe("Talks to these sites, over https only:")
+    // Network that names no site reaches none.
+    expect(permissionLabel("network", { hosts: [] })).toBe("May use the network, but names no site: every request is refused.")
+    expect(permissionLabel("exports:read", { hosts: [] })).toBe("Reads the files in the export's folder")
+    // A program's say what it says it does, as before.
+    expect(permissionLabel("exports:read")).toBe("Reads the exported clips")
+    expect(permissionLabel("network")).toBe("Talks to the internet")
+  })
+
+  it("names its limits as a person says them", () => {
+    expect(limitsLine({ memoryMb: 512, minutes: 30 })).toBe("It may use up to 512 MB of memory. A run stops after 30 minutes.")
+    expect(limitsLine({ memoryMb: 16, minutes: 1 })).toBe("It may use up to 16 MB of memory. A run stops after 1 minute.")
+    expect(limitsLine({ memoryMb: 4096, minutes: 60 })).toBe("It may use up to 4096 MB of memory. A run stops after 1 hour.")
+    expect(limitsLine({ memoryMb: 512, minutes: 1440 })).toBe("It may use up to 512 MB of memory. A run stops after 24 hours.")
+    expect(limitsLine({ memoryMb: 512, minutes: 90 })).toBe("It may use up to 512 MB of memory. A run stops after 90 minutes.")
+  })
+
+  it("are enforced, whatever its pages or protocol", () => {
+    for (const protocol of [1, 2]) expect(checkedWhen({ runtime: "wasm", pages: [], protocol })).toBe("It runs in a sandbox. AutoScene enforces these.")
   })
 })

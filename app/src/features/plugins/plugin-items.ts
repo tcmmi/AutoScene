@@ -1,4 +1,4 @@
-import type { Permission, PluginInfo, PluginReview, PluginUpdate, Trust } from "@/bindings"
+import type { Permission, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, Trust } from "@/bindings"
 import { formatBytes } from "@/lib/format"
 
 /**
@@ -144,17 +144,49 @@ const PERMISSIONS = new Map<Permission, string>([
   ["network", "Talks to the internet"],
 ])
 
-/** A permission a plugin declares, in plain words. */
-export function permissionLabel(p: Permission): string {
-  return PERMISSIONS.get(p) ?? p
+/** What each permission lets a plugin in AutoScene's sandbox do: a wall, not a promise. */
+const SANDBOXED = new Map<Permission, string>([
+  ["exports:read", "Reads the files in the export's folder"],
+  ["exports:write", "Reads, changes and deletes files in the export's folder"],
+  ["project:read", "Reads the project's folder"],
+  ["network", "Talks to these sites, over https only:"],
+])
+
+/** The network of a plugin in the sandbox that names no site: it may reach none. */
+const NO_SITE = "May use the network, but names no site: every request is refused."
+
+/**
+ * A permission a plugin declares, in plain words: what it says it does, or,
+ * for a plugin that runs in AutoScene's sandbox (`sandbox`, with the sites
+ * it may reach), what the sandbox lets it do.
+ */
+export function permissionLabel(p: Permission, sandbox?: { hosts: readonly string[] }): string {
+  if (!sandbox) return PERMISSIONS.get(p) ?? p
+  if (p === "network" && sandbox.hosts.length === 0) return NO_SITE
+  return SANDBOXED.get(p) ?? p
+}
+
+/** `n` of `unit`, as a person says it: "1 minute", "30 minutes". */
+const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`
+
+/**
+ * The limits of a plugin in AutoScene's sandbox, in one line: "It may use up
+ * to 512 MB of memory. A run stops after 30 minutes." Whole hours are said
+ * as hours.
+ */
+export function limitsLine(s: PluginSandbox): string {
+  const after = s.minutes % 60 === 0 ? count(s.minutes / 60, "hour") : count(s.minutes, "minute")
+  return `It may use up to ${s.memoryMb} MB of memory. A run stops after ${after}.`
 }
 
 /**
- * When AutoScene holds a plugin to its permissions: each time its pages
- * ask, and each time its program asks AutoScene for something (protocol 2).
- * None for a program that does neither: they are only what it says it does.
+ * When AutoScene holds a plugin to its permissions: always for one in its
+ * sandbox, each time the pages of another ask, and each time its program
+ * asks AutoScene for something (protocol 2). None for a program that does
+ * neither: they are only what it says it does.
  */
 export function checkedWhen(p: Pick<PluginInfo, "runtime" | "pages" | "protocol">): string | null {
+  if (p.runtime === "wasm") return "It runs in a sandbox. AutoScene enforces these."
   if (p.runtime === "none") return "AutoScene checks these each time its pages ask."
   const pages = p.pages.length > 0
   const calls = p.protocol >= 2

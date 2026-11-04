@@ -264,13 +264,16 @@ function Pages({ p }: { p: PluginInfo }) {
 /**
  * What a plugin may use: what it asked for and the person agreed to, the
  * hosts it reaches, and the secrets set for it. What checks that depends on
- * how it runs: its pages always ask AutoScene, a program needn't.
+ * how it runs: its pages always ask AutoScene, a program needn't, and the
+ * sandbox holds a WebAssembly plugin to them, in the review's words.
  */
 function MayUse({ p }: { p: PluginInfo }) {
   const secrets = p.settings.filter((s) => s.kind.type === "secret" && p.secretsSet.includes(s.key))
   const when = checkedWhen(p)
+  // By how the person agreed it runs: a broken one has no limits to show, but stays a WebAssembly plugin.
+  const sandbox = p.runtime === "wasm" ? { hosts: p.networkHosts } : undefined
   const checked =
-    p.runtime === "none"
+    p.runtime === "none" || sandbox
       ? (when ?? undefined)
       : `Its program runs with your user rights. ${when ?? "AutoScene doesn't check these: they are what it says it does."}`
   return (
@@ -279,7 +282,7 @@ function MayUse({ p }: { p: PluginInfo }) {
         <SettingRow
           key={perm}
           leading={<ShieldCheck className="size-5 shrink-0 text-fg-3" />}
-          label={permissionLabel(perm)}
+          label={permissionLabel(perm, sandbox)}
           description={perm === "network" && p.networkHosts.length > 0 ? p.networkHosts.join(", ") : undefined}
         />
       ))}

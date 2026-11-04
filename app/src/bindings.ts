@@ -1752,7 +1752,10 @@ export type PluginInfo = {
 	 *  doesn't run, whatever else it is.
 	 */
 	withdrawn: string | null,
-	/**  What it says it does: declared by its author, not enforced. */
+	/**
+	 *  What it says it does: declared by its author, and enforced only for
+	 *  a plugin that runs in the sandbox (`sandbox`).
+	 */
 	permissions: Permission[],
 	networkHosts: string[],
 	/**  It uses the GPU, so its runs wait for the analysis. */
@@ -1766,8 +1769,16 @@ export type PluginInfo = {
 	exportActions: PluginExportAction[],
 	commands: CommandSpec[],
 	settings: SettingSpec[],
-	/**  How it runs: a program for each run, or none (it has only pages). */
+	/**
+	 *  How it runs: a program for each run, a WebAssembly component in
+	 *  AutoScene's sandbox, or none (it has only pages).
+	 */
 	runtime: RuntimeKind,
+	/**
+	 *  What a run may use, when it runs in AutoScene's sandbox (a
+	 *  WebAssembly plugin): its permissions are then enforced.
+	 */
+	sandbox: PluginSandbox | null,
 	/**
 	 *  The protocol its program speaks (`engines.protocol`), which its
 	 *  pages see too.
@@ -1848,6 +1859,23 @@ export type PluginReview = {
 	 *  catalog reviewed it.
 	 */
 	catalog: ReviewCatalog | null,
+	/**
+	 *  What the check of a WebAssembly plugin's component found that may
+	 *  surprise its author (its plugin.json's skipped parts are the
+	 *  plugin's `warnings`).
+	 */
+	componentWarnings: string[],
+};
+
+/**
+ *  What a run of a plugin in AutoScene's sandbox may use before it is
+ *  stopped.
+ */
+export type PluginSandbox = {
+	/**  The memory of all its memories together, in MB. */
+	memoryMb: number,
+	/**  How long a run may take, in minutes. */
+	minutes: number,
 };
 
 /**  Where a plugin's files are. */
@@ -1881,6 +1909,12 @@ export type PluginUpdate = {
 	 *  installed version, as the person agreed to it, doesn't.
 	 */
 	becomesService: boolean,
+	/**
+	 *  The installed version, as the person agreed to it, runs in the
+	 *  sandbox, and this one runs a program outside it: with their user
+	 *  rights. One of pages only isn't said to: its pages run in theirs.
+	 */
+	leavesSandbox: boolean,
 	/**
 	 *  Hosts its large files come from that the installed version's
 	 *  `plugin.json` doesn't name (all of them when that can't be read).

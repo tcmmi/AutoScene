@@ -23,6 +23,7 @@ const review = (ticketId: string): PluginReview => ({
   resourceBytes: 0,
   resourceHosts: [],
   catalog: null,
+  componentWarnings: [],
 })
 
 const store = () => usePluginReview.getState()

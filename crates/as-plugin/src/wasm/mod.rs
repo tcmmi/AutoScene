@@ -208,8 +208,10 @@ pub fn run_with(
 
 /// Compiles the component at `path` (its SHA-256 checked against `sha256`
 /// when given), checks what it imports and exports against `m`, and keeps
-/// its compiled code in the folder `cache`, in place of what was there for
-/// another component. Gives what the check found and the compiled file.
+/// its compiled code in the folder `cache`, beside the code there: the
+/// installed version's stays until the person agrees to this one, and the
+/// store then keeps only this ([`keep_only`]). Gives what the check found
+/// and the compiled file. A component that fails leaves no file.
 pub fn prepare(path: &Path, sha256: Option<&str>, cache: &Path, m: &Manifest) -> PluginResult<(Checked, PathBuf)> {
     let engine = engine::engine()?;
     let bytes = read_component(path)?;
@@ -219,7 +221,6 @@ pub fn prepare(path: &Path, sha256: Option<&str>, cache: &Path, m: &Manifest) ->
     }
     let (component, checked) = compiled(engine, &bytes, Some(m))?;
     let file = cache::save(cache, &hash, &component)?;
-    cache::keep_only(cache, &cache::file_name(&hash)?);
     Ok((checked, file))
 }
 
@@ -520,6 +521,12 @@ fn run_in(
     }
 }
 
+/// How the name of code this AutoScene's engine compiled ends
+/// (`-<engine>.cwasm`); none when its engine can't be made.
+pub(crate) fn own_code_end() -> Option<String> {
+    engine::engine_key().ok().map(|key| format!("-{key}.cwasm"))
+}
+
 /// At most [`MAX_LINE_BYTES`] of a string the plugin handed over, cut at a
 /// character, and whether it was cut: as a program's line is kept before
 /// it is cleaned. One may be up to wasmtime's 128 MiB, and cleaning or
@@ -553,13 +560,37 @@ async fn stopped(cancel: &CancelToken, deadline: Instant, seen: &Cell<Option<Ins
                 return Stop::Cancel;
             }
         }
-        tokio::time::sleep(STOP_POLL).await;
+        tokio::time::sleep(next_look(now, deadline, seen.get())).await;
     }
+}
+
+/// How long [`stopped`] waits from `now` before it looks again: a
+/// [`STOP_POLL`], but never past the run's `deadline` nor past the end of
+/// the grace after Stop was `seen`. So a run ends at most one poll after
+/// Stop plus the grace, not two.
+fn next_look(now: Instant, deadline: Instant, seen: Option<Instant>) -> Duration {
+    let grace_ends = seen.map_or(deadline, |at| (at + CANCEL_GRACE).min(deadline));
+    STOP_POLL.min(grace_ends.saturating_duration_since(now))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stop_looks_again_when_the_grace_ends() {
+        let now = Instant::now();
+        let deadline = now + Duration::from_secs(60);
+        // Before Stop, and early in the grace: a poll.
+        assert_eq!(next_look(now, deadline, None), STOP_POLL);
+        assert_eq!(next_look(now, deadline, Some(now)), STOP_POLL);
+        // Near its end: only until it ends, not a whole poll past it.
+        let seen = now - CANCEL_GRACE + Duration::from_millis(20);
+        assert_eq!(next_look(now, deadline, Some(seen)), Duration::from_millis(20));
+        assert_eq!(next_look(now, deadline, Some(now - CANCEL_GRACE)), Duration::ZERO);
+        // Nor past the deadline.
+        assert_eq!(next_look(now, now + Duration::from_millis(5), None), Duration::from_millis(5));
+    }
 
     #[test]
     fn limits_come_from_the_manifest() {

@@ -101,6 +101,31 @@ describe("a plugin's settings", () => {
     }
   })
 
+  it("says AutoScene enforces what a sandboxed plugin may use", async () => {
+    show({ runtime: "wasm", uvScript: false, sandbox: { memoryMb: 512, minutes: 30 }, permissions: ["exports:write", "network"], networkHosts: ["discord.com"] })
+    expect(await screen.findByText("It runs in a sandbox. AutoScene enforces these.")).toBeTruthy()
+    expect(screen.getByText("Reads, changes and deletes files in the export's folder")).toBeTruthy()
+    expect(screen.getByText("Talks to these sites, over https only:")).toBeTruthy()
+    expect(screen.getByText("discord.com")).toBeTruthy()
+    expect(screen.queryByText(/user rights/)).toBeNull()
+    cleanup()
+    queryClient.clear()
+    // A program's line stays as it is.
+    show({ permissions: ["exports:read"] })
+    expect(await screen.findByText(/^Its program runs with your user rights\./)).toBeTruthy()
+    expect(screen.getByText("Reads the exported clips")).toBeTruthy()
+  })
+
+  it("says a broken WebAssembly plugin ran in the sandbox, in the sandbox's words", async () => {
+    // As info() gives one whose plugin.json can't be read: the agreed runtime, no limits.
+    show({ runtime: "wasm", uvScript: false, sandbox: null, broken: "Its files are missing. Install it again.", permissions: ["exports:write", "network"] })
+    expect(await screen.findByText("It runs in a sandbox. AutoScene enforces these.")).toBeTruthy()
+    expect(screen.getByText("Reads, changes and deletes files in the export's folder")).toBeTruthy()
+    expect(screen.getByText("May use the network, but names no site: every request is refused.")).toBeTruthy()
+    expect(screen.queryByText(/user rights/)).toBeNull()
+    expect(screen.queryByText("Changes or adds files beside the exported clips")).toBeNull()
+  })
+
   it("saves a number within its bounds", async () => {
     show({ settings: [number("clips", "Clips", { min: 1, integer: true }), number("pause", "Pause", { max: 2 })] }, { clips: 3 })
     const clips = (await screen.findByRole("textbox", { name: "Clips" })) as HTMLInputElement

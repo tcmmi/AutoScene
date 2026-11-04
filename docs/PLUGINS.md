@@ -1,19 +1,20 @@
 # Writing AutoScene plugins
 
 A plugin adds to AutoScene: code that AutoScene runs for the person (on an
-export, from the command palette, by itself after every export, or from one
-of the plugin's pages), pages of its own that AutoScene shows full screen,
-or both. The code is a program, or a WebAssembly component that runs in a
-sandbox. It describes itself in a `plugin.json`, and AutoScene draws
-what it adds (menu entries, palette commands, its settings, a tile for its
+export, from the command palette, by itself after an export or an analysis,
+from a character's scenepack, or from one of the plugin's pages), pages of
+its own that AutoScene shows full screen, or both. The code is a program, or
+a WebAssembly component that runs in a sandbox. It describes itself in a
+`plugin.json`, and AutoScene draws what it adds (menu entries, palette commands, its settings, a tile for its
 page). It ships as a package, an `.asp` file, which the `asp` tool makes and
 signs. AutoScene's plugin catalog lists the versions AutoScene reviewed (see
 [The catalog](#the-catalog)).
 
 This guide is for plugin authors. It describes AutoScene's plugins as they
 are now: versions 1 and 2 of the manifest and of the protocol. Version 2
-adds pages, services, WebAssembly plugins, secret settings, and calls from
-a plugin into AutoScene. A plugin of version 1 works as it always did.
+adds pages, services, WebAssembly plugins, secret settings, events, shot
+filters, pack actions, a scratch folder for each run, and calls from a
+plugin into AutoScene. A plugin of version 1 works as it always did.
 
 The design started from moongetsu's prototype in
 [PR #93](https://github.com/tcmmi/AutoScene/pull/93): the review before an
@@ -46,6 +47,12 @@ It can add:
 - **Events** (version 2): moments its program runs on by itself once the
   person turns them on, such as the end of an analysis (see
   [Runs by itself](#runs-by-itself)).
+- **Shot filters** (version 2): chips in a character's scenepack. The
+  program judges the character's shots, an episode at a time, and the pack
+  leaves out those it says no to (see [Shot filters](#shot-filters)).
+- **Pack actions** (version 2): entries in a scenepack's ⋯ menu. The
+  program saves the pack, as the grid shows it, as one file the person
+  places, before anything is rendered (see [Pack actions](#pack-actions)).
 - **Settings**: on the plugin's own screen under Plugins (its settings),
   which AutoScene draws and saves. Each run gets the values. A **secret** setting (version
   2), such as a token, is kept in the system's keychain instead (see
@@ -108,10 +115,13 @@ a WebAssembly plugin (see [Developing a plugin](#developing-a-plugin) and
 
 The other examples, in `examples/plugins`:
 
+- `bright-shots`: a shot filter that leaves the dark shots out of a
+  scenepack, by a setting, and a pack action that saves a cut sheet.
 - `clip-list-py`: a WebAssembly plugin in Python that saves a list of an
   export's clips in its folder.
 - `discord-notify`: an export action that posts to the internet through
-  AutoScene (`net.fetch`), with its webhook as a secret setting.
+  AutoScene (`net.fetch`), also after a failed export, with its webhook as a
+  secret setting, and an event that posts when an analysis finishes.
 - `discord-notify-wasm`: its twin as a WebAssembly plugin in Rust, which
   reaches only Discord.
 - `hello-page`: two pages and no program: a note in the rail, and a
@@ -121,9 +131,9 @@ The other examples, in `examples/plugins`:
 ## How a run goes
 
 1. The person starts an action, an export finishes and an action runs
-   after it, or a page of the plugin starts one (`actions.run`). AutoScene
-   queues a job, titled with the action's title, with the plugin's name
-   under it.
+   after it, one of its events happens, a scenepack asks a shot filter, or a
+   page of the plugin starts one (`actions.run`). AutoScene queues a job,
+   titled with the action's title, with the plugin's name under it.
 2. When the job starts, AutoScene checks again that the plugin may run. It
    starts the program, in the plugin's data folder, and sends it the run
    line on stdin. (A WebAssembly plugin's run is a call instead: see
@@ -150,6 +160,9 @@ The other examples, in `examples/plugins`:
   see [where AutoScene keeps plugins](#where-autoscene-keeps-plugins)). It
   is the plugin's to keep files in between runs. It stays through updates,
   and an uninstall removes it only when the person asks.
+- **Temp files** go to the run's scratch folder from protocol 2 on, which
+  AutoScene removes when the run ends (see
+  [The scratch folder](#the-scratch-folder)).
 - **The environment** holds only what programs need to work:
   - On every system: `PATH`, `LANG`, `TZ`, the proxy variables
     (`http_proxy`, `https_proxy`, `no_proxy`, `all_proxy`, also in
@@ -175,6 +188,7 @@ The other examples, in `examples/plugins`:
   | `AUTOSCENE_PROTOCOL` | The protocol the plugin declared: `1` or `2` |
   | `AUTOSCENE_MODE` | `service` for a service; left out for a run |
   | `AUTOSCENE_RESOURCES` | The folder of its large files; only when it names some (see [Large files](#large-files)) |
+  | `AUTOSCENE_RUN_TEMP` | The run's temp folder (protocol 2; see [The scratch folder](#the-scratch-folder)) |
   | `UV_CACHE_DIR`, `UV_PYTHON_INSTALL_DIR` | For a uv script only: where AutoScene's uv keeps packages and Pythons |
   | `UV_NO_CONFIG` | For a uv script only: `1`, so uv reads no configuration file of the person's |
   | `PYTHONUNBUFFERED`, `PYTHONUTF8` | `1` |
@@ -187,6 +201,46 @@ The other examples, in `examples/plugins`:
 A service starts the same way: the same program, folder and environment.
 
 A plugin may run AutoScene's FFmpeg itself. The run line names it too.
+
+### The scratch folder
+
+Each run of a program of protocol 2, each start of a service and each run of
+a WebAssembly plugin gets a temp folder of its own, and AutoScene removes it
+when the run ends. A Stop in the middle of a frame dump leaves nothing
+behind.
+
+- **Where.** In the system's temp folder, on the drive temp files went to
+  anyway: `<temp>/as-<8 letters and digits>/t`. On macOS and Linux only the
+  person's user may enter it. The path is short on purpose, so Python's
+  sockets still fit in it.
+- **How a plugin finds it.** The run or serve line's `plugin.tempDir` and
+  `AUTOSCENE_RUN_TEMP` name it. `TEMP` and `TMP` on Windows, and `TMPDIR` on
+  macOS and Linux, point to it, so Python's `tempfile`, PyTorch and FFmpeg
+  use it with no change to the plugin, and so do the programs it starts. A
+  WebAssembly plugin sees it as `/tmp`.
+- **When it goes.** Once the run's processes have ended, however they
+  ended: a result, an error, a Stop or a kill. A service's goes when that
+  start of the service stops. A link in it is removed, never followed.
+  AutoScene doesn't wait for it: a run ends at once, and 20,000 files take
+  seconds. A file something still holds (a virus scanner, a process that is
+  ending) is tried again for about ten seconds. What is left then, or after
+  a crash, goes when AutoScene next starts.
+- **What belongs in it.** What the run needs while it runs. What the plugin
+  keeps between runs belongs in its data folder. Nothing in the scratch
+  folder is there for the next run. A helper that outlives the run loses
+  it too, with the temp files it expected to find.
+- **It has no size limit**, as the data folder has none. But on Linux the
+  system's temp folder may be a `tmpfs`, which lives in RAM, and a frame dump
+  there fills the computer's memory. Large output belongs in the data folder,
+  or in the export's folder.
+- **Without one.** When it can't be made (a full drive, a temp folder that
+  is gone), the run goes on and the plugin's log says why: a program keeps
+  the system's temp folder, without `plugin.tempDir` or
+  `AUTOSCENE_RUN_TEMP`, and a WebAssembly plugin runs without `/tmp`.
+
+A program of protocol 1 gets no scratch folder: its run line and its
+environment stay as they were, and its temp files stay in the system's temp
+folder.
 
 ### One at a time
 
@@ -261,6 +315,93 @@ without being asked. Each is off until the person turns it on.
 Each runs as a job of its own, so a plugin never fails an export or an
 analysis, or holds it up. The same run waits once: an event that waits or
 runs already isn't queued again, and keeps what it was told.
+
+### Shot filters
+
+A shot filter is a chip in a character's scenepack, beside AutoScene's own
+filters, with the plugin's mark. It shows while the plugin is on. With the
+chip on, the pack leaves out the shots the plugin said no to, dimmed, each
+with the filter's `reason` on its card. A pick by hand still wins. The pack
+decides, so what an export cuts is what the grid shows.
+
+**A check.** With the chip on, AutoScene asks about the shots the pack's own
+filters take that have no verdict yet. A check is a chain of runs, one
+episode per run, in the project's order. Each run waits in the queue like
+any other, and the next episode queues behind what waits by then, so a whole
+series never holds the one plugin slot for more than an episode. Each run
+starts the program again, so a slow start is paid per episode. In Activity a
+run is named by the filter and the character ("Speaks · Walter"). What the
+program says when it ends goes to the log, not to a toast: a season's check
+is a run per episode. A check for Jesse waits beside Walter's; a second one
+for Walter is the same check.
+
+**Verdicts.** The program writes one verdict line for each shot it was sent,
+in any order, as it goes (see
+[What the plugin writes](#what-the-plugin-writes)).
+They are the character's: "does Walter speak here", not "does anyone". A
+later word on a shot replaces the earlier one. A verdict on a shot the run
+wasn't sent, or in any other run, goes to the log and counts for nothing. A
+plugin writes no text onto a card: the `reason` is the manifest's.
+
+**While it checks,** the footer says "Checking 120 of 312 shots" and Export
+waits. A shot without a verdict stays in the pack.
+
+**When a check fails.** A run that fails, is stopped, or leaves shots without
+a word keeps the verdicts it gave. The footer says "Couldn't check 120 shots"
+with **Try again**, and Export goes ahead with what the grid shows. The check
+never starts again by itself, until the person asks or what it depends on
+changes. Keep a shot you can't judge in with a verdict, and say why in the
+log, so one unreadable shot doesn't stop the check.
+
+**What verdicts depend on.** AutoScene keeps them in the project, per filter,
+character and episode, and asks again when the filter's `revision` or a
+setting it names changes (see [contributes](#contributes)). A new version of
+the plugin alone keeps them: raise `revision` when it judges differently.
+Old verdicts stay in force until new ones replace them, shot by shot, so the
+grid doesn't jump back while a new check runs. Finding an episode's shots
+again, or removing it, drops its verdicts.
+
+**A plugin that is off:** the chip is dimmed and says "Plugin off", and the
+pack ignores the filter.
+
+### Pack actions
+
+A pack action is an entry in a scenepack's ⋯ menu, beside Export, and in the
+grid's right-click menu. The ⋯ shows only while a plugin that is on has one.
+It saves the pack as one file, a timeline or a cut sheet, before anything is
+rendered.
+
+1. The person chooses the entry. A pack action is refused as an export of
+   the pack would be: the pack changed since the grid showed it, it takes
+   nothing, its naming can't name its clips, a shot filter it turns on still
+   checks, or the plugin isn't on.
+2. The system's save dialog offers the action's `file.name`, with the
+   character's name for `{character}`, and its kinds of file, in the folder
+   the project's exports go to. Closed, nothing runs. A name of a kind that
+   runs is refused.
+3. AutoScene queues the run, with the pack as it was at the click: the clips
+   an export of it would cut, so the file matches the grid. Its run line's
+   `output` is a file of its own beside the chosen one,
+   `<name>.part-<8 hex>`.
+4. The program writes the whole file to `output`, and nowhere else. The
+   name in `output` is AutoScene's to change: don't read the chosen name
+   from it.
+5. When the run ends well, that file takes the chosen name, replacing what
+   the person agreed to replace. It is marked as a download, as a page's
+   `files.save` marks one, and on macOS and Linux it loses any execute bits.
+   The toast says `Plugin “<name>”: saved Walter.fcpxml`, with **Show in
+   folder**. What the program says when it ends goes to the log.
+
+A run that fails, is stopped, or writes no file removes `output`, and what
+was at the chosen name stays. A second click while the same action of the
+same character's pack waits or runs asks nothing and queues nothing; Jesse's
+pack queues beside Walter's.
+
+A clip's name comes from a file, an online lookup or the person, so it may
+start with `=`. A format a spreadsheet opens, such as CSV, puts a `'` before
+a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return, as
+AutoScene's own cut list does and `bright-shots` does. Otherwise the
+spreadsheet runs the cell as a formula.
 
 ## WebAssembly plugins
 
@@ -389,6 +530,7 @@ warning.
 | | In the sandbox |
 |---|---|
 | `/data` | The plugin's data folder (`plugin-data/<id>`), to read and write. A run starts there. |
+| `/tmp` | The run's temp folder, to read and write, which AutoScene removes when the run ends (see [The scratch folder](#the-scratch-folder)). |
 | `/export` | The export's folder, with `exports:read` to read and with `exports:write` to read, change and delete in. |
 | `/project` | The project's folder, with `project:read`, to read. |
 | `/resources` | The large files its `plugin.json` names under `resources`, to read, once AutoScene got them; only when it names some. Beside each, AutoScene keeps a `<name>.verified` and a `<name>.lock` of its own; a file a version before named is gone before a run. |
@@ -396,7 +538,7 @@ warning.
 | Its environment | `AUTOSCENE_PLUGIN_ID` and `AUTOSCENE_PROTOCOL`, nothing else. Its one argument is its id. |
 | stdin | Empty. |
 | Clocks and random | Yes; at most 1 MB of random bytes at once. |
-| Everything else | None: no other folder (no `/tmp`: use `/data`), no socket, no name lookup, no program, no FFmpeg, no episode file. |
+| Everything else | None: no other folder, no socket, no name lookup, no program, no FFmpeg, no episode file. |
 
 A run starts in `/data`, but use absolute paths, such as `/data/state.json`:
 not every toolchain honours the folder a run starts in. A folder of the
@@ -660,15 +802,17 @@ The first line on the plugin's stdin is the run:
 |---|---|
 | `protocol` | The protocol the plugin declared (`engines.protocol`), which AutoScene speaks to it: `1` or `2`. |
 | `runId` | A new id for each run. It also heads the run's part of the log. |
-| `plugin` | The plugin's `id` and installed `version`, and `dataDir`: its data folder, where the run starts. `resourcesDir`, only for a plugin that names large files: their folder (see [Large files](#large-files)). |
+| `plugin` | The plugin's `id` and installed `version`, and `dataDir`: its data folder, where the run starts. `resourcesDir`, only for a plugin that names large files: their folder (see [Large files](#large-files)). From protocol 2 on also `tempDir`: its [scratch folder](#the-scratch-folder), left out when none could be made. |
 | `app` | AutoScene's `version`, and the `platform` it runs on: `windows-x86_64`, `windows-aarch64`, `macos-aarch64`, `macos-x86_64`, `linux-x86_64` or `linux-aarch64`. |
 | `tools` | AutoScene's `ffmpeg` and `ffprobe` (full paths) and FFmpeg's version. |
 | `settings` | Each of the plugin's settings: the person's value, else its default. A setting with neither is left out. Numbers are JSON numbers and may come as `3.0`, also for whole-number settings. |
-| `action` | What to do: `kind` is `exportAction`, `command` or `event`, `id` is the contribution's id in `plugin.json`, and `trigger` says what started it: `menu` (an export's menu), `afterExport`, `palette`, `page` (one of its pages, protocol 2 only) or `event` (one of its events, turned on). |
+| `action` | What to do: `kind` is `exportAction`, `command`, `event`, `shotFilter` or `packAction`, `id` is the contribution's id in `plugin.json`, and `trigger` says what started it: `menu` (an export's or a scenepack's menu), `afterExport`, `palette`, `page` (one of its pages, protocol 2 only), `event` (one of its events, turned on) or `pack` (a scenepack that needs its verdicts). |
 | `project` | The project it runs in: its `id`, `title` and `folder`. `null` for a command run without a project open. |
-| `export` | The export an export action runs on; `null` for a command and an event. |
+| `export` | The export an export action runs on; `null` for every other kind. |
 | `input` | What the page that started the run handed it (`actions.run`), as JSON; protocol 2, and only with `trigger` `page`. Left out when the page handed none, and for every other trigger. |
 | `event` | What happened, for a run of an event (see below). Left out of every other run's line. |
+| `shots` | The shots a shot filter judges (see below). Left out of every other run's line. |
+| `output`, `pack` | The file a pack action writes, and the scenepack it saves (see below). Left out of every other run's line. |
 
 An export holds its `id`, its `label` (`"Walter · scenepack"`, or `null`
 for single clips), its `preset` (such as `prores-hq`, `h264-edit` or
@@ -690,7 +834,7 @@ program of protocol 1 gets no `status`. Each clip has:
 | `sourcePath` | The episode's file. Empty when the episode was removed from the project since. |
 | `episode` | The episode's name. Empty when it was removed. |
 | `start`, `end` | The clip's first frame in the episode, and the frame after its last. |
-| `fps` | The episode's frame rate as a fraction (`24000/1001`), or `null`. |
+| `fps` | The frame rate the episode's file states, as a fraction (`24000/1001`), or `null`. See [Frames and time](#frames-and-time). |
 
 A scenepack export is joined by default: one file, with a chapter per clip.
 (The run line above is from one made with a file per clip.) Then
@@ -724,7 +868,102 @@ that still waits when the next batch ends tells of that batch too, so
 nothing is told twice or left out; `at` is then the later end. Ask for the
 project (`project.get`, protocol 2) to see them.
 
+A run of a shot filter has `kind` `shotFilter` and `trigger` `pack`. It runs
+in the character's project, on no export, and ends with `shots`: one
+character's shots in one episode, never more. (Ids are short here, to be
+read.)
+
+```json
+{
+  "action": { "kind": "shotFilter", "id": "speaks", "trigger": "pack" },
+  "export": null,
+  "shots": {
+    "character": { "id": "c1", "name": "Walter" },
+    "episodes": [
+      { "mediaId": "m1", "path": "D:\\Breaking Bad\\S01E01.mkv", "fps": "24000/1001", "frames": 83136 }
+    ],
+    "shots": [
+      {
+        "key": "m1:1200",
+        "mediaId": "m1",
+        "start": 1200,
+        "end": 1450,
+        "faceHeight": 0.25,
+        "faceless": false,
+        "face": { "frame": 1310, "x": 0.5, "y": 0.25, "w": 0.125, "h": 0.25 }
+      },
+      {
+        "key": "m1:2000",
+        "mediaId": "m1",
+        "start": 2000,
+        "end": 2100,
+        "faceHeight": 0.5,
+        "faceless": true,
+        "face": null
+      }
+    ]
+  }
+}
+```
+
+An episode's `fps` and `frames` are `null` when they aren't known. `fps` is
+the rate its file states: see [Frames and time](#frames-and-time). Each shot
+has:
+
+| Field | What it holds |
+|---|---|
+| `key` | What its verdict names: `<mediaId>:<start>`. |
+| `start`, `end` | Its first frame in the episode, and the frame after its last. |
+| `faceHeight` | The biggest the character's face is in it, as a share of the frame's height (as big as their body suggests in a shot without it). |
+| `faceless` | Their face doesn't show in it: their body does. |
+| `face` | Where their clearest face in it is: the `frame` it is clearest in, and its box as shares of the frame's width and height from its top left corner. `null` in a shot without their face. |
+
+A run of a pack action has `kind` `packAction` and `trigger` `menu`. It runs
+in the character's project, on no export, and ends with `output` and `pack`:
+
+```json
+{
+  "action": { "kind": "packAction", "id": "fcpxml", "trigger": "menu" },
+  "export": null,
+  "output": "D:\\Cuts\\Walter.fcpxml.part-1a2b3c4d",
+  "pack": {
+    "character": { "id": "c1", "name": "Walter" },
+    "episodes": [
+      { "mediaId": "m1", "path": "D:\\Breaking Bad\\S01E01.mkv", "fps": "24000/1001", "frames": 83136 }
+    ],
+    "clips": [
+      { "index": 0, "name": "Walter White - S01E01 - 0001", "mediaId": "m1", "start": 1188, "end": 1462 },
+      { "index": 1, "name": "Walter White - S01E01 - 0002", "mediaId": "m1", "start": 2000, "end": 2100 }
+    ]
+  }
+}
+```
+
+`pack.episodes` are the episodes its clips are cut from, in the project's
+order. `pack.clips` are the clips in the pack's order: `index` is the clip's
+place from 0, `name` what an export of the pack would name its file or
+chapter, and `start` and `end` its first frame in the episode and the frame
+after its last, as an export would cut them (see [Frames and
+time](#frames-and-time)). The line of a long pack is long (about 130 bytes
+per clip): read it whole.
+
 A later AutoScene may add fields: ignore the ones you don't know.
+
+#### Frames and time
+
+`start`, `end` and `face.frame` count the frames the file really has, from
+0. `fps` is only the rate the file states. So `frame / fps` is a frame's time
+in a file of a constant rate, and nowhere else. A phone recording's rate
+varies, and a recording can have a hole: a file with a 60 second hole states
+24 frames a second as any other does. There, a seek to `frame / fps` shows
+another frame, with no error, and a time made that way is wrong by as much
+as the hole.
+
+The run line has no times, and doesn't say what kind of file an episode is.
+A plugin that must have the exact frame in every file finds it by its
+number, which decodes the file up to it. FFmpeg's `select=eq(n\,1200)` does
+that: its `n` counts from 0 as `start` does. The example `bright-shots`
+seeks, which is much faster, and its README says what that costs.
 
 ### The cancel line
 
@@ -736,7 +975,10 @@ The person pressed Stop:
 
 Stop soon. Exit as you like: the run is cancelled whatever the exit.
 AutoScene sends nothing else. Read stdin on a thread of its own (as the
-examples do), or a cancel line waits until the plugin reads it.
+examples do), or a cancel line waits until the plugin reads it. Then give
+each child process a stdin of its own (`autoscene.py` sees to that): on
+Windows, a child started with a pipe that a thread is reading waits for that
+read to end.
 
 ### What the plugin writes
 
@@ -745,6 +987,7 @@ examples do), or a cancel line waits until the plugin reads it.
 {"type":"log","level":"warn","message":"Clip 4 has no file; skipped."}
 {"type":"result","message":"Posted 12 clips."}
 {"type":"error","message":"Discord doesn't know that webhook.","detail":"HTTP Error 404: Not Found"}
+{"type":"verdict","shot":"m1:1200","keep":false}
 ```
 
 - **`progress`**: `fraction` is how far the run is, from 0 to 1 (left out
@@ -761,6 +1004,9 @@ examples do), or a cancel line waits until the plugin reads it.
   (cut to 300 characters; an empty one shows as "<name> failed."). The
   optional `detail` is technical: it goes to the plugin's log, and to
   AutoScene's own log cut to 2000 characters.
+- **`verdict`**: a shot filter's word on a shot (protocol 2). `shot` is the
+  shot's `key` in the run line; `keep` is `false` to leave it out of the pack
+  (see [Shot filters](#shot-filters)).
 
 Texts lose control characters and the invisible characters that hide or turn
 text, and their line breaks and runs of spaces become single spaces.
@@ -775,7 +1021,11 @@ text, and their line breaks and runs of spaces become single spaces.
 - Every line that isn't a message goes to the plugin's log: text that isn't
   a JSON object, an object with a `type` this AutoScene doesn't know, or a
   message whose fields don't read. So is all of stderr. A plugin may print
-  what it likes; only the messages above are taken as messages.
+  what it likes; only the messages above are taken as messages. A library
+  that prints a JSON object with one of their `type`s would pass for one.
+  `autoscene.py` rules that out (see
+  [A plugin in a few lines](#a-plugin-in-a-few-lines)); a program of another
+  kind keeps what its libraries print off stdout itself.
 - A line may be at most 64 KB (a call line more, see
   [Calls](#calls-version-2)). A longer one is cut there, marked `[cut]` in
   the log, and never read as a message.
@@ -839,7 +1089,8 @@ seconds.
 A plugin of runtime `service` speaks protocol 2. Its program starts in
 service mode while one of its pages is open (see [Services](#services)),
 with `AUTOSCENE_MODE=service`, and its first line is the serve line: the
-run line's context, without a task.
+run line's context, without a task. Its `plugin.tempDir` is the folder of
+that start of the service (see [The scratch folder](#the-scratch-folder)).
 
 ```json
 {
@@ -960,10 +1211,24 @@ except autoscene.CallError as e:
     p.error(str(e), e.code)
 ```
 
-`p.cancelled` is set once AutoScene asks the run to stop. For a service,
-`@p.handle("<method>")` makes a function answer a request, `p.emit` sends
-an event, and `p.serve()` answers until AutoScene says stop:
-`examples/plugins/hello-service` shows it.
+`p.cancelled` is set once AutoScene asks the run to stop. For a shot filter,
+`p.verdict(shot, keep)` writes a verdict: `examples/plugins/bright-shots`
+shows it, with a pack action. For a service, `@p.handle("<method>")` makes a
+function answer a request, `p.emit` sends an event, and `p.serve()` answers
+until AutoScene says stop: `examples/plugins/hello-service` shows it.
+
+`autoscene.start()` keeps stdin and stdout for the protocol's lines. It holds
+on to a copy of each that only `p` uses, then points the program's own stdout
+at stderr and gives it an empty stdin, on Windows, macOS and Linux alike. So
+from then on a `print()`, a C library and a child process that writes to
+stdout all reach the plugin's log, marked `[stderr]`, and what they write is
+never read as a message. A child process finds stdin empty, so it can't take
+a reply or a cancel line. Two things follow:
+
+- Call `autoscene.start()` before anything prints: what comes earlier still
+  goes to stdout, and only the rules above keep it apart from a message.
+- Speak the protocol through `p`. A `print(json.dumps(...))` goes to the log
+  too.
 
 ## Host methods
 
@@ -1623,6 +1888,8 @@ did, and with `"manifestVersion": 2` it reads the same, but for one warning
 | `contributes.pages` | Skipped, with the warning `Skipped contributes.pages: pages need "manifestVersion": 2.` | Read (see [Pages](#pages)). |
 | `contributes.events` | Skipped, with the warning `Skipped contributes.events: events need "manifestVersion": 2.` | Read (see [contributes](#contributes)). |
 | `"afterFailed": true` on an export action | Ignored, with the warning `Ignored contributes.exportActions[0].afterFailed: it needs "manifestVersion": 2.` | Read; it needs protocol 2. |
+| `contributes.shotFilters` | Skipped, with the warning `Skipped contributes.shotFilters: shot filters need "manifestVersion": 2.` | Read; it needs protocol 2 and `project:read` (see [contributes](#contributes)). |
+| `contributes.packActions` | Skipped, with the warning `Skipped contributes.packActions: pack actions need "manifestVersion": 2.` | Read; it needs protocol 2 and `project:read` (see [contributes](#contributes)). |
 | A setting of the type `secret` | Skipped, with the warning `Skipped the setting "<key>": secret settings need "manifestVersion": 2.` | Read, when something can ask for it (see [Secret settings](#secret-settings)). |
 | `"runtime": { "type": "service" }` | Refused: `The plugin's runtime.type "service" needs "manifestVersion": 2.` | Read; it needs protocol 2. |
 | `"runtime": { "type": "none" }` | Refused, as `service` is. | Read. |
@@ -1770,7 +2037,9 @@ What each permission lets a plugin ask AutoScene for:
 
 - `exports:read`: `exports.list`, `exports.get`, and `files.resolve` of a
   clip or a joined file.
-- `project:read`: `project.get`, and `files.resolve` of an episode.
+- `project:read`: `project.get`, and `files.resolve` of an episode. A shot
+  filter or a pack action needs it too: its run line names the episodes'
+  files.
 - `network`: `net.fetch`, to the hosts of `network.hosts`.
 - `exports:write`: nothing AutoScene answers yet; a program says with it
   that it writes beside the exported clips. A WebAssembly plugin gets the
@@ -1801,6 +2070,12 @@ and refuses a WebAssembly plugin (see [Network](#network)).
   ],
   "events": [
     { "id": "analysis-done", "title": "Post when an analysis finishes", "on": "analysisFinished" }
+  ],
+  "shotFilters": [
+    { "id": "speaks", "title": "Speaks", "description": "Keeps the shots where they talk.", "reason": "No speech", "settings": ["sensitivity"], "revision": 1 }
+  ],
+  "packActions": [
+    { "id": "fcpxml", "title": "Save as FCPXML…", "file": { "name": "{character}.fcpxml", "extensions": ["fcpxml"] } }
   ]
 }
 ```
@@ -1829,11 +2104,34 @@ and refuses a WebAssembly plugin (see [Network](#network)).
   with it; otherwise it runs with the open project, if any.
 - **`settings`** (at most 32): see below.
 - **`pages`** (version 2, at most 4): see [Pages](#pages).
+- **`shotFilters`** (version 2, at most 4): each a chip in a character's
+  scenepack (see [Shot filters](#shot-filters)). `title` (at most 24
+  characters) is the chip, `reason` (required, at most 24) the pill on a shot
+  it leaves out. `settings` names the keys of the plugin's settings its
+  verdicts depend on: a change of one asks for them again, a change of
+  another doesn't. Left out, it means all of them; `[]` means none. A key
+  that isn't one of the plugin's settings refuses the plugin. `revision` (1
+  to 65535, default 1): raise it when a new version judges differently.
+- **`packActions`** (version 2, at most 4): each an entry in a scenepack's ⋯
+  menu that saves one file (see [Pack actions](#pack-actions)). `title` (at
+  most 40 characters) is the entry. `file.extensions` lists the 1 to 4 kinds
+  of file it offers, each 1 to 10 lowercase letters and digits, never a kind
+  that runs (`exe`, `lnk`, `ps1`, `sh`, `jar` and the rest `files.save`
+  refuses). `file.name` (at most 100 characters) is the name it offers,
+  ending in one of them, with the characters a package's
+  [paths](#paths) may have, so no space; `{character}` stands for the
+  character's name, which may have any.
 
-An action's, a command's or an event's `id` is 1 to 32 lowercase letters,
-digits and dashes, starting with a letter or digit, and unique among its
-kind. Its `title` (required) has at most 60 characters, its `description`
-at most 200.
+Shot filters and pack actions need a program of protocol 2 that asks for
+`project:read`, of runtime `process` or `service`. Anything else refuses the
+plugin. A WebAssembly plugin can have neither: it can't read the episodes, or
+write the file the person chose. In a `service`, each run still starts a
+program of its own: the service doesn't answer them.
+
+An action's, a command's, an event's, a shot filter's or a pack action's
+`id` is 1 to 32 lowercase letters, digits and dashes, starting with a letter
+or digit, and unique among its kind. Its `title` (required) has at most 60
+characters, or as said above, its `description` at most 200.
 
 ### Settings
 
@@ -1914,8 +2212,8 @@ skipped with a warning, so a plugin made for one still installs in an
 older one: an unknown field, contribution kind or setting type, a page of
 a scope this AutoScene doesn't know, an event it can't wait for, a
 platform this AutoScene doesn't know, and in a version 1 manifest `pages`,
-`events`, `afterFailed`, `banner`, `resources` and secret settings, which
-need `"manifestVersion": 2`. A higher `manifestVersion` or
+`events`, `shotFilters`, `packActions`, `afterFailed`, `banner`, `resources`
+and secret settings, which need `"manifestVersion": 2`. A higher `manifestVersion` or
 `engines.protocol`, or a `runtime.type` other than `process`, `service`,
 `none` and `wasm`, needs a newer AutoScene.
 
@@ -2278,7 +2576,7 @@ component, or a page.
 | | A program (`process`, `service`) | A component (`wasm`) | A page (any runtime) |
 |---|---|---|---|
 | Its calls into AutoScene | Checked, each one | Only its progress, its log, Stop and its own secrets | Checked, each one |
-| Files | Its own: whatever the person may read and write | `/data`, and the export's and the project's folders as its permissions give them | Only `files.resolve` (with a permission), `files.open` and `files.save` (the person's step) |
+| Files | Its own: whatever the person may read and write | `/data`, `/tmp`, and the export's and the project's folders as its permissions give them | Only `files.resolve` (with a permission), `files.open` and `files.save` (the person's step) |
 | The internet | `net.fetch`: checked. Its own connections: not | Only wasi:http to its hosts, checked; no socket | Only `net.fetch`; the CSP blocks the rest, but for the side channels below |
 | The rest of the computer | Whatever the person may do | Nothing: no program, no other file, no environment | Nothing: the frame's sandbox |
 
@@ -2458,7 +2756,8 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
   starts with `--- <time> run <runId> <action>`. The plugin's lines are
   marked `[stdout]`, `[stderr]` and `[<level>]` for its log lines;
   AutoScene's own are marked `[host]`, `[result]` and `[failed]`, with the
-  exit status at the end, and a call and its answer `[call]` and `[reply]`.
+  exit status at the end, a call and its answer `[call]` and `[reply]`, and
+  a verdict that counted for nothing `[verdict]`.
   A WebAssembly plugin's lines are marked the same way, and a trap
   `[host] trapped:`, with its backtrace (see
   [Errors and the log](#errors-and-the-log)).
@@ -2552,8 +2851,10 @@ AutoScene's data folder is `%LOCALAPPDATA%\AutoScene` on Windows,
 | `runtimes/uv-cache/`, `runtimes/uv-python/` | What uv fetched for scripts: their packages, and Pythons. |
 | `library.db` | In the `settings` table: its record (`plugin.<id>`), the settings the person changed (`plugin_settings.<id>`), the runtime the person agreed to and the names of the secrets set (`plugin_extra.<id>`), the id the keychain keeps this data folder's secrets under (`plugins_keychain`), and what AutoScene took of the catalog (`plugins_catalog`). |
 
-The values of secret settings are in the system's keychain, not in the data
-folder (see [Secret settings](#secret-settings)). An uninstall removes the
+A run's scratch folder is in the system's temp folder, not here (see
+[The scratch folder](#the-scratch-folder)). The values of secret settings are
+in the system's keychain, not in the data folder (see
+[Secret settings](#secret-settings)). An uninstall removes the
 plugin's files, its compiled code, its rows and its secrets; its data
 folder, with `page-state.json`, only when the person asks (**Delete what it
 kept too**). AutoScene 1.0 doesn't know `plugin_extra.<id>` or the keychain:

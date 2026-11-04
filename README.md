@@ -126,7 +126,7 @@ cd app && npm test
 | `docs/PLUGINS.md` | How to write, package and sign a plugin |
 | `docs/CATALOG.md` | AutoScene's plugin catalog: its signed index, its keys, `asp catalog` and the runbook |
 | `SECURITY.md` | How to report a security hole privately, and what counts |
-| `examples/plugins/` | Six example plugins: export actions (`hello-export`, and `discord-notify` with a secret and `net.fetch`), a page (`hello-page`), a service (`hello-service`), and two that run in the sandbox as WebAssembly (`discord-notify-wasm` in Rust, `clip-list-py` in Python) |
+| `examples/plugins/` | Seven example plugins: export actions (`hello-export`, and `discord-notify` with a secret, `net.fetch` and an event), a page (`hello-page`), a service (`hello-service`), a shot filter with a pack action (`bright-shots`), and two that run in the sandbox as WebAssembly (`discord-notify-wasm` in Rust, `clip-list-py` in Python) |
 
 `src/autoscene/` and `ui/` hold AutoScene 0.1, the Python-based version. They
 stay until this version also has its dialogue search, smart tags and frame

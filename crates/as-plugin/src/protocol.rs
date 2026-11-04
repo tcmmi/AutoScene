@@ -1179,6 +1179,21 @@ mod tests {
         assert_eq!(read("\u{FEFF}{\"type\":\"result\"}"), PluginMessage::Result { message: None });
     }
 
+    /// The guide shows `line`, by the `keys` that differ from the line
+    /// above them, in the first block after the words `heading`.
+    fn shows_what_differs(heading: &str, keys: &[&str], line: &str) {
+        let guide = include_str!("../../../docs/PLUGINS.md");
+        let block = &guide[guide.find(heading).expect(heading)..];
+        let block = &block[block.find("```json\n").unwrap() + 8..];
+        let shown: Value = serde_json::from_str(&block[..block.find("```").unwrap()]).unwrap();
+        let shown = shown.as_object().unwrap();
+        let line: Value = serde_json::from_str(line).unwrap();
+        assert_eq!(shown.keys().map(String::as_str).collect::<Vec<_>>(), keys);
+        for (key, value) in shown {
+            assert_eq!(&line[key], value, "{key}");
+        }
+    }
+
     #[test]
     fn a_verdict_line_reads_as_the_guide_shows() {
         let read = |line: &str| PluginMessage::read(line);
@@ -1248,6 +1263,10 @@ mod tests {
             ),
             "{line}"
         );
+        // The guide shows the same lines.
+        let guide = include_str!("../../../docs/PLUGINS.md");
+        assert!(guide.contains(r#"{"type":"verdict","shot":"m1:1200","keep":false}"#));
+        shows_what_differs("A run of a shot filter", &["action", "export", "shots"], &line);
         // Any other run line has none.
         assert!(!HostMessage::Run(Box::new(run())).line().contains("shots"));
     }
@@ -1303,6 +1322,7 @@ mod tests {
             ),
             "{line}"
         );
+        shows_what_differs("A run of a pack action", &["action", "export", "output", "pack"], &line);
         // Any other run line has neither.
         let other = HostMessage::Run(Box::new(run())).line();
         assert!(!other.contains("output") && !other.contains("pack"), "{other}");

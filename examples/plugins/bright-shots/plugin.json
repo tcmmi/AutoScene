@@ -1,0 +1,46 @@
+{
+  "manifestVersion": 2,
+  "id": "dev.autoscene.bright-shots",
+  "version": "1.0.0",
+  "name": "Bright Shots",
+  "description": "Leaves the shots too dark to use out of a scenepack, and saves a pack as a cut sheet. An example plugin.",
+  "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
+  "repository": "https://github.com/tcmmi/AutoScene",
+  "engines": { "autoscene": ">=1.0.0, <2", "protocol": 2 },
+  "runtime": {
+    "type": "process",
+    "command": { "*": ["uv", "run", "--script", "--locked", "main.py"] }
+  },
+  "permissions": ["project:read"],
+  "contributes": {
+    "settings": [
+      {
+        "key": "darkest",
+        "type": "number",
+        "title": "Darkest to keep",
+        "description": "How bright a shot must be to stay in the pack, from 0 (black) to 100 (white).",
+        "default": 15,
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "integer": true
+      }
+    ],
+    "shotFilters": [
+      {
+        "id": "bright-enough",
+        "title": "Bright enough",
+        "description": "Leaves out the shots too dark to use.",
+        "reason": "Too dark",
+        "settings": ["darkest"]
+      }
+    ],
+    "packActions": [
+      {
+        "id": "cut-sheet",
+        "title": "Save a cut sheet (CSV)…",
+        "file": { "name": "{character}-cut-sheet.csv", "extensions": ["csv"] }
+      }
+    ]
+  }
+}

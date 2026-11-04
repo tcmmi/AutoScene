@@ -1,9 +1,9 @@
 {
   "manifestVersion": 2,
   "id": "dev.autoscene.discord-notify",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "name": "Discord Notify",
-  "description": "Posts a finished export's clip list to a Discord channel through a webhook. An example plugin.",
+  "description": "Posts a finished export's clip list, and the end of an analysis, to a Discord channel through a webhook. An example plugin.",
   "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
   "repository": "https://github.com/tcmmi/AutoScene",
   "engines": { "autoscene": ">=1.0.0, <2", "protocol": 2 },
@@ -15,7 +15,20 @@
   "network": { "hosts": ["discord.com", "ptb.discord.com", "canary.discord.com", "discordapp.com"] },
   "contributes": {
     "exportActions": [
-      { "id": "post", "title": "Post to Discord", "description": "Posts the export's name and its clips to the channel." }
+      {
+        "id": "post",
+        "title": "Post to Discord",
+        "description": "Posts the export's name and its clips to the channel.",
+        "afterFailed": true
+      }
+    ],
+    "events": [
+      {
+        "id": "analysis-done",
+        "title": "Post when an analysis finishes",
+        "description": "Posts how many of a project's episodes were analysed, and how many failed.",
+        "on": "analysisFinished"
+      }
     ],
     "commands": [
       { "id": "test", "title": "Send a test message to Discord", "description": "Checks that the webhook works." }

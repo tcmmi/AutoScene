@@ -1848,6 +1848,7 @@ fn the_example_plugins_pack_and_parse() {
     let app = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
     // Each is checked by how it runs: an example added here is added below.
     let runtimes = [
+        ("bright-shots", RuntimeKind::Process),
         ("clip-list-py", RuntimeKind::Wasm),
         ("discord-notify", RuntimeKind::Process),
         ("discord-notify-wasm", RuntimeKind::Wasm),
@@ -1894,6 +1895,18 @@ fn the_example_plugins_pack_and_parse() {
         // version 2 and its calls add.
         let versions = if name == "hello-export" { (1, 1) } else { (2, 2) };
         assert_eq!((m.manifest_version, m.engines.protocol), versions, "{name}");
+        // What each shows of version 2 is still in its plugin.json.
+        match name {
+            "bright-shots" => {
+                assert_eq!(m.shot_filters[0].settings, ["darkest"]);
+                assert_eq!(m.pack_actions[0].file.name, "{character}-cut-sheet.csv");
+            }
+            "discord-notify" => {
+                assert!(m.export_actions[0].after_failed);
+                assert_eq!(m.events[0].id, "analysis-done");
+            }
+            _ => {}
+        }
 
         match runtime {
             // A uv script with its lock, which starts the same way everywhere.

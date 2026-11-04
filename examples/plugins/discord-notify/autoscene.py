@@ -20,10 +20,16 @@ service answers its requests one at a time, in the order they came. An
 exception in a handler answers its request with the exception's message,
 and so does an answer JSON can't hold (a set, NaN); its traceback goes to
 the plugin's log. docs/PLUGINS.md describes the protocol itself.
+
+Only this helper reads and writes AutoScene's lines. From start() on, a
+print(), a C library and a child process that writes to stdout all reach
+the plugin's log, as stderr does: what they write is never read as a
+message. stdin is empty for them. So call start() before anything prints.
 """
 
 import itertools
 import json
+import os
 import queue
 import sys
 import threading
@@ -44,7 +50,7 @@ class CallError(Exception):
 class Plugin:
     """A run (`mode` "run") or a service (`mode` "serve") of the plugin."""
 
-    def __init__(self, first: dict):
+    def __init__(self, first: dict, heard, said):
         self.mode = "serve" if first.get("type") == "serve" else "run"
         #: The first line: the run line, or the serve line.
         self.first = first
@@ -52,6 +58,8 @@ class Plugin:
         self.settings = first.get("settings", {})
         #: Set once AutoScene asks the run to cancel, or the service to stop.
         self.cancelled = threading.Event()
+        self._heard = heard
+        self._said = said
         self._out = threading.Lock()
         self._ids = itertools.count(1)
         self._calls: dict = {}
@@ -65,10 +73,11 @@ class Plugin:
 
     def _write(self, line: str) -> None:
         with self._out:
-            print(line, flush=True)
+            self._said.write(line + "\n")
+            self._said.flush()
 
     def _read(self) -> None:
-        for line in sys.stdin:
+        for line in self._heard:
             try:
                 m = json.loads(line)
             except ValueError:
@@ -121,6 +130,10 @@ class Plugin:
     def error(self, message: str, detail: str | None = None) -> None:
         self._send({"type": "error", "message": message, "detail": detail})
 
+    def verdict(self, shot: str, keep: bool) -> None:
+        """Says whether the pack keeps `shot`, a key of the run's shots (a shot filter's only)."""
+        self._send({"type": "verdict", "shot": shot, "keep": keep})
+
     def emit(self, event: str, data=None) -> None:
         """Tells the plugin's open pages `event` (a service's only)."""
         self._send({"type": "emit", "event": event, "data": data})
@@ -164,7 +177,39 @@ class Plugin:
 
 def start() -> Plugin:
     """Reads AutoScene's first line, and starts listening for the rest."""
-    # AutoScene sets PYTHONUTF8, but a run started by hand may not have it.
-    sys.stdin.reconfigure(encoding="utf-8")
-    sys.stdout.reconfigure(encoding="utf-8")
-    return Plugin(json.loads(sys.stdin.readline()))
+    heard, said = _keep_stdin(), _keep_stdout()
+    return Plugin(json.loads(heard.readline()), heard, said)
+
+
+def _keep_stdin():
+    """Keeps stdin for AutoScene's lines: the file it gives reads them.
+
+    fd 0 becomes an empty file, so a child process can't take a reply or a
+    cancel line. It also can't hang: on Windows a process that starts with a
+    pipe a thread is reading waits for that read, which here may never end.
+    The copy isn't inherited.
+    """
+    heard = os.fdopen(os.dup(0), encoding="utf-8")
+    nothing = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(nothing, 0)
+    os.close(nothing)
+    sys.stdin = open(0, encoding="utf-8", closefd=False)
+    return heard
+
+
+def _keep_stdout():
+    """Keeps stdout for the protocol's lines: the file it gives writes them.
+
+    fd 1 becomes stderr, so whatever else writes to stdout reaches the log:
+    print(), a C library, and a child process, which inherits fd 1 on Linux
+    and macOS, and on Windows the standard handle dup2 moves along with it.
+    The copy isn't inherited, so no child can write a line or hold the pipe
+    open.
+    """
+    sys.stdout.flush()
+    said = os.fdopen(os.dup(1), "w", encoding="utf-8", newline="\n")
+    os.dup2(2, 1)
+    # A new file: the old one may hold on to the console it found on Windows.
+    # Line by line, and never an error, so a print() can't lose or end a run.
+    sys.stdout = open(1, "w", encoding="utf-8", errors="backslashreplace", buffering=1, closefd=False)
+    return said

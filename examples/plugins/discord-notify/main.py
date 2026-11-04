@@ -4,8 +4,9 @@
 # ///
 """Discord Notify: an example AutoScene plugin that talks to the internet.
 
-It posts an export's name and clips to a Discord channel through the
-channel's webhook. The webhook's URL is a secret setting: AutoScene keeps
+It posts an export's name and clips, also of an export that failed, and the
+end of a project's analysis to a Discord channel through the channel's
+webhook. The webhook's URL is a secret setting: AutoScene keeps
 it in the system's keychain and hands it over only when the script asks
 (secrets.get). The post goes through AutoScene (net.fetch), which reaches
 only the hosts plugin.json names. The script never writes the URL to its
@@ -46,6 +47,10 @@ def main() -> int:
             content = describe(p.first["export"], settings.get("listClips", True))
             post(p, webhook(p), settings, content)
             p.result("Posted the export to Discord.")
+        elif action["kind"] == "event" and action["id"] == "analysis-done":
+            content = analysed(p.first["project"], p.first["event"])
+            post(p, webhook(p), settings, content)
+            p.result("Posted the analysis to Discord.")
         else:
             raise Refused(f"Discord Notify has no action {action['id']}.")
     except Refused as e:
@@ -84,11 +89,17 @@ def webhook(p: autoscene.Plugin) -> str:
 
 
 def describe(export: dict, list_clips: bool) -> str:
-    """The post for an export: its name, how many clips it made, and which."""
+    """The post for an export: its name, how it went, how many clips it made, and which."""
+    name, preset = plain(export["label"] or "An export"), plain(export["preset"])
+    # Its status, not its clips: a joined export whose file failed has every clip done.
+    status = export.get("status")
+    if status == "failed":
+        return f"**{name}** failed: nothing was made with {preset}."
     made = [c for c in export["clips"] if c["status"] == "done"]
     missing = len(export["clips"]) - len(made)
-    count = "1 clip" if len(made) == 1 else f"{len(made)} clips"
-    head = f"**{plain(export['label'] or 'An export')}** is done: {count} with {plain(export['preset'])}."
+    # No status: it was cancelled (the entry is off while an export runs).
+    went = "was stopped" if status is None else "is partly done" if status == "partial" else "is done"
+    head = f"**{name}** {went}: {counted(len(made), 'clip')} with {preset}."
     if missing:
         head += " 1 wasn't made." if missing == 1 else f" {missing} weren't made."
     lines = [head]
@@ -100,6 +111,18 @@ def describe(export: dict, list_clips: bool) -> str:
                 break
             lines.append(line)
     return "\n".join(lines)
+
+
+def analysed(project: dict | None, event: dict) -> str:
+    """The post for the end of a project's analysis: how many episodes it took, and how many failed."""
+    episodes = event["episodes"]
+    title = plain(project["title"]) if project else "A project"
+    failed = f", {episodes['failed']} failed" if episodes["failed"] else ""
+    return f"**{title}**: {counted(episodes['done'], 'episode')} analysed{failed}."
+
+
+def counted(n: int, word: str) -> str:
+    return f"1 {word}" if n == 1 else f"{n} {word}s"
 
 
 def plain(text: str) -> str:

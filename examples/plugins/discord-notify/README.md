@@ -1,7 +1,8 @@
 # Discord Notify
 
 An example AutoScene plugin that talks to the internet: it posts an
-export's name and clips to a Discord channel through the channel's webhook.
+export's name and clips, and the end of an analysis, to a Discord channel
+through the channel's webhook.
 It keeps the webhook's URL as a secret setting and posts through AutoScene,
 so it needs no package of its own. [docs/PLUGINS.md](../../../docs/PLUGINS.md)
 explains each part.
@@ -9,7 +10,13 @@ explains each part.
 - **Post to Discord** (each export's menu, or after every export): posts
   the export's name, preset and how many clips it made, and, with **List
   the clips** on, each clip's name and episode. It never posts a file, a
-  path or a frame.
+  path or a frame. Turned on to run after every export, it also says so when
+  an export failed or made only some of its clips (`afterFailed`). Chosen
+  from the menu of an export that was cancelled, it says the export was
+  stopped.
+- **Post when an analysis finishes** (the plugin's settings, under **Runs by
+  itself**): an event that posts, once a project's episodes are all analysed,
+  how many were analysed and how many failed.
 - **Send a test message to Discord** (the command palette): posts "AutoScene
   can post here." to check the webhook.
 
@@ -45,6 +52,12 @@ the update to 2.0.0, set **Webhook URL** again in the plugin's settings.
 The old value is no longer read, and setting the secret removes it from
 `library.db`.
 
+## From version 2.0
+
+Version 2.1.0 also posts after an export that failed. If you had **Post to
+Discord** turned on to run after every export, the update turns it off, as
+you agreed to whole exports only: turn it on again under **Runs by itself**.
+
 ## Try it
 
 You need [uv](https://docs.astral.sh/uv/) and the `asp` tool:
@@ -59,7 +72,8 @@ then **Install a plugin…** and pick `discord-notify.asp`. In its
 settings, choose **Set…** beside **Webhook URL** and paste the URL, then run
 **Send a test message to Discord** from the palette. Its settings also have
 **Runs by itself**, where **Post to Discord** can be turned on to post each
-export once it finishes.
+export once it finishes, and **Post when an analysis finishes** to post when
+a project's episodes are all analysed.
 
 The first run can take a while: uv may need to fetch a Python.
 

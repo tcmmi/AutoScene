@@ -6,6 +6,17 @@
 //! asp sign <in.asp> --key <asp.key> [--out <out.asp>]
 //! asp verify <in.asp> [--catalog <index.json> [--online-key <RW…>]… [--offline-key <RW…>]…]
 //! asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
+//! asp catalog new <index.json>
+//! asp catalog add <index.json> <pkg.asp> --url <https://…>… --repo <https://github.com/o/r> --commit <40 hex>
+//!                 [--path <dir>] --author <name> [--author-key <RW…>]
+//! asp catalog withdrawn <index.json> <withdrawn.json>
+//! asp catalog certify --epoch <n> --key <offline.key> [--withdraw-key <ID>]… [--online-key <RW…>]…
+//!                     [--previous <epoch.minisig>] --out <epoch.minisig> [--force]
+//! asp catalog epoch <index.json> <epoch.minisig>
+//! asp catalog bump <index.json> [--days 30]
+//! asp catalog sign <index.json> --key-env <NAME> [--password-env <NAME>]
+//! asp catalog verify <index.json> [--previous <old.json>] [--online-key <RW…>]… [--offline-key <RW…>]…
+//! asp catalog diff <index.json> <pkg.asp>
 //! ```
 //!
 //! - `init` makes a plugin to start from in `<dir>`, a new or empty folder,
@@ -37,6 +48,22 @@
 //!   AutoScene takes it: signed by one of AutoScene's catalog keys (or a key
 //!   given with `--online-key` or `--offline-key`) and living. A version it
 //!   withdrew fails.
+//! - `catalog` keeps AutoScene's plugin catalog ([`catalog`]) as its CI
+//!   does: `new` starts an empty index (epoch 1, number 0), `add` lists a
+//!   package with what it says of itself, `withdrawn` sets the withdrawals,
+//!   `epoch` attaches the epoch certificate `certify` signs with the offline
+//!   key on the owner's computer (asking for the key's password; it
+//!   withdraws again the keys the `--previous` one withdrew), `bump`
+//!   numbers and dates the index, `sign` signs it with a key it reads from
+//!   the environment and writes nowhere, `verify` checks it as an AutoScene
+//!   that holds no catalog (or the `--previous` one) takes it, and `diff`
+//!   says in Markdown what a package changes against the newest version
+//!   listed and not withdrawn. An index is written pretty-printed with a
+//!   trailing newline;
+//!   those bytes are what `sign` signs, and it signs no others. Entries and
+//!   withdrawals are checked as AutoScene checks them, and `sign` refuses an
+//!   index AutoScene would refuse for its form. A key a certificate withdrew
+//!   is withdrawn for good: each later certificate withdraws it again.
 //!
 //! `pack` and `verify` check each platform the plugin runs on as AutoScene
 //! does there, warn of one it can't run on, and fail when it runs on none.
@@ -48,23 +75,30 @@
 //! 1, wrong arguments with 2.
 
 use std::cmp::Reverse;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use as_plugin::catalog::{self, Catalog, CatalogKeys, CatalogState, Checked};
+use as_plugin::catalog::{
+    self, Accepted, Catalog, CatalogKeys, CatalogState, Checked, Entry, Index, MAX_LIFETIME, PackageRef, SourceRef,
+};
+use as_plugin::keys::FIRST_EPOCH;
 use as_plugin::manifest::{self, Parsed};
 use as_plugin::package::{self, AUTHOR_KEY, LOCK, MANIFEST, MAX_BANNER, PictureFormat, SIG, file_in};
 use as_plugin::store;
 use as_plugin::trust::{self, Trust, Verdict};
-use as_plugin::{FilesLock, KeyRole, Launch, LockedFile, Manifest, PluginError, Unpacked, current_platform};
+use as_plugin::{
+    FilesLock, KeyRole, Launch, LockedFile, Manifest, PluginError, RuntimeKind, Unpacked, current_platform,
+};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use minisign::{KeyPair, PublicKey, SecretKey};
+use minisign::{KeyPair, PublicKey, SecretKey, SecretKeyBox};
 use semver::Version;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tempfile::{NamedTempFile, TempDir};
 use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
@@ -75,7 +109,18 @@ usage: asp keygen <dir> [--force] [--unencrypted]
        asp pack <plugin-folder> <out.asp>
        asp sign <in.asp> --key <asp.key> [--out <out.asp>]
        asp verify <in.asp> [--catalog <index.json> [--online-key <RW…>]… [--offline-key <RW…>]…]
-       asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]";
+       asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
+       asp catalog new <index.json>
+       asp catalog add <index.json> <pkg.asp> --url <https://…>… --repo <https://github.com/o/r>
+                       --commit <40 hex> [--path <dir>] --author <name> [--author-key <RW…>]
+       asp catalog withdrawn <index.json> <withdrawn.json>
+       asp catalog certify --epoch <n> --key <offline.key> [--withdraw-key <ID>]… [--online-key <RW…>]…
+                           [--previous <epoch.minisig>] --out <epoch.minisig> [--force]
+       asp catalog epoch <index.json> <epoch.minisig>
+       asp catalog bump <index.json> [--days 30]
+       asp catalog sign <index.json> --key-env <NAME> [--password-env <NAME>]
+       asp catalog verify <index.json> [--previous <old.json>] [--online-key <RW…>]… [--offline-key <RW…>]…
+       asp catalog diff <index.json> <pkg.asp>";
 
 /// The secret key `keygen` writes beside `author.pub`.
 const SECRET_KEY: &str = "asp.key";
@@ -94,6 +139,8 @@ const TYPES: [(&str, &str); 6] = [
     (".autoscene/types/protocol.d.ts", include_str!("../../templates/types/protocol.d.ts")),
     (".autoscene/types/sdk.d.ts", include_str!("../../templates/types/sdk.d.ts")),
 ];
+/// A day, in seconds.
+const DAY: u64 = 86_400;
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -129,9 +176,7 @@ fn run(args: &[OsString]) -> Result<(), Failure> {
         }
         "verify" => {
             let a = Args::read(rest, 1, &[], &["--catalog", "--online-key", "--offline-key"])?;
-            let given = [(KeyRole::Online, "--online-key"), (KeyRole::Offline, "--offline-key")];
-            let keys: Vec<(KeyRole, &OsString)> =
-                given.iter().flat_map(|&(role, option)| a.values(option).into_iter().map(move |k| (role, k))).collect();
+            let keys = a.catalog_keys();
             let index = a.value("--catalog").map(Path::new);
             if index.is_none() && !keys.is_empty() {
                 return Err(usage("--online-key and --offline-key check the index --catalog names"));
@@ -149,6 +194,7 @@ fn run(args: &[OsString]) -> Result<(), Failure> {
             };
             init(&a.paths[0], form, a.value("--id"), a.value("--name"))
         }
+        "catalog" => catalog_command(rest),
         "help" | "--help" | "-h" => {
             println!("{USAGE}");
             Ok(())
@@ -370,13 +416,8 @@ fn verify(path: &Path, index: Option<&Path>, keys: &[(KeyRole, &OsString)]) -> R
     };
     let scratch = tempfile::tempdir()?;
     let dir = scratch.path().join("plugin");
-    let (unpacked, parsed) = open(path, &dir)?;
-    warn_all(&parsed.warnings);
+    let (unpacked, parsed) = unpack_checked(path, &dir)?;
     let m = &parsed.manifest;
-    check_platforms(m, &unpacked.lock)?;
-    package::check_pages(&dir, Some(&unpacked.lock), &m.pages)?;
-    package::check_pictures(&dir, &unpacked.lock, m)?;
-    warn_of_banner(&dir, m)?;
     let (sig, author_key) = (unpacked.signature.as_deref(), unpacked.author_key.as_deref());
     let lock = Some(unpacked.lock_bytes.as_slice());
     let (verdict, _) = store::verdict(m, lock, sig, author_key, None, &catalog, catalog::now())?;
@@ -388,6 +429,17 @@ fn verify(path: &Path, index: Option<&Path>, keys: &[(KeyRole, &OsString)]) -> R
 /// `index.json.minisig` beside it), as an AutoScene that holds none takes
 /// it: signed by one of AutoScene's catalog keys or of `keys`, and living.
 fn read_catalog(path: &Path, keys: &[(KeyRole, &OsString)]) -> Result<Catalog, Failure> {
+    let keys = catalog_keys(keys)?;
+    let (bytes, sig) = read_signed(path)?;
+    let now = catalog::now();
+    let accepted = take_fresh(&bytes, &sig, &keys, now)?;
+    let state = CatalogState::default().after(&accepted, now);
+    Ok(Catalog::new(Some(accepted.index), state))
+}
+
+/// AutoScene's catalog keys and `keys`, each a minisign public key's base64
+/// line.
+fn catalog_keys(keys: &[(KeyRole, &OsString)]) -> Result<CatalogKeys, Failure> {
     // A key pasted, or read from a .pub file, may end in a space or a CR.
     let keys = keys
         .iter()
@@ -395,19 +447,31 @@ fn read_catalog(path: &Path, keys: &[(KeyRole, &OsString)]) -> Result<Catalog, F
             Ok((role, k.to_str().map(str::trim).ok_or_else(|| failed("That isn't a minisign public key."))?))
         })
         .collect::<Result<Vec<(KeyRole, &str)>, Failure>>()?;
-    let keys = CatalogKeys::builtin().with(&keys)?;
+    Ok(CatalogKeys::builtin().with(&keys)?)
+}
+
+/// The index `path` and the signature beside it (`<path>.minisig`), each
+/// read no further than [`catalog::check`] takes: it refuses a larger file.
+fn read_signed(path: &Path) -> Result<(Vec<u8>, String), Failure> {
+    let bytes = read_at_most(path, catalog::MAX_INDEX_BYTES)?;
+    let sig = String::from_utf8_lossy(&read_at_most(&sig_beside(path), catalog::MAX_SIG_BYTES)?).into_owned();
+    Ok((bytes, sig))
+}
+
+/// The index `bytes`, signed with `sig`, as an AutoScene that holds no
+/// catalog takes it at `now`.
+fn take_fresh(bytes: &[u8], sig: &str, keys: &CatalogKeys, now: u64) -> Result<Accepted, Failure> {
+    match catalog::check(bytes, sig, keys, &CatalogState::default(), now)? {
+        Checked::Newer(accepted) => Ok(*accepted),
+        Checked::Same => unreachable!("an empty state holds no index to be the same as"),
+    }
+}
+
+/// `<path>.minisig`, where an index's signature lies.
+fn sig_beside(path: &Path) -> PathBuf {
     let mut sig_path = path.as_os_str().to_owned();
     sig_path.push(".minisig");
-    let sig_path = PathBuf::from(sig_path);
-    // Read no further than the check takes: it refuses a larger file.
-    let bytes = read_at_most(path, catalog::MAX_INDEX_BYTES)?;
-    let sig = String::from_utf8_lossy(&read_at_most(&sig_path, catalog::MAX_SIG_BYTES)?).into_owned();
-    let (held, now) = (CatalogState::default(), catalog::now());
-    let Checked::Newer(accepted) = catalog::check(&bytes, &sig, &keys, &held, now)? else {
-        unreachable!("an empty state holds no index to be the same as");
-    };
-    let state = held.after(&accepted, now);
-    Ok(Catalog::new(Some(accepted.index), state))
+    PathBuf::from(sig_path)
 }
 
 /// The file `path`, to a byte more than `max`.
@@ -415,6 +479,857 @@ fn read_at_most(path: &Path, max: u64) -> Result<Vec<u8>, Failure> {
     let mut bytes = Vec::new();
     File::open(path).and_then(|f| f.take(max + 1).read_to_end(&mut bytes)).map_err(at(path))?;
     Ok(bytes)
+}
+
+/// Runs `asp catalog <command> …`.
+fn catalog_command(args: &[OsString]) -> Result<(), Failure> {
+    let Some((command, rest)) = args.split_first() else { return Err(usage("name a catalog command")) };
+    match command.to_str().unwrap_or_default() {
+        "new" => {
+            let a = Args::read(rest, 1, &[], &[])?;
+            catalog_new(&a.paths[0])
+        }
+        "add" => {
+            let a = Args::read(rest, 2, &[], &["--url", "--repo", "--commit", "--path", "--author", "--author-key"])?;
+            let urls = a.texts("--url")?;
+            if urls.is_empty() {
+                return Err(usage("catalog add needs --url"));
+            }
+            let source = SourceRef {
+                repo: a.needed("--repo", "catalog add")?.to_owned(),
+                commit: a.needed("--commit", "catalog add")?.to_owned(),
+                path: a.text("--path")?.unwrap_or_default().to_owned(),
+            };
+            let author = a.needed("--author", "catalog add")?;
+            // A key pasted, or read from a .pub file, may end in a space or a CR.
+            let author_key = a.text("--author-key")?.map(str::trim);
+            catalog_add(&a.paths[0], &a.paths[1], &urls, source, author, author_key)
+        }
+        "withdrawn" => {
+            let a = Args::read(rest, 2, &[], &[])?;
+            catalog_withdrawn(&a.paths[0], &a.paths[1])
+        }
+        "certify" => {
+            let options = ["--epoch", "--key", "--withdraw-key", "--online-key", "--previous", "--out"];
+            let a = Args::read(rest, 0, &["--force"], &options)?;
+            let epoch = a.needed("--epoch", "catalog certify")?;
+            let epoch = epoch.parse().ok().filter(|&e| e >= FIRST_EPOCH);
+            let epoch = epoch.ok_or_else(|| usage(format!("--epoch takes a number from {FIRST_EPOCH}")))?;
+            let key = a.value("--key").ok_or_else(|| usage("catalog certify needs --key <offline.key>"))?;
+            let out = a.value("--out").ok_or_else(|| usage("catalog certify needs --out <epoch.minisig>"))?;
+            let (withdraw, online) = (a.texts("--withdraw-key")?, a.texts("--online-key")?);
+            let previous = a.value("--previous").map(Path::new);
+            certify(epoch, Path::new(key), &withdraw, &online, previous, Path::new(out), a.has("--force"))
+        }
+        "epoch" => {
+            let a = Args::read(rest, 2, &[], &[])?;
+            catalog_epoch(&a.paths[0], &a.paths[1])
+        }
+        "bump" => {
+            let a = Args::read(rest, 1, &[], &["--days"])?;
+            let most = MAX_LIFETIME / DAY;
+            let days = match a.text("--days")? {
+                Some(days) => days.parse().ok().filter(|d| (1..=most).contains(d)),
+                None => Some(30),
+            };
+            bump(&a.paths[0], days.ok_or_else(|| usage(format!("--days takes 1 to {most}")))?)
+        }
+        "sign" => {
+            let a = Args::read(rest, 1, &[], &["--key-env", "--password-env"])?;
+            sign_index(&a.paths[0], a.needed("--key-env", "catalog sign")?, a.text("--password-env")?)
+        }
+        "verify" => {
+            let a = Args::read(rest, 1, &[], &["--previous", "--online-key", "--offline-key"])?;
+            verify_index(&a.paths[0], a.value("--previous").map(Path::new), &a.catalog_keys())
+        }
+        "diff" => {
+            let a = Args::read(rest, 2, &[], &[])?;
+            catalog_diff(&a.paths[0], &a.paths[1])
+        }
+        other => Err(usage(format!("unknown catalog command \"{other}\""))),
+    }
+}
+
+/// Writes an empty index to `path`, which mustn't be there: epoch 1,
+/// number 0, published and running out at 0, so `bump` dates the first.
+fn catalog_new(path: &Path) -> Result<(), Failure> {
+    if fs::symlink_metadata(path).is_ok() {
+        return Err(failed(format!("{} is there already.", path.display())));
+    }
+    let index = Index {
+        catalog_version: catalog::CATALOG_VERSION,
+        epoch: FIRST_EPOCH,
+        seq: 0,
+        published: 0,
+        expires: 0,
+        epoch_certificate: None,
+        plugins: Vec::new(),
+        withdrawn: Vec::new(),
+    };
+    let file = key_file(folder_of(path), &index_bytes(&index), false)?;
+    file.persist_noclobber(path).map_err(|e| at(path)(e.error))?;
+    println!("Made an empty catalog in {}.", path.display());
+    Ok(())
+}
+
+/// Lists the package `pkg` in the index `path`, with what the package says
+/// of itself, where it is (`urls`), the source it was built from, and its
+/// author (and their key) as the catalog checked them; approved now. A
+/// version the index lists already is refused.
+fn catalog_add(
+    path: &Path,
+    pkg: &Path,
+    urls: &[&str],
+    source: SourceRef,
+    author: &str,
+    author_key: Option<&str>,
+) -> Result<(), Failure> {
+    let mut index = read_index(path)?;
+    let listing = Listing::of(pkg)?;
+    let m = &listing.manifest;
+    if let Some(e) = index.plugins.iter().find(|e| e.id == m.id && same_version(&e.version, &m.version)) {
+        return Err(failed(format!("The catalog lists {} {} already.", e.id, e.version)));
+    }
+    let now = catalog::now();
+    let entry = Entry {
+        id: m.id.clone(),
+        version: m.version.clone(),
+        lock: listing.lock.clone(),
+        package: PackageRef {
+            urls: urls.iter().map(|&url| url.to_owned()).collect(),
+            size: listing.size,
+            sha256: listing.sha256.clone(),
+        },
+        author_key: author_key.map(str::to_owned),
+        name: m.name.clone(),
+        // The manifest cuts its description to 300 characters already.
+        summary: m.description.clone(),
+        author: author.to_owned(),
+        license: m.license.clone(),
+        platforms: listing.platforms.clone(),
+        runtime: listing.runtime.to_owned(),
+        gpu: m.runtime.gpu,
+        uv_script: listing.uv_script,
+        permissions: listing.permissions(),
+        hosts: m.network_hosts.clone(),
+        engines: m.engines.autoscene.clone(),
+        source,
+        icon: listing.icon.clone(),
+        approved: now,
+    };
+    // Checked as AutoScene checks an entry of an index published now.
+    let alone = Index { plugins: vec![entry], ..probe(index.epoch, now) };
+    let Some(entry) = as_autoscene_reads(&alone, now)?.plugins.pop() else {
+        unreachable!("an index AutoScene took keeps its entries")
+    };
+    let named = format!("{} {}", entry.id, entry.version);
+    index.plugins.push(entry);
+    write_file(path, &index_bytes(&index))?;
+    println!("Listed {named} in {}.", path.display());
+    Ok(())
+}
+
+/// Sets the withdrawals of the index `path` to those of the JSON file `list`
+/// (`[{id, versions, reason, since}]`), each checked as AutoScene checks it.
+fn catalog_withdrawn(path: &Path, list: &Path) -> Result<(), Failure> {
+    let mut index = read_index(path)?;
+    let bytes = read_at_most(list, catalog::MAX_INDEX_BYTES)?;
+    let withdrawn = serde_json::from_slice(&bytes).map_err(|e| failed(format!("{}: {e}", list.display())))?;
+    let now = catalog::now();
+    let alone = Index { withdrawn, ..probe(index.epoch, now) };
+    index.withdrawn = as_autoscene_reads(&alone, now)?.withdrawn;
+    write_file(path, &index_bytes(&index))?;
+    println!("{} has {}.", path.display(), count(index.withdrawn.len(), "withdrawal", "withdrawals"));
+    Ok(())
+}
+
+/// Signs the certificate of epoch `epoch` with the offline key `key` (asking
+/// for its password), into `out`, which `force` lets it replace: it names the
+/// online keys of the epoch, `online`, and withdraws the keys whose ids are
+/// `withdraw` for good, and those the certificate `previous` withdrew.
+fn certify(
+    epoch: u64,
+    key: &Path,
+    withdraw: &[&str],
+    online: &[&str],
+    previous: Option<&Path>,
+    out: &Path,
+    force: bool,
+) -> Result<(), Failure> {
+    let mut withdraw = withdraw
+        .iter()
+        .map(|id| {
+            let id = id.trim().to_ascii_uppercase();
+            if id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit()) {
+                Ok(id)
+            } else {
+                Err(usage(format!("--withdraw-key takes a key id, 16 hex digits as minisign shows it, not \"{id}\"")))
+            }
+        })
+        .collect::<Result<Vec<String>, Failure>>()?;
+    let online: Vec<String> = online.iter().map(|k| k.trim().to_owned()).collect();
+    for key in &online {
+        // As AutoScene reads the keys a certificate names.
+        CatalogKeys::new(&[(KeyRole::Online, key.as_str())])?;
+    }
+    match previous.map(read_certificate).transpose()? {
+        Some((_, previous)) if previous.epoch >= epoch => {
+            return Err(failed(format!(
+                "--previous is the certificate of epoch {}, not of an earlier one.",
+                previous.epoch
+            )));
+        }
+        Some((_, previous)) => {
+            Certificate { epoch, withdraw: Vec::new(), online: online.clone() }.names_none_of(&previous)?;
+            withdraw.extend(previous.withdraw);
+            withdraw.sort_unstable();
+            withdraw.dedup();
+        }
+        None => {}
+    }
+    for key in &online {
+        if withdraw.contains(&trust::key_id(key)?) {
+            return Err(failed(format!("The certificate both names and withdraws key {}.", trust::key_id(key)?)));
+        }
+    }
+    if !force && fs::symlink_metadata(out).is_ok() {
+        return Err(failed(format!("{} is there already; --force replaces it.", out.display())));
+    }
+    let secret = secret_key(key)?;
+    let public = PublicKey::from_secret_key(&secret)?;
+    let id = trust::key_id(&public.to_base64())?;
+    if withdraw.contains(&id) {
+        return Err(failed("A certificate can't withdraw the key that signs it."));
+    }
+    if previous.is_none() && epoch > FIRST_EPOCH + 1 {
+        warn(
+            "Without --previous, it doesn't withdraw again what earlier certificates withdrew, and asp catalog \
+             epoch refuses it after one that withdrew a key.",
+        );
+    }
+    if online.is_empty() {
+        warn("It names no online key: only the offline key signs the indexes of this epoch.");
+    }
+    let line = catalog::certificate_line(epoch, &withdraw, &online);
+    let untrusted = Some("AutoScene plugin catalog epoch certificate");
+    let signature = minisign::sign(Some(&public), &secret, line.as_bytes(), Some(&line), untrusted)?;
+    write_file(out, signature.into_string().as_bytes())?;
+    println!("Certified epoch {epoch} with key {id} into {}.", out.display());
+    Ok(())
+}
+
+/// Attaches the epoch certificate `cert` to the index `path`. Its epoch
+/// starts at number 0, so the next `bump` gives its first index. A lower
+/// epoch is refused, and so is another certificate of the same one; the
+/// same certificate again changes nothing.
+fn catalog_epoch(path: &Path, cert: &Path) -> Result<(), Failure> {
+    let mut index = read_index(path)?;
+    let (text, certificate) = read_certificate(cert)?;
+    let epoch = certificate.epoch;
+    let held = index.epoch_certificate.as_deref();
+    // The same certificate, also with other line ends.
+    if epoch == index.epoch && held.is_some_and(|held| signed_lines(held) == signed_lines(&text)) {
+        println!("{} is in epoch {epoch} already.", path.display());
+        return Ok(());
+    }
+    if epoch <= index.epoch {
+        return Err(failed(format!(
+            "The certificate is for epoch {epoch}, and the catalog is in epoch {} already.",
+            index.epoch
+        )));
+    }
+    if let Some(held) = held {
+        certificate.keeps_withdrawals_of(&Certificate::read(held).map_err(|_| unreadable_certificate(path))?)?;
+    }
+    index.epoch = epoch;
+    index.seq = 0;
+    index.epoch_certificate = Some(text);
+    write_file(path, &index_bytes(&index))?;
+    println!("{} starts epoch {epoch}.", path.display());
+    Ok(())
+}
+
+/// Numbers the index `path` one higher and dates it: published now, and
+/// running out in `days`.
+fn bump(path: &Path, days: u64) -> Result<(), Failure> {
+    let mut index = read_index(path)?;
+    let now = catalog::now();
+    index.seq =
+        index.seq.checked_add(1).ok_or_else(|| failed("The catalog's number can't go higher; start a new epoch."))?;
+    index.published = now;
+    index.expires = now + days * DAY;
+    write_file(path, &index_bytes(&index))?;
+    let (seq, epoch, expires) = (index.seq, index.epoch, date(index.expires));
+    println!("{} is number {seq} of epoch {epoch}, running out on {expires}.", path.display());
+    Ok(())
+}
+
+/// Signs the index `path`, as its bytes are, into `<path>.minisig` with the
+/// secret key the environment variable `key_env` holds, opened with the
+/// password `password_env` holds (none: the key has none). The key comes
+/// from the environment alone, and is never written. An index AutoScene
+/// would refuse for its form, its dates included, isn't signed, nor one asp
+/// didn't write as it writes one.
+fn sign_index(path: &Path, key_env: &str, password_env: Option<&str>) -> Result<(), Failure> {
+    let bytes = read_at_most(path, catalog::MAX_INDEX_BYTES)?;
+    let index = parse_index(path, &bytes)?;
+    match &index.epoch_certificate {
+        Some(text) if Certificate::read(text).map_err(|_| unreadable_certificate(path))?.epoch != index.epoch => {
+            return Err(failed("The catalog's epoch certificate is for another epoch."));
+        }
+        None if index.epoch > FIRST_EPOCH => {
+            return Err(failed(format!(
+                "An index of epoch {} needs its epoch certificate, which asp catalog epoch attaches.",
+                index.epoch
+            )));
+        }
+        _ => {}
+    }
+    as_autoscene_reads(&index, catalog::now())?;
+    // Other bytes (edited by hand, a key named twice, other line ends) might
+    // read otherwise in AutoScene than they did here.
+    if bytes != index_bytes(&index) {
+        return Err(failed(format!(
+            "{} isn't written as asp writes an index, so AutoScene might read it otherwise. Any asp catalog \
+             command that changes it writes it again.",
+            path.display()
+        )));
+    }
+    let secret = secret_key_from_env(key_env, password_env)?;
+    let public = PublicKey::from_secret_key(&secret)?;
+    let id = trust::key_id(&public.to_base64())?;
+    let comment = catalog::index_comment(index.epoch, index.seq, index.expires);
+    let untrusted = Some("AutoScene plugin catalog");
+    let signature = minisign::sign(Some(&public), &secret, bytes.as_slice(), Some(&comment), untrusted)?;
+    let sig_path = sig_beside(path);
+    write_file(&sig_path, signature.into_string().as_bytes())?;
+    let (epoch, seq, expires) = (index.epoch, index.seq, date(index.expires));
+    println!(
+        "Signed {} (epoch {epoch}, number {seq}, running out on {expires}) with key {id} into {}.",
+        path.display(),
+        sig_path.display()
+    );
+    Ok(())
+}
+
+/// The secret key the environment variable `key_env` holds, as minisign
+/// writes one, opened with the password the variable `password_env` holds
+/// (none: the key has no password).
+fn secret_key_from_env(key_env: &str, password_env: Option<&str>) -> Result<SecretKey, Failure> {
+    let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    let text = var(key_env).ok_or_else(|| failed(format!("${key_env} holds no key.")))?;
+    let boxed = SecretKeyBox::from_string(&text)?;
+    let key = match password_env {
+        Some(name) => {
+            let password = var(name).ok_or_else(|| failed(format!("${name} holds no password.")))?;
+            boxed.into_secret_key(Some(password))
+        }
+        None if secret_key_lock(text.as_bytes()) == Some(*b"Sc") => {
+            return Err(failed(format!(
+                "The key in ${key_env} is locked with a password; --password-env names the variable that holds it."
+            )));
+        }
+        None => boxed.into_unencrypted_secret_key(),
+    };
+    key.map_err(|e| failed(format!("The key in ${key_env}: {e}")))
+}
+
+/// Checks the index `path`, with its `<path>.minisig`, as AutoScene takes
+/// it now, against AutoScene's catalog keys and `keys`: as an AutoScene
+/// that holds no catalog, or the `previous` index, of which it must keep
+/// every version. Says what it is and who signed it.
+fn verify_index(path: &Path, previous: Option<&Path>, keys: &[(KeyRole, &OsString)]) -> Result<(), Failure> {
+    let keys = catalog_keys(keys)?;
+    let (bytes, sig) = read_signed(path)?;
+    let old = match previous {
+        Some(previous) => {
+            let old_bytes = read_at_most(previous, catalog::MAX_INDEX_BYTES)?;
+            let old = parse_index(previous, &old_bytes)?;
+            let certificate = old.epoch_certificate.as_deref().map(Certificate::read).transpose();
+            let certificate = certificate.map_err(|_| unreadable_certificate(previous))?;
+            Some((previous, old, package::sha256_hex(&old_bytes), certificate))
+        }
+        None => None,
+    };
+    // What an AutoScene holds once it took the previous index, the keys its
+    // certificate withdrew among them. Those earlier ones withdrew, it holds
+    // too: each certificate withdraws them again.
+    let held = old.as_ref().map_or_else(CatalogState::default, |(_, old, sha256, certificate)| CatalogState {
+        v: catalog::STATE_VERSION,
+        epoch: old.epoch,
+        seq: old.seq,
+        sha256: Some(sha256.clone()),
+        published: old.published,
+        expires: old.expires,
+        withdrawn_keys: certificate.as_ref().map(|c| c.withdraw.clone()).unwrap_or_default(),
+        withdrawn: old.withdrawn.clone(),
+        ..CatalogState::default()
+    });
+    let now = catalog::now();
+    let accepted = match catalog::check(&bytes, &sig, &keys, &held, now)? {
+        Checked::Newer(accepted) => *accepted,
+        // The previous index again, which AutoScene takes as no news.
+        Checked::Same => take_fresh(&bytes, &sig, &keys, now)?,
+    };
+    if let Some((previous, old, _, held)) = &old {
+        keeps_every_version(&accepted.index, old, previous)?;
+        if let (Some(held), Some(text)) = (held, &accepted.index.epoch_certificate)
+            && accepted.index.epoch > old.epoch
+        {
+            Certificate::read(text).map_err(|_| unreadable_certificate(path))?.keeps_withdrawals_of(held)?;
+        }
+    }
+    let i = &accepted.index;
+    let role = match accepted.role {
+        KeyRole::Online => "online",
+        KeyRole::Offline => "offline",
+    };
+    println!(
+        "{}: epoch {}, number {}, published {} ({}), running out on {} ({}).",
+        path.display(),
+        i.epoch,
+        i.seq,
+        date(i.published),
+        i.published,
+        date(i.expires),
+        i.expires
+    );
+    println!("Signed with the {role} key {}.", accepted.signed_by);
+    let (plugins, withdrawn) = (i.plugins.len(), i.withdrawn.len());
+    println!(
+        "{} and {}.",
+        count(plugins, "plugin version", "plugin versions"),
+        count(withdrawn, "withdrawal", "withdrawals")
+    );
+    Ok(())
+}
+
+/// Refuses the index `new` when it drops a version the index `old` (read
+/// from `path`) lists, or lists it with another lock: the catalog only adds.
+fn keeps_every_version(new: &Index, old: &Index, path: &Path) -> Result<(), Failure> {
+    for e in &old.plugins {
+        match new.plugins.iter().find(|n| n.id == e.id && same_version(&n.version, &e.version)) {
+            None => {
+                return Err(failed(format!(
+                    "The catalog drops {} {}, which {} lists.",
+                    e.id,
+                    e.version,
+                    path.display()
+                )));
+            }
+            Some(n) if n.lock != e.lock => {
+                return Err(failed(format!(
+                    "The catalog lists {} {} with another files.lock than {} does.",
+                    e.id,
+                    e.version,
+                    path.display()
+                )));
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
+/// Says in Markdown, for the catalog CI's job summary, what the package
+/// `pkg` changes against the newest version of its plugin the index `path`
+/// lists and hasn't withdrawn, or all it is when that lists none. An index
+/// that isn't there yet lists none.
+fn catalog_diff(path: &Path, pkg: &Path) -> Result<(), Failure> {
+    let index = match fs::symlink_metadata(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        _ => Some(read_index(path)?),
+    };
+    let listing = Listing::of(pkg)?;
+    let m = &listing.manifest;
+    let theirs: Vec<&Entry> = index.iter().flat_map(|i| &i.plugins).filter(|e| e.id == m.id).collect();
+    // Withdrawn as AutoScene withdraws a version.
+    let withdrawn = index.as_ref().map(|i| i.withdrawn.clone()).unwrap_or_default();
+    let withdrawn = Catalog::new(None, CatalogState { withdrawn, ..CatalogState::default() });
+    let newest = theirs
+        .iter()
+        .filter(|e| withdrawn.withdrawal(&e.id, &e.version).is_none())
+        .filter_map(|&e| Some((e, Version::parse(&e.version).ok()?)))
+        .max_by(|(_, a), (_, b)| a.cmp_precedence(b))
+        .map(|(e, _)| e);
+    let listed = theirs.iter().any(|e| same_version(&e.version, &m.version));
+    print!("{}", diff_text(&listing, newest, listed, !theirs.is_empty()));
+    Ok(())
+}
+
+/// [`catalog_diff`]'s Markdown for `listing`, against the entry `newest`;
+/// `listed` when the catalog lists its version already, and `known` when it
+/// lists any (withdrawn, when `newest` is none).
+fn diff_text(listing: &Listing, newest: Option<&Entry>, listed: bool, known: bool) -> String {
+    let m = &listing.manifest;
+    let permissions = listing.permissions();
+    let yes = |b: bool| if b { "yes" } else { "no" };
+    let files = format!(
+        "{}, {} bytes; the package is {} bytes",
+        count(listing.files, "file", "files"),
+        listing.unpacked,
+        listing.size
+    );
+    // The author names the plugin: in code, it says nothing in Markdown or
+    // HTML, and can't pass for the version or the id.
+    let mut out = format!("### `{}` {} (`{}`)\n\n", m.name.replace('`', "'"), m.version, m.id);
+    let mut lines = Vec::new();
+    match newest {
+        None => {
+            out.push_str(if known {
+                "The catalog withdrew every version of it it lists.\n\n"
+            } else {
+                "A new plugin.\n\n"
+            });
+            lines.push(format!("Permissions: {}", names(&permissions)));
+            lines.push(format!("Hosts: {}", names(&m.network_hosts)));
+            lines.push(format!("Platforms: {}", platforms(&listing.platforms)));
+            lines.push(format!("Runtime: {}", listing.runtime));
+            lines.push(format!("Python script through uv: {}", yes(listing.uv_script)));
+            lines.push(format!("GPU: {}", yes(m.runtime.gpu)));
+            lines.push(format!("AutoScene: `{}`", m.engines.autoscene));
+            lines.push(format!("Files: {files}"));
+        }
+        Some(e) => {
+            if listed {
+                out.push_str(&format!("The catalog lists {} already, so `asp catalog add` refuses it.\n\n", m.version));
+            }
+            out.push_str(&format!(
+                "Against {}, the newest version the catalog lists and hasn't withdrawn:\n\n",
+                e.version
+            ));
+            for (what, now, was) in
+                [("Permissions", &permissions, &e.permissions), ("Hosts", &m.network_hosts, &e.hosts)]
+            {
+                let added: Vec<String> = now.iter().filter(|p| !was.contains(p)).cloned().collect();
+                let removed: Vec<String> = was.iter().filter(|p| !now.contains(p)).cloned().collect();
+                if !added.is_empty() {
+                    lines.push(format!("{what} added: {}", names(&added)));
+                }
+                if !removed.is_empty() {
+                    lines.push(format!("{what} removed: {}", names(&removed)));
+                }
+            }
+            if listing.platforms.iter().collect::<BTreeSet<_>>() != e.platforms.iter().collect::<BTreeSet<_>>() {
+                lines.push(format!("Platforms: {} (was {})", platforms(&listing.platforms), platforms(&e.platforms)));
+            }
+            if listing.runtime != e.runtime {
+                lines.push(format!("Runtime: {} (was {})", listing.runtime, e.runtime));
+            }
+            if listing.uv_script != e.uv_script {
+                lines.push(format!("Python script through uv: {} (was {})", yes(listing.uv_script), yes(e.uv_script)));
+            }
+            if m.runtime.gpu != e.gpu {
+                lines.push(format!("GPU: {} (was {})", yes(m.runtime.gpu), yes(e.gpu)));
+            }
+            if m.engines.autoscene != e.engines {
+                lines.push(format!("AutoScene: `{}` (was `{}`)", m.engines.autoscene, e.engines));
+            }
+            if lines.is_empty() {
+                lines.push("Permissions, hosts, platforms, runtime, uv, GPU and AutoScene: as before".into());
+            }
+            lines.push(format!("Files: {files} (was {} bytes)", e.package.size));
+        }
+    }
+    for line in lines {
+        out.push_str(&format!("- {line}\n"));
+    }
+    out
+}
+
+/// `items` in Markdown: `a`, `b`; "none" for none.
+fn names(items: &[String]) -> String {
+    if items.is_empty() { "none".into() } else { items.iter().map(|i| format!("`{i}`")).collect::<Vec<_>>().join(", ") }
+}
+
+/// An entry's platforms: "all" for none.
+fn platforms(platforms: &[String]) -> String {
+    if platforms.is_empty() { "all".into() } else { platforms.join(", ") }
+}
+
+/// `n` things: "no files", "1 file", "2 files".
+fn count(n: usize, one: &str, many: &str) -> String {
+    match n {
+        0 => format!("no {many}"),
+        1 => format!("1 {one}"),
+        n => format!("{n} {many}"),
+    }
+}
+
+/// What a package says of itself, as the catalog lists it.
+struct Listing {
+    manifest: Manifest,
+    /// The SHA-256 of its `files.lock`.
+    lock: String,
+    /// How many files it has, and their bytes.
+    files: usize,
+    unpacked: u64,
+    /// The package's size and SHA-256.
+    size: u64,
+    sha256: String,
+    /// The platforms where its command starts; none for one that runs on
+    /// all: one that runs no program, or one uv script everywhere.
+    platforms: Vec<String>,
+    /// Its runtime type, as its manifest names it.
+    runtime: &'static str,
+    /// Whether it runs a Python script through uv.
+    uv_script: bool,
+    /// Its icon as a `data:` URL, when that is small enough.
+    icon: Option<String>,
+}
+
+impl Listing {
+    /// The package `path`, unpacked and checked as `verify` does.
+    fn of(path: &Path) -> Result<Self, Failure> {
+        let scratch = tempfile::tempdir()?;
+        let dir = scratch.path().join("plugin");
+        let (unpacked, parsed) = unpack_checked(path, &dir)?;
+        let m = parsed.manifest;
+        let (mut platforms, mut uv_script) = (Vec::new(), false);
+        for (platform, launch) in m.launches() {
+            if let Ok(launch) = launch
+                && package::check_launch(&unpacked.lock, &launch, platform).is_ok()
+            {
+                uv_script |= matches!(launch, Launch::UvScript { .. });
+                platforms.push(platform.to_owned());
+            }
+        }
+        // One uv script for every platform runs wherever uv does, also on a
+        // platform a later AutoScene adds: it is listed as running on all.
+        let everywhere = m.platforms.is_empty() && m.runtime.command.keys().all(|key| key == "*");
+        if uv_script && everywhere && platforms.len() == manifest::PLATFORMS.len() {
+            platforms.clear();
+        }
+        let runtime = match m.runtime.kind {
+            RuntimeKind::Process => "process",
+            RuntimeKind::Service => "service",
+            RuntimeKind::None => "none",
+        };
+        let icon = m.icon.as_deref().map(|icon| icon_url(&dir, icon)).transpose()?.flatten();
+        let (size, sha256) = size_and_sha256(path)?;
+        Ok(Self {
+            lock: package::sha256_hex(&unpacked.lock_bytes),
+            files: unpacked.lock.files.len(),
+            unpacked: unpacked.lock.files.iter().map(|f| f.size).sum(),
+            size,
+            sha256,
+            platforms,
+            runtime,
+            uv_script,
+            icon,
+            manifest: m,
+        })
+    }
+
+    /// Its permissions, as its manifest names them.
+    fn permissions(&self) -> Vec<String> {
+        self.manifest.permissions.iter().map(|p| p.name().to_owned()).collect()
+    }
+}
+
+/// The icon `path` of the plugin in `dir` as a `data:` URL, when it is at
+/// most [`catalog::MAX_ICON_BYTES`]; a larger one is left out, with a
+/// warning.
+fn icon_url(dir: &Path, path: &str) -> Result<Option<String>, Failure> {
+    let kind = match PictureFormat::of(path) {
+        Some(PictureFormat::Png) => "png",
+        Some(PictureFormat::Svg) => "svg+xml",
+        _ => return Ok(None),
+    };
+    let file = file_in(dir, path);
+    let bytes = fs::read(&file).map_err(at(&file))?;
+    if bytes.len() > catalog::MAX_ICON_BYTES {
+        let most = catalog::MAX_ICON_BYTES >> 10;
+        warn(&format!("The icon is larger than {most} KB, so the catalog lists the plugin without it."));
+        return Ok(None);
+    }
+    Ok(Some(format!("data:image/{kind};base64,{}", STANDARD.encode(bytes))))
+}
+
+/// The size and the SHA-256 of the file `path`, read once.
+fn size_and_sha256(path: &Path) -> Result<(u64, String), Failure> {
+    let (mut file, mut hasher) = (File::open(path).map_err(at(path))?, Sha256::new());
+    let (mut buf, mut size) = (vec![0; 1 << 16], 0);
+    loop {
+        let n = file.read(&mut buf).map_err(at(path))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        size += n as u64;
+    }
+    Ok((size, hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()))
+}
+
+/// An index of `epoch` with nothing in it, published `now` and running out a
+/// day later: what an entry or a withdrawal is checked in.
+fn probe(epoch: u64, now: u64) -> Index {
+    Index {
+        catalog_version: catalog::CATALOG_VERSION,
+        epoch,
+        seq: 1,
+        published: now,
+        expires: now + DAY,
+        epoch_certificate: None,
+        plugins: Vec::new(),
+        withdrawn: Vec::new(),
+    }
+}
+
+/// `index` as AutoScene reads it at `now` ([`catalog::check`]): its dates,
+/// entries and withdrawals checked, and their texts cleaned and cut. The
+/// check runs on a copy signed with keys made for it, which carries their
+/// epoch certificate: whether the index's own certificate and signature
+/// hold, only AutoScene's keys tell, and `catalog verify` asks them.
+fn as_autoscene_reads(index: &Index, now: u64) -> Result<Index, Failure> {
+    let (online, offline) = (KeyPair::generate_unencrypted_keypair()?, KeyPair::generate_unencrypted_keypair()?);
+    let (online_key, offline_key) = (online.pk.to_base64(), offline.pk.to_base64());
+    let line = catalog::certificate_line(index.epoch, &[], std::slice::from_ref(&online_key));
+    let certificate = minisign::sign(None, &offline.sk, line.as_bytes(), Some(&line), None)?.into_string();
+    let copy = Index { epoch_certificate: Some(certificate), ..index.clone() };
+    let bytes = index_bytes(&copy);
+    let comment = catalog::index_comment(copy.epoch, copy.seq, copy.expires);
+    let sig = minisign::sign(None, &online.sk, bytes.as_slice(), Some(&comment), None)?.into_string();
+    let keys = CatalogKeys::new(&[(KeyRole::Online, &online_key), (KeyRole::Offline, &offline_key)])?;
+    Ok(take_fresh(&bytes, &sig, &keys, now)?.index)
+}
+
+/// The index `path`, to change it or to compare with it. Its signature isn't
+/// checked: it is the catalog CI's own file.
+fn read_index(path: &Path) -> Result<Index, Failure> {
+    parse_index(path, &read_at_most(path, catalog::MAX_INDEX_BYTES)?)
+}
+
+/// The index `bytes`, read from `path`. One of a later format is refused:
+/// this asp would drop or change what it doesn't know.
+fn parse_index(path: &Path, bytes: &[u8]) -> Result<Index, Failure> {
+    if bytes.len() as u64 > catalog::MAX_INDEX_BYTES {
+        return Err(failed("The catalog is too large."));
+    }
+    let unreadable = |e: serde_json::Error| failed(format!("{}: {e}", path.display()));
+    let v: Value = serde_json::from_slice(bytes).map_err(unreadable)?;
+    match v.get("catalogVersion").and_then(Value::as_u64) {
+        Some(n) if n == u64::from(catalog::CATALOG_VERSION) => serde_json::from_value(v).map_err(unreadable),
+        Some(n) if n > u64::from(catalog::CATALOG_VERSION) => {
+            Err(failed("The catalog is of a later format than this asp writes. Update asp."))
+        }
+        _ => Err(failed(format!("{} isn't a catalog index.", path.display()))),
+    }
+}
+
+/// An index as the catalog keeps it: pretty-printed, with a trailing
+/// newline. These bytes are what `sign` signs.
+fn index_bytes(index: &Index) -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(index).expect("an index is JSON");
+    bytes.push(b'\n');
+    bytes
+}
+
+/// Writes `bytes` to `path` beside it first, then in its place.
+fn write_file(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
+    key_file(folder_of(path), bytes, false)?.persist(path).map_err(|e| at(path)(e.error))?;
+    Ok(())
+}
+
+/// An epoch certificate, as the catalog keeps it: the epoch it starts, the
+/// ids of the keys it withdraws, and the online keys it names. Who signed it
+/// isn't checked here: only AutoScene's keys tell, and `catalog verify` asks
+/// them.
+struct Certificate {
+    epoch: u64,
+    withdraw: Vec<String>,
+    online: Vec<String>,
+}
+
+impl Certificate {
+    /// The certificate `text`, when it is one, spelled as
+    /// [`catalog::certificate_line`] spells it.
+    fn read(text: &str) -> Result<Self, Failure> {
+        let signature = minisign_verify::Signature::decode(text).map_err(|_| not_a_certificate())?;
+        let line = catalog::read_certificate_line(signature.trusted_comment());
+        let (epoch, withdraw, online) = line.ok_or_else(not_a_certificate)?;
+        Ok(Self { epoch, withdraw, online })
+    }
+
+    /// Refuses this certificate, of a later epoch than `earlier`, when it
+    /// names a key `earlier` withdrew or leaves one out of its withdrawals:
+    /// a key is withdrawn for good, also for an AutoScene that never took an
+    /// index of `earlier`'s epoch.
+    fn keeps_withdrawals_of(&self, earlier: &Self) -> Result<(), Failure> {
+        self.names_none_of(earlier)?;
+        match earlier.withdraw.iter().find(|&id| !self.withdraw.contains(id)) {
+            Some(id) => Err(failed(format!(
+                "The certificate of epoch {} doesn't withdraw key {id}, which that of epoch {} withdrew. \
+                 asp catalog certify --previous withdraws it again.",
+                self.epoch, earlier.epoch
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    /// Refuses this certificate when it names a key `earlier` withdrew.
+    fn names_none_of(&self, earlier: &Self) -> Result<(), Failure> {
+        for key in &self.online {
+            let id = trust::key_id(key)?;
+            if earlier.withdraw.contains(&id) {
+                return Err(failed(format!(
+                    "The certificate of epoch {} names key {id}, which that of epoch {} withdrew for good.",
+                    self.epoch, earlier.epoch
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The epoch certificate in the file `path`, as its text and read.
+fn read_certificate(path: &Path) -> Result<(String, Certificate), Failure> {
+    let bytes = read_at_most(path, catalog::MAX_SIG_BYTES)?;
+    if bytes.len() as u64 > catalog::MAX_SIG_BYTES {
+        return Err(failed("The epoch certificate is too large."));
+    }
+    let text = String::from_utf8(bytes).map_err(|_| not_a_certificate())?;
+    let certificate = Certificate::read(&text)?;
+    Ok((text, certificate))
+}
+
+/// What a minisign signature says, without its untrusted comment and line
+/// ends: the lines its signer wrote, as minisign reads them.
+fn signed_lines(text: &str) -> Vec<&str> {
+    text.lines().skip(1).take(3).collect()
+}
+
+fn not_a_certificate() -> Failure {
+    failed("That isn't an epoch certificate, as asp catalog certify makes one.")
+}
+
+/// The epoch certificate of the index `path` doesn't read.
+fn unreadable_certificate(path: &Path) -> Failure {
+    failed(format!("{}: its epoch certificate can't be read.", path.display()))
+}
+
+/// Whether `a` and `b` are one version as the catalog counts them: of one
+/// precedence (build metadata doesn't count).
+fn same_version(a: &str, b: &str) -> bool {
+    match (Version::parse(a), Version::parse(b)) {
+        (Ok(a), Ok(b)) => a.cmp_precedence(&b).is_eq(),
+        _ => a == b,
+    }
+}
+
+/// `secs` (Unix time) as a UTC date: `2026-11-04`.
+fn date(secs: u64) -> String {
+    // Howard Hinnant's days_from_civil, backwards.
+    let days = i64::try_from(secs / DAY).unwrap_or(i64::MAX / 2);
+    let z = days + 719_468;
+    let (era, doe) = (z.div_euclid(146_097), z.rem_euclid(146_097));
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 /// Reviewed, Pinned (key <id>) or Unreviewed.
@@ -650,6 +1565,20 @@ fn shell_word(s: &str) -> String {
     }
 }
 
+/// Unpacks the package `path` into the new folder `into`, reads its
+/// manifest and checks it as AutoScene would install it, with the warnings
+/// `pack` gives.
+fn unpack_checked(path: &Path, into: &Path) -> Result<(Unpacked, Parsed), Failure> {
+    let (unpacked, parsed) = open(path, into)?;
+    warn_all(&parsed.warnings);
+    let m = &parsed.manifest;
+    check_platforms(m, &unpacked.lock)?;
+    package::check_pages(into, Some(&unpacked.lock), &m.pages)?;
+    package::check_pictures(into, &unpacked.lock, m)?;
+    warn_of_banner(into, m)?;
+    Ok((unpacked, parsed))
+}
+
 /// Unpacks the package `path` into the new folder `into` and reads its
 /// manifest.
 fn open(path: &Path, into: &Path) -> Result<(Unpacked, Parsed), Failure> {
@@ -848,6 +1777,32 @@ impl<'a> Args<'a> {
     fn values(&self, option: &str) -> Vec<&'a OsString> {
         self.options.iter().filter(|(o, _)| *o == option).map(|(_, v)| *v).collect()
     }
+
+    /// The option's last value, as text.
+    fn text(&self, option: &str) -> Result<Option<&'a str>, Failure> {
+        self.value(option).map(|v| as_text(option, v)).transpose()
+    }
+
+    /// The option's values, as text.
+    fn texts(&self, option: &str) -> Result<Vec<&'a str>, Failure> {
+        self.values(option).into_iter().map(|v| as_text(option, v)).collect()
+    }
+
+    /// The option's last value, which the command needs.
+    fn needed(&self, option: &str, command: &str) -> Result<&'a str, Failure> {
+        self.text(option)?.ok_or_else(|| usage(format!("{command} needs {option}")))
+    }
+
+    /// The catalog keys `--online-key` and `--offline-key` give.
+    fn catalog_keys(&self) -> Vec<(KeyRole, &'a OsString)> {
+        let given = [(KeyRole::Online, "--online-key"), (KeyRole::Offline, "--offline-key")];
+        given.iter().flat_map(|&(role, option)| self.values(option).into_iter().map(move |k| (role, k))).collect()
+    }
+}
+
+/// The value `v` of `option`, as text.
+fn as_text<'a>(option: &str, v: &'a OsString) -> Result<&'a str, Failure> {
+    v.to_str().ok_or_else(|| usage(format!("{option} takes text")))
 }
 
 /// Why asp stopped: wrong arguments (with the usage), or a failure.
@@ -920,6 +1875,21 @@ mod tests {
         let public = KeyPair::generate_unencrypted_keypair().unwrap().pk.to_box().unwrap().into_string();
         for not_one in [public.as_str(), "", "untrusted comment: x\nRWQ=\n", &open[..open.len() / 2]] {
             assert_eq!(secret_key_lock(not_one.as_bytes()), None, "{not_one}");
+        }
+    }
+
+    #[test]
+    fn a_date_is_the_day_in_utc() {
+        let days = [
+            (0, "1970-01-01"),
+            (86_399, "1970-01-01"),
+            (951_782_400, "2000-02-29"),
+            (1_800_000_000, "2027-01-15"),
+            (4_107_542_399, "2100-02-28"),
+            (4_107_542_400, "2100-03-01"),
+        ];
+        for (secs, day) in days {
+            assert_eq!(date(secs), day, "{secs}");
         }
     }
 

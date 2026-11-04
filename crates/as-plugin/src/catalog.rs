@@ -676,8 +676,9 @@ fn later_index(tc: &str) -> bool {
 }
 
 /// The epoch, key ids and online keys an epoch certificate's `line` names,
-/// in its one spelling ([`certificate_line`]).
-fn read_certificate_line(line: &str) -> Option<(u64, Vec<String>, Vec<String>)> {
+/// in its one spelling ([`certificate_line`]). Nothing is checked of who
+/// signed it: `asp catalog` reads the catalog's own certificates with it.
+pub fn read_certificate_line(line: &str) -> Option<(u64, Vec<String>, Vec<String>)> {
     let mut parts = line.strip_prefix(EPOCH_TAG)?.split(';');
     let epoch = parts.next()?.strip_prefix("epoch=")?.parse().ok()?;
     let withdraw = items(parts.next()?.strip_prefix("withdraw=")?);

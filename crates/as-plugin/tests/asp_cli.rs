@@ -1,6 +1,7 @@
 //! The asp tool, run as a plugin author runs it: keys, packages, signatures,
-//! and the trust AutoScene would give a package. Each test works in a
-//! folder of its own.
+//! and the trust AutoScene would give a package; and as the catalog's CI and
+//! its owner run it, to fill, number, certify and sign the catalog. Each
+//! test works in a folder of its own.
 #![cfg(feature = "cli")]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,6 +16,8 @@ use as_plugin::manifest;
 use as_plugin::package::{self, AUTHOR_KEY, LOCK, SIG};
 use as_plugin::trust::{self, Trust};
 use as_plugin::{Launch, RuntimeKind, current_platform};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use semver::Version;
 use serde_json::{Value, json};
 use zip::write::SimpleFileOptions;
@@ -48,7 +51,12 @@ impl Run {
 }
 
 fn asp(args: &[&str]) -> Run {
-    let output = Command::new(env!("CARGO_BIN_EXE_asp")).args(args).output().unwrap();
+    asp_env(args, &[])
+}
+
+/// asp run with the environment variables `env` set.
+fn asp_env(args: &[&str], env: &[(&str, &str)]) -> Run {
+    let output = Command::new(env!("CARGO_BIN_EXE_asp")).args(args).envs(env.iter().copied()).output().unwrap();
     Run {
         code: output.status.code(),
         out: String::from_utf8(output.stdout).unwrap(),
@@ -848,6 +856,917 @@ fn verify_names_the_trust_a_package_would_get() {
     assert_eq!(err, "asp: The plugin package is damaged.\n");
     let err = asp(&["verify", text(&place("missing.asp"))]).failed(1);
     assert!(err.starts_with(&format!("asp: {}: ", place("missing.asp").display())), "{err}");
+}
+
+const DAY: u64 = 86_400;
+const HELLO: &str = "dev.autoscene.hello-export";
+const RELEASE: &str = "https://github.com/tcmmi/autoscene-plugins/releases/download/hello-1.2.0/hello-export.asp";
+const COMMIT: &str = "cccccccccccccccccccccccccccccccccccccccc";
+
+/// The JSON file `path`.
+fn json_of(path: &Path) -> Value {
+    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+}
+
+/// Writes `v` to `path` as the catalog keeps an index: pretty, with a
+/// trailing newline.
+fn write_json(path: &Path, v: &Value) {
+    let mut bytes = serde_json::to_vec_pretty(v).unwrap();
+    bytes.push(b'\n');
+    fs::write(path, bytes).unwrap();
+}
+
+/// Changes the index `path` as asp would write it (asp has no command for
+/// what is changed here).
+fn edit_index(path: &Path, edit: impl FnOnce(&mut catalog::Index)) {
+    let mut index: catalog::Index = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    edit(&mut index);
+    let mut bytes = serde_json::to_vec_pretty(&index).unwrap();
+    bytes.push(b'\n');
+    fs::write(path, bytes).unwrap();
+}
+
+/// A catalog as its CI keeps one: `index.json` in a folder of its own, and
+/// the online key that signs it, as the Actions secret holds it.
+struct CiCatalog {
+    index: PathBuf,
+    secret: String,
+    public: String,
+}
+
+impl CiCatalog {
+    /// An empty catalog in `dir`, its key made in `keys`.
+    fn new(dir: &Path, keys: &Path) -> Self {
+        fs::create_dir_all(dir).unwrap();
+        let public = keygen(keys);
+        let secret = fs::read_to_string(keys.join("asp.key")).unwrap();
+        let index = dir.join("index.json");
+        asp(&["catalog", "new", text(&index)]).ok();
+        Self { index, secret, public }
+    }
+
+    /// `asp catalog <command> index.json <more>`.
+    fn run(&self, command: &str, more: &[&str]) -> Run {
+        let mut args = vec!["catalog", command, text(&self.index)];
+        args.extend(more);
+        asp(&args)
+    }
+
+    /// Lists `package` as built from the AutoScene repository.
+    fn add(&self, package: &Path) -> Run {
+        let source = ["--repo", "https://github.com/tcmmi/AutoScene", "--commit", COMMIT, "--path", "hello"];
+        let mut args = vec![text(package), "--url", RELEASE];
+        args.extend(source);
+        args.extend(["--author", "AutoScene"]);
+        self.run("add", &args)
+    }
+
+    /// Signs the index with the secret key `secret`, from the environment.
+    fn sign_with(&self, secret: &str) -> Run {
+        let args = ["catalog", "sign", text(&self.index), "--key-env", "AS_TEST_CATALOG_KEY"];
+        asp_env(&args, &[("AS_TEST_CATALOG_KEY", secret)])
+    }
+
+    /// Bumps the index and signs it with its online key, as a push does.
+    fn publish(&self) {
+        self.run("bump", &[]).ok();
+        self.sign_with(&self.secret).ok();
+    }
+
+    /// `asp catalog verify` with its online key and `more`.
+    fn verify(&self, more: &[&str]) -> Run {
+        let mut args = vec!["--online-key", self.public.as_str()];
+        args.extend(more);
+        self.run("verify", &args)
+    }
+
+    fn json(&self) -> Value {
+        json_of(&self.index)
+    }
+
+    fn bytes(&self) -> Vec<u8> {
+        fs::read(&self.index).unwrap()
+    }
+
+    /// The index and its signature copied to `path` and `<path>.minisig`.
+    fn copy_to(&self, path: &Path) {
+        fs::copy(&self.index, path).unwrap();
+        fs::copy(format!("{}.minisig", self.index.display()), format!("{}.minisig", path.display())).unwrap();
+    }
+}
+
+#[test]
+fn catalog_new_add_bump_sign_verify_round_trip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = uv_plugin(&place("hello"));
+    let package = place("hello.asp");
+    asp(&["pack", text(&src), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    let id = trust::key_id(&cat.public).unwrap();
+    let index = text(&cat.index);
+
+    // An empty index, pretty-printed with a trailing newline, never made
+    // over one that is there.
+    let empty = "{\n  \"catalogVersion\": 1,\n  \"epoch\": 1,\n  \"seq\": 0,\n  \"published\": 0,\n  \"expires\": 0,\n  \
+                 \"plugins\": [],\n  \"withdrawn\": []\n}\n";
+    assert_eq!(String::from_utf8(cat.bytes()).unwrap(), empty);
+    assert_eq!(asp(&["catalog", "new", index]).failed(1), format!("asp: {index} is there already.\n"));
+
+    assert_eq!(cat.add(&package).ok(), format!("Listed {HELLO} 1.2.0 in {index}.\n"));
+    assert!(cat.bytes().ends_with(b"}\n"));
+    // Not dated yet, so AutoScene would find it ran out: it isn't signed.
+    let err = cat.sign_with(&cat.secret).failed(1);
+    assert_eq!(err, "asp: The catalog ran out on 1970-01-01.\n");
+    assert_eq!(names(&place("site")), ["index.json"]);
+
+    let before = catalog::now();
+    let bumped = cat.run("bump", &[]).ok();
+    let (published, expires) = (cat.json()["published"].as_u64().unwrap(), cat.json()["expires"].as_u64().unwrap());
+    assert!((before..=catalog::now()).contains(&published), "{published}");
+    assert_eq!(expires - published, 30 * DAY);
+    assert!(bumped.starts_with(&format!("{index} is number 1 of epoch 1, running out on 20")), "{bumped}");
+    let signed = cat.sign_with(&cat.secret).ok();
+    let sig_path = format!("{index}.minisig");
+    assert!(signed.ends_with(&format!(") with key {id} into {sig_path}.\n")), "{signed}");
+    // The signature names the index it signs, in its trusted comment.
+    let sig = fs::read_to_string(&sig_path).unwrap();
+    assert!(sig.contains(&format!("\ntrusted comment: {}\n", index_comment(1, 1, expires))), "{sig}");
+    assert!(sig.starts_with("untrusted comment: AutoScene plugin catalog\n"), "{sig}");
+
+    let verified = cat.verify(&[]).ok();
+    let lines: Vec<&str> = verified.lines().collect();
+    assert!(lines[0].starts_with(&format!("{index}: epoch 1, number 1, published 20")), "{verified}");
+    assert!(lines[0].ends_with(&format!(" ({expires}).")), "{verified}");
+    let signer = format!("Signed with the online key {id}.");
+    assert_eq!(lines[1..], [signer.as_str(), "1 plugin version and no withdrawals."]);
+    // AutoScene's own keys are always asked; until the catalog opens there
+    // are none, and they don't know this one.
+    if CATALOG_KEYS.is_empty() {
+        let err = cat.run("verify", &[]).failed(1);
+        assert_eq!(err, "asp: The catalog is signed with a key AutoScene doesn't know.\n");
+    }
+
+    // A second version, in the next index: newer than the one before.
+    let old = place("old.json");
+    cat.copy_to(&old);
+    edit_manifest(&src, |v| v["version"] = json!("1.3.0"));
+    let newer = place("hello-1.3.0.asp");
+    asp(&["pack", text(&src), text(&newer)]).ok();
+    cat.add(&newer).ok();
+    cat.publish();
+    let verified = cat.verify(&["--previous", text(&old)]).ok();
+    assert!(verified.starts_with(&format!("{index}: epoch 1, number 2, ")), "{verified}");
+    assert!(verified.ends_with("\n2 plugin versions and no withdrawals.\n"), "{verified}");
+
+    // Changed after it was signed.
+    let changed = String::from_utf8(cat.bytes()).unwrap().replace("Says hello", "Says goodbye");
+    fs::write(&cat.index, changed).unwrap();
+    assert_eq!(cat.verify(&[]).failed(1), "asp: The catalog was changed after it was signed.\n");
+
+    // Wrong arguments.
+    assert!(cat.run("bump", &["--days", "32"]).failed(2).starts_with("asp: --days takes 1 to 31\n"));
+    assert!(cat.run("bump", &["--days", "0"]).failed(2).starts_with("asp: --days takes 1 to 31\n"));
+    assert!(asp(&["catalog"]).failed(2).starts_with("asp: name a catalog command\n"));
+    assert!(asp(&["catalog", "publish", index]).failed(2).starts_with("asp: unknown catalog command \"publish\"\n"));
+    let err = cat.run("add", &[text(&package), "--repo", "https://github.com/o/r"]).failed(2);
+    assert!(err.starts_with("asp: catalog add needs --url\n"), "{err}");
+    assert!(cat.run("sign", &[]).failed(2).starts_with("asp: catalog sign needs --key-env\n"));
+    // A file that isn't an index.
+    let err = asp(&["catalog", "bump", text(&src.join("plugin.json"))]).failed(1);
+    assert_eq!(err, format!("asp: {} isn't a catalog index.\n", src.join("plugin.json").display()));
+    let mut later = cat.json();
+    later["catalogVersion"] = json!(2);
+    write_json(&place("later.json"), &later);
+    let err = asp(&["catalog", "bump", text(&place("later.json"))]).failed(1);
+    assert_eq!(err, "asp: The catalog is of a later format than this asp writes. Update asp.\n");
+    // A number that can't go higher.
+    let mut last = cat.json();
+    last["seq"] = json!(u64::MAX);
+    write_json(&place("last.json"), &last);
+    let err = asp(&["catalog", "bump", text(&place("last.json"))]).failed(1);
+    assert_eq!(err, "asp: The catalog's number can't go higher; start a new epoch.\n");
+
+    // asp leaves nothing beside the index.
+    assert_eq!(names(&place("site")), ["index.json", "index.json.minisig"]);
+}
+
+#[test]
+fn catalog_sign_reads_its_key_from_the_environment_and_writes_no_key_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let package = place("hello.asp");
+    asp(&["pack", text(&uv_plugin(&place("hello"))), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    cat.add(&package).ok();
+    cat.run("bump", &[]).ok();
+    let index = text(&cat.index);
+
+    // A key locked with a password, as the Actions secrets hold it.
+    let pair = minisign::KeyPair::generate_encrypted_keypair(Some("a password".into())).unwrap();
+    let secret = pair.sk.to_box(None).unwrap().into_string();
+    let public = pair.pk.to_base64();
+    let key_line = secret.lines().nth(1).unwrap().to_owned();
+    let sign = |env: &[(&str, &str)], more: &[&str]| {
+        let mut args = vec!["catalog", "sign", index, "--key-env", "AS_TEST_KEY"];
+        args.extend(more);
+        asp_env(&args, env)
+    };
+    let both = [("AS_TEST_KEY", secret.as_str()), ("AS_TEST_PASSWORD", "a password")];
+    let run = sign(&both, &["--password-env", "AS_TEST_PASSWORD"]);
+    for said in [&run.out, &run.err] {
+        assert!(!said.contains(&key_line) && !said.contains("a password"), "{said}");
+    }
+    run.ok();
+    // Nothing but the signature is written, here or beside the index.
+    assert_eq!(names(&place("site")), ["index.json", "index.json.minisig"]);
+    assert_eq!(names(tmp.path()), ["hello", "hello.asp", "online", "site"]);
+    assert!(cat.run("verify", &["--online-key", &public]).ok().contains("Signed with the online key "));
+
+    // A locked key needs its password, the right one, from the environment.
+    let err = sign(&both, &[]).failed(1);
+    assert_eq!(
+        err,
+        "asp: The key in $AS_TEST_KEY is locked with a password; --password-env names the variable that holds it.\n"
+    );
+    let wrong = [("AS_TEST_KEY", secret.as_str()), ("AS_TEST_PASSWORD", "another password")];
+    let err = sign(&wrong, &["--password-env", "AS_TEST_PASSWORD"]).failed(1);
+    assert_eq!(err, "asp: The key in $AS_TEST_KEY: Wrong password for that key\n");
+    let err = sign(&[("AS_TEST_KEY", secret.as_str())], &["--password-env", "AS_TEST_PASSWORD"]).failed(1);
+    assert_eq!(err, "asp: $AS_TEST_PASSWORD holds no password.\n");
+    assert_eq!(sign(&[], &[]).failed(1), "asp: $AS_TEST_KEY holds no key.\n");
+    assert_eq!(sign(&[("AS_TEST_KEY", "")], &[]).failed(1), "asp: $AS_TEST_KEY holds no key.\n");
+    // One without a password signs without one; as the Actions secret may
+    // hold it, with Windows line ends.
+    let crlf = cat.secret.replace('\n', "\r\n");
+    sign(&[("AS_TEST_KEY", crlf.as_str())], &[]).ok();
+    cat.verify(&[]).ok();
+
+    // An index AutoScene would refuse isn't signed, and the signature
+    // beside it stays.
+    let sig = fs::read(format!("{index}.minisig")).unwrap();
+    let mut v = cat.json();
+    v["plugins"][0]["package"]["urls"] = json!(["http://example.com/hello-export.asp"]);
+    write_json(&cat.index, &v);
+    let err = cat.sign_with(&cat.secret).failed(1);
+    assert_eq!(err, format!("asp: The catalog has an entry AutoScene can't read: {HELLO} 1.2.0.\n"));
+    v["plugins"][0]["package"]["urls"] = json!([RELEASE]);
+    v["expires"] = json!(v["published"].as_u64().unwrap() + 32 * DAY);
+    write_json(&cat.index, &v);
+    assert_eq!(cat.sign_with(&cat.secret).failed(1), "asp: The catalog's dates can't be right.\n");
+    assert_eq!(fs::read(format!("{index}.minisig")).unwrap(), sig);
+    assert_eq!(names(&place("site")), ["index.json", "index.json.minisig"]);
+
+    // Only the bytes asp writes are signed: AutoScene refuses an object
+    // that names a key twice, which asp's reading would take; and other
+    // line ends or spacing are another index than the one checked.
+    cat.run("bump", &[]).ok();
+    let asp_wrote = String::from_utf8(cat.bytes()).unwrap();
+    let not_asps = format!(
+        "asp: {index} isn't written as asp writes an index, so AutoScene might read it otherwise. Any asp catalog \
+         command that changes it writes it again.\n"
+    );
+    let twice = asp_wrote.replacen("{\n", "{\n  \"withdrawn\": [{\"id\": \"x\"}],\n", 1);
+    for other in [twice, asp_wrote.replace('\n', "\r\n"), asp_wrote.replace("  ", "\t")] {
+        fs::write(&cat.index, other).unwrap();
+        assert_eq!(cat.sign_with(&cat.secret).failed(1), not_asps);
+    }
+    assert_eq!(fs::read(format!("{index}.minisig")).unwrap(), sig);
+    fs::write(&cat.index, &asp_wrote).unwrap();
+    cat.sign_with(&cat.secret).ok();
+}
+
+#[test]
+fn catalog_add_takes_the_entry_from_the_package() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    // A uv plugin that names its license, platforms, permissions, hosts,
+    // the GPU and an icon.
+    let icon = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"/>"#;
+    let src = uv_plugin(&place("hello"));
+    fs::write(src.join("icon.svg"), icon).unwrap();
+    edit_manifest(&src, |v| {
+        v["license"] = json!("MIT");
+        v["platforms"] = json!(["linux-x86_64", "windows-x86_64"]);
+        v["permissions"] = json!(["network", "exports:read"]);
+        v["network"] = json!({"hosts": ["api.example.com"]});
+        v["runtime"]["gpu"] = json!(true);
+        v["icon"] = json!("icon.svg");
+    });
+    let package = place("hello.asp");
+    asp(&["pack", text(&src), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+
+    // What AutoScene would refuse of the entry is refused at once, and the
+    // index stays as it was.
+    let empty = cat.bytes();
+    let refused = format!("asp: The catalog has an entry AutoScene can't read: {HELLO} 1.2.0.\n");
+    let add = |more: &[&str]| {
+        let mut args = vec![text(&package), "--url", RELEASE, "--repo", "https://github.com/tcmmi/AutoScene"];
+        args.extend(["--commit", COMMIT, "--author", "AutoScene"]);
+        args.extend(more);
+        cat.run("add", &args)
+    };
+    for wrong in [
+        &["--url", "http://example.com/hello.asp"][..],
+        &["--repo", "https://gitlab.com/tcmmi/AutoScene"],
+        &["--commit", "c0ffee"],
+        &["--path", "../hello"],
+        &["--author", "  "],
+        &["--author-key", "RWQ not a key"],
+    ] {
+        assert_eq!(add(wrong).failed(1), refused, "{wrong:?}");
+        assert_eq!(cat.bytes(), empty, "{wrong:?}");
+    }
+
+    let before = catalog::now();
+    cat.add(&package).ok();
+    let after = catalog::now();
+    let entry = &cat.json()["plugins"][0];
+    let approved = entry["approved"].as_u64().unwrap();
+    assert!((before..=after).contains(&approved), "{approved}");
+    let bytes = fs::read(&package).unwrap();
+    let icon_url = format!("data:image/svg+xml;base64,{}", STANDARD.encode(icon));
+    assert_eq!(
+        *entry,
+        json!({
+            "id": HELLO,
+            "version": "1.2.0",
+            "lock": package::sha256_hex(&entries(&package)[LOCK]),
+            "package": {"urls": [RELEASE], "size": bytes.len(), "sha256": package::sha256_hex(&bytes)},
+            "authorKey": null,
+            "name": "Hello Export",
+            "summary": "Says hello after an export.",
+            "author": "AutoScene",
+            "license": "MIT",
+            // In AutoScene's order of platforms.
+            "platforms": ["windows-x86_64", "linux-x86_64"],
+            "runtime": "process",
+            "gpu": true,
+            "uvScript": true,
+            "permissions": ["network", "exports:read"],
+            "hosts": ["api.example.com"],
+            "engines": ">=1.0.0, <2",
+            "source": {"repo": "https://github.com/tcmmi/AutoScene", "commit": COMMIT, "path": "hello"},
+            "icon": icon_url,
+            "approved": approved,
+        })
+    );
+
+    // A plugin that runs no program runs on every platform, as `none`. An
+    // author's key goes in as given, and several addresses in their order.
+    let pages = folder(&place("page"), json!({}), &[("ui/index.html", b"<!doctype html>")]);
+    edit_manifest(&pages, |v| {
+        v["manifestVersion"] = json!(2);
+        v["version"] = json!("2.0.0");
+        v["runtime"] = json!({"type": "none"});
+        v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]});
+    });
+    let page = place("page.asp");
+    asp(&["pack", text(&pages), text(&page)]).ok();
+    let author = keygen(&place("author"));
+    let mirror = "https://example.com/mirror/hello-export-2.0.0.asp";
+    let more = [text(&page), "--url", RELEASE, "--url", mirror, "--repo", "https://github.com/o/r", "--commit", COMMIT];
+    cat.run("add", &[&more[..], &["--author", "Someone Else", "--author-key", &format!(" {author}\r")]].concat()).ok();
+    let entry = &cat.json()["plugins"][1];
+    let wanted = [
+        ("platforms", json!([])),
+        ("runtime", json!("none")),
+        ("uvScript", json!(false)),
+        ("gpu", json!(false)),
+        ("icon", json!(null)),
+        ("license", json!(null)),
+        ("authorKey", json!(author)),
+        ("author", json!("Someone Else")),
+        ("source", json!({"repo": "https://github.com/o/r", "commit": COMMIT, "path": ""})),
+    ];
+    for (key, value) in wanted {
+        assert_eq!(entry[key], value, "{key}");
+    }
+    assert_eq!(entry["package"]["urls"], json!([RELEASE, mirror]));
+
+    // An icon larger than the catalog carries is left out, with a warning.
+    let big = format!(r#"<svg xmlns="http://www.w3.org/2000/svg"><!-- {} --></svg>"#, "x".repeat(8 << 10));
+    fs::write(src.join("icon.svg"), big).unwrap();
+    edit_manifest(&src, |v| v["version"] = json!("1.3.0"));
+    let big_icon = place("big-icon.asp");
+    asp(&["pack", text(&src), text(&big_icon)]).ok();
+    let warned = cat.add(&big_icon).warnings();
+    assert_eq!(warned, "warning: The icon is larger than 8 KB, so the catalog lists the plugin without it.\n");
+    assert_eq!(cat.json()["plugins"][2]["icon"], json!(null));
+
+    // A PNG icon. One uv script, named for no platform, runs on all, also on
+    // those a later AutoScene adds.
+    let small = png(64, 64);
+    fs::write(src.join("icon.png"), &small).unwrap();
+    fs::remove_file(src.join("icon.svg")).unwrap();
+    edit_manifest(&src, |v| {
+        v["version"] = json!("1.4.0");
+        v["icon"] = json!("icon.png");
+        v.as_object_mut().unwrap().remove("platforms");
+    });
+    let png_icon = place("png-icon.asp");
+    asp(&["pack", text(&src), text(&png_icon)]).ok();
+    cat.add(&png_icon).ok();
+    let entry = &cat.json()["plugins"][3];
+    assert_eq!(entry["icon"], json!(format!("data:image/png;base64,{}", STANDARD.encode(&small))));
+    assert_eq!((&entry["platforms"], &entry["uvScript"]), (&json!([]), &json!(true)));
+
+    // A plugin with a program lists the platforms its command starts on:
+    // not Windows on x86, whose program isn't in the package, nor Windows on
+    // Arm, where a program must be an .exe.
+    let command = json!({"windows-x86_64": ["bin/tool.exe"], "*": ["bin/tool"]});
+    let tool = folder(&place("tool"), command, &[("bin/tool", b"#!/bin/sh\n")]);
+    edit_manifest(&tool, |v| v["version"] = json!("4.0.0"));
+    let program = place("tool.asp");
+    asp(&["pack", text(&tool), text(&program)]).warnings();
+    cat.add(&program).warnings();
+    let entry = &cat.json()["plugins"][4];
+    assert_eq!(entry["platforms"], json!(["macos-aarch64", "macos-x86_64", "linux-x86_64", "linux-aarch64"]));
+    assert_eq!((&entry["runtime"], &entry["uvScript"]), (&json!("process"), &json!(false)));
+}
+
+#[test]
+fn catalog_add_refuses_a_version_already_listed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = uv_plugin(&place("hello"));
+    let package = place("hello.asp");
+    asp(&["pack", text(&src), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    cat.add(&package).ok();
+    let listed = cat.bytes();
+
+    // The same package, and another one of the same version, also with
+    // build metadata (which doesn't count).
+    let already = format!("asp: The catalog lists {HELLO} 1.2.0 already.\n");
+    assert_eq!(cat.add(&package).failed(1), already);
+    for version in ["1.2.0", "1.2.0+build.7"] {
+        fs::write(src.join("lib/data.txt"), version).unwrap();
+        edit_manifest(&src, |v| v["version"] = json!(version));
+        let again = place(&format!("{version}.asp"));
+        asp(&["pack", text(&src), text(&again)]).ok();
+        assert_eq!(cat.add(&again).failed(1), already, "{version}");
+    }
+    assert_eq!(cat.bytes(), listed);
+    // A pre-release of it is another version.
+    edit_manifest(&src, |v| v["version"] = json!("1.2.0-rc.1"));
+    asp(&["pack", text(&src), text(&place("rc.asp"))]).ok();
+    cat.add(&place("rc.asp")).ok();
+    assert_eq!(cat.json()["plugins"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn catalog_verify_refuses_an_index_that_drops_an_entry() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let package = place("hello.asp");
+    asp(&["pack", text(&uv_plugin(&place("hello"))), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    cat.add(&package).ok();
+    cat.publish();
+    let old = place("old.json");
+    cat.copy_to(&old);
+    let kept = cat.json();
+
+    // The next index keeps it: it passes.
+    cat.publish();
+    cat.verify(&["--previous", text(&old)]).ok();
+    // One that leaves it out, or lists it with another lock, is refused,
+    // though signed and newer.
+    let refused = |edit: &dyn Fn(&mut Value)| {
+        let mut v = kept.clone();
+        edit(&mut v);
+        write_json(&cat.index, &v);
+        cat.publish();
+        cat.verify(&[]).ok();
+        cat.verify(&["--previous", text(&old)]).failed(1)
+    };
+    let err = refused(&|v| v["plugins"] = json!([]));
+    assert_eq!(err, format!("asp: The catalog drops {HELLO} 1.2.0, which {} lists.\n", old.display()));
+    let err = refused(&|v| v["plugins"][0]["lock"] = json!("d".repeat(64)));
+    assert_eq!(
+        err,
+        format!("asp: The catalog lists {HELLO} 1.2.0 with another files.lock than {} does.\n", old.display())
+    );
+    // An old index that isn't one says so.
+    let err = cat.verify(&["--previous", text(&package)]).failed(1);
+    assert!(err.starts_with(&format!("asp: {}: ", package.display())), "{err}");
+}
+
+#[test]
+fn catalog_verify_refuses_a_lower_number() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let package = place("hello.asp");
+    asp(&["pack", text(&uv_plugin(&place("hello"))), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    cat.add(&package).ok();
+    cat.publish();
+    let (one, two) = (place("one.json"), place("two.json"));
+    cat.copy_to(&one);
+    cat.publish();
+    cat.copy_to(&two);
+
+    let verify = |path: &Path, previous: &Path| {
+        let args = [text(path), "--previous", text(previous), "--online-key", &cat.public];
+        asp(&[&["catalog", "verify"][..], &args].concat())
+    };
+    verify(&two, &one).ok();
+    assert_eq!(verify(&one, &two).failed(1), "asp: This catalog is older than the one AutoScene has.\n");
+    // The same index again is no news, and no failure.
+    assert!(verify(&two, &two).ok().contains(": epoch 1, number 2, "));
+    // Another index of the same number is refused.
+    let withdrawn = place("withdrawn.json");
+    let reason = "It sent export paths to a server.";
+    fs::write(&withdrawn, json!([{"id": HELLO, "versions": "*", "reason": reason, "since": 1}]).to_string()).unwrap();
+    cat.run("withdrawn", &[text(&withdrawn)]).ok();
+    cat.sign_with(&cat.secret).ok();
+    assert_eq!(cat.json()["seq"], json!(2));
+    assert_eq!(cat.verify(&["--previous", text(&two)]).failed(1), "asp: Two catalogs carry the same number.\n");
+}
+
+#[test]
+fn catalog_certify_makes_a_certificate_the_app_takes_only_from_the_offline_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let package = place("hello.asp");
+    asp(&["pack", text(&uv_plugin(&place("hello"))), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    cat.add(&package).ok();
+    cat.publish();
+    let first = place("epoch-1.json");
+    cat.copy_to(&first);
+    let index = text(&cat.index);
+    let (offline, next) = (keygen(&place("offline")), keygen(&place("next")));
+    let (offline_key, next_secret) =
+        (place("offline").join("asp.key"), fs::read_to_string(place("next").join("asp.key")).unwrap());
+    let (offline_id, online_id, next_id) =
+        (trust::key_id(&offline).unwrap(), trust::key_id(&cat.public).unwrap(), trust::key_id(&next).unwrap());
+    let keys = ["--online-key", cat.public.as_str(), "--offline-key", offline.as_str()];
+
+    // The owner certifies epoch 2 with the offline key: the next online key
+    // signs there, and the old one is withdrawn.
+    let cert = place("epoch-2.minisig");
+    let certify = |epoch: &str, key: &Path, more: &[&str], out: &Path| {
+        let args = ["catalog", "certify", "--epoch", epoch, "--key", text(key), "--out", text(out)];
+        asp(&[&args[..], more].concat())
+    };
+    let made = certify("2", &offline_key, &["--online-key", &next, "--withdraw-key", &online_id.to_lowercase()], &cert);
+    assert_eq!(made.ok(), format!("Certified epoch 2 with key {offline_id} into {}.\n", cert.display()));
+    let certificate = fs::read_to_string(&cert).unwrap();
+    let line = catalog::certificate_line(2, std::slice::from_ref(&online_id), std::slice::from_ref(&next));
+    assert!(certificate.contains(&format!("\ntrusted comment: {line}\n")), "{certificate}");
+
+    // Attached, it starts epoch 2 at number 0; again, it changes nothing.
+    assert_eq!(cat.run("epoch", &[text(&cert)]).ok(), format!("{index} starts epoch 2.\n"));
+    let v = cat.json();
+    assert_eq!((&v["epoch"], &v["seq"], &v["epochCertificate"]), (&json!(2), &json!(0), &json!(certificate)));
+    assert_eq!(cat.run("epoch", &[text(&cert)]).ok(), format!("{index} is in epoch 2 already.\n"));
+    // Also with other line ends, as a checkout on Windows may give it.
+    let crlf = place("epoch-2-crlf.minisig");
+    fs::write(&crlf, certificate.replace('\n', "\r\n")).unwrap();
+    assert_eq!(cat.run("epoch", &[text(&crlf)]).ok(), format!("{index} is in epoch 2 already.\n"));
+    assert_eq!(cat.json()["epochCertificate"], json!(certificate));
+    // A certificate made is never made over.
+    let again = ["--online-key", next.as_str(), "--withdraw-key", online_id.as_str()];
+    let err = certify("2", &offline_key, &again, &cert).failed(1);
+    assert_eq!(err, format!("asp: {} is there already; --force replaces it.\n", cert.display()));
+    assert_eq!(fs::read_to_string(&cert).unwrap(), certificate);
+    certify("2", &offline_key, &[&again[..], &["--force"]].concat(), &cert).ok();
+    cat.run("bump", &[]).ok();
+    cat.sign_with(&next_secret).ok();
+    let verified = asp(&[&["catalog", "verify", index, "--previous", text(&first)][..], &keys].concat()).ok();
+    assert!(verified.starts_with(&format!("{index}: epoch 2, number 1, ")), "{verified}");
+    assert!(verified.contains(&format!("\nSigned with the online key {next_id}.\n")), "{verified}");
+    // The offline key signs an index too.
+    cat.sign_with(&fs::read_to_string(&offline_key).unwrap()).ok();
+    let verified = asp(&[&["catalog", "verify", index][..], &keys].concat()).ok();
+    assert!(verified.contains(&format!("\nSigned with the offline key {offline_id}.\n")), "{verified}");
+    // The key it withdrew signs no more.
+    cat.sign_with(&cat.secret).ok();
+    let err = asp(&[&["catalog", "verify", index][..], &keys].concat()).failed(1);
+    assert_eq!(err, "asp: The catalog is signed with a key AutoScene withdrew.\n");
+
+    // A certificate signed by another key than the offline one: asp can't
+    // tell, AutoScene refuses it.
+    let forged = place("epoch-3.minisig");
+    certify("3", &place("next").join("asp.key"), &["--online-key", &next, "--previous", text(&cert)], &forged).ok();
+    cat.run("epoch", &[text(&forged)]).ok();
+    cat.run("bump", &[]).ok();
+    cat.sign_with(&next_secret).ok();
+    let err = asp(&[&["catalog", "verify", index][..], &keys].concat()).failed(1);
+    assert_eq!(err, "asp: The catalog's new epoch isn't signed by AutoScene's offline key.\n");
+
+    // A lower epoch, or another certificate of this one, is refused.
+    let err = cat.run("epoch", &[text(&cert)]).failed(1);
+    assert_eq!(err, "asp: The certificate is for epoch 2, and the catalog is in epoch 3 already.\n");
+    let other = place("other-3.minisig");
+    certify("3", &offline_key, &["--online-key", &next, "--previous", text(&cert)], &other).ok();
+    let err = cat.run("epoch", &[text(&other)]).failed(1);
+    assert_eq!(err, "asp: The certificate is for epoch 3, and the catalog is in epoch 3 already.\n");
+    assert_eq!(
+        cat.run("epoch", &[text(&place("hello").join("plugin.json"))]).failed(1),
+        "asp: That isn't an epoch certificate, as asp catalog certify makes one.\n"
+    );
+    // An index of a later epoch isn't signed without its certificate.
+    let mut v = cat.json();
+    v.as_object_mut().unwrap().remove("epochCertificate");
+    write_json(&cat.index, &v);
+    assert_eq!(
+        cat.sign_with(&next_secret).failed(1),
+        "asp: An index of epoch 3 needs its epoch certificate, which asp catalog epoch attaches.\n"
+    );
+
+    // What a certificate can't say.
+    let out = place("refused.minisig");
+    let err = certify("4", &offline_key, &["--withdraw-key", &offline_id], &out).failed(1);
+    assert_eq!(err, "asp: A certificate can't withdraw the key that signs it.\n");
+    let err = certify("4", &offline_key, &["--online-key", &next, "--withdraw-key", &next_id], &out).failed(1);
+    assert_eq!(err, format!("asp: The certificate both names and withdraws key {next_id}.\n"));
+    let err = certify("4", &offline_key, &["--previous", text(&cert)], &out).warnings();
+    assert_eq!(err, "warning: It names no online key: only the offline key signs the indexes of this epoch.\n");
+    assert!(certify("4", &offline_key, &["--withdraw-key", "nope"], &out).failed(2).starts_with("asp: --withdraw-key"));
+    assert!(certify("0", &offline_key, &[], &out).failed(2).starts_with("asp: --epoch takes a number from 1\n"));
+    let err = certify("4", &offline_key, &["--online-key", "RWQ not a key"], &out).failed(1);
+    assert_eq!(err, "asp: That isn't a minisign public key.\n");
+}
+
+#[test]
+fn catalog_diff_lists_what_a_version_adds() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = uv_plugin(&place("hello"));
+    edit_manifest(&src, |v| v["permissions"] = json!(["exports:read"]));
+    let first = place("hello-1.2.0.asp");
+    asp(&["pack", text(&src), text(&first)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    let diff = |index: &Path, package: &Path| asp(&["catalog", "diff", text(index), text(package)]).ok();
+    // What the package's files come to, and the package.
+    let files = |package: &Path| {
+        let lock: Value = serde_json::from_slice(&entries(package)[LOCK]).unwrap();
+        let sizes = lock["files"].as_array().unwrap().iter().map(|f| f["size"].as_u64().unwrap());
+        let (count, bytes) = (sizes.len(), sizes.sum::<u64>());
+        format!("{count} files, {bytes} bytes; the package is {} bytes", fs::metadata(package).unwrap().len())
+    };
+
+    // A new plugin, also in an index that isn't there yet.
+    let new = format!(
+        "### `Hello Export` 1.2.0 (`{HELLO}`)\n\nA new plugin.\n\n\
+         - Permissions: `exports:read`\n- Hosts: none\n- Platforms: all\n- Runtime: process\n\
+         - Python script through uv: yes\n- GPU: no\n- AutoScene: `>=1.0.0, <2`\n- Files: {}\n",
+        files(&first)
+    );
+    assert_eq!(diff(&cat.index, &first), new);
+    assert_eq!(diff(&place("missing.json"), &first), new);
+    cat.add(&first).ok();
+
+    // What 1.3.0 changes against 1.2.0.
+    fs::write(src.join("lib/more.txt"), b"more").unwrap();
+    edit_manifest(&src, |v| {
+        v["version"] = json!("1.3.0");
+        v["permissions"] = json!(["network"]);
+        v["network"] = json!({"hosts": ["api.example.com"]});
+        v["platforms"] = json!(["linux-x86_64"]);
+        v["runtime"]["gpu"] = json!(true);
+        v["engines"]["autoscene"] = json!(">=1.0.0, <3");
+    });
+    let next = place("hello-1.3.0.asp");
+    asp(&["pack", text(&src), text(&next)]).ok();
+    let was = fs::metadata(&first).unwrap().len();
+    assert_eq!(
+        diff(&cat.index, &next),
+        format!(
+            "### `Hello Export` 1.3.0 (`{HELLO}`)\n\nAgainst 1.2.0, the newest version the catalog lists and hasn't \
+             withdrawn:\n\n- Permissions added: `network`\n- Permissions removed: `exports:read`\n\
+             - Hosts added: `api.example.com`\n- Platforms: linux-x86_64 (was all)\n- GPU: yes (was no)\n\
+             - AutoScene: `>=1.0.0, <3` (was `>=1.0.0, <2`)\n- Files: {} (was {was} bytes)\n",
+            files(&next)
+        )
+    );
+    // Against the newest listed, by version, not by when it was added.
+    cat.add(&next).ok();
+    edit_manifest(&src, |v| v["version"] = json!("1.2.5"));
+    let between = place("hello-1.2.5.asp");
+    asp(&["pack", text(&src), text(&between)]).ok();
+    let said = diff(&cat.index, &between);
+    let as_before = "- Permissions, hosts, platforms, runtime, uv, GPU and AutoScene: as before\n- Files: ";
+    assert!(
+        said.contains(&format!(
+            "\n\nAgainst 1.3.0, the newest version the catalog lists and hasn't withdrawn:\n\n{as_before}"
+        )),
+        "{said}"
+    );
+    // One it lists already says so.
+    let said = diff(&cat.index, &first);
+    assert!(
+        said.contains("\n\nThe catalog lists 1.2.0 already, so `asp catalog add` refuses it.\n\nAgainst 1.3.0, "),
+        "{said}"
+    );
+    assert!(said.contains("\n- Permissions added: `exports:read`\n- Permissions removed: `network`\n- Hosts removed: `api.example.com`\n"), "{said}");
+
+    // A version that runs no program, against one that runs a uv script.
+    fs::create_dir_all(src.join("ui")).unwrap();
+    fs::write(src.join("ui/index.html"), b"<!doctype html>").unwrap();
+    edit_manifest(&src, |v| {
+        v["manifestVersion"] = json!(2);
+        v["version"] = json!("2.0.0");
+        v["runtime"] = json!({"type": "none"});
+        v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]});
+    });
+    let pages = place("hello-2.0.0.asp");
+    asp(&["pack", text(&src), text(&pages)]).ok();
+    let said = diff(&cat.index, &pages);
+    assert!(said.contains("\n- Platforms: all (was linux-x86_64)\n- Runtime: none (was process)\n- Python script through uv: no (was yes)\n- GPU: no (was yes)\n"), "{said}");
+
+    // A withdrawn version isn't what a version is shown against; when all
+    // are withdrawn, it is shown in full.
+    let withdraw = |versions: &str| {
+        let list = place("withdrawn.json");
+        fs::write(&list, json!([{"id": HELLO, "versions": versions, "reason": "It leaked.", "since": 1}]).to_string())
+            .unwrap();
+        cat.run("withdrawn", &[text(&list)]).ok();
+    };
+    withdraw("=1.3.0");
+    let said = diff(&cat.index, &pages);
+    assert!(
+        said.contains("\n\nAgainst 1.2.0, the newest version the catalog lists and hasn't withdrawn:\n\n"),
+        "{said}"
+    );
+    withdraw("*");
+    let said = diff(&cat.index, &pages);
+    assert!(said.contains("\n\nThe catalog withdrew every version of it it lists.\n\n- Permissions: "), "{said}");
+
+    // What the author calls it is in code: no Markdown, no HTML, and no
+    // version or id of its own.
+    edit_manifest(&src, |v| v["name"] = json!("<b>Hi</b> 9.9.9 (`dev.x.y`)"));
+    let named = place("named.asp");
+    asp(&["pack", text(&src), text(&named)]).ok();
+    let said = diff(&cat.index, &named);
+    assert!(said.starts_with(&format!("### `<b>Hi</b> 9.9.9 ('dev.x.y')` 2.0.0 (`{HELLO}`)\n\n")), "{said}");
+}
+
+#[test]
+fn catalog_keys_a_certificate_withdrew_stay_withdrawn() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let package = place("hello.asp");
+    asp(&["pack", text(&uv_plugin(&place("hello"))), text(&package)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    cat.add(&package).ok();
+    cat.publish();
+    let index = text(&cat.index);
+    let (offline, next) = (keygen(&place("offline")), keygen(&place("next")));
+    let (offline_key, next_secret) =
+        (place("offline").join("asp.key"), fs::read_to_string(place("next").join("asp.key")).unwrap());
+    let (first_id, next_id) = (trust::key_id(&cat.public).unwrap(), trust::key_id(&next).unwrap());
+    let certify = |epoch: &str, more: &[&str], out: &Path| {
+        let args = ["catalog", "certify", "--epoch", epoch, "--key", text(&offline_key), "--out", text(out)];
+        asp(&[&args[..], more].concat())
+    };
+    let verify =
+        |more: &[&str]| asp(&[&["catalog", "verify", index, "--offline-key", offline.as_str()][..], more].concat());
+
+    // Epoch 2 withdraws the first online key and names the next.
+    let two = place("epoch-2.minisig");
+    certify("2", &["--withdraw-key", &first_id, "--online-key", &next], &two).ok();
+    cat.run("epoch", &[text(&two)]).ok();
+    cat.run("bump", &[]).ok();
+    cat.sign_with(&next_secret).ok();
+    let held = place("held.json");
+    cat.copy_to(&held);
+
+    // A certificate of epoch 3 that names the withdrawn key again: certify
+    // refuses it after epoch 2's, and without it warns, and epoch refuses it.
+    let names_it = ["--online-key", cat.public.as_str()];
+    let err = certify("3", &[&names_it[..], &["--previous", text(&two)]].concat(), &place("x.minisig")).failed(1);
+    let named =
+        format!("asp: The certificate of epoch 3 names key {first_id}, which that of epoch 2 withdrew for good.\n");
+    assert_eq!(err, named);
+    let three = place("epoch-3.minisig");
+    let warned = certify("3", &names_it, &three).warnings();
+    assert!(warned.starts_with("warning: Without --previous, it doesn't withdraw again what earlier"), "{warned}");
+    assert_eq!(cat.run("epoch", &[text(&three)]).failed(1), named);
+    // Nor may it leave the withdrawal out.
+    let drops = place("drops.minisig");
+    certify("3", &["--online-key", &next], &drops).warnings();
+    assert_eq!(
+        cat.run("epoch", &[text(&drops)]).failed(1),
+        format!(
+            "asp: The certificate of epoch 3 doesn't withdraw key {first_id}, which that of epoch 2 withdrew. asp \
+             catalog certify --previous withdraws it again.\n"
+        )
+    );
+    let previous = ["--previous", text(&two)];
+    let err = certify("2", &previous, &place("y.minisig")).failed(1);
+    assert_eq!(err, "asp: --previous is the certificate of epoch 2, not of an earlier one.\n");
+
+    // Made with asp's checks out of the way, and signed with the withdrawn
+    // key: an AutoScene that took epoch 2 refuses it, and so does verify.
+    // (A fresh one takes it: the next release drops that key.)
+    let at_three = |cert: &Path, secret: &str| {
+        let certificate = fs::read_to_string(cert).unwrap();
+        edit_index(&cat.index, |i| {
+            (i.epoch, i.seq, i.epoch_certificate) = (3, 1, Some(certificate));
+        });
+        cat.sign_with(secret).ok();
+    };
+    at_three(&three, &cat.secret);
+    let refused = verify(&["--previous", text(&held)]).failed(1);
+    assert_eq!(refused, "asp: The catalog is signed with a key AutoScene withdrew.\n");
+    assert!(verify(&[]).ok().contains(&format!("\nSigned with the online key {first_id}.\n")));
+    // One that leaves the withdrawal out is refused too, whoever signed it.
+    at_three(&drops, &next_secret);
+    assert_eq!(
+        verify(&["--previous", text(&held)]).failed(1),
+        format!(
+            "asp: The certificate of epoch 3 doesn't withdraw key {first_id}, which that of epoch 2 withdrew. asp \
+             catalog certify --previous withdraws it again.\n"
+        )
+    );
+
+    // An index whose certificate is for another epoch isn't signed.
+    let certificate = fs::read_to_string(&two).unwrap();
+    edit_index(&cat.index, |i| i.epoch_certificate = Some(certificate));
+    assert_eq!(cat.sign_with(&next_secret).failed(1), "asp: The catalog's epoch certificate is for another epoch.\n");
+
+    // With --previous, epoch 3 withdraws the key again, and passes.
+    edit_index(&cat.index, |i| (i.epoch, i.seq, i.epoch_certificate) = (2, 1, Some(fs::read_to_string(&two).unwrap())));
+    let good = place("epoch-3-good.minisig");
+    certify("3", &[&previous[..], &["--online-key", &next]].concat(), &good).ok();
+    let line = catalog::certificate_line(3, std::slice::from_ref(&first_id), std::slice::from_ref(&next));
+    assert!(fs::read_to_string(&good).unwrap().contains(&format!("\ntrusted comment: {line}\n")));
+    assert_eq!(cat.run("epoch", &[text(&good)]).ok(), format!("{index} starts epoch 3.\n"));
+    cat.run("bump", &[]).ok();
+    cat.sign_with(&next_secret).ok();
+    let verified = verify(&["--previous", text(&held)]).ok();
+    assert!(verified.contains(&format!("\nSigned with the online key {next_id}.\n")), "{verified}");
+}
+
+#[test]
+fn verify_says_reviewed_when_the_catalog_lists_the_package() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let src = uv_plugin(&place("hello"));
+    let (unsigned, signed) = (place("unsigned.asp"), place("signed.asp"));
+    asp(&["pack", text(&src), text(&unsigned)]).ok();
+    let author = keygen(&place("author"));
+    asp(&["sign", text(&unsigned), "--key", text(&place("author").join("asp.key")), "--out", text(&signed)]).ok();
+    fs::write(src.join("lib/data.txt"), b"other").unwrap();
+    let other = place("other.asp");
+    asp(&["pack", text(&src), text(&other)]).ok();
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+    cat.add(&unsigned).ok();
+    cat.publish();
+    let trust = |package: &Path| {
+        let args = ["verify", text(package), "--catalog", text(&cat.index), "--online-key", &cat.public];
+        asp(&args).ok().trim().strip_prefix(&format!("{HELLO} 1.2.0: ")).unwrap().to_owned()
+    };
+
+    // The lock the catalog lists is Reviewed, signed or not; another lock
+    // of the same version isn't.
+    assert_eq!(trust(&unsigned), "Reviewed");
+    assert_eq!(trust(&signed), "Reviewed");
+    assert_eq!(trust(&other), "Unreviewed");
+    let id = trust::key_id(&author).unwrap();
+    asp(&["sign", text(&other), "--key", text(&place("author").join("asp.key"))]).ok();
+    assert_eq!(trust(&other), format!("Pinned (key {id})"));
+
+    // A withdrawal the catalog sets fails the version, though it lists it.
+    let reason = "It sent export paths to a server.";
+    let list = place("withdrawn.json");
+    let now = catalog::now();
+    fs::write(&list, json!([{"id": HELLO, "versions": "<=1.2.0", "reason": reason, "since": now}]).to_string())
+        .unwrap();
+    assert_eq!(cat.run("withdrawn", &[text(&list)]).ok(), format!("{} has 1 withdrawal.\n", cat.index.display()));
+    cat.publish();
+    assert!(cat.verify(&[]).ok().ends_with("\n1 plugin version and 1 withdrawal.\n"));
+    for package in [&unsigned, &signed] {
+        let args = ["verify", text(package), "--catalog", text(&cat.index), "--online-key", &cat.public];
+        let why = format!("AutoScene withdrew Hello Export. {reason}");
+        assert_eq!(asp(&args).failed(1), format!("asp: {why} (plugin withdrawn: Hello Export: {reason})\n"));
+    }
+    // Lifted, it is Reviewed again.
+    fs::write(&list, b"[]").unwrap();
+    cat.run("withdrawn", &[text(&list)]).ok();
+    cat.publish();
+    assert_eq!(trust(&unsigned), "Reviewed");
+
+    // A withdrawal AutoScene couldn't read isn't set.
+    let listed = cat.bytes();
+    let refused = format!("asp: The catalog has a withdrawal AutoScene can't read: {HELLO}.\n");
+    for wrong in [
+        json!([{"id": HELLO, "versions": "*", "reason": " ", "since": now}]),
+        json!([{"id": HELLO, "versions": "not a range", "reason": reason, "since": now}]),
+        json!([{"id": HELLO, "versions": "*", "reason": reason, "since": now + 7 * DAY}]),
+    ] {
+        fs::write(&list, wrong.to_string()).unwrap();
+        assert_eq!(cat.run("withdrawn", &[text(&list)]).failed(1), refused, "{wrong}");
+    }
+    fs::write(&list, json!([{"id": "Not An Id", "versions": "*", "reason": reason, "since": now}]).to_string())
+        .unwrap();
+    assert!(cat.run("withdrawn", &[text(&list)]).failed(1).starts_with(&format!("asp: {}: ", list.display())));
+    assert_eq!(cat.bytes(), listed);
 }
 
 /// The Python and the dependencies a uv script's `# /// script` block asks

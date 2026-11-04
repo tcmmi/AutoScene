@@ -206,6 +206,7 @@ fn plugin() -> PluginContext {
         version: "0.1.0".into(),
         data_dir: ".".into(),
         resources_dir: None,
+        temp_dir: None,
     }
 }
 

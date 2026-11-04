@@ -4,6 +4,8 @@
 //! A service starts as a run does ([`crate::runtime`]): by its path in the
 //! plugin's folder, in the plugin's data folder, with the same environment
 //! and `AUTOSCENE_MODE=service`, as the root of a tree that ends with it.
+//! Each start gets a scratch folder of its own ([`crate::scratch`]), removed
+//! once it stopped.
 //! Its first line is a [`HostMessage::Serve`]. It has [`READY_WAIT`] to say
 //! it is ready (uv may fetch Python and the script's packages first); what
 //! it says of its progress until then goes to the host (its latest, at most
@@ -49,6 +51,7 @@ use crate::protocol::{self, HostMessage, PluginMessage, Request, RequestContext,
 use crate::runtime::{
     self, Calls, DRAIN, Load, MAX_MESSAGE_CHARS, MAX_STAGE_CHARS, Msg, TERM_GRACE, TICK, Talk, sanitize,
 };
+use crate::scratch::Scratch;
 
 /// How long a service may take to say it is ready: uv may install Python
 /// and the script's packages first.
@@ -207,12 +210,15 @@ impl ProcessService {
         let id = message.plugin.id.clone();
         let place = (data_dir.as_path(), resources.as_deref());
         let (data_dir, resources) = runtime::prepare(&mut cmd, place, &ffmpeg, &ffprobe, &id, message.protocol)?;
+        let mut log = PluginLog::open_rolling(&log_path, &message.service_id, "serve")?;
+        // Removed once it stopped, as its thread ends.
+        let scratch = runtime::scratch(&mut cmd, message.protocol, &mut log, &id);
         cmd.env("AUTOSCENE_MODE", "service");
         message.plugin.data_dir = data_dir.to_string_lossy().into_owned();
         message.plugin.resources_dir = resources.map(|r| r.to_string_lossy().into_owned());
+        message.plugin.temp_dir = runtime::temp_dir(scratch.as_ref());
         message.tools.ffmpeg = ffmpeg.to_string_lossy().into_owned();
         message.tools.ffprobe = ffprobe.to_string_lossy().into_owned();
-        let mut log = PluginLog::open_rolling(&log_path, &message.service_id, "serve")?;
         let mut tree = runtime::spawn(&mut cmd, &mut log, &id)?;
 
         let (tx, rx) = mpsc::sync_channel(SERVICE_QUEUE);
@@ -245,6 +251,7 @@ impl ProcessService {
         let serving = Serving {
             name: shown,
             tree,
+            _scratch: scratch,
             rx,
             talk,
             pending: service.pending.clone(),
@@ -416,6 +423,8 @@ struct Serving {
     /// The plugin's name, as a stage shows it.
     name: String,
     tree: Tree,
+    /// Its scratch folder: removed as this drops, once its tree has ended.
+    _scratch: Option<Scratch>,
     rx: Receiver<Msg>,
     talk: Talk,
     pending: Pending,

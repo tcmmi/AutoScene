@@ -74,14 +74,15 @@ impl State {
 }
 
 /// The WASI context of a run of the plugin `id`: its folders (`/data`, its
-/// large files read only as `/resources` when it has some, and what
-/// `mounts` gives), its two variables and its id as its argument, starting
-/// in `/data`, its output to `log`; no stdin, no socket, no name lookup, and
-/// none of the app's environment or arguments.
+/// large files read only as `/resources` when it has some, its temp folder
+/// `tmp` as `/tmp` when it has one, and what `mounts` gives), its two
+/// variables and its id as its argument, starting in `/data`, its output to
+/// `log`; no stdin, no socket, no name lookup, and none of the app's
+/// environment or arguments.
 pub(crate) fn wasi(
     id: &str,
     protocol: u32,
-    (data_dir, resources_dir): (&Path, Option<&Path>),
+    (data_dir, resources_dir, tmp): (&Path, Option<&Path>, Option<&Path>),
     mounts: &Mounts,
     log: &Arc<Mutex<PluginLog>>,
 ) -> PluginResult<WasiCtx> {
@@ -102,6 +103,11 @@ pub(crate) fn wasi(
     b.preopened_dir(data_dir, "/data", FsPerms::ReadWrite).map_err(open)?;
     if let Some(resources) = resources_dir {
         b.preopened_dir(resources, "/resources", FsPerms::ReadOnly).map_err(open)?;
+    }
+    // Where its temp files go (std's temp_dir, Python's tempfile): emptied
+    // when the run ends.
+    if let Some(tmp) = tmp {
+        b.preopened_dir(tmp, "/tmp", FsPerms::ReadWrite).map_err(open)?;
     }
     if let Some(export) = &mounts.export {
         let perms = if mounts.export_write { FsPerms::ReadWrite } else { FsPerms::ReadOnly };

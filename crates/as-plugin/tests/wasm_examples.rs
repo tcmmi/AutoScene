@@ -106,6 +106,7 @@ impl Run {
                 version: "1.0.0".into(),
                 data_dir: "?".into(),
                 resources_dir: None,
+                temp_dir: None,
             },
             app: AppContext { version: "1.1.0".into(), platform: "windows-x86_64".into() },
             tools: ToolPaths { ffmpeg: "ffmpeg".into(), ffprobe: "ffprobe".into(), ffmpeg_version: "9.0".into() },

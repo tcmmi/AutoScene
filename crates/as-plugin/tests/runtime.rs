@@ -20,6 +20,7 @@ use as_plugin::runtime::{
     self, CALL_QUEUE, CANCEL_GRACE, EXIT_GRACE, MAX_CALL_BYTES, MAX_CALLS_IN_FLIGHT, MAX_LINE_BYTES, MAX_UNREAD,
     RunSpec, TERM_GRACE,
 };
+use as_plugin::scratch;
 use as_plugin::{
     ActionContext, ActionKind, AppContext, CallCode, CallError, Caller, Grants, HostCalls, HostMethod, Launch,
     MemorySecrets, PluginContext, PluginError, PluginId, PluginResult, RunMessage, SettingValue, Store, ToolPaths,
@@ -128,6 +129,7 @@ fn message() -> RunMessage {
             version: "1.2.0".into(),
             data_dir: "/data".into(),
             resources_dir: None,
+            temp_dir: None,
         },
         app: AppContext { version: "1.0.3-BETA".into(), platform: "linux-x86_64".into() },
         tools: ToolPaths {
@@ -1057,4 +1059,353 @@ fn calls_still_waiting_at_the_result_are_never_answered() {
     let log = p.log_text();
     assert_eq!(log.matches("[call] settings.get still waiting at the result: dropped\n").count(), 2, "{log}");
     assert_eq!(log.matches("[reply] settings.get cancelled\n").count(), MAX_CALLS_IN_FLIGHT, "{log}");
+}
+
+/// What a run in a `scratch` mode said of its scratch folder.
+fn scratch_said(p: &Plugin) -> Value {
+    serde_json::from_str(&p.text("scratch.json")).unwrap()
+}
+
+/// The temp folder a run in a `scratch` mode was given.
+fn scratch_of(p: &Plugin) -> PathBuf {
+    PathBuf::from(scratch_said(p)["tempDir"].as_str().expect("a scratch folder"))
+}
+
+/// The scratch folder of the run's temp folder `dir`, with its marker.
+fn root_of(dir: &Path) -> PathBuf {
+    assert_eq!(dir.file_name().unwrap(), scratch::TEMP, "{}", dir.display());
+    dir.parent().unwrap().to_owned()
+}
+
+/// Waits until nothing is at `path` any more: a removal runs on a thread of
+/// its own, and is retried for about ten seconds.
+fn wait_gone(path: &Path) {
+    let until = Instant::now() + Duration::from_secs(30);
+    while fs::symlink_metadata(path).is_ok() {
+        assert!(Instant::now() < until, "{} is still there", path.display());
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Runs `p` in `scratch-sleep` (protocol 2), does `during` with its temp
+/// folder once it wrote its files there, and cancels it: the result, and the
+/// folder.
+fn run_scratch_sleep(p: &Plugin, during: impl FnOnce(&Path)) -> (PluginResult<Option<String>>, PathBuf) {
+    run_scratch_sleep_in(p, &env::temp_dir(), during)
+}
+
+/// [`run_scratch_sleep`], with its scratch folder made in `temp`.
+fn run_scratch_sleep_in(
+    p: &Plugin,
+    temp: &Path,
+    during: impl FnOnce(&Path),
+) -> (PluginResult<Option<String>>, PathBuf) {
+    let cancel = CancelToken::new();
+    thread::scope(|s| {
+        let run = s.spawn(|| scratch::with_temp_root(temp, || runtime::run(p.spec(), &cancel, &|_, _| {})));
+        wait_for(|| p.data().join("scratch.json").exists());
+        let dir = scratch_of(p);
+        during(&dir);
+        cancel.cancel();
+        (run.join().unwrap(), dir)
+    })
+}
+
+/// A plugin of protocol 2 in `mode`, which answers no calls.
+fn scratching(mode: &'static str) -> Plugin {
+    Plugin { protocol: 2, ..Plugin::new(mode) }
+}
+
+#[test]
+fn a_run_gets_a_scratch_folder_and_it_goes_after() {
+    let p = scratching("scratch");
+    assert_eq!(p.run().unwrap().as_deref(), Some("Scratched."));
+    let dir = scratch_of(&p);
+    // A folder of its own in the system's temp folder, named short, and in
+    // it the run's temp folder.
+    let root = root_of(&dir);
+    assert_eq!(root.parent(), Some(env::temp_dir().as_path()));
+    let name = root.file_name().unwrap().to_str().unwrap();
+    assert!(name.starts_with(scratch::PREFIX) && name.len() == scratch::PREFIX.len() + scratch::NAME_CHARS, "{name}");
+    // It wrote its files there, and they went with the folder once the run ended.
+    wait_gone(&root);
+    // Its data folder keeps what it wrote there.
+    assert!(p.data().join("scratch.json").is_file());
+    // Each run gets a folder of its own.
+    let again = scratching("scratch");
+    again.run().unwrap();
+    assert_ne!(scratch_of(&again), dir);
+}
+
+#[test]
+fn a_stopped_run_s_scratch_folder_goes_too() {
+    let p = scratching("scratch-sleep");
+    let (result, dir) = run_scratch_sleep(&p, |dir| {
+        // It lives while its run does, with what the plugin wrote, and the
+        // marker beside it, out of the plugin's way.
+        assert_eq!(fs::read_to_string(dir.join("sub").join("b.txt")).unwrap(), "b");
+        assert!(root_of(dir).join(scratch::MARKER).is_file());
+        assert!(!dir.join(scratch::MARKER).exists());
+    });
+    assert!(matches!(result, Err(PluginError::Cancelled)), "{result:?}");
+    wait_gone(&root_of(&dir));
+}
+
+#[test]
+fn temp_points_into_the_scratch_folder() {
+    let p = scratching("scratch");
+    p.run().unwrap();
+    let said = scratch_said(&p);
+    let dir = said["tempDir"].as_str().unwrap();
+    assert_eq!(said["runTemp"], json!(dir));
+    // The program's own temp folder is it: std's, Python's tempfile, FFmpeg's
+    // (Windows ends it with a separator).
+    assert_eq!(Path::new(said["systemTemp"].as_str().unwrap()), Path::new(dir));
+    #[cfg(windows)]
+    assert_eq!((&said["TEMP"], &said["TMP"]), (&json!(dir), &json!(dir)));
+    #[cfg(unix)]
+    assert_eq!(said["TMPDIR"], json!(dir));
+    // The run line names it beside the data folder.
+    let line: Value = serde_json::from_str(&p.text("run.json")).unwrap();
+    assert_eq!(line["plugin"]["dataDir"], json!(p.data()));
+    assert_eq!(line["plugin"]["tempDir"], json!(dir));
+}
+
+/// Asserts that the environment `said` gives the temp folder the app has, as
+/// a run of protocol 1 gets it.
+fn assert_system_temp(said: &Value) {
+    for name in ["TEMP", "TMP", "TMPDIR"] {
+        let ours = env::var(name).ok().filter(|_| runtime::allowed_env(name.as_ref()));
+        assert_eq!(said[name], json!(ours), "{name}");
+    }
+}
+
+#[test]
+fn a_protocol_1_run_gets_its_line_and_environment_as_before() {
+    let p = Plugin::new("scratch");
+    assert_eq!(p.run().unwrap().as_deref(), Some("Scratched."));
+    let said = scratch_said(&p);
+    assert_eq!((&said["tempDir"], &said["runTemp"]), (&Value::Null, &Value::Null));
+    assert_system_temp(&said);
+    assert!(!p.text("run.json").contains("tempDir"));
+}
+
+#[test]
+fn a_run_whose_scratch_folder_can_t_be_made_keeps_the_system_s_temp() {
+    // A system temp folder that is gone, as when TEMP names a deleted folder.
+    let gone = tempfile::tempdir().unwrap();
+    let p = scratching("scratch");
+    let result = scratch::with_temp_root(&gone.path().join("deleted"), || p.run());
+    // It runs as a run of protocol 1 would, and its log says why.
+    assert_eq!(result.unwrap().as_deref(), Some("Scratched."));
+    let said = scratch_said(&p);
+    assert_eq!((&said["tempDir"], &said["runTemp"]), (&Value::Null, &Value::Null));
+    assert_system_temp(&said);
+    assert!(!p.text("run.json").contains("tempDir"));
+    let log = p.log_text();
+    assert!(log.contains("[host] couldn't make its temp folder, so it keeps the system's: "), "{log}");
+}
+
+#[test]
+fn a_link_in_the_scratch_folder_is_removed_not_followed() {
+    let victim = tempfile::tempdir().unwrap();
+    let (keep, keep2) = (victim.path().join("keep.txt"), victim.path().join("keep2.txt"));
+    fs::write(&keep, "keep\n").unwrap();
+    fs::write(&keep2, "keep2\n").unwrap();
+    let hash = |path: &Path| as_plugin::package::sha256_hex(&fs::read(path).unwrap());
+    let hashes = (hash(&keep), hash(&keep2));
+    let p = scratching("scratch-sleep");
+    let (_, dir) = run_scratch_sleep(&p, |dir| {
+        // A link to the folder at its top and deeper, a hard link to a file,
+        // a link to a file (Unix: Windows makes those only in developer
+        // mode), and a read-only file.
+        link_dir(&dir.join("j"), victim.path());
+        link_dir(&dir.join("sub").join("j2"), victim.path());
+        fs::hard_link(&keep2, dir.join("hard.txt")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&keep, dir.join("f")).unwrap();
+        fs::write(dir.join("ro.txt"), "ro").unwrap();
+        let mut ro = fs::metadata(dir.join("ro.txt")).unwrap().permissions();
+        ro.set_readonly(true);
+        fs::set_permissions(dir.join("ro.txt"), ro).unwrap();
+    });
+    wait_gone(&root_of(&dir));
+    let mut left: Vec<_> = fs::read_dir(victim.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    left.sort();
+    assert_eq!(left, ["keep.txt", "keep2.txt"]);
+    assert_eq!((hash(&keep), hash(&keep2)), hashes);
+}
+
+#[test]
+fn a_scratch_folder_swapped_for_a_link_removes_only_the_link() {
+    // What a link could lead to: a folder with a file, and in it one named
+    // as the run's temp folder, with a file too.
+    let victim = tempfile::tempdir().unwrap();
+    let inner = victim.path().join(scratch::TEMP);
+    fs::create_dir(&inner).unwrap();
+    fs::write(victim.path().join("keep.txt"), "keep").unwrap();
+    fs::write(inner.join("keep.txt"), "keep").unwrap();
+    let p = scratching("scratch-sleep");
+    let moved: Mutex<Option<PathBuf>> = Mutex::new(None);
+    let (_, dir) = run_scratch_sleep(&p, |dir| {
+        let root = root_of(dir);
+        let aside = root.with_file_name(format!("{}-moved", root.file_name().unwrap().to_str().unwrap()));
+        let renamed = fs::rename(&root, &aside);
+        // Windows keeps a folder in place while a file in it is open: the
+        // run's marker holds it while the run lives and its removal runs.
+        // The run's temp folder can move, and a link takes its place.
+        #[cfg(windows)]
+        {
+            assert!(renamed.is_err(), "the scratch folder moved while its run held it");
+            fs::rename(dir, dir.with_file_name("moved")).unwrap();
+            link_dir(dir, victim.path());
+        }
+        #[cfg(unix)]
+        {
+            renamed.unwrap();
+            std::os::unix::fs::symlink(victim.path(), &root).unwrap();
+            *moved.lock().unwrap() = Some(aside);
+        }
+    });
+    wait_gone(dir.parent().unwrap());
+    assert_eq!(fs::read_to_string(victim.path().join("keep.txt")).unwrap(), "keep");
+    assert_eq!(fs::read_to_string(inner.join("keep.txt")).unwrap(), "keep");
+    if let Some(away) = moved.into_inner().unwrap() {
+        fs::remove_dir_all(away).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_socket_fits_in_the_scratch_folder() {
+    let p = scratching("scratch-sleep");
+    let (_, dir) = run_scratch_sleep(&p, |dir| {
+        // Where Python's multiprocessing puts its sockets, under TMPDIR.
+        let pymp = dir.join("pymp-k3j9x0qa");
+        fs::create_dir(&pymp).unwrap();
+        let _listener = std::os::unix::net::UnixListener::bind(pymp.join("sock-x0qak3j9")).unwrap();
+        // CPython keeps TMPDIR only while its path and the 28 bytes of
+        // those two names fit (multiprocessing/util.py).
+        let limit = if cfg!(target_os = "macos") { 92 } else { 108 };
+        assert!(dir.as_os_str().len() + 28 < limit, "{}", dir.display());
+    });
+    wait_gone(&root_of(&dir));
+}
+
+#[test]
+fn a_held_file_is_retried_then_left_to_the_sweep() {
+    // A temp folder of its own: the sweep below takes only what this test left.
+    let temp = tempfile::tempdir().unwrap();
+    // A grandchild held a file in it when the plugin exited: once the run
+    // ended its tree, the folder went (on Windows, after a try or two while
+    // the grandchild ended).
+    let p = scratching("scratch-hold");
+    let result = scratch::with_temp_root(temp.path(), || p.run());
+    assert_eq!(result.unwrap().as_deref(), Some("Held."));
+    wait_gone(&root_of(&scratch_of(&p)));
+    held_past_its_tries(temp.path());
+}
+
+/// On Windows: a file held while the run's folder is removed keeps it,
+/// until the file is let go. Let go while it is retried, the folder goes;
+/// held past every try, the folder stays with its marker, for the sweep of
+/// the next start.
+#[cfg(windows)]
+fn held_past_its_tries(temp: &Path) {
+    let waits: Duration = scratch::RETRY_WAITS.iter().sum();
+    let p = scratching("scratch-sleep");
+    let hold = Mutex::new(None);
+    let (result, dir) = run_scratch_sleep_in(&p, temp, |dir| *hold.lock().unwrap() = Some(Hold::new(dir)));
+    assert!(matches!(result, Err(PluginError::Cancelled)), "{result:?}");
+    let root = root_of(&dir);
+    // Its first try came as the run ended; the next comes half a second on.
+    // Meanwhile the run's marker is held: no sweep takes the folder.
+    thread::sleep(scratch::RETRY_WAITS[0] * 2);
+    assert!(held(&root.join(scratch::MARKER)) && dir.join("held.bin").is_file());
+    drop(hold.lock().unwrap().take());
+    let until = Instant::now() + waits;
+    while fs::symlink_metadata(&root).is_ok() {
+        assert!(Instant::now() < until, "{} stayed after its file was let go", root.display());
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    let p = scratching("scratch-sleep");
+    let (result, dir) = run_scratch_sleep_in(&p, temp, |dir| *hold.lock().unwrap() = Some(Hold::new(dir)));
+    assert!(matches!(result, Err(PluginError::Cancelled)), "{result:?}");
+    let root = root_of(&dir);
+    // Its marker is held while it is tried, and let go once the tries are done.
+    let until = Instant::now() + waits + Duration::from_secs(10);
+    while held(&root.join(scratch::MARKER)) {
+        assert!(Instant::now() < until, "{} is still being removed", root.display());
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert!(root.join(scratch::MARKER).is_file() && dir.join("held.bin").is_file());
+    drop(hold);
+    assert_eq!(scratch::sweep(temp), 1);
+    assert!(fs::symlink_metadata(&root).is_err(), "{}", root.display());
+}
+
+/// On Linux and macOS nothing holds a folder of the person's: an open file
+/// doesn't, and folders a plugin left read only (the run's temp folder too)
+/// are given leave to change them, so the folder goes without the sweep.
+#[cfg(unix)]
+fn held_past_its_tries(temp: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let p = scratching("scratch-sleep");
+    let (result, dir) = run_scratch_sleep_in(&p, temp, |dir| {
+        let locked = dir.join("locked");
+        fs::create_dir(&locked).unwrap();
+        fs::write(locked.join("inside.bin"), "inside").unwrap();
+        for dir in [locked.as_path(), dir] {
+            fs::set_permissions(dir, fs::Permissions::from_mode(0o500)).unwrap();
+        }
+    });
+    assert!(matches!(result, Err(PluginError::Cancelled)), "{result:?}");
+    wait_gone(&root_of(&dir));
+}
+
+/// Whether `marker` is there and held: this process can't lock it.
+#[cfg(windows)]
+fn held(marker: &Path) -> bool {
+    fs::File::open(marker).is_ok_and(|f| matches!(f.try_lock(), Err(fs::TryLockError::WouldBlock)))
+}
+
+/// What keeps a folder from being removed on Windows: a file in it opened
+/// without leave to delete it, until it drops.
+#[cfg(windows)]
+struct Hold {
+    _file: fs::File,
+}
+
+#[cfg(windows)]
+impl Hold {
+    fn new(folder: &Path) -> Self {
+        use std::os::windows::fs::OpenOptionsExt;
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .share_mode(0)
+            .open(folder.join("held.bin"))
+            .unwrap();
+        Self { _file: file }
+    }
+}
+
+/// A link at `link` to the folder `target`: a junction on Windows, where a
+/// symlink would need developer mode.
+fn link_dir(link: &Path, target: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, link).unwrap();
+    #[cfg(windows)]
+    {
+        let status = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
 }

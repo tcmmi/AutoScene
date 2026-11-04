@@ -4,7 +4,9 @@
 //! The program starts by its path in the plugin's folder (a uv script's
 //! too, through the uv the host got: AutoScene's own, [`crate::uv`]), in
 //! the plugin's data folder, with only the environment variables of
-//! [`allowed_env`] and a few the run sets. It starts as the root of an
+//! [`allowed_env`] and a few the run sets. A program of protocol 2 also
+//! gets a scratch folder of its own as its temp folder ([`crate::scratch`]),
+//! which is removed once the run has ended. It starts as the root of an
 //! [`as_media::proc::Tree`], so everything it starts ends with it. Its
 //! stdin is written and its stdout and stderr are read on threads of their
 //! own from the start, so a plugin that floods a pipe or never reads its
@@ -65,6 +67,7 @@ use crate::error::{PluginError, PluginResult};
 use crate::log::PluginLog;
 use crate::manifest::{Launch, PluginId, clean, cut, shown};
 use crate::protocol::{Call, CallHead, CallId, HostMessage, PluginMessage, Reply, RunMessage, ServiceMessage};
+use crate::scratch::Scratch;
 
 /// How long a plugin may take to stop after the cancel line.
 pub const CANCEL_GRACE: Duration = Duration::from_secs(5);
@@ -151,9 +154,11 @@ pub struct RunSpec {
 /// its result (a run cancelled before it starts starts nothing). A cancel
 /// after that only stops the wait for it to exit.
 ///
-/// The run line's protocol, data folder and FFmpeg paths are the run's own,
-/// whatever `message` held, so they match the environment's. It returns
-/// once its calls did too, or [`CALL_GRACE`] after its plugin ended.
+/// The run line's protocol, data folder, scratch folder and FFmpeg paths are
+/// the run's own, whatever `message` held, so they match the environment's.
+/// A run of protocol 2 gets a scratch folder ([`crate::scratch`]), removed
+/// once its tree has ended. It returns once its calls did too, or [`CALL_GRACE`]
+/// after its plugin ended.
 pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64>)) -> PluginResult<Option<String>> {
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
@@ -163,12 +168,15 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64
     let mut cmd = command(&name, &dir, &launch, || uv)?;
     let id = message.plugin.id.clone();
     let (data_dir, resources) = prepare(&mut cmd, (&data_dir, resources.as_deref()), &ffmpeg, &ffprobe, &id, protocol)?;
+    let mut log = PluginLog::open(&log_path, &message.run_id, &message.action.id)?;
+    // Removed as it drops, at the end of the run, whatever ended it.
+    let scratch = scratch(&mut cmd, protocol, &mut log, &id);
     message.protocol = protocol;
     message.plugin.data_dir = data_dir.to_string_lossy().into_owned();
     message.plugin.resources_dir = resources.map(|r| r.to_string_lossy().into_owned());
+    message.plugin.temp_dir = temp_dir(scratch.as_ref());
     message.tools.ffmpeg = ffmpeg.to_string_lossy().into_owned();
     message.tools.ffprobe = ffprobe.to_string_lossy().into_owned();
-    let mut log = PluginLog::open(&log_path, &message.run_id, &message.action.id)?;
     let mut tree = spawn(&mut cmd, &mut log, &id)?;
 
     let (tx, rx) = mpsc::sync_channel(QUEUE);
@@ -287,6 +295,38 @@ pub(crate) fn prepare(
         cmd.env("AUTOSCENE_RESOURCES", resources);
     }
     Ok((data_dir, resources))
+}
+
+/// A scratch folder for `cmd`, the program of the plugin `id`, of
+/// `protocol`, from 2 on: its temp folder is `AUTOSCENE_RUN_TEMP`, and the
+/// system's temp folder for the program (`TEMP` and `TMP` on Windows,
+/// `TMPDIR` on Linux and macOS), so its temp files and those of what it
+/// runs land there. A program of protocol 1 gets the environment it always
+/// got, and none. So does one whose folder couldn't be made (a full drive,
+/// a system temp folder that is gone), which says why in its `log`: its
+/// temp files go where they went before, and the run goes on.
+pub(crate) fn scratch(cmd: &mut Command, protocol: u32, log: &mut PluginLog, id: &PluginId) -> Option<Scratch> {
+    if protocol < 2 {
+        return None;
+    }
+    let scratch = Scratch::new()
+        .inspect_err(|e| {
+            log.note("host", &format!("couldn't make its temp folder, so it keeps the system's: {e}"));
+            tracing::warn!(error = %e, plugin = %id.as_str(), "a plugin run's scratch folder couldn't be made");
+        })
+        .ok()?;
+    let dir = scratch.path();
+    cmd.env("AUTOSCENE_RUN_TEMP", dir);
+    #[cfg(windows)]
+    cmd.env("TEMP", dir).env("TMP", dir);
+    #[cfg(unix)]
+    cmd.env("TMPDIR", dir);
+    Some(scratch)
+}
+
+/// The scratch folder as a run or a serve line names it.
+pub(crate) fn temp_dir(scratch: Option<&Scratch>) -> Option<String> {
+    scratch.map(|s| s.path().to_string_lossy().into_owned())
 }
 
 /// Starts `cmd`, the program of the plugin `id`, as the root of a tree;

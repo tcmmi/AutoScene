@@ -12,6 +12,7 @@ use std::{fs, panic};
 
 use as_core::CancelToken;
 use as_plugin::runtime::TERM_GRACE;
+use as_plugin::scratch;
 use as_plugin::service::{MAX_PENDING, MAX_SERVICE_LINE, STOP_GRACE};
 use as_plugin::{
     AppContext, CallCode, CallError, HostCalls, HostMethod, Launch, PluginContext, PluginError, PluginId, PluginResult,
@@ -72,6 +73,7 @@ impl Served {
             version: "1.2.0".into(),
             data_dir: "/data".into(),
             resources_dir: None,
+            temp_dir: None,
         };
         ServiceSpec {
             name: NAME.into(),
@@ -223,6 +225,35 @@ fn a_service_gets_its_resources_folder() {
     assert_eq!(PathBuf::from(serve["plugin"]["resourcesDir"].as_str().unwrap()), folder);
     assert_eq!(PathBuf::from(s.text("resources")), folder);
     service.stop(STOP_GRACE);
+}
+
+#[test]
+fn a_service_s_scratch_folder_goes_when_it_stops() {
+    let s = Served::new("serve");
+    let service = s.start().unwrap();
+    // Its serve line and its environment name the same folder, its own.
+    let serve: Value = serde_json::from_str(&s.text("serve.json")).unwrap();
+    let dir = PathBuf::from(serve["plugin"]["tempDir"].as_str().unwrap());
+    assert_eq!(PathBuf::from(s.text("run-temp")), dir);
+    assert_eq!(dir.file_name().unwrap(), scratch::TEMP);
+    let root = dir.parent().unwrap();
+    assert_eq!(root.file_name().unwrap().len(), scratch::PREFIX.len() + scratch::NAME_CHARS);
+    // It lives while the service does, with what the service wrote there,
+    // and the marker beside it.
+    assert_eq!(fs::read_to_string(dir.join("served.txt")).unwrap(), "served");
+    assert!(root.join(scratch::MARKER).is_file());
+    service.stop(STOP_GRACE);
+    // Removed on a thread of its own, once it stopped.
+    let until = Instant::now() + Duration::from_secs(30);
+    while fs::symlink_metadata(root).is_ok() {
+        assert!(Instant::now() < until, "{} is still there", root.display());
+        thread::sleep(Duration::from_millis(20));
+    }
+    // A second start gets a folder of its own.
+    let again = s.start().unwrap();
+    let serve: Value = serde_json::from_str(&s.text("serve.json")).unwrap();
+    assert_ne!(PathBuf::from(serve["plugin"]["tempDir"].as_str().unwrap()), dir);
+    again.stop(STOP_GRACE);
 }
 
 #[test]

@@ -22,7 +22,8 @@ use as_plugin::package::sha256_hex;
 use as_plugin::page_state;
 use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext};
 use as_plugin::runtime::MAX_LINE_BYTES;
-use as_plugin::wasm::{self, CANCEL_GRACE, Grants, Limits, PROGRESS_GAP, WasmSpec};
+use as_plugin::scratch::{self, Scratch};
+use as_plugin::wasm::{self, CANCEL_GRACE, Grants, Limits, Net, PROGRESS_GAP, WasmSpec};
 use as_plugin::{
     ActionContext, ActionKind, AppContext, Manifest, Permission, PluginContext, PluginError, PluginId, PluginResult,
     RunMessage, SettingValue, ToolPaths, Trigger,
@@ -108,6 +109,7 @@ fn message(root: &Path, action: &str) -> RunMessage {
             version: "1.2.0".into(),
             data_dir: "?".into(),
             resources_dir: None,
+            temp_dir: None,
         },
         app: AppContext { version: "1.1.0".into(), platform: "windows-x86_64".into() },
         tools: ToolPaths { ffmpeg: "ffmpeg".into(), ffprobe: "ffprobe".into(), ffmpeg_version: "9.0".into() },
@@ -271,6 +273,11 @@ fn denied(text: &str, start: &str) {
     assert!(l.contains(": denied ("), "{l}");
 }
 
+fn allowed(text: &str, start: &str) {
+    let l = line(text, start);
+    assert!(l.ends_with(": ALLOWED"), "{l}");
+}
+
 #[test]
 fn a_run_reports_progress_logs_and_its_message() {
     let Some(g) = guest("hello") else { return };
@@ -338,7 +345,9 @@ fn a_plugin_sees_only_its_folders() {
     let paths = [outside.to_string_lossy().into_owned(), g.dir.path().to_string_lossy().into_owned()].join("\n");
     let g = g.with(&[Permission::ExportsRead, Permission::ProjectRead]).text("paths", &paths);
     let said = g.runs();
-    for l in said.lines().filter(|l| !l.starts_with("symlink ")) {
+    // On Linux the test's folders are in /tmp, and their paths name a file
+    // in the run's own /tmp: writing one is its own business.
+    for l in said.lines().filter(|l| !l.starts_with("symlink ") && !l.starts_with("write /tmp/")) {
         assert!(l.contains(": denied ("), "{l}\n{said}");
     }
     assert_eq!(fs::read_to_string(&outside).unwrap(), "secret");
@@ -452,7 +461,7 @@ fn resources_are_read_only_at_slash_resources() {
     let files = [("model.onnx", weights.as_slice()), ("vocab.json", vocab)];
     let g = g.files(&files).text("paths", "model.onnx\nvocab.json");
     let said = g.runs();
-    assert_eq!(line(&said, "preopens="), "preopens=/data,/resources", "{said}");
+    assert_eq!(line(&said, "preopens="), "preopens=/data,/resources,/tmp", "{said}");
     assert!(line(&said, "list /resources:").ends_with(": ALLOWED"), "{said}");
     for (name, bytes) in files {
         // It reads each whole: its copy in /data hashes as the file does.
@@ -493,7 +502,7 @@ fn no_resources_no_preopen() {
     fs::write(g.path("resources/model.onnx"), "weights").unwrap();
     let g = g.text("paths", "model.onnx");
     let said = g.runs();
-    assert_eq!(line(&said, "preopens="), "preopens=/data", "{said}");
+    assert_eq!(line(&said, "preopens="), "preopens=/data,/tmp", "{said}");
     denied(&said, "list /resources:");
     denied(&said, "read /resources/model.onnx:");
     denied(&said, "write /resources/new:");
@@ -508,6 +517,60 @@ fn folders_it_was_not_given_are_not_there() {
     denied(&said, "list /export:");
     denied(&said, "read /export/Clip 1.mp4:");
     denied(&said, "read /project/notes.txt:");
+}
+
+#[test]
+fn tmp_is_the_run_s_scratch_folder() {
+    let Some(g) = guest("escape") else { return };
+    let g = g.text("paths", "/tmp\n/tmp/probe.txt\n/tmp/../x");
+    // What it writes to /tmp lands in the run's temp folder; the marker
+    // beside it is out of its reach.
+    let temp = tempfile::tempdir().unwrap();
+    let scratch = Scratch::new_in(temp.path()).unwrap();
+    let r = wasm::run_in_scratch(g.spec(), Net::system(), &scratch, &CancelToken::new(), &|_, _| {});
+    assert!(matches!(r, Ok(Some(_))), "{r:?}");
+    let said = g.said();
+    allowed(&said, "list /tmp:");
+    allowed(&said, "write /tmp/probe.txt:");
+    // A run's /tmp starts empty: nothing was there to read.
+    denied(&said, "read /tmp/probe.txt:");
+    assert_eq!(fs::read_to_string(scratch.path().join("probe.txt")).unwrap(), "x");
+    let names: Vec<_> = fs::read_dir(scratch.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(names, ["probe.txt"]);
+    assert!(scratch.root().join(scratch::MARKER).is_file());
+    // Nor does it lead anywhere else.
+    denied(&said, "read /tmp/../x:");
+    denied(&said, "write /tmp/../x:");
+    let dir = scratch.root().to_owned();
+    drop(scratch);
+    let until = Instant::now() + Duration::from_secs(30);
+    while fs::symlink_metadata(&dir).is_ok() {
+        assert!(Instant::now() < until, "{} is still there", dir.display());
+        thread::sleep(Duration::from_millis(20));
+    }
+    // Each run has a /tmp of its own, in the system's temp folder: the
+    // second finds nothing the first left.
+    for _ in 0..2 {
+        let Some(g) = guest("escape") else { return };
+        let said = g.text("paths", "/tmp/probe.txt").runs();
+        denied(&said, "read /tmp/probe.txt:");
+        allowed(&said, "write /tmp/probe.txt:");
+    }
+}
+
+#[test]
+fn a_run_whose_tmp_can_t_be_made_runs_without_one() {
+    let Some(g) = guest("escape") else { return };
+    let g = g.text("paths", "/tmp\n/tmp/probe.txt");
+    // A system temp folder that is gone, as when TEMP names a deleted folder.
+    let gone = tempfile::tempdir().unwrap();
+    let (r, _) = scratch::with_temp_root(&gone.path().join("deleted"), || g.run());
+    assert!(matches!(r, Ok(Some(_))), "{r:?}");
+    let said = g.said();
+    denied(&said, "list /tmp:");
+    denied(&said, "write /tmp/probe.txt:");
+    let log = g.log();
+    assert!(log.contains("[host] couldn't make its temp folder, so it has no /tmp: "), "{log}");
 }
 
 #[test]

@@ -25,6 +25,9 @@
 //! ([`net`]); each call is checked against what the plugin may use
 //! ([`calls`]).
 //!
+//! A run of protocol 2 gets a scratch folder of its own, which AutoScene
+//! empties when the run ends, and its temp files land there ([`scratch`]).
+//!
 //! A plugin's pages are its files under `ui/`, which AutoScene shows in a
 //! sandboxed frame and serves itself, each as its package lists it
 //! ([`pages`]). A plugin whose runtime is a service keeps its program running
@@ -60,6 +63,7 @@ pub mod pages;
 pub mod protocol;
 pub mod resources;
 pub mod runtime;
+pub mod scratch;
 pub mod secrets;
 pub mod service;
 pub mod store;

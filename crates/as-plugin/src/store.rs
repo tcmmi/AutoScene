@@ -1194,6 +1194,8 @@ impl Store {
                 version: p.record.version.clone(),
                 data_dir: self.data_dir(id).to_string_lossy().into_owned(),
                 resources_dir: None,
+                // The run's own, made as it starts.
+                temp_dir: None,
             },
             app: AppContext { version: self.app.to_string(), platform: current_platform().into() },
             tools,
@@ -1235,6 +1237,8 @@ impl Store {
                 version: p.record.version.clone(),
                 data_dir: data_dir.to_string_lossy().into_owned(),
                 resources_dir: None,
+                // The start's own, made as it starts.
+                temp_dir: None,
             },
             app: AppContext { version: self.app.to_string(), platform: current_platform().into() },
             tools: ToolPaths {

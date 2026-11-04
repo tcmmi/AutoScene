@@ -232,6 +232,12 @@ pub struct PluginContext {
     /// other plugin's line changes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resources_dir: Option<String>,
+    /// The run's temp folder (protocol 2), in its scratch folder: AutoScene
+    /// empties it when the run ends ([`crate::scratch`]). A run of protocol
+    /// 1 has none, and its line goes without it; so does a run whose folder
+    /// couldn't be made, whose temp files go to the system's temp folder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temp_dir: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -629,6 +635,7 @@ mod tests {
                 version: "1.2.0".into(),
                 data_dir: "/data".into(),
                 resources_dir: None,
+                temp_dir: None,
             },
             app: AppContext { version: "1.0.3-BETA".into(), platform: "linux-x86_64".into() },
             tools: ToolPaths { ffmpeg: "/ffmpeg".into(), ffprobe: "/ffprobe".into(), ffmpeg_version: "9.0".into() },
@@ -657,8 +664,11 @@ mod tests {
         let mut message = run();
         (message.protocol, message.action.trigger) = (2, Trigger::Page);
         message.input = Some(json!({"words": 3}));
+        // So does its scratch folder, after its data folder.
+        message.plugin.temp_dir = Some("/tmp/as-k3j9x0qa".into());
         let line = HostMessage::Run(Box::new(message)).line();
         assert!(line.ends_with(r#""trigger":"page"},"project":null,"export":null,"input":{"words":3}}"#), "{line}");
+        assert!(line.contains(r#""dataDir":"/data","tempDir":"/tmp/as-k3j9x0qa"},"#), "{line}");
     }
 
     #[test]

@@ -358,14 +358,7 @@ The log is in {}",
                 if let Ok(tools) = handle.state::<state::AppState>().tools() {
                     let _ = tools.caps();
                 }
-                // What a plugin install or uninstall that never finished left,
-                // and downloads from the catalog that didn't.
-                if let Some(plugins) = &handle.state::<state::AppState>().plugins {
-                    plugins.store.remove_leftovers();
-                    plugins.catalog.clear_downloads();
-                    // Large files no installed plugin names any more.
-                    plugins.prune_resources();
-                }
+                remove_leftovers(handle.state::<state::AppState>().plugins.as_deref(), &std::env::temp_dir());
             });
             // The plugin catalog, checked shortly after the start and then daily.
             plugins::catalog::start(checks);
@@ -436,11 +429,63 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// Removes what plugins left at the start: what a plugin install or
+/// uninstall that never finished left, downloads from the catalog that
+/// didn't and large files no installed plugin names any more (with
+/// `plugins`), and the scratch folders plugin runs left in
+/// `temp` (the app crashed, or a file in one was held past its removal's
+/// tries), plugins or none. A run that holds its folder keeps it, also one
+/// of a run that starts meanwhile.
+fn remove_leftovers(plugins: Option<&plugins::PluginHost>, temp: &std::path::Path) {
+    if let Some(plugins) = plugins {
+        plugins.store.remove_leftovers();
+        plugins.catalog.clear_downloads();
+        plugins.prune_resources();
+    }
+    let removed = as_plugin::scratch::sweep(temp);
+    if removed > 0 {
+        log::info!("removed {removed} scratch folders plugin runs left");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use as_project::computer::{self, Choice};
 
     use super::*;
+
+    #[test]
+    fn leftover_scratch_folders_are_swept_at_start() {
+        let temp = std::env::temp_dir().join(format!("autoscene-scratch-sweep-{}", std::process::id()));
+        std::fs::remove_dir_all(&temp).ok();
+        std::fs::create_dir_all(&temp).unwrap();
+        // A run that crashed left its folder, with its marker and its frames.
+        let left = temp.join("as-k3j9x0qa");
+        let frames = left.join(as_plugin::scratch::TEMP).join("frames");
+        std::fs::create_dir_all(&frames).unwrap();
+        std::fs::write(left.join(as_plugin::scratch::MARKER), "").unwrap();
+        std::fs::write(frames.join("0001.png"), "frame").unwrap();
+        // A run that lives, and a folder of another program's.
+        let live = as_plugin::scratch::Scratch::new_in(&temp).unwrap();
+        let other = temp.join("as-x0qak3j9");
+        std::fs::create_dir(&other).unwrap();
+        std::fs::write(other.join("theirs.txt"), "theirs").unwrap();
+        // Swept with the rest of what was left, also when plugins are off.
+        super::remove_leftovers(None, &temp);
+        assert!(!left.exists());
+        assert!(live.root().join(as_plugin::scratch::MARKER).is_file());
+        assert_eq!(std::fs::read_to_string(other.join("theirs.txt")).unwrap(), "theirs");
+        // Its removal runs on a thread of its own: done before the test's
+        // folder goes.
+        let root = live.root().to_owned();
+        drop(live);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while std::fs::symlink_metadata(&root).is_ok() {
+            assert!(std::time::Instant::now() < until, "{} is still there", root.display());
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        std::fs::remove_dir_all(&temp).unwrap();
+    }
 
     #[test]
     fn the_protocol_types_name_every_host_method_and_import_nothing() {

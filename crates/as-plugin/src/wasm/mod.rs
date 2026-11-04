@@ -4,6 +4,9 @@
 //! A run sees what its grants give it ([`Grants`]: what the person agreed
 //! to and its manifest still asks for), and nothing else:
 //! - its own folder as `/data`, read and write, where it starts;
+//! - the run's temp folder as `/tmp`, read and write, emptied when the run
+//!   ends ([`crate::scratch`]; none when it couldn't be made, as its log
+//!   says);
 //! - the export's folder as `/export`: read only with `exports:read`, read
 //!   and write with `exports:write`;
 //! - the project's folder as `/project`, read only, with `project:read`;
@@ -68,6 +71,7 @@ use crate::package::{MAX_COMPONENT_BYTES, is_component, sha256_hex};
 use crate::protocol::RunMessage;
 pub use crate::runtime::CANCEL_GRACE;
 use crate::runtime::{DRAIN, MAX_LINE_BYTES, MAX_MESSAGE_CHARS, MAX_STAGE_CHARS, marked, sanitize};
+use crate::scratch::Scratch;
 use crate::store::CHANGED;
 
 mod bindings {
@@ -190,10 +194,46 @@ pub fn run_with(
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
     }
+    // Removed as it drops, once the run's store is gone.
+    let scratch = Scratch::new();
+    run_in_tmp(spec, net, scratch.as_ref().map(Scratch::path), cancel, report)
+}
+
+/// [`run_with`], with `scratch` as its `/tmp`, which the caller removes:
+/// for tests, which look at what the plugin left there.
+#[doc(hidden)]
+pub fn run_in_scratch(
+    spec: WasmSpec,
+    net: Net,
+    scratch: &Scratch,
+    cancel: &CancelToken,
+    report: &dyn Fn(&str, Option<f64>),
+) -> PluginResult<Option<String>> {
+    if cancel.is_cancelled() {
+        return Err(PluginError::Cancelled);
+    }
+    run_in_tmp(spec, net, Ok(scratch.path()), cancel, report)
+}
+
+/// [`run_with`], with `tmp` as its `/tmp`: a run whose temp folder couldn't
+/// be made goes on without one, and its log says why.
+fn run_in_tmp(
+    spec: WasmSpec,
+    net: Net,
+    tmp: Result<&Path, &std::io::Error>,
+    cancel: &CancelToken,
+    report: &dyn Fn(&str, Option<f64>),
+) -> PluginResult<Option<String>> {
     let engine = engine::engine()?;
     fs::create_dir_all(&spec.data_dir)?;
     let log = Arc::new(Mutex::new(PluginLog::open(&spec.log_path, &spec.message.run_id, &spec.message.action.id)?));
-    let ran = run_in(engine, spec, net, &log, cancel, report);
+    let tmp = tmp
+        .inspect_err(|e| {
+            log.lock().note("host", &format!("couldn't make its temp folder, so it has no /tmp: {e}"));
+            tracing::warn!(error = %e, plugin = %spec.message.plugin.id.as_str(), "a plugin run's scratch folder couldn't be made");
+        })
+        .ok();
+    let ran = run_in(engine, spec, net, tmp, &log, cancel, report);
     // How a run that started ended is in the log already.
     if let Err(e) = &ran
         && !matches!(
@@ -382,6 +422,7 @@ fn run_in(
     engine: &Engine,
     spec: WasmSpec,
     net: Net,
+    tmp: Option<&Path>,
     log: &Arc<Mutex<PluginLog>>,
     cancel: &CancelToken,
     report: &dyn Fn(&str, Option<f64>),
@@ -400,7 +441,7 @@ fn run_in(
     secrets.retain(|key, _| grants.secrets.contains(key));
     let mounts = convert::mounts(&message, &grants)?;
     let request = convert::request(&message, &mounts, &grants);
-    let folders = (data_dir.as_path(), resources_dir.as_deref());
+    let folders = (data_dir.as_path(), resources_dir.as_deref(), tmp);
     let wasi = state::wasi(message.plugin.id.as_str(), grants.protocol, folders, &mounts, log)?;
 
     let deadline = Instant::now() + limits.time;

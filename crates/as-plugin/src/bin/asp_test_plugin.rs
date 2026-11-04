@@ -3,8 +3,10 @@
 //! might; its first argument says how. Files it writes go in its current
 //! folder, the run's data folder.
 
+use std::ffi::OsStr;
 use std::io::{self, BufRead, Read, Write};
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use std::{env, fs, process, thread};
 
 use serde_json::{Value, json};
@@ -281,6 +283,54 @@ fn main() {
             read_run();
             serve(mode, &mut stdin, &first);
         }
+        // Its scratch folder: what its run line and its environment say of
+        // it (`scratch.json`), and a few files it writes there.
+        "scratch" => {
+            read_run();
+            scratch(&first);
+            send(json!({"type": "result", "message": "Scratched."}));
+        }
+        // As `scratch`, then it waits for its cancel line.
+        "scratch-sleep" => {
+            read_run();
+            scratch(&first);
+            send(json!({"type": "progress", "stage": "Waiting"}));
+            loop {
+                let mut line = String::new();
+                if stdin.read_line(&mut line).expect("stdin") == 0 {
+                    process::exit(4);
+                }
+                if line.contains(r#""cancel""#) {
+                    process::exit(0);
+                }
+            }
+        }
+        // As `scratch`, then a grandchild holds a file in its scratch folder,
+        // and it exits once the file is held: the grandchild outlives it
+        // until the run ends its tree.
+        "scratch-hold" => {
+            read_run();
+            let temp = scratch(&first).expect("a scratch folder");
+            holder(&temp.join("held.bin"));
+            let until = Instant::now() + Duration::from_secs(20);
+            while !Path::new("holding").exists() {
+                assert!(Instant::now() < until, "the grandchild never held its file");
+                thread::sleep(Duration::from_millis(20));
+            }
+            send(json!({"type": "result", "message": "Held."}));
+        }
+        // The grandchild of `scratch-hold`: opens the file it is given so that
+        // nothing may delete it (on Windows; elsewhere an open file is no
+        // hold), says so in the file it is given second, and waits.
+        "hold" => {
+            let mut open = fs::OpenOptions::new();
+            open.read(true).write(true).create(true).truncate(false);
+            #[cfg(windows)]
+            std::os::windows::fs::OpenOptionsExt::share_mode(&mut open, 0);
+            let _held = open.open(&args[1]).expect("held file");
+            fs::write(&args[2], "").expect("holding");
+            forever();
+        }
         // A plugin of protocol 1 that prints a line like a call: never answered.
         "protocol1-call" => {
             read_run();
@@ -308,6 +358,12 @@ fn serve(mode: &str, stdin: &mut impl BufRead, first: &str) {
     fs::write("serve.json", first).expect("serve.json");
     fs::write("mode", env::var("AUTOSCENE_MODE").unwrap_or_default()).expect("mode");
     fs::write("resources", env::var("AUTOSCENE_RESOURCES").unwrap_or_default()).expect("resources");
+    // Its scratch folder, as its environment names it, with a file in it.
+    let temp = env::var("AUTOSCENE_RUN_TEMP").unwrap_or_default();
+    if !temp.is_empty() {
+        fs::write(Path::new(&temp).join("served.txt"), "served").expect("served.txt");
+    }
+    fs::write("run-temp", temp).expect("run-temp");
     if mode == "serve-slow-start" {
         send(json!({"type": "progress", "fraction": 0.5, "stage": "Getting Python"}));
         thread::sleep(Duration::from_millis(300));
@@ -415,6 +471,36 @@ fn answer(m: &Value, stdin: &mut impl BufRead) {
     }
 }
 
+/// Writes what the run line `first` and the environment say of the run's
+/// scratch folder to `scratch.json` (with the line itself in `run.json`),
+/// once it wrote files there, when it has one: one at its top, one in a
+/// folder, and one in the system's temp folder as the program sees it.
+/// Gives the folder.
+fn scratch(first: &str) -> Option<PathBuf> {
+    let line: Value = serde_json::from_str(first).expect("a run line");
+    let temp = line["plugin"]["tempDir"].as_str().map(PathBuf::from);
+    if let Some(dir) = &temp {
+        fs::write(dir.join("a.txt"), "a").expect("a.txt");
+        fs::create_dir(dir.join("sub")).expect("sub");
+        fs::write(dir.join("sub").join("b.txt"), "b").expect("b.txt");
+        fs::write(env::temp_dir().join("via-temp.txt"), "temp").expect("via-temp.txt");
+    }
+    let var = |name: &str| env::var(name).ok();
+    let said = json!({
+        "tempDir": line["plugin"]["tempDir"],
+        "runTemp": var("AUTOSCENE_RUN_TEMP"),
+        "TEMP": var("TEMP"),
+        "TMP": var("TMP"),
+        "TMPDIR": var("TMPDIR"),
+        "systemTemp": env::temp_dir(),
+    });
+    fs::write("run.json", first).expect("run.json");
+    // Whole once it is there: the tests wait for it.
+    fs::write("scratch.json.part", said.to_string()).expect("scratch.json");
+    fs::rename("scratch.json.part", "scratch.json").expect("scratch.json");
+    temp
+}
+
 /// Writes `message` as its line.
 fn send(message: Value) {
     raw(&message.to_string());
@@ -432,6 +518,20 @@ fn raw(line: &str) {
 fn grandchild() {
     let me = env::current_exe().expect("exe");
     process::Command::new(me).args(["heartbeat", "beat"]).stdin(process::Stdio::null()).spawn().expect("grandchild");
+}
+
+/// Starts this program again to hold `file` (mode `hold`), with no pipes of
+/// the run's. It is never waited for: the run's end ends it.
+#[allow(clippy::zombie_processes)]
+fn holder(file: &Path) {
+    let me = env::current_exe().expect("exe");
+    process::Command::new(me)
+        .args([OsStr::new("hold"), file.as_os_str(), OsStr::new("holding")])
+        .stdin(process::Stdio::null())
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .spawn()
+        .expect("grandchild");
 }
 
 fn forever() -> ! {

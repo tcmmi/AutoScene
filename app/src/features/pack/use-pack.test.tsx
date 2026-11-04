@@ -1,8 +1,8 @@
 import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
-import type { JobInfo, PackChoices, PackClip, PackPreview, PackState } from "@/bindings"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { JobInfo, PackChoices, PackClip, PackFilter, PackPreview, PackSpec, PackState } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
 import { DEFAULT_SPEC, totalsOf } from "./spec"
@@ -16,6 +16,7 @@ vi.mock("@/lib/ipc", () => ({
     packPreview: vi.fn(),
     packPlan: vi.fn(() => Promise.resolve({ names: [], sizes: [], folder: null })),
     packOverride: vi.fn(),
+    packFilterCheck: vi.fn(() => Promise.resolve(true)),
   },
   errorMessage: (e: unknown) => String(e),
 }))
@@ -295,5 +296,138 @@ describe("the pack's export", () => {
       useActivity.getState().upsert({ ...job("j4", "e1", "running", 3), kind: "plugin" })
     })
     expect(result.current).toBeUndefined()
+  })
+})
+
+describe("usePack, plugin filters", () => {
+  // Each test says how a check starts.
+  beforeEach(() => void vi.mocked(commands.packFilterCheck).mockReset().mockResolvedValue(true))
+  const KEY = "dev.example.speech-filter/speaks"
+  const on: PackSpec = { ...DEFAULT_SPEC, pluginFilters: [KEY] }
+  const speaks = (more: Partial<PackFilter> = {}): PackFilter => ({
+    key: KEY,
+    title: "Speaks",
+    description: null,
+    reason: "No speech",
+    plugin: "Speech Filter",
+    checked: 0,
+    total: 2,
+    state: "ready",
+    ...more,
+  })
+  /** The two shots, with the filter as it stands. */
+  const judged = (filter: PackFilter, tag = ""): PackPreview => ({
+    ...preview([clip(0, true), clip(100, true)], `${filter.state} ${filter.checked} ${tag}`),
+    filters: [filter],
+    unchecked: filter.total - filter.checked,
+  })
+  /** The hook with the filter turned on (`spec`), the pack as the backend shows it first. */
+  async function open(first: PackFilter, spec: PackSpec = on) {
+    vi.mocked(commands.packGet).mockResolvedValue({ ...state, spec })
+    vi.mocked(commands.packPreview).mockResolvedValue(judged(first))
+    const hook = renderHook(() => usePack("p", "c", new Map()), { wrapper })
+    await waitFor(() => expect(hook.result.current.preview.data).toBeDefined())
+    return hook
+  }
+
+  /** The check starts when asked: the pack read afterwards says it checks. */
+  const startsWhenAsked = (now: PackFilter) =>
+    vi.mocked(commands.packFilterCheck).mockImplementation(async () => {
+      vi.mocked(commands.packPreview).mockResolvedValue(judged(now))
+      return true
+    })
+
+  it("unchecked shots ask for one check", async () => {
+    startsWhenAsked(speaks({ state: "checking", checked: 1 }))
+    const { result } = await open(speaks())
+    await waitFor(() => expect(commands.packFilterCheck).toHaveBeenCalledOnce())
+    expect(commands.packFilterCheck).toHaveBeenCalledWith("p", "c", KEY, on, false)
+    // The pack is read again to learn it checks now, and says so: no second ask.
+    await waitFor(() => expect(result.current.check).toEqual({ kind: "checking", checked: 1, total: 2 }))
+    expect(commands.packFilterCheck).toHaveBeenCalledOnce()
+  })
+
+  it("asks again only once something changed, never for the same answer twice", async () => {
+    // One shot of two judged, and the check has nothing more to start.
+    const { result } = await open(speaks({ checked: 1 }))
+    await waitFor(() => expect(commands.packFilterCheck).toHaveBeenCalledOnce())
+    // The pack changes otherwise meanwhile (an analysis): the filter's numbers are what they were.
+    for (const tag of ["a", "b"]) {
+      vi.mocked(commands.packPreview).mockResolvedValue(judged(speaks({ checked: 1 }), tag))
+      await act(() => queryClient.invalidateQueries())
+      await waitFor(() => expect(result.current.preview.data?.stamp).toBe(`ready 1 ${tag}`))
+    }
+    expect(commands.packFilterCheck).toHaveBeenCalledOnce()
+    // It checks; then every shot is judged; then a settings change makes one new again: asked again.
+    vi.mocked(commands.packPreview).mockResolvedValue(judged(speaks({ state: "checking", checked: 1 })))
+    await act(() => queryClient.invalidateQueries())
+    await waitFor(() => expect(result.current.check?.kind).toBe("checking"))
+    vi.mocked(commands.packPreview).mockResolvedValue(judged(speaks({ checked: 2 })))
+    await act(() => queryClient.invalidateQueries())
+    await waitFor(() => expect(result.current.check).toBeNull())
+    vi.mocked(commands.packPreview).mockResolvedValue(judged(speaks({ checked: 1 })))
+    await act(() => queryClient.invalidateQueries())
+    await waitFor(() => expect(commands.packFilterCheck).toHaveBeenCalledTimes(2))
+  })
+
+  it("asks for nothing from a filter that is not turned on, is off, or has judged every shot", async () => {
+    await open(speaks(), DEFAULT_SPEC)
+    cleanup()
+    await open(speaks({ state: "off", total: 0 }))
+    cleanup()
+    await open(speaks({ checked: 2 }))
+    await act(() => queryClient.invalidateQueries())
+    expect(commands.packFilterCheck).not.toHaveBeenCalled()
+  })
+
+  it("holds Export back while a check is asked for", async () => {
+    let answer: (started: boolean) => void = () => {}
+    vi.mocked(commands.packFilterCheck).mockImplementation(() => new Promise((ok) => (answer = ok)))
+    const { result } = await open(speaks())
+    await waitFor(() => expect(commands.packFilterCheck).toHaveBeenCalled())
+    expect(result.current.current).toBe(false)
+    vi.mocked(commands.packPreview).mockResolvedValue(judged(speaks({ state: "checking" })))
+    await act(async () => answer(true))
+    await waitFor(() => expect(result.current.check?.kind).toBe("checking"))
+  })
+
+  it("a failed check isn't asked again by itself, only by Try again", async () => {
+    const { result } = await open(speaks({ state: "failed", checked: 1 }))
+    await act(() => queryClient.invalidateQueries())
+    await act(() => queryClient.invalidateQueries())
+    expect(commands.packFilterCheck).not.toHaveBeenCalled()
+    // The shots it did not judge keep its word from before, or are in, as shown: Export goes on.
+    expect(result.current.check).toEqual({ kind: "failed", unchecked: 1 })
+    await waitFor(() => expect(result.current.current).toBe(true))
+    startsWhenAsked(speaks({ state: "checking", checked: 1 }))
+    act(() => result.current.tryAgain())
+    await waitFor(() => expect(commands.packFilterCheck).toHaveBeenCalledExactlyOnceWith("p", "c", KEY, on, true))
+    await waitFor(() => expect(result.current.check?.kind).toBe("checking"))
+  })
+
+  it("a check that finds nothing to start says it failed, and starts again on Try again", async () => {
+    vi.mocked(commands.packFilterCheck).mockResolvedValue(false)
+    const { result } = await open(speaks({ checked: 1 }))
+    await waitFor(() => expect(commands.packFilterCheck).toHaveBeenCalledOnce())
+    // Not silent: the footer offers Try again, and Export goes on.
+    await waitFor(() => expect(result.current.check).toEqual({ kind: "failed", unchecked: 1 }))
+    expect(result.current.filters[0].state).toBe("failed")
+    await waitFor(() => expect(result.current.current).toBe(true))
+    await act(() => queryClient.invalidateQueries())
+    expect(commands.packFilterCheck).toHaveBeenCalledOnce()
+    startsWhenAsked(speaks({ state: "checking", checked: 1 }))
+    act(() => result.current.tryAgain())
+    await waitFor(() => expect(commands.packFilterCheck).toHaveBeenLastCalledWith("p", "c", KEY, on, true))
+    await waitFor(() => expect(result.current.check?.kind).toBe("checking"))
+    expect(result.current.filters[0].state).toBe("checking")
+  })
+
+  it("a check that can't start is not asked for again, and lets Export go on", async () => {
+    vi.mocked(commands.packFilterCheck).mockRejectedValue("Speech Filter is turned off.")
+    const { result } = await open(speaks())
+    await waitFor(() => expect(commands.packFilterCheck).toHaveBeenCalledOnce())
+    await waitFor(() => expect(result.current.current).toBe(true))
+    await act(() => queryClient.invalidateQueries())
+    expect(commands.packFilterCheck).toHaveBeenCalledOnce()
   })
 })

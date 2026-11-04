@@ -5,7 +5,7 @@ import { useActivity } from "@/state/activity"
 import { usePluginReview } from "@/state/plugin-review"
 import { startEventBridge } from "./events"
 import { commands } from "./ipc"
-import { queryClient } from "./queries"
+import { isMadePack, qk, queryClient } from "./queries"
 import { pluginInfo } from "@/test/plugins"
 
 // Each backend event's listener, as the bridge registers it.
@@ -155,13 +155,16 @@ describe("plugins changing", () => {
     handlers.pluginsChanged({ payload: { pluginId: "dev.a.one" } })
     handlers.pluginsChanged({ payload: { pluginId: null } })
     // The list, and by prefix every plugin's settings, and what the catalog
-    // offers against them; the settings too when whether unreviewed plugins
-    // may run changed.
+    // offers against them; the packs' previews (they show the plugins'
+    // filters, and their sizes follow); the settings too when whether
+    // unreviewed plugins may run changed.
     expect(read.mock.calls).toEqual([
       [{ queryKey: ["plugins"] }],
       [{ queryKey: ["catalog"] }],
+      [{ predicate: isMadePack }],
       [{ queryKey: ["plugins"] }],
       [{ queryKey: ["catalog"] }],
+      [{ predicate: isMadePack }],
       [{ queryKey: ["settings"] }],
     ])
     read.mockRestore()
@@ -231,5 +234,20 @@ describe("plugins changing", () => {
     handlers.catalogProgress({ payload: { pluginId: "dev.a.one", done: 5, total: 10 } })
     expect(usePluginReview.getState().getting).toMatchObject({ done: 5, total: 10 })
     usePluginReview.setState({ getting: null })
+  })
+
+  it("plugins:changed makes every pack again, its preview and its plan, and keeps the settings it was made with", () => {
+    // A pack on screen and one not: both show filters of plugins that changed.
+    const [preview, other, plan, state] = [
+      [...qk.packPreviews("p", "c1"), { solo: true }],
+      [...qk.packPreviews("q", "c2"), { solo: false }],
+      [...qk.packPlans("p", "c1"), { solo: true }, { folder: true }],
+      [...qk.pack("p", "c1"), "state"],
+    ]
+    for (const key of [preview, other, plan, state]) queryClient.setQueryData(key, {})
+    handlers.pluginsChanged({ payload: { pluginId: "dev.a.one" } })
+    const stale = (key: unknown[]) => queryClient.getQueryState(key)?.isInvalidated
+    expect([preview, other, plan].map(stale)).toEqual([true, true, true])
+    expect(stale(state)).toBe(false)
   })
 })

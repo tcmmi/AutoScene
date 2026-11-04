@@ -1,4 +1,4 @@
-import type { PackChoices, PackClip, PackPreview, PackReason, PackSpec, ShotSize } from "@/bindings"
+import type { PackChoices, PackClip, PackFilter, PackPreview, PackReason, PackSpec, ShotSize } from "@/bindings"
 
 /**
  * The scenepack builder's filters and picks, as plain data. The backend
@@ -17,6 +17,7 @@ export const DEFAULT_SPEC: PackSpec = {
   order: "episodes",
   limit: null,
   handles: 0,
+  pluginFilters: [],
 }
 
 /** Shot sizes, closest first. */
@@ -82,9 +83,68 @@ export function isDefault(spec: PackSpec): boolean {
     spec.media.length === 0 &&
     spec.order === DEFAULT_SPEC.order &&
     spec.limit === DEFAULT_SPEC.limit &&
-    spec.handles === DEFAULT_SPEC.handles
+    spec.handles === DEFAULT_SPEC.handles &&
+    pluginFiltersOf(spec).length === 0
   )
 }
+
+const NONE: readonly string[] = []
+
+/** The plugin filters `spec` turns on (`<pluginId>/<filterId>`); the same list while there are none. */
+export const pluginFiltersOf = (spec: PackSpec): readonly string[] => spec.pluginFilters ?? NONE
+
+/** `spec` with the plugin filter `key` turned on or off. */
+export function withPluginFilter(spec: PackSpec, key: string, on: boolean): PackSpec {
+  const rest = pluginFiltersOf(spec).filter((k) => k !== key)
+  return { ...spec, pluginFilters: on ? [...rest, key] : rest }
+}
+
+/**
+ * What the plugin filters a spec turns on are doing, as the footer says it:
+ * a check of shots that waits or runs (Export waits for it), else one that
+ * failed, was stopped or couldn't start. Until a shot is checked it keeps
+ * the word the filter gave it with its settings before, and stays in when
+ * there is none: the grid shows it as an export takes it, so Export goes
+ * on. Filters of a plugin that is off count for nothing: the pack
+ * ignores them.
+ */
+export type PackCheck =
+  | { kind: "checking"; checked: number; total: number }
+  | { kind: "failed"; unchecked: number }
+
+/**
+ * The check `filters` are doing for the pack, with `unchecked` the pack's
+ * own count of shots a filter turned on hasn't judged with its settings as
+ * they are (`PackPreview.unchecked`): a shot counts once, however many
+ * filters are on. Every filter that isn't off weighs the same shots, so
+ * one's `total` is the pack's.
+ */
+export function checkOf(filters: readonly PackFilter[], on: readonly string[], unchecked: number): PackCheck | null {
+  const turnedOn = filters.filter((f) => on.includes(f.key) && f.state !== "off")
+  const total = turnedOn.reduce((n, f) => Math.max(n, f.total), 0)
+  const left = Math.min(Math.max(0, unchecked), total)
+  if (turnedOn.some((f) => f.state === "checking")) return { kind: "checking", checked: total - left, total }
+  const failed = turnedOn.some((f) => f.state === "failed" && f.checked < f.total)
+  return failed && left > 0 ? { kind: "failed", unchecked: left } : null
+}
+
+/**
+ * Whether the pack can be exported now: it takes shots, is shown as the
+ * backend has it, has its character, isn't exported already, and no
+ * filter of it checks shots (the backend's export waits for that too).
+ */
+export function exportable(p: {
+  taken: number
+  current: boolean
+  character: boolean
+  exporting: boolean
+  check: PackCheck | null
+}): boolean {
+  return p.taken > 0 && p.current && p.character && !p.exporting && p.check?.kind !== "checking"
+}
+
+/** The words a shot that a plugin's filter left out wears: the filter's own, else a general one. */
+export const filterReason = (f: PackFilter | undefined): string => (f?.reason ? f.reason : REASONS.plugin)
 
 /** A shot of the pack by its media and first frame — what picks by hand stick to. */
 export const keyOf = (c: PackClip) => `${c.shot.mediaId}:${c.shot.start}`

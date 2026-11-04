@@ -37,6 +37,9 @@ export const qk = {
   characterShots: (pid: ProjectId, cid: CharacterId) => ["cast", pid, "shots", cid] as const,
   // Under the cast: a pack is made from it, so every cast change refreshes it.
   pack: (pid: ProjectId, cid: CharacterId) => ["cast", pid, "pack", cid] as const,
+  // The pack the filters make, and its names and sizes: one query per filters (their spec follows).
+  packPreviews: (pid: ProjectId, cid: CharacterId) => ["cast", pid, "pack", cid, "preview"] as const,
+  packPlans: (pid: ProjectId, cid: CharacterId) => ["cast", pid, "pack", cid, "plan"] as const,
   // Under the cast: a name waits only for a character still shown and
   // unnamed. The look-up says it began and ended with `anilist:changed`.
   anilistNames: (pid: ProjectId) => ["cast", pid, "anilist"] as const,
@@ -51,6 +54,16 @@ export const qk = {
   // `plugins:changed` and `catalog:changed` refresh it.
   catalog: ["catalog"] as const,
 }
+
+/**
+ * A pack as the filters make it — its preview or its plan — of any
+ * character in any project. It shows what the plugins do (their filters,
+ * whether they are on), so what changes them (`plugins:changed`) makes
+ * every one again, also those not on screen. The settings it was made with
+ * are not part of it.
+ */
+export const isMadePack = (q: { queryKey: readonly unknown[] }) =>
+  q.queryKey[0] === "cast" && q.queryKey[2] === "pack" && (q.queryKey[4] === "preview" || q.queryKey[4] === "plan")
 
 export function useAppInfo() {
   return useQuery({ queryKey: qk.appInfo, queryFn: () => commands.appInfo() })

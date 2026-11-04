@@ -17,6 +17,7 @@
 import type {
   ActionKind,
   CallCode,
+  CharacterShot,
   PageEvent,
   PageMount,
   PageReply,
@@ -368,8 +369,41 @@ const LARGE_FILES = new Map([[`${BIG_ID}@1.0.0`, { bytes: 327_155_712, hosts: ["
 /** The large files a version's plugin.json names: the same object for the same version, as the same hashes. */
 const largeOf = (p: Pick<MockPlugin, "id" | "version">) => LARGE_FILES.get(`${p.id}@${p.version}`)
 
+/**
+ * The example shot-filter plugin (examples/plugins/bright-shots has the
+ * real one's shape): its filter "Speaks" keeps the shots where the
+ * character talks. Its settings let the mock show a verdict that changes
+ * with a setting (Strict), and a check that fails (Fail the check).
+ */
+const speechFilter = plugin({
+  id: "dev.example.speech-filter",
+  name: "Speech Filter",
+  version: "1.0.0",
+  trust: "reviewed",
+  author: "Example Dev",
+  description: "Keeps the shots of a scenepack where the character talks. An example plugin.",
+  permissions: ["project:read"],
+  icon: icon("#d9776b"),
+  protocol: 2,
+  settings: [
+    {
+      key: "strict",
+      title: "Strict",
+      description: "Leaves out the shots where it is not sure they talk.",
+      kind: { type: "boolean", default: false },
+    },
+    {
+      key: "fail",
+      title: "Fail the check",
+      description: "Only for trying out what a check that fails looks like.",
+      kind: { type: "boolean", default: false },
+    },
+  ],
+})
+
 const installed = new Map<string, MockPlugin>([
   [hello("1.0.0").id, hello("1.0.0")],
+  [speechFilter.id, speechFilter],
   [helloPage.id, helloPage],
   [helloService.id, helloService],
   ...(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mockCatalog") === "withdrawn"
@@ -415,6 +449,82 @@ export function pluginBanner(id: string): string | null {
 
 export function pluginsList(allow: boolean): PluginInfo[] {
   return [...installed.values()].sort((a, b) => a.id.localeCompare(b.id)).map((p) => info(p, allow))
+}
+
+/** A plugin's shot filter, as the mock plugins have them. */
+type MockFilter = {
+  pluginId: string
+  id: string
+  title: string
+  description: string | null
+  /** What a shot it leaves out says. */
+  reason: string
+  /** The settings its verdicts depend on: a new value asks for new verdicts. */
+  settings: string[]
+  keeps: (shot: CharacterShot, values: Record<string, SettingValue>) => boolean
+}
+
+const FILTERS: MockFilter[] = [
+  {
+    pluginId: speechFilter.id,
+    id: "speaks",
+    title: "Speaks",
+    description: "Keeps the shots where they talk.",
+    reason: "No speech",
+    settings: ["strict"],
+    // About three shots in five talk; strict, one in three.
+    keeps: (shot, values) => ((shot.start + shot.trackId) % 3 === 0) || (values.strict !== true && (shot.start + shot.trackId) % 3 === 2),
+  },
+]
+
+/** A shot filter of a pack as the mock backend works it: whose it is, what it judges by, and its verdict. */
+export type PackFilterHost = {
+  /** `<pluginId>/<filterId>`. */
+  key: string
+  title: string
+  description: string | null
+  reason: string
+  /** Its plugin's name (its id when none is installed). */
+  plugin: string
+  /** Its plugin may run now. */
+  active: boolean
+  /** What its verdicts were made with now (its settings that count). */
+  basis: string
+  keeps: (shot: CharacterShot) => boolean
+  /** Its plugin is set to fail its checks. */
+  fails: boolean
+}
+
+/**
+ * The filters a pack can show, as `pack_filters` lists them: every filter
+ * of a plugin that may run, then those `on` turns on that no such plugin has.
+ */
+export function packFilterHosts(allow: boolean, on: readonly string[]): PackFilterHost[] {
+  const out: PackFilterHost[] = []
+  for (const f of FILTERS) {
+    const p = installed.get(f.pluginId)
+    const key = `${f.pluginId}/${f.id}`
+    const active = p != null && info(p, allow).active
+    if (!p || (!active && !on.includes(key))) continue
+    const values = active ? pluginValues(p.id) : {}
+    out.push({
+      key,
+      title: f.title,
+      description: f.description,
+      reason: f.reason,
+      plugin: p.name,
+      active,
+      basis: JSON.stringify(f.settings.map((k) => values[k] ?? null)),
+      keeps: (shot) => f.keeps(shot, values),
+      fails: values.fail === true,
+    })
+  }
+  for (const key of on) {
+    if (out.some((f) => f.key === key)) continue
+    const [plugin, id = ""] = key.split("/")
+    out.push({ key, title: id, description: null, reason: "", plugin, active: false, basis: "", keeps: () => true, fails: false })
+  }
+  return out
 }
 
 /** The next package the file dialog offers. */

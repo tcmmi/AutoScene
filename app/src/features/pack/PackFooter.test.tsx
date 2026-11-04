@@ -97,4 +97,63 @@ describe("PackFooter", () => {
     // A running export that has just started, at 0, keeps its start arc.
     expect(ring("running", 0).arc.style.opacity).toBe("1")
   })
+
+  it("export waits while a plugin checks shots", () => {
+    const onExport = vi.fn()
+    render(
+      <PackFooter
+        totals={totals}
+        bytes={null}
+        format={null}
+        picks={0}
+        canExport={false}
+        check={{ kind: "checking", checked: 120, total: 312 }}
+        onClearPicks={() => {}}
+        onExport={onExport}
+        onShowExport={() => {}}
+      />,
+      { wrapper },
+    )
+    expect(screen.getByText("Checking 120 of 312 shots")).toBeTruthy()
+    const exportButton = screen.getByRole("button", { name: "Export, waits for the check" })
+    expect((exportButton as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(exportButton)
+    expect(onExport).not.toHaveBeenCalled()
+    // What holds it says why, to the keyboard too (a disabled button takes no focus).
+    fireEvent.focus(exportButton.parentElement!)
+    expect(screen.getAllByText("Waits for the check").length).toBeGreaterThan(0)
+  })
+
+  it("a failed check offers Try again and lets Export go", () => {
+    const [onExport, onTryAgain] = [vi.fn(), vi.fn()]
+    render(
+      <PackFooter
+        totals={totals}
+        bytes={null}
+        format={null}
+        picks={0}
+        canExport
+        check={{ kind: "failed", unchecked: 120 }}
+        onClearPicks={() => {}}
+        onTryAgain={onTryAgain}
+        onExport={onExport}
+        onShowExport={() => {}}
+      />,
+      { wrapper },
+    )
+    const status = screen.getByText(/Couldn.t check 120 shots/)
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    expect(onTryAgain).toHaveBeenCalledOnce()
+    // The shots it did not judge keep its word from before, or are in: as the grid shows them.
+    fireEvent.focus(status)
+    expect(screen.getAllByText(/keep what the filter said with its settings before, or stay in/).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole("button", { name: /^Export$/ }))
+    expect(onExport).toHaveBeenCalledOnce()
+  })
+
+  it("says nothing of checks when there are none", () => {
+    footer(null, null)
+    expect(screen.queryByText(/Checking|check/)).toBeNull()
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+  })
 })

@@ -26,6 +26,7 @@ import {
 import { analysisRuns, hardwareInfo, initialGpu, mockPlatform, thisComputer } from "./hardware"
 import {
   fileProblem,
+  giveVerdicts,
   packChoices,
   packFileName,
   packGet,
@@ -34,6 +35,7 @@ import {
   packPlan,
   packPreview,
   packSave,
+  shotsToJudge,
   templateProblem,
 } from "./pack"
 import {
@@ -48,6 +50,7 @@ import {
   mockPlugin,
   nextPluginPackage,
   openPage,
+  packFilterHosts,
   packAction,
   pageCall,
   pagesOf,
@@ -679,6 +682,86 @@ function startPluginJob(
   )
   pluginJobs.set(job.id, { pluginId, run: key })
   return job.id
+}
+
+/** Checks of plugins' filters that wait or run, and those that failed with the basis they had (the backend's `Checks`): by pack and filter. */
+const filterChecks = new Set<string>()
+const failedChecks = new Map<string, string>()
+const checkOf = (p: MockProject, cid: string, key: string) => [p.id, cid, key].join(" ")
+
+/** The pack `spec` makes, with what the plugins' filters have judged of it (as `pack_preview` makes it). */
+function previewOf(p: MockProject, cid: string, spec: PackSpec) {
+  const hosts = packFilterHosts(allows(), spec.pluginFilters ?? [])
+  return packPreview(p.id, cid, spec, p.media, SEGMENTS, hosts, (key) => {
+    const at = checkOf(p, cid, key)
+    if (filterChecks.has(at)) return "checking"
+    return failedChecks.get(at) === hosts.find((h) => h.key === key)?.basis ? "failed" : "ready"
+  })
+}
+
+/** Why an export of `preview` waits, as `export_waits` words it: a filter it turns on checks shots. */
+function exportWaits(preview: ReturnType<typeof previewOf>, spec: PackSpec): string | null {
+  const f = preview.filters.find((x) => x.state === "checking" && (spec.pluginFilters ?? []).includes(x.key))
+  return f ? `The pack waits for “${f.title}” to check its shots.` : null
+}
+
+/**
+ * As `queue_check`: a chain of runs, one episode each, that gives the
+ * filter's verdicts on the shots the pack takes. `true` while it waits or
+ * runs. A check that failed with the basis it has now starts only `again`.
+ * The plugin's "Fail the check" setting makes it give half of an episode's
+ * words, then fail. Each run is a job in Activity; the pack hears
+ * `pack:changed` once per run.
+ */
+function startFilterCheck(p: MockProject, cid: string, key: string, spec: PackSpec, again: boolean): boolean {
+  const f = packFilterHosts(allows(), [key]).find((x) => x.key === key)
+  if (!f) throw { code: "not_found", message: "No plugin has such a filter." }
+  if (!f.active) throw { code: "invalid", message: `${f.plugin} is turned off.` }
+  const at = checkOf(p, cid, key)
+  if (filterChecks.has(at)) return true
+  if (!again && failedChecks.get(at) === f.basis) return false
+  failedChecks.delete(at)
+  const episodes = shotsToJudge(p.id, cid, spec, p.media, SEGMENTS, f)
+  if (episodes.length === 0) return false
+  filterChecks.add(at)
+  const label = characterLabel(p.id, cid)
+  const heard = () => void emit("pack:changed", { projectId: p.id, characterId: cid })
+  const over = (failed: boolean) => {
+    filterChecks.delete(at)
+    if (failed) failedChecks.set(at, f.basis)
+    heard()
+  }
+  const run = (i: number) => {
+    const shots = episodes[i]
+    const job: JobInfo = startJob(
+      "plugin",
+      `${f.title} · ${label}`,
+      p,
+      1500,
+      {
+        subtitle: f.plugin,
+        stage: `Checking ${shots.length} shots`,
+        cancelled: () => over(true),
+      },
+      () => {
+        pluginJobs.delete(job.id)
+        if (f.fails) {
+          giveVerdicts(p.id, cid, f, shots, Math.ceil(shots.length / 2))
+          Object.assign(job, { state: "failed", error: "There is no sound in this episode." })
+          over(true)
+        } else {
+          giveVerdicts(p.id, cid, f, shots)
+          if (i + 1 < episodes.length) {
+            heard()
+            run(i + 1)
+          } else over(false)
+        }
+      },
+    )
+    pluginJobs.set(job.id, { pluginId: key.split("/")[0], run: at })
+  }
+  run(0)
+  return true
 }
 
 /** Stop the runs of the plugins `of` matches, and close their pages, saying `why`. */
@@ -1332,11 +1415,11 @@ const handlers: Record<string, Handler> = {
     return null
   },
   pack_preview: ({ projectId, characterId, spec }) =>
-    packPreview(find(projectId).id, String(characterId), spec as PackSpec, find(projectId).media, SEGMENTS),
+    previewOf(find(projectId), String(characterId), spec as PackSpec),
   pack_override: ({ projectId, characterId, picks, spec }) => {
     const p = find(projectId)
     for (const { shots, include } of picks as PackPicks[]) packOverride(p.id, String(characterId), shots, include)
-    return packChoices(packPreview(p.id, String(characterId), spec as PackSpec, p.media, SEGMENTS))
+    return packChoices(previewOf(p, String(characterId), spec as PackSpec))
   },
   pack_plan: ({ projectId, characterId, spec, naming }) => {
     const n = naming as PackNaming
@@ -1345,20 +1428,20 @@ const handlers: Record<string, Handler> = {
     if (problem) throw { code: "invalid", message: problem }
     const p = find(projectId)
     const cid = String(characterId)
-    const preview = packPreview(p.id, cid, spec as PackSpec, p.media, SEGMENTS)
+    const preview = previewOf(p, cid, spec as PackSpec)
     const names = packNames(p.id, cid, p.title, preview, n, p.media, tcName)
     const folder = n.folder && !n.merge ? characterLabel(p.id, cid) : null
     const file = n.merge ? packFileName(p.id, cid, p.title, n) : null
     return packPlan(names.slice(0, 3), preview, BYTES_PER_FRAME, folder, file)
   },
-  // No mock plugin has a shot filter: there is nothing to check.
-  pack_filter_check: () => false,
+  pack_filter_check: ({ projectId, characterId, filter, spec, again }) =>
+    startFilterCheck(find(projectId), String(characterId), String(filter), spec as PackSpec, Boolean(again)),
   // As `queue_pack_action`: the pack as the grid showed it, then the
   // browser's prompt stands in for the save dialog, in the project's
   // exports. Closed, nothing runs; a name of a kind that runs, or one too
   // long, is refused. Then a run that says where it saved. One run of a pack
-  // action per pack at a time, waiting or running. No mock plugin has a shot
-  // filter, so none holds a pack up.
+  // action per pack at a time, waiting or running. Not while a filter it
+  // turns on checks shots.
   pack_action_run: ({ projectId, characterId, action, spec, naming, stamp }) => {
     const p = find(projectId)
     const cid = String(characterId)
@@ -1368,7 +1451,9 @@ const handlers: Record<string, Handler> = {
     const key = [pluginId, "packAction", actionId, p.id, cid].join(" ")
     const busy = (j: JobInfo) => j.state === "running" || j.state === "queued"
     if (jobs.some((j) => busy(j) && pluginJobs.get(j.id)?.run === key)) return { kind: "waits" }
-    const preview = packPreview(p.id, cid, spec as PackSpec, p.media, SEGMENTS)
+    const preview = previewOf(p, cid, spec as PackSpec)
+    const waits = exportWaits(preview, spec as PackSpec)
+    if (waits) throw { code: "invalid", message: waits }
     if (preview.stamp !== stamp) throw { code: "invalid", message: "The pack changed meanwhile. Check it and export again." }
     if (!preview.clips.some((c) => c.included)) throw { code: "invalid", message: "There's nothing in the pack to export." }
     const problem = templateProblem((naming as PackNaming).template)
@@ -1393,7 +1478,9 @@ const handlers: Record<string, Handler> = {
     // In the backend's order: the names' template, the pack as shown, then the one file's name.
     const template = templateProblem(r.naming.template)
     if (template) throw { code: "invalid", message: template }
-    const preview = packPreview(p.id, cid, r.spec, p.media, SEGMENTS)
+    const preview = previewOf(p, cid, r.spec)
+    const waits = exportWaits(preview, r.spec)
+    if (waits) throw { code: "invalid", message: waits }
     if (preview.stamp !== r.stamp) throw { code: "invalid", message: "The pack changed meanwhile. Check it and export again." }
     const taken = preview.clips.filter((c) => c.included)
     if (taken.length === 0) throw { code: "invalid", message: "There's nothing in the pack to export." }

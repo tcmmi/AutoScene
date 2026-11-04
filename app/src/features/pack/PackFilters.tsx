@@ -1,6 +1,6 @@
 import type * as React from "react"
-import { ArrowCounterClockwise, CaretDown } from "@/components/icons"
-import type { MediaItem, PackOrder, PackSpec, ShotSize } from "@/bindings"
+import { ArrowCounterClockwise, CaretDown, Warning } from "@/components/icons"
+import type { MediaItem, PackFilter, PackOrder, PackSpec, PluginInfo, ShotSize } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -12,23 +12,32 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { ProgressRing } from "@/components/ui/progress"
 import { Segmented } from "@/components/ui/segmented"
 import { Tooltip } from "@/components/ui/tooltip"
+import { plural } from "@/features/cast/cast"
+import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { mediaTitle } from "@/lib/media"
 import { cn } from "@/lib/utils"
-import { DEFAULT_SPEC, HANDLES, LENGTHS, LIMITS, SIZES, isDefault, lengthOf } from "./spec"
+import { DEFAULT_SPEC, HANDLES, LENGTHS, LIMITS, SIZES, isDefault, lengthOf, pluginFiltersOf, withPluginFilter } from "./spec"
 
 /** The pack's filters, in a bar that stays under the top bar while the shots scroll. */
 export function PackFilters({
   spec,
   media,
   faceless,
+  filters = NO_FILTERS,
+  plugins = NO_PLUGINS,
   onChange,
 }: {
   spec: PackSpec
   media: MediaItem[]
   /** The pack has shots where the character's face doesn't show. */
   faceless: boolean
+  /** The plugins' shot filters the pack can show: every one of a plugin that is on, and those `spec` turns on. */
+  filters?: PackFilter[]
+  /** The installed plugins: their marks. */
+  plugins?: PluginInfo[]
   onChange: (spec: PackSpec) => void
 }) {
   const set = (patch: Partial<PackSpec>) => onChange({ ...spec, ...patch })
@@ -146,12 +155,75 @@ export function PackFilters({
           </Chip>
         </Tooltip>
       )}
+      {filters.map((f) => (
+        <PluginFilterChip
+          key={f.key}
+          filter={f}
+          on={pluginFiltersOf(spec).includes(f.key)}
+          icon={plugins.find((p) => p.id === pluginOf(f.key))?.icon}
+          onChange={(on) => onChange(withPluginFilter(spec, f.key, on))}
+        />
+      ))}
       {!isDefault(spec) && (
         <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onChange(DEFAULT_SPEC)}>
           <ArrowCounterClockwise /> Reset filters
         </Button>
       )}
     </div>
+  )
+}
+
+const NO_FILTERS: PackFilter[] = []
+const NO_PLUGINS: PluginInfo[] = []
+
+/** The plugin a filter key (`<pluginId>/<filterId>`) belongs to. */
+const pluginOf = (key: string) => key.slice(0, Math.max(0, key.indexOf("/")))
+
+/**
+ * A plugin's shot filter as a chip with its plugin's mark. Turned on, it
+ * leaves out the shots its plugin says no to; while it checks them, a
+ * ring fills; once its check failed, a warning mark says so (the footer
+ * offers Try again). Its plugin is off: the chip is dimmed and says so, the
+ * pack ignores it, and it can be turned off.
+ */
+function PluginFilterChip({
+  filter: f,
+  on,
+  icon,
+  onChange,
+}: {
+  filter: PackFilter
+  on: boolean
+  icon: string | null | undefined
+  onChange: (on: boolean) => void
+}) {
+  const off = f.state === "off"
+  const checking = on && f.state === "checking"
+  const failed = on && f.state === "failed" && f.checked < f.total
+  const label = off
+    ? `Plugin “${f.plugin}” is off. Turn it on in Plugins, or turn this filter off.`
+    : `Plugin “${f.plugin}”: ${f.description ?? f.title}`
+  const hint = checking
+    ? `Checking ${f.checked} of ${plural(f.total, "shot")}`
+    : failed
+      ? `Couldn't check ${plural(f.total - f.checked, "shot")}`
+      : undefined
+  return (
+    <Tooltip label={label} hint={hint}>
+      <Chip pressed={on} onClick={() => onChange(!on)} className={cn(off && "opacity-60")}>
+        <PluginIcon src={icon} className="size-4" />
+        {f.title}
+        {checking && (
+          <ProgressRing
+            aria-label={`Checking ${f.title}`}
+            className="size-3.5"
+            value={f.checked > 0 && f.total > 0 ? f.checked / f.total : null}
+          />
+        )}
+        {failed && <Warning role="img" aria-label={`Couldn't check ${f.title}`} className="size-3.5 text-danger" />}
+        {off && <span className="text-xs font-normal text-fg-3">Plugin off</span>}
+      </Chip>
+    </Tooltip>
   )
 }
 

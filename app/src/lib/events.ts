@@ -5,7 +5,7 @@ import { isFinished, useActivity } from "@/state/activity"
 import { usePluginReview } from "@/state/plugin-review"
 import { commands, events } from "./ipc"
 import { reveal } from "./os"
-import { exportsQuery, qk, queryClient } from "./queries"
+import { exportsQuery, isMadePack, qk, queryClient } from "./queries"
 
 /**
  * Backend events → React Query invalidation and the activity store. The UI
@@ -19,9 +19,9 @@ import { exportsQuery, qk, queryClient } from "./queries"
  * | media:changed    | media(pid), frameMap(pid, mid), project(pid)       |
  * | analysis:changed | segments(pid, mid)                                 |
  * | cast:changed     | cast(pid) and everything under it (tracks, presence, packs) |
- * | pack:changed     | pack(pid, cid): its settings (an export keeps them) |
+ * | pack:changed     | pack(pid, cid): its settings (an export keeps them), and the shots a plugin's filter judged, once per episode |
  * | export:changed   | exports(pid)                                       |
- * | plugins:changed  | plugins and every plugin's settings, the catalog; settings when no plugin is named |
+ * | plugins:changed  | plugins and every plugin's settings, the catalog; every pack's preview and plan (its filters, on or off); settings when no plugin is named |
  * | catalog:changed  | the catalog, the plugins; a toast for each plugin it newly withdrew |
  * | catalog:progress | the install review's download (progress only)      |
  * | plugin-page:event | an open plugin page (PluginFrame listens)         |
@@ -89,6 +89,8 @@ export function startEventBridge(where: { goPlugins: () => void }): () => void {
       void queryClient.invalidateQueries({ queryKey: qk.plugins })
       // What the catalog offers is worked out against what is installed.
       void queryClient.invalidateQueries({ queryKey: qk.catalog })
+      // A plugin turned on or off, or a setting a filter judges by: the packs, their sizes too, are made again.
+      void queryClient.invalidateQueries({ predicate: isMadePack })
       // None named: the setting may have changed, under a settings save
       // still on its way with the value from before.
       if (payload.pluginId == null) void queryClient.invalidateQueries({ queryKey: qk.settings })

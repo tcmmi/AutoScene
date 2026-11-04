@@ -23,7 +23,7 @@ import { ProjectLoadError } from "@/features/project/ProjectLoadError"
 import { EXPORT_REQUEST } from "@/lib/actions"
 import { shortFormatName } from "@/lib/format"
 import { exportWithMenu } from "@/lib/keymap"
-import { firstFailure, useCast, useMediaList, usePresets, useSettings } from "@/lib/queries"
+import { firstFailure, useCast, useMediaList, usePlugins, usePresets, useSettings } from "@/lib/queries"
 import { PACK_SHORTCUTS, useShortcutKeys, useShortcuts } from "@/lib/shortcuts"
 import { type BodyVerdict } from "@/features/shots/shots"
 import { useUi } from "@/state/ui"
@@ -31,7 +31,7 @@ import { PackCard } from "./PackCard"
 import { PackExportDialog } from "./PackExportDialog"
 import { PackFilters } from "./PackFilters"
 import { PackFooter } from "./PackFooter"
-import { type Show, between, handPicked, keyOf, shown } from "./spec"
+import { type Show, between, exportable, handPicked, keyOf, shown } from "./spec"
 import { usePack, usePackExport } from "./use-pack"
 
 const NO_CLIPS: PackClip[] = []
@@ -106,6 +106,7 @@ function Builder({
   const navigate = useNavigate()
   const { data: settings } = useSettings()
   const { data: presets } = usePresets()
+  const { data: plugins } = usePlugins()
   const [show, setShow] = useState<Show>("all")
   const [exportOpen, setExportOpen] = useState(false)
   const clips = pack.preview.data?.clips ?? NO_CLIPS
@@ -115,7 +116,15 @@ function Builder({
   const taken = totals.clips
   // One export of the pack at a time: the button shows the one under way.
   const exporting = usePackExport(pid, cid)
-  const canExport = taken > 0 && pack.current && character != null && !exporting
+  // While a plugin's filter checks shots the pack is not final: Export waits (a failed check doesn't hold it up).
+  const canExport = exportable({
+    taken,
+    current: pack.current,
+    character: character != null,
+    exporting: exporting != null,
+    check: pack.check,
+  })
+  const filters = pack.filters
   const bytes = pack.plan.data?.sizes.find((s) => s.presetId === settings?.exportPresetId)?.bytes ?? null
   const format = presets?.find((p) => p.id === settings?.exportPresetId)?.name
 
@@ -220,7 +229,14 @@ function Builder({
       <Page topbar={toolbar} menu={pageMenu}>
         <Header character={character} shots={clips.length} />
         {pack.state ? (
-          <PackFilters spec={pack.state.spec} media={media} faceless={faceless} onChange={pack.setSpec} />
+          <PackFilters
+            spec={pack.state.spec}
+            media={media}
+            faceless={faceless}
+            filters={filters}
+            plugins={plugins}
+            onChange={pack.setSpec}
+          />
         ) : (
           <div className="h-[57px] border-b border-hairline" />
         )}
@@ -272,6 +288,7 @@ function Builder({
                   index={i}
                   media={mediaById.get(c.shot.mediaId)}
                   name={character?.label}
+                  filter={c.filter != null ? filters?.[c.filter] : undefined}
                   onToggle={toggle}
                   onOpen={open}
                   onWatch={onWatch}
@@ -294,7 +311,9 @@ function Builder({
           picks={picks.length}
           canExport={canExport}
           exporting={exporting}
+          check={pack.check}
           onClearPicks={() => void pack.clearPicks(picks)}
+          onTryAgain={pack.tryAgain}
           onExport={() => setExportOpen(true)}
           onShowExport={() => useUi.getState().setActivityOpen(true)}
         />

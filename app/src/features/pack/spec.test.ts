@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest"
-import type { PackChoices, PackClip, PackPreview } from "@/bindings"
+import type { PackChoices, PackClip, PackFilter, PackPreview, PackSpec } from "@/bindings"
 import {
   DEFAULT_SPEC,
+  REASONS,
   between,
+  checkOf,
+  exportable,
+  filterReason,
   fits,
   isDefault,
   keyOf,
   lengthOf,
   picksFor,
+  pluginFiltersOf,
   shown,
   totalsOf,
   withChoices,
   withIncluded,
   withPicks,
+  withPluginFilter,
 } from "./spec"
 
 const clip = (start: number, more: Partial<PackClip> = {}): PackClip => {
@@ -140,5 +146,87 @@ describe("filters", () => {
     expect(isDefault(DEFAULT_SPEC)).toBe(true)
     expect(isDefault({ ...DEFAULT_SPEC, skipTiny: false })).toBe(false)
     expect(isDefault({ ...DEFAULT_SPEC, sizes: ["wide"] })).toBe(false)
+  })
+})
+
+describe("plugin filters", () => {
+  const filter = (state: PackFilter["state"], checked: number, total: number, key = "a/b"): PackFilter => ({
+    key,
+    title: "Speaks",
+    description: null,
+    reason: "No speech",
+    plugin: "Speech Filter",
+    checked,
+    total,
+    state,
+  })
+  /** Filters saved before plugins had any have none. */
+  const older = (): PackSpec => {
+    const { pluginFilters: _, ...rest } = DEFAULT_SPEC
+    return rest
+  }
+
+  it("a plugin filter isn't the default", () => {
+    expect(isDefault(DEFAULT_SPEC)).toBe(true)
+    expect(isDefault({ ...DEFAULT_SPEC, pluginFilters: ["a/b"] })).toBe(false)
+    expect(isDefault(older())).toBe(true)
+    expect(isDefault({ ...older(), pluginFilters: [] })).toBe(true)
+  })
+
+  it("turns a filter on and off without touching the others", () => {
+    const two = withPluginFilter(withPluginFilter(DEFAULT_SPEC, "a/b", true), "c/d", true)
+    expect(two.pluginFilters).toEqual(["a/b", "c/d"])
+    expect(withPluginFilter(two, "a/b", true).pluginFilters).toEqual(["c/d", "a/b"])
+    expect(withPluginFilter(two, "a/b", false).pluginFilters).toEqual(["c/d"])
+    expect(withPluginFilter(older(), "a/b", false).pluginFilters).toEqual([])
+    // The same list while there are none, so what depends on it isn't made again.
+    expect(pluginFiltersOf(older())).toBe(pluginFiltersOf(older()))
+  })
+
+  it("says how far a check is while one waits or runs, and what failed otherwise", () => {
+    const on = ["a/b", "c/d"]
+    expect(checkOf([], on, 0)).toBeNull()
+    expect(checkOf([filter("ready", 10, 10)], on, 0)).toBeNull()
+    expect(checkOf([filter("checking", 120, 312)], on, 192)).toEqual({ kind: "checking", checked: 120, total: 312 })
+    // A check that waits comes before one that failed.
+    const more = [filter("checking", 120, 312), filter("failed", 5, 312, "e/f")]
+    expect(checkOf(more, [...on, "e/f"], 307)).toEqual({ kind: "checking", checked: 5, total: 312 })
+    expect(checkOf([filter("failed", 192, 312)], on, 120)).toEqual({ kind: "failed", unchecked: 120 })
+  })
+
+  it("counts every shot once, however many filters are on", () => {
+    // Both weigh the same 312 shots; 200 are judged by both, 112 lack a word from one or the other.
+    const two = (a: PackFilter["state"], b: PackFilter["state"]) => [filter(a, 250, 312), filter(b, 230, 312, "c/d")]
+    const on = ["a/b", "c/d"]
+    expect(checkOf(two("checking", "checking"), on, 112)).toEqual({ kind: "checking", checked: 200, total: 312 })
+    expect(checkOf(two("failed", "failed"), on, 112)).toEqual({ kind: "failed", unchecked: 112 })
+    expect(checkOf(two("failed", "ready"), on, 112)).toEqual({ kind: "failed", unchecked: 112 })
+    // Never more than the pack's shots, even when the counts disagree for a moment.
+    expect(checkOf(two("checking", "ready"), on, 400)).toEqual({ kind: "checking", checked: 0, total: 312 })
+  })
+
+  it("counts only the filters the spec turns on, and none of a plugin that is off", () => {
+    expect(checkOf([filter("checking", 1, 9)], [], 0)).toBeNull()
+    expect(checkOf([filter("off", 0, 0)], ["a/b"], 0)).toBeNull()
+    // A failed check that judged every shot has nothing to try again.
+    expect(checkOf([filter("failed", 9, 9)], ["a/b"], 0)).toBeNull()
+  })
+
+  it("Export waits for a check that runs, not for one that failed", () => {
+    const pack = { taken: 7, current: true, character: true, exporting: false, check: null }
+    expect(exportable(pack)).toBe(true)
+    expect(exportable({ ...pack, check: { kind: "checking", checked: 3, total: 10 } })).toBe(false)
+    expect(exportable({ ...pack, check: { kind: "failed", unchecked: 7 } })).toBe(true)
+    expect(exportable({ ...pack, taken: 0 })).toBe(false)
+    expect(exportable({ ...pack, current: false })).toBe(false)
+    expect(exportable({ ...pack, character: false })).toBe(false)
+    expect(exportable({ ...pack, exporting: true })).toBe(false)
+  })
+
+  it("names a shot left out by its filter's words, else by a general one", () => {
+    expect(filterReason(filter("ready", 0, 0))).toBe("No speech")
+    expect(filterReason({ ...filter("ready", 0, 0), reason: "" })).toBe("Plugin filter")
+    expect(filterReason(undefined)).toBe("Plugin filter")
+    expect(REASONS.plugin).toBe("Plugin filter")
   })
 })

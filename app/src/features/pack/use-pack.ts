@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { type Query, hashKey, keepPreviousData, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { create } from "zustand"
@@ -9,6 +9,7 @@ import type {
   MediaItem,
   PackChoices,
   PackClip,
+  PackFilter,
   PackNaming,
   PackPreview,
   PackSpec,
@@ -18,7 +19,7 @@ import type {
 import { commands, errorMessage } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { isFinished, useActivity } from "@/state/activity"
-import { fits, keyOf, pickable, picksFor, withChoices, withPicks } from "./spec"
+import { type PackCheck, checkOf, fits, keyOf, pickable, picksFor, pluginFiltersOf, withChoices, withPicks } from "./spec"
 
 /** How long the filters rest before the pack is made again, and before they are kept. */
 const PREVIEW_MS = 150
@@ -37,9 +38,12 @@ function useSettled<T>(value: T, ms: number): T {
 }
 
 const NO_PICKS: ReadonlyMap<string, boolean> = new Map()
+const NO_FILTERS: PackFilter[] = []
+const NO_KEYS: readonly string[] = []
+const NO_KEY_SET: ReadonlySet<string> = new Set()
 
-const previews = (pid: ProjectId, cid: CharacterId) => [...qk.pack(pid, cid), "preview"] as const
-const plans = (pid: ProjectId, cid: CharacterId) => [...qk.pack(pid, cid), "plan"] as const
+const previews = qk.packPreviews
+const plans = qk.packPlans
 
 /**
  * Put the choices a click left (`answer`, for the pack `spec` makes) on the
@@ -151,6 +155,76 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
   // The grid shows the pack of the filters as they are: shots can be taken.
   const ready = state != null && settled === state && preview.data != null && !preview.isPlaceholderData
 
+  // Plugins' filters judge the shots a pack takes, an episode at a time
+  // (the backend runs the checks and says so with `pack:changed`).
+  // A check asked for that didn't start (there was nothing the backend
+  // could send it, the pack having changed meanwhile) is failed here: the
+  // footer says so and offers Try again, instead of nothing at all.
+  const [unstarted, setUnstarted] = useState<ReadonlySet<string>>(NO_KEY_SET)
+  const raw = preview.data?.filters ?? NO_FILTERS
+  const filters = useMemo(
+    () =>
+      unstarted.size === 0
+        ? raw
+        : raw.map((f) => (unstarted.has(f.key) && f.state === "ready" && f.checked < f.total ? { ...f, state: "failed" as const } : f)),
+    [raw, unstarted],
+  )
+  const on = state ? pluginFiltersOf(state.spec) : NO_KEYS
+  const unchecked = preview.data?.unchecked ?? 0
+  const check = useMemo(() => checkOf(filters, on, unchecked), [filters, on, unchecked])
+  // Checks asked for and not yet answered: Export doesn't go in between.
+  const [asking, setAsking] = useState(0)
+  const ask = useCallback(
+    async (key: string, spec: PackSpec, again: boolean) => {
+      setAsking((n) => n + 1)
+      try {
+        const started = await commands.packFilterCheck(pid, cid, key, spec, again)
+        setUnstarted((s) => {
+          if (started !== s.has(key)) return s
+          const next = new Set(s)
+          if (started) next.delete(key)
+          else next.add(key)
+          return next
+        })
+        // The pack now says it is checking.
+        await queryClient.invalidateQueries({ queryKey: previews(pid, cid) })
+      } catch (e) {
+        toast.error("Couldn't check the shots", { description: errorMessage(e) })
+      } finally {
+        setAsking((n) => n - 1)
+      }
+    },
+    [pid, cid],
+  )
+  // A filter turned on with shots it hasn't judged is asked for them once.
+  // What it was asked for stays noted until the pack shows it otherwise
+  // (checking, failed, judged all): a check that ends without a word on
+  // every shot is failed for the backend, and starts again only on Try again
+  // — an answer that changes nothing is never asked twice.
+  const asked = useRef(new Map<string, string>())
+  useEffect(() => {
+    if (!ready || !settled || !preview.data) return
+    const spec = settled.spec
+    for (const f of preview.data.filters) {
+      if (!pluginFiltersOf(spec).includes(f.key) || f.state !== "ready" || f.checked >= f.total) {
+        asked.current.delete(f.key)
+        continue
+      }
+      const seen = `${f.checked}/${f.total}`
+      if (asked.current.get(f.key) === seen) continue
+      asked.current.set(f.key, seen)
+      void ask(f.key, spec, false)
+    }
+  }, [ready, settled, preview.data, ask])
+  /** Ask the filters whose check failed, or didn't start, to start it again. */
+  const tryAgain = useCallback(() => {
+    if (!settled) return
+    const spec = settled.spec
+    for (const f of filters) {
+      if (pluginFiltersOf(spec).includes(f.key) && f.state === "failed") void ask(f.key, spec, true)
+    }
+  }, [settled, filters, ask])
+
   // Clicks go one after another, in order. Each answer is the pack's
   // choices (picks change nothing else, so its shots aren't fetched
   // again); the last one also brings the plan up to date.
@@ -214,12 +288,13 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
   // What is shown is what an export takes: only once the filters rest, the
   // pack made from them is in and every click has reached it (the
   // preview's stamp names exactly those clips), its names and size too.
-  const current = ready && sending === 0 && !preview.isFetching
+  const current = ready && sending === 0 && !preview.isFetching && asking === 0
 
-  return { state, saved, setSpec, setNaming, preview, plan, setIncluded, clearPicks, ready, current, fpsOf }
+  return { state, saved, setSpec, setNaming, preview, plan, setIncluded, clearPicks, ready, current, fpsOf, filters, check, tryAgain }
 }
 
 export type Pack = ReturnType<typeof usePack>
+export type { PackCheck }
 
 /**
  * The exports started from each pack while the app is open, by project and

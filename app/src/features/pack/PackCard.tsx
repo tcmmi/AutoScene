@@ -1,6 +1,6 @@
 import { memo } from "react"
 import { ArrowCounterClockwise, Check, Copy, Play, Prohibit, UserCircleDashed } from "@/components/icons"
-import type { MediaItem, PackClip } from "@/bindings"
+import type { MediaItem, PackClip, PackFilter } from "@/bindings"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -12,10 +12,14 @@ import { copyText } from "@/lib/os"
 import { matchShortcut, PACK_SHORTCUTS } from "@/lib/shortcuts"
 import { timecode } from "@/lib/timecode"
 import { cn } from "@/lib/utils"
-import { REASONS, SIZES, pickable } from "./spec"
+import { REASONS, SIZES, filterReason, pickable } from "./spec"
 
 const SIZE_SHORT = new Map(SIZES.map((s) => [s.value, s.short]))
 const SIZE_LABEL = new Map(SIZES.map((s) => [s.value, s.label]))
+
+/** A filter's word on a shot it hasn't checked again since its settings changed. */
+const before = (f: PackFilter) =>
+  f.checked === 0 ? `“${f.title}” said so with its settings before` : `“${f.title}” may have said so with its settings before`
 
 /**
  * A shot of the pack: bright with a gold tick when the pack takes it,
@@ -24,13 +28,18 @@ const SIZE_LABEL = new Map(SIZES.map((s) => [s.value, s.label]))
  * corner button plays it. A shot without the character's face says so;
  * its menu can say the bodies there aren't them. The menu acts on the clip
  * itself (`onWatch`, `onPick`), never on its place in the grid, which may
- * have moved by the time an entry is chosen.
+ * have moved by the time an entry is chosen. One a plugin's filter leaves
+ * out wears the filter's own words (`filter`), and says so in its tooltip
+ * when it was taken back in by hand. Until the filter has checked every
+ * shot with its settings as they are, the word may be one it gave with its
+ * settings before: the tooltip says so (for sure when it has checked none).
  */
 export const PackCard = memo(function PackCard({
   clip,
   index,
   media,
   name,
+  filter,
   onToggle,
   onOpen,
   onWatch,
@@ -42,6 +51,8 @@ export const PackCard = memo(function PackCard({
   media?: MediaItem
   /** Whose pack it is. */
   name?: string
+  /** The plugin filter that leaves the clip out (`clip.filter` in the pack's list), if any. */
+  filter?: PackFilter
   onToggle: (index: number, range: boolean, byKey?: boolean) => void
   onOpen: (index: number) => void
   onWatch?: (clip: PackClip) => void
@@ -57,13 +68,15 @@ export const PackCard = memo(function PackCard({
   // Drop-frame where the rate counts it, like the files' names.
   const at = fps ? timecode(start, fps, true) : ""
   const where = at && `${media?.label ? `${media.label} · ` : ""}${at}`
-  const why = clip.included ? null : clip.reason ? REASONS[clip.reason] : "Left out"
+  const why = clip.included ? null : clip.reason === "plugin" ? filterReason(filter) : clip.reason ? REASONS[clip.reason] : "Left out"
   const canPick = pickable(clip)
   const bodies = clip.shot.faceless ? (clip.shot.bodies ?? []) : []
   // Everything the chips say in short, said in full.
   const hint = [
     SIZE_LABEL.get(clip.size),
     clip.shot.faceless && "their face doesn't show",
+    clip.included && filter && `“${filter.title}” would leave it out`,
+    !clip.included && clip.reason === "plugin" && filter && filter.checked < filter.total && before(filter),
     canPick && `Click to ${clip.included ? "leave it out" : "take it in"}`,
   ]
     .filter(Boolean)
@@ -150,7 +163,9 @@ export const PackCard = memo(function PackCard({
                     <Check weight="bold" className="size-3" />
                   </span>
                 ) : (
-                  <span className="rounded-full bg-black/65 px-2 text-[11px] leading-5 text-white/90 backdrop-blur-md">{why}</span>
+                  <span className="max-w-[10rem] truncate rounded-full bg-black/65 px-2 text-[11px] leading-5 text-white/90 backdrop-blur-md">
+                    {why}
+                  </span>
                 )}
                 {clip.manual === true && (
                   <span className="rounded-full bg-black/55 px-2 text-[11px] leading-5 text-white/80 backdrop-blur-md">Added</span>

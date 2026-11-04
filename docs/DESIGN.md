@@ -157,12 +157,17 @@ Rules:
 - **Character:** the project's artwork as the hero (their blurred face without any) with the portrait (click to choose it from their clearest faces), the name
   (click to rename) and facts as chips; Build a scenepack as the white pill; shots scrub on hover.
 - **Scenepack:** the character's portrait and name, the filters in a glass bar that stays under the top bar (order,
-  shot sizes as chips, length, episodes, limit, handles, "only them", flash cuts), then every shot of the character:
-  the ones the pack takes bright with a gold tick, the rest dimmed with the reason. A click takes a shot in or out,
+  shot sizes as chips, length, episodes, limit, handles, "only them", flash cuts, and a plugin's filters with the
+  plugin mark: a ring fills while one checks, a warning mark once its check failed, a filter of a plugin that is off is
+  dimmed), then every shot of the
+  character: the ones the pack takes bright with a gold tick, the rest dimmed with the reason (a filter's own words
+  for the shots it leaves out). A click takes a shot in or out,
   Shift every shot since the last. A glass bar floats at the bottom with the count, length and size, the picks by
-  hand and Export as the white pill; the export dialog makes one file with a chapter per shot (a switch at the top,
-  on by default) or a file per shot, named from templates: the parts stand out in the field as quiet pills, a
-  mistyped one in red where it is; the name-part buttons are one Tab stop, and each says what it gives.
+  hand, how far a plugin's check is (Export waits for it) or that one failed (Try again; the shots it didn't check keep
+  its word from before, as the grid shows, and Export goes on) and Export as the white pill; the export dialog makes one
+  file with a chapter per shot (a switch at the top, on by default) or a file per shot, named from templates: the parts
+  stand out in the field as quiet pills, a mistyped one in red where it is; the name-part buttons are one Tab stop, and
+  each says what it gives.
 - **Review:** one face against the suggestion, both big, the face lighting the room; answers on the keyboard.
 - **Player:** a dark room — the picture as large as the stage allows at the file's own shape (a preview copy or a
   small file grows too), on a rounded screen with its own ambilight. Every control has one place; a right-click

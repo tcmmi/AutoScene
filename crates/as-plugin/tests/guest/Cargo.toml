@@ -1,0 +1,29 @@
+[package]
+name = "as-plugin-test-guest"
+description = "A stand-in WebAssembly plugin for the sandbox tests (tests/wasm.rs), never shipped"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Built for wasm32-wasip2 by `cargo xtask wasm-guests`, never by the
+# workspace: a workspace of its own, with its own lock.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# Built against wit-frozen/1.0.0, the world as it first shipped, to show a
+# guest of that world still runs.
+frozen = []
+
+[dependencies]
+wit-bindgen = "=0.63.0"
+# wasi:http and the other WASI 0.2 interfaces std doesn't reach.
+wasip2 = "=2.0.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1

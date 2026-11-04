@@ -32,6 +32,12 @@ pub enum PluginError {
     Failed { message: String, detail: Option<String> },
     #[error("{name} stopped unexpectedly.")]
     Crashed { name: String, detail: String },
+    /// A WebAssembly plugin's run took longer than its time limit.
+    #[error("{name} ran for longer than {} and was stopped.", for_minutes(.minutes))]
+    TimedOut { name: String, minutes: u32 },
+    /// A WebAssembly plugin's run needed more memory than its limit.
+    #[error("{name} needed more than {mb} MB of memory and was stopped.")]
+    OutOfMemory { name: String, mb: u32 },
     #[error("Cancelled.")]
     Cancelled,
     /// A host method the plugin has no grant for; the sentence says which.
@@ -79,5 +85,27 @@ impl PluginError {
             Self::Io(e) => format!("plugin files: {e}"),
             e => e.to_string(),
         }
+    }
+}
+
+fn for_minutes(n: &u32) -> String {
+    match n {
+        1 => "1 minute".into(),
+        n => format!("{n} minutes"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limits_that_stopped_a_run_are_said() {
+        let late = |minutes| PluginError::TimedOut { name: "Poster".into(), minutes }.to_string();
+        assert_eq!(late(30), "Poster ran for longer than 30 minutes and was stopped.");
+        assert_eq!(late(1), "Poster ran for longer than 1 minute and was stopped.");
+        let big = PluginError::OutOfMemory { name: "Poster".into(), mb: 512 };
+        assert_eq!(big.to_string(), "Poster needed more than 512 MB of memory and was stopped.");
+        assert_eq!(big.detail(), big.to_string());
     }
 }

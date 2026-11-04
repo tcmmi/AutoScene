@@ -101,7 +101,10 @@ impl From<PluginError> for AppError {
             | PluginError::Catalog(_)
             | PluginError::Withdrawn { .. }
             // A catalog package that didn't come: the page offers to try again.
-            | PluginError::Download { .. } => ErrorCode::Invalid,
+            | PluginError::Download { .. }
+            // A WebAssembly plugin held to its limits.
+            | PluginError::TimedOut { .. }
+            | PluginError::OutOfMemory { .. } => ErrorCode::Invalid,
         };
         match (&e, code) {
             // Why a download failed is in its detail, which only the log keeps.
@@ -150,6 +153,8 @@ mod tests {
             PluginError::Catalog("This catalog is older than the one AutoScene has.".into()),
             PluginError::Withdrawn { name: "Leaky".into(), reason: "It sent export paths to a server.".into() },
             PluginError::Download { what: "Poster".into(), detail: "connection refused".into() },
+            PluginError::TimedOut { name: "Poster".into(), minutes: 30 },
+            PluginError::OutOfMemory { name: "Poster".into(), mb: 512 },
         ];
         for e in invalid {
             let words = e.to_string();

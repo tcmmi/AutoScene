@@ -1048,7 +1048,7 @@ pub(crate) fn read_stderr(stderr: impl Read + Send + 'static, tx: SyncSender<Msg
 /// How a line cut at its limit ends in the log.
 const CUT: &str = " [cut]";
 
-fn marked(mut line: String, was_cut: bool) -> String {
+pub(crate) fn marked(mut line: String, was_cut: bool) -> String {
     if was_cut {
         line.push_str(CUT);
     }
@@ -1090,7 +1090,7 @@ pub(crate) fn capped_lines(r: impl Read, max: usize) -> impl Iterator<Item = (St
     })
 }
 
-fn decoded(mut line: Vec<u8>, mut was_cut: bool, max: usize) -> (String, bool) {
+pub(crate) fn decoded(mut line: Vec<u8>, mut was_cut: bool, max: usize) -> (String, bool) {
     while line.last() == Some(&b'\r') {
         line.pop();
     }

@@ -9,10 +9,13 @@
 //! - `fetch-models [--dir DIR] [--only ID,ID…]` — download every AI model in
 //!   `models/manifest.toml`, or only the ones named, into `fixtures/models`
 //!   for tests.
+//! - `wasm-guests [--out DIR]` — build the WebAssembly plugins the sandbox tests
+//!   run, into `<fixtures>/wasm` (see `wasm_guests.rs`).
 
 mod fixtures;
 mod sidecars;
 mod uv;
+mod wasm_guests;
 
 use std::path::PathBuf;
 
@@ -52,11 +55,17 @@ fn main() -> Result<()> {
             let version = rest.first().context("usage: cargo xtask pin-uv <version>")?;
             uv::pin(version, &workspace_root()).context("pinning uv")
         }
+        "wasm-guests" => {
+            let out =
+                flag(&rest, "--out").map(PathBuf::from).unwrap_or_else(|| as_testkit::fixtures_dir().join("wasm"));
+            wasm_guests::build(&out).context("building the test plugins")
+        }
         "" | "help" | "--help" => {
             println!("cargo xtask fixtures [--out DIR] [--ffmpeg PATH]");
             println!("cargo xtask fetch-sidecars [--root DIR]");
             println!("cargo xtask fetch-models [--dir DIR] [--only ID,ID…]");
             println!("cargo xtask pin-uv <version>");
+            println!("cargo xtask wasm-guests [--out DIR]");
             Ok(())
         }
         other => bail!("unknown task '{other}' (try `cargo xtask help`)"),

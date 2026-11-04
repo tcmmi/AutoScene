@@ -4,4 +4,6 @@
 [toolchain]
 channel = "nightly-2026-10-13"
 components = ["rustfmt", "clippy"]
+# WebAssembly plugins: the test guest and the examples (`cargo xtask wasm-guests`).
+targets = ["wasm32-wasip2"]
 profile = "minimal"

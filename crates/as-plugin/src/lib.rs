@@ -31,13 +31,19 @@
 //! while one of its pages is open, and answers their requests ([`service`]).
 //!
 //! A plugin may instead be a WebAssembly component (manifest version 2,
-//! runtime `wasm`), which a later AutoScene runs in a sandbox; this one
-//! reads its manifest and checks its package, and says it needs that
-//! AutoScene ([`store`]).
+//! runtime `wasm`), which runs in a sandbox (`wasm`, with the feature of
+//! that name): it sees only the folders its permissions give it, reaches
+//! no network yet, and is held to its memory and time limits. This
+//! AutoScene doesn't install one yet: it reads its manifest and checks its
+//! package, and says it needs a newer AutoScene ([`store`]).
 //!
 //! What a plugin says it does (its permissions) is shown before install.
 //! Its calls into AutoScene are held to it; what its program does itself is
-//! not: a process plugin runs with the person's user rights.
+//! not: a process plugin runs with the person's user rights. A WebAssembly
+//! plugin's permissions are what its sandbox gives it.
+
+// The compiled code of WebAssembly plugins is the one exception (wasm/cache.rs).
+#![deny(unsafe_code)]
 
 pub mod calls;
 pub mod catalog;
@@ -58,6 +64,8 @@ pub mod service;
 pub mod store;
 pub mod trust;
 pub mod uv;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 pub use calls::{CallCode, CallError, Caller, Grants, HostCalls, HostMethod};
 pub use catalog::{Catalog, CatalogKeys, CatalogState};

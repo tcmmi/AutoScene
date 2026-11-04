@@ -19,9 +19,17 @@
 //! folder, and must not write it. Windows refuses to replace it while a
 //! program has it open without sharing its deletion (as Python's `open()`
 //! does), so a write tries a few times. It goes with the plugin's data.
+//!
+//! Nothing stops a plugin from putting a link in its place, or in place of
+//! the file a write goes to (a WebAssembly plugin can make links in its
+//! `/data`), so the host follows neither: a link where the state should be
+//! is never read (the call fails, as for a folder there), and a write makes
+//! its file new, never opening one a plugin left. Else its page could read
+//! a file of the person's, or another plugin's state, and a write could
+//! change a file outside the folder.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -43,6 +51,10 @@ pub const MAX_FILE_BYTES: usize = 1 << 20;
 /// twice as long each time from [`RENAME_WAIT`]: 0.63 s in all.
 const RENAME_RETRIES: u32 = 6;
 const RENAME_WAIT: Duration = Duration::from_millis(10);
+
+/// Opens a link itself, not what it leads to (`winbase.h`).
+#[cfg(windows)]
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
 /// The value of `key` in the state in `dir`, if it has one.
 pub fn get(dir: &Path, key: &str) -> PluginResult<Option<Value>> {
@@ -110,11 +122,12 @@ fn in_turn<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
 
 /// The state in `dir`: empty when there is none, or when it is broken (then
 /// it is kept as `.bad`, and the next write starts again). A file that
-/// can't be read now is an error: a write would lose what it keeps.
+/// can't be read now is an error: a write would lose what it keeps. So is
+/// anything else in its place, a folder or a link.
 fn read(dir: &Path) -> PluginResult<BTreeMap<String, Value>> {
     let path = dir.join(FILE);
     let mut bytes = Vec::new();
-    let read = File::open(&path).and_then(|f| f.take(MAX_FILE_BYTES as u64 + 1).read_to_end(&mut bytes));
+    let read = open_plain(&path).and_then(|f| f.take(MAX_FILE_BYTES as u64 + 1).read_to_end(&mut bytes));
     match read {
         Ok(_) => {}
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(BTreeMap::new()),
@@ -132,13 +145,38 @@ fn read(dir: &Path) -> PluginResult<BTreeMap<String, Value>> {
     }
 }
 
+/// `path` opened to read when it is a plain file, never through a link: on
+/// Unix the open fails on one, on Windows it opens the link itself, which
+/// isn't a plain file. Anything else is an error.
+fn open_plain(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NOFOLLOW);
+    #[cfg(windows)]
+    std::os::windows::fs::OpenOptionsExt::custom_flags(&mut options, FILE_FLAG_OPEN_REPARSE_POINT);
+    let file = options.open(path)?;
+    match file.metadata()?.is_file() {
+        true => Ok(file),
+        false => Err(io::Error::other(format!("{FILE} isn't a plain file"))),
+    }
+}
+
 fn write(dir: &Path, state: &BTreeMap<String, Value>) -> PluginResult<()> {
     let json = serde_json::to_vec(state).expect("page state is plain JSON");
     if json.len() > MAX_FILE_BYTES {
         return Err(invalid("The plugin keeps more than 1 MB. Delete something it keeps first."));
     }
     let tmp = dir.join(format!("{FILE}.tmp"));
-    let mut file = File::create(&tmp)?;
+    // Made new: what is in its place (one a crash left, or a plugin's
+    // link) is removed, and `create_new` refuses whatever came back since,
+    // a dangling link too.
+    if let Err(e) = fs::remove_file(&tmp)
+        && e.kind() != ErrorKind::NotFound
+    {
+        return Err(e.into());
+    }
+    let mut file = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
     file.write_all(&json)?;
     file.sync_all()?;
     drop(file);
@@ -229,6 +267,44 @@ mod tests {
         }
         set(dir, "new", json!(2), &on()).unwrap();
         assert_eq!(keys(dir).unwrap(), ["kept", "new"]);
+    }
+
+    #[test]
+    fn links_a_plugin_left_in_its_folder_are_never_followed() {
+        let root = tempfile::tempdir().unwrap();
+        let (dir, outside) = (root.path().join("data"), root.path().join("outside"));
+        fs::create_dir(&dir).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("secret.json"), br#"{"secret": 1}"#).unwrap();
+        fs::write(outside.join("target.json"), b"untouched").unwrap();
+        let up = |name: &str| Path::new("..").join("outside").join(name);
+        // Windows makes links only in developer mode.
+        if !link(&up("secret.json"), &dir.join(FILE)) {
+            eprintln!("this account can't make links (skipping)");
+            return;
+        }
+        // As for a folder there: every call fails, nothing is read, and nothing moves.
+        assert!(get(&dir, "secret").is_err() && keys(&dir).is_err());
+        assert!(set(&dir, "k", json!(1), &on()).is_err());
+        assert!(fs::symlink_metadata(dir.join(FILE)).unwrap().is_symlink());
+        assert!(!dir.join(format!("{FILE}.bad")).exists());
+        fs::remove_file(dir.join(FILE)).unwrap();
+
+        // A write makes its file new, never through a link in its place.
+        assert!(link(&up("target.json"), &dir.join(format!("{FILE}.tmp"))));
+        set(&dir, "k", json!(1), &on()).unwrap();
+        assert_eq!(fs::read(outside.join("target.json")).unwrap(), b"untouched");
+        assert!(!fs::symlink_metadata(dir.join(FILE)).unwrap().is_symlink());
+        assert_eq!(keys(&dir).unwrap(), ["k"]);
+    }
+
+    /// Makes `link` a link to `target`: false where this account can't
+    /// (Windows without developer mode).
+    fn link(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        return std::os::unix::fs::symlink(target, link).map(|()| true).unwrap();
+        #[cfg(windows)]
+        return std::os::windows::fs::symlink_file(target, link).is_ok();
     }
 
     /// As Python's `open()` reads it: others may read and write it, but not

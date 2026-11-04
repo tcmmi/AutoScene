@@ -103,7 +103,8 @@ const STAGING: &str = ".staging";
 const TRASH: &str = ".trash";
 /// Why a plugin whose folder is gone can't run.
 pub const MISSING: &str = "Its files are missing. Install it again.";
-const CHANGED: &str = "Its files were changed. Install it again.";
+/// Why a plugin whose files don't match its lock can't run.
+pub(crate) const CHANGED: &str = "Its files were changed. Install it again.";
 const NEWER: &str = "Needs a newer AutoScene.";
 const RUNTIME_CHANGED: &str = "Its runtime changed. Load it again to agree to that.";
 /// How long a rename waits for Windows: a virus scanner may still hold a

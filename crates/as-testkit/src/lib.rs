@@ -26,10 +26,9 @@ pub fn fixtures_dir() -> PathBuf {
 /// file that exists but doesn't parse always fails.
 pub fn load_truth() -> Option<Truth> {
     let p = fixtures_dir().join("truth.json");
-    let required = std::env::var_os("AUTOSCENE_REQUIRE_FIXTURES").is_some_and(|v| v != "0");
     let raw = match std::fs::read_to_string(&p) {
         Ok(raw) => raw,
-        Err(e) if !required && e.kind() == std::io::ErrorKind::NotFound => {
+        Err(e) if !fixtures_required() && e.kind() == std::io::ErrorKind::NotFound => {
             eprintln!("fixtures missing; run `cargo xtask fixtures` (skipping)");
             return None;
         }
@@ -39,6 +38,28 @@ pub fn load_truth() -> Option<Truth> {
         Ok(t) => Some(t),
         Err(e) => panic!("{} is stale or corrupt ({e}); run `cargo xtask fixtures`", p.display()),
     }
+}
+
+/// A file under [`fixtures_dir`] that an xtask made, by its path there
+/// (`wasm/guest.wasm`, from `cargo xtask wasm-guests`). `None` (the test
+/// skips) only when it isn't there and `AUTOSCENE_REQUIRE_FIXTURES` is
+/// unset, as for [`load_truth`].
+pub fn fixture_file(rel: &str) -> Option<PathBuf> {
+    let p = fixtures_dir().join(rel);
+    if p.is_file() {
+        return Some(p);
+    }
+    let task = if rel.starts_with("wasm/") { "wasm-guests" } else { "fixtures" };
+    if fixtures_required() {
+        panic!("{} is missing (run `cargo xtask {task}`)", p.display());
+    }
+    eprintln!("{rel} missing; run `cargo xtask {task}` (skipping)");
+    None
+}
+
+/// CI sets `AUTOSCENE_REQUIRE_FIXTURES` so missing fixtures fail instead of skip.
+fn fixtures_required() -> bool {
+    std::env::var_os("AUTOSCENE_REQUIRE_FIXTURES").is_some_and(|v| v != "0")
 }
 
 /// The ONNX Runtime the app bundles (`cargo xtask fetch-sidecars`), or

@@ -2,17 +2,23 @@
 //! a time and relays its replies. A crashed engine (GPU driver reset, out of
 //! memory, killed) fails only the job it was running; the job gets a fresh
 //! process and resumes from the last chunk the app received.
+//!
+//! A new launch ([`Engine::set_launch`], a graphics card chosen in Settings)
+//! applies from the next job: an idle engine stops at once, and a running
+//! job finishes on its engine, which stops right after it.
 
 use std::cell::Cell;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use as_core::CancelToken;
+use as_infer::hardware::Hardware;
 use as_media::MediaInfo;
 use parking_lot::Mutex;
 use thiserror::Error;
@@ -171,6 +177,8 @@ struct Proc {
     stdin: ChildStdin,
     replies: mpsc::Receiver<Msg>,
     device: String,
+    /// The launch it was started with ([`Engine::set_launch`] counts them).
+    generation: u64,
 }
 
 impl Proc {
@@ -216,18 +224,140 @@ const START_TIMEOUT: Duration = Duration::from_secs(60);
 /// Engine processes a job may go through before it fails.
 const ATTEMPTS: usize = 3;
 
+/// What [`Engine::watch`] hears about.
+pub enum Note<'a> {
+    /// An engine started and named the devices it found and opened.
+    Ready(&'a Hardware),
+    /// What [`Engine::pending`] or [`Engine::fell_back`] answers may have changed.
+    Changed,
+}
+
+type Watch = Box<dyn Fn(Note<'_>) + Send + Sync>;
+
 pub struct Engine {
-    launch: Launch,
+    /// How to start the next engine, and how many launches there were.
+    launch: Mutex<(Launch, u64)>,
     /// The running process; also serialises jobs.
     proc: Mutex<Option<Proc>>,
     next_id: AtomicU64,
     /// Process id of the running engine (0 = none), readable during a job.
     pid: AtomicU32,
+    /// The launch of the engine running a job (0 = no job).
+    busy: AtomicU64,
+    /// What the last engine to start found and opened.
+    hardware: Mutex<Option<Hardware>>,
+    /// Where the last job's models ran, as its engine last said.
+    devices: Mutex<Option<Devices>>,
+    watch: OnceLock<Watch>,
 }
 
 impl Engine {
     pub fn new(launch: Launch) -> Self {
-        Self { launch, proc: Mutex::new(None), next_id: AtomicU64::new(1), pid: AtomicU32::new(0) }
+        Self {
+            launch: Mutex::new((launch, 1)),
+            proc: Mutex::new(None),
+            next_id: AtomicU64::new(1),
+            pid: AtomicU32::new(0),
+            busy: AtomicU64::new(0),
+            hardware: Mutex::new(None),
+            devices: Mutex::new(None),
+            watch: OnceLock::new(),
+        }
+    }
+
+    /// Hear when an engine names its hardware and when [`Engine::pending`]
+    /// or [`Engine::fell_back`] may answer otherwise (once; later calls are
+    /// ignored). Called on the thread that runs the job or the change.
+    pub fn watch(&self, f: impl Fn(Note<'_>) + Send + Sync + 'static) {
+        let _ = self.watch.set(Box::new(f));
+    }
+
+    fn note(&self, note: Note<'_>) {
+        if let Some(f) = self.watch.get() {
+            f(note);
+        }
+    }
+
+    /// Start engines with `launch` from now on: an idle engine stops at once;
+    /// a job that runs finishes on its engine, which then stops, so the next
+    /// job (also one queued meanwhile) starts a new one with these
+    /// arguments.
+    pub fn set_launch(&self, launch: Launch) {
+        {
+            let mut current = self.launch.lock();
+            *current = (launch, current.1 + 1);
+        }
+        // A job holds the lock for as long as it runs.
+        if let Some(mut guard) = self.proc.try_lock()
+            && let Some(mut p) = guard.take()
+        {
+            stop(&mut p);
+            self.pid.store(0, Ordering::Relaxed);
+        }
+        if self.pending() {
+            self.note(Note::Changed);
+        }
+    }
+
+    /// The launch the next engine starts with, and its number.
+    fn launch(&self) -> (Launch, u64) {
+        self.launch.lock().clone()
+    }
+
+    /// A job runs on an engine started before the last [`Engine::set_launch`]:
+    /// the change applies from the next one.
+    pub fn pending(&self) -> bool {
+        let busy = self.busy.load(Ordering::Relaxed);
+        busy != 0 && busy != self.launch.lock().1
+    }
+
+    /// The devices the last engine to start found and opened (`None` before
+    /// one started; [`Engine::probe`] starts one).
+    pub fn hardware(&self) -> Option<Hardware> {
+        self.hardware.lock().clone()
+    }
+
+    /// Some models of the last job ran on the CPU, which the GPU couldn't
+    /// take ([`Devices::on_cpu`]).
+    pub fn fell_back(&self) -> bool {
+        self.devices.lock().as_ref().is_some_and(|d| !d.on_cpu().is_empty())
+    }
+
+    /// The devices an engine finds, starting one when none has started yet:
+    /// it then waits for work until it is idle long enough to exit. While a
+    /// job's engine starts, this waits for its answer instead.
+    pub fn probe(&self, cancel: &CancelToken) -> Result<Hardware, EngineError> {
+        loop {
+            if let Some(h) = self.hardware() {
+                return Ok(h);
+            }
+            if let Some(mut guard) = self.proc.try_lock() {
+                if guard.as_mut().is_some_and(|p| !p.alive()) {
+                    self.discard(&mut guard);
+                }
+                if guard.is_none() {
+                    *guard = Some(self.start(cancel)?);
+                }
+                return self.hardware().ok_or_else(|| EngineError::Start {
+                    message: "The analysis engine couldn't start. Details are in the log.".into(),
+                    detail: "the engine named no hardware".into(),
+                });
+            }
+            if cancel.is_cancelled() {
+                return Err(EngineError::Cancelled);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    /// Where the job's models run, as its engine says: kept for
+    /// [`Engine::fell_back`].
+    fn devices_seen(&self, devices: Devices) {
+        let fell_back = !devices.on_cpu().is_empty();
+        let before = self.devices.lock().replace(devices).is_some_and(|d| !d.on_cpu().is_empty());
+        if fell_back != before {
+            self.note(Note::Changed);
+        }
     }
 
     /// Process id of the engine while one runs.
@@ -374,12 +504,7 @@ impl Engine {
         if let Some(mut guard) = self.proc.try_lock()
             && let Some(mut p) = guard.take()
         {
-            let _ = p.send(&Request::Shutdown);
-            let deadline = Instant::now() + Duration::from_secs(2);
-            while p.alive() && Instant::now() < deadline {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            p.kill();
+            stop(&mut p);
             self.pid.store(0, Ordering::Relaxed);
         }
         // A job holding the lock is cancelled by its own token on shutdown;
@@ -402,7 +527,9 @@ impl Engine {
         on: &mut impl FnMut(Reply) -> Result<(), String>,
     ) -> Result<(), EngineError> {
         let mut guard = self.proc.lock();
-        if guard.as_mut().is_some_and(|p| !p.alive()) {
+        // An engine of an earlier launch never takes a job.
+        let launch = self.launch.lock().1;
+        if guard.as_mut().is_some_and(|p| !p.alive() || p.generation != launch) {
             self.discard(&mut guard);
         }
         // Replies left over from an earlier job are stale; an engine that
@@ -419,22 +546,48 @@ impl Engine {
         if guard.is_none() {
             *guard = Some(self.start(cancel)?);
         }
-        let p = guard.as_mut().expect("started");
+        let launch = guard.as_ref().expect("started").generation;
+        self.busy.store(launch, Ordering::Relaxed);
+        let r = self.serve(&mut guard, req, id, cancel, on);
+        self.busy.store(0, Ordering::Relaxed);
+        // A new launch came while the job ran: its engine stops now that it
+        // is idle, so the next job starts one with the new arguments.
+        if launch != self.launch.lock().1 {
+            if let Some(mut p) = guard.take() {
+                stop(&mut p);
+                self.pid.store(0, Ordering::Relaxed);
+            }
+            self.note(Note::Changed);
+        }
+        r
+    }
+
+    /// Hand `req` to the engine in `slot` and relay its replies until the
+    /// job ends.
+    fn serve(
+        &self,
+        slot: &mut Option<Proc>,
+        req: Request,
+        id: u64,
+        cancel: &CancelToken,
+        on: &mut impl FnMut(Reply) -> Result<(), String>,
+    ) -> Result<(), EngineError> {
+        let p = slot.as_mut().expect("started");
         if let Err(e) = p.send(&req) {
-            self.discard(&mut guard);
+            self.discard(slot);
             return Err(EngineError::Crashed(format!("sending the job: {e}")));
         }
         let mut cancel_sent: Option<Instant> = None;
         let mut handler_error: Option<String> = None;
         loop {
-            let p = guard.as_mut().expect("running");
+            let p = slot.as_mut().expect("running");
             if (cancel.is_cancelled() || handler_error.is_some()) && cancel_sent.is_none() {
                 let _ = p.send(&Request::Cancel { id });
                 cancel_sent = Some(Instant::now());
             }
             if cancel_sent.is_some_and(|t| t.elapsed() > CANCEL_GRACE) {
                 tracing::warn!(id, "engine didn't stop after cancel; killing it");
-                self.discard(&mut guard);
+                self.discard(slot);
                 return Err(handler_error.map_or(EngineError::Cancelled, EngineError::saving));
             }
             match p.replies.recv_timeout(Duration::from_millis(100)) {
@@ -450,7 +603,7 @@ impl Engine {
                         });
                     }
                     Reply::Fatal { message, detail } => {
-                        self.discard(&mut guard);
+                        self.discard(slot);
                         return Err(EngineError::Start { message, detail });
                     }
                     r @ (Reply::Devices { id: rid, .. }
@@ -460,6 +613,9 @@ impl Engine {
                     | Reply::Embedding { id: rid, .. })
                         if rid == id =>
                     {
+                        if let Reply::Devices { preferred, models, .. } = &r {
+                            self.devices_seen(Devices::new(preferred.clone(), models.clone()));
+                        }
                         if handler_error.is_none()
                             && let Err(e) = on(r)
                         {
@@ -469,7 +625,7 @@ impl Engine {
                     _ => {}
                 },
                 Ok(Msg::Exited) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    let mut p = guard.take().expect("running");
+                    let mut p = slot.take().expect("running");
                     p.kill();
                     let status = p.child.wait().map(|s| s.to_string()).unwrap_or_else(|e| e.to_string());
                     self.pid.store(0, Ordering::Relaxed);
@@ -487,8 +643,9 @@ impl Engine {
     }
 
     fn start(&self, cancel: &CancelToken) -> Result<Proc, EngineError> {
-        let mut cmd = Command::new(&self.launch.program);
-        cmd.args(&self.launch.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let (launch, generation) = self.launch();
+        let mut cmd = Command::new(&launch.program);
+        cmd.args(&launch.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -497,7 +654,7 @@ impl Engine {
         }
         let mut child = as_media::proc::spawn(&mut cmd).map_err(|e| EngineError::Start {
             message: "The analysis engine couldn't start. Reinstall AutoScene.".into(),
-            detail: format!("{}: {e}", self.launch.program.display()),
+            detail: format!("{}: {e}", launch.program.display()),
         })?;
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
@@ -522,7 +679,7 @@ impl Engine {
             }
             let _ = tx.send(Msg::Exited);
         });
-        let mut p = Proc { child, stdin, replies: rx, device: String::new() };
+        let mut p = Proc { child, stdin, replies: rx, device: String::new(), generation };
         let deadline = Instant::now() + START_TIMEOUT;
         loop {
             if cancel.is_cancelled() {
@@ -531,10 +688,12 @@ impl Engine {
             }
             let left = deadline.saturating_duration_since(Instant::now());
             match p.replies.recv_timeout(left.min(Duration::from_millis(100))) {
-                Ok(Msg::Reply(Reply::Ready { device })) => {
-                    tracing::info!(%device, pid = p.child.id(), "analysis engine ready");
+                Ok(Msg::Reply(Reply::Ready { device, hardware })) => {
+                    tracing::info!(%device, pid = p.child.id(), "analysis engine ready on {hardware}");
                     self.pid.store(p.child.id(), Ordering::Relaxed);
                     p.device = device;
+                    *self.hardware.lock() = Some(hardware.clone());
+                    self.note(Note::Ready(&hardware));
                     return Ok(p);
                 }
                 Ok(Msg::Reply(Reply::Fatal { message, detail })) => {
@@ -559,6 +718,16 @@ impl Drop for Engine {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+/// Ask an engine to exit, and kill it if it hasn't after two seconds.
+fn stop(p: &mut Proc) {
+    let _ = p.send(&Request::Shutdown);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while p.alive() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    p.kill();
 }
 
 #[cfg(test)]

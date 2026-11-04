@@ -9,6 +9,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 # One binary for every ONNX Runtime >= 1.24 (the DirectML build 1.24.4 on
@@ -25,3 +26,6 @@ windows = { workspace = true, features = ["Win32_Foundation", "Win32_Graphics_DX
 [target.'cfg(target_os = "macos")'.dependencies]
 ort = { workspace = true, features = ["coreml"] }
 libc.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

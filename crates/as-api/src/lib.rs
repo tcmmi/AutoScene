@@ -114,6 +114,13 @@ pub struct AppSettings {
     /// `plugins_allow_unreviewed`: `settings_update` keeps it as it is.
     #[serde(default)]
     pub allow_unreviewed_plugins: bool,
+    /// The graphics the analysis runs on: `""` Automatic (the card DirectML
+    /// takes by default: the one Windows ranks fastest), `"cpu"` the
+    /// processor only, or a card's key ([`GpuOption::key`]). Applies from the
+    /// next analysis; a card that isn't connected leaves Automatic in its
+    /// place.
+    #[serde(default)]
+    pub gpu: String,
 }
 
 /// The keys the person chose: an editor's keys to start from, and their own
@@ -212,6 +219,69 @@ pub struct ScanDefaults {
     /// computer's graphics get Fast Scan, and the notice isn't done for this
     /// library ("Don't show this again", or a default met in Settings).
     pub notice: bool,
+}
+
+// ---------------------------------------------------------------------------
+// The graphics the analysis runs on (Settings → General)
+// ---------------------------------------------------------------------------
+
+/// A graphics card the analysis can run on.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuOption {
+    /// What [`AppSettings::gpu`] stores when it is chosen.
+    pub key: String,
+    /// As its driver names it, numbered among identical cards.
+    pub name: String,
+}
+
+/// What the analysis runs on.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum AnalysisDevice {
+    /// A graphics card; `name` is empty when the graphics driver picks it.
+    Gpu { name: String },
+    /// An Apple chip: its graphics and Neural Engine.
+    Chip { name: String },
+    /// The processor.
+    Processor,
+}
+
+/// What can be chosen here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum HardwareChoice {
+    /// Nothing to choose: Linux, or Windows without a graphics card the
+    /// analysis can use. It runs on the processor.
+    Fixed,
+    /// Automatic or the processor only: an Apple chip, or one card.
+    AutoOrProcessor,
+    /// Automatic, each card, or the processor only.
+    Cards,
+}
+
+/// Settings → General → Graphics card: what can be chosen, what is, and
+/// what the analysis runs on because of it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HardwareInfo {
+    /// The graphics cards found, in the order DirectML takes them
+    /// (Automatic's first).
+    pub gpus: Vec<GpuOption>,
+    pub choice: HardwareChoice,
+    /// The option chosen: `"auto"`, `"cpu"`, or the key of the card in use
+    /// (as it is named now, which a driver update may have changed).
+    pub selected: String,
+    /// What the analysis runs on with that choice.
+    pub using: AnalysisDevice,
+    /// The chosen card isn't connected: Automatic's runs in its place.
+    pub missing: bool,
+    /// The choice changed while an analysis runs on the one before: it
+    /// applies from the next.
+    pub pending: bool,
+    /// The last analysis ran some steps on the processor, much slower,
+    /// because the graphics couldn't take them.
+    pub fell_back: bool,
 }
 
 // ---------------------------------------------------------------------------

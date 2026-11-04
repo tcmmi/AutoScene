@@ -8,6 +8,9 @@ use std::time::Duration;
 
 use as_core::CancelToken;
 use as_engine::{Config, Engine, EngineError, FacesEvent, FacesInput, Launch, ShotsEvent};
+use as_infer::Placement;
+use as_infer::computer::{self, Choice, Machine};
+use as_infer::hardware::Using;
 use as_media::{MediaInfo, Tools, build_frame_index, probe};
 use as_testkit::{fixtures_dir, load_truth, models_dir, models_required, ort_dir};
 
@@ -32,12 +35,14 @@ fn setup(idle_exit: Option<Duration>) -> Option<(Engine, Media)> {
     let info = probe(&tools, &path).unwrap();
     let work = tempfile::tempdir().unwrap();
     let index = build_frame_index(&tools, &path, &info, work.path(), &CancelToken::new(), |_| {}).unwrap();
-    let cfg = Config { ort_dir: ort, models_dir: models_dir(), ffmpeg_dir: None, gpu: true, idle_exit };
-    let engine = Engine::new(Launch {
-        program: PathBuf::from(env!("CARGO_BIN_EXE_autoscene-engine")),
-        args: as_engine::args(&cfg),
-    });
+    let engine = Engine::new(launch(ort, Choice::Auto, idle_exit));
     Some((engine, Media { path, info, frames: index.len(), index: index.to_bytes() }))
+}
+
+/// How to start the engine binary on the device `gpu` chooses.
+fn launch(ort_dir: PathBuf, gpu: Choice, idle_exit: Option<Duration>) -> Launch {
+    let cfg = Config { ort_dir, models_dir: models_dir(), ffmpeg_dir: None, placement: Placement { gpu }, idle_exit };
+    Launch { program: PathBuf::from(env!("CARGO_BIN_EXE_autoscene-engine")), args: as_engine::args(&cfg) }
 }
 
 /// Run a shots job and collect its chunks; `on_chunk` sees each chunk start.
@@ -129,6 +134,110 @@ fn cancel_stops_a_job_quickly() {
     // The engine stays usable.
     let (r, _) = collect(&engine, &m, 500, &CancelToken::new(), |_| {});
     r.unwrap();
+}
+
+/// The engine names the device it opened: on Automatic the first adapter of
+/// DirectML's own list, which this process's probe classes for Fast Scan
+/// (CI's Windows, with only the software adapter: the processor); each card
+/// when it is chosen; nothing on Processor only.
+#[test]
+fn the_engine_names_the_device_it_uses() {
+    let Some(ort) = ort_dir() else {
+        eprintln!("onnxruntime missing; run `cargo xtask fetch-sidecars` (skipping)");
+        return;
+    };
+    if Tools::locate(None).is_err() {
+        eprintln!("ffmpeg missing (skipping)");
+        return;
+    }
+    let auto = Engine::new(launch(ort.clone(), Choice::Auto, None));
+    let hw = auto.probe(&CancelToken::new()).unwrap();
+    assert_eq!(auto.hardware().as_ref(), Some(&hw), "kept");
+    let expected = computer::choose(computer::machine(), &Choice::Auto);
+    assert_eq!(hw.luid(), expected.luid, "{hw}; the probe expects {expected}");
+    match computer::machine() {
+        Machine::Windows(Some(adapters)) if adapters.is_empty() => assert_eq!(hw.using, Using::Processor, "{hw}"),
+        Machine::CpuRuntime => assert_eq!((hw.using, hw.gpus.len()), (Using::Processor, 0)),
+        Machine::Mac(_) => assert_eq!(hw.using, Using::Chip),
+        _ => {}
+    }
+    for card in hw.gpus.iter().filter(|g| g.dxgi.is_some()) {
+        let chosen = Engine::new(launch(ort.clone(), Choice::from_setting(&card.key), None));
+        let got = chosen.probe(&CancelToken::new()).unwrap();
+        assert_eq!((got.gpu().map(|g| &g.key), got.missing), (Some(&card.key), false), "{got}");
+    }
+    let cpu = Engine::new(launch(ort, Choice::Processor, None));
+    let got = cpu.probe(&CancelToken::new()).unwrap();
+    assert_eq!((got.using, got.luid(), got.gpus.len()), (Using::Processor, None, hw.gpus.len()));
+    assert_eq!(cpu.device().as_deref(), Some(as_infer::Device::Cpu.label()));
+}
+
+/// A choice made while a job runs applies from the next job, also one
+/// queued meanwhile, and stops an idle engine at once.
+#[test]
+fn a_new_launch_applies_to_the_next_job() {
+    let Some((engine, m)) = setup(None) else { return };
+    let ort = ort_dir().unwrap();
+    let on = |gpu| launch(ort.clone(), gpu, None);
+    let started = engine.probe(&CancelToken::new()).unwrap();
+    assert!(engine.pid().is_some());
+    engine.set_launch(on(Choice::Auto));
+    assert_eq!(engine.pid(), None, "an idle engine stops at once");
+    assert!(!engine.pending());
+
+    let cpu = as_infer::Device::Cpu.label();
+    let (mut first, mut second) = (Vec::new(), Vec::new());
+    let mut first_pid = None;
+    std::thread::scope(|s| {
+        let mut queued = None;
+        engine
+            .shots(m.path.clone(), m.info.clone(), m.index.clone(), 0, 100, &CancelToken::new(), |e| {
+                match e {
+                    ShotsEvent::Devices { devices, .. } => first.push(devices.preferred),
+                    ShotsEvent::Chunk { start: 0, .. } => {
+                        first_pid = engine.pid();
+                        engine.set_launch(on(Choice::Processor));
+                        assert!(engine.pending(), "applies from the next analysis");
+                        assert_eq!(engine.pid(), first_pid, "the running job keeps its engine");
+                        // The next job, queued while this one runs.
+                        queued = Some(s.spawn(|| {
+                            let mut seen = Vec::new();
+                            let mut pid = None;
+                            let r = engine.shots(
+                                m.path.clone(),
+                                m.info.clone(),
+                                m.index.clone(),
+                                0,
+                                100,
+                                &CancelToken::new(),
+                                |e| {
+                                    if let ShotsEvent::Devices { devices, .. } = e {
+                                        seen.push(devices.preferred);
+                                        pid = engine.pid();
+                                    }
+                                    Ok(())
+                                },
+                            );
+                            (r, seen, pid)
+                        }));
+                    }
+                    _ => {}
+                }
+                Ok(())
+            })
+            .unwrap();
+        let (r, seen, pid) = queued.take().expect("queued").join().unwrap();
+        r.unwrap();
+        second = seen;
+        assert_ne!(pid, first_pid, "a new engine ran the queued job");
+    });
+    assert_eq!(first.len(), 1);
+    if started.using != Using::Processor {
+        assert_ne!(first[0], cpu, "the first job ran where it started");
+    }
+    assert_eq!(second, [cpu], "the queued job ran on the processor, as chosen meanwhile");
+    assert_eq!(engine.hardware().map(|h| h.using), Some(Using::Processor));
+    assert!(!engine.pending());
 }
 
 fn kill_hard(pid: u32) {

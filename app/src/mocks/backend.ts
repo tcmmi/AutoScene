@@ -22,6 +22,7 @@ import {
   setMockBodies,
   seedCast,
 } from "./cast"
+import { analysisRuns, hardwareInfo, initialGpu, mockPlatform, thisComputer } from "./hardware"
 import {
   fileProblem,
   packChoices,
@@ -168,22 +169,11 @@ const appInfo: AppInfo = {
 let mockClipboard: string | null = null
 
 // -- this computer: Fast Scan's default for new projects ----------------------
-// `?mockMachine=rtx|gtx|integrated|processor|linux|apple-base|apple-pro|unknown`
-// (before the `#`) is the computer the mock analyses on; `rtx`, the default,
-// keeps the full scan as the dev machine does. The platform follows it.
-const MACHINES: Record<string, ThisComputer & { platform: AppInfo["platform"] }> = {
-  rtx: { class: "forAi", name: "NVIDIA GeForce RTX 3060 Ti", platform: "windows" },
-  gtx: { class: "notForAi", name: "NVIDIA GeForce GTX 1060 6GB", platform: "windows" },
-  integrated: { class: "integrated", name: "Intel Iris Xe Graphics", platform: "windows" },
-  processor: { class: "processor", name: "", platform: "windows" },
-  linux: { class: "processor", name: "", platform: "linux" },
-  "apple-base": { class: "integrated", name: "Apple M2", platform: "macos" },
-  "apple-pro": { class: "integrated", name: "Apple M3 Max", platform: "macos" },
-  unknown: { class: "unknown", name: "", platform: "windows" },
-}
-const machineName = new URLSearchParams(window.location.search).get("mockMachine")
-const machine = MACHINES[machineName ?? "rtx"] ?? MACHINES.rtx
-if (machineName) appInfo.platform = machine.platform
+// `?mockMachine=` (before the `#`) is the computer the mock analyses on; see
+// `./hardware`. The platform follows it.
+if (mockPlatform) appInfo.platform = mockPlatform
+/** What Fast Scan's default sees: the graphics chosen in Settings (`AppSettings.gpu`). */
+const machine = (): ThisComputer => thisComputer(settings.gpu ?? "")
 /** The person's choice: only `scan_default_set` changes it, as in the library. */
 let scanChoice: ScanChoice = "auto"
 /** The first-start notice is done ("Don't show this again", or a default met in Settings): one flag, whatever the graphics. */
@@ -192,19 +182,28 @@ let noticeDone = false
 /** Like `as_project::scan::defaults`: what a new project of `content` starts with. */
 function startsFast(content: ContentKind): boolean {
   if (scanChoice !== "auto") return scanChoice === "fast"
-  if (!["notForAi", "integrated", "processor"].includes(machine.class)) return false
+  if (!["notForAi", "integrated", "processor"].includes(machine().class)) return false
   if (content === "animation") return false
   return content === "anime" || !(settings.findBodies ?? false)
 }
 
 function scanDefaults(): ScanDefaults {
   const footage = (["live", "mixed", "animation", "anime"] as const).map((content) => ({ content, fast: startsFast(content) }))
-  const fastHere = ["notForAi", "integrated", "processor"].includes(machine.class)
+  const computer = machine()
+  const fastHere = ["notForAi", "integrated", "processor"].includes(computer.class)
   const notice = scanChoice === "auto" && fastHere && !noticeDone
-  return { computer: { class: machine.class, name: machine.name }, choice: scanChoice, footage, notice }
+  return { computer, choice: scanChoice, footage, notice }
 }
 
-let settings: AppSettings = { libraryRoot: ROOT, exportPresetId: "prores-hq", audioLanguage: "eng", allowUnreviewedPlugins: false }
+let settings: AppSettings = {
+  libraryRoot: ROOT,
+  exportPresetId: "prores-hq",
+  audioLanguage: "eng",
+  allowUnreviewedPlugins: false,
+  gpu: initialGpu,
+}
+/** A graphics card chosen while an analysis runs applies from the next one (`?mockHardware=busy`). */
+let gpuPending = false
 /** As the library answers it, `fastScan` says what live action starts with here. */
 const followFastScan = () => void (settings = { ...settings, fastScan: startsFast("live") })
 followFastScan()
@@ -1003,14 +1002,20 @@ const handlers: Record<string, Handler> = {
     // Like the backend: only plugins_allow_unreviewed changes this one, and
     // only scan_default_set Fast Scan's default (`fastScan` is read only).
     const bodiesChanged = ((s as AppSettings).findBodies ?? false) !== (settings.findBodies ?? false)
+    const gpuChanged = ((s as AppSettings).gpu ?? "") !== (settings.gpu ?? "")
     settings = { ...(s as AppSettings), allowUnreviewedPlugins: allows() }
     followFastScan()
     // Changed in Settings, where Fast Scan's row says why it is on: the notice is met.
-    if (bodiesChanged && scanDefaults().notice) noticeDone = true
+    if ((bodiesChanged || gpuChanged) && scanDefaults().notice) noticeDone = true
+    if (gpuChanged) {
+      gpuPending = analysisRuns
+      void emit("hardware:changed", null)
+    }
     setMockBodies(settings.findBodies ?? false)
     return settings
   },
   scan_defaults_get: () => scanDefaults(),
+  hardware_info: () => hardwareInfo(settings.gpu ?? "", gpuPending),
   scan_default_set: ({ choice }) => {
     scanChoice = choice as ScanChoice
     // The person met the setting (Settings, or the notice's Turn off): the notice is done.

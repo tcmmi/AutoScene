@@ -41,6 +41,9 @@ const KEY_ANILIST: &str = "anilist";
 /// The keyboard shortcuts the person changed, as JSON.
 const KEY_SHORTCUTS: &str = "shortcuts";
 const KEY_ALLOW_UNREVIEWED: &str = "allow_unreviewed_plugins";
+/// The graphics the analysis runs on: unset Automatic, `cpu`, or a card's
+/// key (`as_infer::hardware::key`).
+const KEY_GPU: &str = "gpu";
 /// Most series and films people cut are watched in their original English
 /// track; dubbed tracks are often flagged "default" too, so a language
 /// preference beats the file's flag.
@@ -75,6 +78,8 @@ pub struct Library {
     /// is first needed.
     machine: OnceLock<Machine>,
     probe: fn() -> Machine,
+    /// The graphics the person chose ([`KEY_GPU`]).
+    gpu: Mutex<String>,
 }
 
 impl Library {
@@ -97,6 +102,7 @@ impl Library {
         migrate_fast_scan(&db)?;
         let find_bodies = Arc::new(AtomicBool::new(db.setting(KEY_FIND_BODIES)?.as_deref() == Some("1")));
         let anilist_on = AtomicBool::new(db.setting(KEY_ANILIST)?.as_deref() == Some("1"));
+        let gpu = Mutex::new(db.setting(KEY_GPU)?.unwrap_or_default());
         let anilist = AniList::new(paths.anilist());
         let tvmaze = TvMaze::new(paths.tvmaze());
         let fandom = Fandom::new(paths.fandom());
@@ -113,6 +119,7 @@ impl Library {
             look_pictures: Mutex::default(),
             machine: OnceLock::new(),
             probe,
+            gpu,
         })
     }
 
@@ -185,7 +192,14 @@ impl Library {
             anilist: self.names_from_anilist(),
             shortcuts: self.shortcuts()?,
             allow_unreviewed_plugins: self.allows_unreviewed_plugins()?,
+            gpu: self.gpu(),
         })
+    }
+
+    /// The graphics the analysis runs on, as Settings stores them: `""`
+    /// Automatic, `"cpu"`, or a card's key.
+    pub fn gpu(&self) -> String {
+        self.gpu.lock().clone()
     }
 
     /// Whether plugins AutoScene has not reviewed may be installed and run.
@@ -217,10 +231,11 @@ impl Library {
     }
 
     /// What the analysis runs on here, and whether those graphics are built
-    /// for AI work. The adapters are read once; the device is chosen on every
-    /// call (Automatic, until the graphics card can be chosen).
+    /// for AI work. The adapters are read once; the device the person chose
+    /// ([`Library::gpu`]) is applied on every call, so Fast Scan's default
+    /// follows the card the analysis uses.
     pub fn computer(&self) -> Computer {
-        computer::choose(self.machine(), &Choice::Auto)
+        computer::choose(self.machine(), &Choice::from_setting(&self.gpu()))
     }
 
     /// What the person chose for new projects: Automatic unless they chose
@@ -291,6 +306,19 @@ impl Library {
         // it is on here: the person met the setting, so the notice is done.
         if bodies_changed && self.scan_defaults()?.notice {
             self.scan_notice_done()?;
+        }
+        // The graphics: Fast Scan's default follows the card chosen, so a
+        // change met in Settings meets its notice too, as above.
+        let gpu = s.gpu.trim().to_owned();
+        if gpu != self.gpu() {
+            match gpu.as_str() {
+                "" => self.db.write_settings(&[(KEY_GPU, None)])?,
+                chosen => self.db.set_setting(KEY_GPU, chosen)?,
+            }
+            *self.gpu.lock() = gpu;
+            if self.scan_defaults()?.notice {
+                self.scan_notice_done()?;
+            }
         }
         self.db.set_setting(KEY_ANILIST, if s.anilist { "1" } else { "0" })?;
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
@@ -735,6 +763,7 @@ mod tests {
             anilist: false,
             shortcuts: Default::default(),
             allow_unreviewed_plugins: false,
+            gpu: String::new(),
         })
         .unwrap();
         assert_eq!(lib.audio_language().unwrap(), "deu", "stored as an ISO 639-2 code");
@@ -1249,6 +1278,106 @@ mod tests {
         Machine::CpuRuntime
     }
 
+    /// A hybrid laptop: DirectML's own list starts with the RTX.
+    fn hybrid() -> Machine {
+        Machine::Windows(Some(vec![
+            computer::Adapter {
+                vendor: 0x10DE,
+                device: 0x28E0,
+                name: "NVIDIA GeForce RTX 4060 Laptop GPU".into(),
+                integrated: false,
+                luid: 0x1_0002,
+            },
+            computer::Adapter {
+                vendor: 0x8086,
+                device: 0xA7A0,
+                name: "Intel Iris Xe Graphics".into(),
+                integrated: true,
+                luid: 0x1_0001,
+            },
+        ]))
+    }
+
+    fn choose_gpu(lib: &Library, gpu: &str) -> AppSettings {
+        lib.update_settings(&AppSettings { gpu: gpu.into(), ..lib.settings().unwrap() }).unwrap()
+    }
+
+    #[test]
+    fn the_gpu_choice_is_kept() {
+        let (dir, lib) = lib_on(hybrid);
+        assert_eq!((lib.gpu(), stored(&lib, KEY_GPU)), (String::new(), None), "Automatic stores nothing");
+        let iris = "8086:a7a0:Intel Iris Xe Graphics";
+        assert_eq!(choose_gpu(&lib, &format!(" {iris} ")).gpu, iris);
+        assert_eq!(stored(&lib, KEY_GPU).as_deref(), Some(iris));
+        // Saving other settings keeps it.
+        lib.update_settings(&AppSettings { audio_language: "fra".into(), ..lib.settings().unwrap() }).unwrap();
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), hybrid).unwrap();
+        assert_eq!(lib.settings().unwrap().gpu, iris, "kept across starts");
+        assert_eq!(choose_gpu(&lib, "cpu").gpu, "cpu");
+        assert_eq!(choose_gpu(&lib, "").gpu, "");
+        assert_eq!(stored(&lib, KEY_GPU), None, "Automatic deletes it");
+    }
+
+    #[test]
+    fn a_chosen_card_is_classed_by_the_same_table() {
+        let (_dir, lib) = lib_on(hybrid);
+        // Automatic: the RTX DirectML opens, built for AI work.
+        assert_eq!(lib.computer().class, computer::Class::ForAi);
+        assert!(!lib.settings().unwrap().fast_scan);
+        // Its built-in graphics chosen: Fast Scan on Automatic.
+        choose_gpu(&lib, "8086:a7a0:Intel(R) Iris(R) Xe Graphics");
+        assert_eq!((lib.computer().class, lib.computer().luid), (computer::Class::Integrated, Some(0x1_0001)));
+        let d = lib.scan_defaults().unwrap();
+        assert_eq!(d.computer.class, as_api::GraphicsClass::Integrated);
+        assert!(lib.settings().unwrap().fast_scan);
+        assert!(lib.create_project(&new_project(ContentKind::Live)).unwrap().0.fast_scan);
+        // Its RTX chosen: the full scan.
+        choose_gpu(&lib, "10de:28e0:NVIDIA GeForce RTX 4060 Laptop GPU");
+        assert_eq!((lib.computer().class, lib.computer().luid), (computer::Class::ForAi, Some(0x1_0002)));
+        assert!(!lib.create_project(&new_project(ContentKind::Live)).unwrap().0.fast_scan);
+        // A card that isn't connected any more: Automatic's.
+        choose_gpu(&lib, "1002:744c:AMD Radeon RX 7900 XTX");
+        assert_eq!(lib.computer().luid, Some(0x1_0002));
+    }
+
+    #[test]
+    fn processor_only_counts_as_the_processor_for_fast_scan() {
+        let (_dir, lib) = lib_on(rtx);
+        assert!(!lib.settings().unwrap().fast_scan);
+        choose_gpu(&lib, "cpu");
+        assert_eq!(lib.computer().class, computer::Class::Processor);
+        let d = lib.scan_defaults().unwrap();
+        assert_eq!(d.computer, as_api::ThisComputer { class: as_api::GraphicsClass::Processor, name: String::new() });
+        assert!(lib.settings().unwrap().fast_scan, "live action starts with Fast Scan on the processor");
+        assert!(!lib.create_project(&new_project(ContentKind::Animation)).unwrap().0.fast_scan);
+        choose_gpu(&lib, "");
+        assert!(!lib.settings().unwrap().fast_scan);
+    }
+
+    #[test]
+    fn a_gpu_change_in_settings_meets_the_notice() {
+        // On the RTX the notice isn't due; Processor only makes Fast Scan the
+        // default, and the person chose it where Fast Scan's row says why.
+        let (dir, lib) = lib_on(rtx);
+        assert!(!notice_due(&lib));
+        choose_gpu(&lib, "cpu");
+        assert!(lib.settings().unwrap().fast_scan);
+        assert!(!notice_due(&lib));
+        assert_eq!(stored(&lib, KEY_SCAN_NOTICE).as_deref(), Some("done"));
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), rtx).unwrap();
+        assert!(!notice_due(&lib), "a later start doesn't show it");
+        // A change that leaves the full scan the default stores nothing.
+        let (_dir, lib) = lib_on(hybrid);
+        choose_gpu(&lib, "10de:28e0:NVIDIA GeForce RTX 4060 Laptop GPU");
+        assert_eq!(stored(&lib, KEY_SCAN_NOTICE), None);
+        // Saving the same choice again isn't a change.
+        let (_dir, lib) = lib_on(built_in_graphics);
+        lib.update_settings(&lib.settings().unwrap()).unwrap();
+        assert!(notice_due(&lib));
+    }
+
     fn notice_due(lib: &Library) -> bool {
         lib.scan_defaults().unwrap().notice
     }
@@ -1447,6 +1576,7 @@ mod tests {
             anilist: false,
             shortcuts: Default::default(),
             allow_unreviewed_plugins: false,
+            gpu: String::new(),
         };
         assert!(matches!(lib.update_settings(&bad), Err(ProjectError::Invalid(_))));
         assert_eq!(lib.settings().unwrap().export_preset_id, "h264-edit");

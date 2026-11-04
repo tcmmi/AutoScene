@@ -57,6 +57,7 @@ fn series(dir: &Path) -> (Arc<Project>, CharacterId) {
         anilist: false,
         shortcuts: Default::default(),
         allow_unreviewed_plugins: false,
+        gpu: String::new(),
     })
     .unwrap();
     let files: Vec<String> = (1..=EPISODES)

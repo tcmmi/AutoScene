@@ -58,6 +58,13 @@ export const commands = {
 	 *  isn't shown again in this library, whatever the graphics become.
 	 */
 	scanNoticeDone: () => __TAURI_INVOKE<null>("scan_notice_done"),
+	/**
+	 *  The graphics cards the analysis can run on, the one it runs on and why.
+	 *  The first call of a session starts the engine to ask ONNX Runtime what it
+	 *  finds (its idle exit stops it); later ones answer from what the last
+	 *  engine found.
+	 */
+	hardwareInfo: () => __TAURI_INVOKE<HardwareInfo>("hardware_info"),
 	projectsList: () => __TAURI_INVOKE<ProjectSummary[]>("projects_list"),
 	projectGet: (projectId: ProjectId) => __TAURI_INVOKE<ProjectSummary>("project_get", { projectId }),
 	/**
@@ -95,7 +102,8 @@ export const commands = {
 	/**
 	 *  Save the settings. Whether plugins AutoScene hasn't reviewed may run
 	 *  stays as it is: `plugins_allow_unreviewed` changes it. So does Fast Scan's
-	 *  default for new projects: `scan_default_set` changes it.
+	 *  default for new projects: `scan_default_set` changes it. A graphics card
+	 *  chosen applies from the next analysis.
 	 */
 	settingsUpdate: (settings: AppSettings) => __TAURI_INVOKE<AppSettings>("settings_update", { settings }),
 	mediaList: (projectId: ProjectId) => __TAURI_INVOKE<MediaItem[]>("media_list", { projectId }),
@@ -386,6 +394,7 @@ export const events = {
 	anilistChanged: makeEvent<AniListChanged>("anilist:changed"),
 	castChanged: makeEvent<CastChanged>("cast:changed"),
 	exportChanged: makeEvent<ExportChanged>("export:changed"),
+	hardwareChanged: makeEvent<HardwareChanged>("hardware:changed"),
 	jobChanged: makeEvent<JobChanged>("job:changed"),
 	jobProgress: makeEvent<JobProgressEvent>("job:progress"),
 	libraryChanged: makeEvent<LibraryChanged>("library:changed"),
@@ -412,6 +421,15 @@ export type AnalysisChanged = {
 	projectId: ProjectId,
 	mediaId: MediaId,
 };
+
+/**  What the analysis runs on. */
+export type AnalysisDevice = 
+/**  A graphics card; `name` is empty when the graphics driver picks it. */
+{ kind: "gpu"; name: string } | 
+/**  An Apple chip: its graphics and Neural Engine. */
+{ kind: "chip"; name: string } | 
+/**  The processor. */
+{ kind: "processor" };
 
 /**  A stage of a media's analysis, to run again from scratch. */
 export type AnalysisStage = 
@@ -564,6 +582,14 @@ export type AppSettings = {
 	 *  `plugins_allow_unreviewed`: `settings_update` keeps it as it is.
 	 */
 	allowUnreviewedPlugins?: boolean,
+	/**
+	 *  The graphics the analysis runs on: `""` Automatic (the card DirectML
+	 *  takes by default: the one Windows ranks fastest), `"cpu"` the
+	 *  processor only, or a card's key ([`GpuOption::key`]). Applies from the
+	 *  next analysis; a card that isn't connected leaves Automatic in its
+	 *  place.
+	 */
+	gpu?: string,
 };
 
 export type AudioCodec = { codec: "none" } | 
@@ -944,6 +970,14 @@ export type Gop =
 /**  Encoder defaults (smallest files). */
 "delivery";
 
+/**  A graphics card the analysis can run on. */
+export type GpuOption = {
+	/**  What [`AppSettings::gpu`] stores when it is chosen. */
+	key: string,
+	/**  As its driver names it, numbered among identical cards. */
+	name: string,
+};
+
 /**  What this computer's analysis runs on, as Fast Scan's default sees it. */
 export type GraphicsClass = 
 /**
@@ -959,6 +993,58 @@ export type GraphicsClass =
 "processor" | 
 /**  AutoScene couldn't tell: on Automatic, new projects keep the full scan. */
 "unknown";
+
+/**
+ *  What Settings says about the graphics the analysis runs on may have
+ *  changed: an engine named what it found, a choice applies from the next
+ *  analysis or now does, or the last analysis ran some steps on the
+ *  processor (`hardware_info` answers anew).
+ */
+export type HardwareChanged = null;
+
+/**  What can be chosen here. */
+export type HardwareChoice = 
+/**
+ *  Nothing to choose: Linux, or Windows without a graphics card the
+ *  analysis can use. It runs on the processor.
+ */
+"fixed" | 
+/**  Automatic or the processor only: an Apple chip, or one card. */
+"autoOrProcessor" | 
+/**  Automatic, each card, or the processor only. */
+"cards";
+
+/**
+ *  Settings → General → Graphics card: what can be chosen, what is, and
+ *  what the analysis runs on because of it.
+ */
+export type HardwareInfo = {
+	/**
+	 *  The graphics cards found, in the order DirectML takes them
+	 *  (Automatic's first).
+	 */
+	gpus: GpuOption[],
+	choice: HardwareChoice,
+	/**
+	 *  The option chosen: `"auto"`, `"cpu"`, or the key of the card in use
+	 *  (as it is named now, which a driver update may have changed).
+	 */
+	selected: string,
+	/**  What the analysis runs on with that choice. */
+	using: AnalysisDevice,
+	/**  The chosen card isn't connected: Automatic's runs in its place. */
+	missing: boolean,
+	/**
+	 *  The choice changed while an analysis runs on the one before: it
+	 *  applies from the next.
+	 */
+	pending: boolean,
+	/**
+	 *  The last analysis ran some steps on the processor, much slower,
+	 *  because the graphics couldn't take them.
+	 */
+	fellBack: boolean,
+};
 
 export type HdrKind = "none" | "pq" | "hlg" | "dolby_vision";
 

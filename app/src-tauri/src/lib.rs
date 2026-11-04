@@ -45,6 +45,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::system::scan_defaults_get,
             commands::system::scan_default_set,
             commands::system::scan_notice_done,
+            commands::hardware::hardware_info,
             commands::library::projects_list,
             commands::library::project_get,
             commands::library::project_create,
@@ -123,6 +124,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             updater::update_relaunch,
         ])
         .events(collect_events![
+            events::HardwareChanged,
             events::MenuAction,
             events::JobChanged,
             events::JobProgressEvent,

@@ -8,6 +8,14 @@ use specta::Type;
 use specta_typescript::Unknown;
 use tauri_specta::Event;
 
+/// What Settings says about the graphics the analysis runs on may have
+/// changed: an engine named what it found, a choice applies from the next
+/// analysis or now does, or the last analysis ran some steps on the
+/// processor (`hardware_info` answers anew).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "hardware:changed")]
+pub struct HardwareChanged;
+
 /// A native menu item was chosen (macOS). Payload is the item id, e.g. `view:cast`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 #[tauri_specta(event_name = "menu:action")]

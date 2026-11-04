@@ -265,7 +265,7 @@ fn description(raw: &[u8]) -> String {
 }
 
 /// Drops "(R)", "(TM)", "®" and "™" and collapses runs of spaces.
-fn clean(name: &str) -> String {
+pub(crate) fn clean(name: &str) -> String {
     let mut s = name.replace(['®', '™'], "");
     for mark in ["(R)", "(r)", "(TM)", "(tm)"] {
         s = s.replace(mark, "");

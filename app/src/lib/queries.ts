@@ -17,6 +17,7 @@ export const qk = {
   appInfo: ["appInfo"] as const,
   settings: ["settings"] as const,
   scanDefaults: ["scanDefaults"] as const,
+  hardware: ["hardware"] as const,
   mediaTools: ["mediaTools"] as const,
   presets: ["exportPresets"] as const,
   projects: ["projects"] as const,
@@ -62,6 +63,15 @@ export function useSettings() {
  */
 export function useScanDefaults() {
   return useQuery({ queryKey: qk.scanDefaults, queryFn: () => commands.scanDefaultsGet(), staleTime: 0 })
+}
+
+/**
+ * The graphics the analysis can run on, and the one it does. The first ask
+ * of a session starts the engine to look (a second or so); `hardware:changed`
+ * refreshes it after that, and a failure waits for Try again.
+ */
+export function useHardware() {
+  return useQuery({ queryKey: qk.hardware, queryFn: () => commands.hardwareInfo(), retry: false })
 }
 
 export function useMediaTools() {

@@ -54,8 +54,8 @@ pub struct Config {
     pub models_dir: PathBuf,
     /// Bundled ffmpeg folder, if any (otherwise `AUTOSCENE_FFMPEG_DIR` / PATH).
     pub ffmpeg_dir: Option<PathBuf>,
-    /// `false` keeps every model on the CPU.
-    pub gpu: bool,
+    /// The device the models run on (`--gpu KEY`, `--cpu`).
+    pub placement: as_infer::Placement,
     /// Exit after this long without a job, which frees the GPU memory.
     pub idle_exit: Option<Duration>,
 }
@@ -102,14 +102,14 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
             return 1;
         }
     };
-    let rt = match Runtime::load(&cfg.ort_dir, cfg.gpu) {
+    let rt = match Runtime::load_with(&cfg.ort_dir, &cfg.placement) {
         Ok(rt) => rt,
         Err(e) => {
             out.send(&Reply::Fatal { message: e.to_string(), detail: e.detail() });
             return 1;
         }
     };
-    out.send(&Reply::Ready { device: rt.preferred_device().label().to_string() });
+    out.send(&Reply::Ready { device: rt.preferred_device().label().to_string(), hardware: rt.hardware().clone() });
 
     // Jobs queue up here; cancellation needs no queue and is handled at once.
     let (tx, rx) = mpsc::channel::<(Request, CancelToken)>();

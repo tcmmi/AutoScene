@@ -7,17 +7,19 @@ use std::time::{Duration, Instant};
 
 use as_api::{AnalysisStage, JobInfo, JobKind, JobState, MediaToolsStatus};
 use as_core::{AppPaths, MediaId, ProjectId};
-use as_engine::{Engine, Launch};
+use as_engine::hardware::Hardware;
+use as_engine::{Engine, Launch, Note};
 use as_jobs::{Class, JobEvent, JobRunner};
 use as_media::Tools;
 use as_models::ModelStore;
 use as_plugin::runtime;
 use as_project::Library;
+use as_project::computer::{Choice, Computer};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult, ErrorCode};
-use crate::events::{JobChanged, JobProgressEvent};
+use crate::events::{HardwareChanged, JobChanged, JobProgressEvent};
 use crate::paths;
 use crate::plugins::PluginHost;
 
@@ -71,6 +73,9 @@ pub struct AppState {
     tools: Arc<OnceLock<Arc<Tools>>>,
     /// The ffmpeg folder this build uses (see [`sidecar_dir`]).
     bundled_ffmpeg: Option<PathBuf>,
+    /// How the engine is started, but for the graphics it runs on (see
+    /// [`AppState::choose_gpu`]).
+    engine_start: Arc<(PathBuf, as_engine::Config)>,
 }
 
 impl AppState {
@@ -95,7 +100,7 @@ impl AppState {
             ort_dir,
             models_dir: paths.models(),
             ffmpeg_dir: bundled_ffmpeg.clone(),
-            gpu: true,
+            placement: Default::default(),
             idle_exit: Some(as_engine::IDLE_EXIT),
         };
         // The engine is this very executable, and nothing found by name stands
@@ -104,12 +109,21 @@ impl AppState {
             log::error!("can't locate the app's executable to start the analysis engine: {e}");
             PathBuf::new()
         });
-        let mut args = vec!["--engine".into()];
-        args.extend(as_engine::args(&engine_cfg));
-        let engine = Arc::new(Engine::new(Launch { program, args }));
+        let engine_start = Arc::new((program, engine_cfg));
+        let engine = Arc::new(Engine::new(engine_launch(&engine_start, &library.gpu())));
         let plugins = crate::plugins::open(app, &library, paths);
+        let library = Arc::new(library);
+        let (handle, lib) = (app.clone(), Arc::clone(&library));
+        engine.watch(move |note| {
+            if let Note::Ready(hardware) = note
+                && let Some(why) = unexpected(&lib.computer(), hardware)
+            {
+                log::warn!("{why}");
+            }
+            let _ = HardwareChanged.emit(&handle);
+        });
         Self {
-            library: Arc::new(library),
+            library,
             jobs,
             engine,
             models,
@@ -121,7 +135,15 @@ impl AppState {
             saved_lists: Arc::default(),
             tools: Arc::new(OnceLock::new()),
             bundled_ffmpeg,
+            engine_start,
         }
+    }
+
+    /// Analysis runs on the graphics `gpu` names (`AppSettings::gpu`) from
+    /// the next job on: an idle engine stops at once, a running job finishes
+    /// where it started.
+    pub fn choose_gpu(&self, gpu: &str) {
+        self.engine.set_launch(engine_launch(&self.engine_start, gpu));
     }
 
     /// ffmpeg/ffprobe, kept once found. Not finding them isn't kept: the
@@ -148,6 +170,24 @@ impl AppState {
             Err(e) => MediaToolsStatus { ready: false, version: None, path: None, error: Some(e.message) },
         }
     }
+}
+
+/// How to start the engine (this executable with `--engine`) on the
+/// graphics `gpu` names (`AppSettings::gpu`).
+fn engine_launch((program, cfg): &(PathBuf, as_engine::Config), gpu: &str) -> Launch {
+    let cfg = as_engine::Config { placement: as_engine::Placement { gpu: Choice::from_setting(gpu) }, ..cfg.clone() };
+    let mut args = vec!["--engine".into()];
+    args.extend(as_engine::args(&cfg));
+    Launch { program: program.clone(), args }
+}
+
+/// The engine opened another device than the app's probe expects, so Fast
+/// Scan's default classes another device than the analysis runs on: what
+/// the log says, naming both. `None` when they agree.
+fn unexpected(probe: &Computer, opened: &Hardware) -> Option<String> {
+    (probe.luid != opened.luid()).then(|| {
+        format!("the analysis engine opened {opened}, but this computer's probe expected {probe}; Fast Scan's default follows the probe")
+    })
 }
 
 /// Whether this is a release build: it uses only the sidecars it ships with.
@@ -292,6 +332,55 @@ pub async fn blocking<T: Send + 'static>(f: impl FnOnce() -> AppResult<T> + Send
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_device_the_probe_didnt_expect_is_logged() {
+        use as_engine::hardware::{Kind, RawDevice};
+        use as_project::computer::{Adapter, Machine, choose};
+        let raw = |vendor, device, name: &str, dxgi: u32, luid: u64| RawDevice {
+            kind: Kind::Gpu,
+            vendor,
+            device,
+            metadata: [
+                ("Description", name.to_string()),
+                ("DxgiAdapterNumber", dxgi.to_string()),
+                ("LUID", luid.to_string()),
+            ]
+            .map(|(k, v)| (k.to_string(), v))
+            .into(),
+        };
+        let found = [
+            raw(0x10DE, 0x28E0, "NVIDIA GeForce RTX 4060 Laptop GPU", 1, 2),
+            raw(0x8086, 0xA7A0, "Intel Iris Xe Graphics", 0, 1),
+        ];
+        let adapter = |vendor, device, name: &str, integrated, luid| Adapter {
+            vendor,
+            device,
+            name: name.into(),
+            integrated,
+            luid,
+        };
+        let machine = Machine::Windows(Some(vec![
+            adapter(0x10DE, 0x28E0, "NVIDIA GeForce RTX 4060 Laptop GPU", false, 2),
+            adapter(0x8086, 0xA7A0, "Intel Iris Xe Graphics", true, 1),
+        ]));
+        let opened = Hardware::windows(&found, Some(&[2, 1]));
+        // Both sides agree, for every choice.
+        for gpu in ["", "cpu", "8086:a7a0:Intel Iris Xe Graphics", "1002:744c:AMD Radeon RX 7900 XTX"] {
+            let choice = Choice::from_setting(gpu);
+            assert_eq!(unexpected(&choose(&machine, &choice), &opened.clone().chosen(&choice)), None, "{gpu:?}");
+        }
+        // A probe that sees another computer (a debug override, or DXCore and
+        // ORT disagreeing): the log names both.
+        let other = choose(
+            &Machine::Windows(Some(vec![adapter(0x8086, 0x9A49, "Intel Iris Xe Graphics", true, 0x1_0828)])),
+            &Choice::Auto,
+        );
+        let why = unexpected(&other, &opened).expect("logged");
+        assert!(why.contains("RTX 4060") && why.contains("LUID 0x2") && why.contains("LUID 0x10828"), "{why}");
+        // The probe couldn't read DXCore, the engine opened a card: logged too.
+        assert!(unexpected(&choose(&Machine::Windows(None), &Choice::Auto), &opened).is_some());
+    }
 
     #[test]
     fn every_class_has_a_worker() {

@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use as_infer::hardware::Hardware;
 use as_media::MediaInfo;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -131,8 +132,11 @@ pub struct ModelDevice {
 pub enum Reply {
     /// The runtime is loaded; models run on `device` where they can (each
     /// falls back to the CPU on its own, which every job reports: `Devices`).
+    /// `hardware` names the cards found and the one opened.
     Ready {
         device: String,
+        #[serde(default)]
+        hardware: Hardware,
     },
     /// Where job `id`'s models run, once they are loaded (before its first
     /// progress): on `preferred` each one it can take, on the CPU the rest.
@@ -202,6 +206,34 @@ mod tests {
         }
         let c: Request = serde_json::from_str(r#"{"op":"cancel","id":3}"#).unwrap();
         assert!(matches!(c, Request::Cancel { id: 3 }));
+    }
+
+    #[test]
+    fn ready_carries_the_hardware() {
+        use as_infer::computer::Choice;
+        use as_infer::hardware::{Kind, RawDevice, Using};
+        let card = RawDevice {
+            kind: Kind::Gpu,
+            vendor: 0x10DE,
+            device: 0x24C9,
+            metadata: [("Description", "NVIDIA GeForce RTX 3060 Ti"), ("DxgiAdapterNumber", "0"), ("LUID", "67624")]
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .into(),
+        };
+        let hardware = Hardware::windows(&[card], Some(&[67624])).chosen(&Choice::Auto);
+        let r = Reply::Ready { device: "GPU (DirectML)".into(), hardware: hardware.clone() };
+        match serde_json::from_str::<Reply>(&serde_json::to_string(&r).unwrap()).unwrap() {
+            Reply::Ready { hardware: back, .. } => {
+                assert_eq!(back, hardware);
+                assert_eq!((back.using, back.luid()), (Using::Gpu { index: 0 }, Some(67624)));
+            }
+            other => panic!("{other:?}"),
+        }
+        // A line from an engine that named no hardware still reads.
+        match serde_json::from_str::<Reply>(r#"{"event":"ready","device":"CPU"}"#).unwrap() {
+            Reply::Ready { device, hardware } => assert_eq!((device.as_str(), hardware), ("CPU", Hardware::default())),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

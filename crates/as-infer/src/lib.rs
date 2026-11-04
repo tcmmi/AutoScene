@@ -10,13 +10,15 @@
 //! engine is its own process: switching runtimes means restarting it.
 //!
 //! [`computer`] says which graphics the analysis runs on, and whether they are
-//! built for AI work.
+//! built for AI work; [`hardware`] which cards ONNX Runtime finds, and opens
+//! the one the person chose ([`Placement`]).
 
 pub mod computer;
+pub mod hardware;
 pub mod onnx;
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 pub use ort::inputs;
 pub use ort::session::Session;
@@ -81,17 +83,50 @@ pub const LIBRARY: &str = if cfg!(windows) {
     "libonnxruntime.so"
 };
 
+/// Where a runtime's sessions run.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Placement {
+    /// The graphics the person chose (Settings → General): Automatic, a
+    /// card, or the processor only.
+    pub gpu: computer::Choice,
+}
+
+impl Placement {
+    /// Automatic, or the processor only.
+    pub fn from_gpu(gpu: bool) -> Self {
+        Self { gpu: if gpu { computer::Choice::Auto } else { computer::Choice::Processor } }
+    }
+}
+
+/// The device sessions are built for first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Target {
+    /// DirectML (with the adapter number to open, else its own pick) on
+    /// Windows, Core ML on macOS.
+    Gpu(Option<u32>),
+    Cpu,
+}
+
 pub struct Runtime {
     env: ort::environment::Environment,
-    gpu: bool,
+    target: Target,
+    hardware: Arc<hardware::Hardware>,
 }
 
 static LOADED: OnceLock<PathBuf> = OnceLock::new();
 
 impl Runtime {
     /// Load the runtime from `dir` (once per process; later calls must name
-    /// the same folder). `gpu = false` keeps every session on the CPU.
+    /// the same folder). `gpu = false` keeps every session on the CPU; `true`
+    /// is Automatic ([`Runtime::load_with`]).
     pub fn load(dir: &Path, gpu: bool) -> InferResult<Self> {
+        Self::load_with(dir, &Placement::from_gpu(gpu))
+    }
+
+    /// Load the runtime from `dir` (once per process; later calls must name
+    /// the same folder), with sessions on the device `placement` chooses
+    /// ([`hardware`]).
+    pub fn load_with(dir: &Path, placement: &Placement) -> InferResult<Self> {
         // LoadLibraryEx with an altered search path needs an absolute path.
         let dir = &std::path::absolute(dir).map_err(|e| InferError::Runtime(format!("{}: {e}", dir.display())))?;
         let lib = dir.join(LIBRARY);
@@ -109,21 +144,31 @@ impl Runtime {
             let _ = LOADED.set(dir.to_path_buf());
         }
         let env = ort::init().with_name("autoscene").build().map_err(|e| InferError::Runtime(e.to_string()))?;
-        tracing::info!(runtime = %name(&lib), gpu, "onnxruntime loaded");
-        Ok(Self { env, gpu })
+        let hardware = hardware::discover(&env).chosen(&placement.gpu);
+        let target = match hardware.using {
+            hardware::Using::Processor => Target::Cpu,
+            _ => Target::Gpu(hardware.adapter()),
+        };
+        tracing::info!(runtime = %name(&lib), "onnxruntime loaded; analysis runs on {hardware}");
+        Ok(Self { env, target, hardware: Arc::new(hardware) })
     }
 
     /// The same runtime with every session on the CPU (one runtime per
     /// process: there is no second `load`), e.g. to check GPU results.
     pub fn on_cpu(&self) -> Self {
-        Self { env: self.env.clone(), gpu: false }
+        Self { env: self.env.clone(), target: Target::Cpu, hardware: Arc::clone(&self.hardware) }
+    }
+
+    /// The devices ORT found here, and the one this runtime opened.
+    pub fn hardware(&self) -> &hardware::Hardware {
+        &self.hardware
     }
 
     /// The device sessions will try first.
     pub fn preferred_device(&self) -> Device {
-        match self.gpu {
-            true if cfg!(windows) => Device::DirectMl,
-            true if cfg!(target_os = "macos") => Device::CoreMl,
+        match self.target {
+            Target::Gpu(_) if cfg!(windows) => Device::DirectMl,
+            Target::Gpu(_) if cfg!(target_os = "macos") => Device::CoreMl,
             _ => Device::Cpu,
         }
     }
@@ -188,10 +233,15 @@ impl Runtime {
             #[cfg(windows)]
             Device::DirectMl => {
                 // DirectML needs sequential execution without memory patterns.
-                // The fastest GPU, not adapter 0: on a laptop that is often
-                // the integrated one, with the dedicated GPU left idle.
-                let dml = ort::ep::DirectML::default()
-                    .with_performance_preference(ort::ep::directml::PerformancePreference::HighPerformance);
+                // The card the person chose, or Automatic's, by the adapter
+                // number discovery gave it ([`hardware`]). Without one, the
+                // fastest GPU, not adapter 0: on a laptop that is often the
+                // integrated one, with the dedicated GPU left idle.
+                let dml = match self.target {
+                    Target::Gpu(Some(adapter)) => ort::ep::DirectML::default().with_device_id(adapter as i32),
+                    _ => ort::ep::DirectML::default()
+                        .with_performance_preference(ort::ep::directml::PerformancePreference::HighPerformance),
+                };
                 b = b
                     .with_execution_providers([dml.build().error_on_failure()])
                     .map_err(|e| err(e.to_string()))?

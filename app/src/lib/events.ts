@@ -22,6 +22,7 @@ import { exportsQuery, qk, queryClient } from "./queries"
  * | export:changed   | exports(pid)                                       |
  * | plugins:changed  | plugins and every plugin's settings; settings when no plugin is named |
  * | plugin-page:event | an open plugin page (PluginFrame listens)         |
+ * | hardware:changed | hardware (the graphics the analysis runs on)       |
  */
 export function startEventBridge(): () => void {
   const unlisten: Promise<() => void>[] = []
@@ -86,6 +87,7 @@ export function startEventBridge(): () => void {
       // still on its way with the value from before.
       if (payload.pluginId == null) void queryClient.invalidateQueries({ queryKey: qk.settings })
     }),
+    events.hardwareChanged.listen(() => void queryClient.invalidateQueries({ queryKey: qk.hardware })),
   )
   // Snapshot only once the listeners are live, so nothing falls between the two.
   void Promise.all(unlisten)

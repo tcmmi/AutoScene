@@ -11,6 +11,7 @@ import { PREFERRED_AUDIO_LANGUAGES, pickFolder } from "@/lib/media"
 import { reveal } from "@/lib/os"
 import { qk, queryClient, useAppInfo, usePresets, useScanDefaults, useSettings } from "@/lib/queries"
 import { PathText, SettingRow, SettingsGroup } from "../primitives"
+import { HardwareGroup } from "./HardwareGroup"
 
 async function save(next: AppSettings) {
   try {
@@ -131,6 +132,8 @@ export function GeneralSection() {
           />
         </SettingRow>
       </SettingsGroup>
+
+      <HardwareGroup />
 
       <SettingsGroup title="Audio" description="Many files carry several soundtracks, and dubs are often marked as the default.">
         <SettingRow

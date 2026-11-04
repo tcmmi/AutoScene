@@ -9,7 +9,7 @@ use tauri_specta::Event;
 
 use crate::commands::media::stop_jobs;
 use crate::error::AppResult;
-use crate::events::LibraryChanged;
+use crate::events::{HardwareChanged, LibraryChanged};
 use crate::paths;
 use crate::state::{AppState, allow_asset_dir, blocking};
 use crate::work;
@@ -173,7 +173,8 @@ pub async fn settings_get(state: State<'_, AppState>) -> AppResult<AppSettings> 
 
 /// Save the settings. Whether plugins AutoScene hasn't reviewed may run
 /// stays as it is: `plugins_allow_unreviewed` changes it. So does Fast Scan's
-/// default for new projects: `scan_default_set` changes it.
+/// default for new projects: `scan_default_set` changes it. A graphics card
+/// chosen applies from the next analysis.
 #[tauri::command]
 #[specta::specta]
 pub async fn settings_update(
@@ -181,17 +182,29 @@ pub async fn settings_update(
     state: State<'_, AppState>,
     settings: AppSettings,
 ) -> AppResult<AppSettings> {
+    let state = state.inner().clone();
     let lib = state.library.clone();
     let before = lib.finds_bodies();
-    let saved = blocking(move || {
+    let (saved, gpu_changed) = blocking(move || {
         // Only a new library folder is checked: every other change sends
         // back the one in use.
         if settings.library_root.trim() != lib.library_root()?.display().to_string() {
             paths::check(settings.library_root.trim())?;
         }
-        Ok(lib.update_settings(&settings)?)
+        let gpu_before = lib.gpu();
+        let saved = lib.update_settings(&settings)?;
+        // From the next analysis on; an idle engine stops here, off the UI
+        // thread.
+        let gpu_changed = saved.gpu != gpu_before;
+        if gpu_changed {
+            state.choose_gpu(&saved.gpu);
+        }
+        Ok((saved, gpu_changed))
     })
     .await?;
+    if gpu_changed {
+        let _ = HardwareChanged.emit(&app);
+    }
     // Finding people by their bodies changes every cast.
     if saved.find_bodies != before {
         work::bodies_setting_changed(&app, saved.find_bodies);

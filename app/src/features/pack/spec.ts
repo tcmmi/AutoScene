@@ -152,6 +152,17 @@ export function savable(p: { taken: number; current: boolean; character: boolean
   return exportable({ ...p, exporting: false })
 }
 
+/**
+ * What the plugins' save entries are headed with: their group, when it can't
+ * be used now, says what it waits for (the ⋯ and the right-click menu alike).
+ */
+export function saveHeading(p: { taken: number; current: boolean; check: PackCheck | null }): string {
+  if (p.check?.kind === "checking") return "Save with a plugin waits for the check"
+  if (p.taken === 0) return "Save with a plugin needs a shot in the pack"
+  if (!p.current) return "Save with a plugin waits for the pack"
+  return "Save with a plugin"
+}
+
 /** The words a shot that a plugin's filter left out wears: the filter's own, else a general one. */
 export const filterReason = (f: PackFilter | undefined): string => (f?.reason ? f.reason : REASONS.plugin)
 
@@ -162,16 +173,31 @@ export const keyOf = (c: PackClip) => `${c.shot.mediaId}:${c.shot.start}`
 export const pickable = (c: PackClip) => c.reason !== "missing"
 
 /**
+ * How a click on every shot at once holds the shots it leaves be: the limit
+ * fills the places they leave with the next best (`limit`), and a plugin's
+ * check that is not done judges shots the grid shows as in (`check`).
+ */
+export type Pin = "limit" | "check"
+
+/**
  * Picks that take `clips` in (`included`) or out: by hand where the filters
  * say otherwise, back to the filters where they agree — so taking a shot
- * out and in again leaves no pick behind.
+ * out and in again leaves no pick behind. A click on every shot at once
+ * (`pin`) hands nothing back, as a shot handed back would take a place from
+ * one that stays, or be dropped when the check ends: each is picked. Under a
+ * limit not those the limit can't touch as they are; during a check, all.
  */
-export function picksFor(clips: PackClip[], included: boolean): { pick: PackClip[]; unpick: PackClip[] } {
+export function picksFor(clips: PackClip[], included: boolean, pin?: Pin): { pick: PackClip[]; unpick: PackClip[] } {
   const pick: PackClip[] = []
   const unpick: PackClip[] = []
   for (const c of clips) {
     if (!pickable(c)) continue
-    if (c.byRules === included) {
+    if (pin) {
+      // A shot as asked and not held by the limit has a manual pick of that
+      // answer or none: `included` and `manual` agree.
+      const stays = pin === "limit" && c.included === included && c.reason !== "limit"
+      if (!stays && c.manual !== included) pick.push(c)
+    } else if (c.byRules === included) {
       if (c.manual != null) unpick.push(c)
     } else if (c.manual !== included) {
       pick.push(c)

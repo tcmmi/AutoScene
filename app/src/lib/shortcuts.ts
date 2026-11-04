@@ -166,7 +166,7 @@ export const CAST_SHORTCUTS = scoped<CastId>("cast", [
   { id: "clearSelection", label: "Clear the selection", slots: one(key("escape")), fixed: true },
 ])
 
-export type PackId = "toggle" | "watch" | "export"
+export type PackId = "toggle" | "watch" | "takeAll" | "leaveAll" | "invert" | "export"
 
 /** While building a scenepack (the first two on the focused shot). */
 export const PACK_SHORTCUTS = scoped<PackId>("pack", [
@@ -177,6 +177,13 @@ export const PACK_SHORTCUTS = scoped<PackId>("pack", [
     fixed: true,
   },
   { id: "watch", label: "Watch the shot", slots: one(key("enter")), fixed: true },
+  {
+    id: "takeAll",
+    label: "Take every shot (when all are in: leave them out)",
+    slots: one(key("a", { mod: true })),
+  },
+  { id: "leaveAll", label: "Leave every shot out", slots: one(key("a", { mod: true, shift: true })) },
+  { id: "invert", label: "Invert the pack: what's in goes out, what's out comes in", slots: one(key("i", { mod: true, shift: true })) },
   { id: "export", label: "Export the pack", slots: one(key("e", { mod: true })) },
 ])
 

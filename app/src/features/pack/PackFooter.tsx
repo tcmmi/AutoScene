@@ -1,7 +1,15 @@
+import type { ReactNode } from "react"
 import { ArrowCounterClockwise, DotsThree, Package } from "@/components/icons"
 import type { JobInfo, PackTotals } from "@/bindings"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { ProgressRing } from "@/components/ui/progress"
 import { Tooltip } from "@/components/ui/tooltip"
 import { plural } from "@/features/cast/cast"
@@ -22,9 +30,10 @@ import type { PackCheck } from "./spec"
  * so and offers to try again, and Export goes on: the shots it didn't
  * judge keep the word it gave them with its settings before (out where it
  * said no), else they are in, and the export takes them as the grid shows
- * them. Beside Export, a ⋯ lists what the plugins that may run now save the
- * pack as (a timeline file, before anything is rendered): it is there only
- * when one has such an entry, and goes with Export's wait for a check.
+ * them. Beside Export, a ⋯ lists what can be done to every shot at once and
+ * what the plugins that may run now save the pack as (a timeline file, before
+ * anything is rendered): saving goes with Export's wait for a check, and the
+ * menu says so; taking shots in and out goes on.
  */
 /** What the shots a failed check didn't judge are, as the grid shows them. */
 const FAILED_HINT =
@@ -38,8 +47,10 @@ export function PackFooter({
   canExport,
   exporting,
   check,
+  items,
   actions,
   canSave = false,
+  saveHeading = "Save with a plugin",
   onSave,
   onClearPicks,
   onTryAgain,
@@ -57,10 +68,14 @@ export function PackFooter({
   exporting?: Pick<JobInfo, "state" | "progress">
   /** What the plugin filters turned on are doing, if anything. */
   check?: PackCheck | null
+  /** What can be done to every shot at once: the ⋯ menu's first entries. */
+  items?: ReactNode
   /** What the plugins that may run now save the pack as. */
   actions?: PackActionItem[]
   /** Whether the pack can be saved now: as Export, but also while it exports. */
   canSave?: boolean
+  /** The save group's heading: what it waits for, while it does. */
+  saveHeading?: string
   /** Save the pack with `action`. */
   onSave?: (action: PackActionItem) => void
   onClearPicks: () => void
@@ -72,6 +87,7 @@ export function PackFooter({
 }) {
   const keys = useShortcutKeys()
   const waiting = check?.kind === "checking"
+  const saves = actions ?? []
   return (
     <div className="glass-strong absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 animate-pop-in items-center gap-1 rounded-full py-1.5 pr-1.5 pl-5 whitespace-nowrap">
       <span className="text-md font-semibold text-fg-1">{plural(totals.clips, "shot")}</span>
@@ -106,29 +122,29 @@ export function PackFooter({
           </Button>
         </Tooltip>
       )}
-      {actions && actions.length > 0 && (
+      {(items || saves.length > 0) && (
         <DropdownMenu>
-          {/* A disabled button takes no pointer: the tooltip is on what holds it, as Export's. */}
-          <Tooltip label={waiting && !canSave ? "Waits for the check" : "Save the pack with a plugin"}>
-            <span
-              tabIndex={canSave ? undefined : 0}
-              className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
-            >
-              <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="ghost" disabled={!canSave} aria-label="Save the pack with a plugin">
-                  <DotsThree weight="bold" />
-                </Button>
-              </DropdownMenuTrigger>
-            </span>
+          <Tooltip label="Pack options">
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" aria-label="Pack options">
+                <DotsThree weight="bold" />
+              </Button>
+            </DropdownMenuTrigger>
           </Tooltip>
-          <DropdownMenuContent side="top" align="end" className="min-w-[240px]">
-            <DropdownMenuLabel>Save with a plugin</DropdownMenuLabel>
-            {actions.map((a) => (
-              <DropdownMenuItem key={a.key} onSelect={() => onSave?.(a)}>
-                <PluginIcon src={a.icon} /> {a.title}
-                <span className="ml-auto pl-4 text-xs text-fg-3">{a.pluginName}</span>
-              </DropdownMenuItem>
-            ))}
+          <DropdownMenuContent side="top" align="end" className="min-w-[280px]">
+            {items}
+            {saves.length > 0 && (
+              <>
+                {items && <DropdownMenuSeparator />}
+                <DropdownMenuLabel>{saveHeading}</DropdownMenuLabel>
+                {saves.map((a) => (
+                  <DropdownMenuItem key={a.key} disabled={!canSave} onSelect={() => onSave?.(a)}>
+                    <PluginIcon src={a.icon} /> {a.title}
+                    <span className="ml-auto pl-4 text-xs text-fg-3">{a.pluginName}</span>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       )}

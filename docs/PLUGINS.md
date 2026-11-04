@@ -382,7 +382,7 @@ ignores it, and turning it off is all there is to do.
 ### Pack actions
 
 A pack action is an entry in a scenepack's ⋯ menu, beside Export, and in the
-grid's right-click menu. The ⋯ shows only while a plugin that is on has one.
+grid's right-click menu. It shows only while a plugin that is on has one.
 It saves the pack as one file, a timeline or a cut sheet, before anything is
 rendered.
 

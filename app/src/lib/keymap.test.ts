@@ -130,6 +130,14 @@ describe("the stored keymap", () => {
   })
 })
 
+describe("a pack's Export on a key the builder gave Take every shot", () => {
+  it("keeps the person's key: Ctrl+A exports, and Take every shot goes without", () => {
+    const read = keymapOf({ preset: "", keys: { "pack.export.0": [{ key: "a", mod: true }] } })
+    expect(bindingsOf(shortcutOf("pack.export"), 0, read)).toEqual([{ key: "a", mod: true }])
+    expect(bindingsOf(shortcutOf("pack.takeAll"), 0, read)).toEqual([])
+  })
+})
+
 describe("the macOS menu", () => {
   it("gets the keys of the shortcuts it answers", () => {
     const keys = menuKeys(km)

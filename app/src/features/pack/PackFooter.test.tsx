@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { PackFooter } from "./PackFooter"
 
@@ -189,7 +190,7 @@ describe("PackFooter", () => {
     withActions({ onSave })
     // Nothing shows until the menu opens, and the menu is not Export's.
     expect(screen.queryByText("Save as FCPXML…")).toBeNull()
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Save the pack with a plugin" }), { button: 0, ctrlKey: false })
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Pack options" }), { button: 0, ctrlKey: false })
     const item = screen.getByRole("menuitem", { name: /Save as FCPXML…/ })
     // Its plugin's name stands beside it, and the puzzle piece stands for an icon it hasn't.
     expect(item.textContent).toContain("Cutroom Bridge")
@@ -217,7 +218,7 @@ describe("PackFooter", () => {
       />,
       { wrapper },
     )
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Save the pack with a plugin" }), { button: 0, ctrlKey: false })
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Pack options" }), { button: 0, ctrlKey: false })
     const item = screen.getByRole("menuitem", { name: /Save as FCPXML…/ })
     expect(item.querySelector("img")?.getAttribute("src")).toBe(icon)
     expect(item.querySelector("svg")).toBeNull()
@@ -225,18 +226,49 @@ describe("PackFooter", () => {
     expect(screen.getByText("Save with a plugin")).toBeTruthy()
   })
 
-  it("no ⋯ without pack actions", () => {
+  it("no ⋯ with nothing in it", () => {
     footer(null, null)
-    expect(screen.queryByRole("button", { name: "Save the pack with a plugin" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Pack options" })).toBeNull()
     cleanup()
     render(
       <PackFooter totals={totals} bytes={null} format={null} picks={0} canExport actions={[]} onClearPicks={() => {}} onExport={() => {}} onShowExport={() => {}} />,
       { wrapper },
     )
-    expect(screen.queryByRole("button", { name: "Save the pack with a plugin" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Pack options" })).toBeNull()
   })
 
-  it("⋯ says what it waits for", () => {
+  it("what can be done to every shot comes first, and a plugin's group after it", () => {
+    render(
+      <PackFooter
+        totals={totals}
+        bytes={null}
+        format={null}
+        picks={0}
+        canExport
+        items={<DropdownMenuItem>Take every shot</DropdownMenuItem>}
+        actions={[fcpxml]}
+        canSave
+        onClearPicks={() => {}}
+        onExport={() => {}}
+        onShowExport={() => {}}
+      />,
+      { wrapper },
+    )
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Pack options" }), { button: 0, ctrlKey: false })
+    const entries = screen.getAllByRole("menuitem").map((item) => item.textContent)
+    expect(entries[0]).toBe("Take every shot")
+    expect(entries[1]).toContain("Save as FCPXML…")
+    expect(screen.getByRole("separator")).toBeTruthy()
+  })
+
+  const opened = () => {
+    const dots = screen.getByRole("button", { name: "Pack options" }) as HTMLButtonElement
+    expect(dots.disabled).toBe(false)
+    fireEvent.pointerDown(dots, { button: 0, ctrlKey: false })
+    return screen.getByRole("menuitem", { name: /Save as FCPXML…/ })
+  }
+
+  it("says in its menu what saving waits for", () => {
     render(
       <PackFooter
         totals={totals}
@@ -247,21 +279,20 @@ describe("PackFooter", () => {
         check={{ kind: "checking", checked: 3, total: 10 }}
         actions={[fcpxml]}
         canSave={false}
+        saveHeading="Save with a plugin waits for the check"
         onClearPicks={() => {}}
         onExport={() => {}}
         onShowExport={() => {}}
       />,
       { wrapper },
     )
-    // The disabled button takes no pointer: what holds it can be focused and says why.
-    const holder = screen.getByRole("button", { name: "Save the pack with a plugin" }).parentElement as HTMLElement
-    fireEvent.focus(holder)
-    expect(screen.getAllByText("Waits for the check").length).toBeGreaterThan(0)
+    expect(opened().getAttribute("aria-disabled")).toBe("true")
+    expect(screen.getByText("Save with a plugin waits for the check")).toBeTruthy()
   })
 
-  it("⋯ waits while the pack can't be saved, and goes on while it exports", () => {
+  it("saving waits while the pack can't be saved, and goes on while it exports", () => {
     withActions({ canSave: false })
-    expect((screen.getByRole("button", { name: "Save the pack with a plugin" }) as HTMLButtonElement).disabled).toBe(true)
+    expect(opened().getAttribute("aria-disabled")).toBe("true")
     cleanup()
     // An export under way doesn't hold a save back: the footer says it can.
     render(
@@ -280,6 +311,6 @@ describe("PackFooter", () => {
       />,
       { wrapper },
     )
-    expect((screen.getByRole("button", { name: "Save the pack with a plugin" }) as HTMLButtonElement).disabled).toBe(false)
+    expect(opened().getAttribute("aria-disabled")).toBeNull()
   })
 })

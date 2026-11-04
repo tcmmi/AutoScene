@@ -14,6 +14,7 @@ import {
   picksFor,
   pluginFiltersOf,
   savable,
+  saveHeading,
   shown,
   totalsOf,
   withChoices,
@@ -67,6 +68,41 @@ describe("picks", () => {
     expect(picksFor([kept], true)).toEqual({ pick: [], unpick: [] })
     // A missing file can't be taken.
     expect(picksFor([clip(0, { reason: "missing", included: false })], true)).toEqual({ pick: [], unpick: [] })
+  })
+
+  it("under a limit a click on every shot hands nothing back to it", () => {
+    const pinned = (clips: PackClip[], included: boolean) => picksFor(clips, included, "limit")
+    const inByRules = clip(0)
+    const pastLimit = clip(100, { byRules: false, reason: "limit" })
+    const short = clip(200, { byRules: false, reason: "short" })
+    const removed = clip(300, { manual: false })
+    const added = clip(400, { byRules: false, manual: true })
+    // Out: the places they leave would go to the shots past the limit, and
+    // a shot handed back could take one. A shot the filters drop keeps their word.
+    expect(pinned([inByRules, pastLimit, short, removed, added], false)).toEqual({ pick: [inByRules, pastLimit, added], unpick: [] })
+    // In: a shot handed back would push another past the limit. What is in stays as it is.
+    expect(pinned([inByRules, pastLimit, short, removed, added], true)).toEqual({ pick: [pastLimit, short, removed], unpick: [] })
+    expect(pinned([clip(0, { reason: "missing", included: false })], true)).toEqual({ pick: [], unpick: [] })
+  })
+
+  it("while a plugin's check runs a click on every shot picks each, even one the grid shows as already as asked", () => {
+    // A shot not yet judged is in, and drops when the check ends: only a pick keeps it.
+    const unjudged = clip(0)
+    const out = clip(100, { byRules: false, reason: "short" })
+    const picked = clip(200, { manual: true, byRules: false })
+    expect(picksFor([unjudged, out, picked], true, "check")).toEqual({ pick: [unjudged, out], unpick: [] })
+    expect(picksFor([unjudged, out, picked], false, "check")).toEqual({ pick: [unjudged, out, picked], unpick: [] })
+    expect(picksFor([clip(300, { reason: "missing", included: false })], true, "check")).toEqual({ pick: [], unpick: [] })
+  })
+
+  it("heads the plugins' save entries with what they wait for", () => {
+    const ok = { taken: 3, current: true, check: null }
+    expect(saveHeading(ok)).toBe("Save with a plugin")
+    expect(saveHeading({ ...ok, check: { kind: "checking", checked: 1, total: 4 } })).toBe("Save with a plugin waits for the check")
+    expect(saveHeading({ ...ok, taken: 0 })).toBe("Save with a plugin needs a shot in the pack")
+    expect(saveHeading({ ...ok, current: false })).toBe("Save with a plugin waits for the pack")
+    // A failed check holds nothing up, but a pack without shots has nothing to save.
+    expect(saveHeading({ taken: 0, current: true, check: { kind: "failed", unchecked: 2 } })).toBe("Save with a plugin needs a shot in the pack")
   })
 
   it("takes every shot between two cards, either way round", () => {

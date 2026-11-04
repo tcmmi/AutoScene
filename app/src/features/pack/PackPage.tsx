@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/context-menu"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorState } from "@/components/ui/error-state"
+import { type MenuKit, contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { Page } from "@/components/ui/page"
 import { Segmented } from "@/components/ui/segmented"
 import { TopBar } from "@/components/ui/topbar"
@@ -34,11 +35,13 @@ import { PackCard } from "./PackCard"
 import { PackExportDialog } from "./PackExportDialog"
 import { PackFilters } from "./PackFilters"
 import { PackFooter } from "./PackFooter"
-import { type Show, between, exportable, handPicked, keyOf, savable, shown } from "./spec"
+import { type Show, between, exportable, handPicked, keyOf, pickable, savable, saveHeading, shown } from "./spec"
 import { usePack, usePackExport } from "./use-pack"
 
 const NO_CLIPS: PackClip[] = []
 const NO_MEDIA: MediaItem[] = []
+/** One at a time: a click on every shot at once replaces the toast of the one before. */
+const BULK_TOAST = "pack-bulk"
 
 /** A character's scenepack: filters, every shot of them (the pack's bright), and Export. */
 export function PackPage() {
@@ -131,6 +134,7 @@ export function Builder({
   // A pack action saves a file, so a pack that is being exported can be saved too.
   const canSave = savable({ taken, current: pack.current, character: character != null, check: pack.check })
   const saves = useMemo(() => packActionItems(plugins), [plugins])
+  const saveHead = saveHeading({ taken, current: pack.current, check: pack.check })
   const packState = pack.state
   const stamp = pack.preview.data?.stamp
   // An entry already open when a check starts still asks: the backend refuses
@@ -146,7 +150,6 @@ export function Builder({
   const bytes = pack.plan.data?.sizes.find((s) => s.presetId === settings?.exportPresetId)?.bytes ?? null
   const format = presets?.find((p) => p.id === settings?.exportPresetId)?.name
 
-  useShortcuts(PACK_SHORTCUTS, { export: () => (canExport ? setExportOpen(true) : false) })
   // On macOS the menu's Export item exports the pack while it is open, with
   // the pack's key, and asks for this.
   useEffect(() => {
@@ -161,9 +164,9 @@ export function Builder({
 
   // The cards call back with their index; these read the latest list (so
   // the cards, memoised, needn't draw again when it changes).
-  const latest = useRef({ visible, setIncluded: pack.setIncluded, show })
+  const latest = useRef({ visible, setIncluded: pack.setIncluded, restore: pack.restore, show })
   useLayoutEffect(() => {
-    latest.current = { visible, setIncluded: pack.setIncluded, show }
+    latest.current = { visible, setIncluded: pack.setIncluded, restore: pack.restore, show }
   })
   // The last card clicked: Shift+click takes every shot from it.
   const anchor = useRef<string | null>(null)
@@ -221,50 +224,54 @@ export function Builder({
     [navigate, pid],
   )
 
-  // Bulk action helpers
-  const includeAll = useCallback(() => {
-    if (clips.length > 0) void pack.setIncluded(clips, true)
-  }, [clips, pack])
-
-  const excludeAll = useCallback(() => {
-    if (clips.length > 0) void pack.setIncluded(clips, false)
-  }, [clips, pack])
-
-  const resetPicks = useCallback(() => {
-    if (picks.length > 0) void pack.clearPicks(picks)
-  }, [picks, pack])
-
-  const toggleAll = useCallback(() => {
-    if (clips.length === 0) return
-    const allIncluded = clips.every((c) => c.included)
-    void pack.setIncluded(clips, !allIncluded)
-  }, [clips, pack])
-
-  const invertSelection = useCallback(() => {
-    if (clips.length > 0) void pack.invertIncluded(clips)
-  }, [clips, pack])
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
-        return
-      }
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "a") {
-        e.preventDefault()
-        if (e.shiftKey) {
-          excludeAll()
-        } else {
-          toggleAll()
-        }
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
-        e.preventDefault()
-        invertSelection()
-      }
-    }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [toggleAll, excludeAll, invertSelection])
+  // What can be done to every shot at once: in the ⋯ and the right-click alike, and by key.
+  const free = useMemo(() => clips.filter(pickable), [clips])
+  const canBulk = pack.ready && free.length > 0
+  const allIn = free.every((c) => c.included)
+  const noneIn = !free.some((c) => c.included)
+  // A click on every shot at once rewrites the picks, and says so with a way back: the shots as they were.
+  const limited = pack.state?.spec.limit != null
+  const bulk = (said: string, run: () => Promise<boolean>, pinned = false) => {
+    const before = clips
+    void run().then((changed) => {
+      if (!changed) return
+      toast(said, {
+        id: BULK_TOAST,
+        description: pinned && limited ? "Picked by hand: the limit leaves them alone." : undefined,
+        action: { label: "Undo", onClick: () => void latest.current.restore(before) },
+      })
+    })
+  }
+  const takeAll = () => bulk("Took every shot in", () => pack.setEach(clips, () => true), true)
+  const leaveAll = () => bulk("Left every shot out", () => pack.setEach(clips, () => false), true)
+  const invert = () => bulk("Inverted the pack", () => pack.invertIncluded(clips), true)
+  const handBack = () =>
+    bulk(`Handed ${plural(picks.length, "shot")} back to the filters`, () => pack.clearPicks(picks))
+  useShortcuts(PACK_SHORTCUTS, {
+    export: () => (canExport ? setExportOpen(true) : false),
+    takeAll: () => (canBulk ? (allIn ? leaveAll() : takeAll()) : false),
+    leaveAll: () => (canBulk && !noneIn ? leaveAll() : false),
+    invert: () => (canBulk ? invert() : false),
+  })
+  const bulkItems = ({ Item }: MenuKit) => (
+    <>
+      {/* With every shot in the key leaves them out: it isn't promised on an entry that takes. */}
+      <Item disabled={!canBulk || allIn} onSelect={takeAll} shortcut={allIn ? undefined : keys("pack.takeAll")}>
+        <Check /> Take every shot
+      </Item>
+      <Item disabled={!canBulk || noneIn} onSelect={leaveAll} shortcut={keys("pack.leaveAll")}>
+        <X /> Leave every shot out
+      </Item>
+      <Item disabled={!canBulk} onSelect={invert} shortcut={keys("pack.invert")}>
+        <ArrowsDownUp /> Invert the pack
+      </Item>
+      {picks.length > 0 && (
+        <Item onSelect={handBack}>
+          <ArrowCounterClockwise /> Hand every shot back to the filters
+        </Item>
+      )}
+    </>
+  )
 
   // The pack's empty space: export it, give the hand-picked shots back, choose what shows.
   const pageMenu = (
@@ -273,25 +280,12 @@ export function Builder({
         <Package /> Export the pack…
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem disabled={clips.length === 0} onSelect={includeAll} shortcut={["⌘", "A"]}>
-        <Check /> Take all shots into the pack
-      </ContextMenuItem>
-      <ContextMenuItem disabled={clips.length === 0} onSelect={excludeAll} shortcut={["⇧", "⌘", "A"]}>
-        <X /> Leave all shots out
-      </ContextMenuItem>
-      <ContextMenuItem disabled={clips.length === 0} onSelect={invertSelection} shortcut={["⇧", "⌘", "I"]}>
-        <ArrowsDownUp /> Invert selection
-      </ContextMenuItem>
-      {picks.length > 0 && (
-        <ContextMenuItem onSelect={resetPicks}>
-          <ArrowCounterClockwise /> Hand every shot back to the filters
-        </ContextMenuItem>
-      )}
+      {bulkItems(contextKit)}
       {/* Plugins save the pack as a file of theirs, before anything is rendered: a group of their own, after the app's. */}
       {saves.length > 0 && (
         <>
           <ContextMenuSeparator />
-          <ContextMenuLabel>Save with a plugin</ContextMenuLabel>
+          <ContextMenuLabel>{saveHead}</ContextMenuLabel>
           {saves.map((a) => (
             <ContextMenuItem key={a.key} disabled={!canSave} onSelect={() => save(a)}>
               <PluginIcon src={a.icon} /> {a.title}
@@ -328,66 +322,16 @@ export function Builder({
         )}
         <section className="px-10 pt-5 pb-32">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Segmented<Show>
-                aria-label="Show"
-                value={show}
-                onChange={setShow}
-                options={[
-                  { value: "all", label: `All ${clips.length}` },
-                  { value: "in", label: `In the pack ${taken}` },
-                  { value: "out", label: `Left out ${clips.length - taken}` },
-                ]}
-              />
-
-              {clips.length > 0 && (
-                <div className="flex items-center gap-1 border-l border-white/[0.08] pl-3">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={includeAll}
-                    disabled={!pack.ready}
-                    className="h-7 px-2 text-xs text-fg-3 hover:text-fg-1"
-                  >
-                    Include all
-                  </Button>
-                  <span className="text-xs text-white/20">·</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={excludeAll}
-                    disabled={!pack.ready}
-                    className="h-7 px-2 text-xs text-fg-3 hover:text-fg-1"
-                  >
-                    Exclude all
-                  </Button>
-                  <span className="text-xs text-white/20">·</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={invertSelection}
-                    disabled={!pack.ready}
-                    className="h-7 px-2 text-xs text-fg-3 hover:text-fg-1"
-                  >
-                    Invert
-                  </Button>
-                  {picks.length > 0 && (
-                    <>
-                      <span className="text-xs text-white/20">·</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={resetPicks}
-                        disabled={!pack.ready}
-                        className="h-7 px-2 text-xs text-fg-3 hover:text-fg-1"
-                      >
-                        Reset
-                      </Button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+            <Segmented<Show>
+              aria-label="Show"
+              value={show}
+              onChange={setShow}
+              options={[
+                { value: "all", label: `All ${clips.length}` },
+                { value: "in", label: `In the pack ${taken}` },
+                { value: "out", label: `Left out ${clips.length - taken}` },
+              ]}
+            />
             {clips.length > 0 && (
               <span className="text-sm text-fg-3">Click to take a shot in or out · Shift for every shot since · Enter to watch</span>
             )}
@@ -448,10 +392,12 @@ export function Builder({
           canExport={canExport}
           exporting={exporting}
           check={pack.check}
+          items={bulkItems(dropdownKit)}
           actions={saves}
           canSave={canSave}
+          saveHeading={saveHead}
           onSave={save}
-          onClearPicks={() => void pack.clearPicks(picks)}
+          onClearPicks={handBack}
           onTryAgain={pack.tryAgain}
           onExport={() => setExportOpen(true)}
           onShowExport={() => useUi.getState().setActivityOpen(true)}

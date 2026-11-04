@@ -139,6 +139,17 @@ describe("the keymap", () => {
     expect(matchShortcut(PACK_SHORTCUTS, e(" "))).toBe("toggle")
   })
 
+  it("every shot of a pack has its keys, all three changeable", () => {
+    expect(matchShortcut(PACK_SHORTCUTS, e("a", { ctrlKey: true }))).toBe("takeAll")
+    expect(matchShortcut(PACK_SHORTCUTS, e("A", { ctrlKey: true, shiftKey: true }))).toBe("leaveAll")
+    expect(matchShortcut(PACK_SHORTCUTS, e("I", { ctrlKey: true, shiftKey: true }))).toBe("invert")
+    setKeymap({ preset: "autoscene", own: { "pack.takeAll.0": [{ key: "t" }], "pack.invert.0": [{ key: "v" }] } })
+    expect(matchShortcut(PACK_SHORTCUTS, e("a", { ctrlKey: true }))).toBeNull()
+    expect(matchShortcut(PACK_SHORTCUTS, e("t"))).toBe("takeAll")
+    expect(matchShortcut(PACK_SHORTCUTS, e("v"))).toBe("invert")
+  })
+
+
   it("shows keys as caps, a row's shared modifiers once", () => {
     const second = shortcutOf("player.second")
     expect(capGroups(second)).toEqual([["Shift", "←", "→"]])

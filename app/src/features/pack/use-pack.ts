@@ -232,9 +232,9 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
   const clicks = useRef(0)
   const [sending, setSending] = useState(0)
 
-  /** Send a click's picks for the pack `spec` makes, showing `shown` at once. */
+  /** Send a click's picks for the pack `spec` makes, showing `shown` at once; whether they reached it. */
   const send = useCallback(
-    async (spec: PackSpec, batches: [PackClip[], boolean | null][], shown: (readonly [string, boolean])[]) => {
+    async (spec: PackSpec, batches: [PackClip[], boolean | null][], shown: (readonly [string, boolean])[]): Promise<boolean> => {
       const click = ++clicks.current
       setPicks((m) => new Map([...m, ...shown]))
       setSending((n) => n + 1)
@@ -243,9 +243,11 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
         .map(([clips, include]) => ({ shots: clips.map((c) => ({ mediaId: c.shot.mediaId, shot: c.shot.start })), include }))
       const run = queue.current.then(() => commands.packOverride(pid, cid, picks, spec))
       queue.current = run.catch(() => undefined)
+      let ok = true
       try {
         await takeChoices(pid, cid, spec, await run)
       } catch (e) {
+        ok = false
         toast.error("Couldn't change the pack", { description: errorMessage(e) })
         // Whatever reached it: the pack as the backend has it now.
         await queryClient.invalidateQueries({ queryKey: previews(pid, cid) })
@@ -257,6 +259,7 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
         await refreshPlans(pid, cid)
       }
       setSending((n) => n - 1)
+      return ok
     },
     [pid, cid],
   )
@@ -273,30 +276,49 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
     [ready, settled, send],
   )
 
-  /** Invert inclusion of shots: what was in goes out, what was out goes in. */
-  const invertIncluded = useCallback(
-    async (clips: PackClip[]) => {
-      if (!ready || !settled || clips.length === 0) return
-      const toInclude = clips.filter((c) => !c.included && pickable(c))
-      const toExclude = clips.filter((c) => c.included && pickable(c))
-      const pIn = picksFor(toInclude, true)
-      const pOut = picksFor(toExclude, false)
-      const pick = [...pIn.pick]
-      const unpick = [...pIn.unpick, ...pOut.unpick]
-      const shown = clips.filter(pickable).map((c) => [keyOf(c), !c.included] as const)
-      await send(settled.spec, [[pick, true], [pOut.pick, false], [unpick, null]], shown)
+  /**
+   * Take each of `clips` in or out, as `included` says of it, in one click;
+   * whether the pack changed. Shots a limit or a running check would move
+   * on their own are picked (`Pin`).
+   */
+  const checking = check?.kind === "checking"
+  const setEach = useCallback(
+    async (clips: PackClip[], included: (c: PackClip) => boolean): Promise<boolean> => {
+      if (!ready || !settled) return false
+      const pin = checking ? "check" : settled.spec.limit != null ? "limit" : undefined
+      const taken = picksFor(clips.filter(included), true, pin)
+      const left = picksFor(clips.filter((c) => !included(c)), false, pin)
+      const unpick = [...taken.unpick, ...left.unpick]
+      if (taken.pick.length + left.pick.length + unpick.length === 0) return false
+      const shown = clips.filter(pickable).map((c) => [keyOf(c), included(c)] as const)
+      return send(settled.spec, [[taken.pick, true], [left.pick, false], [unpick, null]], shown)
     },
-    [ready, settled, send],
+    [ready, settled, checking, send],
+  )
+
+  /** What was in goes out, what was out comes in. */
+  const invertIncluded = useCallback((clips: PackClip[]) => setEach(clips, (c) => !c.included), [setEach])
+
+  /** Put the picks of `before` (the pack's shots as they were) back, whatever was done to them since. */
+  const restore = useCallback(
+    async (before: PackClip[]) => {
+      if (!settled) return
+      const free = before.filter(pickable)
+      const where = (manual: boolean | null) => free.filter((c) => c.manual === manual)
+      const shown = free.map((c) => [keyOf(c), c.included] as const)
+      await send(settled.spec, [[where(true), true], [where(false), false], [where(null), null]], shown)
+    },
+    [settled, send],
   )
 
   /** Hand shots back to the filters (what they say doesn't matter: also while they change). */
   const clearPicks = useCallback(
-    async (clips: PackClip[]) => {
-      if (!settled) return
+    async (clips: PackClip[]): Promise<boolean> => {
+      if (!settled) return false
       const picked = clips.filter((c) => c.manual != null)
-      if (picked.length === 0) return
+      if (picked.length === 0) return false
       const shown = picked.filter(pickable).map((c) => [keyOf(c), c.byRules] as const)
-      await send(settled.spec, [[picked, null]], shown)
+      return send(settled.spec, [[picked, null]], shown)
     },
     [settled, send],
   )
@@ -306,7 +328,7 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
   // preview's stamp names exactly those clips), its names and size too.
   const current = ready && sending === 0 && !preview.isFetching && asking === 0
 
-  return { state, saved, setSpec, setNaming, preview, plan, setIncluded, invertIncluded, clearPicks, ready, current, fpsOf, filters, check, tryAgain }
+  return { state, saved, setSpec, setNaming, preview, plan, setIncluded, setEach, invertIncluded, restore, clearPicks, ready, current, fpsOf, filters, check, tryAgain }
 }
 
 export type Pack = ReturnType<typeof usePack>

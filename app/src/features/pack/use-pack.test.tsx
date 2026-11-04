@@ -69,6 +69,72 @@ async function mounted() {
   return hook
 }
 
+describe("every shot at once", () => {
+  const bulk = (clips: PackClip[], spec: PackSpec = DEFAULT_SPEC) => async () => {
+    vi.mocked(commands.packGet).mockResolvedValue({ ...state, spec })
+    vi.mocked(commands.packPreview).mockResolvedValue(preview(clips, "before"))
+    vi.mocked(commands.packOverride).mockResolvedValue(choicesOf(preview(clips, "after")))
+    const hook = renderHook(() => usePack("p", "c", new Map()), { wrapper })
+    await waitFor(() => expect(hook.result.current.current).toBe(true))
+    return hook.result
+  }
+
+  it("inverts in one click: what the filters say comes back, the rest by hand", async () => {
+    const list = [clip(0, true), clip(100, false, null, false), clip(200, false, false), clip(300, true, true, false)]
+    const result = await bulk(list)()
+    await act(() => result.current.invertIncluded(list))
+    expect(commands.packOverride).toHaveBeenCalledExactlyOnceWith("p", "c", picks([[100], true], [[0], false], [[200, 300], null]), DEFAULT_SPEC)
+  })
+
+  it("under a limit every shot is picked, so the limit puts none back", async () => {
+    const limited = { ...DEFAULT_SPEC, limit: 2 }
+    const list = [clip(0, true), clip(100, false, null, false), clip(200, false, false), clip(300, true, true, false)]
+    const result = await bulk(list, limited)()
+    await act(() => result.current.invertIncluded(list))
+    expect(commands.packOverride).toHaveBeenCalledExactlyOnceWith("p", "c", picks([[100, 200], true], [[0, 300], false]), limited)
+  })
+
+  it("puts the picks of the shots as they were back, whatever was done since", async () => {
+    const list = [clip(0, true), clip(100, false, null, false), clip(200, false, false), clip(300, true, true, false)]
+    const result = await bulk(list)()
+    await act(() => result.current.restore(list))
+    expect(commands.packOverride).toHaveBeenCalledExactlyOnceWith("p", "c", picks([[300], true], [[200], false], [[0, 100], null]), DEFAULT_SPEC)
+  })
+
+  it("says whether the pack changed", async () => {
+    const list = [clip(0, true), clip(100, false, null, false)]
+    const result = await bulk(list)()
+    expect(await act(() => result.current.setEach(list, () => true))).toBe(true)
+    expect(await act(() => result.current.setEach([list[0]], () => true))).toBe(false)
+  })
+
+  it("does nothing before the pack is shown", async () => {
+    vi.mocked(commands.packGet).mockResolvedValue(state)
+    vi.mocked(commands.packPreview).mockImplementation(() => new Promise(() => {}))
+    const hook = renderHook(() => usePack("p", "c", new Map()), { wrapper })
+    await waitFor(() => expect(hook.result.current.state).toBeTruthy())
+    expect(hook.result.current.ready).toBe(false)
+    expect(await act(() => hook.result.current.setEach([clip(0, true)], () => false))).toBe(false)
+    expect(commands.packOverride).not.toHaveBeenCalled()
+  })
+
+  it("asks nothing when nothing would change", async () => {
+    const list = [clip(0, true), clip(100, true)]
+    const result = await bulk(list)()
+    await act(() => result.current.setEach(list, () => true))
+    expect(commands.packOverride).not.toHaveBeenCalled()
+  })
+
+  it("shows the shots as asked at once", async () => {
+    const list = [clip(0, true), clip(100, false, null, false)]
+    const result = await bulk(list)()
+    vi.mocked(commands.packOverride).mockImplementation(() => new Promise(() => {}))
+    act(() => void result.current.invertIncluded(list))
+    await waitFor(() => expect(result.current.preview.data?.clips.map((c) => c.included)).toEqual([false, true]))
+    expect(result.current.current).toBe(false)
+  })
+})
+
 afterEach(() => {
   cleanup()
   queryClient.clear()
@@ -345,6 +411,16 @@ describe("usePack, plugin filters", () => {
     // The pack is read again to learn it checks now, and says so: no second ask.
     await waitFor(() => expect(result.current.check).toEqual({ kind: "checking", checked: 1, total: 2 }))
     expect(commands.packFilterCheck).toHaveBeenCalledOnce()
+  })
+
+  it("taking every shot in while a check runs picks them all: the shots not judged yet would drop when it ends", async () => {
+    const now = speaks({ state: "checking", checked: 1 })
+    const { result } = await open(now)
+    await waitFor(() => expect(result.current.check?.kind).toBe("checking"))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    vi.mocked(commands.packOverride).mockResolvedValue(choicesOf(judged(now)))
+    await act(() => result.current.setEach(result.current.preview.data!.clips, () => true))
+    expect(commands.packOverride).toHaveBeenCalledExactlyOnceWith("p", "c", picks([[0, 100], true]), on)
   })
 
   it("asks again only once something changed, never for the same answer twice", async () => {

@@ -49,6 +49,16 @@ describe("ShortcutsSection", () => {
     expect(screen.getByText("1 key differs from AutoScene's.")).toBeTruthy()
   })
 
+  it("lists what the scenepack does to every shot, each with keys that can be changed", async () => {
+    render(<ShortcutsSection />, { wrapper })
+    expect(screen.getByText("Take every shot (when all are in: leave them out)")).toBeTruthy()
+    expect(screen.getByRole("button", { name: /^Take every shot.*Ctrl A\. Change$/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Leave every shot out: Ctrl Shift A. Change" }))
+    key("u", { code: "KeyU", ctrlKey: true })
+    await waitFor(() => expect(saved()).toEqual({ preset: "", keys: { "pack.leaveAll.0": [{ key: "u", mod: true }] } }))
+    expect(screen.getByRole("button", { name: /^Invert the pack.*Ctrl Shift I\. Change$/ })).toBeTruthy()
+  })
+
   it("takes only a fresh press, and keeps a held key's repeats to itself", () => {
     const after = vi.fn()
     render(<ShortcutsSection />, { wrapper })

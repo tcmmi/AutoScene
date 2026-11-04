@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core"
 import { clearMocks } from "@tauri-apps/api/mocks"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import type { Cast, PackNaming, PackPreview, ProjectSummary } from "@/bindings"
+import type { Cast, PackClip, PackNaming, PackPreview, ProjectSummary } from "@/bindings"
+import { pickable, picksFor } from "@/features/pack/spec"
 import { installMockBackend } from "./backend"
 import { defaultPackState, fileProblem, templateProblem } from "./pack"
 
@@ -68,5 +69,50 @@ describe("the mock's pack commands", () => {
     expect(await send(naming("{series} {ep}", "{series} {tc}"), "old")).toBe(unknown("ep"))
     expect(await send(naming("{series} {tc}", "{series} {tc}"), "old")).toBe("The pack changed meanwhile. Check it and export again.")
     expect(await send(naming("{series} {tc}", "{series} {tc}"))).toBe(shot("tc"))
+  })
+
+  it("takes, leaves and inverts every shot under a limit as the click says, through the pack the limit makes", async () => {
+    const [project] = await invoke<ProjectSummary[]>("projects_list")
+    const projectId = project.id
+    const cast = await invoke<Cast>("cast_get", { projectId })
+    const limited = { ...defaultPackState().spec, limit: 2 }
+    const read = (characterId: string) => invoke<PackPreview>("pack_preview", { projectId, characterId, spec: limited })
+    let characterId = ""
+    for (const c of cast.characters) {
+      if ((await read(c.id)).clips.filter(pickable).length >= 5) characterId = c.id
+    }
+    expect(characterId).not.toBe("")
+
+    // What the page does (setEach), against the mock's pack.
+    const click = async (included: (c: PackClip) => boolean) => {
+      const clips = (await read(characterId)).clips
+      const taken = picksFor(clips.filter(included), true, "limit")
+      const left = picksFor(clips.filter((c) => !included(c)), false, "limit")
+      const keys = (list: PackClip[]) => list.map((c) => ({ mediaId: c.shot.mediaId, shot: c.shot.start }))
+      const picks = [
+        { shots: keys(taken.pick), include: true },
+        { shots: keys(left.pick), include: false },
+        { shots: keys([...taken.unpick, ...left.unpick]), include: null },
+      ].filter((p) => p.shots.length > 0)
+      await invoke("pack_override", { projectId, characterId, spec: limited, picks })
+      return (await read(characterId)).clips.filter(pickable)
+    }
+    const inOf = (clips: PackClip[]) => clips.filter((c) => c.included).map((c) => c.shot.start)
+
+    const start = (await read(characterId)).clips.filter(pickable)
+    expect(inOf(start)).toHaveLength(2)
+    // Invert: what was in goes out, what was out comes in, nothing swaps in from the limit's next best.
+    const inverted = await click((c) => !c.included)
+    expect(inOf(inverted).sort()).toEqual(start.filter((c) => !c.included).map((c) => c.shot.start).sort())
+    // Leave: nothing is left in. Take: everything is in. Invert of none: everything.
+    expect(inOf(await click(() => false))).toEqual([])
+    expect(inOf(await click(() => true))).toHaveLength(start.length)
+    expect(inOf(await click(() => false))).toEqual([])
+    expect(inOf(await click((c) => !c.included))).toHaveLength(start.length)
+
+    // Handing every pick back (what Undo and the footer do) returns the pack the limit makes.
+    const keys = (await read(characterId)).clips.filter((c) => c.manual != null).map((c) => ({ mediaId: c.shot.mediaId, shot: c.shot.start }))
+    await invoke("pack_override", { projectId, characterId, spec: limited, picks: [{ shots: keys, include: null }] })
+    expect(inOf((await read(characterId)).clips.filter(pickable))).toEqual(inOf(start))
   })
 })

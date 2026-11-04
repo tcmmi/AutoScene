@@ -1,7 +1,18 @@
 import { act, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { JobInfo, JobProgress } from "@/bindings"
-import { ETA_BRIDGE_MS, HOLD_MS, useActiveProgress, useActivity, useProjectIndexProgress } from "./activity"
+import {
+  describeActive,
+  ETA_BRIDGE_MS,
+  HOLD_MS,
+  jobBar,
+  useActiveCount,
+  useActiveProgress,
+  useActivity,
+  useProjectIndexProgress,
+  useProjectIndexWaiting,
+  useRunningCount,
+} from "./activity"
 
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j1",
@@ -79,6 +90,66 @@ describe("a project's indexing", () => {
       s.upsert(job({ id: "f", kind: "ingest", state: "running", progress: 0.9, projectId: "q" }))
     })
     expect(result.current).toBeCloseTo(0.4)
+  })
+})
+
+describe("work that waits its turn", () => {
+  beforeEach(() => useActivity.setState({ jobs: {}, order: [] }))
+
+  it("shows an empty bar, not a sweep: waiting isn't working", () => {
+    expect(jobBar(job({ state: "queued", progress: null }))).toBe(0)
+    expect(jobBar({ state: "queued", progress: 0.4 })).toBe(0)
+    expect(jobBar(job({ state: "running", progress: 0.4 }))).toBe(0.4)
+    // Running, but how far isn't told: the sweep.
+    expect(jobBar(job({ state: "running", progress: null }))).toBeNull()
+  })
+
+  it("leaves a ring empty and still while all its work waits", () => {
+    const index = renderHook(() => useProjectIndexProgress("p"))
+    const all = renderHook(() => useActiveProgress())
+    // No work: nothing to show, as before.
+    expect(index.result.current).toBeNull()
+    expect(all.result.current).toBeNull()
+    act(() => {
+      const s = useActivity.getState()
+      s.upsert(job({ id: "a", kind: "ingest", state: "queued" }))
+      s.upsert(job({ id: "b", kind: "ingest", state: "queued" }))
+      // Finished work and another project's are not this project's indexing.
+      s.upsert(job({ id: "c", kind: "ingest", state: "done", progress: 1, finishedAt: 2 }))
+      s.upsert(job({ id: "d", kind: "ingest", state: "running", progress: null, projectId: "q" }))
+    })
+    expect(index.result.current).toBe(0)
+    // Elsewhere one runs that hasn't told how far it is: the Activity ring spins for it.
+    expect(all.result.current).toBeNull()
+    act(() => useActivity.getState().upsert(job({ id: "a", kind: "ingest", state: "running", progress: null, rev: 2 })))
+    expect(index.result.current).toBeNull()
+    act(() => useActivity.getState().upsert(job({ id: "a", kind: "ingest", state: "running", progress: 0.3, rev: 3 })))
+    // The waiting one doesn't pull the running one's mean down.
+    expect(index.result.current).toBeCloseTo(0.3)
+  })
+
+  it("tells waiting apart from running work at the start of a stage, which is 0 too", () => {
+    const waits = renderHook(() => useProjectIndexWaiting("p"))
+    const counts = renderHook(() => [useRunningCount(), useActiveCount()])
+    // No work: nothing waits.
+    expect(waits.result.current).toBe(false)
+    act(() => useActivity.getState().upsert(job({ id: "a", kind: "ingest", state: "queued" })))
+    expect(waits.result.current).toBe(true)
+    expect(counts.result.current).toEqual([0, 1])
+    act(() => {
+      const s = useActivity.getState()
+      s.upsert(job({ id: "a", kind: "ingest", state: "running", progress: 0, rev: 2 }))
+      s.upsert(job({ id: "b", kind: "ingest", state: "queued" }))
+    })
+    expect(waits.result.current).toBe(false)
+    expect(counts.result.current).toEqual([1, 2])
+  })
+
+  it("names running and waiting work apart for assistive tech", () => {
+    expect(describeActive(0, 0)).toBe("Nothing running")
+    expect(describeActive(1, 0)).toBe("1 running")
+    expect(describeActive(0, 2)).toBe("2 waiting")
+    expect(describeActive(1, 2)).toBe("1 running, 2 waiting")
   })
 })
 

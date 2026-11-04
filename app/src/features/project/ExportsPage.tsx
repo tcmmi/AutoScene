@@ -38,7 +38,7 @@ import { copyText, reveal } from "@/lib/os"
 import { firstFailure, useExports, useMediaList, usePlugins, useProject } from "@/lib/queries"
 import { fpsValue, isDropFrameRate, timecode } from "@/lib/timecode"
 import { cn } from "@/lib/utils"
-import { useActivity } from "@/state/activity"
+import { jobBar, useActivity } from "@/state/activity"
 import { TopBar } from "@/components/ui/topbar"
 import { ProjectLoadError } from "./ProjectLoadError"
 import { ProjectNav } from "./ProjectNav"
@@ -159,7 +159,7 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
       </ContextArea>
       {running && job && (
         <div className="flex items-center gap-4 border-b border-white/[0.06] px-6 py-3.5">
-          <Progress value={job.state === "running" ? job.progress : null} className="flex-1" />
+          <Progress value={jobBar(job)} className="flex-1" />
           <span className="timecode w-12 text-right text-sm text-fg-2">{formatPercent(job.progress)}</span>
         </div>
       )}
@@ -285,7 +285,9 @@ function exportStatus(ex: ExportSummary, job: JobInfo | undefined): ExportStatus
 }
 
 function ExportStatusBadge({ ex, status, unverified }: { ex: ExportSummary; status: ExportStatus; unverified: number }) {
-  if (status === "running" || status === "queued") return <Badge tone="accent">{status === "queued" ? "Queued" : "Exporting"}</Badge>
+  // Gold while it runs; waiting isn't working.
+  if (status === "queued") return <Badge>Queued</Badge>
+  if (status === "running") return <Badge tone="accent">Exporting</Badge>
   if (status === "cancelled") return <Badge>Cancelled</Badge>
   if (status === "failed" && ex.merged?.error) return <Badge tone="danger">File not made</Badge>
   if (status === "failed") return <Badge tone="danger">Some clips failed</Badge>

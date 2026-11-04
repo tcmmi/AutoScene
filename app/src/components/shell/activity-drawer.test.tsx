@@ -79,4 +79,19 @@ describe("the Activity drawer", () => {
     expect(screen.getByText("No webhook is set.")).toBeTruthy()
     expect(screen.queryByText("Posted 12 clips.")).toBeNull()
   })
+
+  it("leaves a waiting job's bar empty and still, and sweeps only for one that runs", () => {
+    show(
+      job({ id: "run", kind: "analyze", title: "Analysing E01.mkv", state: "running", stage: "Grouping characters", createdAt: 2 }),
+      job({ id: "wait", kind: "analyze", title: "Analysing E02.mkv", state: "queued" }),
+    )
+    const bar = (title: string) => screen.getByText(title).closest("li")!.querySelector<HTMLElement>("[role=progressbar]")!
+    const waiting = bar("Analysing E02.mkv")
+    expect(screen.getByText("Waiting")).toBeTruthy()
+    expect(waiting.getAttribute("aria-valuenow")).toBe("0")
+    expect(waiting.querySelector(".animate-indeterminate")).toBeNull()
+    const running = bar("Analysing E01.mkv")
+    expect(running.getAttribute("aria-valuenow")).toBeNull()
+    expect(running.querySelector(".animate-indeterminate")).not.toBeNull()
+  })
 })

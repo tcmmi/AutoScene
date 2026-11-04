@@ -4,6 +4,7 @@ import { plural, useProjectAnalysis } from "@/features/cast/cast"
 import { formatPercent } from "@/lib/format"
 import { useMediaList } from "@/lib/queries"
 import { cn } from "@/lib/utils"
+import { jobBar } from "@/state/activity"
 
 /** What the analysis of a project is doing right now (nothing when idle). */
 export function AnalysisStatus({ pid, className }: { pid: string; className?: string }) {
@@ -20,8 +21,16 @@ export function AnalysisStatus({ pid, className }: { pid: string; className?: st
         className,
       )}
     >
-      <span className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-accent [&_svg]:size-[18px]">
-        <span className="absolute inset-0 animate-ping rounded-full bg-accent/20 [animation-duration:2.4s]" />
+      <span
+        className={cn(
+          "relative flex size-9 shrink-0 items-center justify-center rounded-full [&_svg]:size-[18px]",
+          // Gold and a ping while it works; while it waits it stands still, as the Activity drawer's rows do.
+          job.state === "running" ? "bg-accent-subtle text-accent" : "bg-white/[0.06] text-fg-3",
+        )}
+      >
+        {job.state === "running" && (
+          <span className="absolute inset-0 animate-ping rounded-full bg-accent/20 [animation-duration:2.4s]" />
+        )}
         <UserFocus />
       </span>
       <div className="min-w-0 flex-1">
@@ -32,7 +41,7 @@ export function AnalysisStatus({ pid, className }: { pid: string; className?: st
           </span>
           <span className="timecode shrink-0 text-xs text-fg-2">{formatPercent(job.progress)}</span>
         </div>
-        <Progress className="mt-2" value={job.state === "running" ? job.progress : null} />
+        <Progress className="mt-2" value={jobBar(job)} />
         {waiting > 0 && <div className="mt-1.5 text-xs text-fg-3">{plural(waiting, "more episode")} queued</div>}
       </div>
     </div>

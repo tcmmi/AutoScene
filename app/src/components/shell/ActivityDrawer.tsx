@@ -34,7 +34,7 @@ import { commands, errorMessage } from "@/lib/ipc"
 import { stopWord } from "@/lib/jobs"
 import { copyText } from "@/lib/os"
 import { cn } from "@/lib/utils"
-import { isFinished, useActivity, useJobs } from "@/state/activity"
+import { isFinished, jobBar, useActivity, useJobs } from "@/state/activity"
 import { useUi } from "@/state/ui"
 
 const KIND_ICON: Record<JobInfo["kind"], React.ReactNode> = {
@@ -226,7 +226,7 @@ function JobRow({ job: j }: { job: JobInfo }) {
           </div>
           {!done && (
             <div className="mt-3">
-              <Progress value={j.state === "running" ? j.progress : null} />
+              <Progress value={jobBar(j)} />
               <div className="mt-1.5 flex justify-between gap-2 text-xs text-fg-3">
                 <span className="truncate">{j.state === "queued" ? "Waiting" : (j.stage ?? "Working")}</span>
                 <span className="timecode shrink-0">{formatProgress(j.progress, j.etaMs)}</span>

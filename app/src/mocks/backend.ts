@@ -10,6 +10,7 @@
  */
 import { emit } from "@tauri-apps/api/event"
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks"
+import { isFinished } from "@/state/activity"
 import {
   castEdit,
   castGet,
@@ -467,6 +468,14 @@ let rev = 0
  */
 const onCancel = new Map<string, () => void>()
 
+/**
+ * The kinds of work that run one job at a time, as the backend's analysis
+ * class does: a second one waits `queued` until the one before it ends.
+ */
+const ONE_AT_A_TIME: JobKind[] = ["analyze"]
+/** How each waiting job starts once its turn comes, by job. */
+const waiting = new Map<string, () => void>()
+
 function startJob(
   kind: JobKind,
   title: string,
@@ -478,6 +487,8 @@ function startJob(
     /** Under the title; the project's by default. */
     subtitle?: string
     stage: string
+    /** What its work marks as it begins (a job that waits begins once its turn comes). */
+    began?: () => void
     cancelled?: () => void
     /** Tells the job's stage, progress, time left and frames `elapsed` ms in, as its kind of work does. */
     tick?: (job: JobInfo, elapsed: number) => void
@@ -486,6 +497,7 @@ function startJob(
   },
   done: () => void,
 ): JobInfo {
+  // As the backend queues it: no stage, no progress and no time left until it runs.
   const job: JobInfo = {
     id: id(),
     kind,
@@ -494,45 +506,65 @@ function startJob(
     projectId: p?.id ?? null,
     mediaId: opts.mediaId ?? null,
     exportId: opts.exportId ?? null,
-    state: "running",
-    progress: 0,
-    stage: opts.stage,
-    etaMs: ms,
+    state: "queued",
+    progress: null,
+    stage: null,
+    etaMs: null,
     error: null,
     message: null,
     createdAt: Date.now(),
     finishedAt: null,
     rev: ++rev,
   }
-  opts.tick?.(job, 0)
+  const run = () => {
+    Object.assign(job, { state: "running", progress: 0, stage: opts.stage, etaMs: ms, rev: ++rev })
+    opts.began?.()
+    opts.tick?.(job, 0)
+    void emit("job:changed", { ...job })
+    const t0 = Date.now()
+    const timer = window.setInterval(() => {
+      if (job.state !== "running") return window.clearInterval(timer)
+      const elapsed = Date.now() - t0
+      const f = Math.min(1, elapsed / ms)
+      job.progress = f
+      job.etaMs = Math.max(0, ms - elapsed)
+      if (f < 1) opts.tick?.(job, elapsed)
+      job.rev = ++rev
+      const { progress, stage, etaMs, frames } = job
+      void emit("job:progress", { id: job.id, rev: job.rev, progress, stage, etaMs, frames: frames ?? null })
+      if (f >= 1) {
+        window.clearInterval(timer)
+        job.state = "done"
+        job.message = opts.message ?? null
+        job.finishedAt = Date.now()
+        job.etaMs = null
+        job.frames = null
+        job.rev = ++rev
+        onCancel.delete(job.id)
+        done()
+        void emit("job:changed", { ...job })
+        nextTurn(kind)
+      }
+    }, 250)
+  }
+  const busy = ONE_AT_A_TIME.includes(kind) && jobs.some((j) => j.kind === kind && !isFinished(j))
   jobs.unshift(job)
   if (opts.cancelled) onCancel.set(job.id, opts.cancelled)
-  void emit("job:changed", { ...job })
-  const t0 = Date.now()
-  const timer = window.setInterval(() => {
-    if (job.state !== "running") return window.clearInterval(timer)
-    const elapsed = Date.now() - t0
-    const f = Math.min(1, elapsed / ms)
-    job.progress = f
-    job.etaMs = Math.max(0, ms - elapsed)
-    if (f < 1) opts.tick?.(job, elapsed)
-    job.rev = ++rev
-    const { progress, stage, etaMs, frames } = job
-    void emit("job:progress", { id: job.id, rev: job.rev, progress, stage, etaMs, frames: frames ?? null })
-    if (f >= 1) {
-      window.clearInterval(timer)
-      job.state = "done"
-      job.message = opts.message ?? null
-      job.finishedAt = Date.now()
-      job.etaMs = null
-      job.frames = null
-      job.rev = ++rev
-      onCancel.delete(job.id)
-      done()
-      void emit("job:changed", { ...job })
-    }
-  }, 250)
+  if (busy) {
+    waiting.set(job.id, run)
+    void emit("job:changed", { ...job })
+  } else run()
   return job
+}
+
+/** The slot of `kind` came free: the job that has waited longest starts, if none runs. */
+function nextTurn(kind: JobKind) {
+  if (!ONE_AT_A_TIME.includes(kind) || jobs.some((j) => j.kind === kind && j.state === "running")) return
+  const next = jobs.findLast((j) => j.kind === kind && j.state === "queued")
+  const run = next && waiting.get(next.id)
+  if (!next || !run) return
+  waiting.delete(next.id)
+  run()
 }
 
 /** Each running plugin job's plugin, and what it runs on (one run of the same at a time). */
@@ -614,20 +646,23 @@ const pagePlaces: PagePlaces = {
 }
 
 /**
- * Cancel the running jobs `of` matches. `record` false: without what a
- * cancel leaves behind (a restart or a removal follows, as in the backend).
+ * Cancel the queued and running jobs `of` matches. `record` false: without
+ * what a cancel leaves behind (a restart or a removal follows, as in the
+ * backend). The work that waited for them gets its turn after.
  */
 function cancelJobs(of: (j: JobInfo) => boolean, record = true) {
-  for (const j of jobs) {
-    if (j.state !== "running" || !of(j)) continue
+  const hit = jobs.filter((j) => !isFinished(j) && of(j))
+  for (const j of hit) {
     j.state = "cancelled"
     j.rev = ++rev
     j.finishedAt = Date.now()
+    waiting.delete(j.id)
     const after = onCancel.get(j.id)
     onCancel.delete(j.id)
     void emit("job:changed", { ...j })
     if (record) after?.()
   }
+  for (const kind of new Set(hit.map((j) => j.kind))) nextTurn(kind)
 }
 
 /**
@@ -723,16 +758,21 @@ export function analysisTick(steps: typeof ANALYSIS) {
 
 function analyze(p: MockProject, m: MediaItem) {
   const facesOnly = m.shots === "ready"
-  if (facesOnly) m.faces = "running"
-  else m.shots = "running"
   const steps = analysisSteps(facesOnly)
   const ms = steps.reduce((sum, s) => sum + s.ms, 0)
-  const cancelled = () => {
-    if (m.shots === "running") m.shots = "stopped"
-    if (m.faces === "running") m.faces = "stopped"
+  const began = () => {
+    if (facesOnly) m.faces = "running"
+    else m.shots = "running"
     void emit("media:changed", { projectId: p.id, mediaId: m.id })
   }
-  startJob("analyze", `Analysing ${m.label ? `${m.label} · ` : ""}${m.fileName}`, p, ms, { mediaId: m.id, stage: steps[0].stage, cancelled, tick: analysisTick(steps) }, () => {
+  // Stopped where it is, or (cancelled while it waited) where it would have
+  // begun, as the backend records it (I06): a failed or stopped stage stays.
+  const cancelled = () => {
+    const stage = m.shots !== "ready" ? "shots" : m.faces !== "ready" ? "faces" : null
+    if (stage && (m[stage] === "running" || m[stage] === "pending")) m[stage] = "stopped"
+    void emit("media:changed", { projectId: p.id, mediaId: m.id })
+  }
+  startJob("analyze", `Analysing ${m.label ? `${m.label} · ` : ""}${m.fileName}`, p, ms, { mediaId: m.id, stage: steps[0].stage, began, cancelled, tick: analysisTick(steps) }, () => {
     m.shots = "ready"
     m.shotCount = SHOT_COUNT
     m.faces = "ready"

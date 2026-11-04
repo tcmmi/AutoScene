@@ -28,6 +28,14 @@ type ActivityState = {
 export const isFinished = (j: JobInfo) => j.state === "done" || j.state === "failed" || j.state === "cancelled"
 
 /**
+ * What a job's bar or ring shows: empty and still while it waits (waiting
+ * isn't working), its progress while it runs (`null`: how far isn't known,
+ * the sweep).
+ */
+export const jobBar = (j: Pick<JobInfo, "state" | "progress">): number | null =>
+  j.state === "queued" ? 0 : j.progress
+
+/**
  * A `null` after a value shows as unknown only once it has lasted this long:
  * every measured momentary gap (a model's download starting, the next clip
  * after a failed one) was under 1.4 s.
@@ -185,30 +193,73 @@ export function useActiveCount(): number {
   return useActivity((s) => s.order.reduce((n, id) => n + (isFinished(s.jobs[id]) ? 0 : 1), 0))
 }
 
-/** The mean progress of the running jobs `of` takes that report one (`null`: none does yet). */
-function meanProgress(s: ActivityState, of: (j: JobInfo) => boolean): number | null {
-  let [sum, n] = [0, 0]
+/** Count of running jobs: the Activity badge is gold only while one runs. */
+export function useRunningCount(): number {
+  return useActivity((s) => s.order.reduce((n, id) => n + (s.jobs[id].state === "running" ? 1 : 0), 0))
+}
+
+/** What the Activity button tells assistive tech: "1 running, 2 waiting". */
+export function describeActive(running: number, waiting: number): string {
+  const parts = [running > 0 && `${running} running`, waiting > 0 && `${waiting} waiting`].filter(Boolean)
+  return parts.length > 0 ? parts.join(", ") : "Nothing running"
+}
+
+/** Do the unfinished jobs `of` takes all wait their turn (and is there one)? */
+function allWait(s: ActivityState, of: (j: JobInfo) => boolean): boolean {
+  let waiting = false
   for (const id of s.order) {
     const j = s.jobs[id]
-    if (j.state === "running" && j.progress != null && of(j)) {
+    if (isFinished(j) || !of(j)) continue
+    if (j.state !== "queued") return false
+    waiting = true
+  }
+  return waiting
+}
+
+/**
+ * The mean progress of the running jobs `of` takes that report one. `null`
+ * while the ones that run haven't told how far they are (a ring spins), and
+ * when nothing matches. While every matching job waits it is `0`: waiting
+ * isn't working, so a ring stands still, empty.
+ */
+function meanProgress(s: ActivityState, of: (j: JobInfo) => boolean): number | null {
+  let [sum, n, running, waiting] = [0, 0, false, false]
+  for (const id of s.order) {
+    const j = s.jobs[id]
+    if (isFinished(j) || !of(j)) continue
+    if (j.state === "queued") {
+      waiting = true
+      continue
+    }
+    running = true
+    if (j.progress != null) {
       sum += j.progress
       n += 1
     }
   }
-  return n > 0 ? sum / n : null
+  if (n > 0) return sum / n
+  return waiting && !running ? 0 : null
 }
 
 /**
  * How far running work is, as one number: the mean progress of the running
- * jobs that report one (`null`: nothing reports progress yet).
+ * jobs that report one (`null`: none of them has told yet; `0`: all wait).
  */
 export function useActiveProgress(): number | null {
   return useActivity((s) => meanProgress(s, () => true))
 }
 
-/** How far the indexing of `projectId` running now is (`null`: none reports progress yet). */
+/** How far the indexing of `projectId` is, as `useActiveProgress` tells it for all work. */
 export function useProjectIndexProgress(projectId: string): number | null {
   return useActivity((s) => meanProgress(s, (j) => j.projectId === projectId && j.kind === "ingest"))
+}
+
+/**
+ * Does all of `projectId`'s indexing wait its turn? A running job's stage
+ * starts at 0 too, so its ring is told waiting apart from a 0.
+ */
+export function useProjectIndexWaiting(projectId: string): boolean {
+  return useActivity((s) => allWait(s, (j) => j.projectId === projectId && j.kind === "ingest"))
 }
 
 /** Is any media of `projectId` being indexed right now? */

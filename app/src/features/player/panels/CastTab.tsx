@@ -27,7 +27,7 @@ import { type Lane, charactersIn, nextAppearance } from "@/lib/presence"
 import { nextShotStart, prevShotStart, segmentIndexAt, shotAt, shotNumbers } from "@/lib/segments"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
-import { useMediaJob } from "@/state/activity"
+import { jobBar, useMediaJob } from "@/state/activity"
 import { type FrameStore, useFrameSelector } from "../frame-store"
 import { ShotHeader } from "./ShotHeader"
 import { TabBody } from "./TabBody"
@@ -216,7 +216,7 @@ export function CastTab({
           </span>
           <span className="timecode">{formatPercent(job.progress)}</span>
         </div>
-        <Progress className="mt-1.5" value={job.state === "running" ? job.progress : null} />
+        <Progress className="mt-1.5" value={jobBar(job)} />
       </div>
     ) : step ? (
       <div>

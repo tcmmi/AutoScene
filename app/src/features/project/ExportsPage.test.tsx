@@ -90,6 +90,11 @@ describe("an export's card", () => {
     expect(screen.queryByRole("progressbar")).toBeNull()
   })
 
+  it("says Queued without gold while it waits: waiting isn't working", () => {
+    show(exported("queued", [item(1, "queued")]), job("queued"))
+    expect(screen.getByText("Queued").className).not.toContain("text-accent")
+  })
+
   it("no longer says Queued once its job was cancelled", () => {
     show(exported("queued", [item(1, "queued")]), job("cancelled"))
     expect(screen.getByText("Cancelled")).toBeTruthy()

@@ -37,7 +37,16 @@ import { reveal } from "@/lib/os"
 import { usePlugins, useProjects } from "@/lib/queries"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
-import { useActiveCount, useActiveProgress, useActivity, useProjectIndexProgress, useProjectIndexing } from "@/state/activity"
+import {
+  describeActive,
+  useActiveCount,
+  useActiveProgress,
+  useActivity,
+  useProjectIndexProgress,
+  useProjectIndexWaiting,
+  useProjectIndexing,
+  useRunningCount,
+} from "@/state/activity"
 import { useNewProject } from "@/state/new-project"
 import { useUi } from "@/state/ui"
 
@@ -348,10 +357,12 @@ function ActivityButton() {
   const actions = useAppActions()
   const open = useUi((s) => s.activityOpen)
   const active = useActiveCount()
+  const running = useRunningCount()
   const progress = useActiveProgress()
   return (
     <RailButton
-      icon={<Queue className={cn(active > 0 && "text-accent")} />}
+      // Gold while something runs: work that only waits is counted, not lit.
+      icon={<Queue className={cn(running > 0 && "text-accent")} />}
       label="Activity"
       onClick={actions.toggleActivity}
       shortcut={keys("global.activity")}
@@ -375,14 +386,26 @@ function ActivityButton() {
       {active > 0 && (
         <>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <ProgressRing aria-hidden value={progress} grid={32} className="size-8" trackClassName="text-white/[0.08]" />
+            <ProgressRing
+              aria-hidden
+              value={progress}
+              waiting={running === 0}
+              grid={32}
+              className="size-8"
+              trackClassName="text-white/[0.08]"
+            />
           </div>
-          <span className="timecode absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] leading-none font-semibold text-on-accent shadow-[0_0_6px_var(--accent)]">
+          <span
+            className={cn(
+              "timecode absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold",
+              running > 0 ? "bg-accent text-on-accent shadow-[0_0_6px_var(--accent)]" : "bg-fg-3 text-canvas",
+            )}
+          >
             {active}
           </span>
         </>
       )}
-      <span className="sr-only">{active > 0 ? `${active} running` : "Nothing running"}</span>
+      <span className="sr-only">{describeActive(running, active - running)}</span>
     </RailButton>
   )
 }
@@ -463,12 +486,13 @@ function ProjectTile({
  */
 function IndexingBadge({ projectId }: { projectId: string }) {
   const progress = useProjectIndexProgress(projectId)
+  const waiting = useProjectIndexWaiting(projectId)
   return (
     <span
       aria-hidden
       className="pointer-events-none absolute -right-1.5 -bottom-1.5 flex size-[18px] animate-pop-in items-center justify-center rounded-full bg-canvas"
     >
-      <ProgressRing value={progress} className="size-3" />
+      <ProgressRing value={progress} waiting={waiting} className="size-3" />
     </span>
   )
 }

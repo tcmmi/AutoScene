@@ -78,7 +78,9 @@ export function Progress({ value, className }: { value?: number | null; classNam
 
 /**
  * The same as a ring, filling clockwise from the top; a `size-*` class sizes
- * it. `value` in 0..1; omit (or null) and an arc spins. `grid` is the width it
+ * it. `value` in 0..1, and a short arc at 0, so work that starts shows; omit
+ * (or null) and an arc spins. `waiting`: the work waits its turn, so the track
+ * stands alone, empty and still, whatever `value` says. `grid` is the width it
  * is drawn on, the line 2 of it: a bigger grid draws a finer line.
  *
  * A ring steps with a stream of values and eases only a change that stands
@@ -87,12 +89,18 @@ export function Progress({ value, className }: { value?: number | null; classNam
  */
 export function ProgressRing({
   value,
+  waiting = false,
   grid = 16,
   className,
   trackClassName = "text-white/15",
   ...props
-}: { value?: number | null; grid?: number; trackClassName?: string } & React.ComponentProps<"svg">) {
-  const m = useFollow(value)
+}: {
+  value?: number | null
+  waiting?: boolean
+  grid?: number
+  trackClassName?: string
+} & React.ComponentProps<"svg">) {
+  const m = useFollow(waiting ? 0 : value)
   const sweeping = m.value == null
   const arc = m.value ?? m.pos
   const c = grid / 2
@@ -119,7 +127,8 @@ export function ProgressRing({
         strokeDasharray={`${Math.max(3, arc * 100)} 100`}
         className="origin-center -rotate-90 drop-shadow-[0_0_6px_var(--accent)] transition-[stroke-dasharray,opacity]"
         style={{
-          opacity: sweeping ? 0 : 1,
+          // Waiting draws no arc at all: a zero-length dash's round cap would still be a dot.
+          opacity: sweeping || waiting ? 0 : 1,
           transitionDuration: `${m.ease === "out" ? "var(--dur-slow)" : "0ms"}, var(--dur-med)`,
           transitionTimingFunction: "var(--ease-out), linear",
         }}

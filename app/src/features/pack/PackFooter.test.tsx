@@ -63,4 +63,38 @@ describe("PackFooter", () => {
     expect(screen.getByRole("button", { name: "Export queued" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: /^Export$/ })).toBeNull()
   })
+
+  it("shows a waiting export's ring empty and still: no arc, no spinner", () => {
+    const ring = (state: "queued" | "running", progress: number | null) => {
+      cleanup()
+      render(
+        <PackFooter
+          totals={totals}
+          bytes={null}
+          format={null}
+          picks={0}
+          canExport={false}
+          exporting={{ state, progress }}
+          onClearPicks={() => {}}
+          onExport={() => {}}
+          onShowExport={() => {}}
+        />,
+        { wrapper },
+      )
+      const svg = screen.getByRole("button", { name: /Export/ }).querySelector("svg[role=progressbar]")!
+      const [, arc, spinner] = svg.querySelectorAll("circle")
+      return { arc: arc as SVGCircleElement, spinner }
+    }
+    const queued = ring("queued", null)
+    expect(queued.arc.style.opacity).toBe("0")
+    expect(queued.spinner).toBeUndefined()
+    // Gold only while it runs.
+    expect(screen.getByRole("button", { name: "Export queued" }).className).not.toContain("text-accent")
+    const running = ring("running", 0.12)
+    expect(running.arc.style.opacity).toBe("1")
+    expect(running.spinner).toBeUndefined()
+    expect(screen.getByRole("button", { name: /Exporting/ }).className).toContain("text-accent")
+    // A running export that has just started, at 0, keeps its start arc.
+    expect(ring("running", 0).arc.style.opacity).toBe("1")
+  })
 })

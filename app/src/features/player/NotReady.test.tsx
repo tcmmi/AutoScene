@@ -108,6 +108,27 @@ describe("the player while an episode isn't ready", () => {
     expect(commands.mediaIndexingStill).not.toHaveBeenCalled()
   })
 
+  it("stands still while the work it waits for waits its turn: a clock and an empty bar, no spinner", () => {
+    useActivity.getState().replaceAll([job({ id: "preview", kind: "proxy", state: "queued", progress: null, stage: null })])
+    const { container } = show(episode({ status: "ready", proxy: "pending" }), { code: "not_ready", message: "Not yet." })
+    expect(screen.getByText("Waiting…")).toBeTruthy()
+    expect(container.querySelector(".animate-spin")).toBeNull()
+    expect(container.querySelector("svg.text-fg-3")).not.toBeNull()
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("0")
+    expect(container.querySelector(".animate-indeterminate")).toBeNull()
+    cleanup()
+    // An indexing that waits: the same clock where its picture will be.
+    useActivity.getState().replaceAll([job({ id: "ingest", state: "queued", progress: null, rev: 2 })])
+    const queued = show(episode({ status: "queued" })).container
+    expect(queued.querySelector(".animate-spin")).toBeNull()
+    expect(queued.querySelector("svg.text-fg-3")).not.toBeNull()
+    cleanup()
+    // Once it runs, it spins.
+    useActivity.getState().replaceAll([job({ id: "ingest", state: "running", progress: 0.1, rev: 3 })])
+    const running = show(episode({ status: "indexing" })).container
+    expect(running.querySelector(".animate-spin")).not.toBeNull()
+  })
+
   it("shows the preview's progress, not an analysis running beside it", () => {
     useActivity.getState().replaceAll([
       job({ id: "preview", kind: "proxy", stage: "Preparing preview", progress: 0.2, createdAt: 1 }),

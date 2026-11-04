@@ -1,7 +1,7 @@
 import type * as React from "react"
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { ArrowCounterClockwise, ArrowLeft, CircleNotch, MagnifyingGlass, X } from "@/components/icons"
+import { ArrowCounterClockwise, ArrowLeft, CircleNotch, Clock, MagnifyingGlass, X } from "@/components/icons"
 import { toast } from "sonner"
 import type { FrameCount, JobInfo, MediaItem } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,7 @@ import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { cancelJob, cancelLabel } from "@/lib/jobs"
 import { assetUrl } from "@/lib/media"
 import { cn } from "@/lib/utils"
-import { useMediaJob } from "@/state/activity"
+import { jobBar, useMediaJob } from "@/state/activity"
 import { useIndexingStill } from "./indexing-still"
 
 /** Poster with what's happening instead of a player. */
@@ -81,17 +81,17 @@ export function NotReady({
       <div className="glass-strong relative flex w-[min(460px,90%)] flex-col items-center rounded-3xl px-8 py-8 text-center">
         {indexing ? (
           <div className="picture-edge artwork-fallback relative grid aspect-video w-64 place-items-center overflow-hidden rounded-xl">
-            {!still && <CircleNotch className="size-6 animate-spin text-accent" />}
+            {!still && <Busy waiting={job.state === "queued"} />}
             <Crossfade src={still} />
           </div>
         ) : job ? (
-          <CircleNotch className="size-6 animate-spin text-accent" />
+          <Busy waiting={job.state === "queued"} />
         ) : null}
         <h2 className={cn("display text-3xl text-fg-1", indexing ? "mt-5" : "mt-3")}>{title}</h2>
         {body && <p className="mt-2 text-md break-words text-fg-2">{body}</p>}
         {job && (
           <div className="mt-6 w-full">
-            <Progress value={job.state === "running" ? job.progress : null} />
+            <Progress value={jobBar(job)} />
             {job.state === "running" && job.frames ? (
               <FramesRead job={job} frames={job.frames} />
             ) : (
@@ -144,6 +144,15 @@ export function NotReady({
         )}
       </div>
     </div>
+  )
+}
+
+/** Work under way spins; work that waits its turn stands still, as its bar does. */
+function Busy({ waiting }: { waiting: boolean }) {
+  return waiting ? (
+    <Clock className="size-6 text-fg-3" />
+  ) : (
+    <CircleNotch className="size-6 animate-spin text-accent" />
   )
 }
 

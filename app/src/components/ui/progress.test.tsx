@@ -191,6 +191,30 @@ describe("ProgressRing", () => {
     expect(ringParts().arc.style.transitionDuration).toBe("var(--dur-slow), var(--dur-med)")
   })
 
+  it("draws no arc while it waits, not even its round cap's dot, whatever its value", () => {
+    const { rerender } = render(<ProgressRing waiting value={0} />)
+    expect(ringParts().arc.style.opacity).toBe("0")
+    expect(ringParts().spinner).toBeNull()
+    expect(ringParts().ring.getAttribute("aria-valuenow")).toBe("0")
+    // Waiting never spins, even with no value told.
+    rerender(<ProgressRing waiting value={null} />)
+    expect(ringParts().arc.style.opacity).toBe("0")
+    expect(ringParts().spinner).toBeNull()
+    rerender(<ProgressRing value={0.01} />)
+    expect(ringParts().arc.style.opacity).toBe("1")
+    expect(ringParts().arc.getAttribute("stroke-dasharray")).toBe("3 100")
+  })
+
+  it("keeps a start arc for running work at 0, so a new stage doesn't blink it out", () => {
+    // The backend tells a stage's start as exactly 0 while the job runs.
+    const { rerender } = render(<ProgressRing value={0.99} />)
+    rerender(<ProgressRing value={0} />)
+    expect(ringParts().arc.style.opacity).toBe("1")
+    expect(ringParts().arc.getAttribute("stroke-dasharray")).toBe("3 100")
+    rerender(<ProgressRing value={0.004} />)
+    expect(ringParts().arc.style.opacity).toBe("1")
+  })
+
   it("tells assistive tech the rounded value", () => {
     const { rerender } = render(<ProgressRing value={0.257} />)
     expect(ringParts().ring.getAttribute("aria-valuenow")).toBe("26")

@@ -6,6 +6,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { plural } from "@/features/cast/cast"
 import { formatBytes, formatDuration, formatPercent } from "@/lib/format"
 import { useShortcutKeys } from "@/lib/shortcuts"
+import { jobBar } from "@/state/activity"
 
 /**
  * The pack at a glance, floating over the shots: how many, how long, about
@@ -56,8 +57,9 @@ export function PackFooter({
       )}
       {exporting ? (
         <Tooltip label="Show it in Activity">
-          <Button size="md" variant="accent" onClick={onShowExport}>
-            <ProgressRing aria-hidden value={exporting.state === "running" ? exporting.progress : null} />
+          {/* Gold while it runs; waiting its turn it is a quiet button with an empty ring. */}
+          <Button size="md" variant={exporting.state === "queued" ? "secondary" : "accent"} onClick={onShowExport}>
+            <ProgressRing aria-hidden value={jobBar(exporting)} waiting={exporting.state === "queued"} />
             {exporting.state === "queued" ? (
               "Export queued"
             ) : (

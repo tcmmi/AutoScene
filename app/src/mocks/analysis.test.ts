@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest"
-import type { JobInfo } from "@/bindings"
-import { HOLD_MS } from "@/state/activity"
-import { ANALYSIS, analysisSteps, analysisTick } from "./backend"
+import { invoke } from "@tauri-apps/api/core"
+import { clearMocks } from "@tauri-apps/api/mocks"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import type { JobInfo, MediaItem, ProjectSummary } from "@/bindings"
+import { HOLD_MS, isFinished } from "@/state/activity"
+import { ANALYSIS, analysisSteps, analysisTick, installMockBackend } from "./backend"
 
 const job = (): JobInfo => ({
   id: "a",
@@ -50,5 +52,43 @@ describe("the mock's analysis", () => {
   it("starts a characters-only run at its characters", () => {
     expect(at(true, 0)).toEqual({ stage: "Finding characters", progress: 0, etaMs: null })
     expect(at(true, 2600).stage).toBe("Grouping characters")
+  })
+})
+
+describe("the mock's analyses, as the backend's one analysis slot runs them", () => {
+  beforeAll(() => installMockBackend())
+  afterAll(() => clearMocks())
+
+  it("run one at a time, and cancelling one that waits leaves its episode stopped where it would have begun", async () => {
+    const projects = await invoke<ProjectSummary[]>("projects_list")
+    const projectId = projects.find((p) => p.title === "Sousou no Frieren")!.id
+    const episodes = async () => invoke<MediaItem[]>("media_list", { projectId })
+    const [a, b, c] = (await episodes()).filter((m) => m.status === "ready")
+    for (const m of [a, b, c]) await invoke("media_analyze", { projectId, mediaId: m.id, redo: "shots" })
+    const jobOf = async (m: MediaItem) =>
+      (await invoke<JobInfo[]>("jobs_list")).find((j) => j.kind === "analyze" && j.mediaId === m.id && !isFinished(j))
+    const shots = async (m: MediaItem) => (await episodes()).find((x) => x.id === m.id)!.shots
+
+    const [ja, jb, jc] = [(await jobOf(a))!, (await jobOf(b))!, (await jobOf(c))!]
+    expect([ja.state, jb.state, jc.state]).toEqual(["running", "queued", "queued"])
+    // As the backend queues a job: nothing told until it runs, and its episode isn't begun.
+    expect([jb.progress, jb.stage, jb.etaMs]).toEqual([null, null, null])
+    expect([await shots(a), await shots(b)]).toEqual(["running", "pending"])
+    // Asking again for one that waits is asking for one under way: nothing new is queued.
+    await invoke("media_analyze", { projectId, mediaId: b.id, redo: null })
+    expect((await invoke<JobInfo[]>("jobs_list")).filter((j) => j.mediaId === b.id && !isFinished(j))).toHaveLength(1)
+
+    await invoke("job_cancel", { jobId: jb.id })
+    expect(await shots(b)).toBe("stopped")
+    expect(await jobOf(b)).toBeUndefined()
+    expect([(await jobOf(a))?.state, (await jobOf(c))?.state]).toEqual(["running", "queued"])
+
+    // The slot comes free: the one that has waited since goes on.
+    await invoke("job_cancel", { jobId: ja.id })
+    expect(await shots(a)).toBe("stopped")
+    expect((await jobOf(c))?.state).toBe("running")
+    expect(await shots(c)).toBe("running")
+    await invoke("job_cancel", { jobId: jc.id })
+    expect(await shots(c)).toBe("stopped")
   })
 })

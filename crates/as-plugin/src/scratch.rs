@@ -267,21 +267,70 @@ fn remove_once(path: &Path, marker: &mut Option<File>) -> io::Result<()> {
     gone(emptied)
 }
 
-/// Removes `path` as what it is: a folder with all it holds (std removes a
-/// link in it as a link), or a link or a file alone, never what a link
-/// leads to.
+/// Removes `path` as what it is: a folder with all it holds (a link in it
+/// goes as a link), or a link or a file alone, never what a link leads to.
 fn remove_entry(path: &Path) -> io::Result<()> {
     let kind = match fs::symlink_metadata(path) {
         Ok(m) => m.file_type(),
         Err(e) => return gone(Err(e)),
     };
     gone(if kind.is_dir() {
-        fs::remove_dir_all(path)
+        remove_tree(path)
     } else if is_dir_link(&kind) {
         fs::remove_dir(path)
     } else {
         fs::remove_file(path)
     })
+}
+
+/// Removes the folder `path` and all it holds.
+#[cfg(windows)]
+fn remove_tree(path: &Path) -> io::Result<()> {
+    fs::remove_dir_all(path)
+}
+
+/// Removes the folder `path` and all it holds, however deep. std's removal
+/// keeps a file open for each level, so a plugin that nests folders past the
+/// limit on open files (a WebAssembly plugin can, with `create_dir` alone)
+/// would leave a tree no try ever removes. Here the folders are lifted
+/// instead: a folder in a folder of `path` is renamed into `path`, with all
+/// it holds, and the one it left goes. Nothing holds more than one folder
+/// open, no path has more than three names, and each pass leaves the tree a
+/// level flatter. A removal that stops part way leaves it flatter too, under
+/// the same `path`.
+#[cfg(not(windows))]
+fn remove_tree(path: &Path) -> io::Result<()> {
+    let mut lifted = 0_u64;
+    loop {
+        let entries = fs::read_dir(path)?.collect::<io::Result<Vec<_>>>()?;
+        if entries.is_empty() {
+            return fs::remove_dir(path);
+        }
+        for entry in entries {
+            if !entry.file_type()?.is_dir() {
+                gone(fs::remove_file(entry.path()))?;
+                continue;
+            }
+            let folder = entry.path();
+            for inner in fs::read_dir(&folder)? {
+                let inner = inner?;
+                if !inner.file_type()?.is_dir() {
+                    gone(fs::remove_file(inner.path()))?;
+                    continue;
+                }
+                // A rename would take the place of an empty folder of this name.
+                let free = loop {
+                    lifted += 1;
+                    let free = path.join(format!("lifted-{lifted}"));
+                    if fs::symlink_metadata(&free).is_err() {
+                        break free;
+                    }
+                };
+                fs::rename(inner.path(), free)?;
+            }
+            gone(fs::remove_dir(&folder))?;
+        }
+    }
 }
 
 /// Gives this user leave to read, change and enter `dir` and each folder in
@@ -473,6 +522,57 @@ mod tests {
         assert_eq!(there.root().parent(), Some(elsewhere.path()));
         assert!(with_temp_root(&elsewhere.path().join("missing"), Scratch::new).is_err());
         assert!(TEMP_ROOT.with_borrow(Option::is_none));
+    }
+
+    /// How many levels a tree needs to be deeper than this process may hold
+    /// files open, up to what a test should build.
+    #[cfg(not(windows))]
+    #[allow(unsafe_code)]
+    fn past_the_open_files() -> usize {
+        let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        // SAFETY: getrlimit only writes the struct it is handed.
+        assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut limit) }, 0);
+        usize::try_from(limit.rlim_cur).unwrap_or(usize::MAX).saturating_add(100).min(20_000)
+    }
+
+    /// A plugin that nests folders past the limit on open files doesn't
+    /// outlive its run. Windows has no such limit, and refuses to move a
+    /// folder while a scanner reads a file in it.
+    #[cfg(not(windows))]
+    #[test]
+    fn a_tree_of_any_depth_goes() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut s = Scratch::new_in(temp.path()).unwrap();
+        // Built from the inside out: a path this long has no name.
+        let (tree, wrap) = (s.path().join("tree"), s.path().join("wrap"));
+        fs::create_dir(&tree).unwrap();
+        fs::write(tree.join("file"), "deep").unwrap();
+        for _ in 0..past_the_open_files() {
+            fs::create_dir(&wrap).unwrap();
+            fs::rename(&tree, wrap.join("d")).unwrap();
+            fs::write(wrap.join("file"), "on the way").unwrap();
+            fs::rename(&wrap, &tree).unwrap();
+        }
+        let root = s.root().to_owned();
+        let marker = s.marker.take();
+        assert!(remove_retrying(&root, marker, &[], |_| {}));
+        assert!(fs::symlink_metadata(&root).is_err(), "{} is still there", root.display());
+    }
+
+    /// The names a tree is lifted to may be taken, by what the plugin made:
+    /// nothing of it is overwritten or left.
+    #[test]
+    fn a_wide_tree_with_names_of_its_own_goes() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut s = Scratch::new_in(temp.path()).unwrap();
+        for name in ["lifted-1", "lifted-2", "a/lifted-1/x", "a/b/c/d", "a/e/f", "g/h"] {
+            fs::create_dir_all(s.path().join(name)).unwrap();
+            fs::write(s.path().join(name).join("file"), name).unwrap();
+        }
+        let root = s.root().to_owned();
+        let marker = s.marker.take();
+        assert!(remove_retrying(&root, marker, &[], |_| {}));
+        assert!(fs::symlink_metadata(&root).is_err(), "{} is still there", root.display());
     }
 
     #[test]

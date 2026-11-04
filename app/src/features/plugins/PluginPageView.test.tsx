@@ -336,4 +336,13 @@ describe("a plugin's page", () => {
     expect(screen.getByText("Plugins couldn't start.")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Go to Plugins" })).toBeTruthy()
   })
+
+  it("a failed refetch while the plugins are cached leaves the page open", async () => {
+    // What the query holds after a refetch was rejected: the list from before, and the error.
+    list.error = { code: "internal", message: "Plugins couldn't start." }
+    show("/x/dev.a.page/main")
+    expect(await screen.findByLabelText("Main")).toBeTruthy()
+    await waitFor(() => expect(pluginPageOpen).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText("Couldn't read the plugins")).toBeNull()
+  })
 })

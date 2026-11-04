@@ -37,7 +37,8 @@ export function PluginPageView() {
   const { data: plugins, isPending, error } = usePlugins()
   if (!isPluginId(plugin) || !isPageId(page)) return <NotFound />
   if (isPending) return null
-  if (error) return <Unread error={error} />
+  // A failed refetch keeps the list from before: an open page stays, as on the Plugins page.
+  if (error && plugins === undefined) return <Unread error={error} />
   const p = plugins?.find((x) => x.id === plugin)
   const pg = p?.pages.find((x) => x.id === page)
   if (!p || !pg || (pg.scope === "project") !== (pid != null)) return <NotFound />

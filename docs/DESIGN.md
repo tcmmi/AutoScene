@@ -237,6 +237,43 @@ Rules:
   had is taken from it (a toast says so, with Undo), one that can't be a shortcut there says why in red. Keys the
   person chose are gold, with a reset beside them. Every tooltip, menu entry and the Player keys dialog shows the
   keys as set (`lib/shortcuts.ts`); on macOS the menu bar gets them too.
+- **Settings → General → Hardware acceleration** (`HardwareGroup.tsx`): "Where analysis runs on this computer." Two
+  rows, the second only where it applies.
+  - **Row 1, Graphics card** ("Chip" on a Mac): a select and one sentence that says what analysis runs on, and is
+    the only place the device is named. Automatic, then each card when there are two or more, then Processor only;
+    a Mac and a Windows computer with one card get Automatic and Processor only, Linux and a computer without a
+    card no select. While it looks, the select is disabled and reads "Looking for graphics cards…" ("Checking the
+    chip…"); if the check fails, a line says "Couldn't check the graphics cards." ("Couldn't check the chip.") with
+    Try again. The choice applies from the next analysis, and the sentence says so until then. Other
+    sentences: the chosen card isn't connected (Automatic stands in), some steps ran on the processor in the last
+    analysis, or analysis runs on the processor and is much slower. While NVIDIA acceleration is in use it ends
+    "with NVIDIA acceleration". Fast Scan's line in New project follows this choice without naming the card.
+  - **Row 2, NVIDIA acceleration:** only on Windows (x64) where analysis runs on a GeForce RTX 30 card or newer,
+    and wherever NVIDIA's files are, also when the card changed. It is the download's only home: no Activity job,
+    no dialog; a toast says how it ended to someone who left Settings. One state at a time, the first that applies:
+    - **Downloading:** a gold `Progress` bar, "45 of 111 MB" under it in the timecode face, and Cancel.
+    - **Failed:** why, in plain words, and Try again, which fetches only what is missing. Five texts, from the
+      code's messages: no internet connection; not enough free space (with how much to free); files that did not
+      arrive as they should; NVIDIA having changed its files, so AutoScene needs an update; a cancelled repair
+      ("analysis runs without NVIDIA acceleration"). Cancel during a repair keeps the verified files and shows
+      Failed; Cancel during a first download or an update removes what was fetched and returns to Available.
+    - **Removing:** "Removing after the current analysis." Windows can't delete a library an engine holds.
+    - **Available:** what it is for, the size, that the Python Package Index sees the IP address, a link to
+      NVIDIA's licence, and Agree and download as the one primary button. A new licence asks again here.
+    - **Not used:** analysis is not running on a card the files serve, whichever way it got there (another card
+      or the processor is chosen, Automatic resolves to another card, or the card changed); the switch is disabled
+      and keeps the person's choice.
+    - **Stopped working:** it failed twice in a row or doesn't load; analysis runs without it. Try again shows
+      that it is checking.
+    - **Needs a newer driver:** the card isn't listed by NVIDIA's engine; Get the driver opens NVIDIA's page.
+    - **Ready:** a switch, on after a first download and the person's from then on. An update or a repair never
+      flips it.
+  - **Remove NVIDIA's files** is a quiet text button under the row's text, wherever files are except while
+    downloading or removing. Its dialog asks first and says what it costs ("Analysis keeps running on this
+    graphics card, more slowly") where the row is ready and the switch is on.
+  - **Copy:** the row says NVIDIA, never TensorRT, CUDA or DirectML. Row 1 names no engine either. About → AI
+    engine names ONNX Runtime with its version and, once downloaded, TensorRT for RTX with NVIDIA's licence and
+    its Acknowledgements.
 
 ## Copy
 

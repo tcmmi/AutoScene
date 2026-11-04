@@ -255,6 +255,14 @@ The engine keeps its models on the graphics card for up to 2 minutes after
 its last analysis. A GPU plugin that starts right after an analysis may
 find less free video memory than it expects.
 
+**The graphics choice covers AutoScene's own analysis only.** The card
+chosen in Settings → General → Hardware acceleration, "Processor only" and
+NVIDIA acceleration decide where AutoScene's models run. A plugin gets none
+of them: AutoScene sets no device for it, nothing of NVIDIA's files is
+handed over, and `"gpu": true` only makes the run and the analysis wait for each other.
+A plugin picks its own device, with `CUDA_VISIBLE_DEVICES` and
+`CUDA_PATH` as AutoScene itself was started with them.
+
 A run that waits or runs already isn't queued again: the same action of the
 same plugin, on the same export or in the same project, with the same input
 from a page. AutoScene then says so, and a page's `actions.run` gives

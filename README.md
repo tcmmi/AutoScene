@@ -34,8 +34,29 @@ once:
   WebKitGTK 4.1 is required for the `.deb` and `.rpm` packages.
 
 FFmpeg and ONNX Runtime ship with the app. The AI models (about 310 MB)
-download the first time an analysis needs them. Analysis runs on the GPU
-through DirectML on Windows and Core ML on macOS; on Linux it runs on the CPU.
+download the first time an analysis needs them.
+
+### Graphics
+
+Analysis runs on the graphics card through DirectML on Windows (any
+DirectX 12 card) and on the Apple chip through Core ML on macOS; on Linux
+it runs on the processor. **Settings → General → Hardware acceleration**
+shows what it runs on. With two or more cards on Windows you can choose one
+there, or the processor only, which is much slower; the choice applies from
+the next analysis. A Mac keeps what Core ML compiled for the next start
+(a compile unused for 30 days goes), so on a Mac a model waits for its compile once, and again after an
+update that changes the model or the runtime.
+
+**NVIDIA acceleration** is optional, for Windows (x64) with a GeForce RTX 30
+series card or newer. Settings offers NVIDIA's engine, when analysis runs on that card, once you
+agree to NVIDIA's licence there: about 111 MB from the Python Package Index
+(which sees your IP address), 286 MB on disk, plus what it compiles as you use it. It speeds up the analysis of
+anime. Live-action analysis (Fast Scan included) and shots don't use it. AutoScene neither
+bundles nor hosts NVIDIA's files, and checks each against a SHA-256 pinned
+in the release before it is used. If the engine doesn't load or a job ends
+badly under it, analysis goes on without it, on DirectML. A switch turns it
+off, and **Remove NVIDIA's files** deletes them and what they compiled.
+Nothing changes for anyone who doesn't download it.
 
 ### Check a download
 

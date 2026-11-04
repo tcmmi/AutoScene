@@ -20,7 +20,7 @@ is a setting of the type `secret`: AutoScene keeps it in your system's
 keychain (the Windows Credential Manager, the macOS Keychain, or the Secret
 Service on Linux), never in its `library.db`, a log or the run line. The
 script asks for it with the call `secrets.get` each time it posts, and never
-writes it to its log or its messages. AutoScene's Settings never show it
+writes it to its log or its messages. The plugin's settings never show it
 again: **Set…** replaces it, **Remove…** takes it out of the keychain.
 
 If the URL gets out, delete the webhook in Discord (the channel's settings,

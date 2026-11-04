@@ -10,13 +10,14 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { pluginInfo } from "@/test/plugins"
-import { PluginSettingsSection } from "./PluginSettingsSection"
+import { PluginHero } from "./PluginSettingsPage"
 import { PluginsPage } from "./PluginsPage"
 
-const { state, reveal, openExternalUrl } = vi.hoisted(() => ({
+const { state, reveal, openExternalUrl, goPlugin } = vi.hoisted(() => ({
   state: { plugins: [] as PluginInfo[], allow: false },
   reveal: vi.fn(),
   openExternalUrl: vi.fn(),
+  goPlugin: vi.fn(),
 }))
 
 const settings = (allow: boolean): AppSettings => ({
@@ -44,7 +45,7 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
 }))
 vi.mock("@/lib/media", () => ({ pickFolder: vi.fn(() => Promise.resolve("D:\\Plugins\\mine")), pickPluginFile: vi.fn() }))
 vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal, openExternalUrl }))
-vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn() }) }))
+vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn(), goPlugin }) }))
 // The window's menu, around the rows' own entries.
 vi.mock("@/components/ui/page", () => ({ Page: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }))
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -78,7 +79,7 @@ describe("PluginsPage", () => {
         name: "Unreviewed One",
         trust: "unreviewed",
         active: false,
-        blockedReason: "Plugins that AutoScene has not reviewed are turned off in Settings.",
+        blockedReason: "Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins.",
       }),
       // A folder says so first, whatever its trust.
       pluginInfo({ id: "dev.a.folder", name: "Folder One", trust: "unreviewed", source: "folder", enabled: false, active: false }),
@@ -96,7 +97,7 @@ describe("PluginsPage", () => {
     // Only AutoScene's review stands behind the name a plugin gives its author.
     expect(within(await row("Pinned One")).getByText("Says it is by Someone, version 1.0.0")).toBeTruthy()
     // Why one that is turned on doesn't run; nothing for one turned off.
-    expect(within(await row("Unreviewed One")).getByText(/turned off in Settings/)).toBeTruthy()
+    expect(within(await row("Unreviewed One")).getByText(/You can allow them in Plugins/)).toBeTruthy()
     const folder = screen.getByRole("switch", { name: "Enable Folder One" })
     expect(folder.getAttribute("aria-checked")).toBe("false")
     expect(screen.getByRole("switch", { name: "Enable Reviewed One" }).getAttribute("aria-checked")).toBe("true")
@@ -143,6 +144,7 @@ describe("PluginsPage", () => {
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
     const menu = await screen.findByRole("menu")
     expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent?.trim())).toEqual([
+      "Its settings",
       "Show its folder",
       "Show its log",
       "Uninstall…",
@@ -286,17 +288,29 @@ describe("PluginsPage", () => {
     await waitFor(() => expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.b.beta", false))
   })
 
-  it("navigates to settings on clicking a card with settings page", async () => {
+  // Each plugin has its screen, its files and what it may use at least.
+  it("a card opens its plugin's settings under Plugins", async () => {
+    const user = userEvent.setup()
     state.plugins = [
       pluginInfo({
         id: "dev.a.alpha",
         name: "Alpha Tool",
+        description: "Has a setting.",
         settings: [{ key: "opt", title: "Option", description: "Test desc", kind: { type: "boolean", default: false } }],
       }),
+      pluginInfo({ id: "dev.a.bare", name: "Bare", description: "Sets nothing." }),
     ]
     render(<PluginsPage />, { wrapper })
-    const card = await screen.findByRole("group", { name: "Alpha Tool" })
-    expect(card.className).toContain("cursor-pointer")
+    await user.click(await screen.findByText("Has a setting."))
+    await user.click(screen.getByText("Sets nothing."))
+    expect(goPlugin.mock.calls).toEqual([["dev.a.alpha"], ["dev.a.bare"]])
+    // Its switch is the switch's, not the card's.
+    vi.mocked(commands.pluginSetEnabled).mockResolvedValueOnce({ ...state.plugins[1], enabled: false })
+    await user.click(screen.getByRole("switch", { name: "Enable Bare" }))
+    await waitFor(() => expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.a.bare", false))
+    await user.click(screen.getByRole("button", { name: "Bare options" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Its settings" }))
+    expect(goPlugin.mock.calls).toEqual([["dev.a.alpha"], ["dev.a.bare"], ["dev.a.bare"]])
   })
 
   it("keeps a banner's place while it loads, and draws neither trust nor facts on it", async () => {
@@ -341,12 +355,12 @@ describe("PluginsPage", () => {
     const { container } = render(
       <>
         <PluginsPage />
-        <PluginSettingsSection id="dev.a.art" />
+        <PluginHero p={state.plugins[0]} />
       </>,
       { wrapper },
     )
-    // The banner on its card and in its settings, beside the icons.
-    await waitFor(() => expect(container.querySelectorAll(`img[src="${art}"]`)).toHaveLength(2))
+    // The banner on its card, and blurred and framed in its settings' hero.
+    await waitFor(() => expect(container.querySelectorAll(`img[src="${art}"]`)).toHaveLength(3))
     await waitFor(() => expect(queryClient.getQueryState(qk.pluginBanner("dev.a.link", "b2"))?.status).toBe("success"))
     await act(() => new Promise((done) => setTimeout(done, 0)))
     const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src"))
@@ -367,21 +381,24 @@ describe("PluginsPage", () => {
     await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledWith("dev.a.mine"))
     page.unmount()
     // Its settings say the same, in their ⋯ (the card's list without
-    // Settings and Uninstall) and in their right-click.
+    // Its settings) and in their right-click.
     const settings = render(
       <AppMenu>
         <div>
-          <PluginSettingsSection id="dev.a.mine" />
+          <PluginHero p={p} />
         </div>
       </AppMenu>,
       { wrapper },
     )
     await user.click(await screen.findByRole("button", { name: "Mine options" }))
     const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
-    expect(items).toEqual(["Show the source it names", "Show its folder", "Show its log"])
+    expect(items).toEqual(["Show the source it names", "Show its folder", "Show its log", "Uninstall…"])
     await user.click(screen.getByRole("menuitem", { name: "Show the source it names" }))
     await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledTimes(2))
     fireEvent.contextMenu(screen.getByRole("heading", { name: "Mine" }), { clientX: 40, clientY: 40 })
+    const right = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
+    // The plugin's list first; the app's own entries follow it.
+    expect(right.slice(0, items.length)).toEqual(items)
     fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Show the source it names" }))
     await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledTimes(3))
     expect(vi.mocked(commands.pluginOpenSource).mock.calls).toEqual([["dev.a.mine"], ["dev.a.mine"], ["dev.a.mine"]])
@@ -429,9 +446,9 @@ describe("PluginsPage", () => {
       await waitFor(() => expect(screen.queryByRole("menu")).toBeNull())
       return items
     }
-    expect(await entries("Reviewed")).toEqual(["Show its source", "Show its folder", "Show its log", "Uninstall…"])
-    expect((await entries("Pinned"))[0]).toBe("Show the source it names")
-    expect((await entries("Folder"))[0]).toBe("Show the source it names")
+    expect(await entries("Reviewed")).toEqual(["Its settings", "Show its source", "Show its folder", "Show its log", "Uninstall…"])
+    expect((await entries("Pinned"))[1]).toBe("Show the source it names")
+    expect((await entries("Folder"))[1]).toBe("Show the source it names")
     await user.click(await screen.findByRole("button", { name: "Reviewed options" }))
     await user.click(await screen.findByRole("menuitem", { name: "Show its source" }))
     await waitFor(() => expect(commands.pluginOpenSource).toHaveBeenCalledWith("dev.a.reviewed"))
@@ -444,13 +461,13 @@ describe("PluginsPage", () => {
     const page = render(<PluginsPage />, { wrapper })
     await user.click(await screen.findByRole("button", { name: "Plain options" }))
     const items = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
-    expect(items).toEqual(["Show its folder", "Show its log", "Uninstall…"])
+    expect(items).toEqual(["Its settings", "Show its folder", "Show its log", "Uninstall…"])
     page.unmount()
     // Nor does the ⋯ of its settings.
-    render(<PluginSettingsSection id="dev.a.plain" />, { wrapper })
+    render(<PluginHero p={state.plugins[0]} />, { wrapper })
     await user.click(await screen.findByRole("button", { name: "Plain options" }))
     const ownItems = within(await screen.findByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent?.trim())
-    expect(ownItems).toEqual(["Show its folder", "Show its log"])
+    expect(ownItems).toEqual(["Show its folder", "Show its log", "Uninstall…"])
     expect(screen.queryByText(/source/)).toBeNull()
     expect(commands.pluginOpenSource).not.toHaveBeenCalled()
   })

@@ -181,6 +181,12 @@ Rules:
     Shift+Z for the whole episode) and scrolls with the wheel; zoomed in, a thin overview of the episode shows the
     part in view.
   - Only the timecode, the playhead and the glow follow every video frame; shots and lanes are drawn on canvases.
+- **A plugin's settings** (`/plugins/<id>`, "Its settings" in menus; Settings lists only the app's own sections): its
+  picture as the hero, always blurred (the banner, else the icon, else the fallback), the sharp banner or icon
+  framed beside the name, the trust badge, the version and the licence as chips, then "Says it is by …" ("By …"
+  only for a package AutoScene reviewed) and what it says it does. On the right the switch and ⋯. Trust text never
+  sits on a plugin's own picture. Below, a banner only when something needs fixing, with the control that fixes it
+  (Allow them…, Load its folder again…), then its settings, after every export, pages, what it may use and files.
 - **Settings → Shortcuts:** the keymap first — Keys like in AutoScene · Premiere Pro · DaVinci Resolve as a pill
   (a card under each option lists where its keys differ) and Reset all — then every shortcut by place. A click on
   a key listens for the new one (a gold pill, held modifiers shown, Esc stops); a key another shortcut in reach

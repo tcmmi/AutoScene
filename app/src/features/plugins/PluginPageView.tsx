@@ -117,14 +117,14 @@ function PageTitle({ p, pg }: { p: PluginInfo; pg: PageSpec }) {
 
 /** What can be done with a plugin's page: its ⋯ menu and a right-click on it list the same. */
 function PageItems({ kit, p, onReload, onClose }: { kit: MenuKit; p: PluginInfo; onReload: () => void; onClose: () => void }) {
-  const { goSettings } = useAppActions()
+  const { goPlugin } = useAppActions()
   const { Item, Separator } = kit
   return (
     <>
       <Item onSelect={onReload}>
         <ArrowCounterClockwise /> Reload the page
       </Item>
-      <Item onSelect={() => goSettings(`plugin.${p.id}`)}>
+      <Item onSelect={() => goPlugin(p.id)}>
         <SlidersHorizontal /> Its settings
       </Item>
       <Item onSelect={() => reveal(p.logPath)}>

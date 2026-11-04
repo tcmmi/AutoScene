@@ -37,8 +37,8 @@ It can add:
 - **Export actions**: entries in each export's menu. The person can also
   turn each one on to run after every export.
 - **Commands**: entries in the command palette, with or without a project.
-- **Settings**: listed under the plugin's name in Settings, which AutoScene
-  draws and saves. Each run gets the values. A **secret** setting (version
+- **Settings**: on the plugin's own screen under Plugins (its settings),
+  which AutoScene draws and saves. Each run gets the values. A **secret** setting (version
   2), such as a token, is kept in the system's keychain instead (see
   [Secret settings](#secret-settings)).
 - **Pages** (version 2): screens of its own, in HTML, which AutoScene shows
@@ -81,8 +81,8 @@ that what it does matches what it says.
    `main.py` counts at the next run.
 5. Run it: **Write a clip list** is in each export's menu, and **Say hello**
    is in the palette (Ctrl+K, or ⌘K on a Mac). The result shows as a toast
-   and in Activity. **Show its log** (right-click the plugin in Settings →
-   Plugins) shows what else it wrote.
+   and in Activity. **Show its log** (right-click the plugin in Plugins)
+   shows what else it wrote.
 6. Make a package to share: `asp pack my-plugin my-plugin-1.0.0.asp`. Sign
    it with your key so its updates can be told from someone else's (see
    [Signing](#signing-with-asp)).
@@ -1450,7 +1450,8 @@ as a PNG or an SVG file does refuses the package.
 
 ### banner
 
-Wide art for the plugin's card in Plugins and the top of its settings: a
+Wide art for the plugin's card in Plugins and the top of its settings
+(blurred behind its name there, and framed beside it): a
 `.png`, `.jpg` (or `.jpeg`) or `.webp` file of at most 512 KB in the
 plugin's folder, in a manifest of `"manifestVersion": 2`. Make it 2:1,
 1200×600: PNG for flat art, JPEG or WebP for pictures. `asp pack` and

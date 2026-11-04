@@ -86,11 +86,12 @@ function mounted(): PageMount {
 function show(path: string) {
   const root = createRootRoute({ component: Outlet })
   const library = createRoute({ getParentRoute: () => root, path: "/", component: () => <p>Library</p> })
+  const settings = createRoute({ getParentRoute: () => root, path: "/plugins/$id", component: () => <p>Its settings</p> })
   const own = createRoute({ getParentRoute: () => root, path: "/x/$plugin/$page/$", component: PluginPageView })
   const project = createRoute({ getParentRoute: () => root, path: "/p/$pid", component: Outlet })
   const projectPage = createRoute({ getParentRoute: () => project, path: "/x/$plugin/$page/$", component: PluginPageView })
   const router = createRouter({
-    routeTree: root.addChildren([library, own, project.addChildren([projectPage])]),
+    routeTree: root.addChildren([library, settings, own, project.addChildren([projectPage])]),
     history: createMemoryHistory({ initialEntries: [path] }),
     defaultNotFoundComponent: NotFound,
   })
@@ -177,6 +178,16 @@ describe("a plugin's page", () => {
     show("/p/p1/x/dev.a.page/clips")
     await waitFor(() => expect(pluginPageOpen).toHaveBeenCalledWith("dev.a.page", "clips", "p1"))
     expect(screen.getByRole("navigation", { name: "Project" })).toBeTruthy()
+  })
+
+  // A plugin's settings are its own screen under Plugins, no longer a section of Settings.
+  it("Its settings opens the plugin under Plugins", async () => {
+    pluginPageOpen.mockReturnValue(new Promise(() => {}))
+    const router = show("/x/dev.a.page/main")
+    fireEvent.pointerDown(await screen.findByRole("button", { name: "Main options" }), { button: 0, ctrlKey: false })
+    fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Its settings" }))
+    await waitFor(() => expect(router.state.location.pathname).toBe("/plugins/dev.a.page"))
+    expect(await screen.findByText("Its settings")).toBeTruthy()
   })
 
   it("a page titled Settings still shows the Plugin badge", async () => {

@@ -190,7 +190,7 @@ impl RunKey {
     }
 }
 
-/// An installed plugin, as Settings → Plugins shows it.
+/// An installed plugin, as Plugins shows it.
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
@@ -1638,10 +1638,10 @@ mod tests {
             assert!(!active(p, allow) && active(p, true));
             assert_eq!(
                 runnable(p, allow).unwrap_err().to_string(),
-                "Plugins that AutoScene has not reviewed are turned off in Settings."
+                "Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins."
             );
         }
-        // Settings shows the folder as what it is.
+        // Plugins shows the folder as what it is.
         assert_eq!(trust(&plugins[3].record), Trust::Unreviewed);
     }
 
@@ -2128,7 +2128,10 @@ mod tests {
         let hello = key(&id, ActionKind::Command, "hello", None, None);
 
         // Loaded from a folder, it is never reviewed: the setting decides.
-        assert_eq!(said(&post, false), "Plugins that AutoScene has not reviewed are turned off in Settings.");
+        assert_eq!(
+            said(&post, false),
+            "Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins."
+        );
         allow(true);
         assert_eq!([said(&post, false), said(&hello, false)], ["starts", "starts"]);
         // Its plugin.json changed while the run waited.

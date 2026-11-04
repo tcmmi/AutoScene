@@ -9,21 +9,27 @@ import { cn } from "@/lib/utils"
  */
 export function Hero({
   path,
+  src,
   ambient,
   blur,
+  dimmed,
   className,
   children,
   ...props
 }: {
-  path: string | null | undefined
+  path?: string | null
+  /** A picture's URL taken as it is (a plugin's checked `data:` URL), in place of `path`. */
+  src?: string | null
   /** Colour the picture glows with (`useAmbient`). */
   ambient?: string | null
   /** Blur the picture into a backdrop (a face is too small to show sharp). */
   blur?: boolean
+  /** Dim the picture (or the backdrop drawn without one): what it stands for is turned off. */
+  dimmed?: boolean
   className?: string
   children: React.ReactNode
 } & Omit<React.HTMLAttributes<HTMLElement>, "title" | "children"> & { ref?: React.Ref<HTMLElement> }) {
-  const url = path ? assetUrl(path) : null
+  const url = src ?? (path ? assetUrl(path) : null)
   return (
     <section className={cn("relative isolate flex min-h-[clamp(380px,56vh,600px)] flex-col justify-end", className)} {...props}>
       <div aria-hidden className="absolute inset-0 -z-10 overflow-hidden">
@@ -35,10 +41,11 @@ export function Hero({
             className={cn(
               "size-full animate-fade-in object-cover",
               blur ? "scale-125 blur-3xl saturate-150" : "scale-[1.02] object-[50%_30%]",
+              dimmed && "opacity-60",
             )}
           />
         ) : (
-          <div className="artwork-fallback size-full" />
+          <div className={cn("artwork-fallback size-full", dimmed && "opacity-60")} />
         )}
         {ambient && (
           <div

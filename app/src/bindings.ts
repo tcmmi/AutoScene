@@ -1699,7 +1699,7 @@ export type PluginExportAction = {
 	afterExport: boolean,
 };
 
-/**  An installed plugin, as Settings → Plugins shows it. */
+/**  An installed plugin, as Plugins shows it. */
 export type PluginInfo = {
 	id: string,
 	name: string,

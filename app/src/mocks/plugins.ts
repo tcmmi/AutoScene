@@ -32,7 +32,7 @@ import type { HostMethod } from "@/plugin-kit/protocol"
 type MockPlugin = Omit<PluginInfo, "active" | "blockedReason">
 
 const DATA = String.raw`C:\Users\you\AppData\Local\AutoScene`
-const NOT_ALLOWED = "Plugins that AutoScene has not reviewed are turned off in Settings."
+const NOT_ALLOWED = "Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins."
 
 /** A plain rounded square in `fill`, as a package's SVG icon arrives (base64). */
 const icon = (fill: string) =>

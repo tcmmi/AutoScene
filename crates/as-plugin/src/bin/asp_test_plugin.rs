@@ -74,7 +74,7 @@ fn main() {
             read_run();
             send(json!({
                 "type": "error",
-                "message": "No webhook is set.\nSet one in Settings.",
+                "message": "No webhook is set.\nSet one in its settings.",
                 "detail": format!("KeyError: 'webhook'\n\u{1b}[2m  at main.py:12\r\n{}", "frame ".repeat(400)),
             }));
             process::exit(1);

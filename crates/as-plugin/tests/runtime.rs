@@ -561,7 +561,7 @@ fn an_error_line_fails_the_run_with_its_message() {
     let p = Plugin::new("error");
     match p.run() {
         Err(PluginError::Failed { message, detail }) => {
-            assert_eq!(message, "No webhook is set. Set one in Settings.");
+            assert_eq!(message, "No webhook is set. Set one in its settings.");
             // Cleaned for the app's log, and cut.
             let detail = detail.unwrap();
             assert!(detail.starts_with("KeyError: 'webhook' [2m at main.py:12 frame frame "), "{detail}");
@@ -572,7 +572,7 @@ fn an_error_line_fails_the_run_with_its_message() {
     }
     // The plugin's log has it as it came, a line for each of its lines.
     let log = p.log_text();
-    let failed = "[failed] No webhook is set.\n  Set one in Settings. (KeyError: 'webhook'\n  \u{1b}[2m  at main.py:12\n  frame ";
+    let failed = "[failed] No webhook is set.\n  Set one in its settings. (KeyError: 'webhook'\n  \u{1b}[2m  at main.py:12\n  frame ";
     assert!(log.contains(failed), "{log}");
     assert!(log.contains(&format!("\n  {})\n", "frame ".repeat(400))), "{log}");
 }

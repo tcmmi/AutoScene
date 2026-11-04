@@ -9,28 +9,37 @@ const cache = new Map<string, string | null>()
  * picture, or where canvas reads aren't possible.
  */
 export function useAmbient(path: string | null | undefined): string | null {
-  const url = path ? assetUrl(path) : null
+  return useAmbientOf(path ? assetUrl(path) : null)
+}
+
+/**
+ * `useAmbient` of a picture at `url`, taken as it is (a plugin's checked
+ * `data:` URL), remembered under `key`: a short name for a long URL, such as
+ * the picture's hash. Without one, the URL is the key.
+ */
+export function useAmbientOf(url: string | null | undefined, key?: string): string | null {
+  const id = url ? (key ?? url) : null
   // The last colour read, with the picture it belongs to.
-  const [read, setRead] = useState<{ url: string; color: string | null } | null>(null)
+  const [read, setRead] = useState<{ id: string; color: string | null } | null>(null)
   useEffect(() => {
-    if (!url || cache.has(url)) return
+    if (!url || !id || cache.has(id)) return
     let live = true
     const img = new Image()
     img.crossOrigin = "anonymous"
     img.decoding = "async"
     img.onload = () => {
       const color = ambientOf(img)
-      cache.set(url, color)
-      if (live) setRead({ url, color })
+      cache.set(id, color)
+      if (live) setRead({ id, color })
     }
-    img.onerror = () => cache.set(url, null)
+    img.onerror = () => cache.set(id, null)
     img.src = url
     return () => {
       live = false
     }
-  }, [url])
-  if (!url) return null
-  return cache.get(url) ?? (read?.url === url ? read.color : null)
+  }, [url, id])
+  if (!id) return null
+  return cache.get(id) ?? (read?.id === id ? read.color : null)
 }
 
 function ambientOf(img: HTMLImageElement): string | null {

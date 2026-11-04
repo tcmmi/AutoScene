@@ -12,13 +12,11 @@ import {
   Plus,
   PuzzlePiece,
   SquaresFour,
-  Trash,
   X,
 } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ContextArea } from "@/components/ui/context-area"
-import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -32,6 +30,7 @@ import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { allowUnreviewed, keepPlugin } from "@/features/plugins/plugin-actions"
 import { hasSettings, reviewedPackage, trustLabel } from "@/features/plugins/plugin-items"
 import { PluginItems } from "@/features/plugins/plugin-menu"
+import { UninstallDialog } from "@/features/plugins/UninstallDialog"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
 import { useAppActions } from "@/lib/actions"
 import { commands, errorMessage } from "@/lib/ipc"
@@ -48,7 +47,6 @@ export function PluginsPage() {
   const [checking, setChecking] = useState<"file" | "folder" | null>(null)
   const [review, setReview] = useState<PluginReview | null>(null)
   const [removing, setRemoving] = useState<PluginInfo | null>(null)
-  const [uninstalling, setUninstalling] = useState(false)
   const [togglingAll, setTogglingAll] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState("")
@@ -323,24 +321,14 @@ export function PluginsPage() {
         )}
 
         <InstallReviewDialog review={review} onClose={() => setReview(null)} />
-        <Dialog open={removing != null} onOpenChange={(open) => !open && !uninstalling && setRemoving(null)}>
-          {removing && (
-            <UninstallForm
-              key={removing.id}
-              p={removing}
-              busy={uninstalling}
-              setBusy={setUninstalling}
-              onDone={() => setRemoving(null)}
-            />
-          )}
-        </Dialog>
+        <UninstallDialog p={removing} onClose={() => setRemoving(null)} />
       </div>
     </Page>
   )
 }
 
 function PluginCard({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void }) {
-  const { goSettings } = useAppActions()
+  const { goPlugin } = useAppActions()
   const trust = trustLabel(p)
   const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
   const facts = [by, `version ${p.version}`].filter(Boolean).join(", ")
@@ -363,14 +351,12 @@ function PluginCard({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void
         role="group"
         aria-label={p.name}
         onClick={(e) => {
-          if (hasSettings(p) && !(e.target as HTMLElement).closest("button, a, input, [role='switch']")) {
-            goSettings(`plugin.${p.id}`)
-          }
+          // Not a click on its own controls, nor one in its ⋯ menu, which
+          // reaches it through the portal.
+          const target = e.target as HTMLElement
+          if (e.currentTarget.contains(target) && !target.closest("button, a, input, [role='switch']")) goPlugin(p.id)
         }}
-        className={cn(
-          "group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] shadow-sm transition-all duration-200 hover:border-white/20 hover:bg-white/[0.05]",
-          hasSettings(p) && "cursor-pointer",
-        )}
+        className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] shadow-sm transition-all duration-200 hover:border-white/20 hover:bg-white/[0.05]"
       >
         {art && (
           <div className="relative aspect-[2/1] w-full overflow-hidden border-b border-white/[0.06] bg-black/40">
@@ -425,7 +411,7 @@ function PluginCard({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => goSettings(`plugin.${p.id}`)}
+                onClick={() => goPlugin(p.id)}
                 className="h-8 gap-1.5 px-3 text-xs text-fg-2 hover:text-fg-1"
               >
                 <GearSix className="size-3.5" />
@@ -454,7 +440,7 @@ function PluginCard({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void
 }
 
 function PluginListItem({ p, onUninstall }: { p: PluginInfo; onUninstall: () => void }) {
-  const { goSettings } = useAppActions()
+  const { goPlugin } = useAppActions()
   const trust = trustLabel(p)
   const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
   const facts = [by, `version ${p.version}`].filter(Boolean).join(", ")
@@ -473,14 +459,12 @@ function PluginListItem({ p, onUninstall }: { p: PluginInfo; onUninstall: () => 
         role="group"
         aria-label={p.name}
         onClick={(e) => {
-          if (hasSettings(p) && !(e.target as HTMLElement).closest("button, a, input, [role='switch']")) {
-            goSettings(`plugin.${p.id}`)
-          }
+          // Not a click on its own controls, nor one in its ⋯ menu, which
+          // reaches it through the portal.
+          const target = e.target as HTMLElement
+          if (e.currentTarget.contains(target) && !target.closest("button, a, input, [role='switch']")) goPlugin(p.id)
         }}
-        className={cn(
-          "group flex min-h-20 items-center justify-between gap-6 px-5 py-4 transition-colors duration-150 hover:bg-white/[0.03]",
-          hasSettings(p) && "cursor-pointer",
-        )}
+        className="group flex min-h-20 items-center justify-between gap-6 px-5 py-4 transition-colors duration-150 hover:bg-white/[0.03]"
       >
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-fg-1 shadow-sm ring-1 ring-white/10 [&_img]:size-7 [&_svg]:size-6">
@@ -521,7 +505,7 @@ function PluginListItem({ p, onUninstall }: { p: PluginInfo; onUninstall: () => 
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => goSettings(`plugin.${p.id}`)}
+              onClick={() => goPlugin(p.id)}
               className="h-8 gap-1.5 px-2.5 text-xs text-fg-2 hover:text-fg-1"
             >
               <GearSix className="size-3.5" />
@@ -545,52 +529,3 @@ function PluginListItem({ p, onUninstall }: { p: PluginInfo; onUninstall: () => 
     </ContextArea>
   )
 }
-
-function UninstallForm({
-  p,
-  busy,
-  setBusy,
-  onDone,
-}: {
-  p: PluginInfo
-  busy: boolean
-  setBusy: (b: boolean) => void
-  onDone: () => void
-}) {
-  const [dataToo, setDataToo] = useState(false)
-  const uninstall = async () => {
-    setBusy(true)
-    try {
-      await commands.pluginUninstall(p.id, dataToo)
-      queryClient.setQueryData<PluginInfo[]>(qk.plugins, (list) => list?.filter((x) => x.id !== p.id))
-      onDone()
-      toast(`Uninstalled ${p.name}`)
-    } catch (e) {
-      toast.error("Couldn't uninstall the plugin", { description: errorMessage(e) })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <DialogContent title={`Uninstall ${p.name}?`} description="Its commands, settings and actions will go.">
-      <div className="my-4">
-        <SettingRow
-          label="Delete what it kept too"
-          description="Remove its saved settings, credentials, caches and logs."
-        >
-          <Switch aria-label="Delete what it kept too" checked={dataToo} disabled={busy} onCheckedChange={setDataToo} />
-        </SettingRow>
-      </div>
-      <DialogFooter>
-        <Button variant="ghost" disabled={busy} onClick={onDone}>
-          Cancel
-        </Button>
-        <Button variant="danger" disabled={busy} onClick={() => void uninstall()}>
-          {busy ? <CircleNotch className="animate-spin" /> : <Trash />} Uninstall
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  )
-}
-

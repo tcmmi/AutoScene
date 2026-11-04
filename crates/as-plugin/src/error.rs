@@ -16,7 +16,7 @@ pub enum PluginError {
     BadSignature(String),
     #[error("This update is signed by a different author than the installed version.")]
     KeyChanged { pinned: String, got: String },
-    #[error("Plugins that AutoScene has not reviewed are turned off in Settings.")]
+    #[error("Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins.")]
     NotAllowed,
     #[error("{0} isn't installed.")]
     NotFound(String),

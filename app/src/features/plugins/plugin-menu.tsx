@@ -4,12 +4,13 @@ import type { MenuKit } from "@/components/ui/menu-actions"
 import { useAppActions } from "@/lib/actions"
 import { reveal } from "@/lib/os"
 import { openSource } from "./plugin-actions"
-import { hasSettings, sourceLabel } from "./plugin-items"
+import { sourceLabel } from "./plugin-items"
 
 /**
  * What a plugin's ⋯ and its right-click list offer, one list for both
- * (`kit`). Its settings only where they aren't open already (`settings`),
- * Uninstall only where it can be asked (`onUninstall`).
+ * (`kit`). Its settings only where they aren't open already (`settings`):
+ * each plugin has them, its files and what it may use at least. Uninstall
+ * only where it can be asked (`onUninstall`).
  */
 export function PluginItems({
   kit,
@@ -22,14 +23,14 @@ export function PluginItems({
   settings?: boolean
   onUninstall?: () => void
 }) {
-  const { goSettings } = useAppActions()
+  const { goPlugin } = useAppActions()
   const { Item, Separator } = kit
   const source = sourceLabel(p)
   return (
     <>
-      {settings && hasSettings(p) && (
-        <Item onSelect={() => goSettings(`plugin.${p.id}`)}>
-          <SlidersHorizontal /> Settings
+      {settings && (
+        <Item onSelect={() => goPlugin(p.id)}>
+          <SlidersHorizontal /> Its settings
         </Item>
       )}
       {source && (

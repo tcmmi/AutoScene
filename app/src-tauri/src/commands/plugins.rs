@@ -1,4 +1,4 @@
-//! Plugins (Settings → Plugins): what is installed and each one's banner,
+//! Plugins (the Plugins screen): what is installed and each one's banner,
 //! installing it after a review, uninstalling, turning plugins and their
 //! after-export actions on or off, their settings and secrets, whether
 //! plugins AutoScene hasn't reviewed may run, running their actions,

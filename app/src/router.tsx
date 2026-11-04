@@ -18,14 +18,14 @@ import { ExportsPage } from "@/features/project/ExportsPage"
 import { OverviewPage } from "@/features/project/OverviewPage"
 import { CharacterCrumb, MediaCrumb, PackCrumb, ProjectCrumb } from "@/features/project/crumbs"
 import { PluginPageCrumb, PluginPageView } from "@/features/plugins/PluginPageView"
+import { PluginCrumb, PluginSettingsPage } from "@/features/plugins/PluginSettingsPage"
 import { PluginsPage } from "@/features/plugins/PluginsPage"
-import { PluginCrumb } from "@/features/plugins/PluginSettingsSection"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { settingsLabel } from "@/features/settings/sections"
 import { NotFound } from "@/features/not-found"
 import { PackPage } from "@/features/pack/PackPage"
 import { RouteError } from "@/features/route-error"
-import { type PluginSection, type SettingsSection, isPluginSection, settingsSection } from "@/lib/actions"
+import { type LegacySettingsSection, type SettingsSection, legacySettingsTarget, settingsSection } from "@/lib/actions"
 import { followPlaces } from "@/lib/places"
 
 declare module "@tanstack/react-router" {
@@ -51,6 +51,15 @@ const pluginsRoute = createRoute({
   path: "/plugins",
   staticData: { crumb: "Plugins" },
   component: PluginsPage,
+})
+
+// A plugin's settings: its own screen under Plugins. Whether it is
+// installed shows there.
+const pluginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/plugins/$id",
+  staticData: { crumb: (p) => <PluginCrumb id={p.id} /> },
+  component: PluginSettingsPage,
 })
 
 const projectRoute = createRoute({
@@ -148,25 +157,20 @@ const settingsIndexRoute = createRoute({
   },
 })
 
-// Plugins were a section of Settings; they have their own place now, and an
-// old link goes there.
-const settingsPluginsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/settings/plugins",
-  beforeLoad: () => {
-    throw redirect({ to: "/plugins", replace: true })
-  },
-})
-
+// Plugins were a section of Settings, and so were each plugin's settings.
+// They have their own place now, and an old link goes there. The parse
+// keeps what such a link names, since it runs before `beforeLoad` sees it.
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/$section",
-  staticData: {
-    crumb: (p) => (isPluginSection(p.section) ? <PluginCrumb id={p.section.slice(7)} /> : `Settings · ${settingsLabel(p.section)}`),
-  },
+  staticData: { crumb: (p) => `Settings · ${settingsLabel(p.section)}` },
   params: {
-    parse: (p): { section: SettingsSection | PluginSection } => ({ section: settingsSection(p.section) }),
+    parse: (p): { section: SettingsSection | LegacySettingsSection } => ({ section: settingsSection(p.section) }),
     stringify: (p) => ({ section: p.section }),
+  },
+  beforeLoad: ({ params }) => {
+    const to = legacySettingsTarget(params.section)
+    if (to) throw redirect({ ...to, replace: true })
   },
   component: SettingsPage,
 })
@@ -174,6 +178,7 @@ const settingsRoute = createRoute({
 export const routeTree = rootRoute.addChildren([
   libraryRoute,
   pluginsRoute,
+  pluginRoute,
   projectRoute.addChildren([
     projectIndexRoute,
     episodesRoute,
@@ -187,7 +192,6 @@ export const routeTree = rootRoute.addChildren([
   ]),
   pluginPageRoute,
   settingsIndexRoute,
-  settingsPluginsRoute,
   settingsRoute,
 ])
 

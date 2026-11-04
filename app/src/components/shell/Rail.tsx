@@ -245,7 +245,7 @@ function PageTileItems({ page, to }: { page: PageItem; to: string }) {
       <ContextMenuItem onSelect={() => void navigate({ to })}>
         <AppWindow /> Open
       </ContextMenuItem>
-      <ContextMenuItem onSelect={() => actions.goSettings(`plugin.${page.pluginId}`)}>
+      <ContextMenuItem onSelect={() => actions.goPlugin(page.pluginId)}>
         <SlidersHorizontal /> Its settings
       </ContextMenuItem>
       {log && (

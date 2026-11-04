@@ -54,6 +54,14 @@ export function sourceLabel(p: Pick<PluginInfo, "trust" | "source" | "repository
   return reviewedPackage(p) ? "Show its source" : "Show the source it names"
 }
 
+/** What a plugin's icon may be: its PNG or SVG as a base64 `data:` URL (the backend reads and checks the file). */
+const ICON_URL = /^data:image\/(?:png|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/
+
+/** `src` while it is a plugin's icon in hand, never a link: else null. */
+export function pluginPicture(src: string | null | undefined): string | null {
+  return src != null && ICON_URL.test(src) ? src : null
+}
+
 const PERMISSIONS = new Map<Permission, string>([
   ["exports:read", "Reads the exported clips"],
   ["exports:write", "Changes or adds files beside the exported clips"],
@@ -82,16 +90,11 @@ export function checkedWhen(p: Pick<PluginInfo, "runtime" | "pages" | "protocol"
 }
 
 /**
- * Whether a plugin has something to show in Settings: its settings, its
+ * Whether a plugin has something to set on its screen: its settings, its
  * export actions to run after every export, or its pages.
  */
 export function hasSettings(p: Pick<PluginInfo, "settings" | "exportActions" | "pages">): boolean {
   return p.settings.length > 0 || p.exportActions.length > 0 || p.pages.length > 0
-}
-
-/** The plugins Settings lists by name: each that has settings, also while it can't run (its settings say why). */
-export function withSettings(plugins: PluginInfo[] | undefined): PluginInfo[] {
-  return (plugins ?? []).filter(hasSettings)
 }
 
 /** An entry a plugin adds to each export's menu. */

@@ -24,8 +24,9 @@ export function useAppActions() {
       goProject: (pid: string, page: "overview" | "episodes" | "cast" | "exports" = "overview") =>
         void navigate({ to: page === "overview" ? "/p/$pid" : `/p/$pid/${page}`, params: { pid } }),
       goPlugins: () => void navigate({ to: "/plugins" }),
-      goSettings: (section: SettingsSection | PluginSection = "general") =>
-        void navigate({ to: "/settings/$section", params: { section } }),
+      /** A plugin's settings: its own screen under Plugins. */
+      goPlugin: (id: string) => void navigate({ to: "/plugins/$id", params: { id } }),
+      goSettings: (section: SettingsSection = "general") => void navigate({ to: "/settings/$section", params: { section } }),
       checkUpdates: () => void useUpdates.getState().check(true, true),
       openLogs: () => commands.openLogsDir().catch((e) => toast.error("Couldn't open logs", { description: errorMessage(e) })),
     }),
@@ -48,21 +49,42 @@ function currentProjectId(): string | undefined {
 
 export const SETTINGS_SECTIONS = ["general", "shortcuts", "updates", "about", "contributors"] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
-/** A plugin's settings, a section of Settings: `plugin.<its id>`. */
-export type PluginSection = `plugin.${string}`
+/**
+ * What an old link names in Settings: its Plugins section, or a plugin's
+ * settings (`plugin.<its id>`). Both have their own place under Plugins now.
+ */
+export type LegacySettingsSection = "plugins" | `plugin.${string}`
 
-/** Whether `section` is a plugin's settings, not one of the app's sections. */
-export function isPluginSection(section: string): section is PluginSection {
-  return /^plugin\.[a-z0-9.-]{3,200}$/.test(section)
+/** Whether `section` is one of the app's own sections of Settings. */
+export function isAppSection(section: string): section is SettingsSection {
+  return (SETTINGS_SECTIONS as readonly string[]).includes(section)
+}
+
+/** The plugin an old link to its settings names (`plugin.<its id>`), else null. */
+function legacyPlugin(section: string): string | null {
+  return /^plugin\.[a-z0-9.-]{3,200}$/.test(section) ? section.slice("plugin.".length) : null
 }
 
 /**
- * The section of Settings a link names: one of the app's, a plugin's
- * settings (whether it is installed shows there), else General.
+ * The section of Settings a link names: one of the app's, an old link's
+ * (which goes to Plugins, see `legacySettingsTarget`), else General.
  */
-export function settingsSection(section: string): SettingsSection | PluginSection {
-  if ((SETTINGS_SECTIONS as readonly string[]).includes(section)) return section as SettingsSection
-  return isPluginSection(section) ? section : "general"
+export function settingsSection(section: string): SettingsSection | LegacySettingsSection {
+  if (isAppSection(section)) return section
+  if (section === "plugins") return section
+  return legacyPlugin(section) != null ? (section as `plugin.${string}`) : "general"
+}
+
+/**
+ * Where an old link into Settings goes now: its Plugins to Plugins, a
+ * plugin's settings to that plugin under Plugins. None for the app's own sections.
+ */
+export function legacySettingsTarget(
+  section: string,
+): { to: "/plugins" } | { to: "/plugins/$id"; params: { id: string } } | null {
+  if (section === "plugins") return { to: "/plugins" }
+  const id = legacyPlugin(section)
+  return id != null ? { to: "/plugins/$id", params: { id } } : null
 }
 
 /** Wire global keyboard shortcuts (non-macOS-native) and macOS menu events to actions. */

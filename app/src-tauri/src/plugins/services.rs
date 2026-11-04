@@ -783,7 +783,7 @@ mod tests {
         let starter = Starter { delay: Duration::from_millis(300), ..Starter::default() };
         let (lib, host, heard) = host_starting(&tmp, starter.clone());
         let id = served(&host, &lib, &tmp, "dev.a.service");
-        // Settings shows its own log.
+        // Its settings show its own log.
         let shown = super::super::info(&host.store.get(&id).unwrap(), &host.store, true);
         assert!(shown.service_log_path.unwrap().ends_with("dev.a.service.service.log"));
         // Each page that opens starts it, and both find one start on its way.

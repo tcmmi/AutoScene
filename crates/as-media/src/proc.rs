@@ -3,7 +3,7 @@
 //! Every ffmpeg/ffprobe the app starts goes through [`spawn`] or [`output`].
 //! On Windows each child joins a job object created with
 //! `KILL_ON_JOB_CLOSE`: the job's only handle belongs to this process, so when
-//! it ends â€” normally, through the updater's `exit(0)`, or in a crash â€” the
+//! it ends — normally, through the updater's `exit(0)`, or in a crash — the
 //! system kills every child with it. Nothing is left holding `ffmpeg.exe`
 //! open during an update or writing a half-finished file.
 //!

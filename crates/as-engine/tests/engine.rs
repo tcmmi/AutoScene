@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use as_core::CancelToken;
 use as_engine::{Config, Engine, EngineError, FacesEvent, FacesInput, Launch, ShotsEvent};
@@ -41,7 +41,12 @@ fn setup(idle_exit: Option<Duration>) -> Option<(Engine, Media)> {
 
 /// How to start the engine binary on the device `gpu` chooses.
 fn launch(ort_dir: PathBuf, gpu: Choice, idle_exit: Option<Duration>) -> Launch {
-    let cfg = Config { ort_dir, models_dir: models_dir(), ffmpeg_dir: None, placement: Placement { gpu }, idle_exit };
+    launch_with(ort_dir, Placement { gpu, cache: None }, idle_exit)
+}
+
+/// How to start the engine binary with this placement.
+fn launch_with(ort_dir: PathBuf, placement: Placement, idle_exit: Option<Duration>) -> Launch {
+    let cfg = Config { ort_dir, models_dir: models_dir(), ffmpeg_dir: None, placement, idle_exit };
     Launch { program: PathBuf::from(env!("CARGO_BIN_EXE_autoscene-engine")), args: as_engine::args(&cfg) }
 }
 
@@ -170,6 +175,34 @@ fn the_engine_names_the_device_it_uses() {
     let got = cpu.probe(&CancelToken::new()).unwrap();
     assert_eq!((got.using, got.luid(), got.gpus.len()), (Using::Processor, None, hw.gpus.len()));
     assert_eq!(cpu.device().as_deref(), Some(as_infer::Device::Cpu.label()));
+}
+
+/// An engine start deletes the compiled models (Core ML's, on a Mac) no
+/// start has used for 30 days, and keeps the others.
+#[test]
+fn an_engine_start_deletes_compiled_models_unused_for_30_days() {
+    let Some(ort) = ort_dir() else {
+        eprintln!("onnxruntime missing; run `cargo xtask fetch-sidecars` (skipping)");
+        return;
+    };
+    if Tools::locate(None).is_err() {
+        eprintln!("ffmpeg missing (skipping)");
+        return;
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let compiled = |key: &str, days: u64| {
+        let dir = cache.path().join(as_infer::cache::COREML).join(key);
+        std::fs::create_dir_all(dir.join("compiled_model.mlmodelc")).unwrap();
+        let used = std::fs::File::create(dir.join(as_infer::cache::USED)).unwrap();
+        used.set_modified(SystemTime::now() - Duration::from_secs(days * 24 * 60 * 60)).unwrap();
+        dir
+    };
+    let (unused, recent) = (compiled("00000000000000aa", 31), compiled("00000000000000bb", 29));
+    let placement = Placement { gpu: Choice::Processor, cache: Some(cache.path().to_path_buf()) };
+    let engine = Engine::new(launch_with(ort, placement, None));
+    engine.probe(&CancelToken::new()).unwrap();
+    assert!(!unused.exists(), "unused for 31 days: deleted");
+    assert!(recent.join("compiled_model.mlmodelc").is_dir(), "used 29 days ago: kept");
 }
 
 /// A choice made while a job runs applies from the next job, also one

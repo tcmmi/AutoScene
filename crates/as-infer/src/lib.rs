@@ -11,8 +11,10 @@
 //!
 //! [`computer`] says which graphics the analysis runs on, and whether they are
 //! built for AI work; [`hardware`] which cards ONNX Runtime finds, and opens
-//! the one the person chose ([`Placement`]).
+//! the one the person chose ([`Placement`]). On a Mac, Core ML keeps what it
+//! compiled for the next start ([`cache`], [`Placement::cache`]).
 
+pub mod cache;
 pub mod computer;
 pub mod hardware;
 pub mod onnx;
@@ -89,12 +91,115 @@ pub struct Placement {
     /// The graphics the person chose (Settings → General): Automatic, a
     /// card, or the processor only.
     pub gpu: computer::Choice,
+    /// Where compiled models are kept between runs (`AppPaths::cache()`):
+    /// Core ML's under `coreml/` ([`cache`]). `None` compiles them at every
+    /// start.
+    pub cache: Option<PathBuf>,
 }
 
 impl Placement {
     /// Automatic, or the processor only.
     pub fn from_gpu(gpu: bool) -> Self {
-        Self { gpu: if gpu { computer::Choice::Auto } else { computer::Choice::Processor } }
+        Self { gpu: if gpu { computer::Choice::Auto } else { computer::Choice::Processor }, cache: None }
+    }
+}
+
+/// How exactly a session must compute. It decides how Core ML builds the
+/// session; everywhere else sessions build alike.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Precision {
+    /// fp16 maths are fine: Core ML's NeuralNetwork format, on every compute
+    /// unit, the Neural Engine included.
+    Fp16Safe,
+    /// fp32 throughout: an ML program without fp16 accumulation on the GPU,
+    /// which Core ML runs on the processor and the GPU only. The anime
+    /// models' embeddings bend under fp16 maths.
+    Fp32,
+}
+
+/// Core ML's model formats (ORT's `ModelFormat`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoreMlFormat {
+    NeuralNetwork,
+    MlProgram,
+}
+
+impl CoreMlFormat {
+    /// ORT's name for it.
+    pub fn option(self) -> &'static str {
+        match self {
+            Self::NeuralNetwork => "NeuralNetwork",
+            Self::MlProgram => "MLProgram",
+        }
+    }
+}
+
+/// What Core ML may compute on (ORT's `MLComputeUnits`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoreMlUnits {
+    /// The Neural Engine, the GPU and the processor.
+    All,
+    CpuAndNeuralEngine,
+    CpuAndGpu,
+    CpuOnly,
+}
+
+impl CoreMlUnits {
+    /// ORT's name for it.
+    pub fn option(self) -> &'static str {
+        match self {
+            Self::All => "ALL",
+            Self::CpuAndNeuralEngine => "CPUAndNeuralEngine",
+            Self::CpuAndGpu => "CPUAndGPU",
+            Self::CpuOnly => "CPUOnly",
+        }
+    }
+}
+
+/// Core ML's options for a session (ORT's names and values), as sessions are
+/// built today; with `cache`, Core ML keeps its compile there. The formats and
+/// compute units stay what they were before compiled models were kept, until
+/// `coreml_bench` measures others on a real Mac (design-i66_67 §5.5).
+pub fn coreml_options(precision: Precision, cache: Option<&Path>) -> Vec<(&'static str, String)> {
+    CoreMlTrial::default().options(precision, cache)
+}
+
+/// Another Core ML setup than today's, which `coreml_bench` compares: another
+/// model format, other compute units, or both. The default is today's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CoreMlTrial {
+    pub format: Option<CoreMlFormat>,
+    pub units: Option<CoreMlUnits>,
+}
+
+impl CoreMlTrial {
+    /// [`coreml_options`] with this trial's format and compute units.
+    pub fn options(self, precision: Precision, cache: Option<&Path>) -> Vec<(&'static str, String)> {
+        let mut options: Vec<(&'static str, String)> = match precision {
+            Precision::Fp16Safe => vec![
+                ("ModelFormat", CoreMlFormat::NeuralNetwork.option().into()),
+                ("MLComputeUnits", CoreMlUnits::All.option().into()),
+            ],
+            Precision::Fp32 => vec![
+                ("ModelFormat", CoreMlFormat::MlProgram.option().into()),
+                ("AllowLowPrecisionAccumulationOnGPU", "0".into()),
+            ],
+        };
+        let trial = [
+            ("ModelFormat", self.format.map(CoreMlFormat::option)),
+            ("MLComputeUnits", self.units.map(CoreMlUnits::option)),
+        ];
+        for (name, value) in trial {
+            let Some(value) = value else { continue };
+            match options.iter_mut().find(|(n, _)| *n == name) {
+                Some(option) => option.1 = value.into(),
+                None => options.push((name, value.into())),
+            }
+        }
+        if let Some(dir) = cache {
+            options.push(("ModelCacheDirectory", dir.to_string_lossy().into_owned()));
+        }
+        options
     }
 }
 
@@ -111,6 +216,12 @@ pub struct Runtime {
     env: ort::environment::Environment,
     target: Target,
     hardware: Arc<hardware::Hardware>,
+    /// [`Placement::cache`]; read where Core ML builds sessions.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    cache: Option<PathBuf>,
+    /// Today's Core ML setup, or the one `coreml_bench` tries.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    coreml: CoreMlTrial,
 }
 
 static LOADED: OnceLock<PathBuf> = OnceLock::new();
@@ -150,13 +261,41 @@ impl Runtime {
             _ => Target::Gpu(hardware.adapter()),
         };
         tracing::info!(runtime = %name(&lib), "onnxruntime loaded; analysis runs on {hardware}");
-        Ok(Self { env, target, hardware: Arc::new(hardware) })
+        Ok(Self {
+            env,
+            target,
+            hardware: Arc::new(hardware),
+            cache: placement.cache.clone(),
+            coreml: CoreMlTrial::default(),
+        })
     }
 
     /// The same runtime with every session on the CPU (one runtime per
     /// process: there is no second `load`), e.g. to check GPU results.
     pub fn on_cpu(&self) -> Self {
-        Self { env: self.env.clone(), target: Target::Cpu, hardware: Arc::clone(&self.hardware) }
+        Self { target: Target::Cpu, ..self.copy() }
+    }
+
+    /// The same runtime, keeping compiled models under `cache` instead
+    /// ([`Placement::cache`]; `None` keeps none), e.g. to time a compile.
+    pub fn with_cache(&self, cache: Option<PathBuf>) -> Self {
+        Self { cache, ..self.copy() }
+    }
+
+    /// The same runtime, with Core ML sessions built as `trial` says instead
+    /// of today's way (`coreml_bench`).
+    pub fn trying(&self, trial: CoreMlTrial) -> Self {
+        Self { coreml: trial, ..self.copy() }
+    }
+
+    fn copy(&self) -> Self {
+        Self {
+            env: self.env.clone(),
+            target: self.target,
+            hardware: Arc::clone(&self.hardware),
+            cache: self.cache.clone(),
+            coreml: self.coreml,
+        }
     }
 
     /// The devices ORT found here, and the one this runtime opened.
@@ -183,7 +322,7 @@ impl Runtime {
 
     /// Load `model`, on the GPU when possible. Returns where it runs.
     pub fn session(&self, model: &Path) -> InferResult<(Session, Device)> {
-        self.session_from(model, None, false)
+        self.session_from(model, None, Precision::Fp16Safe)
     }
 
     /// Like [`Runtime::session`], with the shapes the model declares for its
@@ -195,7 +334,7 @@ impl Runtime {
         let patched = onnx::reshaped(&bytes, input).ok_or_else(|| {
             InferError::Model(format!("{}: not a readable ONNX model, or not shaped like {input:?}", model.display()))
         })?;
-        self.session_from(model, Some(&patched), false)
+        self.session_from(model, Some(&patched), Precision::Fp16Safe)
     }
 
     /// Like [`Runtime::session_shaped`], for an export that pins its batch
@@ -208,25 +347,71 @@ impl Runtime {
             .ok_or_else(|| unreadable("not a readable ONNX model, or a Reshape that takes 0 literally"))?;
         let patched = onnx::reshaped(&free, input).ok_or_else(|| unreadable(&format!("not shaped like {input:?}")))?;
         tracing::debug!(model = %model.display(), targets, "Reshapes copy the batch");
-        self.session_from(model, Some(&patched), false)
+        self.session_from(model, Some(&patched), Precision::Fp16Safe)
     }
 
-    fn session_from(&self, model: &Path, bytes: Option<&[u8]>, fp32: bool) -> InferResult<(Session, Device)> {
+    fn session_from(&self, model: &Path, bytes: Option<&[u8]>, precision: Precision) -> InferResult<(Session, Device)> {
         let want = self.preferred_device();
         if want != Device::Cpu {
-            match self.build(model, bytes, want, fp32) {
+            match self.build(model, bytes, want, precision) {
                 Ok(s) => return Ok((s, want)),
                 Err(e) => {
                     tracing::warn!(model = %name(model), device = ?want, error = %e.detail(), "GPU session failed; using the CPU")
                 }
             }
         }
-        Ok((self.build(model, bytes, Device::Cpu, fp32)?, Device::Cpu))
+        Ok((self.build(model, bytes, Device::Cpu, precision)?, Device::Cpu))
     }
 
-    fn build(&self, model: &Path, bytes: Option<&[u8]>, device: Device, fp32: bool) -> InferResult<Session> {
+    /// A session of `model` (or of `bytes`, the model as edited) on `device`.
+    /// Where there is a cache, Core ML's compile is kept for the next start.
+    fn build(&self, model: &Path, bytes: Option<&[u8]>, device: Device, precision: Precision) -> InferResult<Session> {
+        #[cfg(target_os = "macos")]
+        if device == Device::CoreMl
+            && let Some(root) = &self.cache
+        {
+            return self.build_kept(root, model, bytes, precision);
+        }
+        self.build_in(model, bytes, device, precision, None)
+    }
+
+    /// [`Runtime::build`] on Core ML, compiled into the folder of this model,
+    /// shape, runtime and options, or reusing what an earlier start compiled
+    /// there ([`cache::kept`]).
+    #[cfg(target_os = "macos")]
+    fn build_kept(
+        &self,
+        root: &Path,
+        model: &Path,
+        bytes: Option<&[u8]>,
+        precision: Precision,
+    ) -> InferResult<Session> {
+        let read;
+        let exact = match bytes {
+            Some(bytes) => bytes,
+            None => {
+                read = std::fs::read(model).map_err(|e| InferError::Model(format!("{}: {e}", model.display())))?;
+                &read
+            }
+        };
+        let key = cache::key(exact, ort::info(), &cache::describe(&self.coreml.options(precision, None)));
+        cache::kept(root, cache::COREML, &key, &name(model), |dir| {
+            self.build_in(model, bytes, Device::CoreMl, precision, dir)
+        })
+    }
+
+    /// [`Runtime::build`] without the cache's bookkeeping: `cache` is the
+    /// folder Core ML compiles into.
+    fn build_in(
+        &self,
+        model: &Path,
+        bytes: Option<&[u8]>,
+        device: Device,
+        precision: Precision,
+        cache: Option<&Path>,
+    ) -> InferResult<Session> {
         #[cfg(not(target_os = "macos"))]
-        let _ = fp32;
+        let _ = (precision, cache);
         let err = |e: String| InferError::Model(format!("{}: {e}", model.display()));
         let mut b = Session::builder(&self.env).map_err(|e| err(e.to_string()))?;
         match device {
@@ -252,15 +437,14 @@ impl Runtime {
             }
             #[cfg(target_os = "macos")]
             Device::CoreMl => {
-                // fp32 sessions run as an MLProgram without fp16
-                // accumulation on the GPU (the anime models': their
-                // embeddings bend under low-precision maths).
-                let ep = match fp32 {
-                    true => ort::ep::CoreML::default()
-                        .with_model_format(ort::ep::coreml::ModelFormat::MLProgram)
-                        .with_low_precision_accumulation_on_gpu(false),
-                    false => ort::ep::CoreML::default(),
-                };
+                // Today's format and compute units for the precision
+                // ([`coreml_options`]), or the bench's trial.
+                use ort::ep::ArbitrarilyConfigurableExecutionProvider;
+                let ep = self
+                    .coreml
+                    .options(precision, cache)
+                    .into_iter()
+                    .fold(ort::ep::CoreML::default(), |ep, (name, value)| ep.with_arbitrary_config(name, value));
                 b = b.with_execution_providers([ep.build().error_on_failure()]).map_err(|e| err(e.to_string()))?;
             }
             _ => {}
@@ -273,8 +457,8 @@ impl Runtime {
 }
 
 /// What [`Runtime::fp32_sessions`] returns: the same sessions — same
-/// signatures — but built so CoreML keeps fp32 maths. Off CoreML there is
-/// nothing to build differently.
+/// signatures — but built so CoreML keeps fp32 maths ([`Precision::Fp32`]).
+/// Off CoreML there is nothing to build differently.
 pub struct Fp32<'a> {
     rt: &'a Runtime,
 }
@@ -282,7 +466,7 @@ pub struct Fp32<'a> {
 impl Fp32<'_> {
     /// Like [`Runtime::session`].
     pub fn session(&self, model: &Path) -> InferResult<(Session, Device)> {
-        self.rt.session_from(model, None, true)
+        self.rt.session_from(model, None, Precision::Fp32)
     }
 
     /// Like [`Runtime::session_shaped`].
@@ -291,7 +475,7 @@ impl Fp32<'_> {
         let patched = onnx::reshaped(&bytes, input).ok_or_else(|| {
             InferError::Model(format!("{}: not a readable ONNX model, or not shaped like {input:?}", model.display()))
         })?;
-        self.rt.session_from(model, Some(&patched), true)
+        self.rt.session_from(model, Some(&patched), Precision::Fp32)
     }
 
     /// Like [`Runtime::session_batched`].
@@ -302,7 +486,7 @@ impl Fp32<'_> {
             .ok_or_else(|| unreadable("not a readable ONNX model, or a Reshape that takes 0 literally"))?;
         let patched = onnx::reshaped(&free, input).ok_or_else(|| unreadable(&format!("not shaped like {input:?}")))?;
         tracing::debug!(model = %model.display(), targets, "Reshapes copy the batch");
-        self.rt.session_from(model, Some(&patched), true)
+        self.rt.session_from(model, Some(&patched), Precision::Fp32)
     }
 }
 
@@ -328,5 +512,54 @@ fn preload_windows(dir: &Path) {
         if dml.is_file() && LoadLibraryW(wide(&dml).as_ptr()).is_null() {
             tracing::warn!(path = %name(&dml), "couldn't preload DirectML.dll");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pairs(options: Vec<(&'static str, String)>) -> Vec<String> {
+        options.into_iter().map(|(name, value)| format!("{name}={value}")).collect()
+    }
+
+    #[test]
+    fn coreml_options_keep_todays_formats_and_add_the_cache() {
+        // Today's sessions, named: the NeuralNetwork format on every compute
+        // unit (ORT's defaults), and for fp32 an ML program without fp16
+        // accumulation on the GPU.
+        assert_eq!(
+            pairs(coreml_options(Precision::Fp16Safe, None)),
+            ["ModelFormat=NeuralNetwork", "MLComputeUnits=ALL"]
+        );
+        assert_eq!(
+            pairs(coreml_options(Precision::Fp32, None)),
+            ["ModelFormat=MLProgram", "AllowLowPrecisionAccumulationOnGPU=0"]
+        );
+        // The cache adds the folder to compile into, and nothing else.
+        let dir = Path::new("cache").join(cache::COREML).join("0123456789abcdef");
+        for precision in [Precision::Fp16Safe, Precision::Fp32] {
+            let mut kept = coreml_options(precision, Some(&dir));
+            assert_eq!(kept.pop(), Some(("ModelCacheDirectory", dir.to_string_lossy().into_owned())));
+            assert_eq!(kept, coreml_options(precision, None));
+        }
+        // What the bench tries replaces today's value, or adds its own.
+        let trial = CoreMlTrial { format: Some(CoreMlFormat::MlProgram), units: Some(CoreMlUnits::CpuAndNeuralEngine) };
+        assert_eq!(
+            pairs(trial.options(Precision::Fp16Safe, None)),
+            ["ModelFormat=MLProgram", "MLComputeUnits=CPUAndNeuralEngine"]
+        );
+        let processor = CoreMlTrial { units: Some(CoreMlUnits::CpuOnly), ..CoreMlTrial::default() };
+        assert_eq!(
+            pairs(processor.options(Precision::Fp32, None)),
+            ["ModelFormat=MLProgram", "AllowLowPrecisionAccumulationOnGPU=0", "MLComputeUnits=CPUOnly"]
+        );
+        // ORT's spellings (`coreml_options.cc`).
+        let units = [CoreMlUnits::All, CoreMlUnits::CpuAndNeuralEngine, CoreMlUnits::CpuAndGpu, CoreMlUnits::CpuOnly];
+        assert_eq!(units.map(CoreMlUnits::option), ["ALL", "CPUAndNeuralEngine", "CPUAndGPU", "CPUOnly"]);
+        assert_eq!(
+            [CoreMlFormat::NeuralNetwork, CoreMlFormat::MlProgram].map(CoreMlFormat::option),
+            ["NeuralNetwork", "MLProgram"]
+        );
     }
 }

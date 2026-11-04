@@ -238,6 +238,8 @@ dependencies = [
  "ort",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
  "thiserror 2.0.21",
  "tracing",
  "windows 0.62.2",
@@ -356,7 +358,10 @@ name = "as-vision"
 version = "1.0.3-BETA"
 dependencies = [
  "as-infer",
+ "as-models",
+ "as-testkit",
  "jpeg-encoder",
+ "tempfile",
  "tracing",
 ]
 

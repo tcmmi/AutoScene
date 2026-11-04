@@ -100,7 +100,8 @@ impl AppState {
             ort_dir,
             models_dir: paths.models(),
             ffmpeg_dir: bundled_ffmpeg.clone(),
-            placement: Default::default(),
+            // Compiled models (Core ML's, on a Mac) are kept for the next start.
+            placement: as_engine::Placement { cache: Some(paths.cache()), ..Default::default() },
             idle_exit: Some(as_engine::IDLE_EXIT),
         };
         // The engine is this very executable, and nothing found by name stands
@@ -173,9 +174,11 @@ impl AppState {
 }
 
 /// How to start the engine (this executable with `--engine`) on the
-/// graphics `gpu` names (`AppSettings::gpu`).
+/// graphics `gpu` names (`AppSettings::gpu`), keeping the rest of its
+/// placement (where compiled models are kept).
 fn engine_launch((program, cfg): &(PathBuf, as_engine::Config), gpu: &str) -> Launch {
-    let cfg = as_engine::Config { placement: as_engine::Placement { gpu: Choice::from_setting(gpu) }, ..cfg.clone() };
+    let placement = as_engine::Placement { gpu: Choice::from_setting(gpu), ..cfg.placement.clone() };
+    let cfg = as_engine::Config { placement, ..cfg.clone() };
     let mut args = vec!["--engine".into()];
     args.extend(as_engine::args(&cfg));
     Launch { program: program.clone(), args }
@@ -380,6 +383,25 @@ mod tests {
         assert!(why.contains("RTX 4060") && why.contains("LUID 0x2") && why.contains("LUID 0x10828"), "{why}");
         // The probe couldn't read DXCore, the engine opened a card: logged too.
         assert!(unexpected(&choose(&Machine::Windows(None), &Choice::Auto), &opened).is_some());
+    }
+
+    #[test]
+    fn a_graphics_choice_keeps_the_compiled_models_cache() {
+        let paths = AppPaths::at("data");
+        let cfg = as_engine::Config {
+            ort_dir: "ort".into(),
+            models_dir: paths.models(),
+            ffmpeg_dir: None,
+            placement: as_engine::Placement { cache: Some(paths.cache()), ..Default::default() },
+            idle_exit: Some(as_engine::IDLE_EXIT),
+        };
+        let start = (PathBuf::from("autoscene"), cfg);
+        for gpu in ["", "cpu", "10de:24c9:NVIDIA GeForce RTX 3060 Ti"] {
+            let args: Vec<String> =
+                engine_launch(&start, gpu).args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
+            let cache = paths.cache().to_string_lossy().into_owned();
+            assert!(args.windows(2).any(|w| w == ["--cache".to_string(), cache.clone()]), "{gpu:?}: {args:?}");
+        }
     }
 
     #[test]

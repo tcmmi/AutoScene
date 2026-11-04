@@ -54,7 +54,8 @@ pub struct Config {
     pub models_dir: PathBuf,
     /// Bundled ffmpeg folder, if any (otherwise `AUTOSCENE_FFMPEG_DIR` / PATH).
     pub ffmpeg_dir: Option<PathBuf>,
-    /// The device the models run on (`--gpu KEY`, `--cpu`).
+    /// The device the models run on (`--gpu KEY`, `--cpu`), and where their
+    /// compiles are kept between runs (`--cache DIR`).
     pub placement: as_infer::Placement,
     /// Exit after this long without a job, which frees the GPU memory.
     pub idle_exit: Option<Duration>,
@@ -102,6 +103,17 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
             return 1;
         }
     };
+    // Before any session: no build is using a folder yet.
+    if let Some(cache) = &cfg.placement.cache {
+        let pruned = as_infer::cache::prune(cache, std::time::SystemTime::now());
+        if pruned.folders > 0 {
+            tracing::info!(
+                folders = pruned.folders,
+                mb = pruned.bytes / 1_000_000,
+                "deleted compiled models unused for 30 days"
+            );
+        }
+    }
     let rt = match Runtime::load_with(&cfg.ort_dir, &cfg.placement) {
         Ok(rt) => rt,
         Err(e) => {

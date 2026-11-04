@@ -54,6 +54,24 @@ jobs:
       - run: cargo test --workspace --features as-plugin/cli
         env:
           AUTOSCENE_REQUIRE_FIXTURES: "1"
+      # Core ML (as-vision's tests/coreml.rs) needs SCRFD, ArcFace and CCIP,
+      # kept between runs while the manifest stays the same. The run above
+      # skips those tests without the models; here they must run.
+      - name: Core ML test models
+        if: runner.os == 'macOS'
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/coreml-models
+          key: coreml-models-${{ hashFiles('models/manifest.toml') }}
+      - name: Core ML matches the processor and keeps its compiled models
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cargo xtask fetch-models --only scrfd-10g,arcface-glintr100,anime-ccip-caformer24 --dir "$AUTOSCENE_MODELS_DIR"
+          cargo test -p as-vision --test coreml
+        env:
+          AUTOSCENE_MODELS_DIR: ${{ runner.temp }}/coreml-models
+          AUTOSCENE_REQUIRE_MODELS: "1"
       # The app's bindings, and the plugin protocol's types the kit is built on.
       - name: Bindings are up to date
         shell: bash

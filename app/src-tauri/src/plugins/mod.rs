@@ -79,11 +79,15 @@
 //! A plugin's shot filters judge a character's shots for their scenepack,
 //! an episode per run, in a chain of runs that lets other runs in between
 //! ([`filters`]).
+//!
+//! A plugin's pack actions save a character's scenepack as one file, where
+//! the person chose, before anything is rendered ([`pack_actions`]).
 
 pub mod calls;
 pub mod catalog;
 pub mod filters;
 pub mod opened;
+pub mod pack_actions;
 pub mod pages;
 pub mod services;
 
@@ -104,8 +108,9 @@ use as_plugin::store::RECORD_VERSION;
 use as_plugin::wasm;
 use as_plugin::{
     ActionContext, ActionKind, Approval, Caller, CommandSpec, EventKind, Extra, Grants, HostCalls, HostMethod,
-    Installed, Launch, Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record,
-    Resource, Resources, RunSpec, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
+    Installed, Launch, Manifest, OsKeyring, PackActionSpec, PageSpec, Permission, PluginError, PluginId, PluginResult,
+    Record, Resource, Resources, RunSpec, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger, Trust, package,
+    runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -326,8 +331,9 @@ struct RunKey {
     /// The SHA-256 of what a page handed the run (its JSON), if it handed
     /// it anything: the same action with other input is another run.
     input_sha256: Option<String>,
-    /// The character whose shots a shot filter checks: a check of one
-    /// character's waits beside another's. None for every other kind.
+    /// The character whose shots a shot filter checks, or whose pack a pack
+    /// action saves: one character's waits beside another's. None for
+    /// every other kind.
     character_id: Option<CharacterId>,
 }
 
@@ -397,6 +403,8 @@ pub struct PluginInfo {
     pub uv_script: bool,
     pub export_actions: Vec<PluginExportAction>,
     pub commands: Vec<CommandSpec>,
+    /// What it saves a character's scenepack as, from the pack's ⋯ menu.
+    pub pack_actions: Vec<PackActionSpec>,
     pub settings: Vec<SettingSpec>,
     /// What it may run on by itself, once the person turns it on.
     pub events: Vec<PluginEvent>,
@@ -1259,6 +1267,7 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
             })
             .collect(),
         commands: m.map(|m| m.commands.clone()).unwrap_or_default(),
+        pack_actions: m.map(|m| m.pack_actions.clone()).unwrap_or_default(),
         settings: m.map(|m| m.settings.clone()).unwrap_or_default(),
         events: events
             .iter()
@@ -1463,6 +1472,14 @@ fn action_title(
                 return refused("A shot filter checks a character's scenepack.");
             }
             Ok(f.title.clone())
+        }
+        // Only a scenepack's menu starts one (see pack_actions).
+        ActionKind::PackAction => {
+            let a = m.pack_actions.iter().find(|a| a.id == action).ok_or_else(no_such)?;
+            if project_id.is_none() || export_id.is_some() {
+                return refused("A pack action saves a character's scenepack.");
+            }
+            Ok(a.title.clone())
         }
         ActionKind::ExportAction => {
             let Some(a) = m.export_actions.iter().find(|a| a.id == action) else {

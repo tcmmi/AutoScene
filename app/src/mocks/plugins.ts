@@ -88,6 +88,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     uvScript: true,
     exportActions: [],
     commands: [],
+    packActions: [],
     settings: [],
     events: [],
     runtime: "process",
@@ -828,7 +829,7 @@ const RUNNABLE = new Set(
 
 /** Whether the extension `ext`, or a file called `name` (Windows drops the dots and spaces it ends with), runs as it opens. */
 const runnable = (ext: string) => RUNNABLE.has(ext.toLowerCase())
-function runnableName(name: string): boolean {
+export function runnableName(name: string): boolean {
   const trimmed = name.replace(/[. ]+$/, "")
   const dot = trimmed.lastIndexOf(".")
   return dot >= 0 && runnable(trimmed.slice(dot + 1))
@@ -1043,6 +1044,25 @@ export function pluginRun(
   if (kind === "command" && exportId) refuse("A command doesn't run on an export.")
   if (kind === "command" && "needsProject" in spec && spec.needsProject && !projectId) refuse("Open a project to run it in.")
   return { title: spec.title, name: p.name, message: MESSAGES.get(`${id} ${action}`) ?? `${spec.title} is done.` }
+}
+
+/**
+ * The pack action `action` of `id`, as `queue_pack_action` checks it: its
+ * plugin may run now and has it. Its plugin's name, its title, and the name
+ * the save dialog offers for `character`'s pack.
+ */
+export function packAction(
+  id: string,
+  action: string,
+  character: string,
+  allow: boolean,
+): { name: string; title: string; file: string } {
+  const p = get(id)
+  const shown = info(p, allow)
+  if (!shown.active) throw { code: "invalid", message: p.broken ?? shown.blockedReason ?? `${p.name} is turned off.` }
+  const a = p.packActions.find((x) => x.id === action)
+  if (!a) throw { code: "not_found", message: `${p.name} has no such pack action.` }
+  return { name: p.name, title: a.title, file: a.file.name.replaceAll("{character}", character) }
 }
 
 /** The export actions the plugins that may run now turned on for after every export. */

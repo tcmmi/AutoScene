@@ -23,6 +23,7 @@ export function pluginInfo(o: Partial<PluginInfo> & Pick<PluginInfo, "id" | "nam
     uvScript: true,
     exportActions: [],
     commands: [],
+    packActions: [],
     settings: [],
     events: [],
     runtime: "process",

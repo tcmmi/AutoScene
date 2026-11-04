@@ -48,6 +48,7 @@ import {
   mockPlugin,
   nextPluginPackage,
   openPage,
+  packAction,
   pageCall,
   pagesOf,
   pluginBanner,
@@ -55,6 +56,7 @@ import {
   pluginValues,
   pluginsList,
   reviewed,
+  runnableName,
   setAfterExport,
   setEvent,
   setPluginEnabled,
@@ -1351,6 +1353,39 @@ const handlers: Record<string, Handler> = {
   },
   // No mock plugin has a shot filter: there is nothing to check.
   pack_filter_check: () => false,
+  // As `queue_pack_action`: the pack as the grid showed it, then the
+  // browser's prompt stands in for the save dialog, in the project's
+  // exports. Closed, nothing runs; a name of a kind that runs, or one too
+  // long, is refused. Then a run that says where it saved. One run of a pack
+  // action per pack at a time, waiting or running. No mock plugin has a shot
+  // filter, so none holds a pack up.
+  pack_action_run: ({ projectId, characterId, action, spec, naming, stamp }) => {
+    const p = find(projectId)
+    const cid = String(characterId)
+    const [pluginId, actionId = ""] = String(action).split("/")
+    const label = characterLabel(p.id, cid)
+    const a = packAction(pluginId, actionId, label, allows())
+    const key = [pluginId, "packAction", actionId, p.id, cid].join(" ")
+    const busy = (j: JobInfo) => j.state === "running" || j.state === "queued"
+    if (jobs.some((j) => busy(j) && pluginJobs.get(j.id)?.run === key)) return { kind: "waits" }
+    const preview = packPreview(p.id, cid, spec as PackSpec, p.media, SEGMENTS)
+    if (preview.stamp !== stamp) throw { code: "invalid", message: "The pack changed meanwhile. Check it and export again." }
+    if (!preview.clips.some((c) => c.included)) throw { code: "invalid", message: "There's nothing in the pack to export." }
+    const problem = templateProblem((naming as PackNaming).template)
+    if (problem) throw { code: "invalid", message: problem }
+    const file = window.prompt(`Plugin “${a.name}” saves ${label}'s scenepack. Save as:`, a.file)?.trim()
+    if (!file) return { kind: "cancelled" }
+    if (runnableName(file)) throw { code: "invalid", message: "A plugin can't save a program, a script or a shortcut." }
+    if (new TextEncoder().encode(file).length > 240) {
+      throw { code: "invalid", message: "That file name is too long. Choose a shorter one." }
+    }
+    const path = `${settings.libraryRoot}\\Exports\\${p.title}\\${file}`
+    const title = `${a.title.replace(/[….\s]+$/u, "")} · ${label}`
+    const opts = { subtitle: a.name, stage: `Saving ${file}`, message: `Saved ${file}` }
+    const job = startJob("plugin", title, p, 2500, opts, () => pluginJobs.delete(job.id))
+    pluginJobs.set(job.id, { pluginId, run: key })
+    return { kind: "queued", job: job.id, path }
+  },
   pack_export: ({ projectId, characterId, req }) => {
     const p = find(projectId)
     const r = req as PackExportRequest

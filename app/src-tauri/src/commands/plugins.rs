@@ -469,6 +469,10 @@ pub async fn plugin_run(
         ActionKind::ShotFilter => {
             return Err(AppError::new(ErrorCode::Invalid, "A shot filter checks shots from the scenepack builder."));
         }
+        // It saves where the person chooses first (`pack_action_run`).
+        ActionKind::PackAction => {
+            return Err(AppError::new(ErrorCode::Invalid, "A pack action saves a scenepack from its builder."));
+        }
     };
     blocking(move || plugins::queue_run(&app, &id, kind, &action_id, trigger, project_id, export_id, None)).await
 }

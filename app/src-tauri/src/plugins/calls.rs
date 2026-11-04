@@ -42,7 +42,7 @@ use as_plugin::calls::{
     self, ActionsRun, CallCode, CallError, Caller, CopyText, ExportRef, FileFilter, FileRef, Grants, HostCalls,
     HostMethod, Navigate, NetRequest, OpenExternal, OpenFile, OpenedFile, PageClip, PageEpisode, PageExport,
     PageExportSummary, PageProject, ProgramEpisode, ProgramProject, ProjectRef, ResolvedFile, SaveFile, SecretsGet,
-    ServiceRequestParams, StateKey, StateSet, Toast, ToastTone,
+    ServiceRequestParams, StateKey, StateSet, Toast, ToastTone, runnable_extension, runnable_name,
 };
 use as_plugin::manifest::plain_link;
 use as_plugin::pages::{self, Mount};
@@ -552,7 +552,7 @@ fn check_page_path(path: &str) -> Result<(), CallError> {
 
 /// Whether `name` is a plain file name of up to 100 characters, as
 /// `files.save` offers it: one part, of the letters a package's paths use,
-/// and of no kind that runs ([`RUNNABLE`]).
+/// and of no kind that runs ([`calls::RUNNABLE`]).
 fn check_save_name(name: &str) -> Result<(), CallError> {
     if !(name.len() <= MAX_SAVE_NAME && !name.contains('/') && package::check_path(name).is_ok()) {
         return Err(invalid("files.save takes a plain file name of up to 100 characters, like clips.txt."));
@@ -561,34 +561,6 @@ fn check_save_name(name: &str) -> Result<(), CallError> {
         true => Err(runnable_refused()),
         false => Ok(()),
     }
-}
-
-/// The kinds of file a page never saves, on any system: programs, scripts,
-/// installers, libraries, disk images and shortcuts, which run something,
-/// or open where they point, as the person opens them: Windows' first
-/// (with a remote desktop's and a sandbox's settings, which connect and
-/// run), then macOS's, then Linux's and Java's, by their extensions. An
-/// archive may hold any of them: on Windows and macOS it is marked as a
-/// download ([`mark_downloaded`]), and what comes out of it with it.
-const RUNNABLE: &str = "exe com scr pif cpl dll ocx sys drv bat cmd msi msix msixbundle msp mst appx appxbundle \
-                        appinstaller application appref-ms lnk url website scf hta chm hlp rdp wsb js jse vbs vbe vb wsf wsh \
-                        wsc ws sct ps1 ps1xml ps2 psc1 psd1 psm1 msh msh1 msh2 mshxml reg inf ins isp gadget diagcab \
-                        msc xll xbap vsix settingcontent-ms library-ms search-ms searchconnector-ms iso img vhd vhdx \
-                        py pyw pyz pyzw app command tool terminal pkg mpkg dmg webloc inetloc fileloc scpt scptd \
-                        applescript workflow action prefpane kext osax desktop sh run bin appimage deb rpm \
-                        flatpakref snap so jar jnlp";
-
-/// Whether a file called `name` is of a kind that runs ([`RUNNABLE`]).
-/// Windows drops the dots and spaces a name ends with: they don't hide it.
-fn runnable_name(name: &str) -> bool {
-    let name = name.trim_end_matches(['.', ' ']);
-    name.rsplit_once('.').is_some_and(|(_, ext)| runnable_extension(ext))
-}
-
-/// Whether the extension `ext` (without its dot) is of a kind that runs.
-fn runnable_extension(ext: &str) -> bool {
-    let ext = ext.to_ascii_lowercase();
-    RUNNABLE.split_ascii_whitespace().any(|r| r == ext)
 }
 
 fn runnable_refused() -> CallError {
@@ -647,15 +619,16 @@ fn write_whole(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// Marks the file at `path` as one from the internet, as a browser marks
-/// its downloads: a page's code made it. Windows then asks before it runs
+/// its downloads: a plugin's code made it (a page's `files.save`, a pack
+/// action). Windows then asks before it runs
 /// anything in it, and opens a document in it read-only. A disk that keeps
 /// no such marks (FAT, some network shares) saves the file without one.
 #[cfg(windows)]
-fn mark_downloaded(path: &Path) {
+pub(super) fn mark_downloaded(path: &Path) {
     let mut zone = path.as_os_str().to_owned();
     zone.push(":Zone.Identifier");
     if let Err(e) = std::fs::write(&zone, "[ZoneTransfer]\r\nZoneId=3\r\n") {
-        log::warn!("a plugin page's saved file isn't marked as a download: {e}");
+        log::warn!("a plugin's saved file isn't marked as a download: {e}");
     }
 }
 
@@ -664,7 +637,7 @@ fn mark_downloaded(path: &Path) {
 /// it, before it runs. A disk that keeps no such marks saves the file
 /// without one.
 #[cfg(target_os = "macos")]
-fn mark_downloaded(path: &Path) {
+pub(super) fn mark_downloaded(path: &Path) {
     use std::os::unix::ffi::OsStrExt;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     // Downloaded, by AutoScene, not yet opened.
@@ -677,13 +650,13 @@ fn mark_downloaded(path: &Path) {
     // SAFETY: both names are NUL-terminated, and `value` lives for the call.
     let set = unsafe { libc::setxattr(path.as_ptr(), name.as_ptr(), value.as_ptr().cast(), value.len(), 0, 0) };
     if set != 0 {
-        log::warn!("a plugin page's saved file isn't marked as a download: {}", std::io::Error::last_os_error());
+        log::warn!("a plugin's saved file isn't marked as a download: {}", std::io::Error::last_os_error());
     }
 }
 
-/// Nothing marks a file so here: [`RUNNABLE`] keeps out what would run.
+/// Nothing marks a file so here: [`calls::RUNNABLE`] keeps out what would run.
 #[cfg(not(any(windows, target_os = "macos")))]
-fn mark_downloaded(_: &Path) {}
+pub(super) fn mark_downloaded(_: &Path) {}
 
 /// `n` bytes as people read them: 16 MB, 512 KB, 100 bytes.
 fn size_words(n: u64) -> String {

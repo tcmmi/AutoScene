@@ -1,7 +1,12 @@
 //! Scenepacks: a character's shots, filtered and picked by hand, exported in
 //! one go. The pack is made from the analysis each time (as_project::pack),
 //! so the grid, the plan and the export can't disagree: with the verdicts
-//! of the plugins' shot filters as they are then (plugins::filters).
+//! of the plugins' shot filters as they are then (plugins::filters). A
+//! plugin's pack action saves the pack as the grid showed it as one file,
+//! before anything is rendered (plugins::pack_actions).
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use as_api::{
     ExportPlan, ExportSummary, PackChoices, PackExportRequest, PackNaming, PackPicks, PackPreview, PackSpec, PackState,
@@ -9,13 +14,16 @@ use as_api::{
 use as_core::{CharacterId, ProjectId};
 use as_export::builtin_presets;
 use as_media::Caps;
-use tauri::{AppHandle, State};
+use as_plugin::calls::FileFilter;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::{ExportChanged, PackChanged};
 use crate::paths;
 use crate::plugins::filters::{self, Checking};
+use crate::plugins::pack_actions::{self, AskFn, PackActionStart, Saving, Shown};
 use crate::state::{AppState, allow_asset_tree, blocking};
 use crate::work;
 
@@ -131,6 +139,52 @@ pub async fn pack_filter_check(
 ) -> AppResult<bool> {
     let ck = Checking::of(&app)?;
     blocking(move || filters::queue_check(&ck, project_id, character_id, &filter, &spec, again)).await
+}
+
+/// Save a character's pack, exactly as the preview with `stamp` showed it,
+/// with a plugin's pack action `action` (`<pluginId>/<actionId>`): the
+/// system's save dialog asks where first, then its run is queued, and the
+/// file is there once it ends well. Refused, before anything is asked, as an
+/// export of the pack would be: when it changed since it was shown, while a
+/// filter it turns on checks shots, or when it takes nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn pack_action_run(
+    app: AppHandle,
+    project_id: ProjectId,
+    character_id: CharacterId,
+    action: String,
+    spec: PackSpec,
+    naming: PackNaming,
+    stamp: String,
+) -> AppResult<PackActionStart> {
+    let sv = Saving::of(&app, save_dialog(&app))?;
+    blocking(move || {
+        let shown = Shown { spec: &spec, naming: &naming, stamp: &stamp };
+        pack_actions::queue_pack_action(&sv, project_id, character_id, &action, &shown)
+    })
+    .await
+}
+
+/// The system's save dialog over the window, as a page's `files.save` has
+/// it: titled, offering a name and the kinds of file, in the folder given
+/// (where the project's exports go), or where the system opens it.
+fn save_dialog(app: &AppHandle) -> Arc<AskFn> {
+    let app = app.clone();
+    Arc::new(move |title: &str, name: &str, kinds: &[FileFilter], folder: Option<&Path>| -> Option<PathBuf> {
+        let mut dialog = app.dialog().file().set_title(title).set_file_name(name);
+        for k in kinds {
+            let extensions: Vec<&str> = k.extensions.iter().map(String::as_str).collect();
+            dialog = dialog.add_filter(&k.name, &extensions);
+        }
+        if let Some(folder) = folder {
+            dialog = dialog.set_directory(folder);
+        }
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
+        }
+        dialog.blocking_save_file()?.into_path().ok()
+    })
 }
 
 /// Export a character's pack: exactly what the preview with `req.stamp`

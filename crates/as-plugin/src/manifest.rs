@@ -44,6 +44,12 @@
 //! WebAssembly plugin can't read the episodes, and is refused. A version 1
 //! manifest skips them with a warning.
 //!
+//! Version 2 also has pack actions ([`PackActionSpec`]): entries of a
+//! scenepack's ⋯ menu whose program saves the pack as one file (an FCPXML, a
+//! cut sheet), before anything is rendered. They follow the rules of shot
+//! filters: a program of protocol 2 that reads the project; a WebAssembly
+//! plugin can't write the file the person chose, and is refused.
+//!
 //! No shell reads a command: its arguments are fixed, and handed to the
 //! program as they are. The program is a file in the plugin's own folder,
 //! started by its path there ([`Launch::entry_in`]) and never looked up on
@@ -94,6 +100,13 @@ pub const MAX_SHOT_FILTERS: usize = 4;
 pub const MAX_FILTER_LABEL: usize = 24;
 /// The highest revision a shot filter may have.
 pub const MAX_FILTER_REVISION: u32 = 65535;
+/// The most pack actions a plugin may add, the longest a pack action's
+/// title (a menu entry) may be, the longest its file's name, and the most
+/// kinds of file it may save.
+pub const MAX_PACK_ACTIONS: usize = 4;
+pub const MAX_PACK_ACTION_TITLE: usize = 40;
+pub const MAX_PACK_FILE_NAME: usize = 100;
+pub const MAX_PACK_EXTENSIONS: usize = 4;
 /// The memory a WebAssembly plugin's run may use in all, in MB (1 MB = 1
 /// MiB), when it doesn't say; and the least and most it may ask for.
 pub const DEFAULT_MEMORY_MB: u32 = 512;
@@ -281,6 +294,8 @@ pub struct Manifest {
     pub commands: Vec<CommandSpec>,
     /// Its filters for a character's scenepack (manifest version 2).
     pub shot_filters: Vec<ShotFilterSpec>,
+    /// What it saves a character's scenepack as (manifest version 2).
+    pub pack_actions: Vec<PackActionSpec>,
     pub settings: Vec<SettingSpec>,
     /// Its pages (manifest version 2); whether their files are there is
     /// checked at install.
@@ -492,6 +507,31 @@ pub struct ShotFilterSpec {
     /// Raised by the author when a version judges shots differently: its
     /// verdicts are asked for again. A new version alone keeps them.
     pub revision: u32,
+}
+
+/// An entry a plugin adds to a scenepack's ⋯ menu (manifest version 2): its
+/// program saves the character's pack, as the grid shows it, as one file
+/// the person places in the system's save dialog, before anything is
+/// rendered ([`crate::protocol::PackContext`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PackActionSpec {
+    pub id: String,
+    /// Its menu entry ("Save as FCPXML…"), at most 40 characters.
+    pub title: String,
+    pub file: PackFileSpec,
+}
+
+/// The file a pack action saves, as the save dialog offers it.
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PackFileSpec {
+    /// The name it offers: a plain file name ending in one of `extensions`,
+    /// where `{character}` stands for the character's name.
+    pub name: String,
+    /// The kinds of file it offers: 1 to 4 extensions without their dot,
+    /// each of 1 to 10 lowercase letters and digits.
+    pub extensions: Vec<String>,
 }
 
 /// A page a plugin adds: one of its files, which AutoScene shows full screen
@@ -945,7 +985,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     }
 
     let (mut export_actions, mut commands_out, mut settings) = (Vec::new(), Vec::new(), Vec::new());
-    let (mut pages, mut events, mut shot_filters) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut pages, mut events, mut shot_filters, mut pack_actions) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     if let Some(c) = root.object("contributes")? {
         for key in c.map.keys() {
             match key.as_str() {
@@ -959,7 +999,10 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
                 "shotFilters" if manifest_version < 2 => {
                     w.push(r#"Skipped contributes.shotFilters: shot filters need "manifestVersion": 2."#.into());
                 }
-                "pages" | "events" | "shotFilters" => {}
+                "packActions" if manifest_version < 2 => {
+                    w.push(r#"Skipped contributes.packActions: pack actions need "manifestVersion": 2."#.into());
+                }
+                "pages" | "events" | "shotFilters" | "packActions" => {}
                 key => w.push(format!("Skipped contributes.{}, which this AutoScene doesn't know.", shown(key))),
             }
         }
@@ -1070,6 +1113,18 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             shot_filters.push(shot_filter(&f, &settings, &named, &mut w)?);
         }
         unique(shot_filters.iter().map(|f| f.id.as_str()), "contributes.shotFilters", "id")?;
+        // A version 1 manifest's pack actions were skipped above, whatever they hold.
+        let listed = if manifest_version >= 2 { c.list("packActions")? } else { &[] };
+        if !listed.is_empty() {
+            check_saving(kind, protocol, &permissions)?;
+        }
+        if listed.len() > MAX_PACK_ACTIONS {
+            return Err(invalid(format!("The plugin adds more than {MAX_PACK_ACTIONS} pack actions.")));
+        }
+        for (i, a) in listed.iter().enumerate() {
+            pack_actions.push(pack_action(&object(a, format!("contributes.packActions[{i}]"))?, &mut w)?);
+        }
+        unique(pack_actions.iter().map(|a| a.id.as_str()), "contributes.packActions", "id")?;
     }
 
     // A plugin that runs no program is its pages.
@@ -1136,6 +1191,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         export_actions,
         commands: commands_out,
         shot_filters,
+        pack_actions,
         settings,
         pages,
         events,
@@ -1144,6 +1200,75 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         resources,
     };
     Ok(Parsed { manifest, warnings: w })
+}
+
+/// Whether a plugin of runtime `kind`, speaking `protocol` and asking for
+/// `permissions`, may save packs: its program reads the episodes and writes
+/// the file the person chose, so it is a program (a component in the
+/// sandbox can do neither), it speaks protocol 2, and it says it reads the
+/// project.
+fn check_saving(kind: RuntimeKind, protocol: u32, permissions: &[Permission]) -> PluginResult<()> {
+    match kind {
+        RuntimeKind::Wasm => Err(invalid("A WebAssembly plugin can't write the file a pack action saves.")),
+        RuntimeKind::None => Err(invalid("Pack actions need a program, and runtime.type none runs none.")),
+        _ if protocol < 2 => Err(invalid(r#"A pack action speaks protocol 2: set "engines": {"protocol": 2}."#)),
+        _ if !permissions.contains(&Permission::ProjectRead) => {
+            Err(invalid(r#"A pack action reads the project: add "project:read" to permissions."#))
+        }
+        RuntimeKind::Process | RuntimeKind::Service => Ok(()),
+    }
+}
+
+/// A pack action `a`: its id, its title and the one file it saves, whose
+/// name is a plain file name (as a package's are, [`check_path`]) but for
+/// `{character}`, ending in one of its 1 to 4 extensions.
+fn pack_action(a: &Obj, w: &mut Vec<String>) -> PluginResult<PackActionSpec> {
+    a.warn_unknown(&["id", "title", "file"], w);
+    let id = a.contribution_id()?;
+    let title = a.required_label("title", MAX_PACK_ACTION_TITLE, w)?;
+    let file = a.required_object("file")?;
+    file.warn_unknown(&["name", "extensions"], w);
+    let listed = file.list("extensions")?;
+    if !(1..=MAX_PACK_EXTENSIONS).contains(&listed.len()) {
+        return Err(invalid(format!(
+            "The plugin's {} must name 1 to {MAX_PACK_EXTENSIONS} kinds of file.",
+            file.at("extensions")
+        )));
+    }
+    let mut extensions: Vec<String> = Vec::new();
+    for (i, e) in listed.iter().enumerate() {
+        let plain =
+            |e: &&str| (1..=10).contains(&e.len()) && e.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+        let Some(e) = e.as_str().filter(plain) else {
+            return Err(invalid(format!(
+                "The plugin's {}[{i}] must be 1 to 10 lowercase letters and digits, such as fcpxml.",
+                file.at("extensions")
+            )));
+        };
+        // The file a pack action saves is opened as the person opens it: never one that runs.
+        if crate::calls::runnable_extension(e) {
+            return Err(invalid(format!(
+                "The plugin's {}[{i}] is {e}, a kind of file that runs: a pack action never saves a program, a script or a shortcut.",
+                file.at("extensions")
+            )));
+        }
+        extensions.push(e.to_owned());
+    }
+    unique(extensions.iter().map(String::as_str), &file.at("extensions"), "extension")?;
+    let name = file.required_text("name")?;
+    // `{character}` is its one field; the rest is a name as a package's files have.
+    let plain = name.replace("{character}", "character");
+    let named = name.len() <= MAX_PACK_FILE_NAME
+        && !plain.contains(['/', '{', '}'])
+        && check_path(&plain).is_ok()
+        && extensions.iter().any(|e| plain.strip_suffix(e.as_str()).is_some_and(|s| s.len() > 1 && s.ends_with('.')));
+    if !named {
+        return Err(invalid(format!(
+            "The plugin's {} must be a plain file name ending in one of its extensions, with {{character}} for the character's name, such as {{character}}.fcpxml.",
+            file.at("name")
+        )));
+    }
+    Ok(PackActionSpec { id, title, file: PackFileSpec { name: name.to_owned(), extensions } })
 }
 
 /// Whether a plugin of runtime `kind`, speaking `protocol` and asking for
@@ -3204,6 +3329,10 @@ mod tests {
             (&defs["shotFilter"]["properties"]["title"]["maxLength"], MAX_FILTER_LABEL),
             (&defs["shotFilter"]["properties"]["reason"]["maxLength"], MAX_FILTER_LABEL),
             (&defs["shotFilter"]["properties"]["revision"]["maximum"], MAX_FILTER_REVISION as usize),
+            (&contributes["packActions"]["maxItems"], MAX_PACK_ACTIONS),
+            (&defs["packAction"]["properties"]["title"]["maxLength"], MAX_PACK_ACTION_TITLE),
+            (&defs["packFile"]["properties"]["name"]["maxLength"], MAX_PACK_FILE_NAME),
+            (&defs["packFile"]["properties"]["extensions"]["maxItems"], MAX_PACK_EXTENSIONS),
             (&schema["properties"]["platforms"]["maxItems"], MAX_PLATFORMS),
             (&defs["network"]["properties"]["hosts"]["maxItems"], MAX_HOSTS),
             (&defs["commandLine"]["maxItems"], MAX_ARGS),
@@ -3214,6 +3343,13 @@ mod tests {
         ] {
             assert_eq!(*limit, json!(max));
         }
+        // A pack action's kinds of file: none that runs, as the parser says,
+        // of those its pattern lets through.
+        let extension = &defs["packFile"]["properties"]["extensions"]["items"];
+        let plain = |e: &&str| e.len() <= 10 && e.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+        let runs: BTreeSet<&str> = crate::calls::RUNNABLE.split_ascii_whitespace().filter(plain).collect();
+        assert_eq!(named(&extension["not"]["enum"]), runs);
+        assert_eq!(extension["pattern"], "^[a-z0-9]{1,10}$");
         // A WebAssembly plugin's limits: their bounds, and what a run gets
         // when it leaves one out.
         let wasm_limits = &defs["limits"]["properties"];
@@ -3274,7 +3410,7 @@ mod tests {
 
         // A plugin with an object of each kind the schema describes: version
         // 2, a program of protocol 2, the network, a select setting, a page,
-        // an event, a shot filter.
+        // an event, a shot filter, a pack action.
         let mut full = plugin();
         full["manifestVersion"] = json!(2);
         full["engines"]["protocol"] = json!(2);
@@ -3288,6 +3424,7 @@ mod tests {
         full["contributes"]["events"] = json!([{"id": "done", "title": "Done", "on": "analysisFinished"}]);
         full["contributes"]["exportActions"][0]["afterFailed"] = json!(true);
         full["contributes"]["shotFilters"] = json!([{"id": "speaks", "title": "Speaks", "reason": "No speech"}]);
+        full["contributes"]["packActions"] = json!([fcpxml()]);
         let reads = |v: &Value, what: &str| {
             let p = read(v).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             assert_eq!(p.warnings, Vec::<String>::new(), "{what}");
@@ -3311,6 +3448,8 @@ mod tests {
             ("resource", "/resources/0"),
             ("event", "/contributes/events/0"),
             ("shotFilter", "/contributes/shotFilters/0"),
+            ("packAction", "/contributes/packActions/0"),
+            ("packFile", "/contributes/packActions/0/file"),
         ];
         // Every object the schema describes is here, but a setting, whose
         // keys depend on its type, and the limits, which only a WebAssembly
@@ -3345,6 +3484,7 @@ mod tests {
         sandboxed["runtime"] = json!({"type": "wasm", "component": "plugin.wasm", "limits": {}});
         sandboxed["contributes"].as_object_mut().unwrap().remove("events");
         sandboxed["contributes"].as_object_mut().unwrap().remove("shotFilters");
+        sandboxed["contributes"].as_object_mut().unwrap().remove("packActions");
         assert_eq!(reads(&sandboxed, "wasm").runtime.limits, Some(WasmLimits::default()));
         for (at, properties) in [("/runtime", &defs["runtime"]["properties"]), ("/runtime/limits", wasm_limits)] {
             for key in keys(properties) {
@@ -3409,12 +3549,14 @@ mod tests {
                 c.remove("commands");
                 c.remove("events");
                 c.remove("shotFilters");
+                c.remove("packActions");
             }
             if runtime == "wasm" {
                 v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
                 let c = v["contributes"].as_object_mut().unwrap();
                 c.remove("events");
                 c.remove("shotFilters");
+                c.remove("packActions");
             }
             assert_eq!(kind_name(json!(reads(&v, runtime).runtime.kind)), *runtime);
         }
@@ -3736,6 +3878,147 @@ mod tests {
         // its plugin's, and no run gets its value.
         let m = named(json!(["webhook", "later", "sensitivity", "webhook"])).unwrap().manifest;
         assert_eq!(m.shot_filters[0].settings, ["webhook", "sensitivity"]);
+    }
+
+    /// A pack action that saves an FCPXML.
+    fn fcpxml() -> Value {
+        json!({"id": "fcpxml", "title": "Save as FCPXML…", "file": {"name": "{character}.fcpxml", "extensions": ["fcpxml"]}})
+    }
+
+    /// A version 2 plugin of protocol 2 that reads the project, with the
+    /// pack actions `actions`.
+    fn saving(actions: Value) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["engines"]["protocol"] = json!(2);
+            v["permissions"] = json!(["project:read"]);
+            v["contributes"]["packActions"] = actions;
+        })
+    }
+
+    #[test]
+    fn a_pack_action_names_one_file_and_reads_the_project() {
+        let m = saving(json!([fcpxml()])).unwrap().manifest;
+        let file = PackFileSpec { name: "{character}.fcpxml".into(), extensions: vec!["fcpxml".into()] };
+        assert_eq!(m.pack_actions, [PackActionSpec { id: "fcpxml".into(), title: "Save as FCPXML…".into(), file }]);
+        // A service saves packs too, and a name may be plain, or end in any of its extensions.
+        let service = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["engines"]["protocol"] = json!(2);
+            v["permissions"] = json!(["project:read"]);
+            v["runtime"]["type"] = json!("service");
+            v["contributes"]["packActions"] = json!([{"id": "csv", "title": "Save a cut sheet…",
+                "file": {"name": "cut-sheet.v2.csv", "extensions": ["txt", "csv"]}}]);
+        });
+        assert_eq!(service.unwrap().manifest.pack_actions[0].file.name, "cut-sheet.v2.csv");
+
+        // Protocol 2, the project:read permission and a program, or it is refused.
+        let refused = |edit: &dyn Fn(&mut Value)| {
+            message(with(|v| {
+                v["manifestVersion"] = json!(2);
+                v["engines"]["protocol"] = json!(2);
+                v["permissions"] = json!(["project:read"]);
+                v["contributes"]["packActions"] = json!([fcpxml()]);
+                edit(v);
+            }))
+        };
+        assert_eq!(
+            refused(&|v| v["engines"]["protocol"] = json!(1)),
+            r#"A pack action speaks protocol 2: set "engines": {"protocol": 2}."#
+        );
+        assert_eq!(
+            refused(&|v| v["permissions"] = json!(["exports:read", "exports:write"])),
+            r#"A pack action reads the project: add "project:read" to permissions."#
+        );
+        assert_eq!(
+            refused(&|v| {
+                v["runtime"] = json!({"type": "none"});
+                v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}],
+                                          "packActions": [fcpxml()]});
+            }),
+            "Pack actions need a program, and runtime.type none runs none."
+        );
+
+        // One file: a plain name, with {character} its only field, of a kind it names.
+        let named = |name: &str, extensions: Value| {
+            saving(json!([{"id": "a", "title": "A", "file": {"name": name, "extensions": extensions}}]))
+        };
+        let fcp = || json!(["fcpxml"]);
+        for ok in ["{character}.fcpxml", "{character}-{character}.fcpxml", "Walter_cut.fcpxml", "x.fcpxml"] {
+            assert_eq!(named(ok, fcp()).unwrap().manifest.pack_actions[0].file.name, ok);
+        }
+        for bad in [
+            "{character} cut.fcpxml",
+            "{series}.fcpxml",
+            "{character}.xml",
+            "{character}",
+            ".fcpxml",
+            "../{character}.fcpxml",
+            "cuts/{character}.fcpxml",
+            "con.fcpxml",
+            "{character}.fcpxml.",
+            "C:{character}.fcpxml",
+        ] {
+            assert!(message(named(bad, fcp())).contains("must be a plain file name"), "{bad}");
+        }
+        assert!(message(named(&format!("{}.fcpxml", "a".repeat(94)), fcp())).contains("plain file name"));
+        assert!(named(&format!("{}.fcpxml", "a".repeat(93)), fcp()).is_ok());
+        let kinds = |e: Value| message(named("x.fcpxml", e));
+        for bad in [json!([]), json!(["a", "b", "c", "d", "fcpxml"])] {
+            assert!(kinds(bad).contains("must name 1 to 4 kinds of file"));
+        }
+        for bad in [json!(["FCPXML"]), json!([".fcpxml"]), json!(["fcpxml0123a"]), json!([""]), json!([3])] {
+            assert!(kinds(bad.clone()).contains("lowercase letters and digits"), "{bad}");
+        }
+        assert!(kinds(json!(["fcpxml", "fcpxml"])).contains("twice"));
+        // Never a kind that runs: asp check and the install say so, not a click.
+        for runs in ["exe", "lnk", "bat", "ps1", "sh", "command", "jar", "py"] {
+            assert_eq!(
+                kinds(json!(["fcpxml", runs])),
+                format!(
+                    "The plugin's contributes.packActions[0].file.extensions[1] is {runs}, a kind of file that runs: a pack action never saves a program, a script or a shortcut."
+                ),
+            );
+        }
+        assert!(message(named("{character}.exe", json!(["exe"]))).contains("a kind of file that runs"));
+        assert!(message(saving(json!([{"id": "a", "title": "A"}]))).contains("file is missing"));
+        assert!(message(named("x.fcpxml", Value::Null)).contains("must name 1 to 4"));
+        // Its limits.
+        let five: Vec<Value> =
+            (0..5).map(|i| json!({"id": format!("a{i}"), "title": "A", "file": fcpxml()["file"]})).collect();
+        assert_eq!(message(saving(json!(five))), "The plugin adds more than 4 pack actions.");
+        assert!(message(saving(json!([fcpxml(), fcpxml()]))).contains("contributes.packActions"));
+        let long = saving(
+            json!([{"id": "a", "title": "A title far too long for an entry of a menu", "file": fcpxml()["file"]}]),
+        );
+        let p = long.unwrap();
+        assert!(p.manifest.pack_actions[0].title.chars().count() <= MAX_PACK_ACTION_TITLE);
+        assert_eq!(p.warnings, ["Cut contributes.packActions[0].title to 40 characters."]);
+        // What it doesn't know is ignored with a word.
+        let later = saving(json!([{"id": "a", "title": "A", "later": 1,
+            "file": {"name": "x.fcpxml", "extensions": ["fcpxml"], "later": 2}}]));
+        assert_eq!(later.unwrap().warnings.len(), 2);
+
+        // A version 1 manifest skips them, whatever they hold.
+        let v1 = with(|v| v["contributes"]["packActions"] = json!([{"id": "BAD"}])).unwrap();
+        assert!(v1.manifest.pack_actions.is_empty());
+        assert!(
+            v1.warnings.iter().any(|w| w.contains(r#"pack actions need "manifestVersion": 2"#)),
+            "{:?}",
+            v1.warnings
+        );
+    }
+
+    #[test]
+    fn a_wasm_plugin_has_no_pack_action() {
+        let w = wasm(|v| {
+            v["engines"]["protocol"] = json!(2);
+            v["permissions"] = json!(["project:read"]);
+            v["contributes"]["packActions"] = json!([fcpxml()]);
+        });
+        assert_eq!(message(w), "A WebAssembly plugin can't write the file a pack action saves.");
+        // Without pack actions it reads as before.
+        assert!(wasm(|v| v["contributes"]["packActions"] = json!([])).unwrap().manifest.pack_actions.is_empty());
     }
 
     fn wasm(edit: impl FnOnce(&mut Value)) -> PluginResult<Parsed> {

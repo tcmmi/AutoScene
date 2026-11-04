@@ -49,6 +49,22 @@ fn main() {
             }
             send(json!({"type": "result", "message": format!("Checked {} shots.", shots.len())}));
         }
+        // A pack action: writes each clip of the pack, a line each, to the
+        // file it is given; with "fail", it then says it failed.
+        "pack" => {
+            read_run();
+            let run: Value = serde_json::from_str(&first).expect("run line");
+            let clips = run["pack"]["clips"].as_array().cloned().unwrap_or_default();
+            let lines: String = clips
+                .iter()
+                .map(|c| format!("{} {} {}-{}\n", c["index"], c["name"].as_str().unwrap_or(""), c["start"], c["end"]))
+                .collect();
+            fs::write(run["output"].as_str().expect("an output"), lines).expect("output");
+            match args.get(1).map(String::as_str) {
+                Some("fail") => send(json!({"type": "error", "message": "The clips don't fit a timeline."})),
+                _ => send(json!({"type": "result", "message": format!("Saved {} clips.", clips.len())})),
+            }
+        }
         "echo" => {
             read_run();
             fs::write("run.json", &first).expect("run.json");

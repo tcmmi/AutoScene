@@ -26,6 +26,6 @@ pub use bodies::BodiesPlan;
 pub use cast::{FACE_CHUNK, FacesPlan, PORTRAIT, Portrait, StoppedStage, face_models};
 pub use error::{ProjectError, ProjectResult};
 pub use library::Library;
-pub use pack::{CheckShot, FilterCheck};
+pub use pack::{CheckShot, CutEpisode, FilterCheck, PackCut};
 pub use project::{Project, Recovery, RelinkedFolder};
 pub use verdicts::{PluginFilter, PluginFilters, basis};

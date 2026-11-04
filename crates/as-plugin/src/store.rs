@@ -1239,6 +1239,8 @@ impl Store {
             export: None,
             input: None,
             shots: None,
+            output: None,
+            pack: None,
         })
     }
 

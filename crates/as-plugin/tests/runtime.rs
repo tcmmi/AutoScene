@@ -23,8 +23,9 @@ use as_plugin::runtime::{
 use as_plugin::scratch;
 use as_plugin::{
     ActionContext, ActionKind, AppContext, CallCode, CallError, Caller, CharacterContext, EpisodeContext, FaceBox,
-    Grants, HostCalls, HostMethod, Launch, MemorySecrets, PluginContext, PluginError, PluginId, PluginResult,
-    RunMessage, SettingValue, ShotContext, ShotsContext, Store, ToolPaths, Trigger, current_platform,
+    Grants, HostCalls, HostMethod, Launch, MemorySecrets, PackClipContext, PackContext, PluginContext, PluginError,
+    PluginId, PluginResult, RunMessage, SettingValue, ShotContext, ShotsContext, Store, ToolPaths, Trigger,
+    current_platform,
 };
 use semver::Version;
 use serde_json::value::RawValue;
@@ -145,6 +146,8 @@ fn message() -> RunMessage {
         export: None,
         input: None,
         shots: None,
+        output: None,
+        pack: None,
     }
 }
 
@@ -674,6 +677,41 @@ fn verdicts_reach_their_sink_and_odd_ones_the_log() {
             "{log}"
         );
         assert_eq!(log.matches("[verdict]").count(), 5, "{log}");
+    }
+}
+
+#[test]
+fn a_pack_action_writes_the_file_it_is_given() {
+    let clip = |index: u32, name: &str, start: u64, end: u64| PackClipContext {
+        index,
+        name: name.into(),
+        media_id: "m1".into(),
+        start,
+        end,
+    };
+    let mut p = Plugin::new("pack");
+    p.protocol = 2;
+    p.message.action = ActionContext { kind: ActionKind::PackAction, id: "fcpxml".into(), trigger: Trigger::Menu };
+    let out = p.dir.path().join("Walter.fcpxml.part-1a2b3c4d");
+    p.message.output = Some(out.to_string_lossy().into_owned());
+    p.message.pack = Some(PackContext {
+        character: CharacterContext { id: "c1".into(), name: "Walter".into() },
+        episodes: vec![EpisodeContext {
+            media_id: "m1".into(),
+            path: "/media/S01E01.mkv".into(),
+            fps: Some("24000/1001".into()),
+            frames: Some(2400),
+        }],
+        clips: vec![clip(0, "Walter_001", 0, 50), clip(1, "Walter_002", 120, 200)],
+    });
+    // It reads the pack and the path from its run line, and writes there.
+    assert_eq!(p.run().unwrap().as_deref(), Some("Saved 2 clips."));
+    assert_eq!(fs::read_to_string(&out).unwrap(), "0 Walter_001 0-50\n1 Walter_002 120-200\n");
+    // One that fails says why, whatever it wrote: the host decides what becomes of the file.
+    p.args = vec!["fail".into()];
+    match p.run() {
+        Err(PluginError::Failed { message, .. }) => assert_eq!(message, "The clips don't fit a timeline."),
+        r => panic!("{r:?}"),
     }
 }
 

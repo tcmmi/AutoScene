@@ -859,6 +859,30 @@ pub struct FileFilter {
     pub extensions: Vec<String>,
 }
 
+/// The kinds of file a plugin never saves through AutoScene, on any system
+/// (a page's `files.save`, a pack action): programs, scripts, installers,
+/// libraries, disk images and shortcuts, which run something, or open where
+/// they point, as the person opens them: Windows' first (with a remote
+/// desktop's and a sandbox's settings, which connect and run), then
+/// macOS's, then Linux's and Java's, by their extensions. An archive may
+/// hold any of them: on Windows and macOS the app marks what it saves as a
+/// download, and what comes out of it is marked with it.
+pub const RUNNABLE: &str = "exe com scr pif cpl dll ocx sys drv bat cmd msi msix msixbundle msp mst appx appxbundle                             appinstaller application appref-ms lnk url website scf hta chm hlp rdp wsb js jse vbs vbe vb wsf wsh                             wsc ws sct ps1 ps1xml ps2 psc1 psd1 psm1 msh msh1 msh2 mshxml reg inf ins isp gadget diagcab                             msc xll xbap vsix settingcontent-ms library-ms search-ms searchconnector-ms iso img vhd vhdx                             py pyw pyz pyzw app command tool terminal pkg mpkg dmg webloc inetloc fileloc scpt scptd                             applescript workflow action prefpane kext osax desktop sh run bin appimage deb rpm                             flatpakref snap so jar jnlp";
+
+/// Whether a file called `name` is of a kind that runs ([`RUNNABLE`]).
+/// Windows drops the dots and spaces a name ends with: they don't hide it.
+pub fn runnable_name(name: &str) -> bool {
+    let name = name.trim_end_matches(['.', ' ']);
+    name.rsplit_once('.').is_some_and(|(_, ext)| runnable_extension(ext))
+}
+
+/// Whether the extension `ext` (without its dot) is of a kind that runs
+/// ([`RUNNABLE`]).
+pub fn runnable_extension(ext: &str) -> bool {
+    let ext = ext.to_ascii_lowercase();
+    RUNNABLE.split_ascii_whitespace().any(|r| r == ext)
+}
+
 /// `files.save`: a file the person saves where they choose, as text or as
 /// base64, never both; it gives `{ saved }`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]

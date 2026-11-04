@@ -298,6 +298,8 @@ impl Run {
             export: None,
             input: None,
             shots: None,
+            output: None,
+            pack: None,
         };
         WasmSpec {
             name: "Test Guest".into(),

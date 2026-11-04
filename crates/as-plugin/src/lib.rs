@@ -77,15 +77,15 @@ pub use catalog::{Catalog, CatalogKeys, CatalogState};
 pub use error::{PluginError, PluginResult};
 pub use keys::KeyRole;
 pub use manifest::{
-    ActionSpec, Author, CommandSpec, Engines, EventKind, EventSpec, Launch, Manifest, PageScope, PageSpec, Parsed,
-    Permission, PluginId, Resource, Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue,
-    ShotFilterSpec, SourceLink, WasmLimits, current_platform,
+    ActionSpec, Author, CommandSpec, Engines, EventKind, EventSpec, Launch, Manifest, PackActionSpec, PackFileSpec,
+    PageScope, PageSpec, Parsed, Permission, PluginId, Resource, Runtime, RuntimeKind, SelectOption, SettingKind,
+    SettingSpec, SettingValue, ShotFilterSpec, SourceLink, WasmLimits, current_platform,
 };
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{
     ActionContext, ActionKind, AppContext, CallId, CharacterContext, ClipContext, EpisodeContext, EpisodeCounts,
-    EventContext, ExportContext, FaceBox, PluginContext, ProjectContext, RequestContext, RunMessage, ServeMessage,
-    ServiceMessage, ShotContext, ShotsContext, ToolPaths, Trigger,
+    EventContext, ExportContext, FaceBox, PackClipContext, PackContext, PluginContext, ProjectContext, RequestContext,
+    RunMessage, ServeMessage, ServiceMessage, ShotContext, ShotsContext, ToolPaths, Trigger,
 };
 pub use resources::Resources;
 pub use runtime::{RunSpec, VerdictSink};

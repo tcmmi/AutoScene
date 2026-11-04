@@ -277,6 +277,15 @@ export const commands = {
 	 *  check shows in Activity.
 	 */
 	packFilterCheck: (projectId: ProjectId, characterId: CharacterId, filter: string, spec: PackSpec, again: boolean) => __TAURI_INVOKE<boolean>("pack_filter_check", { projectId, characterId, filter, spec, again }),
+	/**
+	 *  Save a character's pack, exactly as the preview with `stamp` showed it,
+	 *  with a plugin's pack action `action` (`<pluginId>/<actionId>`): the
+	 *  system's save dialog asks where first, then its run is queued, and the
+	 *  file is there once it ends well. Refused, before anything is asked, as an
+	 *  export of the pack would be: when it changed since it was shown, while a
+	 *  filter it turns on checks shots, or when it takes nothing.
+	 */
+	packActionRun: (projectId: ProjectId, characterId: CharacterId, action: string, spec: PackSpec, naming: PackNaming, stamp: string) => __TAURI_INVOKE<PackActionStart>("pack_action_run", { projectId, characterId, action, spec, naming, stamp }),
 	/**  Every installed plugin, by id (also the broken ones). */
 	pluginsList: () => __TAURI_INVOKE<PluginInfo[]>("plugins_list"),
 	/**
@@ -475,7 +484,12 @@ export type ActionKind = "exportAction" | "command" |
  *  A shot filter of the scenepack builder (protocol 2), which judges
  *  the shots of [`RunMessage::shots`].
  */
-"shotFilter";
+"shotFilter" | 
+/**
+ *  An entry of a scenepack's menu (protocol 2), which saves
+ *  [`RunMessage::pack`] as [`RunMessage::output`].
+ */
+"packAction";
 
 /**  Analysis results of a media changed (shots or faces found, or reset). */
 export type AnalysisChanged = {
@@ -1472,6 +1486,34 @@ export type NewProject = {
 };
 
 /**
+ *  An entry a plugin adds to a scenepack's ⋯ menu (manifest version 2): its
+ *  program saves the character's pack, as the grid shows it, as one file
+ *  the person places in the system's save dialog, before anything is
+ *  rendered ([`crate::protocol::PackContext`]).
+ */
+export type PackActionSpec = {
+	id: string,
+	/**  Its menu entry ("Save as FCPXML…"), at most 40 characters. */
+	title: string,
+	file: PackFileSpec,
+};
+
+/**  What a click on a pack action did. */
+export type PackActionStart = 
+/**
+ *  Its run waits in Activity as `job`; once it ends well, the file is
+ *  at `path`.
+ */
+{ kind: "queued"; job: JobId; path: string } | 
+/**
+ *  The same pack action of this pack waits or runs already: nothing
+ *  was asked, and nothing queued.
+ */
+{ kind: "waits" } | 
+/**  The person closed the save dialog: nothing runs. */
+{ kind: "cancelled" };
+
+/**
  *  A character's pack changed: its settings (an export keeps the ones it
  *  was made with), or a run of a plugin's shot filter on an episode of its
  *  shots is over (once per run, when its verdicts are kept and its check
@@ -1548,6 +1590,20 @@ export type PackExportRequest = {
 	outDir: string | null,
 	/**  The preview's stamp: the export is refused if the pack changed since. */
 	stamp: string,
+};
+
+/**  The file a pack action saves, as the save dialog offers it. */
+export type PackFileSpec = {
+	/**
+	 *  The name it offers: a plain file name ending in one of `extensions`,
+	 *  where `{character}` stands for the character's name.
+	 */
+	name: string,
+	/**
+	 *  The kinds of file it offers: 1 to 4 extensions without their dot,
+	 *  each of 1 to 10 lowercase letters and digits.
+	 */
+	extensions: string[],
 };
 
 /**  A plugin's shot filter, as the scenepack builder shows it. */
@@ -1881,6 +1937,8 @@ export type PluginInfo = {
 	uvScript: boolean,
 	exportActions: PluginExportAction[],
 	commands: CommandSpec[],
+	/**  What it saves a character's scenepack as, from the pack's ⋯ menu. */
+	packActions: PackActionSpec[],
 	settings: SettingSpec[],
 	/**  What it may run on by itself, once the person turns it on. */
 	events: PluginEvent[],

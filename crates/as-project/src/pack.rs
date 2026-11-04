@@ -16,6 +16,10 @@
 //! filters do, before the limit. A shot none has judged yet stays in, and
 //! counts as unchecked; a pick by hand wins over a verdict too. Only shots
 //! the pack's own filters take are judged: the ones a check sends.
+//!
+//! A plugin's pack action saves the pack as one file before anything is
+//! rendered: it gets what an export of the pack would cut
+//! ([`Project::pack_cut`]), as the grid showed it, or the export's refusal.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -82,6 +86,26 @@ struct Made {
     /// order): the shots the pack's own filters take that it hasn't judged
     /// on its basis now, in (media, start) order; none for one that's off.
     lacking: Vec<Vec<(MediaId, FrameIdx)>>,
+}
+
+/// What a pack action's run saves of a character's pack: the clips an
+/// export of it would cut, named as its files (or chapters) would be, in the
+/// pack's order, and the episodes they are cut from.
+pub struct PackCut {
+    pub character: CharacterId,
+    /// The character's name.
+    pub name: String,
+    /// In the project's order.
+    pub episodes: Vec<CutEpisode>,
+    pub clips: Vec<ClipRequest>,
+}
+
+/// An episode a pack's clips are cut from: its file, frame rate and frames.
+pub struct CutEpisode {
+    pub media: MediaId,
+    pub path: String,
+    pub fps: Option<Rational>,
+    pub frames: Option<u32>,
 }
 
 /// What a shot filter's run judges: one episode's shots of a character,
@@ -318,14 +342,7 @@ impl Project {
         filters: &PluginFilters,
         default_dir: &Path,
     ) -> ProjectResult<(ExportRequest, PathBuf)> {
-        check_template(&req.naming.template).map_err(|e| ProjectError::Invalid(e.to_string()))?;
-        let made = self.make_pack(c, &req.spec, filters)?;
-        if made.pack.stamp != req.stamp {
-            return Err(ProjectError::Invalid("The pack changed meanwhile. Check it and export again.".into()));
-        }
-        if made.pack.totals.clips == 0 {
-            return Err(ProjectError::Invalid("There's nothing in the pack to export.".into()));
-        }
+        let made = self.shown_pack(c, &req.spec, filters, &req.naming, &req.stamp)?;
         let label = self.db().character_label(c)?.ok_or_else(gone)?;
         let mut merge = self.pack_file_name(&label, &req.naming)?;
         let clips = self.named_clips(c, &made, &req.naming)?;
@@ -354,6 +371,60 @@ impl Project {
             merge,
         };
         Ok((request, out_dir))
+    }
+
+    /// What a pack action saves of a character's pack: the clips an export
+    /// of what the grid showed (`stamp`) would cut, named by `naming`, and
+    /// their episodes; refused as that export would be, when the pack
+    /// changed since or takes nothing.
+    pub fn pack_cut(
+        &self,
+        c: CharacterId,
+        spec: &PackSpec,
+        filters: &PluginFilters,
+        naming: &PackNaming,
+        stamp: &str,
+    ) -> ProjectResult<PackCut> {
+        let made = self.shown_pack(c, spec, filters, naming, stamp)?;
+        let name = self.character_label(c)?;
+        let clips = self.named_clips(c, &made, naming)?;
+        let mut episodes: Vec<&MediaItem> = Vec::new();
+        for clip in &clips {
+            if let Some(s) = made.sources.get(&clip.media_id)
+                && !episodes.iter().any(|m| m.id == s.media.id)
+            {
+                episodes.push(&s.media);
+            }
+        }
+        episodes.sort_by_key(|m| m.position);
+        let episodes = episodes
+            .into_iter()
+            .map(|m| CutEpisode { media: m.id, path: m.path.clone(), fps: m.fps, frames: m.frames })
+            .collect();
+        Ok(PackCut { character: c, name, episodes, clips })
+    }
+
+    /// The pack `spec` makes (with the plugins' `filters`) as the grid
+    /// showed it (`stamp`), to be cut with clips named by `naming`: refused
+    /// when the pack changed since, when it takes nothing, or when `naming`
+    /// can't name its clips.
+    fn shown_pack(
+        &self,
+        c: CharacterId,
+        spec: &PackSpec,
+        filters: &PluginFilters,
+        naming: &PackNaming,
+        stamp: &str,
+    ) -> ProjectResult<Made> {
+        check_template(&naming.template).map_err(|e| ProjectError::Invalid(e.to_string()))?;
+        let made = self.make_pack(c, spec, filters)?;
+        if made.pack.stamp != stamp {
+            return Err(ProjectError::Invalid("The pack changed meanwhile. Check it and export again.".into()));
+        }
+        if made.pack.totals.clips == 0 {
+            return Err(ProjectError::Invalid("There's nothing in the pack to export.".into()));
+        }
+        Ok(made)
     }
 
     /// The one file's name when `naming` joins the pack into one.
@@ -1590,6 +1661,135 @@ mod tests {
         let state = PackState { spec: on(), naming: PackNaming::default() };
         p.project.save_pack_state(p.walter, &state).unwrap();
         assert_eq!(p.project.pack_state(p.walter).unwrap().spec.plugin_filters, [SPEAKS]);
+    }
+
+    /// Each clip of `clips` as (episode, first frame, end, name).
+    fn cuts(clips: &[ClipRequest]) -> Vec<(MediaId, FrameIdx, FrameIdx, String)> {
+        clips.iter().map(|c| (c.media_id, c.start, c.end, c.name.clone().unwrap_or_default())).collect()
+    }
+
+    #[test]
+    fn a_pack_action_gets_the_clips_an_export_would_cut() {
+        let p = pack();
+        let spec = with(|s| (s.handles, s.order) = (2, PackOrder::Best));
+        let naming = PackNaming { merge: false, ..PackNaming::default() };
+        let v = preview(&p, &spec);
+        let out = p.dir.path().join("Exports");
+        let req = |spec: &PackSpec, naming: &PackNaming, stamp: &str| PackExportRequest {
+            spec: spec.clone(),
+            naming: naming.clone(),
+            preset_id: "h264-edit".into(),
+            out_dir: None,
+            stamp: stamp.into(),
+        };
+        let export = |spec: &PackSpec, naming: &PackNaming, stamp: &str, filters: &PluginFilters| {
+            p.project.pack_export_request(p.walter, &req(spec, naming, stamp), filters, &out).unwrap().0.clips
+        };
+        let cut = p.project.pack_cut(p.walter, &spec, &PluginFilters::NONE, &naming, &v.stamp).unwrap();
+        // It only reads: unlike an export, it keeps no settings for next time.
+        assert_eq!(p.project.pack_state(p.walter).unwrap(), PackState::default());
+        // The clips an export cuts, named alike, in the pack's order: the best first here.
+        assert_eq!(cuts(&cut.clips), cuts(&export(&spec, &naming, &v.stamp, &PluginFilters::NONE)));
+        let shown: Vec<_> = v.clips.iter().filter(|c| c.included).map(|c| (c.shot.media_id, c.start, c.end)).collect();
+        assert_eq!(cut.clips.iter().map(|c| (c.media_id, c.start, c.end)).collect::<Vec<_>>(), shown);
+        assert_eq!(cut.clips[0].start, 48, "the best first, with its handles");
+        assert_eq!((cut.character, cut.name.as_str()), (p.walter, "Walter"));
+        // Its one episode, with its file, frame rate and frames.
+        let m = p.project.media(p.media).unwrap();
+        let episodes: Vec<_> = cut.episodes.iter().map(|e| (e.media, e.path.clone(), e.fps, e.frames)).collect();
+        assert_eq!(episodes, [(p.media, m.path.clone(), m.fps, m.frames)]);
+        assert!(m.fps.is_some() && m.frames == Some(FRAMES));
+        // In one file the names are its chapters', as the export's.
+        let joined = PackNaming::default();
+        let one = p.project.pack_cut(p.walter, &spec, &PluginFilters::NONE, &joined, &v.stamp).unwrap();
+        assert_eq!(cuts(&one.clips), cuts(&export(&spec, &joined, &v.stamp, &PluginFilters::NONE)));
+
+        // A plugin filter's drop is out, as the grid shows it.
+        let filters = speaks("b1", PackFilterState::Ready);
+        judge(&p, p.walter, "b1", &[(50, false), (0, true), (290, true)]);
+        let v = filtered(&p, &on(), &filters);
+        let cut = p.project.pack_cut(p.walter, &on(), &filters, &naming, &v.stamp).unwrap();
+        assert_eq!(cut.clips.iter().map(|c| c.start).collect::<Vec<_>>(), [0, 290]);
+        assert_eq!(cuts(&cut.clips), cuts(&export(&on(), &naming, &v.stamp, &filters)));
+    }
+
+    #[test]
+    fn a_pack_action_names_the_episodes_in_the_project_s_order() {
+        // Added as 03, 01, 02, and Walter big (his best shot) only in 03: the
+        // pack's best order starts there, the episodes are in the project's.
+        let names = ["Show S01E03.mkv", "Show S01E01.mkv", "Show S01E02.mkv"];
+        let (_dir, project, ids) = crate::analysis::tests::project_with_episodes(&names, FRAMES);
+        let (e3, e1, e2) = (ids[0], ids[1], ids[2]);
+        for m in [e1, e2, e3] {
+            let mut seen = faces(290).to_vec();
+            if m != e3 {
+                seen.remove(3);
+            }
+            project.db().store_segments(m, &shots(290)).unwrap();
+            project.store_face_chunk(m, 0, FRAMES, &tracks::encode(&seen), &[], &[]).unwrap();
+            project.finish_faces(m).unwrap();
+        }
+        let tracks: Vec<u32> = project
+            .cast_tracks(TrackFilter::Unassigned)
+            .unwrap()
+            .iter()
+            .filter(|t| (t.face_height - 0.2).abs() > 0.01)
+            .map(|t| t.id)
+            .collect();
+        assert_eq!(tracks.len(), 10);
+        let walter =
+            project.cast_edit(&CastEdit::NewCharacter { tracks, name: Some("Walter".into()) }).unwrap().unwrap();
+        let spec = with(|s| s.order = PackOrder::Best);
+        let naming = PackNaming::default();
+        let v = project.pack_preview(walter, &spec, &PluginFilters::NONE).unwrap();
+        let cut = project.pack_cut(walter, &spec, &PluginFilters::NONE, &naming, &v.stamp).unwrap();
+        let from: Vec<MediaId> = cut.clips.iter().map(|c| c.media_id).collect();
+        assert_eq!(from[0], e3, "the best first");
+        assert!(from.contains(&e1) && from.contains(&e2), "{from:?}");
+        let episodes: Vec<MediaId> = cut.episodes.iter().map(|e| e.media).collect();
+        assert_eq!(episodes, [e1, e2, e3]);
+        // Each with its own file.
+        let path = |m| project.media(m).unwrap().path;
+        assert_eq!(cut.episodes.iter().map(|e| e.path.clone()).collect::<Vec<_>>(), [path(e1), path(e2), path(e3)]);
+    }
+
+    #[test]
+    fn a_changed_pack_is_refused_as_for_export() {
+        let p = pack();
+        let spec = PackSpec::default();
+        let naming = PackNaming::default();
+        let v = preview(&p, &spec);
+        let out = p.dir.path().join("Exports");
+        let refused = |spec: &PackSpec, naming: &PackNaming, stamp: &str| {
+            let req = PackExportRequest {
+                spec: spec.clone(),
+                naming: naming.clone(),
+                preset_id: "h264-edit".into(),
+                out_dir: None,
+                stamp: stamp.into(),
+            };
+            let export = p.project.pack_export_request(p.walter, &req, &PluginFilters::NONE, &out).unwrap_err();
+            let cut = p.project.pack_cut(p.walter, spec, &PluginFilters::NONE, naming, stamp).err().unwrap();
+            assert_eq!(cut.to_string(), export.to_string());
+            cut.to_string()
+        };
+        // Other settings than those it was shown with, or a pick since: the export's words.
+        let changed = "The pack changed meanwhile. Check it and export again.";
+        assert!(refused(&with(|s| s.solo = true), &naming, &v.stamp).contains(changed));
+        p.project.set_pack_overrides(p.walter, &[PackKey { media_id: p.media, shot: 50 }], Some(false)).unwrap();
+        assert!(refused(&spec, &naming, &v.stamp).contains(changed));
+        // Nothing in it, or names it can't make: refused alike.
+        let none = with(|s| s.min_sec = Some(600.0));
+        let empty = preview(&p, &none);
+        assert!(refused(&none, &naming, &empty.stamp).contains("nothing in the pack"));
+        let bad = PackNaming { template: "{series} {nme}".into(), ..PackNaming::default() };
+        let now = p.project.pack_choices(p.walter, &spec, &PluginFilters::NONE).unwrap();
+        refused(&spec, &bad, &now.stamp);
+        // As the pack is now, it is cut.
+        assert_eq!(
+            p.project.pack_cut(p.walter, &spec, &PluginFilters::NONE, &naming, &now.stamp).unwrap().clips.len(),
+            2
+        );
     }
 
     #[test]

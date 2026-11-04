@@ -74,7 +74,8 @@ pub(crate) fn guest_path(root: &Path, guest_root: &str, host: &str) -> Option<St
 /// `run-request` for `run`. Its protocol is the one the plugin declared,
 /// and a setting `grants` names a secret is left out. A shot filter's run
 /// has no request: a component can't read the episodes it judges, and its
-/// manifest can't name a filter ([`crate::manifest`]).
+/// manifest can't name a filter ([`crate::manifest`]). Nor has a pack
+/// action's: a component can't write the file the person chose.
 pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) -> PluginResult<Request> {
     let settings = message
         .settings
@@ -134,6 +135,9 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
         ActionKind::Command => wit::ActionKind::Command,
         ActionKind::Event => return Err(no_event()),
         ActionKind::ShotFilter => return Err(no_filter()),
+        ActionKind::PackAction => {
+            return Err(PluginError::Invalid("A WebAssembly plugin can't save a scenepack.".into()));
+        }
     };
     let trigger = match message.action.trigger {
         Trigger::Menu => wit::Trigger::Menu,
@@ -263,6 +267,8 @@ mod tests {
             }),
             input: None,
             shots: None,
+            output: None,
+            pack: None,
         }
     }
 
@@ -386,8 +392,10 @@ mod tests {
             m.action.trigger = trigger;
             assert_eq!(format!("{:?}", run(request(&m, &Mounts::default(), &g)).action.trigger), wit);
         }
-        // A shot filter's run is never a component's.
+        // A shot filter's run is never a component's, nor is a pack action's.
         m.action = ActionContext { kind: ActionKind::ShotFilter, id: "speaks".into(), trigger: Trigger::Pack };
+        assert!(matches!(request(&m, &Mounts::default(), &g), Err(PluginError::Invalid(_))));
+        m.action = ActionContext { kind: ActionKind::PackAction, id: "fcpxml".into(), trigger: Trigger::Menu };
         assert!(matches!(request(&m, &Mounts::default(), &g), Err(PluginError::Invalid(_))));
     }
 

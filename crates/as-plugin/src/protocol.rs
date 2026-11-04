@@ -28,6 +28,11 @@
 //! shots of one character in one episode ([`ShotsContext`]) and says of
 //! each whether the scenepack keeps it ([`PluginMessage::Verdict`]).
 //!
+//! And pack actions: a run of `kind: "packAction"` gets a character's
+//! scenepack as the grid shows it ([`PackContext`]: the clips an export of it
+//! would cut) and the path of the one file it writes ([`RunMessage::output`]),
+//! which takes the place the person chose once the run ends well.
+//!
 //! Fields added later are `#[serde(default)]` when read and left out while
 //! empty when written, so an older plugin's lines still read and an older
 //! plugin's run line stays as it was.
@@ -193,6 +198,41 @@ pub struct RunMessage {
     /// only): one episode's, of one character.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shots: Option<ShotsContext>,
+    /// The file a pack action writes (protocol 2, `kind: "packAction"`
+    /// only): a new file beside the one the person chose, which takes its
+    /// place once the run ends well, and is removed otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    /// The scenepack a pack action saves (protocol 2, `kind: "packAction"`
+    /// only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pack: Option<PackContext>,
+}
+
+/// What a pack action's run saves: a character's scenepack as the grid shows
+/// it, as the clips an export of it would cut, in the pack's order.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PackContext {
+    pub character: CharacterContext,
+    /// The episodes its clips are cut from, in the project's order.
+    pub episodes: Vec<EpisodeContext>,
+    pub clips: Vec<PackClipContext>,
+}
+
+/// A clip of a scenepack, in frames of its episode.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PackClipContext {
+    /// Its place in the pack, from 0.
+    pub index: u32,
+    /// Its name, as an export of the pack names its file (or its chapter).
+    pub name: String,
+    pub media_id: String,
+    /// Its first frame.
+    pub start: u64,
+    /// The frame after its last one.
+    pub end: u64,
 }
 
 /// What a shot filter's run judges: shots of one character in one episode.
@@ -215,7 +255,7 @@ pub struct CharacterContext {
     pub name: String,
 }
 
-/// An episode a shot filter reads.
+/// An episode a shot filter or a pack action reads.
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EpisodeContext {
@@ -358,13 +398,16 @@ pub enum ActionKind {
     /// A shot filter of the scenepack builder (protocol 2), which judges
     /// the shots of [`RunMessage::shots`].
     ShotFilter,
+    /// An entry of a scenepack's menu (protocol 2), which saves
+    /// [`RunMessage::pack`] as [`RunMessage::output`].
+    PackAction,
 }
 
 /// What started a run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Trigger {
-    /// The export's menu.
+    /// The export's menu, or a scenepack's.
     Menu,
     /// An export that finished, with the action turned on to run after each.
     AfterExport,
@@ -767,6 +810,8 @@ mod tests {
             input: None,
             event: None,
             shots: None,
+            output: None,
+            pack: None,
         }
     }
 
@@ -1097,6 +1142,7 @@ mod tests {
         assert_eq!(serde_json::to_string(&ActionKind::Event).unwrap(), r#""event""#);
         assert_eq!(serde_json::to_string(&ActionKind::ShotFilter).unwrap(), r#""shotFilter""#);
         assert_eq!(serde_json::to_string(&Trigger::Pack).unwrap(), r#""pack""#);
+        assert_eq!(serde_json::to_string(&ActionKind::PackAction).unwrap(), r#""packAction""#);
         assert_eq!(serde_json::from_str::<Trigger>(r#""menu""#).unwrap(), Trigger::Menu);
         assert_eq!(serde_json::from_str::<ActionKind>(r#""command""#).unwrap(), ActionKind::Command);
     }
@@ -1204,6 +1250,62 @@ mod tests {
         );
         // Any other run line has none.
         assert!(!HostMessage::Run(Box::new(run())).line().contains("shots"));
+    }
+
+    #[test]
+    fn a_pack_run_line_reads_as_the_guide_shows() {
+        // A pack action of the scenepack's menu: its project, the file it
+        // writes, and the pack as an export of it would cut it.
+        let mut message = run();
+        message.protocol = 2;
+        message.action = ActionContext { kind: ActionKind::PackAction, id: "fcpxml".into(), trigger: Trigger::Menu };
+        message.project =
+            Some(ProjectContext { id: "p1".into(), title: "Breaking Bad".into(), folder: "D:\\BB".into() });
+        message.output = Some("D:\\Cuts\\Walter.fcpxml.part-1a2b3c4d".into());
+        message.pack = Some(PackContext {
+            character: CharacterContext { id: "c1".into(), name: "Walter".into() },
+            episodes: vec![EpisodeContext {
+                media_id: "m1".into(),
+                path: "D:\\Breaking Bad\\S01E01.mkv".into(),
+                fps: Some("24000/1001".into()),
+                frames: Some(83136),
+            }],
+            clips: vec![
+                PackClipContext {
+                    index: 0,
+                    name: "Walter White - S01E01 - 0001".into(),
+                    media_id: "m1".into(),
+                    start: 1188,
+                    end: 1462,
+                },
+                PackClipContext {
+                    index: 1,
+                    name: "Walter White - S01E01 - 0002".into(),
+                    media_id: "m1".into(),
+                    start: 2000,
+                    end: 2100,
+                },
+            ],
+        });
+        let line = HostMessage::Run(Box::new(message)).line();
+        assert!(
+            line.ends_with(
+                &[
+                    r#""action":{"kind":"packAction","id":"fcpxml","trigger":"menu"},"#,
+                    r#""project":{"id":"p1","title":"Breaking Bad","folder":"D:\\BB"},"export":null,"#,
+                    r#""output":"D:\\Cuts\\Walter.fcpxml.part-1a2b3c4d","#,
+                    r#""pack":{"character":{"id":"c1","name":"Walter"},"#,
+                    r#""episodes":[{"mediaId":"m1","path":"D:\\Breaking Bad\\S01E01.mkv","fps":"24000/1001","frames":83136}],"#,
+                    r#""clips":[{"index":0,"name":"Walter White - S01E01 - 0001","mediaId":"m1","start":1188,"end":1462},"#,
+                    r#"{"index":1,"name":"Walter White - S01E01 - 0002","mediaId":"m1","start":2000,"end":2100}]}}"#,
+                ]
+                .concat()
+            ),
+            "{line}"
+        );
+        // Any other run line has neither.
+        let other = HostMessage::Run(Box::new(run())).line();
+        assert!(!other.contains("output") && !other.contains("pack"), "{other}");
     }
 
     #[test]

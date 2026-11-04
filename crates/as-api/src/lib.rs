@@ -125,6 +125,10 @@ pub struct AppSettings {
     /// plugins. On by default.
     #[serde(default = "yes")]
     pub plugin_catalog_checks: bool,
+    /// Analysis uses NVIDIA's engine once its files are downloaded: on
+    /// unless switched off. Applies from the next analysis.
+    #[serde(default = "yes")]
+    pub nvidia_acceleration: bool,
 }
 
 fn yes() -> bool {
@@ -290,6 +294,58 @@ pub struct HardwareInfo {
     /// The last analysis ran some steps on the processor, much slower,
     /// because the graphics couldn't take them.
     pub fell_back: bool,
+    /// The ONNX Runtime's version (About).
+    pub runtime: String,
+    pub accel: AccelInfo,
+}
+
+/// Settings → General → NVIDIA acceleration.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AccelInfo {
+    pub row: AccelRow,
+    /// NVIDIA's files are here (About names them).
+    pub installed: bool,
+    /// Some of them are, finished or not: the row offers to remove them.
+    pub removable: bool,
+    /// Analysis uses them.
+    pub active: bool,
+    /// The bytes a download fetches.
+    pub download_bytes: u64,
+    /// NVIDIA's licence, which the person agrees to by downloading.
+    pub licence: String,
+    /// TensorRT for RTX's release (About).
+    pub engine: String,
+}
+
+/// What the row shows: the first of these that applies, in this order, but
+/// for [`AccelRow::Hidden`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "state", rename_all = "camelCase")]
+pub enum AccelRow {
+    /// Nothing: this computer can't use it and has no files of it.
+    Hidden,
+    Downloading {
+        done: u64,
+        total: u64,
+    },
+    /// The last download failed; `message` says why, for the person.
+    Failed {
+        message: String,
+    },
+    /// The files go once the current analysis is done with them.
+    Removing,
+    /// It can be downloaded (or its new licence has to be agreed to).
+    Available,
+    /// Another card, or the processor, is chosen.
+    NotUsed,
+    /// It failed twice in a row, or doesn't load: analysis runs without it
+    /// until the person tries again.
+    Stopped,
+    /// It lists no device for this card.
+    NeedsDriver,
+    /// Installed and usable: the switch (`AppSettings::nvidia_acceleration`).
+    Ready,
 }
 
 // ---------------------------------------------------------------------------

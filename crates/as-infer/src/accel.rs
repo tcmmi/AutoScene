@@ -6,15 +6,15 @@
 //! the same process for every model the plugin doesn't take. Its files (the
 //! "pack") are NVIDIA's own and are fetched at the person's request, never
 //! bundled; a pack folder holds them and [`STAMP`], the size and SHA-256 each
-//! was verified against.
+//! was verified against and the libraries the plugin needs.
 //!
 //! At [`crate::Runtime::load_with`], and only when the card the analysis
 //! uses is one the pack serves ([`serves`]), so its libraries never load on
 //! a machine without an NVIDIA driver:
 //! 1. the pack's files are checked against their stamp;
-//! 2. the plugin's own libraries are loaded by full path, in [`PRELOAD`]'s
-//!    order: the plugin then finds them, and the C++ runtime beside ONNX
-//!    Runtime, already loaded;
+//! 2. the plugin's own libraries are loaded by full path, in the order the
+//!    stamp gives: the plugin then finds them, and the C++ runtime beside
+//!    ONNX Runtime, already loaded;
 //! 3. the plugin is registered under [`EP`];
 //! 4. its device for the card in use is picked by LUID.
 //!
@@ -26,6 +26,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -41,25 +42,84 @@ pub const EP: &str = "NvTensorRTRTXExecutionProvider";
 /// The plugin library ONNX Runtime registers.
 pub const PLUGIN: &str = "onnxruntime_providers_nv_tensorrt_rtx.dll";
 
-/// The libraries the plugin needs, loaded by full path in this order before
-/// it is registered: the CUDA runtime, then TensorRT for RTX and the two
-/// libraries built on it, which the plugin loads by name when it first
-/// needs them.
+/// The libraries the plugin of [`VERSION`] needs, loaded by full path in this
+/// order before it is registered: the CUDA runtime, then TensorRT for RTX and
+/// the two libraries built on it, which the plugin loads by name when it
+/// first needs them. Their names carry TensorRT's release, so a pack keeps
+/// its own list in its [`STAMP`]: a pack of an older release goes on loading
+/// under a build that pins a newer one.
 pub const PRELOAD: [&str; 4] =
     ["cudart64_13.dll", "tensorrt_rtx_1_7.dll", "tensorrt_onnxparser_rtx_1_7.dll", "tensorrt_plugins.dll"];
 
-/// The pack's release (the PyPI wheel's version), and the folder it lives in
-/// under the app's runtimes (`AppPaths::runtimes()`).
+/// NVIDIA's third-party notices, a file of the pack (About links to it).
+pub const NOTICES: &str = "TRTRTX_Acknowledgements.txt";
+
+/// The pack's release (the PyPI wheel's version), the one this build loads:
+/// [`pins`] has to name it. Its folder is `AppPaths::accel_dir`.
 pub const VERSION: &str = "0.5.0";
-pub const FOLDER: &str = "nvidia-rtx-0.5.0";
 
 /// The pack folder's record of its files: one `<sha256> <bytes> <name>` line
-/// each, written once they were verified.
+/// each, written once they were verified, and a `load <name>` line for each
+/// library the plugin needs, in the order they load.
 pub const STAMP: &str = ".autoscene-pack";
 
 /// How many times in a row the pack ended an engine or failed a model, in
 /// its folder (the engine client keeps it).
 pub const CRASHES: &str = ".autoscene-crashes";
+
+/// The pack's files as `cargo xtask pin-accel` pinned them (`accel.toml`).
+#[derive(Clone, Debug, Deserialize)]
+pub struct Pins {
+    /// The wheel's release.
+    pub version: String,
+    /// TensorRT for RTX's release in it (About names it).
+    pub engine: String,
+    /// NVIDIA's licence, which the person agrees to.
+    pub licence: String,
+    /// NVIDIA's wheel on the Python Package Index.
+    pub url: String,
+    /// The wheel's size and SHA-256, a record of what was pinned: each file
+    /// of it is fetched alone and checked by its own.
+    pub size: u64,
+    pub sha256: String,
+    /// The largest first.
+    #[serde(rename = "file")]
+    pub files: Vec<PinnedFile>,
+}
+
+/// A file of the pack: one member of the wheel.
+#[derive(Clone, Debug, Deserialize)]
+pub struct PinnedFile {
+    pub name: String,
+    /// Its path in the wheel.
+    pub member: String,
+    /// The bytes it takes in the wheel, which is what travels.
+    pub packed: u64,
+    /// Unpacked.
+    pub size: u64,
+    pub sha256: String,
+}
+
+impl Pins {
+    /// The bytes a download fetches.
+    pub fn download_bytes(&self) -> u64 {
+        self.files.iter().map(|f| f.packed).sum()
+    }
+}
+
+/// The pins this build was made with.
+pub fn pins() -> &'static Pins {
+    static PINS: LazyLock<Pins> =
+        LazyLock::new(|| toml::from_str(include_str!("../accel.toml")).expect("accel.toml is valid"));
+    &PINS
+}
+
+/// Whether Settings offers the pack on a computer of this `os` and `arch`
+/// (`std::env::consts`) whose analysis runs on `resolved`: Windows on x64
+/// and a card the pack serves. `None` is the processor or an Apple chip.
+pub fn offered(os: &str, arch: &str, resolved: Option<&Gpu>) -> bool {
+    os == "windows" && arch == "x86_64" && resolved.is_some_and(serves)
+}
 
 /// Whether `dir` holds a pack whose download finished: its stamp is there.
 /// Its files are checked against the stamp where the pack loads.
@@ -107,26 +167,41 @@ pub struct Pack {
     /// The plugin's SHA-256: its build, for the keys of what it compiles
     /// ([`crate::cache::key`]).
     pub plugin: String,
+    /// The libraries the plugin needs, in the order they load.
+    pub load: Vec<String>,
+}
+
+/// Only plain names: a stamp never points outside its folder.
+fn of_the_pack(name: &str) -> Result<&str, String> {
+    if name.contains(['/', '\\']) || name == ".." {
+        return Err(format!("{STAMP}: {name:?} isn't a file of the pack"));
+    }
+    Ok(name)
 }
 
 /// The pack in `dir`, if every file [`STAMP`] lists has the listed size and
-/// hash, and the plugin and every library it needs are among them.
+/// hash, and the plugin and every library the stamp names for it are among
+/// them.
 pub fn verify(dir: &Path) -> Result<Pack, String> {
     let stamp = fs::read_to_string(dir.join(STAMP)).map_err(|e| format!("{STAMP}: {e}"))?;
     let mut listed = Vec::new();
+    let mut load = Vec::new();
     for line in stamp.lines().filter(|l| !l.trim().is_empty()) {
+        if let Some(name) = line.strip_prefix("load ") {
+            load.push(of_the_pack(name)?.to_string());
+            continue;
+        }
         let mut parts = line.splitn(3, ' ');
         let (Some(sha256), Some(bytes), Some(name)) = (parts.next(), parts.next(), parts.next()) else {
             return Err(format!("{STAMP}: unreadable line {line:?}"));
         };
         let bytes: u64 = bytes.parse().map_err(|_| format!("{STAMP}: unreadable size in {line:?}"))?;
-        // Only plain names: a stamp never points outside its folder.
-        if name.contains(['/', '\\']) || name == ".." {
-            return Err(format!("{STAMP}: {name:?} isn't a file of the pack"));
-        }
-        listed.push((sha256.to_ascii_lowercase(), bytes, name.to_string()));
+        listed.push((sha256.to_ascii_lowercase(), bytes, of_the_pack(name)?.to_string()));
     }
-    for needed in PRELOAD.iter().chain([&PLUGIN]) {
+    if load.is_empty() {
+        return Err(format!("{STAMP} names no library to load"));
+    }
+    for needed in load.iter().map(String::as_str).chain([PLUGIN]) {
         if !listed.iter().any(|(_, _, name)| name == needed) {
             return Err(format!("{STAMP} doesn't list {needed}"));
         }
@@ -143,17 +218,21 @@ pub fn verify(dir: &Path) -> Result<Pack, String> {
         }
     }
     let plugin = listed.iter().find(|(_, _, name)| name == PLUGIN).map(|(sha256, ..)| sha256.clone());
-    Ok(Pack { dir: dir.to_path_buf(), plugin: plugin.unwrap_or_default() })
+    Ok(Pack { dir: dir.to_path_buf(), plugin: plugin.unwrap_or_default(), load })
 }
 
-/// Write `dir`'s [`STAMP`] for `files` (names in `dir`), as they are now:
-/// for the download that verified them.
-pub fn stamp(dir: &Path, files: &[&str]) -> io::Result<()> {
+/// Write `dir`'s [`STAMP`] for `files` (names in `dir`), as they are now, and
+/// the libraries of them to `load`, in order: for the download that verified
+/// them.
+pub fn stamp(dir: &Path, files: &[&str], load: &[&str]) -> io::Result<()> {
     let mut lines = String::new();
     for name in files {
         let path = dir.join(name);
         let bytes = fs::metadata(&path)?.len();
         writeln!(lines, "{} {bytes} {name}", hash(&path)?).expect("writing to a String");
+    }
+    for name in load {
+        writeln!(lines, "load {name}").expect("writing to a String");
     }
     fs::write(dir.join(STAMP), lines)
 }
@@ -205,7 +284,7 @@ pub(crate) fn register(
         Ok(pack) => pack,
         Err(e) => return failed(format!("the pack doesn't match its record: {e}")),
     };
-    if let Err(e) = preload(dir) {
+    if let Err(e) = preload(&pack) {
         return failed(e);
     }
     if let Err(e) = env.register_ep_library(EP, dir.join(PLUGIN)) {
@@ -221,17 +300,17 @@ pub(crate) fn register(
     (AccelState::Active, Some(Registered { luid, plugin: pack.plugin }))
 }
 
-/// Load the plugin's libraries by full path, each resolving what it needs
-/// from its own folder and the system's.
+/// Load the libraries `pack` lists for its plugin by full path, each
+/// resolving what it needs from its own folder and the system's.
 #[cfg(all(windows, target_arch = "x86_64"))]
-fn preload(dir: &Path) -> Result<(), String> {
+fn preload(pack: &Pack) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
 
     use windows_sys::Win32::System::LibraryLoader::{
         LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LoadLibraryExW,
     };
-    for name in PRELOAD {
-        let wide: Vec<u16> = dir.join(name).as_os_str().encode_wide().chain([0]).collect();
+    for name in &pack.load {
+        let wide: Vec<u16> = pack.dir.join(name).as_os_str().encode_wide().chain([0]).collect();
         // SAFETY: a valid NUL-terminated wide path; the module stays loaded
         // for the life of the process, which the plugin expects.
         let module = unsafe {
@@ -289,8 +368,46 @@ mod tests {
         assert_eq!(EP, "NvTensorRTRTXExecutionProvider");
         assert_eq!(RUNTIME_CACHE.split_once('.'), Some((EP, "nv_runtime_cache_path")));
         assert!(!PRELOAD.contains(&PLUGIN));
-        // One folder per release, so a new one never loads beside an old one's files.
-        assert_eq!(FOLDER, format!("nvidia-rtx-{VERSION}"));
+    }
+
+    #[test]
+    fn the_pins_are_of_the_pack_this_build_loads() {
+        let pins = pins();
+        assert_eq!(pins.version, VERSION, "a new release is written into VERSION too");
+        let pinned = |name: &str| pins.files.iter().any(|f| f.name == name);
+        for needed in PRELOAD.iter().chain([&PLUGIN, &NOTICES]) {
+            assert!(pinned(needed), "{needed} isn't pinned");
+        }
+        for f in &pins.files {
+            assert!(!f.name.contains(['/', '\\']) && f.member.ends_with(&format!("/{}", f.name)), "{f:?}");
+            assert_eq!(f.sha256.len(), 64, "{f:?}");
+            assert!(f.packed > 0 && f.packed <= f.size, "{f:?}");
+        }
+        // What travels is what the wheel holds, but for its own bookkeeping.
+        assert!(pins.download_bytes() <= pins.size);
+        assert!(pins.download_bytes() * 100 / pins.size >= 99);
+        assert!(pins.url.starts_with("https://files.pythonhosted.org/"), "{}", pins.url);
+        assert!(pins.licence.starts_with("https://docs.nvidia.com/"), "{}", pins.licence);
+    }
+
+    #[test]
+    fn accel_offered_only_for_rtx_30_and_newer_on_windows() {
+        let (windows, x64) = ("windows", "x86_64");
+        for device in [0x24C9, 0x2204] {
+            assert!(offered(windows, x64, Some(&card(NVIDIA, device))), "{device:#06x}");
+        }
+        // RTX 2080, GTX 1660 Ti, GTX 1080.
+        for device in [0x1E82, 0x2182, 0x1B80] {
+            assert!(!offered(windows, x64, Some(&card(NVIDIA, device))), "{device:#06x}");
+        }
+        assert!(!offered(windows, x64, Some(&card(0x1002, 0x73BF))), "AMD");
+        assert!(!offered(windows, x64, Some(&card(0x8086, 0xA7A0))), "Intel");
+        // The card chosen decides, not the fastest one there: the integrated
+        // graphics chosen on an RTX laptop, or the processor alone.
+        assert!(!offered(windows, x64, None));
+        let rtx = card(NVIDIA, 0x28E0);
+        assert!(!offered("macos", "aarch64", Some(&rtx)) && !offered("linux", x64, Some(&rtx)));
+        assert!(!offered(windows, "aarch64", Some(&rtx)));
     }
 
     #[test]
@@ -302,11 +419,12 @@ mod tests {
         }
         assert!(verify(dir.path()).unwrap_err().contains(STAMP), "no stamp, no pack");
         assert!(!installed(dir.path()));
-        stamp(dir.path(), &files).unwrap();
+        stamp(dir.path(), &files, &PRELOAD).unwrap();
         assert!(installed(dir.path()));
         let pack = verify(dir.path()).unwrap();
         assert_eq!(pack.plugin, hash(&dir.path().join(PLUGIN)).unwrap());
         assert_eq!(pack.plugin.len(), 64);
+        assert_eq!(pack.load, PRELOAD);
 
         // A file changed after it was verified: same size, other bytes.
         fs::write(dir.path().join("tensorrt_plugins.dll"), "file X").unwrap();
@@ -320,9 +438,26 @@ mod tests {
         assert!(verify(dir.path()).is_err());
 
         // A stamp that leaves a library out, or points outside the folder.
-        stamp(dir.path(), &files[1..4]).unwrap();
+        stamp(dir.path(), &files[1..4], &PRELOAD).unwrap();
         assert!(verify(dir.path()).unwrap_err().contains("doesn't list cudart64_13.dll"));
         fs::write(dir.path().join(STAMP), "00 1 ../outside.dll\n").unwrap();
         assert!(verify(dir.path()).unwrap_err().contains("isn't a file of the pack"));
+        fs::write(dir.path().join(STAMP), "load ../outside.dll\n").unwrap();
+        assert!(verify(dir.path()).unwrap_err().contains("isn't a file of the pack"));
+    }
+
+    #[test]
+    fn a_pack_of_another_release_loads_the_libraries_its_own_stamp_names() {
+        let dir = tempfile::tempdir().unwrap();
+        // Another TensorRT, so other names than this build's.
+        let load = ["cudart64_12.dll", "tensorrt_rtx_1_6.dll"];
+        for name in load.iter().chain([&PLUGIN]) {
+            fs::write(dir.path().join(name), name).unwrap();
+        }
+        stamp(dir.path(), &[load[0], load[1], PLUGIN], &load).unwrap();
+        assert_eq!(verify(dir.path()).unwrap().load, load, "in its order");
+        // Without a list there is nothing to load the plugin with.
+        stamp(dir.path(), &[load[0], load[1], PLUGIN], &[]).unwrap();
+        assert!(verify(dir.path()).unwrap_err().contains("names no library"));
     }
 }

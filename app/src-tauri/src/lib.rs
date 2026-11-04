@@ -6,6 +6,7 @@
 //! executable started with `--engine`) so a GPU or driver crash can never
 //! take the UI down.
 
+mod accel;
 mod commands;
 mod error;
 mod events;
@@ -46,6 +47,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::system::scan_default_set,
             commands::system::scan_notice_done,
             commands::hardware::hardware_info,
+            commands::hardware::accel_install,
+            commands::hardware::accel_cancel,
+            commands::hardware::accel_remove,
+            commands::hardware::accel_try_again,
+            commands::hardware::accel_notices,
             commands::library::projects_list,
             commands::library::project_get,
             commands::library::project_create,
@@ -134,6 +140,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
         ])
         .events(collect_events![
             events::HardwareChanged,
+            events::AccelProgress,
+            events::AccelFinished,
             events::MenuAction,
             events::JobChanged,
             events::JobProgressEvent,
@@ -357,6 +365,9 @@ The log is in {}",
                 }
                 // A uv of an older AutoScene; what it fetched for plugins stays.
                 as_plugin::uv::prune(&runtimes);
+                // What a removal or an update of NVIDIA's files left, and the
+                // release this build pins when an older one is here.
+                accel::upkeep(&handle);
                 work::recover_all(&handle);
                 if let Ok(tools) = handle.state::<state::AppState>().tools() {
                     let _ = tools.caps();

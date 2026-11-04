@@ -174,7 +174,7 @@ pub async fn settings_get(state: State<'_, AppState>) -> AppResult<AppSettings> 
 /// Save the settings. Whether plugins AutoScene hasn't reviewed may run
 /// stays as it is: `plugins_allow_unreviewed` changes it. So does Fast Scan's
 /// default for new projects: `scan_default_set` changes it. A graphics card
-/// chosen applies from the next analysis.
+/// chosen, and NVIDIA acceleration switched, apply from the next analysis.
 #[tauri::command]
 #[specta::specta]
 pub async fn settings_update(
@@ -185,25 +185,25 @@ pub async fn settings_update(
     let state = state.inner().clone();
     let lib = state.library.clone();
     let before = lib.finds_bodies();
-    let (checked_before, saved, gpu_changed) = blocking(move || {
+    let (checked_before, saved, launch_changed) = blocking(move || {
         // Only a new library folder is checked: every other change sends
         // back the one in use.
         if settings.library_root.trim() != lib.library_root()?.display().to_string() {
             paths::check(settings.library_root.trim())?;
         }
         let checked = lib.settings()?.plugin_catalog_checks;
-        let gpu_before = lib.gpu();
+        let before = (lib.gpu(), lib.nvidia_acceleration());
         let saved = lib.update_settings(&settings)?;
         // From the next analysis on; an idle engine stops here, off the UI
         // thread.
-        let gpu_changed = saved.gpu != gpu_before;
-        if gpu_changed {
-            state.choose_gpu(&saved.gpu);
+        let launch_changed = (&saved.gpu, saved.nvidia_acceleration) != (&before.0, before.1);
+        if launch_changed {
+            state.relaunch();
         }
-        Ok((checked, saved, gpu_changed))
+        Ok((checked, saved, launch_changed))
     })
     .await?;
-    if gpu_changed {
+    if launch_changed {
         let _ = HardwareChanged.emit(&app);
     }
     // Finding people by their bodies changes every cast.

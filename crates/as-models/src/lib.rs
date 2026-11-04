@@ -583,7 +583,7 @@ impl ModelStore {
     /// Fail before `bytes` are downloaded when the models folder's drive
     /// hasn't room for them (and [`SPARE`]). A drive whose free space can't
     /// be read is let through: a full one then fails the write, which says so.
-    fn room_for(&self, bytes: u64) -> ModelResult<()> {
+    pub fn room_for(&self, bytes: u64) -> ModelResult<()> {
         let need = bytes.saturating_add(SPARE);
         match (self.free_space)(&self.dir) {
             Ok(free) if free < need => Err(ModelError::NoSpace { dir: self.dir.clone(), need, free }),

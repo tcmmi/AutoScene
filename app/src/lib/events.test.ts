@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { toast } from "sonner"
-import type { ExportItem, ExportSummary, JobInfo } from "@/bindings"
+import type { ExportItem, ExportSummary, HardwareInfo, JobInfo } from "@/bindings"
 import { useActivity } from "@/state/activity"
 import { usePluginReview } from "@/state/plugin-review"
 import { rememberPackSave, takePackSave } from "@/features/plugins/pack-saves"
@@ -278,5 +278,37 @@ describe("plugins changing", () => {
     const stale = (key: unknown[]) => queryClient.getQueryState(key)?.isInvalidated
     expect([preview, other, plan].map(stale)).toEqual([true, true, true])
     expect(stale(state)).toBe(false)
+  })
+})
+
+describe("the download of NVIDIA files", () => {
+  const hardware = (state: "downloading" | "ready") =>
+    ({ accel: { row: state === "ready" ? { state } : { state, done: 0, total: 100 } } }) as HardwareInfo
+
+  it("moves the bar of the row, and only while it downloads", () => {
+    queryClient.setQueryData(qk.hardware, hardware("downloading"))
+    handlers.accelProgress({ payload: { done: 45, total: 100 } })
+    expect(queryClient.getQueryData<HardwareInfo>(qk.hardware)?.accel.row).toEqual({ state: "downloading", done: 45, total: 100 })
+    queryClient.setQueryData(qk.hardware, hardware("ready"))
+    handlers.accelProgress({ payload: { done: 46, total: 100 } })
+    expect(queryClient.getQueryData<HardwareInfo>(qk.hardware)?.accel.row).toEqual({ state: "ready" })
+  })
+
+  it("says how it ended outside Settings, where the row can't", () => {
+    window.location.hash = "#/p/1"
+    handlers.accelFinished({ payload: { error: null } })
+    expect(toast.success).toHaveBeenCalledExactlyOnceWith("NVIDIA acceleration is ready")
+    handlers.accelFinished({ payload: { error: "No room." } })
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("NVIDIA acceleration couldn't be downloaded", { description: "No room." })
+  })
+
+  it("leaves it to the row in Settings, and reads the setting it switched on", () => {
+    window.location.hash = "#/settings/general"
+    const read = vi.spyOn(queryClient, "invalidateQueries")
+    handlers.accelFinished({ payload: { error: null } })
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(read).toHaveBeenCalledWith({ queryKey: qk.settings })
+    window.location.hash = ""
+    read.mockRestore()
   })
 })

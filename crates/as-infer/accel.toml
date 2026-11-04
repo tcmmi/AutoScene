@@ -1,0 +1,49 @@
+# Written by `cargo xtask pin-accel 0.5.0`. Don't edit by hand.
+version = "0.5.0"
+engine = "1.7.1"
+licence = "https://docs.nvidia.com/deeplearning/tensorrt-rtx/latest/reference/sla.html"
+url = "https://files.pythonhosted.org/packages/ef/64/6a704b972f2c6806b3a13abce3e0d827deb0e4192e7f4240ffdafa8d099c/onnxruntime_ep_nv_tensorrt_rtx_cu13-0.5.0-py3-none-win_amd64.whl"
+size = 110875664
+sha256 = "609b19f7236c8522ef005a9f763003a78f492e5d871afad39fe1b247760eb3c7"
+
+[[file]]
+name = "tensorrt_rtx_1_7.dll"
+member = "onnxruntime_ep_nv_tensorrt_rtx/tensorrt_rtx_1_7.dll"
+packed = 92151331
+size = 229312112
+sha256 = "7b8a06d4b66dfe7da7f1ff48a994ad9dcf107cd28b4822d6f25453528c0db6dd"
+
+[[file]]
+name = "tensorrt_plugins.dll"
+member = "onnxruntime_ep_nv_tensorrt_rtx/tensorrt_plugins.dll"
+packed = 16500928
+size = 51289200
+sha256 = "50a345da5f5f9ecc214410f65964513f37e9c30e8bfe55eeb9f744bc0db95692"
+
+[[file]]
+name = "onnxruntime_providers_nv_tensorrt_rtx.dll"
+member = "onnxruntime_ep_nv_tensorrt_rtx/onnxruntime_providers_nv_tensorrt_rtx.dll"
+packed = 1025940
+size = 2392176
+sha256 = "efbf29728e5dbdc148369640cf2eac7215c05deff256484bd0a61d8a96d140a7"
+
+[[file]]
+name = "tensorrt_onnxparser_rtx_1_7.dll"
+member = "onnxruntime_ep_nv_tensorrt_rtx/tensorrt_onnxparser_rtx_1_7.dll"
+packed = 959796
+size = 2329200
+sha256 = "b38d00d107dae534f1fc855df5bc1a04fc0ae25135b5b10d17f9b30cc4c9c411"
+
+[[file]]
+name = "cudart64_13.dll"
+member = "onnxruntime_ep_nv_tensorrt_rtx/cudart64_13.dll"
+packed = 215505
+size = 551024
+sha256 = "f0e947c8e46b5b3b38ae643d5aff5b939d25676b7fe7c299bc2cc9a05815fda6"
+
+[[file]]
+name = "TRTRTX_Acknowledgements.txt"
+member = "onnxruntime_ep_nv_tensorrt_rtx/TRTRTX_Acknowledgements.txt"
+packed = 12943
+size = 107164
+sha256 = "611660ec0ae19c7b8df4a6442009c8bc85ba9e56d7d5ea042564841e72032d25"

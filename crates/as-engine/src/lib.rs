@@ -18,8 +18,10 @@ pub mod server;
 
 /// The devices an engine finds and opens ([`Engine::hardware`]), and where
 /// its models run ([`Config::placement`]).
-pub use as_infer::{Placement, accel, hardware};
-pub use client::{Devices, Engine, EngineError, FacesEvent, FacesInput, Launch, Note, ShotsEvent};
+pub use as_infer::{Placement, accel, cache, hardware};
+pub use client::{
+    Devices, Engine, EngineError, FacesEvent, FacesInput, Launch, Note, PACK_FAILURES, ShotsEvent, pack_failures,
+};
 pub use server::{Config, serve};
 
 use std::ffi::OsString;

@@ -76,6 +76,8 @@ as-testkit.workspace = true
 minisign.workspace = true
 # The catalog's tests make writing its row fail, with a trigger.
 rusqlite.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
 # The catalog's tests pack the packages it offers.
 zip.workspace = true
 

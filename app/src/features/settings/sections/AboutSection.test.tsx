@@ -1,8 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { ModelInfo } from "@/bindings"
+import type { AccelInfo, ModelInfo, Platform } from "@/bindings"
+import { commands } from "@/lib/ipc"
+import { openExternalUrl } from "@/lib/os"
 import { AboutSection } from "./AboutSection"
+
+const { machine } = vi.hoisted(() => ({
+  machine: { platform: "windows" as Platform, accel: { installed: false } as Partial<AccelInfo> },
+}))
 
 const model = (id: string, purpose: string, license: string, nonCommercial: boolean, installed: boolean): ModelInfo => ({
   id,
@@ -16,7 +23,14 @@ const model = (id: string, purpose: string, license: string, nonCommercial: bool
 
 vi.mock("@/lib/ipc", () => ({
   commands: {
-    appInfo: vi.fn(() => Promise.resolve({ version: "1.0.0", platform: "windows", arch: "x86_64" })),
+    appInfo: vi.fn(() => Promise.resolve({ version: "1.0.0", platform: machine.platform, arch: "x86_64" })),
+    hardwareInfo: vi.fn(() =>
+      Promise.resolve({
+        runtime: machine.platform === "windows" ? "1.24.4" : "1.31.1",
+        accel: { engine: "1.7.1", licence: "https://docs.nvidia.com/licence", ...machine.accel },
+      }),
+    ),
+    accelNotices: vi.fn(() => Promise.resolve()),
     mediaTools: vi.fn(() => Promise.resolve({ ready: true, version: "8.0", path: "ffmpeg", error: null })),
     models: vi.fn(() =>
       Promise.resolve([
@@ -29,10 +43,48 @@ vi.mock("@/lib/ipc", () => ({
 }))
 
 vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ openLogs: vi.fn() }) }))
+vi.mock("@/lib/os", () => ({ openExternalUrl: vi.fn(() => Promise.resolve()) }))
 
 afterEach(cleanup)
 
+const show = () =>
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AboutSection />
+    </QueryClientProvider>,
+  )
+
 describe("AboutSection", () => {
+  it("names the AI engine and what it computes through on each system", async () => {
+    for (const [platform, line] of [
+      ["windows", "ONNX Runtime 1.24.4 with DirectML"],
+      ["macos", "ONNX Runtime 1.31.1 with Core ML"],
+      ["linux", "ONNX Runtime 1.31.1"],
+    ] as const) {
+      machine.platform = platform
+      show()
+      expect(await screen.findByText(line)).toBeTruthy()
+      cleanup()
+    }
+    machine.platform = "windows"
+  })
+
+  it("names NVIDIA's engine with its licence and notices once it is downloaded", async () => {
+    const user = userEvent.setup()
+    show()
+    await screen.findByText("ONNX Runtime 1.24.4 with DirectML")
+    expect(screen.queryByText(/TensorRT/)).toBeNull()
+    cleanup()
+    machine.accel = { installed: true }
+    show()
+    expect(await screen.findByText("NVIDIA TensorRT for RTX 1.7.1")).toBeTruthy()
+    await user.click(screen.getByRole("button", { name: "NVIDIA's licence" }))
+    expect(openExternalUrl).toHaveBeenCalledWith("https://docs.nvidia.com/licence")
+    await user.click(screen.getByRole("button", { name: "Acknowledgements" }))
+    expect(commands.accelNotices).toHaveBeenCalledOnce()
+    machine.accel = { installed: false }
+  })
+
   it("lists the AI models with their licences and marks the non-commercial ones", async () => {
     render(
       <QueryClientProvider client={new QueryClient()}>

@@ -45,6 +45,8 @@ const KEY_ALLOW_UNREVIEWED: &str = "allow_unreviewed_plugins";
 /// key (`as_infer::hardware::key`).
 const KEY_GPU: &str = "gpu";
 const KEY_CATALOG_CHECKS: &str = "plugin_catalog_checks";
+/// `0` once NVIDIA's engine is switched off; it is on unless it is.
+const KEY_NVIDIA_ACCELERATION: &str = "nvidia_acceleration";
 /// Most series and films people cut are watched in their original English
 /// track; dubbed tracks are often flagged "default" too, so a language
 /// preference beats the file's flag.
@@ -81,6 +83,8 @@ pub struct Library {
     probe: fn() -> Machine,
     /// The graphics the person chose ([`KEY_GPU`]).
     gpu: Mutex<String>,
+    /// Whether NVIDIA's engine is switched on ([`KEY_NVIDIA_ACCELERATION`]).
+    nvidia_acceleration: AtomicBool,
 }
 
 impl Library {
@@ -104,6 +108,7 @@ impl Library {
         let find_bodies = Arc::new(AtomicBool::new(db.setting(KEY_FIND_BODIES)?.as_deref() == Some("1")));
         let anilist_on = AtomicBool::new(db.setting(KEY_ANILIST)?.as_deref() == Some("1"));
         let gpu = Mutex::new(db.setting(KEY_GPU)?.unwrap_or_default());
+        let nvidia_acceleration = AtomicBool::new(db.setting(KEY_NVIDIA_ACCELERATION)?.as_deref() != Some("0"));
         let anilist = AniList::new(paths.anilist());
         let tvmaze = TvMaze::new(paths.tvmaze());
         let fandom = Fandom::new(paths.fandom());
@@ -121,6 +126,7 @@ impl Library {
             machine: OnceLock::new(),
             probe,
             gpu,
+            nvidia_acceleration,
         })
     }
 
@@ -195,7 +201,22 @@ impl Library {
             allow_unreviewed_plugins: self.allows_unreviewed_plugins()?,
             gpu: self.gpu(),
             plugin_catalog_checks: self.db.setting(KEY_CATALOG_CHECKS)?.as_deref() != Some("0"),
+            nvidia_acceleration: self.nvidia_acceleration(),
         })
+    }
+
+    /// Whether analysis may use NVIDIA's engine.
+    pub fn nvidia_acceleration(&self) -> bool {
+        self.nvidia_acceleration.load(Ordering::Relaxed)
+    }
+
+    /// Switch NVIDIA's engine on or off. On stores nothing.
+    pub fn set_nvidia_acceleration(&self, on: bool) -> ProjectResult<()> {
+        if on != self.nvidia_acceleration() {
+            self.db.write_settings(&[(KEY_NVIDIA_ACCELERATION, (!on).then_some("0"))])?;
+            self.nvidia_acceleration.store(on, Ordering::Relaxed);
+        }
+        Ok(())
     }
 
     /// The graphics the analysis runs on, as Settings stores them: `""`
@@ -322,6 +343,7 @@ impl Library {
                 self.scan_notice_done()?;
             }
         }
+        self.set_nvidia_acceleration(s.nvidia_acceleration)?;
         self.db.set_setting(KEY_ANILIST, if s.anilist { "1" } else { "0" })?;
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
         // `allow_unreviewed_plugins` stays: see `set_allows_unreviewed_plugins`.
@@ -768,6 +790,7 @@ mod tests {
             allow_unreviewed_plugins: false,
             gpu: String::new(),
             plugin_catalog_checks: true,
+            nvidia_acceleration: true,
         })
         .unwrap();
         assert_eq!(lib.audio_language().unwrap(), "deu", "stored as an ISO 639-2 code");
@@ -1324,6 +1347,30 @@ mod tests {
     }
 
     #[test]
+    fn nvidia_acceleration_is_on_unless_switched_off() {
+        let (dir, lib) = lib_on(hybrid);
+        // A library from before it, and a settings file without the field.
+        assert_eq!(stored(&lib, KEY_NVIDIA_ACCELERATION), None);
+        assert!(lib.settings().unwrap().nvidia_acceleration);
+        let mut json = serde_json::to_value(lib.settings().unwrap()).unwrap();
+        json.as_object_mut().unwrap().remove("nvidiaAcceleration");
+        assert!(serde_json::from_value::<AppSettings>(json).unwrap().nvidia_acceleration);
+
+        let off = AppSettings { nvidia_acceleration: false, ..lib.settings().unwrap() };
+        assert!(!lib.update_settings(&off).unwrap().nvidia_acceleration);
+        assert_eq!(stored(&lib, KEY_NVIDIA_ACCELERATION).as_deref(), Some("0"));
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), hybrid).unwrap();
+        assert!(!lib.nvidia_acceleration(), "kept across starts");
+        // Another setting saved keeps it.
+        lib.update_settings(&AppSettings { audio_language: "fra".into(), ..lib.settings().unwrap() }).unwrap();
+        assert!(!lib.nvidia_acceleration());
+        lib.set_nvidia_acceleration(true).unwrap();
+        assert!(lib.settings().unwrap().nvidia_acceleration);
+        assert_eq!(stored(&lib, KEY_NVIDIA_ACCELERATION), None, "on stores nothing");
+    }
+
+    #[test]
     fn a_chosen_card_is_classed_by_the_same_table() {
         let (_dir, lib) = lib_on(hybrid);
         // Automatic: the RTX DirectML opens, built for AI work.
@@ -1607,6 +1654,7 @@ mod tests {
             allow_unreviewed_plugins: false,
             gpu: String::new(),
             plugin_catalog_checks: true,
+            nvidia_acceleration: true,
         };
         assert!(matches!(lib.update_settings(&bad), Err(ProjectError::Invalid(_))));
         assert_eq!(lib.settings().unwrap().export_preset_id, "h264-edit");

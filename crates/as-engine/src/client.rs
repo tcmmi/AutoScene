@@ -376,6 +376,14 @@ impl Engine {
         self.note(Note::Changed);
     }
 
+    /// NVIDIA's engine in `dir` gets a new chance: the person tries it again,
+    /// or new files arrived. Engines start with it once more, under the next
+    /// launch.
+    pub fn pack_try_again(&self, dir: &Path) {
+        set_pack_failures(dir, 0);
+        self.pack_broken.store(false, Ordering::Relaxed);
+    }
+
     /// A job finished with NVIDIA's engine in `dir`: its failures in a row end.
     fn pack_worked(&self, dir: &Path) {
         if pack_failures(dir) > 0 {
@@ -466,6 +474,21 @@ impl Engine {
             }
             std::thread::sleep(Duration::from_millis(50));
         }
+    }
+
+    /// Start an engine now, unless one is there or a job runs: what it finds
+    /// reaches [`Engine::watch`] and [`Engine::accel`] without waiting for
+    /// the next job. Its idle exit stops it.
+    pub fn warm(&self, cancel: &CancelToken) -> Result<(), EngineError> {
+        if let Some(mut guard) = self.proc.try_lock() {
+            if guard.as_mut().is_some_and(|p| !p.alive()) {
+                self.discard(&mut guard);
+            }
+            if guard.is_none() {
+                *guard = Some(self.start(cancel)?);
+            }
+        }
+        Ok(())
     }
 
     /// Where the job's models run, as its engine says: kept for

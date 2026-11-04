@@ -10,11 +10,28 @@ use tauri_specta::Event;
 
 /// What Settings says about the graphics the analysis runs on may have
 /// changed: an engine named what it found, a choice applies from the next
-/// analysis or now does, or the last analysis ran some steps on the
-/// processor (`hardware_info` answers anew).
+/// analysis or now does, the last analysis ran some steps on the processor,
+/// or NVIDIA's files came or went (`hardware_info` answers anew).
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 #[tauri_specta(event_name = "hardware:changed")]
 pub struct HardwareChanged;
+
+/// How far the download of NVIDIA's files is, in bytes of `total`.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "accel:progress")]
+pub struct AccelProgress {
+    pub done: u64,
+    pub total: u64,
+}
+
+/// The download of NVIDIA's files the person asked for ended: `error` says
+/// why it failed, for the person. Cancelled ones don't say, nor does an
+/// update that runs by itself: its files come by the next start.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "accel:finished")]
+pub struct AccelFinished {
+    pub error: Option<String>,
+}
 
 /// A native menu item was chosen (macOS). Payload is the item id, e.g. `view:cast`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]

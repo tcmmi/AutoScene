@@ -23,7 +23,7 @@ import {
   setMockBodies,
   seedCast,
 } from "./cast"
-import { analysisRuns, hardwareInfo, initialGpu, mockPlatform, thisComputer } from "./hardware"
+import { accelCalls, analysisRuns, hardwareInfo, initialAccelOn, initialGpu, mockPlatform, thisComputer } from "./hardware"
 import {
   fileProblem,
   giveVerdicts,
@@ -210,6 +210,7 @@ let settings: AppSettings = {
   allowUnreviewedPlugins: false,
   gpu: initialGpu,
   pluginCatalogChecks: true,
+  nvidiaAcceleration: initialAccelOn,
 }
 /** A graphics card chosen while an analysis runs applies from the next one (`?mockHardware=busy`). */
 let gpuPending = false
@@ -1119,11 +1120,12 @@ const handlers: Record<string, Handler> = {
     // only scan_default_set Fast Scan's default (`fastScan` is read only).
     const bodiesChanged = ((s as AppSettings).findBodies ?? false) !== (settings.findBodies ?? false)
     const gpuChanged = ((s as AppSettings).gpu ?? "") !== (settings.gpu ?? "")
+    const accelChanged = ((s as AppSettings).nvidiaAcceleration ?? true) !== (settings.nvidiaAcceleration ?? true)
     settings = { ...(s as AppSettings), allowUnreviewedPlugins: allows() }
     followFastScan()
     // Changed in Settings, where Fast Scan's row says why it is on: the notice is met.
     if ((bodiesChanged || gpuChanged) && scanDefaults().notice) noticeDone = true
-    if (gpuChanged) {
+    if (gpuChanged || accelChanged) {
       gpuPending = analysisRuns
       void emit("hardware:changed", null)
     }
@@ -1131,7 +1133,10 @@ const handlers: Record<string, Handler> = {
     return settings
   },
   scan_defaults_get: () => scanDefaults(),
-  hardware_info: () => hardwareInfo(settings.gpu ?? "", gpuPending),
+  hardware_info: () => hardwareInfo(settings.gpu ?? "", gpuPending, settings.nvidiaAcceleration ?? true),
+  ...accelCalls(() => {
+    settings = { ...settings, nvidiaAcceleration: true }
+  }),
   scan_default_set: ({ choice }) => {
     scanChoice = choice as ScanChoice
     // The person met the setting (Settings, or the notice's Turn off): the notice is done.

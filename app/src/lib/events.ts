@@ -1,5 +1,5 @@
 import { toast } from "sonner"
-import type { JobInfo } from "@/bindings"
+import type { HardwareInfo, JobInfo } from "@/bindings"
 import { takePackSave } from "@/features/plugins/pack-saves"
 import { pluginToast } from "@/features/plugins/plugin-toast"
 import { isFinished, useActivity } from "@/state/activity"
@@ -28,6 +28,8 @@ import { exportsQuery, isMadePack, qk, queryClient } from "./queries"
  * | plugin-page:event | an open plugin page (PluginFrame listens)         |
  * | hardware:changed | hardware (the graphics the analysis runs on)       |
  * | plugins:opened   | packages opened from outside (useOpenedPackages listens) |
+ * | accel:progress   | hardware: the bar of NVIDIA's download             |
+ * | accel:finished   | settings; toast unless Settings is open            |
  */
 export function startEventBridge(where: { goPlugins: () => void }): () => void {
   const unlisten: Promise<() => void>[] = []
@@ -104,6 +106,21 @@ export function startEventBridge(where: { goPlugins: () => void }): () => void {
       void tellWithdrawn(payload.withdrawn, where.goPlugins)
     }),
     events.catalogProgress.listen(({ payload }) => usePluginReview.getState().progress(payload.pluginId, payload.done, payload.total)),
+    events.accelProgress.listen(({ payload }) => {
+      queryClient.setQueryData<HardwareInfo>(qk.hardware, (hw) =>
+        hw?.accel.row.state === "downloading"
+          ? { ...hw, accel: { ...hw.accel, row: { state: "downloading", done: payload.done, total: payload.total } } }
+          : hw,
+      )
+    }),
+    events.accelFinished.listen(({ payload }) => {
+      // A first download finished switches it on.
+      void queryClient.invalidateQueries({ queryKey: qk.settings })
+      // In Settings the row says so itself.
+      if (window.location.hash.startsWith("#/settings")) return
+      if (payload.error) toast.error("NVIDIA acceleration couldn't be downloaded", { description: payload.error })
+      else toast.success("NVIDIA acceleration is ready")
+    }),
   )
   // Snapshot only once the listeners are live, so nothing falls between the two.
   void Promise.all(unlisten)

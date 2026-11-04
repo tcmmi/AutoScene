@@ -11,8 +11,16 @@
  * states: still looking, an analysis running (a choice then applies from the
  * next), the last analysis on the processor in part, a chosen card that isn't
  * connected. `?mockFail=hardware_info` shows the error.
+ *
+ * `?mockAccel=on|off|downloading|failed|no-room|removing|driver|stopped|update-licence|half`
+ * starts NVIDIA acceleration in that state: on an offered card, or with
+ * `on`, `off` and `removing` on any card as a pack left there. `half` is an
+ * unfinished download found at a start. Without it
+ * the row is Available wherever it is offered. Agree and download then
+ * fills the bar; `downloading` waits at 45 MB.
  */
-import type { AppInfo, GraphicsClass, HardwareInfo, ThisComputer } from "@/bindings"
+import { emit } from "@tauri-apps/api/event"
+import type { AccelInfo, AccelRow, AppInfo, GraphicsClass, HardwareInfo, ThisComputer } from "@/bindings"
 
 /** A card DirectML opens, and how Fast Scan's default classes it. */
 type Card = { key: string; name: string; class: GraphicsClass }
@@ -102,8 +110,130 @@ function label(c: Card): string {
   return twins.length > 1 ? `${c.name} (${ids(c.key)[1] + 1})` : c.name
 }
 
+/** The bytes the pack's download fetches, and where `accelInfo` finds its pins. */
+const ACCEL_BYTES = 110_866_443
+const ACCEL_LICENCE = "https://docs.nvidia.com/deeplearning/tensorrt-rtx/latest/reference/sla.html"
+const ACCEL_ENGINE = "1.7.1"
+
+const accelState = params.get("mockAccel")
+
+/** Like `as_infer::accel::serves`: an NVIDIA card of the Ampere generation or newer. */
+function serves(c: Card | null | undefined): boolean {
+  const [vendor, device] = (c?.key ?? "").split(":")
+  return machine.platform === "windows" && vendor === "10de" && Number.parseInt(device ?? "0", 16) >= 0x2200
+}
+
+/** The switch to start with. */
+export const initialAccelOn = accelState !== "off"
+
+type Phase = { state: "idle" } | { state: "downloading"; done: number } | { state: "failed"; message: string } | { state: "removing" }
+
+const NO_NET = "NVIDIA's files couldn't be downloaded. Check the internet connection and try again."
+const NO_ROOM = "There isn't enough free space for NVIDIA's files. Free up 124 MB on the drive of AutoScene's data folder and try again."
+
+/** What the mock's download and removal are doing, and whether the pack is here. */
+let phase: Phase =
+  accelState === "downloading"
+    ? { state: "downloading", done: 45_000_000 }
+    : accelState === "failed"
+      ? { state: "failed", message: NO_NET }
+      : accelState === "no-room"
+        ? { state: "failed", message: NO_ROOM }
+        : accelState === "removing"
+          ? { state: "removing" }
+          : { state: "idle" }
+let installed = ["on", "off", "removing", "driver", "stopped", "update-licence"].includes(accelState ?? "")
+let stopped = accelState === "stopped"
+/** An unfinished download is here: nothing to use, but something to remove. */
+let half = accelState === "half"
+let ticking: ReturnType<typeof setInterval> | undefined
+
+/** Like `accel::row`: the first state that applies. */
+function accelRow(offered: boolean): AccelRow {
+  if (phase.state === "downloading") return { state: "downloading", done: phase.done, total: ACCEL_BYTES }
+  if (phase.state === "failed") return { state: "failed", message: phase.message }
+  if (phase.state === "removing") return { state: "removing" }
+  if (offered && (!installed || accelState === "update-licence")) return { state: "available" }
+  if (!installed) return { state: "hidden" }
+  if (!offered) return { state: "notUsed" }
+  if (stopped) return { state: "stopped" }
+  if (accelState === "driver") return { state: "needsDriver" }
+  return { state: "ready" }
+}
+
+function accelInfo(offered: boolean, on: boolean): AccelInfo {
+  const row = accelRow(offered)
+  return {
+    row,
+    installed,
+    removable: installed || half,
+    active: on && row.state === "ready",
+    downloadBytes: ACCEL_BYTES,
+    licence: ACCEL_LICENCE,
+    engine: ACCEL_ENGINE,
+  }
+}
+
+/** The commands of the row: `switchedOn` is what a finished download does to the setting. */
+export function accelCalls(switchedOn: () => void) {
+  const changed = () => void emit("hardware:changed", null)
+  const stop = () => {
+    clearInterval(ticking)
+    ticking = undefined
+  }
+  return {
+    accel_install: () => {
+      phase = { state: "downloading", done: 0 }
+      changed()
+      ticking = setInterval(() => {
+        if (phase.state !== "downloading") return stop()
+        const done = Math.min(phase.done + 3_700_000, ACCEL_BYTES)
+        phase = { state: "downloading", done }
+        void emit("accel:progress", { done, total: ACCEL_BYTES })
+        if (done === ACCEL_BYTES) {
+          stop()
+          phase = { state: "idle" }
+          installed = true
+          half = false
+          switchedOn()
+          changed()
+          void emit("accel:finished", { error: null })
+        }
+      }, 120)
+      return null
+    },
+    accel_cancel: () => {
+      stop()
+      phase = { state: "idle" }
+      changed()
+      return null
+    },
+    accel_remove: () => {
+      phase = { state: "removing" }
+      changed()
+      setTimeout(() => {
+        phase = { state: "idle" }
+        installed = false
+        half = false
+        changed()
+      }, 900)
+      return null
+    },
+    accel_try_again: () =>
+      new Promise<null>((done) =>
+        // It checks every file and starts an engine.
+        setTimeout(() => {
+          stopped = false
+          changed()
+          done(null)
+        }, 900),
+      ),
+    accel_notices: () => null,
+  }
+}
+
 /** Like `commands::hardware::info`: `hardware_info` with the graphics `gpu` chooses. */
-export function hardwareInfo(gpu: string, pending: boolean): HardwareInfo | Promise<never> {
+export function hardwareInfo(gpu: string, pending: boolean, accelOn: boolean): HardwareInfo | Promise<never> {
   if (state === "loading") return new Promise<never>(() => {})
   const { index, missing } = resolve(gpu)
   const openable = machine.noDxgi ? [] : machine.cards
@@ -124,6 +254,8 @@ export function hardwareInfo(gpu: string, pending: boolean): HardwareInfo | Prom
     missing,
     pending,
     fellBack: state === "fell-back",
+    runtime: machine.platform === "windows" ? "1.24.4" : "1.31.1",
+    accel: accelInfo(serves(c), accelOn),
   }
 }
 

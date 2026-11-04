@@ -4,6 +4,7 @@
 //! |---|---|---|
 //! | app data (models, runtimes, library.db, logs) | `%LOCALAPPDATA%\AutoScene` | `~/Library/Application Support/AutoScene` |
 //! | default library (project folders) | `Documents\AutoScene Library` | `~/Documents/AutoScene Library` |
+//! | NVIDIA's engine, once downloaded | app data `runtimes\nvidia-rtx-<version>` | not offered |
 //! | plugins, what they keep, their logs | app data `plugins`, `plugin-data`, `logs\plugins` | app data `plugins`, `plugin-data`, `logs/plugins` |
 //! | plugin packages from the catalog, while they download | app data `cache\plugin-downloads` | app data `cache/plugin-downloads` |
 //! | WebAssembly plugins' compiled code | app data `cache\plugin-code` | app data `cache/plugin-code` |
@@ -16,6 +17,8 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 const APP_DIR: &str = "AutoScene";
+/// How the folder of a release of NVIDIA's engine starts ([`AppPaths::accel_dir`]).
+pub const ACCEL_PREFIX: &str = "nvidia-rtx-";
 
 #[derive(Clone, Debug)]
 pub struct AppPaths {
@@ -43,6 +46,11 @@ impl AppPaths {
     }
     pub fn runtimes(&self) -> PathBuf {
         self.data.join("runtimes")
+    }
+    /// NVIDIA's engine at its release `version`, fetched at the person's
+    /// request (`as_infer::accel`). Each release has its own folder.
+    pub fn accel_dir(&self, version: &str) -> PathBuf {
+        self.runtimes().join(format!("{ACCEL_PREFIX}{version}"))
     }
     pub fn logs(&self) -> PathBuf {
         self.data.join("logs")

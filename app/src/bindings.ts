@@ -65,6 +65,19 @@ export const commands = {
 	 *  engine found.
 	 */
 	hardwareInfo: () => __TAURI_INVOKE<HardwareInfo>("hardware_info"),
+	/**
+	 *  Download NVIDIA's files: the person agreed to NVIDIA's licence. The row
+	 *  follows it (`hardware:changed`, `accel:progress`).
+	 */
+	accelInstall: () => __TAURI_INVOKE<void>("accel_install"),
+	/**  Stop the download of NVIDIA's files. */
+	accelCancel: () => __TAURI_INVOKE<void>("accel_cancel"),
+	/**  Remove NVIDIA's files, once no analysis uses them. */
+	accelRemove: () => __TAURI_INVOKE<null>("accel_remove"),
+	/**  Use NVIDIA's files again after they stopped working. */
+	accelTryAgain: () => __TAURI_INVOKE<null>("accel_try_again"),
+	/**  Open NVIDIA's third-party notices (About). */
+	accelNotices: () => __TAURI_INVOKE<null>("accel_notices"),
 	projectsList: () => __TAURI_INVOKE<ProjectSummary[]>("projects_list"),
 	projectGet: (projectId: ProjectId) => __TAURI_INVOKE<ProjectSummary>("project_get", { projectId }),
 	/**
@@ -103,7 +116,7 @@ export const commands = {
 	 *  Save the settings. Whether plugins AutoScene hasn't reviewed may run
 	 *  stays as it is: `plugins_allow_unreviewed` changes it. So does Fast Scan's
 	 *  default for new projects: `scan_default_set` changes it. A graphics card
-	 *  chosen applies from the next analysis.
+	 *  chosen, and NVIDIA acceleration switched, apply from the next analysis.
 	 */
 	settingsUpdate: (settings: AppSettings) => __TAURI_INVOKE<AppSettings>("settings_update", { settings }),
 	mediaList: (projectId: ProjectId) => __TAURI_INVOKE<MediaItem[]>("media_list", { projectId }),
@@ -447,6 +460,8 @@ export const commands = {
 
 /** Events */
 export const events = {
+	accelFinished: makeEvent<AccelFinished>("accel:finished"),
+	accelProgress: makeEvent<AccelProgress>("accel:progress"),
 	analysisChanged: makeEvent<AnalysisChanged>("analysis:changed"),
 	anilistChanged: makeEvent<AniListChanged>("anilist:changed"),
 	castChanged: makeEvent<CastChanged>("cast:changed"),
@@ -473,6 +488,63 @@ export const FILE_PARTS = ["series","character"] as const;
 export const NAME_PARTS = [["series","Series"],["character","Character"],["episode","Episode"],["index","Number"],["tc","Timecode"],["frame","Frame"]] as const;
 
 /* Types */
+/**
+ *  The download of NVIDIA's files the person asked for ended: `error` says
+ *  why it failed, for the person. Cancelled ones don't say, nor does an
+ *  update that runs by itself: its files come by the next start.
+ */
+export type AccelFinished = {
+	error: string | null,
+};
+
+/**  Settings → General → NVIDIA acceleration. */
+export type AccelInfo = {
+	row: AccelRow,
+	/**  NVIDIA's files are here (About names them). */
+	installed: boolean,
+	/**  Some of them are, finished or not: the row offers to remove them. */
+	removable: boolean,
+	/**  Analysis uses them. */
+	active: boolean,
+	/**  The bytes a download fetches. */
+	downloadBytes: number,
+	/**  NVIDIA's licence, which the person agrees to by downloading. */
+	licence: string,
+	/**  TensorRT for RTX's release (About). */
+	engine: string,
+};
+
+/**  How far the download of NVIDIA's files is, in bytes of `total`. */
+export type AccelProgress = {
+	done: number,
+	total: number,
+};
+
+/**
+ *  What the row shows: the first of these that applies, in this order, but
+ *  for [`AccelRow::Hidden`].
+ */
+export type AccelRow = 
+/**  Nothing: this computer can't use it and has no files of it. */
+{ state: "hidden" } | { state: "downloading"; done: number; total: number } | 
+/**  The last download failed; `message` says why, for the person. */
+{ state: "failed"; message: string } | 
+/**  The files go once the current analysis is done with them. */
+{ state: "removing" } | 
+/**  It can be downloaded (or its new licence has to be agreed to). */
+{ state: "available" } | 
+/**  Another card, or the processor, is chosen. */
+{ state: "notUsed" } | 
+/**
+ *  It failed twice in a row, or doesn't load: analysis runs without it
+ *  until the person tries again.
+ */
+{ state: "stopped" } | 
+/**  It lists no device for this card. */
+{ state: "needsDriver" } | 
+/**  Installed and usable: the switch (`AppSettings::nvidia_acceleration`). */
+{ state: "ready" };
+
 /**  Which of a plugin's contributions a run is for. */
 export type ActionKind = "exportAction" | "command" | 
 /**
@@ -670,6 +742,11 @@ export type AppSettings = {
 	 *  plugins. On by default.
 	 */
 	pluginCatalogChecks?: boolean,
+	/**
+	 *  Analysis uses NVIDIA's engine once its files are downloaded: on
+	 *  unless switched off. Applies from the next analysis.
+	 */
+	nvidiaAcceleration?: boolean,
 };
 
 export type AudioCodec = { codec: "none" } | 
@@ -1182,8 +1259,8 @@ export type GraphicsClass =
 /**
  *  What Settings says about the graphics the analysis runs on may have
  *  changed: an engine named what it found, a choice applies from the next
- *  analysis or now does, or the last analysis ran some steps on the
- *  processor (`hardware_info` answers anew).
+ *  analysis or now does, the last analysis ran some steps on the processor,
+ *  or NVIDIA's files came or went (`hardware_info` answers anew).
  */
 export type HardwareChanged = null;
 
@@ -1229,6 +1306,9 @@ export type HardwareInfo = {
 	 *  because the graphics couldn't take them.
 	 */
 	fellBack: boolean,
+	/**  The ONNX Runtime's version (About). */
+	runtime: string,
+	accel: AccelInfo,
 };
 
 export type HdrKind = "none" | "pq" | "hlg" | "dolby_vision";

@@ -7,7 +7,11 @@
     "core:default",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://github.com/*" }]
+      "allow": [
+        { "url": "https://github.com/*" },
+        { "url": "https://docs.nvidia.com/*" },
+        { "url": "https://www.nvidia.com/*" }
+      ]
     },
     "dialog:allow-open",
     "dialog:allow-save",

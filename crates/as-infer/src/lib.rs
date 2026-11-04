@@ -243,6 +243,26 @@ pub struct Runtime {
 
 static LOADED: OnceLock<PathBuf> = OnceLock::new();
 
+/// The version the ONNX Runtime at `lib`, already loaded, gives itself: it is
+/// shown in About, so it is never written by hand. Empty if it won't say.
+fn version(lib: &Path) -> String {
+    type GetApiBase = unsafe extern "C" fn() -> *const ort::sys::OrtApiBase;
+    // SAFETY: `lib` is the library ort loaded, so this only takes another
+    // reference to it. `OrtGetApiBase` has this signature in every ONNX
+    // Runtime, its base is valid for as long as the library stays loaded,
+    // which ort keeps it, and `GetVersionString` returns a static C string.
+    let read = || unsafe {
+        let library = libloading::Library::new(lib)?;
+        let base = library.get::<GetApiBase>(b"OrtGetApiBase")?();
+        let version = ((*base).GetVersionString)();
+        Ok::<_, libloading::Error>(std::ffi::CStr::from_ptr(version).to_string_lossy().into_owned())
+    };
+    read().unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "the runtime didn't say its version");
+        String::new()
+    })
+}
+
 impl Runtime {
     /// Load the runtime from `dir` (once per process; later calls must name
     /// the same folder). `gpu = false` keeps every session on the CPU; `true`
@@ -272,7 +292,7 @@ impl Runtime {
             let _ = LOADED.set(dir.to_path_buf());
         }
         let env = ort::init().with_name("autoscene").build().map_err(|e| InferError::Runtime(e.to_string()))?;
-        let hardware = hardware::discover(&env).chosen(&placement.gpu);
+        let hardware = hardware::Hardware { runtime: version(&lib), ..hardware::discover(&env).chosen(&placement.gpu) };
         let target = match hardware.using {
             hardware::Using::Processor => Target::Cpu,
             _ => Target::Gpu(hardware.adapter()),

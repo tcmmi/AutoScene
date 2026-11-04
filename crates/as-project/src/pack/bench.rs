@@ -60,6 +60,7 @@ fn series(dir: &Path) -> (Arc<Project>, CharacterId) {
         allow_unreviewed_plugins: false,
         gpu: String::new(),
         plugin_catalog_checks: true,
+        nvidia_acceleration: true,
     })
     .unwrap();
     let files: Vec<String> = (1..=EPISODES)

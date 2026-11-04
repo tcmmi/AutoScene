@@ -1,15 +1,20 @@
 import { useQuery } from "@tanstack/react-query"
-import { FileText } from "@/components/icons"
+import { toast } from "sonner"
+import { ArrowSquareOut, FileText } from "@/components/icons"
 import { AutoSceneMark } from "@/components/brand/AutoSceneMark"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useAppActions } from "@/lib/actions"
 import { formatBytes } from "@/lib/format"
-import { commands } from "@/lib/ipc"
-import { useAppInfo, useMediaTools } from "@/lib/queries"
+import { commands, errorMessage } from "@/lib/ipc"
+import { openExternalUrl } from "@/lib/os"
+import { useAppInfo, useHardware, useMediaTools } from "@/lib/queries"
 import { SettingRow, SettingsGroup } from "../primitives"
 
 const PLATFORM_LABEL = { windows: "Windows", macos: "macOS", linux: "Linux" } as const
+
+/** What ONNX Runtime computes through on each system. */
+const RUNTIME_WITH = { windows: " with DirectML", macos: " with Core ML", linux: "" } as const
 
 /** Third-party components shipped inside the app. */
 const LICENSES: { name: string; license: string; url: string }[] = [
@@ -52,6 +57,7 @@ export function AboutSection() {
   const { data: info } = useAppInfo()
   const { data: tools } = useMediaTools()
   const { data: models } = useModels()
+  const { data: hardware } = useHardware()
   const a = useAppActions()
   return (
     <>
@@ -91,6 +97,28 @@ export function AboutSection() {
         >
           <span className="text-sm text-fg-3">LGPL / GPL</span>
         </SettingRow>
+      </SettingsGroup>
+
+      <SettingsGroup title="AI engine" description="Analysis runs on ONNX Runtime.">
+        <SettingRow label={`ONNX Runtime${hardware?.runtime ? ` ${hardware.runtime}` : ""}${info ? RUNTIME_WITH[info.platform] : ""}`}>
+          <span className="text-sm text-fg-3">MIT</span>
+        </SettingRow>
+        {hardware?.accel.installed && (
+          <SettingRow label={`NVIDIA TensorRT for RTX ${hardware.accel.engine}`} description="NVIDIA's own files, downloaded from Settings → General.">
+            <Button size="sm" variant="ghost" onClick={() => void openExternalUrl(hardware.accel.licence)}>
+              <ArrowSquareOut /> NVIDIA's licence
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                commands.accelNotices().catch((e: unknown) => toast.error("Couldn't open the notices", { description: errorMessage(e) }))
+              }}
+            >
+              <FileText /> Acknowledgements
+            </Button>
+          </SettingRow>
+        )}
       </SettingsGroup>
 
       <SettingsGroup

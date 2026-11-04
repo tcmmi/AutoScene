@@ -11,7 +11,11 @@
 //!   for tests.
 //! - `wasm-guests [--out DIR]` — build the WebAssembly plugins the sandbox tests
 //!   run, into `<fixtures>/wasm` (see `wasm_guests.rs`).
+//! - `pin-accel <version> [--work DIR]` — pin the NVIDIA files "NVIDIA
+//!   acceleration" downloads, into `crates/as-infer/accel.toml`, refusing a
+//!   library NVIDIA didn't sign (see `accel_pin.rs`; Windows only).
 
+mod accel_pin;
 mod fixtures;
 mod sidecars;
 mod uv;
@@ -55,6 +59,11 @@ fn main() -> Result<()> {
             let version = rest.first().context("usage: cargo xtask pin-uv <version>")?;
             uv::pin(version, &workspace_root()).context("pinning uv")
         }
+        "pin-accel" => {
+            let version = rest.first().context("usage: cargo xtask pin-accel <version> [--work DIR]")?;
+            let work = flag(&rest, "--work").map(PathBuf::from);
+            accel_pin::pin(version, work.as_deref(), &workspace_root()).context("pinning NVIDIA's files")
+        }
         "wasm-guests" => {
             let out =
                 flag(&rest, "--out").map(PathBuf::from).unwrap_or_else(|| as_testkit::fixtures_dir().join("wasm"));
@@ -66,6 +75,7 @@ fn main() -> Result<()> {
             println!("cargo xtask fetch-models [--dir DIR] [--only ID,ID…]");
             println!("cargo xtask pin-uv <version>");
             println!("cargo xtask wasm-guests [--out DIR]");
+            println!("cargo xtask pin-accel <version> [--work DIR]");
             Ok(())
         }
         other => bail!("unknown task '{other}' (try `cargo xtask help`)"),

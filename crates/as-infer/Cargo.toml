@@ -12,12 +12,16 @@ license.workspace = true
 serde.workspace = true
 # Names the folders compiled models are kept in (cache.rs).
 sha2.workspace = true
+# Reads accel.toml, the pins of NVIDIA's engine (accel.rs).
+toml.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 # One binary for every ONNX Runtime >= 1.24 (the DirectML build 1.24.4 on
 # Windows, 1.31.1 on macOS and Linux), loaded from the app's own folder at
 # runtime.
 ort = { workspace = true, features = ["std", "load-dynamic", "api-24"] }
+# Asks the loaded runtime its version, which ort keeps to itself (lib.rs).
+libloading.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 ort = { workspace = true, features = ["directml"] }

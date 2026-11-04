@@ -1,11 +1,12 @@
 //! The graphics the analysis runs on (Settings → General → Graphics card).
 
-use as_api::{AnalysisDevice, GpuOption, HardwareChoice, HardwareInfo};
+use as_api::{AccelInfo, AnalysisDevice, GpuOption, HardwareChoice, HardwareInfo};
 use as_core::CancelToken;
 use as_engine::hardware::{Hardware, Using};
 use as_project::computer::Choice;
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::accel;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::state::{AppState, blocking};
 
@@ -22,14 +23,57 @@ pub async fn hardware_info(state: State<'_, AppState>) -> AppResult<HardwareInfo
             log::warn!("looking for graphics cards: {}", e.detail());
             AppError::new(ErrorCode::Internal, "Couldn't check the graphics cards.")
         })?;
-        Ok(info(&found, &state.library.gpu(), state.engine.pending(), state.engine.fell_back()))
+        let gpu = state.library.gpu();
+        let chosen = found.clone().chosen(&Choice::from_setting(&gpu));
+        let accel = state.accel.info(&chosen, state.library.nvidia_acceleration(), &state.engine);
+        Ok(info(&found, &gpu, state.engine.pending(), state.engine.fell_back(), accel))
     })
     .await
 }
 
+/// Download NVIDIA's files: the person agreed to NVIDIA's licence. The row
+/// follows it (`hardware:changed`, `accel:progress`).
+#[tauri::command]
+#[specta::specta]
+pub fn accel_install(app: AppHandle) {
+    accel::install(&app, true);
+}
+
+/// Stop the download of NVIDIA's files.
+#[tauri::command]
+#[specta::specta]
+pub fn accel_cancel(state: State<'_, AppState>) {
+    state.accel.cancel();
+}
+
+/// Remove NVIDIA's files, once no analysis uses them.
+#[tauri::command]
+#[specta::specta]
+pub async fn accel_remove(app: AppHandle) -> AppResult<()> {
+    blocking(move || accel::remove(&app)).await
+}
+
+/// Use NVIDIA's files again after they stopped working.
+#[tauri::command]
+#[specta::specta]
+pub async fn accel_try_again(app: AppHandle) -> AppResult<()> {
+    blocking(move || {
+        accel::try_again(&app);
+        Ok(())
+    })
+    .await
+}
+
+/// Open NVIDIA's third-party notices (About).
+#[tauri::command]
+#[specta::specta]
+pub fn accel_notices(state: State<'_, AppState>) -> AppResult<()> {
+    accel::open_notices(&state)
+}
+
 /// What Settings shows for the devices an engine `found` and the graphics
 /// the person chose (`AppSettings::gpu`).
-fn info(found: &Hardware, gpu: &str, pending: bool, fell_back: bool) -> HardwareInfo {
+fn info(found: &Hardware, gpu: &str, pending: bool, fell_back: bool, accel: AccelInfo) -> HardwareInfo {
     let choice = Choice::from_setting(gpu);
     let chosen = found.clone().chosen(&choice);
     // Cards DirectML opens by number; without numbers it picks one itself,
@@ -55,14 +99,30 @@ fn info(found: &Hardware, gpu: &str, pending: bool, fell_back: bool) -> Hardware
         Using::Chip => AnalysisDevice::Chip { name: chosen.name().into() },
         Using::Processor => AnalysisDevice::Processor,
     };
-    HardwareInfo { gpus, choice: kind, selected, using, missing: chosen.missing, pending, fell_back }
+    let runtime = found.runtime.clone();
+    HardwareInfo { gpus, choice: kind, selected, using, missing: chosen.missing, pending, fell_back, runtime, accel }
 }
 
 #[cfg(test)]
 mod tests {
+    use as_api::AccelRow;
     use as_engine::hardware::{Kind, RawDevice};
 
     use super::*;
+
+    /// [`super::info`] with the row of NVIDIA acceleration left out.
+    fn info(found: &Hardware, gpu: &str, pending: bool, fell_back: bool) -> HardwareInfo {
+        let accel = AccelInfo {
+            row: AccelRow::Hidden,
+            installed: false,
+            removable: false,
+            active: false,
+            download_bytes: 0,
+            licence: String::new(),
+            engine: String::new(),
+        };
+        super::info(found, gpu, pending, fell_back, accel)
+    }
 
     fn card(vendor: u32, device: u32, name: &str, dxgi: Option<u32>, luid: u64) -> RawDevice {
         let mut metadata: std::collections::BTreeMap<String, String> =

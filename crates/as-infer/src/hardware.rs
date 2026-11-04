@@ -99,6 +99,8 @@ pub enum Using {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Hardware {
+    /// The version of the ONNX Runtime that looked (About names it).
+    pub runtime: String,
     /// The processor, as its maker names it.
     pub cpu: String,
     /// The graphics cards DirectML can open, in DirectML's order (Windows).
@@ -228,7 +230,7 @@ impl Hardware {
                     _ => Using::Preferred,
                 }),
         };
-        Self { cpu: cpu_from(devices), gpus, chip: String::new(), auto, using: auto, missing: false }
+        Self { cpu: cpu_from(devices), gpus, auto, using: auto, ..Self::default() }
     }
 
     /// macOS: the chip's graphics and Neural Engine (Core ML), named by its

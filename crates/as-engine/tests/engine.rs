@@ -169,6 +169,7 @@ fn the_engine_names_the_device_it_uses() {
     let auto = Engine::new(launch(ort.clone(), Choice::Auto, None));
     let hw = auto.probe(&CancelToken::new()).unwrap();
     assert_eq!(auto.hardware().as_ref(), Some(&hw), "kept");
+    assert!(hw.runtime.starts_with("1."), "the runtime says its version: {:?}", hw.runtime);
     let expected = computer::choose(computer::machine(), &Choice::Auto);
     assert_eq!(hw.luid(), expected.luid, "{hw}; the probe expects {expected}");
     match computer::machine() {
@@ -420,6 +421,57 @@ fn an_engine_that_dies_with_the_pack_restarts_without_it() {
     assert_eq!(pack_failures(pack.path()), 1);
 }
 
+/// Trying again starts engines with it once more: until then a new launch
+/// doesn't bring it back, and an engine that is there isn't started again.
+#[test]
+fn trying_again_brings_the_pack_back() {
+    let Some(ort) = runtime_and_tools() else { return };
+    let pack = tempfile::tempdir().unwrap();
+    let launch = launch_with_pack(ort, pack.path(), Some("start"));
+    let engine = Engine::new(launch.clone());
+    let cancel = CancelToken::new();
+    engine.warm(&cancel).expect("an engine without the pack started");
+    let pid = engine.pid().expect("it runs");
+    assert_eq!(pack_failures(pack.path()), 1);
+    engine.warm(&cancel).unwrap();
+    assert_eq!(engine.pid(), Some(pid), "the one that is there stays");
+
+    engine.set_launch(launch.clone());
+    engine.warm(&cancel).unwrap();
+    assert_eq!(pack_failures(pack.path()), 1, "not tried again by itself");
+
+    engine.pack_try_again(pack.path());
+    assert_eq!(pack_failures(pack.path()), 0);
+    engine.set_launch(launch);
+    engine.warm(&cancel).unwrap();
+    assert_eq!(pack_failures(pack.path()), 1, "started with it, and it ended again");
+}
+
+/// A pack that failed this session is no reason to leave out the one that
+/// replaces it: the failure was the old files', and the download says so.
+#[test]
+fn a_new_pack_starts_engines_after_the_one_before_it_failed() {
+    let Some(ort) = runtime_and_tools() else { return };
+    let failed = tempfile::tempdir().unwrap();
+    let engine = Engine::new(launch_with_pack(ort.clone(), failed.path(), Some("start")));
+    let cancel = CancelToken::new();
+    engine.warm(&cancel).expect("an engine without the pack started");
+    assert_eq!(pack_failures(failed.path()), 1);
+
+    // The new pack is left out until the download says it is here: its
+    // folder has no failures, but this session's still count.
+    let fresh = tempfile::tempdir().unwrap();
+    let launch = launch_with_pack(ort, fresh.path(), Some("start"));
+    engine.set_launch(launch.clone());
+    engine.warm(&cancel).unwrap();
+    assert_eq!(pack_failures(fresh.path()), 0, "not started with it yet");
+
+    engine.pack_try_again(fresh.path());
+    engine.set_launch(launch);
+    engine.warm(&cancel).unwrap();
+    assert_eq!(pack_failures(fresh.path()), 1, "started with it, so --accel reached it");
+}
+
 /// One that ends under its first job while NVIDIA's engine is in use, and
 /// the job may run a model there (anime): the job runs again without it, and
 /// that costs none of its attempts: two more engines may still go away under
@@ -489,7 +541,7 @@ fn a_broken_accel_folder_leaves_the_engine_on_directml() {
     for name in &files {
         std::fs::write(pack.path().join(name), b"MZ not a library").unwrap();
     }
-    accel::stamp(pack.path(), &files).unwrap();
+    accel::stamp(pack.path(), &files, &accel::PRELOAD).unwrap();
     let engine = Engine::new(launch_with_pack(ort, pack.path(), None));
     let hw = engine.probe(&CancelToken::new()).unwrap();
     let state = engine.accel().expect("an engine started");

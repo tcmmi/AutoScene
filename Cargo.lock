@@ -250,12 +250,14 @@ name = "as-infer"
 version = "1.0.3-BETA"
 dependencies = [
  "libc",
+ "libloading",
  "ort",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
+ "toml 1.1.8+spec-1.1.0",
  "tracing",
  "windows 0.62.2",
  "windows-sys 0.61.2",
@@ -627,6 +629,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "specta",
  "specta-serde",
  "specta-typescript",
@@ -642,6 +645,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tauri-runtime-wry",
  "tauri-specta",
+ "tempfile",
  "tokio",
  "tracing",
  "webkit2gtk",
@@ -8346,6 +8350,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tar",
+ "tempfile",
  "zip 9.2.2",
 ]
 

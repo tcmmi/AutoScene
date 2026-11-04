@@ -57,3 +57,16 @@ export function xOf(v: View, t: number, width: number): number {
 export function tAt(v: View, x: number, width: number): number {
   return v.t0 + (x / Math.max(1, width)) * v.span
 }
+
+/**
+ * The overview's handle as it is drawn: the view itself, or, when the view is
+ * narrower than `min` of the episode (1 % by default, so it can be seen and
+ * grabbed), `min` of the episode around the view's middle, kept on the track.
+ * A press anywhere on the drawn handle pans, so the hit test and the drawing
+ * share this.
+ */
+export function thumb(v: View, length: number, min = 0.01): View {
+  const span = Math.min(Math.max(length, 1e-6), Math.max(v.span, length * min))
+  const t0 = Math.min(Math.max(v.t0 + v.span / 2 - span / 2, 0), Math.max(0, length - span))
+  return { t0, span }
+}

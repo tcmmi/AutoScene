@@ -29,7 +29,7 @@ import { SEGMENT_LABEL } from "../labels"
 import { drawSegments, drawSpans, prepare } from "./draw"
 import { visibleLanes } from "./lanes"
 import { type Counting, ticks } from "./ticks"
-import { type View, centerOn, fit, follow, panBy, tAt, xOf, zoomAt } from "./viewport"
+import { type View, centerOn, fit, follow, panBy, tAt, thumb, xOf, zoomAt } from "./viewport"
 
 const ZOOM_STEP = 2
 
@@ -380,7 +380,9 @@ const LABEL_ROOM = 72
 
 /**
  * The whole episode as a thin bar while the timeline is zoomed: the part in
- * view as a window to drag, a click elsewhere goes there.
+ * view as a window to drag, a click elsewhere goes there. The window is the
+ * handle as drawn (see `thumb`): a press anywhere on it pans, so the grab
+ * hand shows exactly there.
  */
 function Overview({
   axis,
@@ -399,21 +401,31 @@ function Overview({
 }) {
   const frame = useFrame(store)
   const drag = useRef<{ x: number; t0: number } | null>(null)
+  const [panning, setPanning] = useState(false)
   const pct = (t: number) => (t / Math.max(length, 1e-9)) * 100
   const { view } = axis
+  const handle = thumb(view, length)
   const range = inFrame != null || outFrame != null
-  const release = () => (drag.current = null)
+  const release = () => {
+    drag.current = null
+    setPanning(false)
+  }
   return (
     <div
-      className="absolute inset-x-0 top-0 h-2.5 cursor-pointer touch-none rounded-full bg-white/[0.06] select-none"
+      // Outside the handle a click goes there; while it pans, the pointer holds it.
+      className={cn(
+        "absolute inset-x-0 top-0 h-2.5 touch-none rounded-full bg-white/[0.06] select-none",
+        panning ? "cursor-grabbing" : "cursor-pointer",
+      )}
       onPointerDown={(e) => {
         // Only the main button pans: a right-click opens the menu, nothing else.
         if (e.button !== 0) return
         const r = e.currentTarget.getBoundingClientRect()
         const t = ((e.clientX - r.left) / r.width) * length
-        if (t >= view.t0 && t <= view.t0 + view.span) {
+        if (t >= handle.t0 && t <= handle.t0 + handle.span) {
           e.currentTarget.setPointerCapture(e.pointerId)
           drag.current = { x: e.clientX, t0: view.t0 }
+          setPanning(true)
         } else {
           onView((v) => centerOn(v, t, length))
         }
@@ -446,10 +458,13 @@ function Overview({
         />
       )}
       <div
-        className="absolute inset-y-0 rounded-full border border-white/40 bg-white/15"
-        style={{ left: `${pct(view.t0)}%`, width: `${Math.max(1, pct(view.span))}%` }}
+        className={cn(
+          "absolute inset-y-0 rounded-full border border-white/40 bg-white/15",
+          panning ? "cursor-grabbing" : "cursor-grab",
+        )}
+        style={{ left: `${pct(handle.t0)}%`, width: `${pct(handle.span)}%` }}
       />
-      <div className="absolute inset-y-0 w-px bg-white" style={{ left: `${pct(axis.t(frame))}%` }} />
+      <div className="pointer-events-none absolute inset-y-0 w-px bg-white" style={{ left: `${pct(axis.t(frame))}%` }} />
     </div>
   )
 }
@@ -492,7 +507,10 @@ function Scrub({
   onMarkOut: (f: number) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ x: number; f: number } | null>(null)
+  // Where the pointer is on the track, as in Shots: the frame it names comes
+  // from the view as it is now, so a zoom or a scroll with the pointer at rest
+  // keeps the readout about the frame a click would seek to.
+  const [hover, setHover] = useState<{ x: number; w: number } | null>(null)
   const [dragging, setDragging] = useState(false)
   // The frame the menu is about: the one right-clicked (the playhead's, from the keyboard).
   const [menuAt, setMenuAt] = useState<number | null>(null)
@@ -501,7 +519,7 @@ function Scrub({
   const at = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect()
     const x = Math.min(Math.max(clientX - r.left, 0), r.width)
-    return { x, f: axis.frameAt(tAt(view, x, r.width)) }
+    return { x, w: r.width, f: axis.frameAt(tAt(view, x, r.width)) }
   }
   const x = (f: number) => xOf(view, axis.t(f), width)
   const head = x(frame)
@@ -554,7 +572,7 @@ function Scrub({
         }}
         onPointerMove={(e) => {
           const h = at(e.clientX)
-          setHover(h)
+          setHover({ x: h.x, w: h.w })
           if (dragging) onSeek(h.f)
         }}
         onPointerUp={(e) => {
@@ -591,7 +609,7 @@ function Scrub({
         )}
         {hover && (
           <Tip x={hover.x}>
-            <span className="timecode text-fg-1">{tc(hover.f)}</span>
+            <span className="timecode text-fg-1">{tc(axis.frameAt(tAt(view, hover.x, hover.w)))}</span>
           </Tip>
         )}
       </div>
@@ -662,7 +680,10 @@ function Shots({
   onMarkShot: (s: Segment) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ x: number; i: number } | null>(null)
+  // Where the pointer is on the track (its offset and the track's width), not
+  // what is under it: a zoom, a scroll or a page turn moves the shots under a
+  // pointer at rest, and the readout and the hand follow.
+  const [pointer, setPointer] = useState<{ x: number; w: number } | null>(null)
   // The shot the menu is about: the one right-clicked.
   const [menuShot, setMenuShot] = useState(-1)
   // The shot a click was on: the page may turn under the pointer before the
@@ -678,13 +699,15 @@ function Shots({
     (ctx: CanvasRenderingContext2D, w: number, h: number) => drawSegments(ctx, w, h, view, segments, numbers, axis.t),
     [view, segments, numbers, axis.t],
   )
-  const indexAt = (clientX: number) => {
+  const place = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect()
-    const x = Math.min(Math.max(clientX - r.left, 0), r.width)
-    return { x, i: segmentIndexAt(segments, axis.frameAt(tAt(view, x, r.width))) }
+    return { x: Math.min(Math.max(clientX - r.left, 0), r.width), w: r.width }
   }
+  const segmentAt = (p: { x: number; w: number }) => segmentIndexAt(segments, axis.frameAt(tAt(view, p.x, p.w)))
+  const indexAt = (clientX: number) => segmentAt(place(clientX))
   const cur = current >= 0 ? segments[current] : null
-  const hovered = hover && hover.i >= 0 ? segments[hover.i] : null
+  const hoverIndex = pointer ? segmentAt(pointer) : -1
+  const hovered = hoverIndex >= 0 ? segments[hoverIndex] : null
   const seconds = (s: Segment) => (axis.t(s.end) - axis.t(s.start)).toFixed(1)
   const name = (i: number) => (segments[i].kind === "shot" ? `Shot ${numbers[i] + 1}` : SEGMENT_LABEL[segments[i].kind])
   const ms = menuShot >= 0 ? segments[menuShot] : undefined
@@ -712,32 +735,32 @@ function Shots({
     </>
   )
   return (
-    <ContextArea menu={menu} onContextMenu={(e) => setMenuShot(indexAt(e.clientX).i)}>
+    <ContextArea menu={menu} onContextMenu={(e) => setMenuShot(indexAt(e.clientX))}>
       <div
         ref={ref}
         className={cn("relative h-[16px] rounded-md select-none", hovered && "cursor-pointer")}
         role="group"
         aria-label="Shots"
-        onPointerMove={(e) => setHover(indexAt(e.clientX))}
-        onPointerLeave={() => setHover(null)}
+        onPointerMove={(e) => setPointer(place(e.clientX))}
+        onPointerLeave={() => setPointer(null)}
         onClick={(e) => {
-          const i = e.detail > 1 && clicked.current >= 0 ? clicked.current : indexAt(e.clientX).i
+          const i = e.detail > 1 && clicked.current >= 0 ? clicked.current : indexAt(e.clientX)
           clicked.current = i
           if (i < 0) return
           onScrub()
           onSeek(segments[i].start)
         }}
         onDoubleClick={(e) => {
-          const i = clicked.current >= 0 ? clicked.current : indexAt(e.clientX).i
+          const i = clicked.current >= 0 ? clicked.current : indexAt(e.clientX)
           if (segments[i]?.kind === "shot") onMarkShot(segments[i])
         }}
       >
         <TrackCanvas axis={axis} draw={draw} />
         {cur && <Outline left={xOf(view, axis.t(cur.start), width)} right={xOf(view, axis.t(cur.end), width)} width={width} />}
         <HeadLine axis={axis} store={store} />
-        {hover && hovered && (
-          <Tip x={hover.x}>
-            <span className="text-fg-1">{name(hover.i)}</span>
+        {pointer && hovered && (
+          <Tip x={pointer.x}>
+            <span className="text-fg-1">{name(hoverIndex)}</span>
             <span className="timecode text-fg-3">
               {" "}
               · {tc(hovered.start)} · {seconds(hovered)} s{hovered.tiny ? " · tiny" : ""}
@@ -791,7 +814,9 @@ function LaneRow({
   onOpen: (characterId: string) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ x: number; span: Presence } | null>(null)
+  // Where the pointer is on the track, as in Shots: what is under it comes from
+  // the view as it is now.
+  const [pointer, setPointer] = useState<{ x: number; w: number } | null>(null)
   const [menuSpan, setMenuSpan] = useState<Presence | null>(null)
   const c = lane.character
   const { view } = axis
@@ -799,15 +824,17 @@ function LaneRow({
     (ctx: CanvasRenderingContext2D, w: number, h: number) => drawSpans(ctx, w, h, view, lane.spans, focused, axis.t),
     [view, lane.spans, focused, axis.t],
   )
-  const spanAt = (clientX: number) => {
+  const place = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect()
-    const x = clientX - r.left
+    return { x: clientX - r.left, w: r.width }
+  }
+  const spanAt = ({ x, w }: { x: number; w: number }) => {
     // The span under the pointer, else the nearest within a few pixels.
     let best: Presence | null = null
     let dist = 6
     for (const s of lane.spans) {
-      const a = xOf(view, axis.t(s.start), r.width)
-      const b = xOf(view, axis.t(s.end), r.width)
+      const a = xOf(view, axis.t(s.start), w)
+      const b = xOf(view, axis.t(s.end), w)
       const d = x < a ? a - x : x > b ? x - b : 0
       if (d <= dist) {
         dist = d
@@ -816,6 +843,7 @@ function LaneRow({
     }
     return best ? { x, span: best } : null
   }
+  const hover = pointer ? spanAt(pointer) : null
   const go = (f: number) => {
     onScrub()
     onSeek(f)
@@ -863,7 +891,7 @@ function LaneRow({
     <ContextArea
       menu={menu}
       // On the track the appearance under the pointer; on the name, none.
-      onContextMenu={(e) => setMenuSpan(ref.current?.contains(e.target as Node) ? (spanAt(e.clientX)?.span ?? null) : null)}
+      onContextMenu={(e) => setMenuSpan(ref.current?.contains(e.target as Node) ? (spanAt(place(e.clientX))?.span ?? null) : null)}
     >
       <div className="group grid grid-cols-[var(--lane-label-w)_minmax(0,1fr)] items-center gap-3">
         <span className="flex min-w-0 items-center gap-2">
@@ -880,10 +908,10 @@ function LaneRow({
         <div
           ref={ref}
           className={cn("relative h-[20px] rounded-lg group-hover:bg-white/[0.03]", hover && "cursor-pointer")}
-          onPointerMove={(e) => setHover(spanAt(e.clientX))}
-          onPointerLeave={() => setHover(null)}
+          onPointerMove={(e) => setPointer(place(e.clientX))}
+          onPointerLeave={() => setPointer(null)}
           onClick={(e) => {
-            const h = spanAt(e.clientX)
+            const h = spanAt(place(e.clientX))
             if (!h) return
             onScrub()
             onSeek(h.span.start)

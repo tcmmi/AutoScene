@@ -4,7 +4,7 @@ import type { Lane } from "@/lib/presence"
 import { frameAtCount, timecode, timecodeCount } from "@/lib/timecode"
 import { MAX_LANES, visibleLanes } from "./lanes"
 import { ticks } from "./ticks"
-import { centerOn, clampView, fit, follow, panBy, tAt, xOf, zoomAt } from "./viewport"
+import { centerOn, clampView, fit, follow, panBy, tAt, thumb, xOf, zoomAt } from "./viewport"
 
 const LENGTH = 2700 // a 45-minute episode
 const MIN = 1
@@ -49,6 +49,19 @@ describe("the timeline's view", () => {
     expect(follow(away, 130.08, 130.04, LENGTH)).toBe(away)
     // Until it runs into the view and off it again.
     expect(follow(away, 560.04, 559.99, LENGTH).t0).toBeCloseTo(557.04)
+  })
+
+  it("draws the overview's handle as the view, or 1 % of the episode around a narrower one, and keeps it on the track", () => {
+    // Wide enough: the view itself.
+    expect(thumb({ t0: 600, span: 300 }, LENGTH)).toEqual({ t0: 600, span: 300 })
+    expect(thumb(fit(LENGTH), LENGTH)).toEqual(fit(LENGTH))
+    // One second of a 45-minute episode is drawn 27 s wide, around its middle.
+    expect(thumb({ t0: 1000, span: 1 }, LENGTH)).toEqual({ t0: 987, span: 27 })
+    // At either end it is pushed back onto the track and still holds the view.
+    expect(thumb({ t0: 0, span: 1 }, LENGTH)).toEqual({ t0: 0, span: 27 })
+    expect(thumb({ t0: LENGTH - 1, span: 1 }, LENGTH)).toEqual({ t0: LENGTH - 27, span: 27 })
+    // A handle is never wider than the episode.
+    expect(thumb({ t0: 0, span: 5 }, 5)).toEqual({ t0: 0, span: 5 })
   })
 })
 

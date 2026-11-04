@@ -344,6 +344,28 @@ pub async fn plugin_set_after_export(
     Ok(p)
 }
 
+/// Turn a plugin's event on or off: on, it runs by itself when what it
+/// waits for happens.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_set_event(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    plugin_id: String,
+    event_id: String,
+    on: bool,
+) -> AppResult<PluginInfo> {
+    let id = PluginId::parse(&plugin_id)?;
+    let (host, lib) = (host(&state)?, state.library.clone());
+    let p = blocking(move || {
+        let p = host.store.set_event(&id, &event_id, on)?;
+        Ok(info(&p, &host.store, lib.allows_unreviewed_plugins()?))
+    })
+    .await?;
+    changed(&app, Some(p.id.clone()));
+    Ok(p)
+}
+
 /// A plugin's settings: the person's value of each, else its default.
 #[tauri::command]
 #[specta::specta]
@@ -440,6 +462,9 @@ pub async fn plugin_run(
     let trigger = match kind {
         ActionKind::ExportAction => Trigger::Menu,
         ActionKind::Command => Trigger::Palette,
+        ActionKind::Event => {
+            return Err(AppError::new(ErrorCode::Invalid, "An event runs by itself, once it is turned on."));
+        }
     };
     blocking(move || plugins::queue_run(&app, &id, kind, &action_id, trigger, project_id, export_id, None)).await
 }

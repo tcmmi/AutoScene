@@ -248,7 +248,7 @@ describe("an export's edit lists", () => {
 })
 
 describe("an export's plugin actions", () => {
-  const post = { id: "post", title: "Post to Discord", description: null, afterExport: false }
+  const post = { id: "post", title: "Post to Discord", description: null, afterExport: false, afterFailed: false }
   const entry = (name: RegExp) => screen.getByRole("menuitem", { name })
 
   it("runs a plugin's export action", async () => {

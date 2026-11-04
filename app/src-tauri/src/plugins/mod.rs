@@ -19,8 +19,14 @@
 //!
 //! An export that finished whole queues each export action that active
 //! plugins turned on for after every export ([`queue_after_export`]), off
-//! the export's job: a plugin never fails or holds up an export. Queued runs
-//! aren't kept anywhere: one still waiting at quit is lost.
+//! the export's job: a plugin never fails or holds up an export. An export
+//! that failed, or made only some of its clips, queues those of them that
+//! say they run then too (`afterFailed`, [`export_failed`]). A project whose
+//! last analysis of a batch ended (no indexing, analysis or regrouping of it
+//! left) queues the events turned on for that ([`batch_job_ended`]). Both
+//! come from the job runner's listener ([`job_ended`]), which only hands
+//! them on. Queued runs aren't kept anywhere: one still waiting at quit is
+//! lost.
 //!
 //! A run of a plugin that speaks protocol 2 may call AutoScene for its
 //! project, its export and its settings, and reach the hosts it names on
@@ -82,19 +88,19 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use as_api::{ExportSummary, JobKind};
+use as_api::{ExportStatus, ExportSummary, JobInfo, JobKind, JobState};
 use as_core::{AppPaths, CancelToken, ExportId, JobId, ProjectId};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::net::{Transport, UreqTransport};
 use as_plugin::pages::{Mount, Pages};
-use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage};
+use as_plugin::protocol::{ClipContext, EpisodeCounts, EventContext, ExportContext, ProjectContext, RunMessage};
 use as_plugin::service::STOP_GRACE;
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::wasm;
 use as_plugin::{
-    ActionContext, ActionKind, Approval, Caller, CommandSpec, Extra, Grants, HostCalls, HostMethod, Installed, Launch,
-    Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record, Resource, Resources,
-    RunSpec, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
+    ActionContext, ActionKind, Approval, Caller, CommandSpec, EventKind, Extra, Grants, HostCalls, HostMethod,
+    Installed, Launch, Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record,
+    Resource, Resources, RunSpec, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger, Trust, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -283,6 +289,11 @@ pub struct PluginHost {
     uv: Box<dyn GetUv>,
     /// Where the plugins' large files come from and are kept.
     resources: Box<dyn GetResources>,
+    /// The analyses of each project's batch that ended, until its event.
+    batches: Batches,
+    /// Each event run that waits, with its job and what it will be told:
+    /// an event that comes meanwhile is told by it too.
+    told: Mutex<Vec<(RunKey, JobId, EventContext)>>,
 }
 
 /// The plugins in use: by a run, or by an install, update or uninstall.
@@ -376,6 +387,8 @@ pub struct PluginInfo {
     pub export_actions: Vec<PluginExportAction>,
     pub commands: Vec<CommandSpec>,
     pub settings: Vec<SettingSpec>,
+    /// What it may run on by itself, once the person turns it on.
+    pub events: Vec<PluginEvent>,
     /// How it runs: a program for each run, a WebAssembly component in
     /// AutoScene's sandbox, or none (it has only pages).
     pub runtime: RuntimeKind,
@@ -436,6 +449,22 @@ pub struct PluginExportAction {
     pub description: Option<String>,
     /// It runs after every export that finishes.
     pub after_export: bool,
+    /// Turned on for after every export, it also runs after one that failed
+    /// or made only some of its clips.
+    pub after_failed: bool,
+}
+
+/// A moment a plugin may run on by itself.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEvent {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    /// What it waits for.
+    pub on: EventKind,
+    /// The person turned it on: it runs when that happens.
+    pub turned_on: bool,
 }
 
 /// A package (or folder) checked for install, for the person to say yes
@@ -611,6 +640,8 @@ impl PluginHost {
             services: Services::new(start),
             uv,
             resources,
+            batches: Batches::default(),
+            told: Mutex::default(),
         }
     }
 
@@ -953,7 +984,12 @@ impl PluginHost {
         let mut runs = self.runs.lock();
         let live: HashSet<JobId> = jobs.jobs().into_iter().filter(|j| !j.state.is_finished()).map(|j| j.id).collect();
         runs.retain(|job, _| live.contains(job));
-        let same: Vec<JobId> = runs.iter().filter(|(_, k)| **k == key).map(|(job, _)| *job).collect();
+        // An event's run is deduped where it is told ([`PluginHost::tell`]):
+        // one that runs already doesn't keep the next from waiting.
+        let same: Vec<JobId> = match key.kind {
+            ActionKind::Event => Vec::new(),
+            _ => runs.iter().filter(|(_, k)| **k == key).map(|(job, _)| *job).collect(),
+        };
         let job = jobs.submit_unless(|j| same.contains(&j.id), spec, work)?;
         runs.insert(job, key);
         Some(job)
@@ -1020,6 +1056,45 @@ impl PluginHost {
             }
             self.freed.wait_for(&mut busy, WAIT_TICK);
         }
+    }
+}
+
+impl PluginHost {
+    /// Queues with `queue` the run `key` of an event, to tell it `event`
+    /// (with `jobs` the job runner), unless a run of it waits: that one
+    /// tells of `event` too, and None is given. A run that started was told
+    /// already, so one is queued after it. Told while no other event is
+    /// told, so the same run never waits twice.
+    fn tell<E>(
+        &self,
+        jobs: &JobRunner,
+        key: RunKey,
+        event: &EventContext,
+        queue: impl FnOnce(RunKey) -> Result<Option<JobId>, E>,
+    ) -> Result<Option<JobId>, E> {
+        let mut told = self.told.lock();
+        let live: HashSet<JobId> = jobs.jobs().into_iter().filter(|j| !j.state.is_finished()).map(|j| j.id).collect();
+        // One that ended before it started is told nothing more.
+        told.retain(|(_, job, _)| live.contains(job));
+        if let Some((_, _, waiting)) = told.iter_mut().find(|(k, _, _)| *k == key) {
+            waiting.episodes.done += event.episodes.done;
+            waiting.episodes.failed += event.episodes.failed;
+            waiting.at = waiting.at.max(event.at);
+            return Ok(None);
+        }
+        let job = queue(key.clone())?;
+        if let Some(job) = job {
+            told.push((key, job, event.clone()));
+        }
+        Ok(job)
+    }
+
+    /// What the event run `job` tells, as it starts: from now on an event
+    /// queues another run.
+    fn take_event(&self, job: JobId) -> Option<EventContext> {
+        let mut told = self.told.lock();
+        let at = told.iter().position(|(_, j, _)| *j == job)?;
+        Some(told.remove(at).2)
     }
 }
 
@@ -1109,6 +1184,7 @@ fn name(p: &Installed) -> &str {
 
 /// `p` as the app shows it, with `allow_unreviewed` the setting.
 pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo {
+    let events = p.manifest.as_ref().map_or(&[][..], |m| &m.events);
     let m = p.manifest.as_ref();
     let id = &p.record.id;
     let actions = m.map_or(&[][..], |m| &m.export_actions);
@@ -1141,10 +1217,21 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
                 title: a.title.clone(),
                 description: a.description.clone(),
                 after_export: p.record.after_export.contains(&a.id),
+                after_failed: a.after_failed,
             })
             .collect(),
         commands: m.map(|m| m.commands.clone()).unwrap_or_default(),
         settings: m.map(|m| m.settings.clone()).unwrap_or_default(),
+        events: events
+            .iter()
+            .map(|e| PluginEvent {
+                id: e.id.clone(),
+                title: e.title.clone(),
+                description: e.description.clone(),
+                on: e.on,
+                turned_on: p.extra.events.contains(&e.id),
+            })
+            .collect(),
         runtime: m.map_or_else(|| p.extra.agreed_runtime(), |m| m.runtime.kind),
         sandbox: m.and_then(sandbox),
         protocol: m.map_or(1, |m| m.engines.protocol),
@@ -1172,11 +1259,11 @@ fn sandbox(m: &Manifest) -> Option<PluginSandbox> {
 pub fn review(t: &Ticket, host: &PluginHost, allow_unreviewed: bool) -> PluginReview {
     let store = &host.store;
     let needs_unreviewed = t.verdict.trust != Trust::Reviewed;
-    let plugin = info(&as_installed(t), store, allow_unreviewed);
     // The installed version as it is now: the pages a loaded folder's
-    // plugin.json may have changed since its record was written, and the
-    // runtime the person agreed to.
+    // plugin.json may have changed since its record was written, the
+    // runtime the person agreed to, and the events they turned on.
     let before = t.previous.as_ref().and_then(|p| store.get(&p.id).ok());
+    let plugin = info(&as_installed(t, before.as_ref()), store, allow_unreviewed);
     PluginReview {
         ticket_id: t.id.to_string(),
         update: t.previous.as_ref().map(|previous| update(previous, before.as_ref(), &t.manifest)),
@@ -1193,14 +1280,16 @@ pub fn review(t: &Ticket, host: &PluginHost, allow_unreviewed: bool) -> PluginRe
 }
 
 /// The plugin of `t` as it would be once installed, in the folder it was
-/// checked in (as [`Store::commit`] keeps what the version before had; its
-/// secrets aren't shown before it is).
-fn as_installed(t: &Ticket) -> Installed {
+/// checked in (as [`Store::commit`] keeps what the version before had,
+/// which is `before` as it is now; its secrets aren't shown before it is).
+fn as_installed(t: &Ticket, before: Option<&Installed>) -> Installed {
     let m = &t.manifest;
     let previous = t.previous.as_ref();
     let after_export = previous.map_or_else(Vec::new, |p| {
-        p.after_export.iter().filter(|a| m.export_actions.iter().any(|e| e.id == **a)).cloned().collect()
+        as_plugin::store::after_export_kept(m, before.and_then(|b| b.manifest.as_ref()), &p.after_export)
     });
+    let turned_on = before.map_or(&[][..], |b| &b.extra.events);
+    let events = m.events.iter().filter(|e| turned_on.contains(&e.id)).map(|e| e.id.clone()).collect();
     let dir = match (&t.staged, &t.source) {
         (Some(staged), _) => staged.clone(),
         (None, Source::Folder { path }) => PathBuf::from(path),
@@ -1225,7 +1314,7 @@ fn as_installed(t: &Ticket) -> Installed {
         warnings: t.warnings.clone(),
         dir,
         broken: None,
-        extra: Extra::agreed(m.runtime.kind),
+        extra: Extra { events, ..Extra::agreed(m.runtime.kind) },
         // A version the catalog withdrew is never staged.
         withdrawn: None,
     }
@@ -1281,9 +1370,16 @@ pub fn queue_run(
     export_id: Option<ExportId>,
     input: Option<Value>,
 ) -> AppResult<Option<JobId>> {
+    let key = RunKey::new(id, kind, action, project_id, export_id, input.as_ref());
+    queue_key(app, key, trigger, input)
+}
+
+/// Queues the run `key`, started by `trigger`, as [`queue_run`] says: with
+/// `input` from a page. A run of an event takes what happened as it starts
+/// ([`PluginHost::tell`]).
+fn queue_key(app: &AppHandle, key: RunKey, trigger: Trigger, input: Option<Value>) -> AppResult<Option<JobId>> {
     let state = app.state::<AppState>();
     let host = host(&state)?;
-    let key = RunKey::new(id, kind, action, project_id, export_id, input.as_ref());
     let work = |gpu| {
         let (app, host, key) = (app.clone(), host.clone(), key.clone());
         move |ctx: &JobCtx| run(&app, &host, ctx, &key, trigger, input, gpu)
@@ -1300,13 +1396,14 @@ fn takes(p: &Installed, trigger: Trigger) -> PluginResult<()> {
         Trigger::Page => {
             as_plugin::calls::check(HostMethod::ActionsRun, &Caller::Page { project: None }, &Grants::of(p)?)
         }
-        Trigger::Menu | Trigger::AfterExport | Trigger::Palette => Ok(()),
+        Trigger::Menu | Trigger::AfterExport | Trigger::Palette | Trigger::Event => Ok(()),
     }
 }
 
 /// The title of the action `action` of `kind` in `m`, when it may run with
 /// what it is given: an export action needs an export (with its project),
-/// a command never runs on one, and one that needs a project needs it.
+/// a command never runs on one, and one that needs a project needs it. An
+/// event runs in the project where it happened, on no export.
 fn action_title(
     m: &Manifest,
     kind: ActionKind,
@@ -1342,6 +1439,13 @@ fn action_title(
             }
             Ok(c.title.clone())
         }
+        ActionKind::Event => {
+            let Some(e) = m.events.iter().find(|e| e.id == action) else { return Err(no_such()) };
+            if export_id.is_some() || project_id.is_none() {
+                return refused("An event runs in the project where it happened.");
+            }
+            Ok(e.title.clone())
+        }
     }
 }
 
@@ -1362,9 +1466,10 @@ fn job_spec(m: &Manifest, title: &str, project_id: Option<ProjectId>, export_id:
     }
 }
 
-/// The queued run `key`, started by `trigger` with `input`, now it starts;
-/// `gpu` is whether it waited as analysis. A program of protocol 2 gets its
-/// calls answered; a WebAssembly plugin runs in the sandbox.
+/// The queued run `key`, started by `trigger` with `input` (a run of an
+/// event with what it was told), now it starts; `gpu` is whether it waited
+/// as analysis. A program of protocol 2 gets its calls answered; a
+/// WebAssembly plugin runs in the sandbox.
 fn run(
     app: &AppHandle,
     host: &Arc<PluginHost>,
@@ -1381,8 +1486,18 @@ fn run(
     let p = startable(&host.store, &state.library, key, trigger, gpu)?;
     let action = ActionContext { kind: key.kind, id: key.action.clone(), trigger };
     let report = |stage: &str, f: Option<f64>| ctx.report(stage, f);
+    // What a run of an event tells, taken as it starts, whichever way it
+    // runs: until then, one that comes is told by it too.
+    let told = || match key.kind {
+        ActionKind::Event => {
+            let nothing = || JobError::Failed("Nothing happened for it to tell.".into());
+            host.take_event(ctx.id).map(Some).ok_or_else(nothing)
+        }
+        _ => Ok(None),
+    };
     let said = if sandboxed(&p) {
-        let spec = wasm_spec_for(host, &*state.library, (&p, key), action, input, &ctx.cancel, &report)?;
+        let mut spec = wasm_spec_for(host, &*state.library, (&p, key), action, input, &ctx.cancel, &report)?;
+        spec.message.event = told()?;
         ctx.stage(&format!("Starting {}", spec.name));
         wasm::run(spec, &ctx.cancel, &|stage, f| ctx.report(stage, f))
     } else {
@@ -1390,6 +1505,7 @@ fn run(
         let tools_at = (tools.ffmpeg.as_path(), tools.ffprobe.as_path(), tools.version.as_str());
         let mut spec = host.run_spec(&p, action, tools_at, &ctx.cancel, &report).map_err(plugin_job_error)?;
         add_context(&mut spec.message, &*state.library, key, input).map_err(job_error)?;
+        spec.message.event = told()?;
         let calls = calls_for(&state.library, host, &p, key, spec.protocol).map_err(plugin_job_error)?;
         spec.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
         ctx.stage(&format!("Starting {}", spec.name));
@@ -1491,7 +1607,8 @@ fn startable(store: &Store, lib: &Library, key: &RunKey, trigger: Trigger, gpu: 
 }
 
 /// Gives `message` what the run `key` is for: the project it runs in and
-/// the export it runs on, as `places` has them now, and `input`, what its
+/// the export it runs on, as `places` has them now (how the export went
+/// only for a run of protocol 2, whose line has it), and `input`, what its
 /// page handed it.
 fn add_context(
     message: &mut RunMessage,
@@ -1504,7 +1621,11 @@ fn add_context(
     let project = places.project(project_id)?;
     message.project = Some(project_context(&project)?);
     if let Some(export_id) = key.export_id {
-        message.export = Some(export_context(&project, &places.export(&project, export_id)?)?);
+        let mut export = export_context(&project, &places.export(&project, export_id)?)?;
+        if message.protocol < 2 {
+            export.status = None;
+        }
+        message.export = Some(export);
     }
     Ok(())
 }
@@ -1571,6 +1692,32 @@ fn export_context(project: &Project, export: &ExportSummary) -> ProjectResult<Ex
         created_at: export.created_at,
         merged_file: export.merged.as_ref().and_then(|f| f.path.clone()),
         clips,
+        status: export_outcome(export).map(str::to_owned),
+    })
+}
+
+/// How `export` went, as a run of protocol 2 is told: `done`, `partial`
+/// (some of what it was to make is missing) or `failed` (it made nothing).
+/// None while it waits or runs, and once it was cancelled: it didn't go
+/// any way yet, or went no way the person would be told of.
+fn export_outcome(export: &ExportSummary) -> Option<&'static str> {
+    if !matches!(export.status, ExportStatus::Done | ExportStatus::Failed) {
+        return None;
+    }
+    let made = |path: &Option<String>, error: &Option<String>| path.is_some() && error.is_none();
+    let clips_made = export.items.iter().filter(|i| i.status == ExportStatus::Done && made(&i.path, &i.error)).count();
+    let (whole, some) = match &export.merged {
+        // Its clips are parts of the one file.
+        Some(file) => {
+            let file = made(&file.path, &file.error);
+            (file && clips_made == export.items.len(), file)
+        }
+        None => (clips_made == export.items.len(), clips_made > 0),
+    };
+    Some(match (whole && export.status == ExportStatus::Done, some) {
+        (true, _) => "done",
+        (false, true) => "partial",
+        (false, false) => "failed",
     })
 }
 
@@ -1629,6 +1776,251 @@ fn after_export_runs(plugins: &[Installed], allow_unreviewed: bool) -> Vec<(&Plu
             actions.iter().filter(|a| p.record.after_export.contains(&a.id)).map(|a| (&p.record.id, a.id.as_str()))
         })
         .collect()
+}
+
+/// The export actions to run after an export that failed or made only some
+/// of its clips: of each active plugin, those it turned on for after every
+/// export that say they run then too (`afterFailed`), in its order.
+fn after_failed_runs(plugins: &[Installed], allow_unreviewed: bool) -> Vec<(&PluginId, &str)> {
+    plugins
+        .iter()
+        .filter(|p| active(p, allow_unreviewed))
+        .flat_map(|p| {
+            let actions = p.manifest.as_ref().map_or(&[][..], |m| &m.export_actions);
+            actions
+                .iter()
+                .filter(|a| a.after_failed && p.record.after_export.contains(&a.id))
+                .map(|a| (&p.record.id, a.id.as_str()))
+        })
+        .collect()
+}
+
+/// The events to run when what `on` names happened: of each active plugin,
+/// those waiting for it that the person turned on, in its order.
+fn event_runs(plugins: &[Installed], allow_unreviewed: bool, on: EventKind) -> Vec<(&PluginId, &str)> {
+    plugins
+        .iter()
+        .filter(|p| active(p, allow_unreviewed))
+        .flat_map(|p| {
+            let events = p.manifest.as_ref().map_or(&[][..], |m| &m.events);
+            events
+                .iter()
+                .filter(|e| e.on == on && p.extra.events.contains(&e.id))
+                .map(|e| (&p.record.id, e.id.as_str()))
+        })
+        .collect()
+}
+
+/// What a job that ended sets off for plugins.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Moment {
+    /// An export failed, or made only some of its clips: the export
+    /// actions turned on that run then too ([`after_failed_runs`]).
+    ExportFailed { project: ProjectId, export: ExportId },
+    /// An indexing, analysis or regrouping of a project ended: perhaps the
+    /// last of a batch ([`Batches`]).
+    BatchJob(ProjectId),
+}
+
+/// What `info`, a job that ended, sets off. An export that finished whole
+/// queues its runs itself ([`queue_after_export`]), so each runs once, and
+/// one that was cancelled tells no one.
+fn moment(info: &JobInfo) -> Option<Moment> {
+    match (info.kind, info.state, info.project_id) {
+        (JobKind::Export, JobState::Failed, Some(project)) => {
+            info.export_id.map(|export| Moment::ExportFailed { project, export })
+        }
+        (JobKind::Ingest | JobKind::Analyze | JobKind::Regroup, state, Some(project)) if state.is_finished() => {
+            Some(Moment::BatchJob(project))
+        }
+        _ => None,
+    }
+}
+
+/// Tells the plugins of `app` that the job `info` changed, as the job
+/// runner's listener does: what one that ended sets off is queued off the
+/// listener, which only hands it on.
+pub fn job_ended(app: &AppHandle, info: &JobInfo) {
+    if moment(info).is_none() {
+        return;
+    }
+    let (app, info) = (app.clone(), info.clone());
+    tauri::async_runtime::spawn_blocking(move || hand_on(&info, &app));
+}
+
+/// Where [`job_ended`] hands what a job's end sets off: the app, or a
+/// test's stand-in.
+trait SetOff {
+    /// The export `export` of `project` failed, or made only some of its
+    /// clips.
+    fn export_failed(&self, project: ProjectId, export: ExportId);
+    /// `info`, an indexing, analysis or regrouping of a project, ended.
+    fn batch_job_ended(&self, info: &JobInfo);
+}
+
+impl SetOff for AppHandle {
+    fn export_failed(&self, project: ProjectId, export: ExportId) {
+        export_failed(self, project, export);
+    }
+
+    fn batch_job_ended(&self, info: &JobInfo) {
+        batch_job_ended(self, info);
+    }
+}
+
+/// Hands what `info`, a job that ended, sets off to `to`.
+fn hand_on(info: &JobInfo, to: &impl SetOff) {
+    match moment(info) {
+        Some(Moment::ExportFailed { project, export }) => to.export_failed(project, export),
+        Some(Moment::BatchJob(_)) => to.batch_job_ended(info),
+        None => {}
+    }
+}
+
+/// The installed plugins of `app` and the setting, for runs it queues by
+/// itself; `what` names those runs in the log when they can't be read.
+fn plugins_now(app: &AppHandle, what: &str) -> Option<(Vec<Installed>, bool)> {
+    let state = app.try_state::<AppState>()?;
+    let host = state.plugins.clone()?;
+    let plugins = host.store.list().map_err(|e| e.detail());
+    let allow = state.library.allows_unreviewed_plugins().map_err(|e| e.detail());
+    match (plugins, allow) {
+        (Ok(plugins), Ok(allow)) => Some((plugins, allow)),
+        (Err(e), _) | (_, Err(e)) => {
+            log::warn!("plugins {what}: {e}");
+            None
+        }
+    }
+}
+
+/// Queues, for the export `export` of `project` that failed or made only
+/// some of its clips, the export actions turned on that run then too.
+/// What goes wrong is only logged.
+fn export_failed(app: &AppHandle, project: ProjectId, export: ExportId) {
+    let what = format!("after failed export {export}");
+    let Some((plugins, allow)) = plugins_now(app, &what) else { return };
+    for (id, action) in after_failed_runs(&plugins, allow) {
+        let queued = queue_run(
+            app,
+            id,
+            ActionKind::ExportAction,
+            action,
+            Trigger::AfterExport,
+            Some(project),
+            Some(export),
+            None,
+        );
+        match queued {
+            Ok(Some(_)) => {}
+            Ok(None) => log::info!("{id} {action} {what}: waits or runs already"),
+            Err(e) => log::warn!("running {id} {what}: {}", e.message),
+        }
+    }
+}
+
+/// Notes that `info`, an indexing, analysis or regrouping of a project,
+/// ended; once it was the last of the project's batch, queues the events
+/// turned on for an analysis that finished.
+fn batch_job_ended(app: &AppHandle, info: &JobInfo) {
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let (Some(host), Some(project)) = (state.plugins.clone(), info.project_id) else { return };
+    if let Some(episodes) = host.batches.ended(info, || state.jobs.jobs()) {
+        let event = EventContext { kind: EventKind::AnalysisFinished, at: as_api::now_ms(), episodes };
+        queue_event(app, project, event);
+    }
+}
+
+/// Queues the events that wait for `event`, which happened in `project`,
+/// of each active plugin that turned them on. The same event of a plugin
+/// waits once: one that waits tells of `event` too, and one that runs was
+/// told its own, so another follows it ([`PluginHost::tell`]). What goes
+/// wrong is only logged.
+fn queue_event(app: &AppHandle, project: ProjectId, event: EventContext) {
+    let what = format!("on {} in {project}", event.kind.name());
+    let Some((plugins, allow)) = plugins_now(app, &what) else { return };
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let Some(host) = state.plugins.clone() else { return };
+    for (id, name) in event_runs(&plugins, allow, event.kind) {
+        let key = RunKey::new(id, ActionKind::Event, name, Some(project), None, None);
+        match host.tell(&state.jobs, key, &event, |key| queue_key(app, key, Trigger::Event, None)) {
+            Ok(Some(_)) => {}
+            Ok(None) => log::info!("{id} {name} {what}: the run that waits tells of it too"),
+            Err(e) => log::warn!("running {id} {name} {what}: {}", e.message),
+        }
+    }
+}
+
+/// Notes that the analysis job `job` of `project` analysed what it had to,
+/// before it ends: done or failed, an analysis event counts it. One that
+/// found its episode analysed already, or handed it to a restart, isn't
+/// counted.
+pub fn analysis_worked(state: &AppState, project: ProjectId, job: JobId) {
+    if let Some(host) = &state.plugins {
+        host.batches.worked(project, job);
+    }
+}
+
+/// The analyses of each project that ended since it last told of a batch,
+/// and the jobs of its batches whose end was noted: an analysis event fires
+/// once a project's indexing, analysis and regrouping are all over, and
+/// counts only analyses that had something to do.
+#[derive(Default)]
+struct Batches(Mutex<HashMap<ProjectId, Batch>>);
+
+#[derive(Default)]
+struct Batch {
+    /// The analyses that ended since the last event: done or failed (one
+    /// cancelled isn't counted).
+    episodes: EpisodeCounts,
+    /// The batch jobs whose end was noted, of those the job runner lists.
+    noted: HashSet<JobId>,
+    /// The analyses that said they analysed something ([`analysis_worked`]),
+    /// until their end is noted.
+    worked: HashSet<JobId>,
+}
+
+impl Batches {
+    /// Notes that the analysis `job` of `project` analysed something.
+    fn worked(&self, project: ProjectId, job: JobId) {
+        self.0.lock().entry(project).or_default().worked.insert(job);
+    }
+
+    /// Notes the end of `info`, a batch job of a project (an indexing,
+    /// analysis or regrouping), with `jobs` giving the job runner's jobs:
+    /// the episodes to tell of when nothing of the batch is left, else
+    /// none. A job of the batch that waits or runs is left; so is one that
+    /// ended and whose end isn't noted yet: that note tells. The jobs are
+    /// read once the note holds the lock, so the last note sees every end
+    /// before it: two analyses that end at once tell once, whichever note
+    /// comes first.
+    fn ended(&self, info: &JobInfo, jobs: impl FnOnce() -> Vec<JobInfo>) -> Option<EpisodeCounts> {
+        let project = info.project_id?;
+        let mut batches = self.0.lock();
+        let jobs = jobs();
+        let batch = batches.entry(project).or_default();
+        // Only an analysis that analysed something is counted.
+        if batch.noted.insert(info.id) && info.kind == JobKind::Analyze && batch.worked.remove(&info.id) {
+            match info.state {
+                JobState::Done => batch.episodes.done += 1,
+                JobState::Failed => batch.episodes.failed += 1,
+                _ => {}
+            }
+        }
+        let of_batch: Vec<&JobInfo> = jobs
+            .iter()
+            .filter(|j| {
+                j.project_id == Some(project) && matches!(j.kind, JobKind::Ingest | JobKind::Analyze | JobKind::Regroup)
+            })
+            .collect();
+        // What the runner no longer lists can't be waited for.
+        batch.noted.retain(|id| of_batch.iter().any(|j| j.id == *id));
+        batch.worked.retain(|id| of_batch.iter().any(|j| j.id == *id));
+        let left = of_batch.iter().any(|j| !j.state.is_finished() || !batch.noted.contains(&j.id));
+        if left || batch.episodes == EpisodeCounts::default() {
+            return None;
+        }
+        Some(std::mem::take(&mut batch.episodes))
+    }
 }
 
 /// Of the plugin jobs `runs`, those to stop once plugins AutoScene hasn't
@@ -3029,6 +3421,8 @@ mod tests {
         let got = export_context(&project, &export).unwrap();
         assert_eq!((got.id, got.label.as_deref()), (export.id.to_string(), Some("Walter · scenepack")));
         assert_eq!((got.preset, got.out_dir.as_str(), got.created_at), (export.preset.id.clone(), "/out", 7));
+        // Every clip made: it went whole (a run of protocol 1 isn't told).
+        assert_eq!(got.status.as_deref(), Some("done"));
         let clips: Vec<_> = got
             .clips
             .iter()
@@ -3066,6 +3460,33 @@ mod tests {
         // An export removed since stops the run.
         let removed = key(&p.record.id, ActionKind::ExportAction, "post", Some(summary.id), Some(ExportId::new()));
         assert!(matches!(add_context(&mut message, &lib, &removed, None), Err(ProjectError::NotFound(_))));
+
+        // A run of protocol 1 is never told how the export went: its line
+        // stays as it was. One of protocol 2 is.
+        struct Exported<'a>(&'a Library, &'a ExportSummary);
+        impl calls::Places for Exported<'_> {
+            fn project(&self, id: ProjectId) -> ProjectResult<Arc<Project>> {
+                self.0.project(id)
+            }
+            fn exports(&self, _: &Project) -> ProjectResult<Vec<ExportSummary>> {
+                Ok(vec![self.1.clone()])
+            }
+            fn export(&self, _: &Project, _: ExportId) -> ProjectResult<ExportSummary> {
+                Ok(self.1.clone())
+            }
+        }
+        let post = key(&p.record.id, ActionKind::ExportAction, "post", Some(summary.id), Some(export.id));
+        let action =
+            || ActionContext { kind: ActionKind::ExportAction, id: "post".into(), trigger: Trigger::AfterExport };
+        let mut message =
+            host.store.run_spec(&p, action(), Path::new("ffmpeg"), Path::new("ffprobe"), "9.0").unwrap().message;
+        assert_eq!(message.protocol, 1);
+        add_context(&mut message, &Exported(&lib, &export), &post, None).unwrap();
+        let told = message.export.as_ref().map(|e| (e.id.clone(), e.status.clone()));
+        assert_eq!(told, Some((export.id.to_string(), None)));
+        message.protocol = 2;
+        add_context(&mut message, &Exported(&lib, &export), &post, None).unwrap();
+        assert_eq!(message.export.and_then(|e| e.status).as_deref(), Some("done"));
         drop((host, project, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
     }
@@ -3300,5 +3721,541 @@ mod tests {
         assert!(!other.exists());
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// `p` with the export actions `actions` running after a failed export
+    /// too.
+    fn failing(mut p: Installed, actions: &[&str]) -> Installed {
+        for a in &mut p.manifest.as_mut().unwrap().export_actions {
+            a.after_failed = actions.contains(&a.id.as_str());
+        }
+        p
+    }
+
+    /// `p` with the events `events` (waiting for an analysis), of which the
+    /// person turned on `on`.
+    fn waiting(mut p: Installed, events: &[&str], on: &[&str]) -> Installed {
+        p.manifest.as_mut().unwrap().events = events
+            .iter()
+            .map(|e| as_plugin::EventSpec {
+                id: (*e).into(),
+                title: format!("Tell {e}"),
+                description: None,
+                on: EventKind::AnalysisFinished,
+            })
+            .collect();
+        p.extra.events = on.iter().map(|e| (*e).to_owned()).collect();
+        p
+    }
+
+    fn named(runs: Vec<(&PluginId, &str)>) -> Vec<String> {
+        runs.into_iter().map(|(id, a)| format!("{id} {a}")).collect()
+    }
+
+    /// A job of `kind` of `project` (on `export`) as the runner says it ended.
+    fn job(kind: JobKind, state: JobState, project: Option<ProjectId>, export: Option<ExportId>) -> JobInfo {
+        JobInfo {
+            id: JobId::new(),
+            kind,
+            title: "A job".into(),
+            subtitle: None,
+            project_id: project,
+            media_id: None,
+            export_id: export,
+            state,
+            progress: None,
+            stage: None,
+            eta_ms: None,
+            frames: None,
+            error: None,
+            message: None,
+            created_at: 0,
+            finished_at: Some(1),
+            rev: 1,
+        }
+    }
+
+    /// An export of `items` (each its status, and whether its file was
+    /// made), joined into one file when `merged` says whether that was made.
+    fn exported(status: ExportStatus, items: &[(ExportStatus, bool)], merged: Option<bool>) -> ExportSummary {
+        let items = items
+            .iter()
+            .enumerate()
+            .map(|(i, (status, made))| ExportItem {
+                id: i as i64,
+                media_id: as_core::MediaId::new(),
+                start: 0,
+                end: 24,
+                name: format!("Clip {i}"),
+                status: *status,
+                path: made.then(|| format!("/out/Clip {i}.mp4")),
+                verified: *made,
+                encoder: None,
+                bytes: None,
+                error: (!made).then(|| "It failed.".to_owned()),
+            })
+            .collect();
+        ExportSummary {
+            id: ExportId::new(),
+            project_id: ProjectId::new(),
+            created_at: 7,
+            preset: as_export::builtin_presets()[0].clone(),
+            out_dir: "/out".into(),
+            status,
+            items,
+            label: None,
+            merged: merged.map(|made| as_api::MergedFile {
+                name: "All".into(),
+                path: made.then(|| "/out/All.mp4".to_owned()),
+                verified: made,
+                bytes: None,
+                error: (!made).then(|| "Joining failed.".to_owned()),
+            }),
+        }
+    }
+
+    #[test]
+    fn after_failed_runs_for_partial_and_failed_never_cancelled() {
+        let post = failing(after(plugin("dev.a.post", Trust::Reviewed, false), &["post", "tag"]), &["post"]);
+        // It may run after a failed export, but the person never turned it on.
+        let unasked = failing(after(plugin("dev.a.unasked", Trust::Reviewed, false), &[]), &["post"]);
+        let mut off = failing(after(plugin("dev.a.off", Trust::Reviewed, false), &["post"]), &["post"]);
+        off.record.enabled = false;
+        let unreviewed = failing(after(plugin("dev.a.unreviewed", Trust::Unreviewed, false), &["tag"]), &["tag"]);
+        let plugins = [post, unasked, off, unreviewed];
+        assert_eq!(named(after_failed_runs(&plugins, false)), ["dev.a.post post"]);
+        assert_eq!(named(after_failed_runs(&plugins, true)), ["dev.a.post post", "dev.a.unreviewed tag"]);
+
+        // An export job that failed sets them off; one cancelled or done doesn't.
+        let (project, export) = (Some(ProjectId::new()), Some(ExportId::new()));
+        let failed = job(JobKind::Export, JobState::Failed, project, export);
+        assert_eq!(moment(&failed), Some(Moment::ExportFailed { project: project.unwrap(), export: export.unwrap() }));
+        for state in [JobState::Cancelled, JobState::Done, JobState::Running] {
+            assert_eq!(moment(&job(JobKind::Export, state, project, export)), None, "{state:?}");
+        }
+        assert_eq!(moment(&job(JobKind::Export, JobState::Failed, project, None)), None);
+        assert_eq!(moment(&job(JobKind::Plugin, JobState::Failed, project, export)), None);
+
+        // The run is told how it went: some clips made, or none.
+        use ExportStatus::{Cancelled, Queued, Running};
+        use ExportStatus::{Done, Failed};
+        let outcome = |status, items: &[(ExportStatus, bool)], merged| export_outcome(&exported(status, items, merged));
+        assert_eq!(outcome(Failed, &[(Done, true), (Failed, false)], None), Some("partial"));
+        assert_eq!(outcome(Failed, &[(Failed, false), (Failed, false)], None), Some("failed"));
+        assert_eq!(outcome(Done, &[(Done, true), (Done, true)], None), Some("done"));
+        // A joined export is its one file.
+        assert_eq!(outcome(Failed, &[(Done, true), (Done, true)], Some(false)), Some("failed"));
+        assert_eq!(outcome(Failed, &[(Done, true), (Failed, false)], Some(true)), Some("partial"));
+        assert_eq!(outcome(Done, &[(Done, true)], Some(true)), Some("done"));
+        // One that waits, runs or was cancelled went no way yet (exports.get
+        // shows each).
+        assert_eq!(outcome(Queued, &[(Queued, false); 2], None), None);
+        assert_eq!(outcome(Running, &[(Done, true), (Running, false)], None), None);
+        assert_eq!(outcome(Running, &[(Running, false), (Queued, false)], None), None);
+        assert_eq!(outcome(Cancelled, &[(Done, true), (Cancelled, false)], None), None);
+        assert_eq!(outcome(Cancelled, &[(Cancelled, false)], Some(false)), None);
+    }
+
+    #[test]
+    fn after_failed_runs_when_ffmpeg_is_missing() {
+        // The export's job fails before it renders anything, as it does when
+        // FFmpeg isn't found: the job runner's word is all there is.
+        let (tx, ended) = mpsc::channel();
+        let tx = Mutex::new(tx);
+        let jobs = JobRunner::new(&[(Class::Export, 1)], move |e| {
+            if let as_jobs::JobEvent::Changed(info) = e
+                && info.state.is_finished()
+            {
+                drop(tx.lock().send(info));
+            }
+        });
+        let (project, export) = (ProjectId::new(), ExportId::new());
+        let spec = JobSpec {
+            kind: JobKind::Export,
+            class: Class::Export,
+            title: "Exporting 2 clips".into(),
+            subtitle: None,
+            project_id: Some(project),
+            media_id: None,
+            export_id: Some(export),
+        };
+        jobs.submit(spec, |_| Err(JobError::Failed("FFmpeg wasn't found.".into())));
+        let info = ended.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(moment(&info), Some(Moment::ExportFailed { project, export }));
+        // The export it marked failed made nothing.
+        let unmade = exported(ExportStatus::Failed, &[(ExportStatus::Queued, false); 2], None);
+        assert_eq!(export_outcome(&unmade), Some("failed"));
+    }
+
+    /// What a job's end set off, as [`hand_on`] handed it on.
+    #[derive(Default)]
+    struct SetOffs(Mutex<Vec<String>>);
+
+    impl SetOff for SetOffs {
+        fn export_failed(&self, _: ProjectId, export: ExportId) {
+            self.0.lock().push(format!("export {export} failed"));
+        }
+
+        fn batch_job_ended(&self, info: &JobInfo) {
+            self.0.lock().push(format!("{:?} {:?}", info.kind, info.state));
+        }
+    }
+
+    #[test]
+    fn a_job_s_end_is_handed_on_to_what_it_sets_off() {
+        let (project, export) = (Some(ProjectId::new()), Some(ExportId::new()));
+        let set_off = |kind, state| {
+            let to = SetOffs::default();
+            hand_on(&job(kind, state, project, export), &to);
+            to.0.into_inner()
+        };
+        // A failed export queues the actions that run then too; one done
+        // queued its own, and one cancelled tells no one.
+        assert_eq!(set_off(JobKind::Export, JobState::Failed), [format!("export {} failed", export.unwrap())]);
+        for state in [JobState::Done, JobState::Cancelled, JobState::Running, JobState::Queued] {
+            assert!(set_off(JobKind::Export, state).is_empty(), "{state:?}");
+        }
+        // Each batch job that ended is noted, however it ended; one that
+        // waits or runs isn't.
+        for kind in [JobKind::Ingest, JobKind::Analyze, JobKind::Regroup] {
+            for state in [JobState::Done, JobState::Failed, JobState::Cancelled] {
+                assert_eq!(set_off(kind, state), [format!("{kind:?} {state:?}")]);
+            }
+            for state in [JobState::Queued, JobState::Running] {
+                assert!(set_off(kind, state).is_empty(), "{kind:?} {state:?}");
+            }
+        }
+        assert!(set_off(JobKind::Portraits, JobState::Done).is_empty());
+        assert!(set_off(JobKind::Plugin, JobState::Failed).is_empty());
+    }
+
+    #[test]
+    fn a_whole_export_queues_each_action_once() {
+        let p = failing(after(plugin("dev.a.post", Trust::Reviewed, false), &["post", "tag"]), &["post"]);
+        let plugins = [p];
+        // The export queues each action it turned on itself; its job's end adds none.
+        let (project, export) = (Some(ProjectId::new()), Some(ExportId::new()));
+        assert_eq!(moment(&job(JobKind::Export, JobState::Done, project, export)), None);
+        assert_eq!(named(after_export_runs(&plugins, true)), ["dev.a.post post", "dev.a.post tag"]);
+        // A failed one queues only those that run then too, once.
+        assert_eq!(named(after_failed_runs(&plugins, true)), ["dev.a.post post"]);
+    }
+
+    #[test]
+    fn events_of_plugins_that_may_not_run_are_not_queued() {
+        let on = waiting(plugin("dev.a.on", Trust::Reviewed, false), &["done", "tally"], &["tally", "done", "gone"]);
+        let unasked = waiting(plugin("dev.a.unasked", Trust::Reviewed, false), &["done"], &[]);
+        let mut off = waiting(plugin("dev.a.off", Trust::Reviewed, false), &["done"], &["done"]);
+        off.record.enabled = false;
+        let mut broken = waiting(plugin("dev.a.broken", Trust::Reviewed, false), &["done"], &["done"]);
+        broken.broken = Some(as_plugin::store::MISSING.into());
+        let mut withdrawn = waiting(plugin("dev.a.withdrawn", Trust::Reviewed, false), &["done"], &["done"]);
+        withdrawn.withdrawn = Some("It sent export paths to a server.".into());
+        let unreviewed = waiting(plugin("dev.a.unreviewed", Trust::Unreviewed, false), &["done"], &["done"]);
+        let plugins = [on, unasked, off, broken, withdrawn, unreviewed];
+        // In the order its plugin.json lists them; one it no longer has is left out.
+        let runs = |allow| named(event_runs(&plugins, allow, EventKind::AnalysisFinished));
+        assert_eq!(runs(false), ["dev.a.on done", "dev.a.on tally"]);
+        assert_eq!(runs(true), ["dev.a.on done", "dev.a.on tally", "dev.a.unreviewed done"]);
+
+        // Settings shows each, and whether it is on.
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-events-{}", std::process::id()));
+        let (lib, host) = host_in(&tmp);
+        let shown = info(&plugins[0], &host.store, false);
+        let events: Vec<_> = shown.events.iter().map(|e| (e.id.as_str(), e.on, e.turned_on)).collect();
+        assert_eq!(events, [("done", EventKind::AnalysisFinished, true), ("tally", EventKind::AnalysisFinished, true)]);
+        assert!(!info(&plugins[1], &host.store, false).events[0].turned_on);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_same_event_waits_once() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-event-once-{}", std::process::id()));
+        let (lib, host) = host_in(&tmp);
+        lib.set_allows_unreviewed_plugins(true).unwrap();
+        let mut m = manifest("dev.a.tell", false);
+        m["manifestVersion"] = serde_json::json!(2);
+        m["contributes"]["events"] =
+            serde_json::json!([{"id": "done", "title": "Tell the channel", "on": "analysisFinished"}]);
+        let id = host.store.commit(folder(&host, &tmp, &m), true, true).unwrap().record.id;
+        host.store.set_event(&id, "done", true).unwrap();
+        let jobs = JobRunner::new(&[(Class::Plugin, 1)], |_| {});
+        let (project, elsewhere) = (ProjectId::new(), ProjectId::new());
+        // A run holds the one Plugin slot until the test lets it go; the
+        // event it was told, once it starts, goes to `started`.
+        let (started, told) = mpsc::channel::<Option<EventContext>>();
+        let (go, gate) = (Arc::new(AtomicBool::new(false)), host.clone());
+        let queue = |key: RunKey| {
+            host.queue(&jobs, true, key, Trigger::Event, |_| {
+                let (started, go, host) = (started.clone(), go.clone(), gate.clone());
+                move |ctx: &JobCtx| {
+                    drop(started.send(host.take_event(ctx.id)));
+                    while !go.load(Ordering::SeqCst) && !ctx.cancel.is_cancelled() {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Ok(())
+                }
+            })
+        };
+        let event = |done: u32, at: i64| EventContext {
+            kind: EventKind::AnalysisFinished,
+            at,
+            episodes: EpisodeCounts { done, failed: 0 },
+        };
+        let done = |project| key(&id, ActionKind::Event, "done", project, None);
+        let tell = |project, e: &EventContext| host.tell(&jobs, done(Some(project)), e, queue);
+        // The first runs; the one after it waits.
+        let first = tell(project, &event(1, 10)).unwrap().unwrap();
+        assert_eq!(told.recv_timeout(Duration::from_secs(10)).unwrap(), Some(event(1, 10)));
+        let second = tell(project, &event(2, 20)).unwrap().unwrap();
+        // Told again while it waits: it isn't queued twice, and tells of both.
+        assert_eq!(tell(project, &event(3, 30)).unwrap(), None);
+        let other = tell(elsewhere, &event(4, 40)).unwrap().unwrap();
+        let title = jobs.jobs().into_iter().find(|j| j.id == first).unwrap().title;
+        assert_eq!(title, "Tell the channel");
+        go.store(true, Ordering::SeqCst);
+        let mut later: Vec<_> = (0..2).map(|_| told.recv_timeout(Duration::from_secs(10)).unwrap()).collect();
+        later.sort_by_key(|e| e.as_ref().map(|e| e.at));
+        assert_eq!(later, [Some(event(5, 30)), Some(event(4, 40))]);
+        for job in [first, second, other] {
+            let ended = || jobs.jobs().into_iter().find(|j| j.id == job).is_none_or(|j| j.state.is_finished());
+            let start = Instant::now();
+            while !ended() && start.elapsed() < Duration::from_secs(10) {
+                thread::sleep(Duration::from_millis(5));
+            }
+            assert!(ended(), "{job}");
+        }
+        // It runs in the project where it happened, on no export; and only one it has.
+        let said = |key: RunKey| queue(key).unwrap_err().to_string();
+        assert_eq!(said(done(None)), "An event runs in the project where it happened.");
+        let on_export = key(&id, ActionKind::Event, "done", Some(project), Some(ExportId::new()));
+        assert_eq!(said(on_export), "An event runs in the project where it happened.");
+        assert_eq!(
+            said(key(&id, ActionKind::Event, "later", Some(project), None)),
+            "Plugin dev.a.tell has no such action."
+        );
+        // It starts as it was queued.
+        assert!(startable(&host.store, &lib, &done(Some(project)), Trigger::Event, false).is_ok());
+        drop((host, gate, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// A job runner whose batch jobs end when a test says, with the
+    /// [`Batches`] its ends are noted in.
+    struct Batching {
+        jobs: JobRunner,
+        ended: mpsc::Receiver<JobInfo>,
+        /// Ends the runner told of before the test waited for them.
+        early: Mutex<Vec<JobInfo>>,
+        gates: Mutex<HashMap<JobId, mpsc::Sender<JobResult>>>,
+        batches: Arc<Batches>,
+    }
+
+    impl Batching {
+        fn new() -> Self {
+            let (tx, ended) = mpsc::channel();
+            let tx = Mutex::new(tx);
+            let jobs = JobRunner::new(&[(Class::Analysis, 16)], move |e| {
+                if let as_jobs::JobEvent::Changed(info) = e
+                    && info.state.is_finished()
+                {
+                    drop(tx.lock().send(info));
+                }
+            });
+            Self { jobs, ended, early: Mutex::default(), gates: Mutex::default(), batches: Arc::default() }
+        }
+
+        /// Queues a job of `kind` of `project`, which runs until it is
+        /// ended or cancelled; an analysis analyses something.
+        fn queue(&self, kind: JobKind, project: ProjectId) -> JobId {
+            self.queue_with(kind, project, true)
+        }
+
+        /// [`Batching::queue`]; an analysis says it analysed something as
+        /// it ends when `works`, as work.rs's does (after ending as it
+        /// was asked, whatever that is).
+        fn queue_with(&self, kind: JobKind, project: ProjectId, works: bool) -> JobId {
+            let (tx, rx) = mpsc::channel::<JobResult>();
+            let spec = JobSpec {
+                kind,
+                class: Class::Analysis,
+                title: format!("{kind:?}"),
+                subtitle: None,
+                project_id: Some(project),
+                media_id: None,
+                export_id: None,
+            };
+            let batches = self.batches.clone();
+            let job = self.jobs.submit(spec, move |ctx| {
+                let result = loop {
+                    match rx.recv_timeout(Duration::from_millis(5)) {
+                        Ok(result) => break result,
+                        Err(mpsc::RecvTimeoutError::Timeout) if !ctx.cancel.is_cancelled() => {}
+                        Err(_) => break Err(JobError::Cancelled),
+                    }
+                };
+                if works && kind == JobKind::Analyze {
+                    batches.worked(project, ctx.id);
+                }
+                result
+            });
+            self.gates.lock().insert(job, tx);
+            job
+        }
+
+        /// Ends `job` with `result`; once the runner says it ended, its end
+        /// as the runner gave it, not yet noted.
+        fn end(&self, job: JobId, result: JobResult) -> JobInfo {
+            self.gates.lock().remove(&job).unwrap().send(result).unwrap();
+            self.wait(job)
+        }
+
+        /// Cancels `job`, as its end is given.
+        fn cancel(&self, job: JobId) -> JobInfo {
+            self.jobs.cancel(job);
+            self.wait(job)
+        }
+
+        fn wait(&self, job: JobId) -> JobInfo {
+            let early = self.early.lock().iter().position(|i| i.id == job);
+            if let Some(at) = early {
+                return self.early.lock().remove(at);
+            }
+            loop {
+                let info = self.ended.recv_timeout(Duration::from_secs(10)).unwrap();
+                if info.id == job {
+                    return info;
+                }
+                self.early.lock().push(info);
+            }
+        }
+
+        /// Notes the end `info`: the episodes it tells of, done and failed.
+        fn note(&self, info: &JobInfo) -> Option<(u32, u32)> {
+            self.batches.ended(info, || self.jobs.jobs()).map(|e| (e.done, e.failed))
+        }
+    }
+
+    fn failed() -> JobResult {
+        Err(JobError::Failed("The engine stopped.".into()))
+    }
+
+    #[test]
+    fn an_analysis_event_waits_for_the_project_s_last_analysis() {
+        let b = Batching::new();
+        let (show, other) = (ProjectId::new(), ProjectId::new());
+        let [one, two] = [(); 2].map(|_| b.queue(JobKind::Analyze, show));
+        let elsewhere = b.queue(JobKind::Analyze, other);
+        assert_eq!(b.note(&b.end(one, Ok(()))), None);
+        // Another project's batch is its own.
+        assert_eq!(b.note(&b.end(elsewhere, Ok(()))), Some((1, 0)));
+        // A failed analysis counts too, and the last one tells of all.
+        assert_eq!(b.note(&b.end(two, failed())), Some((1, 1)));
+
+        // Two that end at once tell once, whichever end is noted first.
+        let [three, four] = [(); 2].map(|_| b.queue(JobKind::Analyze, show));
+        let (three, four) = (b.end(three, Ok(())), b.end(four, Ok(())));
+        assert_eq!(b.note(&four), None);
+        assert_eq!(b.note(&three), Some((2, 0)));
+        assert_eq!(b.note(&four), None);
+        // Portraits and posters change pictures, not who is who: they aren't waited for.
+        let portraits = b.queue(JobKind::Portraits, show);
+        let five = b.queue(JobKind::Analyze, show);
+        assert_eq!(b.note(&b.end(five, Ok(()))), Some((1, 0)));
+        b.end(portraits, Ok(()));
+    }
+
+    #[test]
+    fn an_analysis_that_ends_while_an_ingest_waits_tells_no_one_yet() {
+        let b = Batching::new();
+        let show = ProjectId::new();
+        let (indexing, first) = (b.queue(JobKind::Ingest, show), b.queue(JobKind::Analyze, show));
+        assert_eq!(b.note(&b.end(first, Ok(()))), None);
+        // An ingest queues its episode's analysis as it ends.
+        let second = b.queue(JobKind::Analyze, show);
+        assert_eq!(b.note(&b.end(indexing, Ok(()))), None);
+        assert_eq!(b.note(&b.end(second, Ok(()))), Some((2, 0)));
+        // One that failed queues none: its end is the batch's.
+        let (indexing, third) = (b.queue(JobKind::Ingest, show), b.queue(JobKind::Analyze, show));
+        assert_eq!(b.note(&b.end(third, Ok(()))), None);
+        assert_eq!(b.note(&b.end(indexing, failed())), Some((1, 0)));
+    }
+
+    #[test]
+    fn a_regroup_after_the_analysis_is_waited_for() {
+        let b = Batching::new();
+        let show = ProjectId::new();
+        let analysis = b.queue(JobKind::Analyze, show);
+        // The cast is grouped again before the analysis says it ended.
+        let regroup = b.queue(JobKind::Regroup, show);
+        assert_eq!(b.note(&b.end(analysis, Ok(()))), None);
+        assert_eq!(b.note(&b.end(regroup, Ok(()))), Some((1, 0)));
+        // A regroup alone has no analysis to tell of.
+        let regroup = b.queue(JobKind::Regroup, show);
+        assert_eq!(b.note(&b.end(regroup, Ok(()))), None);
+    }
+
+    #[test]
+    fn a_restarted_analysis_never_fires_early_and_counts_once() {
+        let b = Batching::new();
+        let show = ProjectId::new();
+        // The old analysis queues the new one, then ends done without
+        // saying it analysed anything: as work.rs ends it.
+        let analysis = b.queue_with(JobKind::Analyze, show, false);
+        let again = b.queue(JobKind::Analyze, show);
+        assert_eq!(b.note(&b.end(analysis, Ok(()))), None);
+        assert_eq!(b.note(&b.end(again, Ok(()))), Some((1, 0)));
+        // Stopped by a cancel first, it is the same.
+        let analysis = b.queue_with(JobKind::Analyze, show, false);
+        let again = b.queue(JobKind::Analyze, show);
+        assert_eq!(b.note(&b.cancel(analysis)), None);
+        assert_eq!(b.note(&b.end(again, Ok(()))), Some((1, 0)));
+    }
+
+    #[test]
+    fn an_analysis_that_had_nothing_to_do_tells_no_one() {
+        // A folder found again queues an analysis of each of its episodes,
+        // which finds it analysed already.
+        let b = Batching::new();
+        let show = ProjectId::new();
+        let [one, two] = [(); 2].map(|_| b.queue_with(JobKind::Analyze, show, false));
+        assert_eq!(b.note(&b.end(one, Ok(()))), None);
+        assert_eq!(b.note(&b.end(two, Ok(()))), None);
+        // Beside one that analysed an episode, that one is told of.
+        let idle = b.queue_with(JobKind::Analyze, show, false);
+        let new = b.queue(JobKind::Analyze, show);
+        assert_eq!(b.note(&b.end(new, failed())), None);
+        assert_eq!(b.note(&b.end(idle, Ok(()))), Some((0, 1)));
+    }
+
+    #[test]
+    fn a_note_reads_the_jobs_once_it_holds_the_lock() {
+        // Two analyses end close together, and the second's note comes
+        // first: the last note to come must see the other's end noted.
+        let b = Batching::new();
+        let show = ProjectId::new();
+        let [one, two] = [(); 2].map(|_| b.queue(JobKind::Analyze, show));
+        let (one, two) = (b.end(one, Ok(())), b.end(two, Ok(())));
+        let read = || {
+            assert!(b.batches.0.try_lock().is_none(), "the jobs were read before the note held the lock");
+            b.jobs.jobs()
+        };
+        assert_eq!(b.batches.ended(&two, read), None);
+        assert_eq!(b.batches.ended(&one, read).map(|e| (e.done, e.failed)), Some((2, 0)));
+    }
+
+    #[test]
+    fn a_batch_cancelled_whole_tells_no_one() {
+        let b = Batching::new();
+        let show = ProjectId::new();
+        let [one, two] = [(); 2].map(|_| b.queue(JobKind::Analyze, show));
+        let indexing = b.queue(JobKind::Ingest, show);
+        for job in [indexing, one, two] {
+            assert_eq!(b.note(&b.cancel(job)), None);
+        }
+        // The next batch tells of its own episodes only.
+        let three = b.queue(JobKind::Analyze, show);
+        assert_eq!(b.note(&b.end(three, Ok(()))), Some((1, 0)));
     }
 }

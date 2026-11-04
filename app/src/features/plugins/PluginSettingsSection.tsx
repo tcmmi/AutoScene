@@ -2,7 +2,7 @@ import type * as React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
-import type { PluginInfo, SettingKind, SettingSpec, SettingValue } from "@/bindings"
+import type { EventKind, PluginInfo, SettingKind, SettingSpec, SettingValue } from "@/bindings"
 import { AppWindow, ArrowCounterClockwise, CircleNotch, FolderOpen, GraphicsCard, PuzzlePiece, ShieldCheck } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
@@ -38,14 +38,20 @@ const SETTLE_MS = 400
  */
 const MAX_SECRET = 1024
 
+/** When an event of each kind runs, as its row says it. */
+const EVENT_WHEN: Record<EventKind, string> = {
+  analysisFinished: "When a project's episodes are all analysed",
+}
+
 /** What a blocked plugin's screen says of it, beside "Allow them…". */
 const NOT_REVIEWED = "AutoScene hasn't reviewed this plugin, so it doesn't run."
 
 /**
  * A plugin's settings, under its hero (`PluginSettingsPage`): what needs
  * fixing, with the control that fixes it; what it lets the person set (a
- * secret only into the system's keychain), the export actions to run after
- * every export, its pages, what it may use, and where its files and log are.
+ * secret only into the system's keychain), what runs by itself once turned
+ * on (export actions after every export, events), its pages, what it may
+ * use, and where its files and log are.
  */
 export function PluginSettingsSection({ id }: { id: string }) {
   const { data: plugins, isPending, error, refetch, isFetching } = usePlugins()
@@ -97,6 +103,13 @@ function PluginSettings({ p }: { p: PluginInfo }) {
       toast.error("Couldn't save the setting", { description: errorMessage(e) })
     }
   }
+  const setEvent = async (eventId: string, on: boolean) => {
+    try {
+      keepPlugin(await commands.pluginSetEvent(p.id, eventId, on))
+    } catch (e) {
+      toast.error("Couldn't save the setting", { description: errorMessage(e) })
+    }
+  }
   return (
     <>
       {/* Gone, the plugin leaves this screen for Plugins. */}
@@ -132,14 +145,27 @@ function PluginSettings({ p }: { p: PluginInfo }) {
       )}
 
       {/* A withdrawn plugin never runs again: nothing here would do anything. */}
-      {p.exportActions.length > 0 && p.withdrawn == null && (
-        <SettingsGroup title="After every export" description="Runs by itself each time an export finishes with every clip made.">
+      {(p.exportActions.length > 0 || p.events.length > 0) && p.withdrawn == null && (
+        <SettingsGroup title="Runs by itself" description="Each runs without being asked once you turn it on, as a job in Activity.">
           {p.exportActions.map((a) => (
-            <SettingRow key={a.id} label={a.title} description={a.description ?? undefined}>
+            <SettingRow
+              key={`action-${a.id}`}
+              label={a.title}
+              description={runsWhen(a.description, a.afterFailed ? "After every export, also one that failed" : "After every export")}
+            >
               <Switch
-                aria-label={`Run ${a.title} after every export`}
+                aria-label={a.afterFailed ? `Run ${a.title} after every export, also one that failed` : `Run ${a.title} after every export`}
                 checked={a.afterExport}
                 onCheckedChange={(on) => void setAfterExport(a.id, on)}
+              />
+            </SettingRow>
+          ))}
+          {p.events.map((e) => (
+            <SettingRow key={`event-${e.id}`} label={e.title} description={runsWhen(e.description, EVENT_WHEN[e.on])}>
+              <Switch
+                aria-label={`Run ${e.title}, ${lowerFirst(EVENT_WHEN[e.on])}`}
+                checked={e.turnedOn}
+                onCheckedChange={(on) => void setEvent(e.id, on)}
               />
             </SettingRow>
           ))}
@@ -306,6 +332,25 @@ function MayUse({ p }: { p: PluginInfo }) {
       ))}
     </SettingsGroup>
   )
+}
+
+/**
+ * What the row of something that runs by itself says under its title: what
+ * it does, as its plugin says, and `when` it runs.
+ */
+function runsWhen(description: string | null, when: string): React.ReactNode {
+  if (!description) return when
+  return (
+    <>
+      <span className="block">{description}</span>
+      <span className="block">{when}</span>
+    </>
+  )
+}
+
+/** `text` with its first letter small, to follow a comma. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1)
 }
 
 /**

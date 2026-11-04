@@ -38,7 +38,7 @@ use serde_json::value::RawValue;
 use specta::Type;
 
 use crate::calls::CallError;
-use crate::manifest::{PluginId, SettingValue, cut};
+use crate::manifest::{EventKind, PluginId, SettingValue, cut};
 
 /// The longest id a call may give as a text; a call with a longer one is no
 /// message.
@@ -181,6 +181,10 @@ pub struct RunMessage {
     /// What a page handed its run (protocol 2, `trigger: "page"` only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<Value>,
+    /// What happened, for a run of one of its events (`trigger: "event"`
+    /// only); left out of every other run's line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<EventContext>,
 }
 
 /// A service's start: its context, as a run's line has it, without a task.
@@ -274,6 +278,9 @@ pub struct ActionContext {
 pub enum ActionKind {
     ExportAction,
     Command,
+    /// One of its events (`contributes.events`), which AutoScene starts by
+    /// itself: never from a menu, the palette or a page.
+    Event,
 }
 
 /// What started a run.
@@ -290,6 +297,31 @@ pub enum Trigger {
     /// program that speaks protocol 2: a protocol 1 program never reads it.
     /// Its run gets what the page handed it as `input`.
     Page,
+    /// What one of its events waits for happened, with the event turned on.
+    /// Its run gets what happened as `event`.
+    Event,
+}
+
+/// What happened, for a run of an event.
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EventContext {
+    /// What its event waits for (`on` in its `plugin.json`).
+    pub kind: EventKind,
+    /// When it happened (Unix milliseconds).
+    pub at: i64,
+    /// The episodes whose analysis ended since the project last told of
+    /// one (`analysisFinished`).
+    pub episodes: EpisodeCounts,
+}
+
+/// How the analyses of a project's episodes ended: those cancelled aren't
+/// counted.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EpisodeCounts {
+    pub done: u32,
+    pub failed: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -313,6 +345,11 @@ pub struct ExportContext {
     /// The one file a merged export wrote, if it was merged.
     pub merged_file: Option<String>,
     pub clips: Vec<ClipContext>,
+    /// How it went (protocol 2): `done`, `partial` (some of what it was to
+    /// make is missing) or `failed` (it made nothing). Left out for a run of
+    /// protocol 1, whose line stays as it was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// One clip of an export, and the part of its episode it shows.
@@ -644,6 +681,7 @@ mod tests {
             project: None,
             export: None,
             input: None,
+            event: None,
         }
     }
 
@@ -669,6 +707,91 @@ mod tests {
         let line = HostMessage::Run(Box::new(message)).line();
         assert!(line.ends_with(r#""trigger":"page"},"project":null,"export":null,"input":{"words":3}}"#), "{line}");
         assert!(line.contains(r#""dataDir":"/data","tempDir":"/tmp/as-k3j9x0qa"},"#), "{line}");
+    }
+
+    /// An export of one clip, `status` as a run of its protocol gets it.
+    fn export(status: Option<&str>) -> ExportContext {
+        ExportContext {
+            id: "e1".into(),
+            label: None,
+            preset: "h264-edit".into(),
+            out_dir: "/out".into(),
+            created_at: 7,
+            merged_file: None,
+            clips: vec![ClipContext {
+                name: "Walter_001".into(),
+                path: None,
+                status: "failed".into(),
+                media_id: "m1".into(),
+                source_path: "/S01E01.mkv".into(),
+                episode: "S01E01".into(),
+                start: 0,
+                end: 24,
+                fps: None,
+            }],
+            status: status.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_protocol_1_after_export_line_is_unchanged() {
+        let mut message = run();
+        message.action =
+            ActionContext { kind: ActionKind::ExportAction, id: "post".into(), trigger: Trigger::AfterExport };
+        message.export = Some(export(None));
+        assert_eq!(
+            HostMessage::Run(Box::new(message.clone())).line(),
+            [
+                r#"{"type":"run","protocol":1,"runId":"run-1","#,
+                r#""plugin":{"id":"dev.autoscene.hello","version":"1.2.0","dataDir":"/data"},"#,
+                r#""app":{"version":"1.0.3-BETA","platform":"linux-x86_64"},"#,
+                r#""tools":{"ffmpeg":"/ffmpeg","ffprobe":"/ffprobe","ffmpegVersion":"9.0"},"settings":{},"#,
+                r#""action":{"kind":"exportAction","id":"post","trigger":"afterExport"},"project":null,"#,
+                r#""export":{"id":"e1","label":null,"preset":"h264-edit","outDir":"/out","createdAt":7,"mergedFile":null,"#,
+                r#""clips":[{"name":"Walter_001","path":null,"status":"failed","mediaId":"m1","#,
+                r#""sourcePath":"/S01E01.mkv","episode":"S01E01","start":0,"end":24,"fps":null}]}}"#,
+            ]
+            .concat()
+        );
+        // A run of protocol 2 is told how the export went, last.
+        message.protocol = 2;
+        message.export = Some(export(Some("partial")));
+        let line = HostMessage::Run(Box::new(message)).line();
+        assert!(line.ends_with(r#""fps":null}],"status":"partial"}}"#), "{line}");
+    }
+
+    #[test]
+    fn an_event_run_line_reads_as_the_guide_shows() {
+        let guide = include_str!("../../../docs/PLUGINS.md");
+        let start = guide.find("A run of an event").expect("the guide shows a run of an event");
+        let block = &guide[start..];
+        let block = &block[block.find("```json\n").unwrap() + 8..];
+        let shown: Value = serde_json::from_str(&block[..block.find("```").unwrap()]).unwrap();
+
+        let mut message = run();
+        message.action = ActionContext { kind: ActionKind::Event, id: "analysis-done".into(), trigger: Trigger::Event };
+        message.project = Some(ProjectContext {
+            id: "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b".into(),
+            title: "Breaking Bad".into(),
+            folder: r"D:\AutoScene Library\Breaking Bad".into(),
+        });
+        message.event = Some(EventContext {
+            kind: EventKind::AnalysisFinished,
+            at: 1_762_150_000_000,
+            episodes: EpisodeCounts { done: 7, failed: 1 },
+        });
+        let line: Value = serde_json::from_str(&HostMessage::Run(Box::new(message.clone())).line()).unwrap();
+        let shown = shown.as_object().unwrap();
+        // The guide shows what differs from the line above it.
+        assert_eq!(shown.keys().collect::<Vec<_>>(), ["action", "event", "export", "project"]);
+        for (key, value) in shown {
+            assert_eq!(&line[key], value, "{key}");
+        }
+        // It comes last, and only on an event's run.
+        let line = HostMessage::Run(Box::new(message.clone())).line();
+        assert!(line.ends_with(r#""export":null,"event":{"kind":"analysisFinished","at":1762150000000,"episodes":{"done":7,"failed":1}}}"#), "{line}");
+        message.event = None;
+        assert!(!HostMessage::Run(Box::new(message)).line().contains(r#""event":"#));
     }
 
     #[test]
@@ -885,6 +1008,8 @@ mod tests {
         assert_eq!(serde_json::to_string(&ActionKind::ExportAction).unwrap(), r#""exportAction""#);
         assert_eq!(serde_json::to_string(&Trigger::AfterExport).unwrap(), r#""afterExport""#);
         assert_eq!(serde_json::to_string(&Trigger::Page).unwrap(), r#""page""#);
+        assert_eq!(serde_json::to_string(&Trigger::Event).unwrap(), r#""event""#);
+        assert_eq!(serde_json::to_string(&ActionKind::Event).unwrap(), r#""event""#);
         assert_eq!(serde_json::from_str::<Trigger>(r#""menu""#).unwrap(), Trigger::Menu);
         assert_eq!(serde_json::from_str::<ActionKind>(r#""command""#).unwrap(), ActionKind::Command);
     }

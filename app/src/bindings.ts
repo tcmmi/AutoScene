@@ -327,6 +327,11 @@ export const commands = {
 	pluginSetEnabled: (pluginId: string, enabled: boolean) => __TAURI_INVOKE<PluginInfo>("plugin_set_enabled", { pluginId, enabled }),
 	/**  Turn a plugin's export action on or off for after every export. */
 	pluginSetAfterExport: (pluginId: string, actionId: string, on: boolean) => __TAURI_INVOKE<PluginInfo>("plugin_set_after_export", { pluginId, actionId, on }),
+	/**
+	 *  Turn a plugin's event on or off: on, it runs by itself when what it
+	 *  waits for happens.
+	 */
+	pluginSetEvent: (pluginId: string, eventId: string, on: boolean) => __TAURI_INVOKE<PluginInfo>("plugin_set_event", { pluginId, eventId, on }),
 	/**  A plugin's settings: the person's value of each, else its default. */
 	pluginSettingsGet: (pluginId: string) => __TAURI_INVOKE<{ [key in string]: SettingValue }>("plugin_settings_get", { pluginId }),
 	/**
@@ -451,7 +456,12 @@ export const NAME_PARTS = [["series","Series"],["character","Character"],["episo
 
 /* Types */
 /**  Which of a plugin's contributions a run is for. */
-export type ActionKind = "exportAction" | "command";
+export type ActionKind = "exportAction" | "command" | 
+/**
+ *  One of its events (`contributes.events`), which AutoScene starts by
+ *  itself: never from a menu, the palette or a page.
+ */
+"event";
 
 /**  Analysis results of a media changed (shots or faces found, or reset). */
 export type AnalysisChanged = {
@@ -943,6 +953,18 @@ export type ErrorCode = "not_found" |
 "not_ready" | "cancelled" | 
 /**  ffmpeg is missing or failed. */
 "media" | "io" | "update" | "internal";
+
+/**
+ *  What an event waits for. One this AutoScene doesn't know is skipped with
+ *  a warning, so a later AutoScene may add one.
+ */
+export type EventKind = 
+/**
+ *  A project's episodes are all analysed: the last of its analyses
+ *  that had something to do ended, with no indexing or regrouping of
+ *  it left to wait for.
+ */
+"analysisFinished";
 
 /**  An export was created, progressed to another clip, or finished. */
 export type ExportChanged = {
@@ -1708,6 +1730,17 @@ export type Permission =
 
 export type Platform = "windows" | "macos" | "linux";
 
+/**  A moment a plugin may run on by itself. */
+export type PluginEvent = {
+	id: string,
+	title: string,
+	description: string | null,
+	/**  What it waits for. */
+	on: EventKind,
+	/**  The person turned it on: it runs when that happens. */
+	turnedOn: boolean,
+};
+
 /**  An entry a plugin adds to each export's menu. */
 export type PluginExportAction = {
 	id: string,
@@ -1715,6 +1748,11 @@ export type PluginExportAction = {
 	description: string | null,
 	/**  It runs after every export that finishes. */
 	afterExport: boolean,
+	/**
+	 *  Turned on for after every export, it also runs after one that failed
+	 *  or made only some of its clips.
+	 */
+	afterFailed: boolean,
 };
 
 /**  An installed plugin, as Plugins shows it. */
@@ -1769,6 +1807,8 @@ export type PluginInfo = {
 	exportActions: PluginExportAction[],
 	commands: CommandSpec[],
 	settings: SettingSpec[],
+	/**  What it may run on by itself, once the person turns it on. */
+	events: PluginEvent[],
 	/**
 	 *  How it runs: a program for each run, a WebAssembly component in
 	 *  AutoScene's sandbox, or none (it has only pages).

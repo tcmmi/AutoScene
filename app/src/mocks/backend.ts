@@ -56,6 +56,7 @@ import {
   pluginsList,
   reviewed,
   setAfterExport,
+  setEvent,
   setPluginEnabled,
   setPluginSecret,
   setPluginValues,
@@ -1435,6 +1436,11 @@ ${url}`
   },
   plugin_set_after_export: ({ pluginId, actionId, on }) => {
     const p = setAfterExport(String(pluginId), String(actionId), Boolean(on), allows())
+    void emit("plugins:changed", { pluginId: p.id })
+    return p
+  },
+  plugin_set_event: ({ pluginId, eventId, on }) => {
+    const p = setEvent(String(pluginId), String(eventId), Boolean(on), allows())
     void emit("plugins:changed", { pluginId: p.id })
     return p
   },

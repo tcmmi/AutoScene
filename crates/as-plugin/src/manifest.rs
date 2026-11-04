@@ -80,6 +80,8 @@ pub const MAX_SETTINGS: usize = 32;
 pub const MAX_SECRETS: usize = 8;
 /// The most pages a plugin may add.
 pub const MAX_PAGES: usize = 4;
+/// The most events a plugin may wait for.
+pub const MAX_EVENTS: usize = 4;
 /// The memory a WebAssembly plugin's run may use in all, in MB (1 MB = 1
 /// MiB), when it doesn't say; and the least and most it may ask for.
 pub const DEFAULT_MEMORY_MB: u32 = 512;
@@ -269,6 +271,9 @@ pub struct Manifest {
     /// Its pages (manifest version 2); whether their files are there is
     /// checked at install.
     pub pages: Vec<PageSpec>,
+    /// What it may run on by itself, once the person turns it on (manifest
+    /// version 2).
+    pub events: Vec<EventSpec>,
     /// A `.png` or `.svg` in the package (whether it's there is checked at install).
     pub icon: Option<String>,
     /// Its wide art (manifest version 2): a `.png`, `.jpg` or `.webp` in the
@@ -393,13 +398,52 @@ impl Default for WasmLimits {
     }
 }
 
-/// An entry of an export's menu (and of "After every export").
+/// An entry of an export's menu (and of "Runs by itself").
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionSpec {
     pub id: String,
     pub title: String,
     pub description: Option<String>,
+    /// Turned on for after every export, it also runs after one that failed
+    /// or made only some of its clips, never after a cancelled one
+    /// (`afterFailed`; manifest version 2 and protocol 2, whose run line
+    /// says how the export went).
+    pub after_failed: bool,
+}
+
+/// A moment a plugin may run on by itself (`contributes.events`, manifest
+/// version 2): off until the person turns it on in its settings.
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EventSpec {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    /// What it waits for.
+    pub on: EventKind,
+}
+
+/// What an event waits for. One this AutoScene doesn't know is skipped with
+/// a warning, so a later AutoScene may add one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum EventKind {
+    /// A project's episodes are all analysed: the last of its analyses
+    /// that had something to do ended, with no indexing or regrouping of
+    /// it left to wait for.
+    AnalysisFinished,
+}
+
+impl EventKind {
+    pub const ALL: [Self; 1] = [Self::AnalysisFinished];
+
+    /// Its name in a manifest and on the run line.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::AnalysisFinished => "analysisFinished",
+        }
+    }
 }
 
 /// An entry of the command palette.
@@ -864,16 +908,24 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     }
 
     let (mut export_actions, mut commands_out, mut settings) = (Vec::new(), Vec::new(), Vec::new());
-    let mut pages = Vec::new();
+    let (mut pages, mut events) = (Vec::new(), Vec::new());
     if let Some(c) = root.object("contributes")? {
-        for kind in c.map.keys() {
-            match kind.as_str() {
+        for key in c.map.keys() {
+            match key.as_str() {
                 "exportActions" | "commands" | "settings" => {}
                 "pages" if manifest_version < 2 => {
                     w.push(r#"Skipped contributes.pages: pages need "manifestVersion": 2."#.into());
                 }
                 "pages" => {}
-                kind => w.push(format!("Skipped contributes.{}, which this AutoScene doesn't know.", shown(kind))),
+                "events" if manifest_version < 2 => {
+                    w.push(r#"Skipped contributes.events: events need "manifestVersion": 2."#.into());
+                }
+                // A component is told through a function of a later world.
+                "events" if kind == RuntimeKind::Wasm => {
+                    w.push("Skipped contributes.events: a WebAssembly plugin's events need a newer AutoScene.".into());
+                }
+                "events" => {}
+                key => w.push(format!("Skipped contributes.{}, which this AutoScene doesn't know.", shown(key))),
             }
         }
         let (actions, palette, specs) = (c.list("exportActions")?, c.list("commands")?, c.list("settings")?);
@@ -888,11 +940,24 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         }
         for (i, a) in actions.iter().enumerate() {
             let a = object(a, format!("contributes.exportActions[{i}]"))?;
-            a.warn_unknown(&["id", "title", "description"], &mut w);
+            a.warn_unknown(&["id", "title", "description", "afterFailed"], &mut w);
+            // How the export went is on the run line from protocol 2.
+            let after_failed = match a.flag("afterFailed")? {
+                Some(true) if manifest_version < 2 => {
+                    w.push(format!(r#"Ignored {}: it needs "manifestVersion": 2."#, a.at("afterFailed")));
+                    false
+                }
+                Some(true) if protocol < 2 => {
+                    w.push(format!(r#"Ignored {}: it needs "engines": {{"protocol": 2}}."#, a.at("afterFailed")));
+                    false
+                }
+                on => on.unwrap_or(false),
+            };
             export_actions.push(ActionSpec {
                 id: a.contribution_id()?,
                 title: a.required_label("title", 60, &mut w)?,
                 description: a.label("description", 200, &mut w)?,
+                after_failed,
             });
         }
         unique(export_actions.iter().map(|a| a.id.as_str()), "contributes.exportActions", "id")?;
@@ -918,6 +983,17 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             }
         }
         unique(pages.iter().map(|p| p.id.as_str()), "contributes.pages", "id")?;
+        // Skipped above, whatever they hold, in version 1 and for a component.
+        let waits = if manifest_version >= 2 && kind != RuntimeKind::Wasm { c.list("events")? } else { &[] };
+        if waits.len() > MAX_EVENTS {
+            return Err(invalid(format!("The plugin adds more than {MAX_EVENTS} events.")));
+        }
+        for (i, e) in waits.iter().enumerate() {
+            if let Some(spec) = event(&object(e, format!("contributes.events[{i}]"))?, &mut w)? {
+                events.push(spec);
+            }
+        }
+        unique(events.iter().map(|e| e.id.as_str()), "contributes.events", "id")?;
         // A secret is read with a call, which a program of protocol 1 never
         // has answered. The rule is that program's: a page asks AutoScene
         // its own way, and so does a runtime that starts none.
@@ -949,6 +1025,9 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     if kind == RuntimeKind::None {
         if !export_actions.is_empty() || !commands_out.is_empty() {
             return Err(invalid("Export actions and commands need a program, and runtime.type none runs none."));
+        }
+        if !events.is_empty() {
+            return Err(invalid("Events need a program, and runtime.type none runs none."));
         }
         if pages.is_empty() {
             return Err(invalid("A plugin that runs no program needs a page."));
@@ -1007,6 +1086,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         commands: commands_out,
         settings,
         pages,
+        events,
         icon,
         banner,
         resources,
@@ -1445,6 +1525,24 @@ fn page(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<PageSpec>> {
         rail: rail && scope == PageScope::Global,
         id,
         scope,
+    }))
+}
+
+/// One entry of `contributes.events` (manifest version 2), or `None` for
+/// what this AutoScene can't wait for.
+fn event(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<EventSpec>> {
+    let id = o.contribution_id()?;
+    let on = o.required_text("on")?;
+    let Some(on) = EventKind::ALL.into_iter().find(|k| k.name() == on) else {
+        w.push(format!(r#"Skipped the event "{id}": "{}" needs a newer AutoScene."#, shown(on)));
+        return Ok(None);
+    };
+    o.warn_unknown(&["id", "title", "description", "on"], w);
+    Ok(Some(EventSpec {
+        title: o.required_label("title", 60, w)?,
+        description: o.label("description", 200, w)?,
+        id,
+        on,
     }))
 }
 
@@ -2421,6 +2519,121 @@ mod tests {
         assert_eq!(p.warnings, ["Ignored platforms: a plugin that runs no program works on every platform."]);
     }
 
+    /// A manifest of version 2 with the events `events`.
+    fn with_events(events: Value, edit: impl FnOnce(&mut Value)) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["contributes"]["events"] = events;
+            edit(v);
+        })
+    }
+
+    #[test]
+    fn events_need_a_program_and_name_what_they_wait_for() {
+        let done = json!([{"id": "done", "title": "Post when an analysis finishes", "on": "analysisFinished"}]);
+        // A program of protocol 1 may wait too: its run line names the event.
+        let p = with_events(done.clone(), |_| {}).unwrap();
+        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(
+            p.manifest.events,
+            [EventSpec {
+                id: "done".into(),
+                title: "Post when an analysis finishes".into(),
+                description: None,
+                on: EventKind::AnalysisFinished,
+            }]
+        );
+        let service = with_events(done.clone(), |v| {
+            v["engines"]["protocol"] = json!(2);
+            v["runtime"]["type"] = json!("service");
+            v["contributes"]["pages"] = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
+        });
+        assert_eq!(service.unwrap().manifest.events.len(), 1);
+        // Pages alone run nothing that could be told.
+        let none = with_events(done.clone(), |v| {
+            v["runtime"] = json!({"type": "none"});
+            v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]});
+            v["contributes"]["events"] = done.clone();
+        });
+        assert_eq!(message(none), "Events need a program, and runtime.type none runs none.");
+        // What it waits for is named, as text.
+        let unnamed = json!([{"id": "done", "title": "Done"}]);
+        assert_eq!(message(with_events(unnamed, |_| {})), "The plugin's contributes.events[0].on is missing.");
+        let number = json!([{"id": "done", "title": "Done", "on": 1}]);
+        assert_eq!(message(with_events(number, |_| {})), "The plugin's contributes.events[0].on must be text.");
+        let untitled = json!([{"id": "done", "on": "analysisFinished"}]);
+        assert_eq!(message(with_events(untitled, |_| {})), "The plugin's contributes.events[0].title is missing.");
+        // At most 4, each id once.
+        let many: Vec<Value> =
+            (0..=MAX_EVENTS).map(|i| json!({"id": format!("e{i}"), "title": "E", "on": "analysisFinished"})).collect();
+        assert_eq!(message(with_events(json!(many), |_| {})), "The plugin adds more than 4 events.");
+        let twice = json!([done[0].clone(), done[0].clone()]);
+        assert!(message(with_events(twice, |_| {})).contains(r#"the id "done" twice"#));
+
+        // Version 1 skips them, whatever they hold, as AutoScene 1.0 does.
+        let p = with(|v| v["contributes"]["events"] = json!("anything")).unwrap();
+        assert_eq!(p.manifest.events, []);
+        assert_eq!(p.warnings, [r#"Skipped contributes.events: events need "manifestVersion": 2."#]);
+        // A component is told through a function of a later world.
+        let p = with_events(done, |v| v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"})).unwrap();
+        assert_eq!(p.manifest.events, []);
+        assert_eq!(p.warnings, ["Skipped contributes.events: a WebAssembly plugin's events need a newer AutoScene."]);
+    }
+
+    #[test]
+    fn an_unknown_event_is_skipped_with_a_warning() {
+        let events = json!([
+            {"id": "export", "title": "After an export", "on": "exportFinished"},
+            {"id": "done", "title": "Done", "description": "Says so.", "on": "analysisFinished", "every": 2},
+        ]);
+        let p = with_events(events, |_| {}).unwrap();
+        let kept: Vec<_> = p.manifest.events.iter().map(|e| (e.id.as_str(), e.description.as_deref())).collect();
+        assert_eq!(kept, [("done", Some("Says so."))]);
+        assert_eq!(
+            p.warnings,
+            [
+                r#"Skipped the event "export": "exportFinished" needs a newer AutoScene."#,
+                "Ignored contributes.events[1].every, which this AutoScene doesn't know.",
+            ]
+        );
+        // The one it skipped may share an id with one it keeps: a later
+        // AutoScene would refuse that, this one has nothing to tell apart.
+        let alike = json!([
+            {"id": "done", "title": "Later", "on": "somethingLater"},
+            {"id": "done", "title": "Done", "on": "analysisFinished"},
+        ]);
+        assert_eq!(with_events(alike, |_| {}).unwrap().manifest.events.len(), 1);
+    }
+
+    #[test]
+    fn after_failed_needs_protocol_2() {
+        let at = |manifest: u32, protocol: u32, after_failed: Value| {
+            with(|v| {
+                v["manifestVersion"] = json!(manifest);
+                v["engines"]["protocol"] = json!(protocol);
+                v["contributes"]["exportActions"][0]["afterFailed"] = after_failed;
+            })
+        };
+        let said = |p: PluginResult<Parsed>| {
+            let p = p.unwrap();
+            (p.manifest.export_actions[0].after_failed, p.warnings)
+        };
+        assert_eq!(said(at(2, 2, json!(true))), (true, vec![]));
+        // Left out or false, it runs after a whole export only.
+        assert!(!read(&plugin()).unwrap().manifest.export_actions[0].after_failed);
+        assert_eq!(said(at(2, 1, json!(false))), (false, vec![]));
+        assert_eq!(said(at(1, 1, json!(false))), (false, vec![]));
+        // A run of protocol 1 isn't told how the export went.
+        let protocol_1 = r#"Ignored contributes.exportActions[0].afterFailed: it needs "engines": {"protocol": 2}."#;
+        assert_eq!(said(at(2, 1, json!(true))), (false, vec![protocol_1.to_owned()]));
+        let version_1 = r#"Ignored contributes.exportActions[0].afterFailed: it needs "manifestVersion": 2."#;
+        assert_eq!(said(at(1, 2, json!(true))), (false, vec![version_1.to_owned()]));
+        assert_eq!(
+            message(at(2, 2, json!("yes"))),
+            "The plugin's contributes.exportActions[0].afterFailed must be true or false."
+        );
+    }
+
     #[test]
     fn a_service_speaks_protocol_2_and_serves_a_page() {
         let main = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
@@ -2876,6 +3089,7 @@ mod tests {
             (&contributes["settings"]["maxItems"], MAX_SETTINGS),
             (&contributes["settings"]["maxContains"], MAX_SECRETS),
             (&contributes["pages"]["maxItems"], MAX_PAGES),
+            (&contributes["events"]["maxItems"], MAX_EVENTS),
             (&schema["properties"]["platforms"]["maxItems"], MAX_PLATFORMS),
             (&defs["network"]["properties"]["hosts"]["maxItems"], MAX_HOSTS),
             (&defs["commandLine"]["maxItems"], MAX_ARGS),
@@ -2930,6 +3144,13 @@ mod tests {
                 PageScope::Global | PageScope::Project => {}
             }
         }
+        for on in EventKind::ALL {
+            match on {
+                EventKind::AnalysisFinished => {}
+            }
+        }
+        assert_eq!(named(&defs["event"]["properties"]["on"]["enum"]), EventKind::ALL.map(EventKind::name).into());
+        assert_eq!(EventKind::ALL.map(|k| kind_name(json!(k))), EventKind::ALL.map(|k| k.name().to_owned()));
         let runtime_names: Vec<String> = runtimes.iter().map(|k| kind_name(json!(k))).collect();
         let setting_names: Vec<String> = settings.iter().map(|k| kind_name(json!(k))).collect();
         let scope_names: Vec<String> = scopes.iter().map(|k| kind_name(json!(k))).collect();
@@ -2938,7 +3159,8 @@ mod tests {
         assert_eq!(named(&defs["page"]["properties"]["scope"]["enum"]), as_set(&scope_names));
 
         // A plugin with an object of each kind the schema describes: version
-        // 2, a program of protocol 2, the network, a select setting, a page.
+        // 2, a program of protocol 2, the network, a select setting, a page,
+        // an event.
         let mut full = plugin();
         full["manifestVersion"] = json!(2);
         full["engines"]["protocol"] = json!(2);
@@ -2949,6 +3171,8 @@ mod tests {
             json!([{"key": "pick", "type": "select", "title": "Pick", "options": options}]);
         full["contributes"]["pages"] = json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]);
         full["resources"] = json!([resource("model.onnx")]);
+        full["contributes"]["events"] = json!([{"id": "done", "title": "Done", "on": "analysisFinished"}]);
+        full["contributes"]["exportActions"][0]["afterFailed"] = json!(true);
         let reads = |v: &Value, what: &str| {
             let p = read(v).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             assert_eq!(p.warnings, Vec::<String>::new(), "{what}");
@@ -2970,6 +3194,7 @@ mod tests {
             ("option", "/contributes/settings/0/options/0"),
             ("page", "/contributes/pages/0"),
             ("resource", "/resources/0"),
+            ("event", "/contributes/events/0"),
         ];
         // Every object the schema describes is here, but a setting, whose
         // keys depend on its type, and the limits, which only a WebAssembly
@@ -2998,9 +3223,11 @@ mod tests {
         }
 
         // A WebAssembly plugin, with each key the schema names for its
-        // runtime and its limits; one it doesn't name is ignored.
+        // runtime and its limits; one it doesn't name is ignored. It has no
+        // events yet.
         let mut sandboxed = full.clone();
         sandboxed["runtime"] = json!({"type": "wasm", "component": "plugin.wasm", "limits": {}});
+        sandboxed["contributes"].as_object_mut().unwrap().remove("events");
         assert_eq!(reads(&sandboxed, "wasm").runtime.limits, Some(WasmLimits::default()));
         for (at, properties) in [("/runtime", &defs["runtime"]["properties"]), ("/runtime/limits", wasm_limits)] {
             for key in keys(properties) {
@@ -3063,9 +3290,11 @@ mod tests {
                 let c = v["contributes"].as_object_mut().unwrap();
                 c.remove("exportActions");
                 c.remove("commands");
+                c.remove("events");
             }
             if runtime == "wasm" {
                 v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
+                v["contributes"].as_object_mut().unwrap().remove("events");
             }
             assert_eq!(kind_name(json!(reads(&v, runtime).runtime.kind)), *runtime);
         }

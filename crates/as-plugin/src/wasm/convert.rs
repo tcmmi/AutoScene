@@ -70,8 +70,10 @@ pub(crate) fn guest_path(root: &Path, guest_root: &str, host: &str) -> Option<St
 
 /// `message` as the world's request, its folders as `mounts` gives them.
 /// Its protocol is the one the plugin declared, and a setting `grants`
-/// names a secret is left out.
-pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) -> wit::RunRequest {
+/// names a secret is left out. A run of an event has no request in the 1.0
+/// world: its plugin's events are skipped when its `plugin.json` is read,
+/// so none is queued.
+pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) -> PluginResult<wit::RunRequest> {
     let in_export = |path: &str| mounts.export.as_deref().and_then(|root| guest_path(root, "/export", path));
     let settings = message
         .settings
@@ -89,17 +91,20 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
     // Every kind and trigger has its case in the 1.0 world; one that a
     // later protocol adds needs a newer world (or a function of its own),
     // never a case that a 1.0 plugin doesn't know.
+    let no_event = || PluginError::Invalid("A WebAssembly plugin's events need a newer AutoScene.".into());
     let kind = match message.action.kind {
         ActionKind::ExportAction => wit::ActionKind::ExportAction,
         ActionKind::Command => wit::ActionKind::Command,
+        ActionKind::Event => return Err(no_event()),
     };
     let trigger = match message.action.trigger {
         Trigger::Menu => wit::Trigger::Menu,
         Trigger::AfterExport => wit::Trigger::AfterExport,
         Trigger::Palette => wit::Trigger::Palette,
         Trigger::Page => wit::Trigger::Page,
+        Trigger::Event => return Err(no_event()),
     };
-    wit::RunRequest {
+    Ok(wit::RunRequest {
         protocol: grants.protocol,
         run_id: message.run_id.clone(),
         plugin: wit::PluginContext {
@@ -139,7 +144,7 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
         }),
         // A page's input is at most 64 KiB: `actions.run` takes no more.
         input: message.input.as_ref().map(|v| v.to_string()),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -184,6 +189,7 @@ mod tests {
         let out = root.join("export");
         let at = |name: &str| Some(out.join(name).to_string_lossy().into_owned());
         RunMessage {
+            event: None,
             protocol: 1,
             run_id: "run-1".into(),
             plugin: PluginContext {
@@ -208,6 +214,7 @@ mod tests {
                 folder: root.join("project").to_string_lossy().into_owned(),
             }),
             export: Some(ExportContext {
+                status: None,
                 id: "e1".into(),
                 label: Some("Cut".into()),
                 preset: "h264".into(),
@@ -288,7 +295,7 @@ mod tests {
         let dir = folders();
         let m = message(dir.path());
         let g = grants(&[Permission::ExportsRead, Permission::ProjectRead]);
-        let r = request(&m, &mounts(&m, &g).unwrap(), &g);
+        let r = request(&m, &mounts(&m, &g).unwrap(), &g).unwrap();
         assert_eq!((r.protocol, r.run_id.as_str(), r.plugin.data_dir.as_str()), (2, "run-1", "/data"));
         assert_eq!(r.plugin.id, "dev.autoscene.hello");
         // Sorted by key, and never a secret.
@@ -313,7 +320,7 @@ mod tests {
         let dir = folders();
         let m = message(dir.path());
         let g = grants(&[]);
-        let r = request(&m, &mounts(&m, &g).unwrap(), &g);
+        let r = request(&m, &mounts(&m, &g).unwrap(), &g).unwrap();
         assert_eq!(r.project.unwrap().folder, None);
         let e = r.export.unwrap();
         assert_eq!((e.out_dir, e.merged_file), (None, None));
@@ -328,13 +335,17 @@ mod tests {
         m.action = ActionContext { kind: ActionKind::Command, id: "count".into(), trigger: Trigger::Page };
         m.input = Some(json!({"words": ["a", "b"]}));
         let g = grants(&[]);
-        let r = request(&m, &Mounts::default(), &g);
+        let r = request(&m, &Mounts::default(), &g).unwrap();
         assert!(matches!(r.action.kind, wit::ActionKind::Command));
         assert!(matches!(r.action.trigger, wit::Trigger::Page));
         assert_eq!(r.input.as_deref(), Some(r#"{"words":["a","b"]}"#));
         for (trigger, wit) in [(Trigger::AfterExport, "Trigger::AfterExport"), (Trigger::Palette, "Trigger::Palette")] {
             m.action.trigger = trigger;
-            assert_eq!(format!("{:?}", request(&m, &Mounts::default(), &g).action.trigger), wit);
+            assert_eq!(format!("{:?}", request(&m, &Mounts::default(), &g).unwrap().action.trigger), wit);
         }
+        // An event's run has no request in the 1.0 world.
+        m.action = ActionContext { kind: ActionKind::Event, id: "done".into(), trigger: Trigger::Event };
+        let refused = request(&m, &Mounts::default(), &g).unwrap_err().to_string();
+        assert_eq!(refused, "A WebAssembly plugin's events need a newer AutoScene.");
     }
 }

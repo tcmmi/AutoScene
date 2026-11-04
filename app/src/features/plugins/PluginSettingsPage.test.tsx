@@ -382,7 +382,7 @@ describe("a plugin AutoScene withdrew", () => {
     state.plugins = [
       {
         ...leaky(),
-        exportActions: [{ id: "list", title: "List the clips", description: null, afterExport: true }],
+        exportActions: [{ id: "list", title: "List the clips", description: null, afterExport: true, afterFailed: false }],
         settings: [{ key: "on", title: "Post it", description: null, kind: { type: "boolean", default: true } }],
         pages: [{ id: "main", title: "Leaky Export", description: null, entry: "ui/index.html", scope: "global", rail: false }],
       },

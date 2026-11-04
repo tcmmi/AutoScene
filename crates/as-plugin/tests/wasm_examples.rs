@@ -99,6 +99,7 @@ impl Run {
             fps: Some("24000/1001".into()),
         };
         let message = RunMessage {
+            event: None,
             protocol: 2,
             run_id: "run-1".into(),
             plugin: PluginContext {
@@ -114,6 +115,7 @@ impl Run {
             action: ActionContext { kind: ActionKind::ExportAction, id: self.action.into(), trigger: Trigger::Menu },
             project: None,
             export: Some(ExportContext {
+                status: None,
                 id: "e1".into(),
                 label: self.label.clone(),
                 preset: "h264".into(),

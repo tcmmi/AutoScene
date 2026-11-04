@@ -89,6 +89,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     exportActions: [],
     commands: [],
     settings: [],
+    events: [],
     runtime: "process",
     sandbox: null,
     protocol: 1,
@@ -151,7 +152,7 @@ const hello = (version: string, more: Partial<MockPlugin> = {}) =>
     permissions: ["exports:read", "exports:write"],
     icon: icon("#e0b45c"),
     bannerHash: "5d1c0e7a",
-    exportActions: [{ id: "hello", title: "Say hello", description: "Writes hello.txt beside the export.", afterExport: false }],
+    exportActions: [{ id: "hello", title: "Say hello", description: "Writes hello.txt beside the export.", afterExport: false, afterFailed: false }],
     commands: [{ id: "greet", title: "Say hello to the project", description: null, needsProject: true }],
     settings: HELLO_SETTINGS,
     ...more,
@@ -175,7 +176,10 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
       permissions: ["exports:read", "network"],
       networkHosts: ["discord.com"],
       icon: icon("#7c8cf5"),
-      exportActions: [{ id: "post", title: "Post to Discord", description: "Posts the clip list to the channel.", afterExport: false }],
+      exportActions: [{ id: "post", title: "Post to Discord", description: "Posts the clip list to the channel.", afterExport: false, afterFailed: true }],
+      events: [
+        { id: "analysis-done", title: "Post when an analysis finishes", description: null, on: "analysisFinished", turnedOn: false },
+      ],
       settings: [
         {
           key: "webhook",
@@ -214,7 +218,7 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
       permissions: ["exports:read"],
       gpu: true,
       uvScript: false,
-      exportActions: [{ id: "check", title: "Check for dropped frames", description: null, afterExport: false }],
+      exportActions: [{ id: "check", title: "Check for dropped frames", description: null, afterExport: false, afterFailed: false }],
     }),
   },
   {
@@ -227,7 +231,7 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
       description: "Lists each clip's episode and timecodes in a text file beside the export.",
       permissions: ["exports:read", "exports:write", "project:read"],
       icon: icon("#5fc58f"),
-      exportActions: [{ id: "notes", title: "Write shot notes", description: null, afterExport: false }],
+      exportActions: [{ id: "notes", title: "Write shot notes", description: null, afterExport: false, afterFailed: false }],
       commands: [{ id: "whats-new", title: "What's new in Shot Notes", description: null, needsProject: false }],
     }),
   },
@@ -255,7 +259,7 @@ const PACKAGES: { path: string; plugin: MockPlugin }[] = [
       permissions: ["exports:write"],
       icon: icon("#c58f5f"),
       exportActions: [
-        { id: "list", title: "Save a clip list", description: "Saves each clip's name, episode and frames in the export's folder.", afterExport: false },
+        { id: "list", title: "Save a clip list", description: "Saves each clip's name, episode and frames in the export's folder.", afterExport: false, afterFailed: false },
       ],
     }),
   },
@@ -274,7 +278,7 @@ const folderPlugin = (path: string) =>
     description: "A plugin being written, loaded from its folder.",
     source: "folder",
     folder: path,
-    exportActions: [{ id: "try", title: "Try my plugin", description: null, afterExport: false }],
+    exportActions: [{ id: "try", title: "Try my plugin", description: null, afterExport: false, afterFailed: false }],
     commands: [{ id: "hello", title: "Run my plugin", description: null, needsProject: false }],
   })
 
@@ -346,7 +350,7 @@ const leaky = plugin({
   protocol: 2,
   runtime: "none",
   uvScript: false,
-  exportActions: [{ id: "list", title: "List the clips", description: null, afterExport: false }],
+  exportActions: [{ id: "list", title: "List the clips", description: null, afterExport: false, afterFailed: false }],
   pages: [{ id: "main", title: "Leaky Export", description: "Lists the clips of an export.", entry: "ui/index.html", scope: "global", rail: true }],
   withdrawn: LEAKY_REASON,
 })
@@ -441,6 +445,7 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
           ...a,
           afterExport: previous.exportActions.some((b) => b.id === a.id && b.afterExport),
         })),
+        events: p.events.map((e) => ({ ...e, turnedOn: previous.events.some((b) => b.id === e.id && b.turnedOn) })),
       }
     : p
   tickets.set(ticketId, next)
@@ -564,6 +569,14 @@ export function setAfterExport(id: string, action: string, on: boolean, allow: b
   const old = get(id)
   if (!old.exportActions.some((a) => a.id === action)) throw { code: "invalid", message: `The plugin has no export action ${action}.` }
   const p = { ...old, exportActions: old.exportActions.map((a) => (a.id === action ? { ...a, afterExport: on } : a)) }
+  installed.set(id, p)
+  return info(p, allow)
+}
+
+export function setEvent(id: string, event: string, on: boolean, allow: boolean): PluginInfo {
+  const old = get(id)
+  if (!old.events.some((e) => e.id === event)) throw { code: "invalid", message: `The plugin has no event ${event}.` }
+  const p = { ...old, events: old.events.map((e) => (e.id === event ? { ...e, turnedOn: on } : e)) }
   installed.set(id, p)
   return info(p, allow)
 }

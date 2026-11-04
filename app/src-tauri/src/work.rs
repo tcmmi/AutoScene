@@ -427,6 +427,8 @@ fn submit_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, o
         let state = app2.state::<AppState>();
         state.analysis.lock().running.insert(media_id);
         let running = Running { state: &state, media: media_id };
+        // Before it runs: whether it analyses anything plugins are told of.
+        let due = analysis_due(&project, media_id);
         let _awake = crate::keep_awake::hold();
         let notify = || {
             let _ = AnalysisChanged { project_id: project.id, media_id }.emit(&app2);
@@ -450,9 +452,13 @@ fn submit_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, o
             bodies
         });
         // Asked to start over while this ran: now nothing writes any more.
+        // (The new analysis is the one plugins are told of.)
         if let Some(stage) = running.finish() {
             restart_analysis(&app2, &project, media_id, stage);
             return ended_for_restart(&ctx.cancel);
+        }
+        if due {
+            crate::plugins::analysis_worked(&state, project.id, ctx.id);
         }
         result.map_err(JobError::from)
     });
@@ -510,6 +516,19 @@ pub fn stop_unstarted_analysis(app: &AppHandle, project_id: ProjectId, media_id:
 fn analysed_otherwise(jobs: &JobRunner, runs: &parking_lot::Mutex<AnalysisRuns>, media: MediaId) -> bool {
     runs.lock().running.contains(&media)
         || jobs.is_under_way(|j| j.kind == JobKind::Analyze && j.media_id == Some(media))
+}
+
+/// Whether an analysis of `media_id` has anything to do: a stage it runs
+/// isn't ready, or its faces are an older embedder's or another search's.
+/// One of an episode analysed already (as a folder found again queues)
+/// finds nothing to do.
+fn analysis_due(project: &Project, media_id: MediaId) -> bool {
+    let Ok(m) = project.media(media_id) else { return false };
+    let ready = |s: StageState| s == StageState::Ready;
+    !ready(m.shots)
+        || !ready(m.faces)
+        || (project.finds_bodies() && !ready(m.bodies))
+        || project.faces_by_other_model(project.face_embedder()).is_ok_and(|ids| ids.contains(&media_id))
 }
 
 /// Clear a media's results from `stage` on and analyse it again. Only call

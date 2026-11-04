@@ -221,6 +221,7 @@ fn tools() -> ToolPaths {
 /// The run line of a protocol 2 program, for the action `id`.
 fn run(kind: ActionKind, id: &str, trigger: Trigger) -> RunMessage {
     RunMessage {
+        event: None,
         protocol: 2,
         run_id: "run-1".into(),
         plugin: plugin(),
@@ -366,6 +367,7 @@ fn the_template_program_runs_and_serves() {
     };
     let mut message = run(ActionKind::ExportAction, "count-clips", Trigger::Menu);
     message.export = Some(ExportContext {
+        status: None,
         id: "e1".into(),
         label: None,
         preset: "fast".into(),
@@ -449,6 +451,7 @@ fn the_discord_example_reads_its_secret_and_posts_through_autoscene() {
         fps: None,
     };
     message.export = Some(ExportContext {
+        status: None,
         id: "e1".into(),
         label: Some("Walter · scenepack".into()),
         preset: "prores-hq".into(),

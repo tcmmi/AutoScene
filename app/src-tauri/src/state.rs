@@ -83,7 +83,14 @@ impl AppState {
         let handle = app.clone();
         let jobs = JobRunner::new(LIMITS, move |e| {
             let _ = match e {
-                JobEvent::Changed(info) => JobChanged(info).emit(&handle),
+                JobEvent::Changed(info) => {
+                    // What a job that ended sets off for plugins is queued
+                    // off this listener.
+                    if info.state.is_finished() {
+                        crate::plugins::job_ended(&handle, &info);
+                    }
+                    JobChanged(info).emit(&handle)
+                }
                 JobEvent::Progress(p) => JobProgressEvent(p).emit(&handle),
             };
         });

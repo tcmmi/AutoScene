@@ -280,6 +280,7 @@ impl Run {
             settings.insert("timeout-ms".into(), SettingValue::Number(ms));
         }
         let message = RunMessage {
+            event: None,
             protocol: 2,
             run_id: "run-1".into(),
             plugin: PluginContext {

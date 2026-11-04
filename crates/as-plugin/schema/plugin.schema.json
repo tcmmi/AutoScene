@@ -11,7 +11,7 @@
       "type": "string"
     },
     "manifestVersion": {
-      "description": "The version of plugin.json this file is written for. Version 2 adds pages, secret settings, and the runtime types service, none and wasm.",
+      "description": "The version of plugin.json this file is written for. Version 2 adds pages, secret settings, events, afterFailed, and the runtime types service, none and wasm.",
       "enum": [1, 2]
     },
     "id": {
@@ -95,9 +95,22 @@
           "contributes": {
             "properties": {
               "pages": false,
+              "events": false,
+              "exportActions": { "items": { "properties": { "afterFailed": false } } },
               "settings": { "items": { "properties": { "type": { "not": { "const": "secret" } } } } }
             }
           }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["engines"],
+        "properties": { "engines": { "required": ["protocol"], "properties": { "protocol": { "const": 1 } } } }
+      },
+      "then": {
+        "properties": {
+          "contributes": { "properties": { "exportActions": { "items": { "properties": { "afterFailed": { "const": false } } } } } }
         }
       }
     },
@@ -114,7 +127,7 @@
           "runtime": { "properties": { "command": false, "gpu": false, "component": false, "limits": false } },
           "contributes": {
             "required": ["pages"],
-            "properties": { "exportActions": false, "commands": false, "pages": { "minItems": 1 } }
+            "properties": { "exportActions": false, "commands": false, "events": false, "pages": { "minItems": 1 } }
           }
         }
       }
@@ -134,7 +147,10 @@
         "properties": { "runtime": { "required": ["type"], "properties": { "type": { "const": "wasm" } } } }
       },
       "then": {
-        "properties": { "runtime": { "required": ["component"], "properties": { "command": false, "gpu": { "const": false } } } }
+        "properties": {
+          "runtime": { "required": ["component"], "properties": { "command": false, "gpu": { "const": false } } },
+          "contributes": { "properties": { "events": false } }
+        }
       }
     },
     {
@@ -342,6 +358,12 @@
           "type": "array",
           "maxItems": 4,
           "items": { "$ref": "#/$defs/page" }
+        },
+        "events": {
+          "description": "Moments its program may run on by itself, each once the person turns it on in the plugin's settings (manifest version 2; not for a WebAssembly plugin yet).",
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/event" }
         }
       },
       "additionalProperties": false
@@ -352,7 +374,25 @@
       "properties": {
         "id": { "$ref": "#/$defs/contributionId" },
         "title": { "$ref": "#/$defs/label", "maxLength": 60 },
-        "description": { "type": "string", "maxLength": 200 }
+        "description": { "type": "string", "maxLength": 200 },
+        "afterFailed": {
+          "description": "Turned on for after every export, it also runs after one that failed or made only some of its clips, never after a cancelled one (manifest version 2, protocol 2).",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "required": ["id", "title", "on"],
+      "properties": {
+        "id": { "$ref": "#/$defs/contributionId" },
+        "title": { "$ref": "#/$defs/label", "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 200 },
+        "on": {
+          "description": "What it waits for. analysisFinished: a project's episodes are all analysed.",
+          "enum": ["analysisFinished"]
+        }
       },
       "additionalProperties": false
     },

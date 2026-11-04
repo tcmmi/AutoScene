@@ -23,6 +23,7 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     pluginSettingsGet: vi.fn(() => Promise.resolve(state.values)),
     pluginSettingsSet: vi.fn(async (_: string, v: Record<string, SettingValue>) => ({ ...(await state.values), ...v })),
     pluginSetAfterExport: vi.fn(),
+    pluginSetEvent: vi.fn(),
     pluginSecretSet: vi.fn(),
     pluginSecretClear: vi.fn(),
   },
@@ -253,7 +254,7 @@ describe("a plugin's settings", () => {
   })
 
   it("turns on Run after every export", async () => {
-    const action = { id: "hello", title: "Say hello", description: null, afterExport: false }
+    const action = { id: "hello", title: "Say hello", description: null, afterExport: false, afterFailed: false }
     show({ exportActions: [action] })
     const on = await screen.findByRole("switch", { name: "Run Say hello after every export" })
     expect(on.getAttribute("aria-checked")).toBe("false")
@@ -263,6 +264,53 @@ describe("a plugin's settings", () => {
       expect(screen.getByRole("switch", { name: "Run Say hello after every export" }).getAttribute("aria-checked")).toBe("true"),
     )
     expect(commands.pluginSetAfterExport).toHaveBeenCalledExactlyOnceWith("dev.a.hello", "hello", true)
+  })
+
+  const analysisDone = {
+    id: "done",
+    title: "Post when an analysis finishes",
+    description: null,
+    on: "analysisFinished" as const,
+    turnedOn: false,
+  }
+
+  it("an event is off until the person turns it on", async () => {
+    show({ events: [analysisDone] })
+    const name = "Run Post when an analysis finishes, when a project's episodes are all analysed"
+    const on = await screen.findByRole("switch", { name })
+    expect(on.getAttribute("aria-checked")).toBe("false")
+    vi.mocked(commands.pluginSetEvent).mockResolvedValue({ ...state.plugin!, events: [{ ...analysisDone, turnedOn: true }] })
+    fireEvent.click(on)
+    await waitFor(() => expect(screen.getByRole("switch", { name }).getAttribute("aria-checked")).toBe("true"))
+    expect(commands.pluginSetEvent).toHaveBeenCalledExactlyOnceWith("dev.a.hello", "done", true)
+    expect(commands.pluginSetAfterExport).not.toHaveBeenCalled()
+  })
+
+  it("after-export actions and events share one group", async () => {
+    const actions = [
+      { id: "post", title: "Post to Discord", description: "Posts the clip list.", afterExport: true, afterFailed: true },
+      { id: "tag", title: "Tag the clips", description: null, afterExport: false, afterFailed: false },
+    ]
+    show({ exportActions: actions, events: [analysisDone] })
+    const group = (await screen.findByText("Runs by itself")).closest("section")!
+    const rows = within(group).getAllByRole("switch").map((s) => s.getAttribute("aria-label"))
+    expect(rows).toEqual([
+      "Run Post to Discord after every export, also one that failed",
+      "Run Tag the clips after every export",
+      "Run Post when an analysis finishes, when a project's episodes are all analysed",
+    ])
+    // Each row says when it runs, and what it does when its plugin says so.
+    expect(within(group).getByText("After every export, also one that failed")).toBeTruthy()
+    expect(within(group).getByText("Posts the clip list.")).toBeTruthy()
+    expect(within(group).getByText("After every export")).toBeTruthy()
+    expect(within(group).getByText("When a project's episodes are all analysed")).toBeTruthy()
+    expect(screen.queryByText("After every export", { selector: "h2, h3" })).toBeNull()
+  })
+
+  it("has no Runs by itself group without actions or events", async () => {
+    show({ settings: [number("count", "Count", {})] })
+    await screen.findByText("Settings")
+    expect(screen.queryByText("Runs by itself")).toBeNull()
   })
 
   const secret = (key: string, title: string): SettingSpec => ({

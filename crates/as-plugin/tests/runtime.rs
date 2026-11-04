@@ -122,6 +122,7 @@ impl Plugin {
 
 fn message() -> RunMessage {
     RunMessage {
+        event: None,
         protocol: 1,
         run_id: "run-1".into(),
         plugin: PluginContext {
@@ -272,6 +273,7 @@ fn the_run_message_is_one_line_with_the_full_context() {
     p.message.action.trigger = Trigger::AfterExport;
     p.message.project = Some(ProjectContext { id: "p1".into(), title: "Breaking Bad".into(), folder: "/bb".into() });
     p.message.export = Some(ExportContext {
+        status: None,
         id: "e1".into(),
         label: Some("Jesse".into()),
         preset: "prores".into(),

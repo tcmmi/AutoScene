@@ -43,6 +43,9 @@ It can add:
 - **Export actions**: entries in each export's menu. The person can also
   turn each one on to run after every export.
 - **Commands**: entries in the command palette, with or without a project.
+- **Events** (version 2): moments its program runs on by itself once the
+  person turns them on, such as the end of an analysis (see
+  [Runs by itself](#runs-by-itself)).
 - **Settings**: on the plugin's own screen under Plugins (its settings),
   which AutoScene draws and saves. Each run gets the values. A **secret** setting (version
   2), such as a token, is kept in the system's keychain instead (see
@@ -234,13 +237,30 @@ person can stop it in Activity. A WebAssembly plugin's run has one (see
   with the computer. A plugin you no longer trust: uninstall it, and look
   at what starts with your computer.
 
-### After every export
+### Runs by itself
 
-Each export action can be turned on in the plugin's settings, under
-**After every export**. It is off until the person turns it on. It
-then runs once an export finishes with every clip made: never after an
-export that failed, was cancelled, or made only some of its clips. It runs
-as a job of its own, so a plugin never fails an export or holds it up.
+The plugin's settings list, under **Runs by itself**, what it may run
+without being asked. Each is off until the person turns it on.
+
+- **After every export**: each export action. It runs once an export
+  finishes with every clip made. With `"afterFailed": true` (version 2 and
+  protocol 2) it also runs after an export that failed or made only some of
+  its clips; its run line's `export.status` says which. Never after an
+  export that was cancelled.
+- **When a project's episodes are all analysed**: each event that waits
+  for `analysisFinished`. It runs once a project's analyses are over: none
+  of its episodes waits to be indexed, analysed or regrouped any more.
+  Episodes added in one go are one batch, so it runs once for them, and
+  says how many were analysed and how many failed. An analysis counts
+  when it had something to do: an episode new to the project, one
+  analysed again, or faces found again for a newer face model. One of an
+  episode analysed already (a moved folder found again queues those)
+  tells no one. Neither does a batch cancelled whole. Portraits and
+  posters aren't waited for.
+
+Each runs as a job of its own, so a plugin never fails an export or an
+analysis, or holds it up. The same run waits once: an event that waits or
+runs already isn't queued again, and keeps what it was told.
 
 ## WebAssembly plugins
 
@@ -625,22 +645,28 @@ The first line on the plugin's stdin is the run:
 | `app` | AutoScene's `version`, and the `platform` it runs on: `windows-x86_64`, `windows-aarch64`, `macos-aarch64`, `macos-x86_64`, `linux-x86_64` or `linux-aarch64`. |
 | `tools` | AutoScene's `ffmpeg` and `ffprobe` (full paths) and FFmpeg's version. |
 | `settings` | Each of the plugin's settings: the person's value, else its default. A setting with neither is left out. Numbers are JSON numbers and may come as `3.0`, also for whole-number settings. |
-| `action` | What to do: `kind` is `exportAction` or `command`, `id` is the contribution's id in `plugin.json`, and `trigger` says what started it: `menu` (an export's menu), `afterExport`, `palette` or `page` (one of its pages, protocol 2 only). |
+| `action` | What to do: `kind` is `exportAction`, `command` or `event`, `id` is the contribution's id in `plugin.json`, and `trigger` says what started it: `menu` (an export's menu), `afterExport`, `palette`, `page` (one of its pages, protocol 2 only) or `event` (one of its events, turned on). |
 | `project` | The project it runs in: its `id`, `title` and `folder`. `null` for a command run without a project open. |
-| `export` | The export an export action runs on; `null` for a command. |
+| `export` | The export an export action runs on; `null` for a command and an event. |
 | `input` | What the page that started the run handed it (`actions.run`), as JSON; protocol 2, and only with `trigger` `page`. Left out when the page handed none, and for every other trigger. |
+| `event` | What happened, for a run of an event (see below). Left out of every other run's line. |
 
 An export holds its `id`, its `label` (`"Walter · scenepack"`, or `null`
 for single clips), its `preset` (such as `prores-hq`, `h264-edit` or
 `bit-perfect`), `outDir` (the folder it was written to), `createdAt` (Unix
 milliseconds), `mergedFile` (the one file its clips were joined into, or
-`null` for a file per clip) and its `clips`. Each clip has:
+`null` for a file per clip) and its `clips`. For a program of protocol 2
+it ends with `status`, how the export went once it ended: `done`,
+`partial` (some of what it was to make is missing) or `failed` (it made
+nothing; see [Runs by itself](#runs-by-itself)). An export that waits,
+runs or was cancelled has no `status` (`exports.get` gets those too). A
+program of protocol 1 gets no `status`. Each clip has:
 
 | Field | What it holds |
 |---|---|
 | `name` | The clip's file name, without its extension. |
 | `path` | Where the clip was written; `null` until it is. In a joined export, the joined file. |
-| `status` | `queued`, `running`, `done`, `failed` or `cancelled`. After every export, each is `done`. |
+| `status` | `queued`, `running`, `done`, `failed` or `cancelled`. After a whole export, each is `done`. |
 | `mediaId` | The episode's id in the project. |
 | `sourcePath` | The episode's file. Empty when the episode was removed from the project since. |
 | `episode` | The episode's name. Empty when it was removed. |
@@ -653,6 +679,31 @@ A scenepack export is joined by default: one file, with a chapter per clip.
 `path`. A clip's `start` and `end` are still frames of its episode, not
 times in the joined file. Check `mergedFile` before you act on each clip's `path`,
 or a plugin that uploads each clip uploads the whole file once per clip.
+
+A run of an event has `kind` and `trigger` `event`. It runs in the project
+where the event happened, on no export, and ends with `event`; the rest of
+its line is as above:
+
+```json
+{
+  "action": { "kind": "event", "id": "analysis-done", "trigger": "event" },
+  "project": {
+    "id": "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b",
+    "title": "Breaking Bad",
+    "folder": "D:\\AutoScene Library\\Breaking Bad"
+  },
+  "export": null,
+  "event": { "kind": "analysisFinished", "at": 1762150000000, "episodes": { "done": 7, "failed": 1 } }
+}
+```
+
+`event.kind` is the event's `on`, `at` when it happened (Unix
+milliseconds). For `analysisFinished`, `episodes` counts the episodes whose
+analysis ended since the project last told of one: `done`, and `failed`
+(those cancelled, and those with nothing to do, aren't counted). A run
+that still waits when the next batch ends tells of that batch too, so
+nothing is told twice or left out; `at` is then the later end. Ask for the
+project (`project.get`, protocol 2) to see them.
 
 A later AutoScene may add fields: ignore the ones you don't know.
 
@@ -1551,6 +1602,8 @@ did, and with `"manifestVersion": 2` it reads the same, but for one warning
 |---|---|---|
 | `"engines": { "protocol": 2 }` | Read. | Read. |
 | `contributes.pages` | Skipped, with the warning `Skipped contributes.pages: pages need "manifestVersion": 2.` | Read (see [Pages](#pages)). |
+| `contributes.events` | Skipped, with the warning `Skipped contributes.events: events need "manifestVersion": 2.` | Read, but for a WebAssembly plugin (see [contributes](#contributes)). |
+| `"afterFailed": true` on an export action | Ignored, with the warning `Ignored contributes.exportActions[0].afterFailed: it needs "manifestVersion": 2.` | Read; it needs protocol 2. |
 | A setting of the type `secret` | Skipped, with the warning `Skipped the setting "<key>": secret settings need "manifestVersion": 2.` | Read, when something can ask for it (see [Secret settings](#secret-settings)). |
 | `"runtime": { "type": "service" }` | Refused: `The plugin's runtime.type "service" needs "manifestVersion": 2.` | Read; it needs protocol 2. |
 | `"runtime": { "type": "none" }` | Refused, as `service` is. | Read. |
@@ -1719,30 +1772,49 @@ and refuses a WebAssembly plugin (see [Network](#network)).
 ```json
 "contributes": {
   "exportActions": [
-    { "id": "post", "title": "Post to Discord", "description": "Posts the export's clips to the channel." }
+    { "id": "post", "title": "Post to Discord", "description": "Posts the export's clips to the channel.", "afterFailed": true }
   ],
   "commands": [
     { "id": "test", "title": "Send a test message", "needsProject": false }
   ],
   "settings": [
     { "key": "webhookUrl", "type": "secret", "title": "Webhook URL" }
+  ],
+  "events": [
+    { "id": "analysis-done", "title": "Post when an analysis finishes", "on": "analysisFinished" }
   ]
 }
 ```
 
 - **`exportActions`** (at most 8): each an entry in each export's menu, and
-  a switch under "After every export" in the plugin's settings. An entry is
-  off while its export runs.
+  a switch under "Runs by itself" in the plugin's settings, to run after
+  every export. An entry is off while its export runs. `afterFailed`
+  (version 2, protocol 2): turned on, it also runs after an export that
+  failed or made only some of its clips (see
+  [Runs by itself](#runs-by-itself)); in a protocol 1 manifest it is
+  ignored with the warning
+  `Ignored contributes.exportActions[0].afterFailed: it needs "engines": {"protocol": 2}.`
+  An update that adds `afterFailed` to an action the person turned on
+  turns it off: they agreed to whole exports only, so they turn it on
+  again.
+- **`events`** (version 2, at most 4): moments its program runs on by
+  itself, each a switch under "Runs by itself", off until the person turns
+  it on. `on` names what it waits for: `analysisFinished` (a project's
+  episodes are all analysed). One this AutoScene doesn't know is
+  skipped with the warning `Skipped the event "<id>": "<on>" needs a newer AutoScene.`
+  A program of protocol 1 or 2 may have events; a plugin that runs none
+  (`none`) may not, and a WebAssembly plugin's are skipped with a warning
+  until a later AutoScene.
 - **`commands`** (at most 16): each an entry in the palette's Plugins group.
   With `"needsProject": true` it is offered only inside a project, and runs
   with it; otherwise it runs with the open project, if any.
 - **`settings`** (at most 32): see below.
 - **`pages`** (version 2, at most 4): see [Pages](#pages).
 
-An action's or a command's `id` is 1 to 32 lowercase letters, digits and
-dashes, starting with a letter or digit, and unique among its kind. Its
-`title` (required) has at most 60 characters, its `description` at most
-200.
+An action's, a command's or an event's `id` is 1 to 32 lowercase letters,
+digits and dashes, starting with a letter or digit, and unique among its
+kind. Its `title` (required) has at most 60 characters, its `description`
+at most 200.
 
 ### Settings
 
@@ -1821,11 +1893,12 @@ missing or wrong field, an unknown permission, a key named twice in one
 object, a `plugin.json` over 256 KB. What a later AutoScene may add is
 skipped with a warning, so a plugin made for one still installs in an
 older one: an unknown field, contribution kind or setting type, a page of
-a scope this AutoScene doesn't know, a platform this AutoScene doesn't
-know, and in a version 1 manifest `pages`, `banner`, `resources` and
-secret settings, which need `"manifestVersion": 2`. A higher
-`manifestVersion` or `engines.protocol`, or a `runtime.type` other than
-`process`, `service`, `none` and `wasm`, needs a newer AutoScene.
+a scope this AutoScene doesn't know, an event it can't wait for, a
+platform this AutoScene doesn't know, and in a version 1 manifest `pages`,
+`events`, `afterFailed`, `banner`, `resources` and secret settings, which
+need `"manifestVersion": 2`. A higher `manifestVersion` or
+`engines.protocol`, or a `runtime.type` other than `process`, `service`,
+`none` and `wasm`, needs a newer AutoScene.
 
 The review lists the warnings under "Skipped in its plugin.json", and so
 do the plugin's settings. What the check of a WebAssembly plugin's
@@ -2479,6 +2552,8 @@ folders it has no record of.
 - **Shortcuts** for plugin commands.
 - **A WebAssembly plugin that stays and answers calls**, as a service
   does: a WebAssembly plugin may have pages, but not a service.
+- **Events for WebAssembly plugins**: their `contributes.events` are
+  skipped with a warning.
 - **The network for Python WebAssembly plugins.**
 - **A JavaScript template** for `asp init --wasm` (see
   [JavaScript](#javascript)).

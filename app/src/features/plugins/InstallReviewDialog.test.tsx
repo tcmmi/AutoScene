@@ -29,7 +29,7 @@ const discord = pluginInfo({
   trust: "unreviewed",
   permissions: ["exports:read", "network"],
   networkHosts: ["discord.com"],
-  exportActions: [{ id: "post", title: "Post to Discord", description: null, afterExport: false }],
+  exportActions: [{ id: "post", title: "Post to Discord", description: null, afterExport: false, afterFailed: false }],
 })
 
 const review = (o: Partial<PluginReview> = {}): PluginReview => ({
@@ -415,6 +415,26 @@ describe("the install review", () => {
     expect(screen.getByText("1 setting")).toBeTruthy()
   })
 
+  it("says what may run by itself once the person turns it on", () => {
+    const exportActions = [
+      { id: "post", title: "Post to Discord", description: null, afterExport: false, afterFailed: true },
+      { id: "tag", title: "Tag the clips", description: null, afterExport: false, afterFailed: false },
+    ]
+    const events = [
+      { id: "done", title: "Post when an analysis finishes", description: null, on: "analysisFinished" as const, turnedOn: false },
+    ]
+    show(review({ plugin: { ...discord, exportActions, events } }))
+    const adds = (where: string) =>
+      screen.getByText(`${where}:`, { exact: true }).closest("li")!.textContent!.replace(/\s+/g, " ").trim()
+    expect(adds("Can run when an analysis finishes")).toBe("Can run when an analysis finishes: Post when an analysis finishes (you turn it on)")
+    expect(adds("Can run after every export, also one that failed")).toBe(
+      "Can run after every export, also one that failed: Post to Discord (you turn it on)",
+    )
+    // Each action stays in the export's menu; only the one that says so runs after a failed export.
+    expect(screen.getAllByText("Each export's menu:")).toHaveLength(2)
+    expect(screen.getAllByText("Can run after every export, also one that failed:")).toHaveLength(1)
+  })
+
   it("never says a first signature shows who made it", () => {
     const signed = { ...discord, trust: "pinned" as const, author: "AutoScene", authorKeyId: "4B2D9C1E0F3A7E51" }
     show(review({ plugin: signed }))
@@ -459,7 +479,7 @@ describe("the install review", () => {
     uvScript: false,
     sandbox: { memoryMb: 512, minutes: 30 },
     permissions: ["exports:write"],
-    exportActions: [{ id: "list", title: "Write the clip list", description: null, afterExport: false }],
+    exportActions: [{ id: "list", title: "Write the clip list", description: null, afterExport: false, afterFailed: false }],
   })
 
   it("says a WebAssembly plugin runs in a sandbox and its permissions are enforced", () => {

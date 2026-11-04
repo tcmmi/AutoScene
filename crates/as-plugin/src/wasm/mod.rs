@@ -440,7 +440,7 @@ fn run_in(
     message.protocol = grants.protocol;
     secrets.retain(|key, _| grants.secrets.contains(key));
     let mounts = convert::mounts(&message, &grants)?;
-    let request = convert::request(&message, &mounts, &grants);
+    let request = convert::request(&message, &mounts, &grants)?;
     let folders = (data_dir.as_path(), resources_dir.as_deref(), tmp);
     let wasi = state::wasi(message.plugin.id.as_str(), grants.protocol, folders, &mounts, log)?;
 

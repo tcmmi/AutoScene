@@ -1,7 +1,7 @@
 import type * as React from "react"
 import { useId, useState } from "react"
 import { toast } from "sonner"
-import type { PageSpec, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, ReviewCatalog } from "@/bindings"
+import type { EventKind, PageSpec, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, ReviewCatalog } from "@/bindings"
 import { CircleNotch, ShieldCheck } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -455,10 +455,15 @@ function pagePlace(page: PageSpec): string {
     : ", in the command palette"
 }
 
+/** What the review says an event of each kind adds. */
+const EVENT_ADDS: Record<EventKind, string> = {
+  analysisFinished: "Can run when an analysis finishes",
+}
+
 /**
- * The pages (and where they show), menu entries, palette commands and
- * settings it adds, with the pages an update adds marked, and the secrets
- * it keeps.
+ * The pages (and where they show), menu entries, palette commands, what may
+ * run by itself (once turned on) and settings it adds, with the pages an
+ * update adds marked, and the secrets it keeps.
  */
 function Adds({ p, addedPages }: { p: PluginInfo; addedPages: string[] }) {
   const adds = [
@@ -471,6 +476,22 @@ function Adds({ p, addedPages }: { p: PluginInfo; addedPages: string[] }) {
     })),
     ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title, after: "", added: false })),
     ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title, after: "", added: false })),
+    ...p.exportActions
+      .filter((a) => a.afterFailed)
+      .map((a) => ({
+        key: `failed-${a.id}`,
+        where: "Can run after every export, also one that failed",
+        what: a.title,
+        after: " (you turn it on)",
+        added: false,
+      })),
+    ...p.events.map((e) => ({
+      key: `event-${e.id}`,
+      where: EVENT_ADDS[e.on],
+      what: e.title,
+      after: " (you turn it on)",
+      added: false,
+    })),
   ]
   const secrets = p.settings.filter((s) => s.kind.type === "secret")
   const settings = p.settings.length - secrets.length

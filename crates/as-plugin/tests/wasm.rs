@@ -102,6 +102,7 @@ fn message(root: &Path, action: &str) -> RunMessage {
         fps: Some("24000/1001".into()),
     };
     RunMessage {
+        event: None,
         protocol: 1,
         run_id: "run-1".into(),
         plugin: PluginContext {
@@ -122,6 +123,7 @@ fn message(root: &Path, action: &str) -> RunMessage {
         action: ActionContext { kind: ActionKind::ExportAction, id: action.into(), trigger: Trigger::Menu },
         project: Some(ProjectContext { id: "p1".into(), title: "Breaking".into(), folder: host(root.join("project")) }),
         export: Some(ExportContext {
+            status: None,
             id: "e1".into(),
             label: Some("Cut".into()),
             preset: "h264".into(),

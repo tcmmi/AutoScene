@@ -24,6 +24,7 @@ export function pluginInfo(o: Partial<PluginInfo> & Pick<PluginInfo, "id" | "nam
     exportActions: [],
     commands: [],
     settings: [],
+    events: [],
     runtime: "process",
     sandbox: null,
     protocol: 1,

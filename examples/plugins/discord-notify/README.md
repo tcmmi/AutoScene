@@ -58,7 +58,8 @@ Turn on **Plugins → Allow plugins that AutoScene has not reviewed**,
 then **Install a plugin…** and pick `discord-notify.asp`. In its
 settings, choose **Set…** beside **Webhook URL** and paste the URL, then run
 **Send a test message to Discord** from the palette. Its settings also have
-**After every export**, to post each export once it finishes.
+**Runs by itself**, where **Post to Discord** can be turned on to post each
+export once it finishes.
 
 The first run can take a while: uv may need to fetch a Python.
 

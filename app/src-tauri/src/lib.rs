@@ -108,6 +108,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::plugins::plugin_uninstall,
             commands::plugins::plugin_set_enabled,
             commands::plugins::plugin_set_after_export,
+            commands::plugins::plugin_set_event,
             commands::plugins::plugin_settings_get,
             commands::plugins::plugin_settings_set,
             commands::plugins::plugin_run,

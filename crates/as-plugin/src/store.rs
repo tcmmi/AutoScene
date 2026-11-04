@@ -165,11 +165,16 @@ pub struct Extra {
     /// never the values.
     #[serde(default)]
     pub secrets: Vec<String>,
+    /// The ids of its events the person turned on, in its `plugin.json`'s
+    /// order. Left out of the row while there are none, so a row stays as
+    /// AutoScene 1.1 wrote it; 1.1 forgets them when it writes the row.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<String>,
 }
 
 impl Default for Extra {
     fn default() -> Self {
-        Self { v: EXTRA_VERSION, installed_at: 0, runtime: None, secrets: Vec::new() }
+        Self { v: EXTRA_VERSION, installed_at: 0, runtime: None, secrets: Vec::new(), events: Vec::new() }
     }
 }
 
@@ -759,15 +764,25 @@ impl Store {
         if let Some(p) = &previous {
             check_update(p, m, verdict.trust, lock_sha256.as_deref())?;
         }
-        // The secrets it has keep their values; it runs as its manifest says
-        // from now, which the person agreed to. A value kept under the key of
-        // a secret setting, from before it was a secret, goes.
-        let kept = match &previous {
-            Some(p) => self.extra(p)?.secrets,
+        // The secrets it has keep their values, and the events it still has
+        // stay on; it runs as its manifest says from now, which the person
+        // agreed to. A value kept under the key of a secret setting, from
+        // before it was a secret, goes.
+        let (kept, events) = match &previous {
+            Some(p) => {
+                let extra = self.extra(p)?;
+                (extra.secrets, events_kept(m, &extra.events))
+            }
+            None => (Vec::new(), Vec::new()),
+        };
+        // As the person turned them on for the version before, read from
+        // its files while they are still there.
+        let after_export = match &previous {
+            Some(p) => after_export_kept(m, self.load(p.clone()).manifest.as_ref(), &p.after_export),
             None => Vec::new(),
         };
         let installed_at = as_api::now_ms();
-        let extra = Extra { installed_at, secrets: kept, ..Extra::agreed(m.runtime.kind) };
+        let extra = Extra { installed_at, secrets: kept, events, ..Extra::agreed(m.runtime.kind) };
         let settings = self.settings_without_secrets(&m.id, m)?;
 
         let plugin_dir = self.root.join(m.id.as_str());
@@ -784,7 +799,6 @@ impl Store {
             }
             None => None,
         };
-        let actions: Vec<&str> = m.export_actions.iter().map(|a| a.id.as_str()).collect();
         let record = Record {
             v: RECORD_VERSION,
             id: m.id.clone(),
@@ -795,10 +809,7 @@ impl Store {
             permissions: m.permissions.clone(),
             network_hosts: m.network_hosts.clone(),
             enabled: previous.as_ref().is_none_or(|p| p.enabled),
-            after_export: previous
-                .as_ref()
-                .map(|p| p.after_export.iter().filter(|a| actions.contains(&a.as_str())).cloned().collect())
-                .unwrap_or_default(),
+            after_export,
             lock_sha256,
             installed_at,
         };
@@ -906,6 +917,27 @@ impl Store {
             .collect();
         self.write_record(&p.record)?;
         Ok(p)
+    }
+
+    /// Turns the event `event` of `id` on or off: on, it runs by itself
+    /// when what it waits for happens.
+    pub fn set_event(&self, id: &PluginId, event: &str, on: bool) -> PluginResult<Installed> {
+        let _changing = self.changing.lock();
+        let record = self.record(id)?.ok_or_else(|| not_found(id))?;
+        let p = self.load(record);
+        let m = manifest_of(&p)?;
+        if !m.events.iter().any(|e| e.id == event) {
+            return Err(invalid(format!("The plugin has no event {}.", shown(event))));
+        }
+        let mut extra = self.extra(&p.record)?;
+        let mut turned_on = extra.events.clone();
+        turned_on.retain(|e| e != event);
+        if on {
+            turned_on.push(event.to_owned());
+        }
+        extra.events = events_kept(m, &turned_on);
+        self.write_extra(id, &extra, None)?;
+        Ok(self.load(p.record))
     }
 
     /// The value of each of the settings of `id`: the person's while it
@@ -1187,6 +1219,7 @@ impl Store {
     ) -> PluginResult<RunMessage> {
         let id = &p.record.id;
         Ok(RunMessage {
+            event: None,
             protocol: m.engines.protocol,
             run_id: Uuid::now_v7().to_string(),
             plugin: PluginContext {
@@ -1586,6 +1619,26 @@ fn installed_by_a_newer_autoscene() -> PluginError {
     invalid(
         "A newer AutoScene installed this plugin, so this one can't change it. Update AutoScene, or uninstall the plugin.",
     )
+}
+
+/// Of the events `turned_on`, those `m` still has, in its order.
+fn events_kept(m: &Manifest, turned_on: &[String]) -> Vec<String> {
+    m.events.iter().filter(|e| turned_on.contains(&e.id)).map(|e| e.id.clone()).collect()
+}
+
+/// Of the export actions `turned_on` for after every export in the version
+/// of manifest `before` (none when it can't be read), those that stay on in
+/// the version of `m`: each it still has, unless it now runs after a failed
+/// export too and didn't then. The person agreed to whole exports only, so
+/// they turn it on again.
+pub fn after_export_kept(m: &Manifest, before: Option<&Manifest>, turned_on: &[String]) -> Vec<String> {
+    let failed_before =
+        |id: &str| before.is_some_and(|b| b.export_actions.iter().any(|a| a.id == id && a.after_failed));
+    turned_on
+        .iter()
+        .filter(|id| m.export_actions.iter().any(|a| a.id == **id && (!a.after_failed || failed_before(id))))
+        .cloned()
+        .collect()
 }
 
 /// The extra row `value` of `id`, when this AutoScene can read it: of
@@ -2232,6 +2285,80 @@ mod tests {
         assert_eq!(new.record.after_export, ["hello"]);
         assert_eq!(store.get(&id()).unwrap().record, new.record);
         assert_eq!(place.plugins(), holding(&new));
+    }
+
+    #[test]
+    fn an_update_that_runs_after_failed_exports_too_is_turned_on_again() {
+        let place = Place::new();
+        let store = place.store();
+        let failing = |version: &str, after_failed: &[&str]| {
+            let mut m = manifest(ID, version);
+            m["manifestVersion"] = json!(2);
+            m["engines"]["protocol"] = json!(2);
+            for a in m["contributes"]["exportActions"].as_array_mut().unwrap() {
+                let id = a["id"].as_str().unwrap().to_owned();
+                a["afterFailed"] = json!(after_failed.contains(&id.as_str()));
+            }
+            place.package(&files(&m), None, false)
+        };
+        install(&store, &failing("1.0.0", &["wave"])).unwrap();
+        store.set_after_export(&id(), "hello", true).unwrap();
+        store.set_after_export(&id(), "wave", true).unwrap();
+        // 1.1.0 runs hello after a failed export too, and the person agreed
+        // to whole exports only; wave ran so already.
+        let new = install(&store, &failing("1.1.0", &["hello", "wave"])).unwrap();
+        assert_eq!(new.record.after_export, ["wave"]);
+        assert_eq!(store.get(&id()).unwrap().record.after_export, ["wave"]);
+        // Turned on again, it stays on through an update that keeps it so.
+        store.set_after_export(&id(), "hello", true).unwrap();
+        let kept = install(&store, &failing("1.2.0", &["hello", "wave"])).unwrap();
+        assert_eq!(kept.record.after_export, ["hello", "wave"]);
+        // One that stops running after a failed export keeps it on.
+        assert_eq!(install(&store, &failing("1.3.0", &[])).unwrap().record.after_export, ["hello", "wave"]);
+    }
+
+    #[test]
+    fn turned_on_events_survive_an_update_that_keeps_them() {
+        let place = Place::new();
+        let store = place.store();
+        let waiting_for = |version: &str, events: &[&str]| {
+            let mut m = manifest(ID, version);
+            m["manifestVersion"] = json!(2);
+            let events: Vec<Value> =
+                events.iter().map(|e| json!({"id": e, "title": e, "on": "analysisFinished"})).collect();
+            m["contributes"]["events"] = json!(events);
+            place.package(&files(&m), None, false)
+        };
+        let p = install(&store, &waiting_for("1.0.0", &["done", "tally"])).unwrap();
+        // Off until the person turns them on, and then in its plugin.json's order.
+        assert_eq!(p.extra.events, Vec::<String>::new());
+        store.set_event(&id(), "tally", true).unwrap();
+        assert_eq!(store.set_event(&id(), "done", true).unwrap().extra.events, ["done", "tally"]);
+        assert_eq!(store.get(&id()).unwrap().extra.events, ["done", "tally"]);
+        assert_eq!(store.set_event(&id(), "done", false).unwrap().extra.events, ["tally"]);
+        let e = store.set_event(&id(), "later", true).unwrap_err();
+        assert_eq!(e.to_string(), "The plugin has no event later.");
+        store.set_event(&id(), "done", true).unwrap();
+
+        // 1.1.0 has no tally any more, and a new event, which is off.
+        let update = waiting_for("1.1.0", &["fresh", "done"]);
+        place.refuse_writes();
+        assert!(install(&store, &update).is_err());
+        assert_eq!(store.get(&id()).unwrap().extra.events, ["done", "tally"]);
+        place.allow_writes();
+        let new = install(&store, &update).unwrap();
+        assert_eq!(new.extra.events, ["done"]);
+        assert_eq!(store.get(&id()).unwrap().extra.events, ["done"]);
+        // One that drops it forgets it: turned on again, it starts off.
+        install(&store, &waiting_for("1.2.0", &["fresh"])).unwrap();
+        assert_eq!(install(&store, &waiting_for("1.3.0", &["done"])).unwrap().extra.events, Vec::<String>::new());
+
+        // None on, the row is written as AutoScene 1.1 wrote it.
+        let row = place.db.setting(&extra_key(&id())).unwrap().unwrap();
+        assert!(!row.contains("events"), "{row}");
+        store.set_event(&id(), "done", true).unwrap();
+        let row = place.db.setting(&extra_key(&id())).unwrap().unwrap();
+        assert!(row.contains(r#""events":["done"]"#), "{row}");
     }
 
     #[test]

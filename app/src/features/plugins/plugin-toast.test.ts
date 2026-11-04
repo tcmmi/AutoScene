@@ -14,6 +14,12 @@ describe("a plugin's toast", () => {
     expect(toast.error).toHaveBeenCalledExactlyOnceWith("Plugin “AutoScene”: Update failed", { description: undefined })
   })
 
+  it("can offer an action", () => {
+    const action = { label: "Show in folder", onClick: () => {} }
+    pluginToast("FCPXML", { text: "saved Walter.fcpxml", action })
+    expect(toast).toHaveBeenCalledExactlyOnceWith("Plugin “FCPXML”: saved Walter.fcpxml", { description: undefined, action })
+  })
+
   it("names no plugin it doesn't know", () => {
     pluginToast(null, { text: "Post to Discord failed", tone: "error" })
     expect(toast.error).toHaveBeenCalledExactlyOnceWith("A plugin: Post to Discord failed", { description: undefined })

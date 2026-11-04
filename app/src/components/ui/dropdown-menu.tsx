@@ -13,6 +13,7 @@ export function DropdownMenuContent({
   className,
   align = "end",
   sideOffset = 6,
+  collisionPadding = 8,
   onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof M.Content>) {
@@ -21,6 +22,7 @@ export function DropdownMenuContent({
       <M.Content
         align={align}
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         // Back to the ⋯ button only when the focus would be lost: an entry
         // that opened a field or a dialog keeps it there.
         onCloseAutoFocus={(e) => {
@@ -28,7 +30,12 @@ export function DropdownMenuContent({
           const active = document.activeElement
           if (active !== null && active !== document.body) e.preventDefault()
         }}
-        className={cn(menuSurface, "data-[state=open]:animate-pop-in", className)}
+        className={cn(
+          menuSurface,
+          // As the context menu: a long list (plugins decide how long) scrolls inside the window.
+          "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto data-[state=open]:animate-pop-in",
+          className,
+        )}
         {...props}
       />
     </M.Portal>

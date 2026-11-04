@@ -1,9 +1,12 @@
-import { ArrowCounterClockwise, Package } from "@/components/icons"
+import { ArrowCounterClockwise, DotsThree, Package } from "@/components/icons"
 import type { JobInfo, PackTotals } from "@/bindings"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ProgressRing } from "@/components/ui/progress"
 import { Tooltip } from "@/components/ui/tooltip"
 import { plural } from "@/features/cast/cast"
+import { PluginIcon } from "@/features/plugins/PluginIcon"
+import type { PackActionItem } from "@/features/plugins/plugin-items"
 import { formatBytes, formatDuration, formatPercent } from "@/lib/format"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { jobBar } from "@/state/activity"
@@ -19,7 +22,9 @@ import type { PackCheck } from "./spec"
  * so and offers to try again, and Export goes on: the shots it didn't
  * judge keep the word it gave them with its settings before (out where it
  * said no), else they are in, and the export takes them as the grid shows
- * them.
+ * them. Beside Export, a ⋯ lists what the plugins that may run now save the
+ * pack as (a timeline file, before anything is rendered): it is there only
+ * when one has such an entry, and goes with Export's wait for a check.
  */
 /** What the shots a failed check didn't judge are, as the grid shows them. */
 const FAILED_HINT =
@@ -33,6 +38,9 @@ export function PackFooter({
   canExport,
   exporting,
   check,
+  actions,
+  canSave = false,
+  onSave,
   onClearPicks,
   onTryAgain,
   onExport,
@@ -49,6 +57,12 @@ export function PackFooter({
   exporting?: Pick<JobInfo, "state" | "progress">
   /** What the plugin filters turned on are doing, if anything. */
   check?: PackCheck | null
+  /** What the plugins that may run now save the pack as. */
+  actions?: PackActionItem[]
+  /** Whether the pack can be saved now: as Export, but also while it exports. */
+  canSave?: boolean
+  /** Save the pack with `action`. */
+  onSave?: (action: PackActionItem) => void
   onClearPicks: () => void
   /** Ask the filters whose check failed to start it again. */
   onTryAgain?: () => void
@@ -91,6 +105,32 @@ export function PackFooter({
             <ArrowCounterClockwise /> {plural(picks, "pick")} by hand
           </Button>
         </Tooltip>
+      )}
+      {actions && actions.length > 0 && (
+        <DropdownMenu>
+          {/* A disabled button takes no pointer: the tooltip is on what holds it, as Export's. */}
+          <Tooltip label={waiting && !canSave ? "Waits for the check" : "Save the pack with a plugin"}>
+            <span
+              tabIndex={canSave ? undefined : 0}
+              className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
+            >
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" disabled={!canSave} aria-label="Save the pack with a plugin">
+                  <DotsThree weight="bold" />
+                </Button>
+              </DropdownMenuTrigger>
+            </span>
+          </Tooltip>
+          <DropdownMenuContent side="top" align="end" className="min-w-[240px]">
+            <DropdownMenuLabel>Save with a plugin</DropdownMenuLabel>
+            {actions.map((a) => (
+              <DropdownMenuItem key={a.key} onSelect={() => onSave?.(a)}>
+                <PluginIcon src={a.icon} /> {a.title}
+                <span className="ml-auto pl-4 text-xs text-fg-3">{a.pluginName}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
       {exporting ? (
         <Tooltip label="Show it in Activity">

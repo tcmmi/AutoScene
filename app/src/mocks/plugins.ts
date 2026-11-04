@@ -401,9 +401,28 @@ const speechFilter = plugin({
   ],
 })
 
+/**
+ * The example pack-action plugin: its action saves a scenepack as a Final
+ * Cut Pro timeline, before anything is rendered. The mock's save is a
+ * prompt, and its run takes a moment (see `pack_action_run`).
+ */
+const fcpxml = plugin({
+  id: "dev.example.fcpxml",
+  name: "FCPXML",
+  version: "1.0.0",
+  trust: "reviewed",
+  author: "Example Dev",
+  description: "Saves a character's scenepack as a Final Cut Pro timeline, before anything is rendered. An example plugin.",
+  permissions: ["project:read"],
+  icon: icon("#6b8fd9"),
+  protocol: 2,
+  packActions: [{ id: "fcpxml", title: "Save as FCPXML…", file: { name: "{character}.fcpxml", extensions: ["fcpxml"] } }],
+})
+
 const installed = new Map<string, MockPlugin>([
   [hello("1.0.0").id, hello("1.0.0")],
   [speechFilter.id, speechFilter],
+  [fcpxml.id, fcpxml],
   [helloPage.id, helloPage],
   [helloService.id, helloService],
   ...(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mockCatalog") === "withdrawn"

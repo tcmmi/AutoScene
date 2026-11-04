@@ -164,10 +164,12 @@ Rules:
   for the shots it leaves out). A click takes a shot in or out,
   Shift every shot since the last. A glass bar floats at the bottom with the count, length and size, the picks by
   hand, how far a plugin's check is (Export waits for it) or that one failed (Try again; the shots it didn't check keep
-  its word from before, as the grid shows, and Export goes on) and Export as the white pill; the export dialog makes one
-  file with a chapter per shot (a switch at the top, on by default) or a file per shot, named from templates: the parts
-  stand out in the field as quiet pills, a mistyped one in red where it is; the name-part buttons are one Tab stop, and
-  each says what it gives.
+  its word from before, as the grid shows, and Export goes on) and Export as the white pill, with a ⋯ beside it only
+  when a plugin saves the pack as its own timeline file (the entries in a menu that scrolls inside the window, each
+  with the plugin's mark and name; the ⋯ says what it waits for; the same entries in a group of their own after the
+  app's in the grid's right-click menu); the export dialog makes one file with a chapter per shot (a switch at the top,
+  on by default) or a file per shot, named from templates: the parts stand out in the field as quiet pills, a mistyped
+  one in red where it is; the name-part buttons are one Tab stop, and each says what it gives.
 - **Review:** one face against the suggestion, both big, the face lighting the room; answers on the keyboard.
 - **Player:** a dark room — the picture as large as the stage allows at the file's own shape (a preview copy or a
   small file grows too), on a rounded screen with its own ambilight. Every control has one place; a right-click

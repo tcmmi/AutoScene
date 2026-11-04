@@ -143,6 +143,15 @@ export function exportable(p: {
   return p.taken > 0 && p.current && p.character && !p.exporting && p.check?.kind !== "checking"
 }
 
+/**
+ * Whether the pack can be saved with a plugin's action now: as it can be
+ * exported, but also while an export of it runs (saving is a file the
+ * pack's own clips go into, not a second export).
+ */
+export function savable(p: { taken: number; current: boolean; character: boolean; check: PackCheck | null }): boolean {
+  return exportable({ ...p, exporting: false })
+}
+
 /** The words a shot that a plugin's filter left out wears: the filter's own, else a general one. */
 export const filterReason = (f: PackFilter | undefined): string => (f?.reason ? f.reason : REASONS.plugin)
 

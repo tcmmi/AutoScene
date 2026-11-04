@@ -7,8 +7,13 @@ import { toast } from "sonner"
  */
 export function pluginToast(
   name: string | null,
-  { text, description, tone = "neutral" }: { text: string; description?: string; tone?: "neutral" | "error" },
+  {
+    text,
+    description,
+    action,
+    tone = "neutral",
+  }: { text: string; description?: string; action?: { label: string; onClick: () => void }; tone?: "neutral" | "error" },
 ) {
   const from = name != null ? `Plugin “${name}”` : "A plugin"
-  return (tone === "error" ? toast.error : toast)(`${from}: ${text}`, { description })
+  return (tone === "error" ? toast.error : toast)(`${from}: ${text}`, action ? { description, action } : { description })
 }

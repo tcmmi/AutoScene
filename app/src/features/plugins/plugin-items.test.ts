@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { pluginInfo } from "@/test/plugins"
-import { checkedWhen, downloadSize, firstTime, joinWords, limitsLine, nextTime, permissionLabel, pluginMatches, pluginPicture, pluginsLit, resourceLine, trustLabel, withdrawnLine } from "./plugin-items"
+import { checkedWhen, downloadSize, firstTime, joinWords, limitsLine, nextTime, packActionItems, permissionLabel, pluginMatches, pluginPicture, pluginsLit, resourceLine, trustLabel, withdrawnLine } from "./plugin-items"
 
 describe("finding a plugin", () => {
   const p = pluginInfo({ id: "dev.example.discord-notify", name: "Discord Notify", author: "Example Dev", description: "Posts each export's clip list." })
@@ -136,5 +136,28 @@ describe("a sandboxed plugin's permissions", () => {
 
   it("are enforced, whatever its pages or protocol", () => {
     for (const protocol of [1, 2]) expect(checkedWhen({ runtime: "wasm", pages: [], protocol })).toBe("It runs in a sandbox. AutoScene enforces these.")
+  })
+})
+
+describe("the pack actions of the plugins", () => {
+  const action = (id: string, title: string) => ({ id, title, file: { name: "{character}.fcpxml", extensions: ["fcpxml"] } })
+
+  it("lists those of the plugins that may run now, plugin by plugin", () => {
+    const list = packActionItems([
+      pluginInfo({ id: "dev.a", name: "A", packActions: [action("one", "Save as one…"), action("two", "Save as two…")] }),
+      pluginInfo({ id: "dev.off", name: "Off", active: false, packActions: [action("x", "Save as x…")] }),
+      pluginInfo({ id: "dev.none", name: "None" }),
+      pluginInfo({ id: "dev.b", name: "B", icon: "data:image/png;base64,AAAA", packActions: [action("three", "Save as three…")] }),
+    ])
+    expect(list.map((a) => [a.key, a.pluginName, a.title])).toEqual([
+      ["dev.a.one", "A", "Save as one…"],
+      ["dev.a.two", "A", "Save as two…"],
+      ["dev.b.three", "B", "Save as three…"],
+    ])
+    expect(list[2]).toMatchObject({ pluginId: "dev.b", actionId: "three", icon: "data:image/png;base64,AAAA" })
+  })
+
+  it("lists none before the plugins are known", () => {
+    expect(packActionItems(undefined)).toEqual([])
   })
 })

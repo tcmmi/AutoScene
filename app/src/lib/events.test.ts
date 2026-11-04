@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import type { ExportItem, ExportSummary, JobInfo } from "@/bindings"
 import { useActivity } from "@/state/activity"
 import { usePluginReview } from "@/state/plugin-review"
+import { rememberPackSave, takePackSave } from "@/features/plugins/pack-saves"
 import { startEventBridge } from "./events"
 import { commands } from "./ipc"
 import { isMadePack, qk, queryClient } from "./queries"
@@ -140,6 +141,34 @@ describe("a plugin job that finishes", () => {
   it("reads as a plugin's even when the plugin calls itself AutoScene", () => {
     handlers.jobChanged({ payload: plugin({ state: "done", title: "Update ready", subtitle: "AutoScene", message: "Restart now.", rev: 3 }) })
     expect(toast).toHaveBeenCalledExactlyOnceWith("Plugin “AutoScene”: Update ready", { description: "Restart now." })
+  })
+
+  it("a pack saved with a plugin says which file, and shows it in its folder", () => {
+    rememberPackSave("j2", "C:\\Cuts\\Walter.fcpxml")
+    handlers.jobChanged({ payload: plugin({ state: "running" }) })
+    // Not yet: the run is not over.
+    expect(toast).not.toHaveBeenCalled()
+    handlers.jobChanged({
+      payload: plugin({ state: "done", title: "Save as FCPXML · Walter", subtitle: "FCPXML", message: "Saved Walter.fcpxml", rev: 3 }),
+    })
+    expect(toast).toHaveBeenCalledOnce()
+    const [text, opts] = vi.mocked(toast).mock.calls[0] as unknown as [string, { action?: { label: string; onClick: () => void } }]
+    expect(text).toBe("Plugin “FCPXML”: saved Walter.fcpxml")
+    expect(opts.action?.label).toBe("Show in folder")
+    opts.action?.onClick()
+    expect(commands.revealPath).toHaveBeenCalledWith("C:\\Cuts\\Walter.fcpxml")
+  })
+
+  it("a pack save that failed says so, and forgets where the file would have gone", () => {
+    rememberPackSave("j2", "C:\\Cuts\\Walter.fcpxml")
+    handlers.jobChanged({ payload: plugin({ state: "failed", title: "Save as FCPXML · Walter", subtitle: "FCPXML", error: "No timeline.", rev: 3 }) })
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Plugin “FCPXML”: Save as FCPXML · Walter failed", { description: "No timeline." })
+    expect(takePackSave("j2")).toBeUndefined()
+  })
+
+  it("a save started before a restart says the job's own words", () => {
+    handlers.jobChanged({ payload: plugin({ state: "done", title: "Save as FCPXML · Walter", subtitle: "FCPXML", message: "Saved Walter.fcpxml", rev: 3 }) })
+    expect(toast).toHaveBeenCalledExactlyOnceWith("Plugin “FCPXML”: Save as FCPXML · Walter", { description: "Saved Walter.fcpxml" })
   })
 
   it("says nothing when it has nothing to say", () => {

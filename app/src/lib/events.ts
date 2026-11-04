@@ -1,5 +1,6 @@
 import { toast } from "sonner"
 import type { JobInfo } from "@/bindings"
+import { takePackSave } from "@/features/plugins/pack-saves"
 import { pluginToast } from "@/features/plugins/plugin-toast"
 import { isFinished, useActivity } from "@/state/activity"
 import { usePluginReview } from "@/state/plugin-review"
@@ -141,12 +142,19 @@ async function tellWithdrawn(ids: string[], goPlugins: () => void) {
  * Exports finish in the background; say so wherever the user is. A plugin's
  * job that finishes says its message the same way, named by its plugin. Its
  * name, title and words are all the plugin's own (a plugin may be called
- * "AutoScene"), so the toast starts with a word it can't choose.
+ * "AutoScene"), so the toast starts with a word it can't choose. A pack
+ * saved with a plugin's action says which file, and shows it in its folder.
  */
 function notifyFinished(job: JobInfo) {
   if (job.kind === "plugin") {
+    const saved = isFinished(job) ? takePackSave(job.id) : undefined
     if (job.state === "failed")
       pluginToast(job.subtitle, { text: `${job.title} failed`, description: job.error ?? undefined, tone: "error" })
+    else if (job.state === "done" && saved)
+      pluginToast(job.subtitle, {
+        text: `saved ${saved.split(/[\\/]/).pop()}`,
+        action: { label: "Show in folder", onClick: () => reveal(saved) },
+      })
     else if (job.state === "done" && job.message) pluginToast(job.subtitle, { text: job.title, description: job.message })
     return
   }

@@ -222,5 +222,24 @@ export function exportActionItems(plugins: PluginInfo[] | undefined): ExportActi
     )
 }
 
+/** An entry a plugin adds to a scenepack's ⋯ menu: the same shape as an export's. */
+export type PackActionItem = ExportActionItem
+
+/** The pack actions of the plugins that may run now, plugin by plugin, in the order each lists them. */
+export function packActionItems(plugins: PluginInfo[] | undefined): PackActionItem[] {
+  return (plugins ?? [])
+    .filter((p) => p.active)
+    .flatMap((p) =>
+      p.packActions.map((a) => ({
+        key: `${p.id}.${a.id}`,
+        pluginId: p.id,
+        pluginName: p.name,
+        icon: p.icon,
+        actionId: a.id,
+        title: a.title,
+      })),
+    )
+}
+
 /** Whether the rail's Plugins tile is lit at `path`: a plugin's settings are under Plugins. */
 export const pluginsLit = (path: string) => path === "/plugins" || path.startsWith("/plugins/")

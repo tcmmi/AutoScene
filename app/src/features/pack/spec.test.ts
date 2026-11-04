@@ -13,6 +13,7 @@ import {
   lengthOf,
   picksFor,
   pluginFiltersOf,
+  savable,
   shown,
   totalsOf,
   withChoices,
@@ -221,6 +222,18 @@ describe("plugin filters", () => {
     expect(exportable({ ...pack, current: false })).toBe(false)
     expect(exportable({ ...pack, character: false })).toBe(false)
     expect(exportable({ ...pack, exporting: true })).toBe(false)
+  })
+
+  it("a pack saves with a plugin while it exports, and waits as Export does otherwise", () => {
+    const pack = { taken: 7, current: true, character: true, check: null }
+    expect(savable(pack)).toBe(true)
+    // What holds Export back for a running export doesn't hold a save back.
+    expect(exportable({ ...pack, exporting: true })).toBe(false)
+    expect(savable({ ...pack, check: { kind: "checking", checked: 3, total: 10 } })).toBe(false)
+    expect(savable({ ...pack, check: { kind: "failed", unchecked: 7 } })).toBe(true)
+    expect(savable({ ...pack, taken: 0 })).toBe(false)
+    expect(savable({ ...pack, current: false })).toBe(false)
+    expect(savable({ ...pack, character: false })).toBe(false)
   })
 
   it("names a shot left out by its filter's words, else by a general one", () => {

@@ -824,7 +824,7 @@ function Maybe({
                               }
                             }}
                             aria-label={`Face${m?.label ? ` in ${m.label}` : ""}`}
-                            className="block size-full outline-none"
+                            className="block size-full cursor-default outline-none"
                           >
                             <img src={assetUrl(t.thumb)} alt="" loading="lazy" className="size-full object-cover" />
                           </button>

@@ -77,8 +77,9 @@ Rules:
 
 ## Window & navigation
 
-- A desktop app, not a web page: no site header or breadcrumbs, the arrow cursor on controls (a hand means
-  "web link"), text not selectable outside fields and paths.
+- A desktop app, not a web page: no site header or breadcrumbs, the hand on everything a click acts on (buttons, links,
+  tabs, switches, sliders), the arrow on disabled controls, on the entries of menus and lists, on the player's picture
+  and on the window's caption buttons; text not selectable outside fields and paths.
 - **Rail** (76px, `components/shell/Rail.tsx`) on the window's left edge, on the native material where there is
   one: the mark, Library, each recent project as its picture (gold ring when open), New project, and at the bottom
   Search (`Ctrl/⌘ K`), Activity (a ring fills as work runs), Plugins (lit on Plugins and on a plugin's settings) and

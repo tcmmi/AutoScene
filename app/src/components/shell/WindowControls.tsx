@@ -43,8 +43,9 @@ export function WindowItems({ kit }: { kit: MenuKit }) {
 export function WindowControls() {
   const maximized = useMaximized()
   const win = () => getCurrentWindow()
+  // The arrow, like Windows' own caption buttons, which these imitate.
   const base =
-    "flex h-full w-[46px] items-center justify-center text-fg-1/80 transition-colors duration-[var(--dur-fast)] [filter:drop-shadow(0_1px_2px_rgb(0_0_0/0.6))]"
+    "flex h-full cursor-default w-[46px] items-center justify-center text-fg-1/80 transition-colors duration-[var(--dur-fast)] [filter:drop-shadow(0_1px_2px_rgb(0_0_0/0.6))]"
 
   return (
     <ContextArea tail={false} menu={<WindowItems kit={contextKit} />}>

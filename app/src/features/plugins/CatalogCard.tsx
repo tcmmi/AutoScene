@@ -70,7 +70,7 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
               aria-label={offer === "install" ? `Install ${p.name}…` : p.name}
               disabled={act == null || getting}
               onClick={act}
-              className="block w-full rounded-2xl text-left disabled:cursor-default"
+              className="block w-full rounded-2xl text-left"
             >
               {art}
             </button>

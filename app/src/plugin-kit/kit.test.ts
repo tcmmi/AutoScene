@@ -20,4 +20,15 @@ describe("the kit build", () => {
     expect(files["theme.css"]).toContain(".as-btn")
     expect(files["theme.css"]).toContain("--bg-canvas")
   })
+
+  it.skipIf(missing && !import.meta.env.CI)("a page's controls show the hand like the app's, a disabled one the arrow", () => {
+    const css = files["theme.css"]
+    // The build lowers the rule's nesting, so the disabled arrow is a rule of its own: a pattern
+    // that only the lowered form can match.
+    const hand = css.match(/([^{}]*)\{cursor:\s*pointer\}/)?.[1] ?? ""
+    for (const part of ["a[href]", "button", "[role=slider]", ":not([role=option]"]) expect(hand).toContain(part)
+    const arrow = css.match(/([^{}]*:is\(:disabled[^{}]*)\{cursor:\s*default\}/)?.[1] ?? ""
+    expect(arrow).toContain("a[href]")
+    expect(arrow).toContain("button")
+  })
 })

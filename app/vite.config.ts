@@ -48,8 +48,9 @@ export default defineConfig(({ command, mode }) => ({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}", "vite.mock-asp.test.ts"],
     setupFiles: ["src/test/setup.ts"],
-    // The kit's built theme.css is read as text (plugin-kit/kit.test.ts);
-    // other CSS stays out of the tests.
-    css: { include: [/\/dist\/_as\/theme\.css/] },
+    // The kit's built theme.css and the base layer's cursor rule are read as
+    // text (plugin-kit/kit.test.ts, styles/cursor.test.tsx); other CSS stays out
+    // of the tests.
+    css: { include: [/\/dist\/_as\/theme\.css/, /\/src\/styles\/base\.css/] },
   },
 }))

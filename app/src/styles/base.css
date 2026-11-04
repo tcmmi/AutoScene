@@ -36,12 +36,30 @@
     -webkit-user-select: none;
   }
 
-  /* Controls keep the arrow, as in native apps (the hand means "web link"). */
-  a,
-  button,
-  [role="button"],
-  [role="tab"] {
-    cursor: default;
+  /* The hand on everything a click acts on: buttons, links, and every element
+     that says it is a control (tabs, switches, checkboxes, radios, sliders) or
+     a label that works one. A disabled one keeps the arrow, and so do the
+     entries of menus and lists, where the highlight under the pointer already
+     says what a click picks (as in native menus). Text fields keep the
+     browser's text cursor, the window's drag regions the arrow. */
+  :where(
+    a[href],
+    button,
+    select,
+    summary,
+    input:is([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"], [type="submit"], [type="reset"]),
+    label:has(:is([role="switch"], [role="checkbox"], [role="radio"], input[type="checkbox"], input[type="radio"]):enabled),
+    label[for]:has(+ :is([role="switch"], [role="checkbox"], [role="radio"], input[type="checkbox"], input[type="radio"]):enabled),
+    label[for]:has(+ * > :is([role="switch"], [role="checkbox"], [role="radio"], input[type="checkbox"], input[type="radio"]):enabled),
+    [role="button"], [role="link"], [role="tab"],
+    [role="switch"], [role="checkbox"], [role="radio"], [role="slider"]
+  ):not([role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]) {
+    cursor: pointer;
+
+    /* A control may carry data-disabled="false" (cmdk writes it on working entries) and still work. */
+    &:is(:disabled, [aria-disabled="true"], [data-disabled]:not([data-disabled="false"])) {
+      cursor: default;
+    }
   }
 
   /* Pictures and links don't drag out as the browser's ghost (a link would show its URL). */

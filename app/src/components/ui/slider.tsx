@@ -51,7 +51,7 @@ export function Slider({
         else setDrag(true)
       }}
       onLostPointerCapture={() => setDrag(false)}
-      className={cn("relative flex h-5 touch-none items-center select-none data-[disabled]:opacity-40", className)}
+      className={cn("relative flex h-5 cursor-pointer touch-none items-center select-none data-[disabled]:cursor-default data-[disabled]:opacity-40", className)}
     >
       <S.Track className="relative h-1 grow overflow-hidden rounded-full bg-white/[0.14]">
         <S.Range className="absolute h-full rounded-full bg-fg-1" />

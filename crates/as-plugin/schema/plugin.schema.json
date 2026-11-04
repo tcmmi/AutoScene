@@ -70,6 +70,16 @@
       "description": "A .png or .svg file in the plugin, such as icon.svg.",
       "type": "string",
       "pattern": "\\.([pP][nN][gG]|[sS][vV][gG])$"
+    },
+    "color": {
+      "description": "Its accent color: a hex color such as #2a2a2a.",
+      "type": "string",
+      "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+    },
+    "banner": {
+      "description": "A wide .png or .svg file in the plugin, such as banner.png.",
+      "type": "string",
+      "pattern": "\\.([pP][nN][gG]|[sS][vV][gG])$"
     }
   },
   "additionalProperties": false,
@@ -149,7 +159,8 @@
       "required": ["name"],
       "properties": {
         "name": { "$ref": "#/$defs/label", "maxLength": 60 },
-        "url": { "description": "An https:// link.", "$ref": "#/$defs/link" }
+        "url": { "description": "An https:// link.", "$ref": "#/$defs/link" },
+        "avatar": { "description": "An https:// link to their picture.", "$ref": "#/$defs/link" }
       },
       "additionalProperties": false
     },

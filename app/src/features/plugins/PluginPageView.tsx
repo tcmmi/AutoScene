@@ -145,14 +145,14 @@ function PageItems({ kit, p, onReload, onClose }: { kit: MenuKit; p: PluginInfo;
 
 /** A page whose plugins couldn't be read: why, and where to look. */
 function Unread({ error }: { error: unknown }) {
-  const { goSettings } = useAppActions()
+  const { goPlugins } = useAppActions()
   return (
     <EmptyState
       icon={<AppWindow />}
       tone="danger"
       title="Couldn't read the plugins"
       description={errorMessage(error)}
-      actions={<Button onClick={() => goSettings("plugins")}>Go to Plugins</Button>}
+      actions={<Button onClick={goPlugins}>Go to Plugins</Button>}
       className="h-full"
     />
   )
@@ -160,13 +160,13 @@ function Unread({ error }: { error: unknown }) {
 
 /** A page of a plugin that can't run now: why, and where to change that. */
 function Unavailable({ p }: { p: PluginInfo }) {
-  const { goSettings } = useAppActions()
+  const { goPlugins } = useAppActions()
   return (
     <EmptyState
       icon={<AppWindow />}
       title="This page isn't available"
       description={p.broken ?? p.blockedReason ?? `${p.name} is turned off.`}
-      actions={<Button onClick={() => goSettings("plugins")}>Go to Plugins</Button>}
+      actions={<Button onClick={goPlugins}>Go to Plugins</Button>}
       className="flex-1"
     />
   )

@@ -1452,6 +1452,10 @@ export type PluginInfo = {
 	description: string,
 	/**  Its author's name. */
 	author: string,
+	/**  An optional link to the author's profile or website. */
+	authorUrl: string | null,
+	/**  An optional URL to the author's avatar. */
+	authorAvatar: string | null,
 	license: string | null,
 	/**  An `https://` link. */
 	repository: string | null,
@@ -1503,6 +1507,10 @@ export type PluginInfo = {
 	secretsSet: string[],
 	/**  A `data:` URL of its icon (PNG or SVG), when it has a sound one. */
 	icon: string | null,
+	/**  An optional hex brand/accent color (e.g. `#2a2a2a`). */
+	color: string | null,
+	/**  A `data:` URL of its banner (PNG or SVG), when it has a sound one. */
+	banner: string | null,
 	/**  Where its runs write their log. */
 	logPath: string,
 	/**  Where its service writes its log, when it runs one. */

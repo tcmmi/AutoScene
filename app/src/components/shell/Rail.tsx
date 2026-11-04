@@ -126,6 +126,12 @@ export function Rail() {
         />
         <ActivityButton />
         <RailLink
+          to="/plugins"
+          icon={<PuzzlePiece />}
+          label="Plugins"
+          active={path === "/plugins"}
+        />
+        <RailLink
           to="/settings/general"
           icon={<GearSix />}
           label="Settings"
@@ -142,7 +148,7 @@ export function Rail() {
               <ContextMenuItem onSelect={() => actions.goSettings("updates")}>
                 <ArrowCounterClockwise /> Updates
               </ContextMenuItem>
-              <ContextMenuItem onSelect={() => actions.goSettings("plugins")}>
+              <ContextMenuItem onSelect={actions.goPlugins}>
                 <PuzzlePiece /> Plugins
               </ContextMenuItem>
               <ContextMenuItem onSelect={actions.checkUpdates}>

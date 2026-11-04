@@ -18,6 +18,7 @@ import { ExportsPage } from "@/features/project/ExportsPage"
 import { OverviewPage } from "@/features/project/OverviewPage"
 import { CharacterCrumb, MediaCrumb, PackCrumb, ProjectCrumb } from "@/features/project/crumbs"
 import { PluginPageCrumb, PluginPageView } from "@/features/plugins/PluginPageView"
+import { PluginsPage } from "@/features/plugins/PluginsPage"
 import { PluginCrumb } from "@/features/plugins/PluginSettingsSection"
 import { SettingsPage } from "@/features/settings/SettingsPage"
 import { settingsLabel } from "@/features/settings/sections"
@@ -43,6 +44,13 @@ const libraryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: LibraryPage,
+})
+
+const pluginsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/plugins",
+  staticData: { crumb: "Plugins" },
+  component: PluginsPage,
 })
 
 const projectRoute = createRoute({
@@ -155,6 +163,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   libraryRoute,
+  pluginsRoute,
   projectRoute.addChildren([
     projectIndexRoute,
     episodesRoute,

@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { AppSettings, PluginInfo, PluginReview } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
@@ -8,9 +9,9 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { pluginInfo } from "@/test/plugins"
-import { PluginsSection } from "./PluginsSection"
+import { PluginsPage } from "./PluginsPage"
 
-const { state } = vi.hoisted(() => ({ state: { plugins: [] as PluginInfo[], allow: false } }))
+const { state, reveal } = vi.hoisted(() => ({ state: { plugins: [] as PluginInfo[], allow: false }, reveal: vi.fn() }))
 
 const settings = (allow: boolean): AppSettings => ({
   libraryRoot: "C:\\Library",
@@ -29,14 +30,18 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     pluginUninstall: vi.fn(() => Promise.resolve(null)),
     pluginInspectFolder: vi.fn(),
     pluginDiscard: vi.fn(() => Promise.resolve(null)),
+    revealPath: vi.fn(() => Promise.resolve()),
   },
 }))
 vi.mock("@/lib/media", () => ({ pickFolder: vi.fn(() => Promise.resolve("D:\\Plugins\\mine")), pickPluginFile: vi.fn() }))
+vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal }))
 vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn() }) }))
 // The window's menu, around the rows' own entries.
+vi.mock("@/components/ui/page", () => ({ Page: ({ children }: { children: React.ReactNode }) => <main>{children}</main> }))
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   useCanGoBack: () => false,
+  useRouterState: () => ({ location: { pathname: "/plugins" } }),
 }))
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -54,7 +59,7 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-describe("Settings → Plugins", () => {
+describe("PluginsPage", () => {
   it("lists plugins with their trust", async () => {
     state.plugins = [
       pluginInfo({ id: "dev.a.reviewed", name: "Reviewed One", description: "Says hello.", author: "AutoScene" }),
@@ -69,7 +74,7 @@ describe("Settings → Plugins", () => {
       // A folder says so first, whatever its trust.
       pluginInfo({ id: "dev.a.folder", name: "Folder One", trust: "unreviewed", source: "folder", enabled: false, active: false }),
     ]
-    render(<PluginsSection />, { wrapper })
+    render(<PluginsPage />, { wrapper })
     const row = (name: string) => screen.findByRole("group", { name })
     const badges: [string, string][] = [
       ["Reviewed One", "Reviewed by AutoScene"],
@@ -95,12 +100,12 @@ describe("Settings → Plugins", () => {
   })
 
   it("says so when no plugin is installed", async () => {
-    render(<PluginsSection />, { wrapper })
+    render(<PluginsPage />, { wrapper })
     expect(await screen.findByText("No plugins yet")).toBeTruthy()
   })
 
   it("leaves the question about unreviewed plugins to AutoScene's own dialog", async () => {
-    render(<PluginsSection />, { wrapper })
+    render(<PluginsPage />, { wrapper })
     await waitFor(() => expect((allowSwitch() as HTMLButtonElement).disabled).toBe(false))
     // The person said no there: it stays off.
     vi.mocked(commands.pluginsAllowUnreviewed).mockResolvedValueOnce(settings(false))
@@ -124,7 +129,7 @@ describe("Settings → Plugins", () => {
 
   it("offers a plugin's actions in its ⋯ menu too", async () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
-    render(<PluginsSection />, { wrapper })
+    render(<PluginsPage />, { wrapper })
     const trigger = await screen.findByRole("button", { name: "One options" })
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
     const menu = await screen.findByRole("menu")
@@ -141,7 +146,7 @@ describe("Settings → Plugins", () => {
     state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
     let done: (v: null) => void = () => {}
     vi.mocked(commands.pluginUninstall).mockReturnValueOnce(new Promise((resolve) => (done = resolve)))
-    render(<PluginsSection />, { wrapper })
+    render(<PluginsPage />, { wrapper })
     fireEvent.pointerDown(await screen.findByRole("button", { name: "One options" }), { button: 0, ctrlKey: false })
     fireEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Uninstall…" }))
     const dialog = await screen.findByRole("dialog")
@@ -158,7 +163,7 @@ describe("Settings → Plugins", () => {
     state.allow = true
     let checked: (r: PluginReview) => void = () => {}
     vi.mocked(commands.pluginInspectFolder).mockReturnValueOnce(new Promise((resolve) => (checked = resolve)))
-    render(<PluginsSection />, { wrapper })
+    render(<PluginsPage />, { wrapper })
     const load = await screen.findByRole("button", { name: /Load a folder/ })
     fireEvent.click(load)
     await waitFor(() => expect(load.querySelector(".animate-spin")).not.toBeNull())
@@ -172,7 +177,7 @@ describe("Settings → Plugins", () => {
     render(
       <AppMenu>
         <div>
-          <PluginsSection />
+          <PluginsPage />
         </div>
       </AppMenu>,
       { wrapper },
@@ -196,7 +201,7 @@ describe("Settings → Plugins", () => {
   })
 
   it("hides Load a folder while unreviewed plugins are off", async () => {
-    render(<PluginsSection />, { wrapper })
+    render(<PluginsPage />, { wrapper })
     expect(await screen.findByRole("button", { name: "Install a plugin…" })).toBeTruthy()
     await waitFor(() => expect((allowSwitch() as HTMLButtonElement).disabled).toBe(false))
     expect(screen.queryByRole("button", { name: "Load a folder…" })).toBeNull()
@@ -204,7 +209,84 @@ describe("Settings → Plugins", () => {
     queryClient.clear()
 
     state.allow = true
-    render(<PluginsSection />, { wrapper })
+    render(<PluginsPage />, { wrapper })
     expect(await screen.findByRole("button", { name: "Load a folder…" })).toBeTruthy()
+  })
+
+  it("filters plugins by search text and filter tabs", async () => {
+    state.plugins = [
+      pluginInfo({ id: "dev.a.alpha", name: "Alpha Tool", author: "Alice", description: "Video helper", enabled: true, gpu: true }),
+      pluginInfo({ id: "dev.b.beta", name: "Beta Script", author: "Bob", description: "Audio cleaner", enabled: false, gpu: false }),
+    ]
+    render(<PluginsPage />, { wrapper })
+    expect(await screen.findByRole("group", { name: "Alpha Tool" })).toBeTruthy()
+    expect(screen.getByRole("group", { name: "Beta Script" })).toBeTruthy()
+
+    // Search query
+    const input = screen.getByPlaceholderText("Search plugins…")
+    fireEvent.change(input, { target: { value: "alpha" } })
+    expect(screen.getByRole("group", { name: "Alpha Tool" })).toBeTruthy()
+    expect(screen.queryByRole("group", { name: "Beta Script" })).toBeNull()
+
+    // Clear search
+    fireEvent.change(input, { target: { value: "" } })
+    expect(screen.getByRole("group", { name: "Alpha Tool" })).toBeTruthy()
+    expect(screen.getByRole("group", { name: "Beta Script" })).toBeTruthy()
+
+    // Filter tab: Disabled
+    fireEvent.click(screen.getByRole("button", { name: /Disabled/ }))
+    expect(screen.queryByRole("group", { name: "Alpha Tool" })).toBeNull()
+    expect(screen.getByRole("group", { name: "Beta Script" })).toBeTruthy()
+
+    // Filter tab: GPU
+    fireEvent.click(screen.getByRole("button", { name: /GPU/ }))
+    expect(screen.getByRole("group", { name: "Alpha Tool" })).toBeTruthy()
+    expect(screen.queryByRole("group", { name: "Beta Script" })).toBeNull()
+  })
+
+  it("opens plugin folder and log via ⋯ menu items", async () => {
+    const user = userEvent.setup()
+    state.plugins = [pluginInfo({ id: "dev.a.alpha", name: "Alpha Tool", folder: "/path/to/folder", logPath: "/path/to/log.txt" })]
+    render(<PluginsPage />, { wrapper })
+    const trigger = await screen.findByRole("button", { name: "Alpha Tool options" })
+    await user.click(trigger)
+    await user.click(await screen.findByRole("menuitem", { name: "Show its folder" }))
+    expect(reveal).toHaveBeenCalledWith("/path/to/folder")
+
+    await user.click(trigger)
+    await user.click(await screen.findByRole("menuitem", { name: "Show its log" }))
+    expect(reveal).toHaveBeenCalledWith("/path/to/log.txt")
+  })
+
+  it("enables and disables all plugins via bulk action buttons", async () => {
+    state.plugins = [
+      pluginInfo({ id: "dev.a.alpha", name: "Alpha", enabled: false }),
+      pluginInfo({ id: "dev.b.beta", name: "Beta", enabled: true }),
+    ]
+    vi.mocked(commands.pluginSetEnabled).mockImplementation((id, on) =>
+      Promise.resolve(pluginInfo({ id, name: id, enabled: on })),
+    )
+    render(<PluginsPage />, { wrapper })
+
+    // Enable all
+    fireEvent.click(await screen.findByRole("button", { name: "Enable all" }))
+    await waitFor(() => expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.a.alpha", true))
+
+    // Disable all
+    fireEvent.click(screen.getByRole("button", { name: "Disable all" }))
+    await waitFor(() => expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.b.beta", false))
+  })
+
+  it("navigates to settings on clicking a card with settings page", async () => {
+    state.plugins = [
+      pluginInfo({
+        id: "dev.a.alpha",
+        name: "Alpha Tool",
+        settings: [{ key: "opt", title: "Option", description: "Test desc", kind: { type: "boolean", default: false } }],
+      }),
+    ]
+    render(<PluginsPage />, { wrapper })
+    const card = await screen.findByRole("group", { name: "Alpha Tool" })
+    expect(card.className).toContain("cursor-pointer")
   })
 })

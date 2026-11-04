@@ -96,7 +96,7 @@ const NOT_PROGRAMS: &str = "uv uvx py pyw node deno bun perl ruby php osascript 
 /// toward the uv form.
 const SCRIPTS: [&str; 5] = [".bat", ".cmd", ".ps1", ".sh", ".py"];
 const UV_FORM: &str = r#"["uv", "run", "--script", "--locked", "<script>.py"]"#;
-const TOP_KEYS: [&str; 16] = [
+const TOP_KEYS: [&str; 18] = [
     "$schema",
     "manifestVersion",
     "id",
@@ -113,6 +113,8 @@ const TOP_KEYS: [&str; 16] = [
     "network",
     "contributes",
     "icon",
+    "color",
+    "banner",
 ];
 
 /// A plugin's id: a reverse domain name such as `dev.example.my-plugin`,
@@ -226,6 +228,10 @@ pub struct Manifest {
     pub pages: Vec<PageSpec>,
     /// A `.png` or `.svg` in the package (whether it's there is checked at install).
     pub icon: Option<String>,
+    /// An optional hex brand/accent color (e.g. `#2a2a2a`).
+    pub color: Option<String>,
+    /// A `.png` or `.svg` wide banner in the package.
+    pub banner: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
@@ -234,6 +240,8 @@ pub struct Author {
     pub name: String,
     /// An `https://` link.
     pub url: Option<String>,
+    /// An optional `https://` avatar URL or local image path.
+    pub avatar: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
@@ -548,8 +556,12 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     let description = root.required_label("description", 300, &mut w)?;
     let author = {
         let a = root.required_object("author")?;
-        a.warn_unknown(&["name", "url"], &mut w);
-        Author { name: a.required_label("name", 60, &mut w)?, url: a.link("url", &mut w)? }
+        a.warn_unknown(&["name", "url", "avatar"], &mut w);
+        Author {
+            name: a.required_label("name", 60, &mut w)?,
+            url: a.link("url", &mut w)?,
+            avatar: a.link("avatar", &mut w)?,
+        }
     };
     let license = root.label("license", 60, &mut w)?;
     let repository = root.link("repository", &mut w)?;
@@ -765,6 +777,33 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         }
         None => None,
     };
+
+    let color = match root.text("color")? {
+        Some(c) => {
+            let hex = c.trim();
+            let valid = (hex.len() == 4 || hex.len() == 7 || hex.len() == 9)
+                && hex.starts_with('#')
+                && hex[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+            if valid {
+                Some(hex.to_ascii_lowercase())
+            } else {
+                w.push(format!("Left out the color: {c} isn't a hex color like #2a2a2a."));
+                None
+            }
+        }
+        None => None,
+    };
+
+    let banner = match root.text("banner")? {
+        Some(p) if check_path(p).is_ok() && (ends_with_any_case(p, ".png") || ends_with_any_case(p, ".svg")) => {
+            Some(p.to_owned())
+        }
+        Some(_) => {
+            w.push("Left out the banner: it must be a .png or .svg file in the plugin.".into());
+            None
+        }
+        None => None,
+    };
     root.warn_unknown(&TOP_KEYS, &mut w);
 
     if w.len() > MAX_WARNINGS {
@@ -791,6 +830,8 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         settings,
         pages,
         icon,
+        color,
+        banner,
     };
     Ok(Parsed { manifest, warnings: w })
 }
@@ -1445,7 +1486,10 @@ mod tests {
         assert_eq!(p.warnings, Vec::<String>::new());
         let m = p.manifest;
         assert_eq!(m.id.as_str(), "dev.autoscene.hello-export");
-        assert_eq!(m.author, Author { name: "AutoScene".into(), url: Some("https://autoscene.app".into()) });
+        assert_eq!(
+            m.author,
+            Author { name: "AutoScene".into(), url: Some("https://autoscene.app".into()), avatar: None }
+        );
         assert_eq!(m.permissions, [Permission::ExportsRead]);
         assert_eq!(m.export_actions[0].id, "hello");
         assert!(m.commands[0].needs_project);

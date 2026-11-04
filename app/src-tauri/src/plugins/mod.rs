@@ -191,6 +191,10 @@ pub struct PluginInfo {
     pub description: String,
     /// Its author's name.
     pub author: String,
+    /// An optional link to the author's profile or website.
+    pub author_url: Option<String>,
+    /// An optional URL to the author's avatar.
+    pub author_avatar: Option<String>,
     pub license: Option<String>,
     /// An `https://` link.
     pub repository: Option<String>,
@@ -232,6 +236,10 @@ pub struct PluginInfo {
     pub secrets_set: Vec<String>,
     /// A `data:` URL of its icon (PNG or SVG), when it has a sound one.
     pub icon: Option<String>,
+    /// An optional hex brand/accent color (e.g. `#2a2a2a`).
+    pub color: Option<String>,
+    /// A `data:` URL of its banner (PNG or SVG), when it has a sound one.
+    pub banner: Option<String>,
     /// Where its runs write their log.
     pub log_path: String,
     /// Where its service writes its log, when it runs one.
@@ -722,6 +730,8 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
         version: p.record.version.clone(),
         description: m.map(|m| m.description.clone()).unwrap_or_default(),
         author: m.map(|m| m.author.name.clone()).unwrap_or_default(),
+        author_url: m.and_then(|m| m.author.url.clone()),
+        author_avatar: m.and_then(|m| m.author.avatar.clone()),
         license: m.and_then(|m| m.license.clone()),
         repository: m.and_then(|m| m.repository.clone()),
         trust: trust(&p.record),
@@ -753,6 +763,8 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
         pages: m.map(|m| m.pages.clone()).unwrap_or_default(),
         secrets_set: p.secrets_stored(),
         icon: store.icon_data_url(p),
+        color: m.and_then(|m| m.color.clone()),
+        banner: store.banner_data_url(p),
         log_path: store.log_path(id).to_string_lossy().into_owned(),
         service_log_path: m
             .filter(|m| m.runtime.kind == RuntimeKind::Service)

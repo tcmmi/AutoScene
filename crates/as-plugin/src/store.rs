@@ -1139,8 +1139,9 @@ impl Store {
     /// ([`Grants::of`](crate::calls::Grants::of): what the person agreed to
     /// that its manifest still asks for) and its limits, and a run as
     /// [`Store::run_spec`] makes it, without FFmpeg, which it can't start.
-    /// The values of its secrets are the host's to add. A broken plugin
-    /// can't run, nor one that isn't a WebAssembly plugin.
+    /// The values of its secrets and the folder of the large files its
+    /// plugin names ([`crate::resources`]) are the host's to add. A broken
+    /// plugin can't run, nor one that isn't a WebAssembly plugin.
     #[cfg(feature = "wasm")]
     pub fn wasm_spec(&self, p: &Installed, action: ActionContext) -> PluginResult<WasmSpec> {
         let m = manifest_of(p)?;
@@ -1163,6 +1164,7 @@ impl Store {
             component_sha256,
             cache: self.cache_dir(id),
             data_dir: self.data_dir(id),
+            resources_dir: None,
             log_path: self.log_path(id),
             grants,
             limits: Limits::of(m.runtime.limits.unwrap_or_default()),

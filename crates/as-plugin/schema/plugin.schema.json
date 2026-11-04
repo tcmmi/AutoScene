@@ -77,7 +77,7 @@
       "pattern": "\\.([pP][nN][gG]|[jJ][pP][eE]?[gG]|[wW][eE][bB][pP])$"
     },
     "resources": {
-      "description": "With manifestVersion 2: large files the plugin's program needs, such as a model's weights. AutoScene gets each at the plugin's first run, keeps it by its hash, and hands the program their folder (AUTOSCENE_RESOURCES).",
+      "description": "With manifestVersion 2: large files the plugin's program needs, such as a model's weights. AutoScene gets each at the plugin's first run, keeps it by its hash, and hands the program their folder (AUTOSCENE_RESOURCES); a WebAssembly plugin reads them, read only, at /resources.",
       "type": "array",
       "maxItems": 16,
       "items": { "$ref": "#/$defs/resource" }

@@ -209,6 +209,19 @@ impl Resources {
         }
     }
 
+    /// Removes from `id`'s folder the files `rs`, those its version names
+    /// now, doesn't name, with what as-models keeps beside them: before a
+    /// run that sees the folder, so a version updated to in this process
+    /// leaves it nothing of the one before, not even a part of a file. Not
+    /// while a fetch holds a lock of the folder: what stays goes before the
+    /// next run, or at the next start's [`Resources::prune`].
+    pub fn prune_unnamed(&self, id: &PluginId, rs: &[Resource]) {
+        let dir = self.dir(id);
+        if !held(&dir) {
+            prune_files(&dir, rs);
+        }
+    }
+
     /// Removes `id`'s files (it was uninstalled), as much as it can: what
     /// stays goes at the next start's [`Resources::prune`].
     pub fn remove(&self, id: &PluginId) {
@@ -634,6 +647,33 @@ mod tests {
         assert!(names(tmp.path()).is_empty(), "with none installed, nothing stays");
         // No folder yet: nothing to do.
         Resources::new(tmp.path().join("missing")).prune(&[]);
+    }
+
+    #[test]
+    fn before_a_run_its_folder_keeps_only_what_its_version_names() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Resources::new(tmp.path());
+        let dir = store.dir(&id());
+        fs::create_dir_all(&dir).unwrap();
+        let kept = ["model.onnx", "model.onnx.verified", "model.onnx.lock"];
+        // What the version before named: a file, its marker, and a part of one.
+        let gone = ["old.onnx", "old.onnx.verified", "old.onnx.part"];
+        for name in kept.iter().chain(&gone) {
+            fs::write(dir.join(name), b"x").unwrap();
+        }
+        let rs = [resource("model.onnx", &["https://example.com/m"], b"x")];
+        // A fetch holds its lock: nothing goes yet.
+        let busy = File::options().write(true).open(dir.join("model.onnx.lock")).unwrap();
+        busy.lock().unwrap();
+        store.prune_unnamed(&id(), &rs);
+        assert_eq!(names(&dir).len(), kept.len() + gone.len());
+        drop(busy);
+        store.prune_unnamed(&id(), &rs);
+        let mut want = kept.to_vec();
+        want.sort();
+        assert_eq!(names(&dir), want);
+        // No folder yet: nothing to do.
+        Resources::new(tmp.path().join("missing")).prune_unnamed(&id(), &rs);
     }
 
     #[test]

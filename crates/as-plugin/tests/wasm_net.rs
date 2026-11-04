@@ -302,6 +302,7 @@ impl Run {
             component_sha256: None,
             cache: root.join("code"),
             data_dir: root.join("data"),
+            resources_dir: None,
             log_path: root.join("logs/plugin.log"),
             grants: Grants {
                 runtime: RuntimeKind::Wasm,

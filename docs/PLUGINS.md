@@ -367,6 +367,7 @@ warning.
 | `/data` | The plugin's data folder (`plugin-data/<id>`), to read and write. A run starts there. |
 | `/export` | The export's folder, with `exports:read` to read and with `exports:write` to read, change and delete in. |
 | `/project` | The project's folder, with `project:read`, to read. |
+| `/resources` | The large files its `plugin.json` names under `resources`, to read, once AutoScene got them; only when it names some. Beside each, AutoScene keeps a `<name>.verified` and a `<name>.lock` of its own; a file a version before named is gone before a run. |
 | Its request | The run's `run-request`: the plugin, the app, the settings (sorted by key, never a secret), the action, and the project and export it runs on, with the names of the export's clips. A clip's or a joined file's `path` is `/export/<name>` while `/export` is there, else none. |
 | Its environment | `AUTOSCENE_PLUGIN_ID` and `AUTOSCENE_PROTOCOL`, nothing else. Its one argument is its id. |
 | stdin | Empty. |
@@ -1991,7 +1992,9 @@ file counts while its size and time stay as they were.
 
 **What the program gets.** Its folder, as `AUTOSCENE_RESOURCES` and
 `plugin.resourcesDir` in the run line, only when the plugin names large
-files: no other plugin's environment or run line changes.
+files: no other plugin's environment or run line changes. A WebAssembly
+plugin reads them at `/resources` instead, read only (see
+[What a run sees](#what-a-run-sees)).
 
 ```python
 weights = os.path.join(os.environ["AUTOSCENE_RESOURCES"], "htdemucs.onnx")

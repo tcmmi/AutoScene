@@ -110,6 +110,10 @@ pub struct WasmSpec {
     pub cache: PathBuf,
     /// The plugin's own folder for files, seen as `/data`.
     pub data_dir: PathBuf,
+    /// The folder of the large files its `plugin.json` names
+    /// ([`crate::resources`]), seen read only as `/resources`; none when it
+    /// names none, and then there is no `/resources`.
+    pub resources_dir: Option<PathBuf>,
     /// The plugin's log file.
     pub log_path: PathBuf,
     pub grants: Grants,
@@ -204,6 +208,13 @@ pub fn run_with(
         log.lock().note("host", &format!("couldn't start: {}", e.detail()));
     }
     ran
+}
+
+/// Whether the folders the run `spec` sees are there: its export's and its
+/// project's, as its grants let it see them. [`run`] fails the same way
+/// without them; a host asks first, before it gets anything for the run.
+pub fn check_folders(spec: &WasmSpec) -> PluginResult<()> {
+    convert::mounts(&spec.message, &spec.grants).map(drop)
 }
 
 /// Compiles the component at `path` (its SHA-256 checked against `sha256`
@@ -382,14 +393,15 @@ fn run_in(
         log.lock().note("host", "cancelled before it started");
         return Err(PluginError::Cancelled);
     }
-    let WasmSpec { name, data_dir, grants, limits, mut secrets, mut message, .. } = spec;
+    let WasmSpec { name, data_dir, resources_dir, grants, limits, mut secrets, mut message, .. } = spec;
     let shown = sanitize(&name, MAX_STAGE_CHARS);
     // Its protocol is the one it declared, as for a program.
     message.protocol = grants.protocol;
     secrets.retain(|key, _| grants.secrets.contains(key));
     let mounts = convert::mounts(&message, &grants)?;
     let request = convert::request(&message, &mounts, &grants);
-    let wasi = state::wasi(message.plugin.id.as_str(), grants.protocol, &data_dir, &mounts, log)?;
+    let folders = (data_dir.as_path(), resources_dir.as_deref());
+    let wasi = state::wasi(message.plugin.id.as_str(), grants.protocol, folders, &mounts, log)?;
 
     let deadline = Instant::now() + limits.time;
     let (progress, mut progressed) = tokio::sync::watch::channel(None);

@@ -13,7 +13,7 @@ wit_bindgen::generate!({ world: "plugin", path: "../../wit-frozen/1.0.0" });
 use std::fmt::Display;
 use std::hint::black_box;
 use std::io::Write;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use std::{fs, thread};
 
 use autoscene::plugin::host::{self, LogLevel};
@@ -170,6 +170,53 @@ fn escape(req: &RunRequest) -> String {
         out.push(tried(&format!("symlink /data/host-link to {p}"), symlink(&p, "host-link")));
         out.push(tried("read /data/host-link", fs::read("/data/host-link")));
     }
+    out.join("\n")
+}
+
+/// Reads the large files `paths` names (one name per line) in
+/// `/resources` and copies each into `/data`, then tries to change them: one
+/// line per try, after the folders it was given (`preopens=`).
+fn read_resources(req: &RunRequest) -> String {
+    let dirs = wasip2::filesystem::preopens::get_directories();
+    let mut folders: Vec<String> = dirs.into_iter().map(|(_, path)| path).collect();
+    folders.sort();
+    let mut out = vec![format!("preopens={}", folders.join(","))];
+    out.push(tried("list /resources", fs::read_dir("/resources")));
+    for name in lines(req, "paths") {
+        let file = format!("/resources/{name}");
+        let copied = fs::read(&file).and_then(|bytes| fs::write(format!("/data/{name}"), &bytes).map(|()| bytes.len()));
+        out.push(match copied {
+            Ok(n) => format!("read {file}: {n} bytes"),
+            Err(e) => format!("read {file}: denied ({e})"),
+        });
+        out.push(tried(&format!("write {file}"), fs::write(&file, "x")));
+        out.push(tried(&format!("append {file}"), fs::OpenOptions::new().append(true).open(&file)));
+        out.push(tried(&format!("truncate {file}"), fs::File::create(&file)));
+        out.push(tried(&format!("delete {file}"), fs::remove_file(&file)));
+        out.push(tried(&format!("rename {file} to /data"), fs::rename(&file, "/data/moved")));
+        out.push(tried(
+            &format!("rename /data into {file}"),
+            fs::write("/data/mine", "x").and_then(|()| fs::rename("/data/mine", &file)),
+        ));
+        out.push(tried(&format!("hard link {file} into /data"), fs::hard_link(&file, "/data/linked")));
+        out.push(tried(
+            &format!("hard link /data into {file}"),
+            fs::write("/data/mine", "x").and_then(|()| fs::hard_link("/data/mine", format!("{file}.linked"))),
+        ));
+        out.push(tried(
+            &format!("set times of {file}"),
+            fs::File::open(&file).and_then(|f| f.set_modified(SystemTime::UNIX_EPOCH)),
+        ));
+    }
+    out.push(tried("write /resources/new", fs::write("/resources/new", "x")));
+    out.push(tried("mkdir /resources/new-dir", fs::create_dir("/resources/new-dir")));
+    // Out of it, to a file that is there: `outside/secret.txt` lies beside
+    // the folder. Its error's kind says whether the file was found.
+    let up = "/resources/../outside/secret.txt";
+    out.push(match fs::read(up) {
+        Ok(bytes) => format!("read {up}: ALLOWED ({} bytes)", bytes.len()),
+        Err(e) => format!("read {up}: denied ({:?}: {e})", e.kind()),
+    });
     out.join("\n")
 }
 
@@ -374,6 +421,7 @@ impl Guest for TestGuest {
             "context" => Ok(Some(context(&req))),
             "escape" => Ok(Some(escape(&req))),
             "links" => Ok(Some(links(&req))),
+            "read-resources" => Ok(Some(read_resources(&req))),
             "write-export" => {
                 fs::write("/export/out.txt", "out").map_err(|e| err(format!("write /export/out.txt: {e}")))?;
                 fs::remove_file("/export/remove-me.txt").map_err(|e| err(format!("delete: {e}")))?;

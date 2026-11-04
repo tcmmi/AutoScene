@@ -188,6 +188,9 @@ pub trait GetResources: Send + Sync {
     ) -> PluginResult<PathBuf>;
     /// Removes what no installed plugin names ([`Resources::prune`]).
     fn prune(&self, installed: &[(PluginId, Option<Vec<Resource>>)]);
+    /// Removes from `id`'s folder what `rs` doesn't name
+    /// ([`Resources::prune_unnamed`]).
+    fn prune_unnamed(&self, id: &PluginId, rs: &[Resource]);
     /// Removes `id`'s files: it was uninstalled.
     fn remove(&self, id: &PluginId);
 }
@@ -222,6 +225,10 @@ impl GetResources for Resources {
 
     fn prune(&self, installed: &[(PluginId, Option<Vec<Resource>>)]) {
         Resources::prune(self, installed);
+    }
+
+    fn prune_unnamed(&self, id: &PluginId, rs: &[Resource]) {
+        Resources::prune_unnamed(self, id, rs);
     }
 
     fn remove(&self, id: &PluginId) {
@@ -630,11 +637,13 @@ impl PluginHost {
     }
 
     /// The folder of the large files `m`, the manifest of the plugin `id`,
-    /// names: none when it names none. A file kept already is hashed the
-    /// first time this process asks, which `report` hears first (`checking`)
-    /// since it takes a while. Those not kept yet come now, as `report`
-    /// hears (`stage`, and how far once their bytes come). Either ends once
-    /// `cancel` fires; a cancel keeps what came for the next try.
+    /// names: none when it names none. What the folder holds that `m` no
+    /// longer names goes first, so a run sees nothing of a version before.
+    /// A file kept already is hashed the first time this process asks,
+    /// which `report` hears first (`checking`) since it takes a while. Those
+    /// not kept yet come now, as `report` hears (`stage`, and how far once
+    /// their bytes come). Either ends once `cancel` fires; a cancel keeps
+    /// what came for the next try.
     fn resources_for(
         &self,
         id: &PluginId,
@@ -646,6 +655,7 @@ impl PluginHost {
         if m.resources.is_empty() {
             return Ok(None);
         }
+        self.resources.prune_unnamed(id, &m.resources);
         if self.resources.needs_check(id, &m.resources) {
             report(checking, None);
         }
@@ -657,11 +667,26 @@ impl PluginHost {
         self.resources.fetch(id, &m.name, &m.resources, cancel, &mut progress).map(Some)
     }
 
+    /// The folder of the large files the plugin of `p` names, for its run
+    /// ([`PluginHost::resources_for`]: got now when they aren't kept, as
+    /// `report` hears, naming the plugin, until `cancel` fires); none when
+    /// it names none.
+    fn files_for_run(
+        &self,
+        p: &Installed,
+        cancel: &CancelToken,
+        report: &dyn Fn(&str, Option<f64>),
+    ) -> PluginResult<Option<PathBuf>> {
+        let Some(m) = &p.manifest else { return Ok(None) };
+        let stages = (format!("Checking files for {}", m.name), format!("Getting files for {}", m.name));
+        self.resources_for(&p.record.id, m, (&stages.0, &stages.1), cancel, report)
+    }
+
     /// A run of `action` of `p`, as [`Store::run_spec`] makes it, through
     /// AutoScene's uv when it is a uv script ([`PluginHost::uv_for`]: got
     /// now when it isn't here, as `report` hears, until `cancel` fires),
     /// and then with the large files its plugin names
-    /// ([`PluginHost::resources_for`], got the same way).
+    /// ([`PluginHost::files_for_run`], got the same way).
     fn run_spec(
         &self,
         p: &Installed,
@@ -672,10 +697,7 @@ impl PluginHost {
     ) -> PluginResult<RunSpec> {
         let mut spec = self.store.run_spec(p, action, ffmpeg, ffprobe, ffmpeg_version)?;
         spec.uv = self.uv_for(&spec.launch, cancel, report)?;
-        if let Some(m) = &p.manifest {
-            let stages = (format!("Checking files for {}", m.name), format!("Getting files for {}", m.name));
-            spec.resources = self.resources_for(&p.record.id, m, (&stages.0, &stages.1), cancel, report)?;
-        }
+        spec.resources = self.files_for_run(p, cancel, report)?;
         Ok(spec)
     }
 
@@ -1358,14 +1380,14 @@ fn run(
     let state = app.state::<AppState>();
     let p = startable(&host.store, &state.library, key, trigger, gpu)?;
     let action = ActionContext { kind: key.kind, id: key.action.clone(), trigger };
+    let report = |stage: &str, f: Option<f64>| ctx.report(stage, f);
     let said = if sandboxed(&p) {
-        let spec = wasm_spec_for(&host.store, &*state.library, &p, key, action, input)?;
+        let spec = wasm_spec_for(host, &*state.library, (&p, key), action, input, &ctx.cancel, &report)?;
         ctx.stage(&format!("Starting {}", spec.name));
         wasm::run(spec, &ctx.cancel, &|stage, f| ctx.report(stage, f))
     } else {
         let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
         let tools_at = (tools.ffmpeg.as_path(), tools.ffprobe.as_path(), tools.version.as_str());
-        let report = |stage: &str, f: Option<f64>| ctx.report(stage, f);
         let mut spec = host.run_spec(&p, action, tools_at, &ctx.cancel, &report).map_err(plugin_job_error)?;
         add_context(&mut spec.message, &*state.library, key, input).map_err(job_error)?;
         let calls = calls_for(&state.library, host, &p, key, spec.protocol).map_err(plugin_job_error)?;
@@ -1385,20 +1407,31 @@ fn sandboxed(p: &Installed) -> bool {
     p.manifest.as_ref().and_then(|m| m.launch().ok()).is_some_and(|l| !needs_tools(&l))
 }
 
-/// The run `key` of the WebAssembly plugin `p`, of `action`, with `input`
-/// from its page: what [`Store::wasm_spec`] gives, with the values of its
-/// set secrets and what it runs on, as `places` has them now.
+/// The run `key` of the WebAssembly plugin `p` of `host`, of `action`, with
+/// `input` from its page: what [`Store::wasm_spec`] gives, with the values
+/// of its set secrets and what it runs on, as `places` has them now, and
+/// last the folder of the large files its plugin names, its `/resources`
+/// ([`PluginHost::files_for_run`]: got now when they aren't kept, as
+/// `report` hears, until `cancel` fires). So they are here before its
+/// component is compiled and run, and a run refused for its spec, its
+/// secrets, what it runs on or a folder of it that is gone
+/// ([`wasm::check_folders`]) gets none of them. One whose component then
+/// fails to load got them all the same; they are kept for the next.
 fn wasm_spec_for(
-    store: &Store,
+    host: &PluginHost,
     places: &dyn calls::Places,
-    p: &Installed,
-    key: &RunKey,
+    (p, key): (&Installed, &RunKey),
     action: ActionContext,
     input: Option<Value>,
+    cancel: &CancelToken,
+    report: &dyn Fn(&str, Option<f64>),
 ) -> Result<wasm::WasmSpec, JobError> {
+    let store = &host.store;
     let mut spec = store.wasm_spec(p, action).map_err(plugin_job_error)?;
     spec.secrets = secret_values(store, &p.record.id, &spec.grants.secrets).map_err(plugin_job_error)?;
     add_context(&mut spec.message, places, key, input).map_err(job_error)?;
+    wasm::check_folders(&spec).map_err(plugin_job_error)?;
+    spec.resources_dir = host.files_for_run(p, cancel, report).map_err(plugin_job_error)?;
     Ok(spec)
 }
 
@@ -1857,6 +1890,8 @@ mod tests {
         pub(super) got: std::sync::atomic::AtomicUsize,
         /// The plugins whose files were removed.
         pub(super) removed: Mutex<Vec<PluginId>>,
+        /// The plugins whose folders lost what they no longer name, before a run.
+        pub(super) pruned: Mutex<Vec<PluginId>>,
     }
 
     impl FakeFiles {
@@ -1935,6 +1970,10 @@ mod tests {
         }
 
         fn prune(&self, _: &[(PluginId, Option<Vec<Resource>>)]) {}
+
+        fn prune_unnamed(&self, id: &PluginId, _: &[Resource]) {
+            self.pruned.lock().push(id.clone());
+        }
 
         fn remove(&self, id: &PluginId) {
             self.kept.lock().retain(|(kept, _)| kept != id);
@@ -2476,24 +2515,46 @@ mod tests {
         assert_eq!(serde_json::to_value(&u).unwrap()["leavesSandbox"], serde_json::json!(true));
     }
 
+    /// The library, whose project has one export, `.1`, whatever its id.
+    struct GoneExport<'a>(&'a Library, ExportSummary);
+
+    impl calls::Places for GoneExport<'_> {
+        fn project(&self, id: ProjectId) -> ProjectResult<Arc<Project>> {
+            self.0.project(id)
+        }
+
+        fn exports(&self, _: &Project) -> ProjectResult<Vec<ExportSummary>> {
+            Ok(vec![self.1.clone()])
+        }
+
+        fn export(&self, _: &Project, _: ExportId) -> ProjectResult<ExportSummary> {
+            Ok(self.1.clone())
+        }
+    }
+
     #[test]
-    fn a_wasm_run_gets_its_set_secrets_and_what_it_runs_on() {
+    fn a_wasm_run_gets_its_set_secrets_its_files_and_what_it_runs_on() {
         // The test guest (`cargo xtask wasm-guests`): its component is checked and compiled at load.
         let Some(guest) = as_testkit::fixture_file("wasm/guest.wasm") else { return };
         let tmp = std::env::temp_dir().join(format!("autoscene-plugin-wasm-spec-{}", std::process::id()));
-        let secrets = Arc::new(as_plugin::MemorySecrets::default());
-        let (lib, host) = host_keeping(&tmp, secrets.clone());
+        let files = FakeFiles::missing(false);
+        let (lib, host, _) = host_getting(&tmp, NoStart, FakeUv::here(), Some(files.clone()));
+        // The test guest as the WebAssembly plugin `id`, of `m`.
+        let install = |id: &str, m: serde_json::Value| {
+            let dir = tmp.join(id);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::copy(&guest, dir.join("plugin.wasm")).unwrap();
+            std::fs::write(dir.join("plugin.json"), m.to_string()).unwrap();
+            host.store.commit(host.store.stage_folder(&dir).unwrap(), true, true).unwrap().record.id
+        };
         let mut m = wasm_manifest("dev.a.keeper", None);
         m["contributes"]["settings"] = serde_json::json!([
             {"key": "token", "type": "secret", "title": "Token"},
             {"key": "spare", "type": "secret", "title": "Spare"}
         ]);
-        let dir = tmp.join("dev.a.keeper");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::copy(&guest, dir.join("plugin.wasm")).unwrap();
-        std::fs::write(dir.join("plugin.json"), m.to_string()).unwrap();
-        let p = host.store.commit(host.store.stage_folder(&dir).unwrap(), true, true).unwrap();
-        let id = p.record.id.clone();
+        m["resources"] = serde_json::json!([resource("model.onnx", HF, 300)]);
+        m["permissions"] = serde_json::json!(["exports:read"]);
+        let id = install("dev.a.keeper", m);
         host.store.secret_set(&id, "token", "s3cret").unwrap();
         let p = host.store.get(&id).unwrap();
         assert!(sandboxed(&p));
@@ -2501,13 +2562,86 @@ mod tests {
         let input = serde_json::json!({"from": "its page"});
         let run = RunKey::new(&id, ActionKind::ExportAction, "post", None, None, Some(&input));
         let action = ActionContext { kind: ActionKind::ExportAction, id: "post".into(), trigger: Trigger::Page };
-        let spec = wasm_spec_for(&host.store, &lib, &p, &run, action, Some(input.clone())).unwrap();
+        let heard = Mutex::new(Vec::new());
+        let report = |stage: &str, f: Option<f64>| heard.lock().push((stage.to_owned(), f));
+        let cancel = CancelToken::new();
+        let spec_in = |places: &dyn calls::Places, p: &Installed, run: &RunKey, cancel: &CancelToken| {
+            wasm_spec_for(&host, places, (p, run), action.clone(), Some(input.clone()), cancel, &report)
+        };
+        let spec_of = |p: &Installed, run: &RunKey, cancel: &CancelToken| spec_in(&lib, p, run, cancel);
+        let got = || files.got.load(std::sync::atomic::Ordering::SeqCst);
+
+        // A run that can't start gets none of its files: not in a project
+        // the library doesn't have…
+        let (project, export) = (Some(ProjectId::new()), Some(ExportId::new()));
+        let nowhere = RunKey::new(&id, ActionKind::ExportAction, "post", project, export, Some(&input));
+        assert!(spec_of(&p, &nowhere, &cancel).is_err());
+        // …nor on an export whose folder is gone.
+        let footage = tmp.join("footage/Show S01E02.mkv");
+        std::fs::create_dir_all(footage.parent().unwrap()).unwrap();
+        std::fs::write(&footage, b"x").unwrap();
+        let req = NewProject {
+            title: "Show".into(),
+            kind: ProjectKind::Series,
+            content: ContentKind::Live,
+            files: vec![footage.display().to_string()],
+        };
+        let (summary, _, _) = lib.create_project(&req).unwrap();
+        let gone = GoneExport(
+            &lib,
+            ExportSummary {
+                id: ExportId::new(),
+                project_id: summary.id,
+                created_at: 7,
+                preset: as_export::builtin_presets()[0].clone(),
+                out_dir: tmp.join("gone").display().to_string(),
+                status: ExportStatus::Done,
+                items: Vec::new(),
+                label: None,
+                merged: None,
+            },
+        );
+        let on_gone =
+            RunKey::new(&id, ActionKind::ExportAction, "post", Some(summary.id), Some(gone.1.id), Some(&input));
+        let Err(JobError::Failed(why)) = spec_in(&gone, &p, &on_gone, &cancel) else { panic!("it started") };
+        assert!(why.contains("The export's folder is gone."), "{why}");
+        assert!(heard.lock().is_empty());
+        assert_eq!((got(), files.pruned.lock().len()), (0, 0));
+
+        let spec = spec_of(&p, &run, &cancel).unwrap();
         // Only the secrets that are set, by key, read before it starts.
         assert_eq!(spec.secrets, BTreeMap::from([("token".into(), "s3cret".into())]));
         // No FFmpeg, which it can't start; what its page handed it.
         assert_eq!((spec.message.tools.ffmpeg.as_str(), spec.message.tools.ffprobe.as_str()), ("", ""));
-        assert_eq!(spec.message.input, Some(input));
+        assert_eq!(spec.message.input, Some(input.clone()));
         assert_eq!(spec.message.action.id, "post");
+        // Its large files, got before it starts, as a program's are: their
+        // folder is its /resources.
+        assert_eq!(spec.resources_dir, Some(Path::new(TEST_FILES).join("dev.a.keeper")));
+        let getting = |f| ("Getting files for Plugin dev.a.keeper".to_owned(), f);
+        assert_eq!(*heard.lock(), [getting(None), getting(Some(0.0)), getting(Some(1.0))]);
+        assert_eq!(got(), 1);
+        // Its folder lost what its version no longer names first.
+        assert_eq!(*files.pruned.lock(), std::slice::from_ref(&id));
+        // Kept, the next run gets them at once; a cancel while they are
+        // checked fails its start.
+        heard.lock().clear();
+        assert_eq!(spec_of(&p, &run, &cancel).unwrap().resources_dir, Some(Path::new(TEST_FILES).join("dev.a.keeper")));
+        assert!(heard.lock().is_empty());
+        files.forget_checks();
+        let cancelled = CancelToken::new();
+        cancelled.cancel();
+        assert!(matches!(spec_of(&p, &run, &cancelled), Err(JobError::Cancelled)));
+        assert_eq!(*heard.lock(), [("Checking files for Plugin dev.a.keeper".to_owned(), None)]);
+        // One that names none gets no /resources, and nothing is got for it.
+        let plain = install("dev.a.plain", wasm_manifest("dev.a.plain", None));
+        let plain = host.store.get(&plain).unwrap();
+        let run = RunKey::new(&plain.record.id, ActionKind::ExportAction, "post", None, None, Some(&input));
+        heard.lock().clear();
+        assert_eq!(spec_of(&plain, &run, &cancel).unwrap().resources_dir, None);
+        assert!(heard.lock().is_empty());
+        assert_eq!(got(), 1);
+        assert!(!files.pruned.lock().contains(&plain.record.id));
         // A key that isn't its secret is refused.
         assert!(secret_values(&host.store, &id, &["greeting".to_owned()]).is_err());
         // A program runs outside it.

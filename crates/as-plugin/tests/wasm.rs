@@ -40,11 +40,15 @@ const MARKER: &str = "s3cret-marker-7f1c";
 /// - `export/`, an export's folder with two clips and `remove-me.txt`;
 /// - `project/`, the project's folder with `notes.txt`;
 /// - `outside/secret.txt`, which it must never reach;
-/// - `code/` and `logs/`, its compiled code and its log.
+/// - `code/` and `logs/`, its compiled code and its log;
+/// - `resources/`, its large files, once it has some ([`Guest::files`]).
 struct Guest {
     dir: TempDir,
     component: PathBuf,
     sha256: Option<String>,
+    /// Its large files' folder, its `/resources`; none when its plugin
+    /// names none.
+    resources: Option<PathBuf>,
     permissions: Vec<Permission>,
     secret_keys: Vec<String>,
     secrets: BTreeMap<String, String>,
@@ -74,6 +78,7 @@ fn guest_from(fixture: &str, action: &str) -> Option<Guest> {
         dir,
         component,
         sha256: None,
+        resources: None,
         permissions: Vec::new(),
         secret_keys: vec!["token".into()],
         secrets: BTreeMap::new(),
@@ -144,6 +149,17 @@ impl Guest {
         self
     }
 
+    /// With the large files `files`, by name, in `resources/`.
+    fn files(mut self, files: &[(&str, &[u8])]) -> Self {
+        let dir = self.path("resources");
+        fs::create_dir(&dir).unwrap();
+        for (name, bytes) in files {
+            fs::write(dir.join(name), bytes).unwrap();
+        }
+        self.resources = Some(dir);
+        self
+    }
+
     fn text(mut self, key: &str, value: &str) -> Self {
         self.message.settings.insert(key.into(), SettingValue::Text(value.into()));
         self
@@ -156,6 +172,7 @@ impl Guest {
             component_sha256: self.sha256.clone(),
             cache: self.path("code"),
             data_dir: self.path("data"),
+            resources_dir: self.resources.clone(),
             log_path: self.path("logs/plugin.log"),
             grants: Grants {
                 runtime: RuntimeKind::Wasm,
@@ -424,6 +441,64 @@ fn exports_write_lets_it_change_the_export_folder() {
     let (r, _) = g.with(&[Permission::ExportsRead]).run();
     let Err(PluginError::Failed { message, .. }) = r else { panic!("{r:?}") };
     assert!(message.starts_with("write /export/out.txt:"), "{message}");
+}
+
+#[test]
+fn resources_are_read_only_at_slash_resources() {
+    let Some(g) = guest("read-resources") else { return };
+    // Weights larger than one read, and a small file beside them.
+    let weights: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let vocab: &[u8] = br#"{"a": 1}"#;
+    let files = [("model.onnx", weights.as_slice()), ("vocab.json", vocab)];
+    let g = g.files(&files).text("paths", "model.onnx\nvocab.json");
+    let said = g.runs();
+    assert_eq!(line(&said, "preopens="), "preopens=/data,/resources", "{said}");
+    assert!(line(&said, "list /resources:").ends_with(": ALLOWED"), "{said}");
+    for (name, bytes) in files {
+        // It reads each whole: its copy in /data hashes as the file does.
+        let file = format!("/resources/{name}");
+        assert_eq!(line(&said, &format!("read {file}:")), format!("read {file}: {} bytes", bytes.len()));
+        assert_eq!(sha256_hex(&fs::read(g.path("data").join(name)).unwrap()), sha256_hex(bytes));
+        // It changes none of them.
+        for tried in ["write", "append", "truncate", "delete"] {
+            denied(&said, &format!("{tried} {file}:"));
+        }
+        denied(&said, &format!("rename {file} to /data:"));
+        denied(&said, &format!("rename /data into {file}:"));
+        denied(&said, &format!("hard link {file} into /data:"));
+        denied(&said, &format!("hard link /data into {file}:"));
+        denied(&said, &format!("set times of {file}:"));
+        assert_eq!(fs::read(g.path("resources").join(name)).unwrap(), bytes, "{name}");
+        let modified = fs::metadata(g.path("resources").join(name)).unwrap().modified().unwrap();
+        assert_ne!(modified, std::time::SystemTime::UNIX_EPOCH, "{name}");
+    }
+    // Nor adds one, nor climbs out: to a file that is there, refused for
+    // where it is, not missed.
+    denied(&said, "write /resources/new:");
+    denied(&said, "mkdir /resources/new-dir:");
+    let up = line(&said, "read /resources/../outside/secret.txt:");
+    assert!(up.contains(": denied (") && !up.contains("NotFound"), "{up}");
+    let mut kept: Vec<String> =
+        fs::read_dir(g.path("resources")).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+    kept.sort();
+    assert_eq!(kept, ["model.onnx", "vocab.json"]);
+    assert!(!g.path("data/moved").exists() && !g.path("data/linked").exists());
+}
+
+#[test]
+fn no_resources_no_preopen() {
+    let Some(g) = guest("read-resources") else { return };
+    // Files lie in a folder beside its own, but its plugin names none.
+    fs::create_dir(g.path("resources")).unwrap();
+    fs::write(g.path("resources/model.onnx"), "weights").unwrap();
+    let g = g.text("paths", "model.onnx");
+    let said = g.runs();
+    assert_eq!(line(&said, "preopens="), "preopens=/data", "{said}");
+    denied(&said, "list /resources:");
+    denied(&said, "read /resources/model.onnx:");
+    denied(&said, "write /resources/new:");
+    assert!(!g.path("data/model.onnx").exists());
+    assert_eq!(fs::read_to_string(g.path("resources/model.onnx")).unwrap(), "weights");
 }
 
 #[test]

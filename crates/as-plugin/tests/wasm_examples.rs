@@ -129,6 +129,7 @@ impl Run {
             component_sha256: None,
             cache: self.path("code"),
             data_dir: self.path("data"),
+            resources_dir: None,
             log_path: self.path("logs/plugin.log"),
             grants: Grants {
                 runtime: RuntimeKind::Wasm,

@@ -299,6 +299,16 @@ fn an_unlisted_entry_is_refused() {
 }
 
 #[test]
+fn precompiled_code_is_refused_before_a_file_is_written() {
+    let place = Place::new();
+    let message = place.refused(&zip_of(&with_lock(&with(plugin(), "lib/plugin.CWASM", b"compiled"))));
+    assert_eq!(
+        message,
+        "The package holds precompiled code (lib/plugin.CWASM). Ship the .wasm file: AutoScene compiles it itself."
+    );
+}
+
+#[test]
 fn a_listed_file_that_is_missing_is_refused() {
     let place = Place::new();
     let lock = lock_of(&with(plugin(), "lib/gone.txt", b"x"));

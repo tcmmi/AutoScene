@@ -30,6 +30,11 @@
 //! ([`pages`]). A plugin whose runtime is a service keeps its program running
 //! while one of its pages is open, and answers their requests ([`service`]).
 //!
+//! A plugin may instead be a WebAssembly component (manifest version 2,
+//! runtime `wasm`), which a later AutoScene runs in a sandbox; this one
+//! reads its manifest and checks its package, and says it needs that
+//! AutoScene ([`store`]).
+//!
 //! What a plugin says it does (its permissions) is shown before install.
 //! Its calls into AutoScene are held to it; what its program does itself is
 //! not: a process plugin runs with the person's user rights.
@@ -60,7 +65,8 @@ pub use error::{PluginError, PluginResult};
 pub use keys::KeyRole;
 pub use manifest::{
     ActionSpec, Author, CommandSpec, Engines, Launch, Manifest, PageScope, PageSpec, Parsed, Permission, PluginId,
-    Resource, Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue, SourceLink, current_platform,
+    Resource, Runtime, RuntimeKind, SelectOption, SettingKind, SettingSpec, SettingValue, SourceLink, WasmLimits,
+    current_platform,
 };
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{

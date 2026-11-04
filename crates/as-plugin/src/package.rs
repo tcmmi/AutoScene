@@ -67,6 +67,9 @@ pub const MAX_ICON_SVG: u64 = 64 << 10;
 /// The largest banner: a 1200×600 picture fits as a JPEG or WebP, and as a
 /// PNG of flat art.
 pub const MAX_BANNER: u64 = 512 << 10;
+/// The largest WebAssembly component AutoScene compiles (Python's are
+/// about 18 MB, JavaScript's 12 MB).
+pub const MAX_COMPONENT_BYTES: u64 = 64 << 20;
 /// The `lockVersion` this AutoScene reads and writes.
 pub const LOCK_VERSION: u32 = 1;
 pub const LOCK: &str = "files.lock";
@@ -195,6 +198,7 @@ pub fn unpack(archive: &Path, into: &Path) -> PluginResult<Unpacked> {
     let lock_bytes = read_beside(&mut zip, &listing, LOCK, MAX_LOCK_BYTES)?
         .ok_or_else(|| invalid("The plugin package has no files.lock."))?;
     let lock = read_lock(&lock_bytes)?;
+    refuse_precompiled(&lock)?;
     check_listing(&zip, &listing, &lock)?;
     let signature = read_beside(&mut zip, &listing, SIG, MAX_SIG_BYTES)?.map(|b| text(SIG, b)).transpose()?;
     let author_key =
@@ -238,8 +242,27 @@ pub fn verify_dir(dir: &Path, lock: &FilesLock) -> PluginResult<()> {
 
 /// Checks that the package of `lock` holds what `launch` starts on
 /// `platform` (a key of [`PLATFORMS`](crate::manifest::PLATFORMS)): the
-/// program, marked to run unless on Windows, or the script and its lock.
+/// program, marked to run unless on Windows, the script and its lock, or
+/// the component, not marked to run and at most [`MAX_COMPONENT_BYTES`].
 pub fn check_launch(lock: &FilesLock, launch: &Launch, platform: &str) -> PluginResult<()> {
+    if let Launch::Wasm { component } = launch {
+        let Some(f) = lock.files.iter().find(|f| f.path == *component) else {
+            return Err(invalid(format!(
+                "The plugin package is missing {}, which its runtime needs.",
+                shown(component)
+            )));
+        };
+        if f.exec {
+            return Err(invalid(format!(
+                "The plugin's files.lock marks {} to run. A component isn't a program: remove its exec flag.",
+                shown(component)
+            )));
+        }
+        if f.size > MAX_COMPONENT_BYTES {
+            return Err(invalid("The plugin's component is larger than 64 MB."));
+        }
+        return Ok(());
+    }
     for file in launch.files() {
         let Some(f) = lock.files.iter().find(|f| f.path == file) else {
             return Err(invalid(format!("The plugin package is missing {}, which its command needs.", shown(&file))));
@@ -249,6 +272,12 @@ pub fn check_launch(lock: &FilesLock, launch: &Launch, platform: &str) -> Plugin
         }
     }
     Ok(())
+}
+
+/// Whether `bytes` start as a WebAssembly component does: `\0asm`, version
+/// 0x0d, layer 1 (a core module is layer 0).
+pub fn is_component(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"\0asm\x0d\x00\x01\x00")
 }
 
 /// Checks the files of the plugin's `pages` in the folder `dir`, which
@@ -563,6 +592,7 @@ pub fn lock_folder(dir: &Path) -> PluginResult<FilesLock> {
     files.sort_by(|a, b| a.path.cmp(&b.path));
     let lock = FilesLock { lock_version: LOCK_VERSION, files };
     check_lock(&lock)?;
+    refuse_precompiled(&lock)?;
     Ok(lock)
 }
 
@@ -807,6 +837,22 @@ fn check_lock(lock: &FilesLock) -> PluginResult<()> {
         return Err(invalid("The plugin's files.lock doesn't list plugin.json."));
     }
     Ok(())
+}
+
+/// Refuses a new package or folder whose lock lists precompiled code (a
+/// path ending in `.cwasm`, in any case): AutoScene compiles a component
+/// itself, and never loads code a package brings compiled. Packing it is a
+/// mistake worth naming. Only what is about to be packed or installed is
+/// checked: an installed plugin's lock was fine when it was installed, and
+/// still loads.
+fn refuse_precompiled(lock: &FilesLock) -> PluginResult<()> {
+    match lock.files.iter().find(|f| f.path.to_ascii_lowercase().ends_with(".cwasm")) {
+        Some(f) => Err(invalid(format!(
+            "The package holds precompiled code ({}). Ship the .wasm file: AutoScene compiles it itself.",
+            shown(&f.path)
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// Checks the zip against its lock: it holds exactly the listed files
@@ -1154,6 +1200,75 @@ mod tests {
         let uv = Launch::UvScript { script: "main.py".into() };
         let Err(PluginError::Invalid(m)) = check_launch(&lock, &uv, "linux-x86_64") else { panic!() };
         assert_eq!(m, "The plugin package is missing main.py.lock, which its command needs.");
+    }
+
+    #[test]
+    fn a_component_is_listed_and_never_marked_to_run() {
+        let wasm = Launch::Wasm { component: "plugin.wasm".into() };
+        let check = |lock: &FilesLock, platform: &str| check_launch(lock, &wasm, platform).map_err(|e| e.to_string());
+        let listed = lock_of(&[("plugin.json", 2, false), ("plugin.wasm", 2, false)]);
+        for platform in ["windows-x86_64", "macos-aarch64", "linux-x86_64"] {
+            assert_eq!(check(&listed, platform), Ok(()), "{platform}");
+        }
+        // Not as a program, on any platform.
+        let marked = lock_of(&[("plugin.json", 2, false), ("plugin.wasm", 2, true)]);
+        for platform in ["windows-x86_64", "linux-x86_64"] {
+            assert_eq!(
+                check(&marked, platform),
+                Err("The plugin's files.lock marks plugin.wasm to run. A component isn't a program: remove its exec flag."
+                    .into())
+            );
+        }
+        let missing = lock_of(&[("plugin.json", 2, false), ("other.wasm", 2, false)]);
+        assert_eq!(
+            check(&missing, "linux-x86_64"),
+            Err("The plugin package is missing plugin.wasm, which its runtime needs.".into())
+        );
+    }
+
+    #[test]
+    fn a_component_larger_than_64_mb_is_refused() {
+        let wasm = Launch::Wasm { component: "plugin.wasm".into() };
+        let lock = |size: u64| lock_of(&[("plugin.json", 2, false), ("plugin.wasm", size, false)]);
+        assert!(check_launch(&lock(MAX_COMPONENT_BYTES), &wasm, "linux-x86_64").is_ok());
+        let Err(e) = check_launch(&lock(MAX_COMPONENT_BYTES + 1), &wasm, "linux-x86_64") else { panic!() };
+        assert_eq!(e.to_string(), "The plugin's component is larger than 64 MB.");
+        assert_eq!(MAX_COMPONENT_BYTES, 64 << 20);
+    }
+
+    #[test]
+    fn a_component_starts_as_one() {
+        assert!(is_component(b"\0asm\x0d\x00\x01\x00\x07\x10"));
+        // A core module (layer 0, version 1), a short file and text are none.
+        assert!(!is_component(b"\0asm\x01\x00\x00\x00"));
+        // The component's version with the layer of a module is none either.
+        assert!(!is_component(b"\0asm\x0d\x00\x00\x00"));
+        assert!(!is_component(b"\0asm\x0d\x00"));
+        assert!(!is_component(b"(component)"));
+    }
+
+    #[test]
+    fn precompiled_code_is_refused() {
+        let said = |p: &str| {
+            format!("The package holds precompiled code ({p}). Ship the .wasm file: AutoScene compiles it itself.")
+        };
+        // In a lock, also of a plugin that isn't WebAssembly.
+        for p in ["plugin.cwasm", "bin/x.CWASM", "a.Cwasm"] {
+            let lock = lock_of(&[("plugin.json", 2, false), (p, 2, false)]);
+            assert_eq!(refuse_precompiled(&lock).map_err(|e| e.to_string()), Err(said(p)), "{p}");
+            // An installed plugin's lock is read back as it was installed.
+            assert!(check_lock(&lock).is_ok(), "{p}");
+        }
+        let fine = lock_of(&[("plugin.json", 2, false), ("plugin.wasm", 2, false), ("cwasm.txt", 2, false)]);
+        assert!(refuse_precompiled(&fine).is_ok());
+        // And in a folder to pack.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(MANIFEST), b"{}").unwrap();
+        fs::write(dir.path().join("plugin.wasm"), b"\0asm").unwrap();
+        assert!(lock_folder(dir.path()).is_ok());
+        fs::create_dir(dir.path().join("cache")).unwrap();
+        fs::write(dir.path().join("cache/plugin.CWASM"), b"compiled").unwrap();
+        assert_eq!(lock_folder(dir.path()).map_err(|e| e.to_string()), Err(said("cache/plugin.CWASM")));
     }
 
     #[test]

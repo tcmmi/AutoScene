@@ -449,6 +449,8 @@ pub(crate) fn command(
             cmd.env("UV_NO_CONFIG", "1");
             Ok(cmd)
         }
+        // The store neither stages nor loads one for a run (it needs a newer AutoScene).
+        Launch::Wasm { .. } => Err(PluginError::Invalid(format!("{name} runs in a sandbox, not as a program."))),
     }
 }
 

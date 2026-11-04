@@ -11,7 +11,7 @@
       "type": "string"
     },
     "manifestVersion": {
-      "description": "The version of plugin.json this file is written for. Version 2 adds pages, secret settings, and the runtime types service and none.",
+      "description": "The version of plugin.json this file is written for. Version 2 adds pages, secret settings, and the runtime types service, none and wasm.",
       "enum": [1, 2]
     },
     "id": {
@@ -91,7 +91,7 @@
         "properties": {
           "banner": false,
           "resources": false,
-          "runtime": { "properties": { "type": { "const": "process" } } },
+          "runtime": { "properties": { "type": { "const": "process" }, "component": false, "limits": false } },
           "contributes": {
             "properties": {
               "pages": false,
@@ -111,15 +111,30 @@
         "properties": {
           "platforms": false,
           "resources": { "maxItems": 0 },
-          "runtime": { "properties": { "command": false, "gpu": false } },
+          "runtime": { "properties": { "command": false, "gpu": false, "component": false, "limits": false } },
           "contributes": {
             "required": ["pages"],
             "properties": { "exportActions": false, "commands": false, "pages": { "minItems": 1 } }
           }
         }
+      }
+    },
+    {
+      "if": {
+        "required": ["runtime"],
+        "properties": { "runtime": { "required": ["type"], "properties": { "type": { "enum": ["process", "service"] } } } }
       },
-      "else": {
-        "properties": { "runtime": { "required": ["command"] } }
+      "then": {
+        "properties": { "runtime": { "required": ["command"], "properties": { "component": false, "limits": false } } }
+      }
+    },
+    {
+      "if": {
+        "required": ["runtime"],
+        "properties": { "runtime": { "required": ["type"], "properties": { "type": { "const": "wasm" } } } }
+      },
+      "then": {
+        "properties": { "runtime": { "required": ["component"], "properties": { "command": false, "gpu": { "const": false } } } }
       }
     },
     {
@@ -191,8 +206,8 @@
       "required": ["type"],
       "properties": {
         "type": {
-          "description": "process: its program starts for each run. service: it also runs while one of its pages is open (protocol 2). none: it runs no program, and has only pages.",
-          "enum": ["process", "service", "none"]
+          "description": "process: its program starts for each run. service: it also runs while one of its pages is open (protocol 2). none: it runs no program, and has only pages. wasm: its WebAssembly component runs in AutoScene's sandbox for each run (manifest version 2).",
+          "enum": ["process", "service", "none", "wasm"]
         },
         "command": {
           "description": "The command per platform, or \"*\" for every other one. A program in the plugin's folder, or a Python script as [\"uv\", \"run\", \"--script\", \"--locked\", \"main.py\"].",
@@ -206,6 +221,33 @@
         "gpu": {
           "description": "It uses the GPU, so its runs wait for the analysis to leave it free.",
           "type": "boolean"
+        },
+        "component": {
+          "description": "Its WebAssembly component (wasm only): a .wasm file in the plugin's folder, such as plugin.wasm.",
+          "type": "string",
+          "pattern": "^(?!(.*/)?\\.\\.?(/|$))([A-Za-z0-9._@+-]+/)*[A-Za-z0-9._@+-]+\\.wasm$"
+        },
+        "limits": { "$ref": "#/$defs/limits" }
+      },
+      "additionalProperties": false
+    },
+    "limits": {
+      "description": "What each run of its component may take (wasm only). Left out, each is its default.",
+      "type": "object",
+      "properties": {
+        "memoryMb": {
+          "description": "The memory a run may use, in MB.",
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 4096,
+          "default": 512
+        },
+        "minutes": {
+          "description": "How long a run may take, in minutes. A longer one is stopped.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440,
+          "default": 30
         }
       },
       "additionalProperties": false

@@ -749,7 +749,7 @@ function missing(method: HostMethod, p: MockPlugin): string | null {
     case "service.request":
       return p.runtime === "service" ? null : `${method} needs a plugin that runs a service.`
     case "actions.run":
-      return p.runtime !== "none" && p.protocol >= 2 ? null : `${method} needs a plugin whose program speaks protocol 2.`
+      return (p.runtime === "process" || p.runtime === "service") && p.protocol >= 2 ? null : `${method} needs a plugin whose program speaks protocol 2.`
     default:
       return null
   }

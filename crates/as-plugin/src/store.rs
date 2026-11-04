@@ -71,7 +71,7 @@ use crate::calls::HostCalls;
 use crate::catalog::{self, Catalog};
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{
-    self, Manifest, Parsed, Permission, PluginId, RuntimeKind, SettingKind, SettingSpec, SettingValue,
+    self, Launch, Manifest, Parsed, Permission, PluginId, RuntimeKind, SettingKind, SettingSpec, SettingValue,
     current_platform, invalid, shown,
 };
 use crate::package::{
@@ -453,7 +453,9 @@ impl Store {
         let bytes = manifest::read_file(&staged.join(MANIFEST))?;
         let Parsed { manifest: m, warnings } = manifest::parse(&bytes, &self.app)?;
         if m.runs_program() {
-            package::check_launch(&unpacked.lock, &m.launch()?, current_platform())?;
+            let launch = m.launch()?;
+            package::check_launch(&unpacked.lock, &launch, current_platform())?;
+            waits_for_the_sandbox(&launch)?;
         }
         package::check_pages(staged, Some(&unpacked.lock), &m.pages)?;
         package::check_pictures(staged, &unpacked.lock, &m)?;
@@ -504,14 +506,18 @@ impl Store {
             _ => e.into(),
         })?;
         let Parsed { manifest: m, warnings } = manifest::parse(&bytes, &self.app)?;
-        let starts = if m.runs_program() { m.launch()?.files() } else { Vec::new() };
-        for file in starts {
+        let launch = if m.runs_program() { Some(m.launch()?) } else { None };
+        for file in launch.iter().flat_map(Launch::files) {
             if !fs::metadata(file_in(&dir, &file)).is_ok_and(|f| f.is_file()) {
+                let needs = if m.is_sandboxed() { "runtime" } else { "command" };
                 return Err(invalid(format!(
-                    "The plugin folder is missing {}, which its command needs.",
+                    "The plugin folder is missing {}, which its {needs} needs.",
                     shown(&file)
                 )));
             }
+        }
+        if let Some(launch) = &launch {
+            waits_for_the_sandbox(launch)?;
         }
         package::check_pages(&dir, None, &m.pages)?;
         let previous = self.record(&m.id)?;
@@ -1235,6 +1241,12 @@ impl Store {
                     true => Ok(parsed),
                     false => Err(RUNTIME_CHANGED.to_owned()),
                 });
+                // One a newer AutoScene installed to run in the sandbox waits
+                // for it, as at install ([`waits_for_the_sandbox`]).
+                let read = read.and_then(|parsed| match parsed.manifest.is_sandboxed() {
+                    false => Ok(parsed),
+                    true => Err(NEWER.into()),
+                });
                 (extra, read)
             }
             Ok(None) => (Extra::default(), Err(NEWER.into())),
@@ -1501,6 +1513,17 @@ fn allowed(trust: Trust, allow_unreviewed: bool, accept_unreviewed: bool) -> Plu
         _ if !allow_unreviewed => Err(PluginError::NotAllowed),
         _ if !accept_unreviewed => Err(invalid("Confirm that you want to install it.")),
         _ => Ok(()),
+    }
+}
+
+/// Refuses a plugin that runs in the sandbox, which this AutoScene reads
+/// but can't run yet: it needs a newer one. Its manifest and component were
+/// checked first, so a package or folder without its component, or with
+/// one marked to run, says that instead.
+fn waits_for_the_sandbox(launch: &Launch) -> PluginResult<()> {
+    match launch {
+        Launch::Wasm { .. } => Err(PluginError::TooNew("runtime".into())),
+        Launch::Exe { .. } | Launch::UvScript { .. } => Ok(()),
     }
 }
 
@@ -2080,6 +2103,44 @@ mod tests {
         assert_eq!(broken_on("2.0.0").as_deref(), Some("This plugin only works with an older AutoScene."));
         assert_eq!(broken_on("1.5.0"), None);
         assert_eq!(place.plugins(), holding(&p), "its files stay");
+    }
+
+    #[test]
+    fn a_wasm_package_waits_for_a_newer_autoscene() {
+        let place = Place::new();
+        let store = place.store();
+        let mut m = manifest(ID, "1.0.0");
+        m["manifestVersion"] = json!(2);
+        m["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
+        let plugin_json = ("plugin.json".to_owned(), serde_json::to_vec_pretty(&m).unwrap());
+        let component = ("plugin.wasm".to_owned(), b"\0asm\x0d\x00\x01\x00".to_vec());
+        let files: Files = vec![plugin_json.clone(), component];
+
+        // Its manifest reads, and its files check out, but nothing here runs it yet.
+        let staged = store.stage(&place.package(&files, None, false));
+        assert!(matches!(staged, Err(PluginError::TooNew(ref f)) if f == "runtime"), "{staged:?}");
+        assert_eq!(place.plugins(), [".staging", ".trash"], "the staged package is gone");
+        let dev = place.folder("hello-wasm", &files);
+        let loaded = store.stage_folder(&dev);
+        assert!(matches!(loaded, Err(PluginError::TooNew(ref f)) if f == "runtime"), "{loaded:?}");
+        assert!(store.list().unwrap().is_empty());
+
+        // A package or folder without its component says so first.
+        let Err(e) = store.stage(&place.package(&vec![plugin_json.clone()], None, false)) else { panic!() };
+        assert_eq!(e.to_string(), "The plugin package is missing plugin.wasm, which its runtime needs.");
+        let Err(e) = store.stage_folder(&place.folder("no-component", &vec![plugin_json])) else { panic!() };
+        assert_eq!(e.to_string(), "The plugin folder is missing plugin.wasm, which its runtime needs.");
+
+        // One a newer AutoScene loaded, read back here, waits for it too.
+        let process = place.folder("hello-later", &with_secrets("1.0.0", &[]));
+        let p = store.commit(store.stage_folder(&process).unwrap(), true, true).unwrap();
+        fs::write(process.join("plugin.json"), &files[0].1).unwrap();
+        fs::write(process.join("plugin.wasm"), &files[1].1).unwrap();
+        let row = format!(r#"{{"v":1,"installedAt":{},"runtime":"wasm"}}"#, p.record.installed_at);
+        place.db.set_setting(&format!("plugin_extra.{ID}"), &row).unwrap();
+        let p = store.get(&id()).unwrap();
+        assert_eq!((p.broken.as_deref(), p.manifest.is_none()), (Some(NEWER), true));
+        assert!(crate::calls::Grants::of(&p).is_err());
     }
 
     #[test]

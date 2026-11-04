@@ -1287,6 +1287,40 @@ fn catalog_add_takes_the_entry_from_the_package() {
 }
 
 #[test]
+fn catalog_add_lists_a_webassembly_plugin_on_every_platform() {
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let component: &[u8] = b"\0asm\x0d\x00\x01\x00";
+    let wasm = folder(&place("wasm"), json!({}), &[("plugin.wasm", component)]);
+    edit_manifest(&wasm, |v| {
+        v["manifestVersion"] = json!(2);
+        v["engines"]["protocol"] = json!(2);
+        v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
+    });
+    let cat = CiCatalog::new(&place("site"), &place("online"));
+
+    // A component runs wherever AutoScene does, also on a platform a later
+    // AutoScene adds: it is listed as running on all.
+    let everywhere = place("everywhere.asp");
+    asp(&["pack", text(&wasm), text(&everywhere)]).ok();
+    cat.add(&everywhere).ok();
+    let entry = &cat.json()["plugins"][0];
+    assert_eq!((&entry["runtime"], &entry["platforms"]), (&json!("wasm"), &json!([])));
+    assert_eq!((&entry["uvScript"], &entry["gpu"]), (&json!(false), &json!(false)));
+
+    // One that names its platforms installs only there, and is listed so.
+    edit_manifest(&wasm, |v| {
+        v["version"] = json!("1.3.0");
+        v["platforms"] = json!(["linux-x86_64", "windows-x86_64"]);
+    });
+    let named = place("named.asp");
+    asp(&["pack", text(&wasm), text(&named)]).ok();
+    cat.add(&named).ok();
+    let entry = &cat.json()["plugins"][1];
+    assert_eq!((&entry["runtime"], &entry["platforms"]), (&json!("wasm"), &json!(["windows-x86_64", "linux-x86_64"])));
+}
+
+#[test]
 fn catalog_add_refuses_a_version_already_listed() {
     let tmp = tempfile::tempdir().unwrap();
     let place = |name: &str| tmp.path().join(name);
@@ -1850,6 +1884,8 @@ fn the_example_plugins_pack_and_parse() {
                 assert!(!into.join("main.py").exists(), "{name}");
                 assert!(!m.pages.is_empty(), "{name}");
             }
+            // No example runs in the sandbox yet: one that does says here what it packs.
+            RuntimeKind::Wasm => unreachable!("{name} is a WebAssembly plugin"),
         }
         // Each page is a file of the package, as AutoScene checks it.
         package::check_pages(&into, Some(&lock), &m.pages).unwrap();
@@ -1930,6 +1966,8 @@ fn init_makes_a_plugin_that_packs_and_parses() {
             RuntimeKind::None => (1, true, false, true, false, false),
             RuntimeKind::Service => (1, false, true, true, true, false),
             RuntimeKind::Process => (0, false, false, false, false, true),
+            // No form of asp init makes a WebAssembly plugin yet.
+            RuntimeKind::Wasm => unreachable!("{folder} is a WebAssembly plugin"),
         };
         assert_eq!(says, says_for, "{folder}");
         let pack = if folder.contains(' ') {

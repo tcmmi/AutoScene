@@ -2020,8 +2020,8 @@ export type ReviewCatalog = {
 
 /**
  *  How a plugin runs. This AutoScene installs `process` plugins and, from
- *  manifest version 2, `service` and `none` ones. Also what the person
- *  agreed to at install
+ *  manifest version 2, `service` and `none` ones; it reads `wasm` ones,
+ *  which a later AutoScene runs. Also what the person agreed to at install
  *  ([`crate::store::Extra`]).
  */
 export type RuntimeKind = 
@@ -2030,7 +2030,9 @@ export type RuntimeKind =
 /**  Also starts in service mode while one of its pages is open (protocol 2). */
 "service" | 
 /**  Runs no program: pages only. */
-"none";
+"none" | 
+/**  Runs its WebAssembly component in AutoScene's sandbox, for each run. */
+"wasm";
 
 /**  An export's clips saved as a list (see [`ListFormat`]). */
 export type SavedList = {

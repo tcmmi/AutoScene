@@ -265,6 +265,31 @@ fn key_file(dir: &Path, bytes: &[u8], secret: bool) -> Result<NamedTempFile, Fai
     Ok(file)
 }
 
+/// Marks the programs the manifest `m` starts to run in `lock`, and its
+/// component not to: a component isn't a program, whatever the folder says
+/// of it. Gives the other files the folder marks to run, which stay so.
+fn mark_to_run(m: &Manifest, lock: &mut FilesLock) -> Vec<String> {
+    let (mut programs, mut components) = (Vec::new(), Vec::new());
+    for (_, launch) in m.launches() {
+        match launch {
+            Ok(Launch::Exe { program, .. }) => programs.push(program),
+            Ok(Launch::Wasm { component }) => components.push(component),
+            _ => {}
+        }
+    }
+    let mut others = Vec::new();
+    for f in &mut lock.files {
+        if programs.contains(&f.path) {
+            f.exec = true;
+        } else if components.contains(&f.path) {
+            f.exec = false;
+        } else if f.exec {
+            others.push(f.path.clone());
+        }
+    }
+    others
+}
+
 /// Packs the plugin folder `dir` into the package `out`, unsigned.
 fn pack(dir: &Path, out: &Path) -> Result<(), Failure> {
     // asp writes beside the package as it works, and a package in its own
@@ -280,20 +305,8 @@ fn pack(dir: &Path, out: &Path) -> Result<(), Failure> {
     let parsed = read_manifest(&manifest::read_file(&path).map_err(at(&path))?)?;
     warn_all(&parsed.warnings);
     let m = &parsed.manifest;
-    let launches = m.launches();
-    let programs: Vec<&str> = launches
-        .iter()
-        .filter_map(|(_, launch)| match launch {
-            Ok(Launch::Exe { program, .. }) => Some(program.as_str()),
-            _ => None,
-        })
-        .collect();
-    for f in &mut lock.files {
-        if programs.contains(&f.path.as_str()) {
-            f.exec = true;
-        } else if f.exec {
-            warn(&format!("{} may run on this computer, so the package marks it to run too.", f.path));
-        }
+    for marked in mark_to_run(m, &mut lock) {
+        warn(&format!("{marked} may run on this computer, so the package marks it to run too."));
     }
     check_platforms(m, &lock)?;
     package::check_pages(dir, Some(&lock), &m.pages).map_err(plugin_at(dir))?;
@@ -327,7 +340,9 @@ fn refuse_secret_keys(dir: &Path, lock: &FilesLock) -> Result<(), Failure> {
 /// AutoScene checks it at install there: its command, and the files that
 /// starts in `lock` ([`package::check_launch`]). Warns of each platform it
 /// can't run on, and fails when that is all of them. A plugin that runs no
-/// program (only pages) runs on every platform.
+/// program (only pages) runs on every platform. A WebAssembly plugin has
+/// one launch, its component, on each platform it names (or all), so what
+/// is wrong with the component is said once, for all of them.
 fn check_platforms(m: &Manifest, lock: &FilesLock) -> Result<(), Failure> {
     if !m.runs_program() {
         return Ok(());
@@ -1071,7 +1086,8 @@ struct Listing {
     size: u64,
     sha256: String,
     /// The platforms where its command starts; none for one that runs on
-    /// all: one that runs no program, or one uv script everywhere.
+    /// all: one that runs no program, one uv script everywhere, or a
+    /// WebAssembly component that names no platform.
     platforms: Vec<String>,
     /// Its runtime type, as its manifest names it.
     runtime: &'static str,
@@ -1097,16 +1113,18 @@ impl Listing {
                 platforms.push(platform.to_owned());
             }
         }
-        // One uv script for every platform runs wherever uv does, also on a
-        // platform a later AutoScene adds: it is listed as running on all.
+        // One uv script for every platform runs wherever uv does, and a
+        // WebAssembly component wherever AutoScene does, also on a platform
+        // a later AutoScene adds: either is listed as running on all.
         let everywhere = m.platforms.is_empty() && m.runtime.command.keys().all(|key| key == "*");
-        if uv_script && everywhere && platforms.len() == manifest::PLATFORMS.len() {
+        if (uv_script || m.is_sandboxed()) && everywhere && platforms.len() == manifest::PLATFORMS.len() {
             platforms.clear();
         }
         let runtime = match m.runtime.kind {
             RuntimeKind::Process => "process",
             RuntimeKind::Service => "service",
             RuntimeKind::None => "none",
+            RuntimeKind::Wasm => "wasm",
         };
         let icon = m.icon.as_deref().map(|icon| icon_url(&dir, icon)).transpose()?.flatten();
         let (size, sha256) = size_and_sha256(path)?;
@@ -1894,6 +1912,21 @@ mod tests {
         for (secs, day) in days {
             assert_eq!(date(secs), day, "{secs}");
         }
+    }
+
+    #[test]
+    fn a_component_is_never_marked_to_run() {
+        let wasm = br#"{"manifestVersion": 2, "id": "dev.autoscene.hello-wasm", "version": "1.0.0",
+            "name": "Hello Wasm", "description": "Says hello.", "author": {"name": "AutoScene"},
+            "engines": {"autoscene": ">=1.0.0", "protocol": 2},
+            "runtime": {"type": "wasm", "component": "plugin.wasm"}}"#;
+        let m = manifest::parse_for_any_app(wasm).unwrap().manifest;
+        let file = |path: &str| LockedFile { path: path.into(), size: 8, sha256: "0".repeat(64), exec: true };
+        let mut lock = FilesLock { lock_version: 1, files: vec![file("plugin.wasm"), file("tool.sh")] };
+        // The folder marks both to run (Linux and macOS): the component is cleared, the other kept.
+        assert_eq!(mark_to_run(&m, &mut lock), ["tool.sh"]);
+        assert_eq!(lock.files.iter().map(|f| f.exec).collect::<Vec<_>>(), [false, true]);
+        assert!(check_platforms(&m, &lock).is_ok());
     }
 
     #[test]

@@ -29,6 +29,15 @@
 //! computer or its network, or an address, gets a warning: `net.fetch` never
 //! reaches it ([`crate::net`]).
 //!
+//! Version 2 also has the runtime type `wasm`: a WebAssembly component in
+//! the package (`runtime.component`), which AutoScene runs in a sandbox
+//! with the limits the plugin asks for (`runtime.limits`, [`WasmLimits`]),
+//! on every platform. It names no command and can't use the GPU, and its
+//! network hosts must be public names ([`net::public_name`]): the sandbox
+//! never reaches anything else, so a plugin that names more is refused
+//! rather than warned. This AutoScene reads such a plugin but doesn't run
+//! it yet: [`crate::store`] answers that it needs a newer AutoScene.
+//!
 //! No shell reads a command: its arguments are fixed, and handed to the
 //! program as they are. The program is a file in the plugin's own folder,
 //! started by its path there ([`Launch::entry_in`]) and never looked up on
@@ -71,6 +80,17 @@ pub const MAX_SETTINGS: usize = 32;
 pub const MAX_SECRETS: usize = 8;
 /// The most pages a plugin may add.
 pub const MAX_PAGES: usize = 4;
+/// The memory a WebAssembly plugin's run may use in all, in MB (1 MB = 1
+/// MiB), when it doesn't say; and the least and most it may ask for.
+pub const DEFAULT_MEMORY_MB: u32 = 512;
+pub const MIN_MEMORY_MB: u32 = 16;
+pub const MAX_MEMORY_MB: u32 = 4096;
+/// How long a WebAssembly plugin's run may take, in minutes, when it
+/// doesn't say; and the least and most it may ask for.
+pub const DEFAULT_MINUTES: u32 = 30;
+pub const MIN_MINUTES: u32 = 1;
+pub const MAX_MINUTES: u32 = 1440;
+
 /// The most large files a plugin may name (`resources`, manifest version 2).
 pub const MAX_RESOURCES: usize = 16;
 /// The largest one of them.
@@ -322,8 +342,8 @@ pub struct Engines {
 }
 
 /// How a plugin runs. This AutoScene installs `process` plugins and, from
-/// manifest version 2, `service` and `none` ones. Also what the person
-/// agreed to at install
+/// manifest version 2, `service` and `none` ones; it reads `wasm` ones,
+/// which a later AutoScene runs. Also what the person agreed to at install
 /// ([`crate::store::Extra`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -334,6 +354,8 @@ pub enum RuntimeKind {
     Service,
     /// Runs no program: pages only.
     None,
+    /// Runs its WebAssembly component in AutoScene's sandbox, for each run.
+    Wasm,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
@@ -345,7 +367,30 @@ pub struct Runtime {
     /// other platform.
     pub command: BTreeMap<String, Vec<String>>,
     /// It uses the GPU, so it waits for the analysis to leave it free.
+    /// Never for a WebAssembly plugin.
     pub gpu: bool,
+    /// The package path of its component (a `.wasm` file); WebAssembly only.
+    pub component: Option<String>,
+    /// What a run may use, with the defaults filled in; WebAssembly only.
+    pub limits: Option<WasmLimits>,
+}
+
+/// What a WebAssembly plugin's run may use before it is stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WasmLimits {
+    /// The memory it may use in all, in MB (1 MB = 1 MiB):
+    /// [`MIN_MEMORY_MB`] to [`MAX_MEMORY_MB`], [`DEFAULT_MEMORY_MB`] if unset.
+    pub memory_mb: u32,
+    /// How long it may take, in minutes: [`MIN_MINUTES`] to [`MAX_MINUTES`],
+    /// [`DEFAULT_MINUTES`] if unset.
+    pub minutes: u32,
+}
+
+impl Default for WasmLimits {
+    fn default() -> Self {
+        Self { memory_mb: DEFAULT_MEMORY_MB, minutes: DEFAULT_MINUTES }
+    }
 }
 
 /// An entry of an export's menu (and of "After every export").
@@ -429,34 +474,40 @@ pub enum SettingValue {
     Text(String),
 }
 
-/// How a run starts on this computer. `program` and `script` are package
-/// paths (see [`check_path`]), not names: a run starts them by their path in
-/// the plugin's folder ([`Launch::entry_in`]), so the PATH never decides
-/// what runs. Neither starts with a dash, which a program reads as an option.
+/// How a run starts on this computer. `program`, `script` and `component`
+/// are package paths (see [`check_path`]), not names: a run starts them by
+/// their path in the plugin's folder ([`Launch::entry_in`]), so the PATH
+/// never decides what runs. None starts with a dash, which a program reads
+/// as an option.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Launch {
     /// A program in the plugin's folder (an `.exe` on Windows).
     Exe { program: String, args: Vec<String> },
     /// A Python script in the plugin's folder, through `uv run --script --locked`.
     UvScript { script: String },
+    /// A WebAssembly component in the plugin's folder, run in the sandbox.
+    Wasm { component: String },
 }
 
 impl Launch {
-    /// The package files it starts from: the program, or the script and the
-    /// lock `uv lock --script` writes beside it, which `--locked` requires.
+    /// The package files it starts from: the program, the script and the
+    /// lock `uv lock --script` writes beside it, which `--locked` requires,
+    /// or the component.
     pub fn files(&self) -> Vec<String> {
         match self {
             Self::Exe { program, .. } => vec![program.clone()],
             Self::UvScript { script } => vec![script.clone(), format!("{script}.lock")],
+            Self::Wasm { component } => vec![component.clone()],
         }
     }
 
     /// The file a run starts, inside the plugin's folder `dir`: the program,
-    /// or the script uv runs (handed to uv as this path too).
+    /// the script uv runs (handed to uv as this path too), or the component.
     pub fn entry_in(&self, dir: &Path) -> PathBuf {
         let file = match self {
             Self::Exe { program, .. } => program,
             Self::UvScript { script } => script,
+            Self::Wasm { component } => component,
         };
         crate::package::file_in(dir, file)
     }
@@ -483,8 +534,9 @@ pub fn current_platform() -> &'static str {
 }
 
 impl Manifest {
-    /// The command for this computer: its platform's own, else `*`. A plugin
-    /// of runtime `none` has none.
+    /// The command for this computer: its platform's own, else `*`; or the
+    /// component of a WebAssembly plugin, the same on every platform. A
+    /// plugin of runtime `none` has none.
     pub fn launch(&self) -> PluginResult<Launch> {
         self.launch_on(current_platform())
     }
@@ -496,6 +548,9 @@ impl Manifest {
         }
         if !PLATFORMS.contains(&here) || (!self.platforms.is_empty() && !self.platforms.iter().any(|p| p == here)) {
             return Err(PluginError::Platform);
+        }
+        if let Some(component) = &self.runtime.component {
+            return Ok(Launch::Wasm { component: component.clone() });
         }
         let commands = &self.runtime.command;
         let (key, command) =
@@ -526,9 +581,15 @@ impl Manifest {
         self.settings.iter().filter(|s| matches!(s.kind, SettingKind::Secret { .. })).map(|s| s.key.as_str())
     }
 
-    /// Whether it runs a program: all but a plugin of runtime `none`.
+    /// Whether it runs code of its own, a program or a WebAssembly
+    /// component: all but a plugin of runtime `none`.
     pub fn runs_program(&self) -> bool {
         self.runtime.kind != RuntimeKind::None
+    }
+
+    /// Whether it runs in AutoScene's sandbox: a WebAssembly plugin.
+    pub fn is_sandboxed(&self) -> bool {
+        self.runtime.kind == RuntimeKind::Wasm
     }
 
     /// Its page `id`.
@@ -626,7 +687,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         Some(Value::String(t)) if t == "process" => RuntimeKind::Process,
         // Version 2's, which a later AutoScene runs. A version 1 manifest
         // can't name them, and this AutoScene knows that much.
-        Some(Value::String(t)) if (t == "service" || t == "none") && manifest_version < 2 => {
+        Some(Value::String(t)) if ["service", "none", "wasm"].contains(&t.as_str()) && manifest_version < 2 => {
             return Err(invalid(format!(r#"The plugin's runtime.type "{t}" needs "manifestVersion": 2."#)));
         }
         // Pages only.
@@ -636,6 +697,8 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             return Err(invalid(r#"A service speaks protocol 2: set "engines": {"protocol": 2}."#));
         }
         Some(Value::String(t)) if t == "service" => RuntimeKind::Service,
+        // A component, run in the sandbox.
+        Some(Value::String(t)) if t == "wasm" => RuntimeKind::Wasm,
         Some(Value::String(_)) => return Err(PluginError::TooNew("runtime".into())),
         _ => return Err(invalid(r#"The plugin's runtime needs "type": "process"."#)),
     };
@@ -685,15 +748,40 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         }
     }
 
-    runtime.warn_unknown(&["type", "command", "gpu"], &mut w);
+    // Version 1 knows neither key: there they stay ignored, as under M1.
+    let known: &[&str] = if manifest_version >= 2 {
+        &["type", "command", "gpu", "component", "limits"]
+    } else {
+        &["type", "command", "gpu"]
+    };
+    runtime.warn_unknown(known, &mut w);
     let mut command = BTreeMap::new();
+    let (mut component, mut limits) = (None, None);
+    if manifest_version >= 2 && kind != RuntimeKind::Wasm && runtime.get("limits").is_some() {
+        w.push("runtime.limits applies only to WebAssembly plugins.".into());
+    }
     let gpu = if kind == RuntimeKind::None {
         // Nothing starts, and nothing waits for the GPU.
-        if let Some(key) = ["command", "gpu"].into_iter().find(|k| runtime.get(k).is_some()) {
+        if let Some(key) = ["command", "gpu", "component"].into_iter().find(|k| runtime.get(k).is_some()) {
             return Err(invalid(format!("A plugin whose runtime.type is none runs no program: remove runtime.{key}.")));
         }
         false
+    } else if kind == RuntimeKind::Wasm {
+        // The sandbox runs the component, and nothing of the computer's.
+        if runtime.get("command").is_some() {
+            return Err(invalid("A WebAssembly plugin names its component, not a command."));
+        }
+        if runtime.flag("gpu")? == Some(true) {
+            return Err(invalid("A WebAssembly plugin can't use the graphics card."));
+        }
+        component = Some(wasm_component(&runtime)?);
+        limits = Some(wasm_limits(&runtime, &mut w)?);
+        false
     } else {
+        if manifest_version >= 2 && runtime.get("component").is_some() {
+            let kind = if kind == RuntimeKind::Service { "service" } else { "process plugin" };
+            return Err(invalid(format!("A {kind} names a command, not a component.")));
+        }
         let per_platform = runtime.required_object("command")?;
         if per_platform.map.is_empty() {
             return Err(invalid("The plugin's runtime.command names no command."));
@@ -756,6 +844,14 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         if !network_hosts.is_empty() && !permissions.contains(&Permission::Network) {
             w.push("Ignored network.hosts: the plugin doesn't ask for the network permission.".into());
             network_hosts.clear();
+        }
+        // The sandbox reaches public addresses only, so a name for this
+        // computer or its network could never work. The wall is the address
+        // check of each request; this only says so before install.
+        if kind == RuntimeKind::Wasm
+            && let Some(h) = network_hosts.iter().find(|h| !net::public_name(h))
+        {
+            return Err(invalid(format!("A WebAssembly plugin reaches only public host names: {h} isn't one.")));
         }
         // A name for this computer or its network, or an address: net.fetch
         // never connects there. A program may still, with its own sockets,
@@ -904,7 +1000,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         repository,
         engines: Engines { autoscene: autoscene.to_owned(), protocol },
         platforms,
-        runtime: Runtime { kind, command, gpu },
+        runtime: Runtime { kind, command, gpu, component, limits },
         permissions,
         network_hosts,
         export_actions,
@@ -916,6 +1012,41 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         resources,
     };
     Ok(Parsed { manifest, warnings: w })
+}
+
+/// The `component` of a WebAssembly plugin's `runtime`: a `.wasm` file in
+/// the package, spelled in lowercase as it is built.
+fn wasm_component(runtime: &Obj) -> PluginResult<String> {
+    let path = runtime.get("component").and_then(Value::as_str).filter(|p| {
+        let name = p.rsplit('/').next().unwrap_or_default();
+        check_path(p).is_ok() && name.len() > ".wasm".len() && name.ends_with(".wasm")
+    });
+    path.map(str::to_owned).ok_or_else(|| {
+        invalid("The plugin's runtime.component must be a .wasm file in the package, such as plugin.wasm.")
+    })
+}
+
+/// The `limits` of a WebAssembly plugin's `runtime`: each a whole number in
+/// its range, and the default for each it leaves out.
+fn wasm_limits(runtime: &Obj, w: &mut Vec<String>) -> PluginResult<WasmLimits> {
+    let mut limits = WasmLimits::default();
+    let Some(asked) = runtime.object("limits")? else { return Ok(limits) };
+    asked.warn_unknown(&["memoryMb", "minutes"], w);
+    let within = |key: &str, min: u32, max: u32| -> PluginResult<Option<u32>> {
+        let Some(v) = asked.get(key) else { return Ok(None) };
+        let n = v.as_u64().filter(|n| (u64::from(min)..=u64::from(max)).contains(n));
+        // Within the range, so it fits.
+        n.map(|n| Some(n as u32)).ok_or_else(|| {
+            invalid(format!("The plugin's runtime.limits.{key} must be a whole number from {min} to {max}."))
+        })
+    };
+    if let Some(mb) = within("memoryMb", MIN_MEMORY_MB, MAX_MEMORY_MB)? {
+        limits.memory_mb = mb;
+    }
+    if let Some(minutes) = within("minutes", MIN_MINUTES, MAX_MINUTES)? {
+        limits.minutes = minutes;
+    }
+    Ok(limits)
 }
 
 /// The large files a manifest of `version` names (`resources`), for a
@@ -1853,14 +1984,19 @@ mod tests {
         // Read before anything else, so a later field never reads as a mistake.
         assert_eq!(too_new(read(&json!({"manifestVersion": 3, "id": "?"}))), "manifestVersion");
         for version in [1, 2] {
-            let wasm = with(|v| {
+            let later = with(|v| {
                 v["manifestVersion"] = json!(version);
-                v["runtime"] = json!({"type": "wasm", "component": "x.wasm"});
+                v["runtime"] = json!({"type": "hologram", "component": "x.wasm"});
             });
-            assert_eq!(too_new(wasm), "runtime");
+            assert_eq!(too_new(later), "runtime");
         }
+        let wasm = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"] = json!({"type": "wasm", "component": "x.wasm"});
+        });
+        assert_eq!(wasm.unwrap().manifest.runtime.kind, RuntimeKind::Wasm);
         // In version 1, version 2's runtime types are a mistake this one can name.
-        for kind in ["service", "none"] {
+        for kind in ["service", "none", "wasm"] {
             let v1 = message(with(|v| v["runtime"]["type"] = json!(kind)));
             assert_eq!(v1, format!(r#"The plugin's runtime.type "{kind}" needs "manifestVersion": 2."#));
         }
@@ -2745,15 +2881,26 @@ mod tests {
         ] {
             assert_eq!(*limit, json!(max));
         }
+        // A WebAssembly plugin's limits: their bounds, and what a run gets
+        // when it leaves one out.
+        let wasm_limits = &defs["limits"]["properties"];
+        for (key, min, max, default) in [
+            ("memoryMb", MIN_MEMORY_MB, MAX_MEMORY_MB, DEFAULT_MEMORY_MB),
+            ("minutes", MIN_MINUTES, MAX_MINUTES, DEFAULT_MINUTES),
+        ] {
+            let schema = &wasm_limits[key];
+            assert_eq!((&schema["minimum"], &schema["maximum"]), (&json!(min), &json!(max)), "{key}");
+            assert_eq!(schema["default"], json!(default), "{key}");
+        }
         assert_eq!(defs["resource"]["properties"]["size"]["maximum"], json!(MAX_RESOURCE_BYTES));
 
         // The runtime types, setting types and page scopes it names are
         // the parser's. A kind added to the parser fails to compile here
         // until it is listed, and then this test until the schema names it.
-        let runtimes = [RuntimeKind::Process, RuntimeKind::Service, RuntimeKind::None];
+        let runtimes = [RuntimeKind::Process, RuntimeKind::Service, RuntimeKind::None, RuntimeKind::Wasm];
         for kind in runtimes {
             match kind {
-                RuntimeKind::Process | RuntimeKind::Service | RuntimeKind::None => {}
+                RuntimeKind::Process | RuntimeKind::Service | RuntimeKind::None | RuntimeKind::Wasm => {}
             }
         }
         let settings = [
@@ -2820,7 +2967,8 @@ mod tests {
             ("resource", "/resources/0"),
         ];
         // Every object the schema describes is here, but a setting, whose
-        // keys depend on its type (below).
+        // keys depend on its type, and the limits, which only a WebAssembly
+        // plugin has (both below).
         let described: BTreeSet<&str> = defs
             .as_object()
             .unwrap()
@@ -2828,7 +2976,10 @@ mod tests {
             .filter(|(_, d)| d.get("properties").is_some())
             .map(|(k, _)| k.as_str())
             .collect();
-        assert_eq!(objects.iter().map(|(def, _)| *def).chain(["setting"]).collect::<BTreeSet<_>>(), described);
+        assert_eq!(
+            objects.iter().map(|(def, _)| *def).chain(["setting", "limits"]).collect::<BTreeSet<_>>(),
+            described
+        );
         let objects = objects.iter().map(|(def, at)| (*at, &defs[*def]["properties"]));
         for (at, properties) in objects.chain([("", &schema["properties"])]) {
             for key in keys(properties) {
@@ -2840,6 +2991,43 @@ mod tests {
             v.pointer_mut(at).unwrap()["later"] = json!(1);
             assert_eq!(read(&v).unwrap().warnings.len(), 1, "{at}/later");
         }
+
+        // A WebAssembly plugin, with each key the schema names for its
+        // runtime and its limits; one it doesn't name is ignored.
+        let mut sandboxed = full.clone();
+        sandboxed["runtime"] = json!({"type": "wasm", "component": "plugin.wasm", "limits": {}});
+        assert_eq!(reads(&sandboxed, "wasm").runtime.limits, Some(WasmLimits::default()));
+        for (at, properties) in [("/runtime", &defs["runtime"]["properties"]), ("/runtime/limits", wasm_limits)] {
+            for key in keys(properties) {
+                let mut v = sandboxed.clone();
+                v.pointer_mut(at).unwrap().as_object_mut().unwrap().entry(key).or_insert(Value::Null);
+                reads(&v, &format!("wasm {at}/{key}"));
+            }
+            let mut v = sandboxed.clone();
+            v.pointer_mut(at).unwrap()["later"] = json!(1);
+            assert_eq!(read(&v).unwrap().warnings.len(), 1, "wasm {at}/later");
+        }
+        // Version 1 runs programs only, and knows neither key of a component.
+        let version_1 = schema["allOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["if"]["properties"]["manifestVersion"]["const"] == 1)
+            .unwrap();
+        let runtime_1 = &version_1["then"]["properties"]["runtime"]["properties"];
+        assert_eq!(
+            (&runtime_1["type"], &runtime_1["component"], &runtime_1["limits"]),
+            (&json!({"const": "process"}), &json!(false), &json!(false))
+        );
+        // A WebAssembly plugin names its component, and no command.
+        let wasm_branch = schema["allOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["if"]["properties"]["runtime"]["properties"]["type"]["const"] == "wasm")
+            .unwrap();
+        let runtime = &wasm_branch["then"]["properties"]["runtime"];
+        assert_eq!((&runtime["required"], &runtime["properties"]["command"]), (&json!(["component"]), &json!(false)));
 
         // A setting of each type, with each key the schema names for it.
         let typed: Vec<&str> =
@@ -2870,6 +3058,9 @@ mod tests {
                 let c = v["contributes"].as_object_mut().unwrap();
                 c.remove("exportActions");
                 c.remove("commands");
+            }
+            if runtime == "wasm" {
+                v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
             }
             assert_eq!(kind_name(json!(reads(&v, runtime).runtime.kind)), *runtime);
         }
@@ -3051,6 +3242,212 @@ mod tests {
             let m = message(command(json!(["uv", "run", "--script", "--locked", script])));
             assert!(m.contains("starts with a dash"), "{script}: {m}");
         }
+    }
+
+    /// A version 2 manifest of a WebAssembly plugin with its component
+    /// `plugin.wasm`, changed by `edit`.
+    fn wasm(edit: impl FnOnce(&mut Value)) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
+            edit(v);
+        })
+    }
+
+    #[test]
+    fn wasm_plugins_name_a_component() {
+        let p = wasm(|_| {}).unwrap();
+        assert_eq!(p.warnings, Vec::<String>::new());
+        let m = p.manifest;
+        let runtime = Runtime {
+            kind: RuntimeKind::Wasm,
+            command: BTreeMap::new(),
+            gpu: false,
+            component: Some("plugin.wasm".into()),
+            limits: Some(WasmLimits { memory_mb: 512, minutes: 30 }),
+        };
+        assert_eq!(m.runtime, runtime);
+        assert!(m.is_sandboxed() && m.runs_program());
+        let launch = m.launch().unwrap();
+        assert_eq!(launch, Launch::Wasm { component: "plugin.wasm".into() });
+        assert_eq!(launch.files(), ["plugin.wasm"]);
+        assert_eq!(launch.entry_in(Path::new("dir")), Path::new("dir").join("plugin.wasm"));
+        assert_eq!(
+            serde_json::to_value(&m.runtime).unwrap(),
+            json!({"kind": "wasm", "command": {}, "gpu": false, "component": "plugin.wasm",
+                   "limits": {"memoryMb": 512, "minutes": 30}}),
+        );
+        assert_eq!(serde_json::to_value(RuntimeKind::Wasm).unwrap(), json!("wasm"), "as the UI reads it");
+        // A program has neither.
+        let process = read(&plugin()).unwrap().manifest;
+        assert_eq!((&process.runtime.component, process.runtime.limits, process.is_sandboxed()), (&None, None, false));
+        // Nor does a plugin of pages only.
+        let none = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["runtime"] = json!({"type": "none", "component": "plugin.wasm"});
+            v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}]});
+        });
+        assert_eq!(message(none), "A plugin whose runtime.type is none runs no program: remove runtime.component.");
+    }
+
+    #[test]
+    fn a_component_is_a_wasm_file_in_the_package() {
+        let component = |c: Value| wasm(|v| v["runtime"]["component"] = c);
+        for good in ["plugin.wasm", "bin/my-plugin.wasm", "a.b.wasm"] {
+            assert_eq!(component(json!(good)).unwrap().manifest.runtime.component.as_deref(), Some(good));
+        }
+        let said = "The plugin's runtime.component must be a .wasm file in the package, such as plugin.wasm.";
+        for bad in [
+            json!("../x.wasm"),
+            json!("/x.wasm"),
+            json!("x.cwasm"),
+            json!("x.WASM"),
+            json!("x"),
+            json!("a b.wasm"),
+            json!(".wasm"),
+            json!("bin/.wasm"),
+            json!("bin\\x.wasm"),
+            json!("plugin.json"),
+            json!(["x.wasm"]),
+            json!(""),
+        ] {
+            assert_eq!(message(component(bad.clone())), said, "{bad}");
+        }
+        let left_out = wasm(|v| {
+            v["runtime"].as_object_mut().unwrap().remove("component");
+        });
+        assert_eq!(message(left_out), said);
+    }
+
+    #[test]
+    fn a_wasm_plugin_cannot_use_the_gpu_or_a_command() {
+        let command = wasm(|v| v["runtime"]["command"] = json!({"*": ["bin/tool"]}));
+        assert_eq!(message(command), "A WebAssembly plugin names its component, not a command.");
+        let gpu = wasm(|v| v["runtime"]["gpu"] = json!(true));
+        assert_eq!(message(gpu), "A WebAssembly plugin can't use the graphics card.");
+        assert!(message(wasm(|v| v["runtime"]["gpu"] = json!("no"))).contains("runtime.gpu must be true or false"));
+        // Saying it doesn't is fine.
+        let p = wasm(|v| v["runtime"]["gpu"] = json!(false)).unwrap();
+        assert_eq!((p.manifest.runtime.gpu, p.warnings.len()), (false, 0));
+    }
+
+    #[test]
+    fn wasm_limits_have_defaults_and_bounds() {
+        let limits = |l: Value| wasm(|v| v["runtime"]["limits"] = l).map(|p| p.manifest.runtime.limits.unwrap());
+        assert_eq!(WasmLimits::default(), WasmLimits { memory_mb: 512, minutes: 30 });
+        assert_eq!(wasm(|_| {}).unwrap().manifest.runtime.limits, Some(WasmLimits::default()));
+        assert_eq!(limits(json!({})).unwrap(), WasmLimits::default());
+        assert_eq!(limits(json!(null)).unwrap(), WasmLimits::default());
+        let (low, high) = (json!({"memoryMb": 16, "minutes": 1}), json!({"memoryMb": 4096, "minutes": 1440}));
+        assert_eq!(limits(low).unwrap(), WasmLimits { memory_mb: 16, minutes: 1 });
+        assert_eq!(limits(high).unwrap(), WasmLimits { memory_mb: 4096, minutes: 1440 });
+        // What it leaves out keeps its default.
+        assert_eq!(limits(json!({"minutes": 5})).unwrap(), WasmLimits { memory_mb: 512, minutes: 5 });
+        let memory = "The plugin's runtime.limits.memoryMb must be a whole number from 16 to 4096.";
+        for mb in [json!(15), json!(4097), json!(1.5), json!(-1), json!(0), json!("512"), json!(u64::MAX)] {
+            assert_eq!(message(limits(json!({ "memoryMb": mb }))), memory, "{mb}");
+        }
+        let minutes = "The plugin's runtime.limits.minutes must be a whole number from 1 to 1440.";
+        for m in [json!(0), json!(1441), json!(1.5), json!(true)] {
+            assert_eq!(message(limits(json!({ "minutes": m }))), minutes, "{m}");
+        }
+        assert!(message(limits(json!(512))).contains("runtime.limits must be an object"));
+        // A limit a later AutoScene adds is named.
+        let p = wasm(|v| v["runtime"]["limits"] = json!({"cpus": 2})).unwrap();
+        assert_eq!(p.warnings, ["Ignored runtime.limits.cpus, which this AutoScene doesn't know."]);
+    }
+
+    #[test]
+    fn a_wasm_plugin_reaches_only_public_host_names() {
+        let hosts = |hosts: &[&str]| {
+            wasm(|v| {
+                v["permissions"] = json!(["network"]);
+                v["network"] = json!({ "hosts": hosts });
+            })
+        };
+        let p = hosts(&["discord.com", "api.example.com"]).unwrap();
+        assert_eq!(p.manifest.network_hosts, ["discord.com", "api.example.com"]);
+        assert_eq!(p.warnings, Vec::<String>::new());
+        for h in
+            ["localhost", "printer.local", "nas.lan", "x.home.arpa", "intranet", "10.0.0.1", "0x7f.1", "x.internal"]
+        {
+            let said = format!("A WebAssembly plugin reaches only public host names: {h} isn't one.");
+            assert_eq!(message(hosts(&["discord.com", h])), said);
+        }
+        // Without the network permission it names no hosts, so none is refused.
+        let p = wasm(|v| v["network"] = json!({"hosts": ["localhost"]})).unwrap();
+        assert_eq!(p.manifest.network_hosts, Vec::<String>::new());
+    }
+
+    #[test]
+    fn process_plugins_keep_their_host_rule() {
+        for version in [1, 2] {
+            let p = with(|v| {
+                v["manifestVersion"] = json!(version);
+                v["permissions"] = json!(["network"]);
+                v["network"] = json!({"hosts": ["localhost", "10.0.0.1"]});
+            })
+            .unwrap();
+            assert_eq!(p.manifest.network_hosts, ["localhost", "10.0.0.1"], "version {version}");
+        }
+    }
+
+    #[test]
+    fn limits_are_ignored_with_a_warning_on_a_process_plugin() {
+        let v2 = |edit: Edit| {
+            with(|v| {
+                v["manifestVersion"] = json!(2);
+                edit(v);
+            })
+        };
+        let p = v2(|v| v["runtime"]["limits"] = json!({"memoryMb": 1, "minutes": 99999})).unwrap();
+        assert_eq!(p.warnings, ["runtime.limits applies only to WebAssembly plugins."]);
+        assert_eq!(p.manifest.runtime.limits, None);
+        assert_eq!(p.manifest.launch().unwrap(), Launch::UvScript { script: "main.py".into() });
+        // A component is a mistake there: the plugin would run another file than it names.
+        let component = v2(|v| v["runtime"]["component"] = json!("plugin.wasm"));
+        assert_eq!(message(component), "A process plugin names a command, not a component.");
+        // Version 1 knows neither key, and reads as it did before.
+        let old = with(|v| {
+            v["runtime"]["limits"] = json!({"memoryMb": 1});
+            v["runtime"]["component"] = json!("plugin.wasm");
+        })
+        .unwrap();
+        assert_eq!(
+            old.warnings,
+            [
+                "Ignored runtime.component, which this AutoScene doesn't know.",
+                "Ignored runtime.limits, which this AutoScene doesn't know.",
+            ]
+        );
+        assert_eq!((&old.manifest.runtime.component, old.manifest.runtime.limits), (&None, None));
+        assert_eq!(old.manifest.launch().unwrap(), Launch::UvScript { script: "main.py".into() });
+        let service = with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["engines"]["protocol"] = json!(2);
+            v["runtime"]["type"] = json!("service");
+            v["runtime"]["component"] = json!("plugin.wasm");
+        });
+        assert_eq!(message(service), "A service names a command, not a component.");
+    }
+
+    #[test]
+    fn wasm_plugins_honour_their_platforms() {
+        let launches = |edit: Edit| {
+            let m = wasm(edit).unwrap().manifest;
+            m.launches().into_iter().map(|(p, l)| (p, l.unwrap())).collect::<Vec<_>>()
+        };
+        let component = Launch::Wasm { component: "plugin.wasm".into() };
+        // One launch, the same on every platform.
+        let everywhere: Vec<_> = PLATFORMS.into_iter().map(|p| (p, component.clone())).collect();
+        assert_eq!(launches(|_| {}), everywhere);
+        let named = launches(|v| v["platforms"] = json!(["linux-x86_64", "windows-aarch64", "plan9-mips"]));
+        assert_eq!(named, [("windows-aarch64", component.clone()), ("linux-x86_64", component)]);
+        let m = wasm(|v| v["platforms"] = json!(["plan9-mips"])).unwrap().manifest;
+        assert_eq!(m.launches().len(), 0);
+        assert!(matches!(m.launch_on("linux-x86_64"), Err(PluginError::Platform)));
+        let m = wasm(|_| {}).unwrap().manifest;
+        assert!(matches!(m.launch_on("other"), Err(PluginError::Platform)));
     }
 
     #[test]

@@ -94,6 +94,7 @@
      capture its `position: fixed` children (selection bar, overlays). */
   --animate-rise-in: rise-in var(--dur-slow) var(--ease-out) backwards;
   --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-indeterminate: indeterminate 1.4s var(--ease-in-out) infinite;
   --animate-pop-in: pop-in var(--dur-med) var(--ease-out);
   --animate-sheet-in: sheet-in var(--dur-slow) var(--ease-out);
 }

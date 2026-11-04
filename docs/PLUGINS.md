@@ -1001,6 +1001,10 @@ classes:
 The page's background stays clear over AutoScene's, and its body scrolls.
 A `<select>`, a checkbox or a range in a page is the browser's own.
 
+Under reduced motion, AutoScene's theme plays every animation once and at
+once, so a loop stands still. `.as-skeleton` fades slowly instead. Give a
+looping indicator of your own a still look, such as a "Working…" label.
+
 ## Services
 
 A plugin of runtime `service` keeps its program running while one of its

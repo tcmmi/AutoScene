@@ -138,7 +138,29 @@
     ::before,
     ::after {
       animation-duration: 1ms !important;
+      /* Once: a loop at 1 ms would jump to a new place every frame. */
+      animation-iteration-count: 1 !important;
       transition-duration: 1ms !important;
+    }
+    /* What says "working" keeps saying it without moving: a slow fade. Longhands only,
+       so an inline animation-play-state still pauses a hidden sweep or spinner.
+       .as-skeleton is the plugin kit's (plugin-kit/kit.css): this layer's !important
+       beats its unlayered animation, so plugin pages fade too. */
+    .animate-spin,
+    .animate-ping,
+    .animate-indeterminate,
+    .skeleton,
+    .as-skeleton {
+      animation-name: busy !important;
+      animation-duration: 2s !important;
+      animation-timing-function: var(--ease-in-out) !important;
+      animation-iteration-count: infinite !important;
+    }
+  }
+
+  @keyframes busy {
+    50% {
+      opacity: 0.4;
     }
   }
 }

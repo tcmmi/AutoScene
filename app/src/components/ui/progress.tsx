@@ -18,7 +18,9 @@ export function Progress({ value, className }: { value?: number | null; classNam
           style={{ transform: `scaleX(${Math.max(0, Math.min(1, value))})` }}
         />
       ) : (
-        <div className="absolute inset-y-0 w-1/3 animate-[indeterminate_1.4s_var(--ease-in-out)_infinite] rounded-full bg-accent shadow-[0_0_12px_var(--accent)]" />
+        // Under reduced motion it stands still across the whole track, a faint tint that fades
+        // (the reduced-motion rule in the base styles), so it never reads as a third done.
+        <div className="absolute inset-y-0 w-1/3 animate-indeterminate rounded-full bg-accent shadow-[0_0_12px_var(--accent)] motion-reduce:inset-x-0 motion-reduce:w-auto motion-reduce:bg-accent/40" />
       )}
     </div>
   )
@@ -62,7 +64,11 @@ export function ProgressRing({
         strokeDasharray={determinate ? `${Math.max(3, v * 100)} 100` : "25 75"}
         className={cn(
           "origin-center drop-shadow-[0_0_6px_var(--accent)] transition-[stroke-dasharray] duration-[var(--dur-slow)]",
-          determinate ? "-rotate-90" : "animate-spin [animation-duration:1.4s]",
+          // Under reduced motion the spinner is a whole circle that fades instead of turning, at the bar's
+          // faint tint and unlit, so it never reads as a full ring.
+          determinate
+            ? "-rotate-90"
+            : "animate-spin [animation-duration:1.4s] motion-reduce:drop-shadow-none motion-reduce:[stroke-dasharray:100_0] motion-reduce:[stroke:var(--accent-line)]",
         )}
       />
     </svg>

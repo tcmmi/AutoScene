@@ -24,6 +24,9 @@ const SINGLE = [
   /^react-dom$/,
   /^@tanstack\/react-(query|router)$/,
   /^cmdk$/,
+  // One i18n instance and one React context, or components miss a language switch.
+  /^i18next$/,
+  /^react-i18next$/,
   /^react-remove-scroll(-bar)?$/,
   /^react-style-singleton$/,
   /^use-sidecar$/,

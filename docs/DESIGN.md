@@ -306,3 +306,55 @@ Rules:
 - Never expose engine names in primary UI (CUDA, ONNX, TransNet, InsightFace, NVENC, ffmpeg). They belong in
   Settings → About only.
 - No marketing tone, no emoji, no exclamation marks.
+
+### Where the words live
+
+The UI's words are in a catalog, not in the code, so AutoScene can speak more than English (issue #47).
+
+- English is the source: `app/src/locales/en/<namespace>.ts`, `export default { … } as const`. Keys are
+  `ns:area.item` in lowerCamelCase that name the role, not the wording; `_` is kept for plural forms
+  (`_one`, `_few`, `_other`). A comment above a key is a note for the translator (button or title, what a
+  `{{variable}}` holds, where it shows). `t()` is typed by these files: an unknown key, a missing or misspelled
+  `{{variable}}` doesn't compile.
+- Namespaces follow ownership: `common` (shared words and the `fmt` templates; changed only by phase 0), `shell`,
+  `ui`, `shortcuts`, `settings`, `cast`, `project`, `library`, `media`, `player`, `pack`, `export`, `plugins`. All
+  are registered in `locales/index.ts`; a sweep group fills its own file and never edits that one, nor `common`
+  (a shared word it misses goes into its own namespace).
+- Other languages are JSON next to it (`locales/ro/<namespace>.json`), loaded when chosen. English starts
+  synchronously, so the first paint and every test have it with no provider.
+- Components call `useTranslation(ns)`; code outside React (toasts, palette data, `lib/`) calls `t` from
+  `@/lib/i18n` when it shows the words. Numbers, sizes, dates, lists and times go through `fmt` (`@/lib/i18n`):
+  English reads as it always did (en-GB dates, "14,200", "1.5 KB"), another language writes them its way.
+
+Rules for every word on screen:
+
+- No translated text at module scope, in state or in query caches: keep keys and data, translate at render.
+- A component that shows words calls `useTranslation()`, also when the words come from a helper.
+- No sentence built from fragments (`` `Couldn't ${verb.toLowerCase()}` ``), no `n === 1 ?`: a whole message per
+  case, plural keys for counts.
+- No `"en-GB"`, `toLocaleString()` or `Intl.*Format` outside `lib/i18n.ts`: use `fmt`.
+- React elements inside a sentence go through `<Trans>` with tags from `b strong em mono key x go`, never an HTML
+  void name (`<link>`, `<br>`, `<img>`…), which renders empty.
+- Plugin words and the user's data stay values inside a translated sentence; brand and product names (AniList,
+  ProRes…) stay as they are. Nothing about a plugin is translated.
+- No `t()` in per-frame paths: cache the words, keyed on the language.
+
+The guard (`locales/hardcoded.test.ts`) refuses new words in the code: JSX text, text in JSX attributes, toast
+arguments and options, the `label`/`title`/`description`/`hint`/`message`/`placeholder`/`heading`/`blurb`/`body`/
+`question`/`detail`/`action`/`crumb` of objects, OS dialog filter names, text handed to `t()` as a value, both sides
+of a `n === 1 ?`, calls of the deprecated `plural(`/`formatScreenTime(`, and locale-bound formatting. Where only
+words go, one lower-case word counts too (`` `${n} shots` ``, `"faces"`). A word that is never translated gets
+`// i18n-ignore: <why>` (or `{/* i18n-ignore: … */}`) on the line before. While the sweep moves today's words,
+`locales/hardcoded/g1.json` … `g8.json` list what each group still has to move. A list only shrinks: the test fails
+on a word no list has, on an entry the code no longer has, and on a list longer than it was when the guard came in;
+each group deletes its file when done. `lib/format.ts`, `lib/ipc.ts` and `lib/i18n.ts` have no list: no word there.
+
+`npm run i18n -- count` prints the inventory. `-- baseline` shrinks the lists to what the code still has and never
+adds: a word it refuses goes into the catalog. (`-- baseline --init` rewrites them from the code; it is for a change
+to the guard itself, never for a sweep or a feature.) `-- status` shows, per group, what its list still has and what
+the guard lets through (returns, variables, call arguments, label maps); `-- unguarded <group>` lists the latter by
+line, for the group to check before it deletes its file. `-- status --compare <rev>` lists English that left the
+code since `<rev>` but is in no catalog as it was, which a reviewer checks byte for byte. `?lang=pseudo`
+(development and the mock) shows every catalog word accented, longer and in brackets, and the values a message gets
+plain: whatever reads plain is still in the code or is the person's data, whatever is cut off will be cut in a
+longer language.

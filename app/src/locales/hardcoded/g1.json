@@ -1,0 +1,271 @@
+{
+  "components/shell/ActivityDrawer.tsx": [
+    "Activity",
+    "Cancelled",
+    "Clear finished",
+    "Clear finished",
+    "Copy the error",
+    "Copy the message",
+    "Couldn't clear the list",
+    "Couldn't {x} the job",
+    "Couldn't {x} the job",
+    "Done",
+    "Failed",
+    "Finished",
+    "In progress",
+    "Indexing, previews and exports show up here with live progress while they run.",
+    "Nothing running",
+    "Open in the player",
+    "Open the cast",
+    "Open the project",
+    "Show the exports",
+    "Waiting",
+    "Working"
+  ],
+  "components/shell/AppMenu.tsx": [
+    "Activity",
+    "Back",
+    "Command palette…",
+    "Command palette…",
+    "Copy",
+    "Hide the rail",
+    "Keyboard shortcuts",
+    "Library",
+    "New project…",
+    "Plugins",
+    "Reload window",
+    "Settings",
+    "Settings",
+    "Show the rail"
+  ],
+  "components/shell/CommandPalette.tsx": [
+    "About AutoScene",
+    "Actions",
+    "Browse plugins",
+    "Cast",
+    "Characters",
+    "Check for plugin updates",
+    "Check for updates",
+    "Command palette",
+    "Episodes",
+    "Episodes",
+    "Esc",
+    "Exports",
+    "Files",
+    "Go to",
+    "Keyboard shortcuts",
+    "Library",
+    "Movie",
+    "New project…",
+    "Nothing matches.",
+    "Open logs folder",
+    "Overview",
+    "Plugins",
+    "Plugins",
+    "Projects",
+    "Search characters, episodes, projects and commands",
+    "Search projects, places and commands",
+    "Settings",
+    "Show activity",
+    "Show or hide the rail",
+    "episode",
+    "episodes"
+  ],
+  "components/shell/DropZone.tsx": [
+    "Add to this project",
+    "Added {x} {x}",
+    "Couldn't add files",
+    "Create a project",
+    "Drop a season folder or video files",
+    "Drop its .asp package",
+    "Drop plugin packages on their own",
+    "Drop plugin packages on their own.",
+    "Finish the plugin review first.",
+    "Nothing new to add",
+    "Packages and other files together are not taken",
+    "Plugin packages are no project files. Close this window and drop them on their own.",
+    "Review a plugin",
+    "file",
+    "files"
+  ],
+  "components/shell/FastScanNotice.tsx": [
+    "Continue",
+    "Couldn't turn Fast Scan back on",
+    "Couldn't turn off Fast Scan",
+    "Don't show this again",
+    "Fast Scan is off",
+    "Fast Scan is on",
+    "New projects start with the full scan.",
+    "Turn off Fast Scan",
+    "Undo"
+  ],
+  "components/shell/Rail.tsx": [
+    " · indexing",
+    "About AutoScene",
+    "Activity",
+    "AutoScene library",
+    "Check for updates",
+    "Clear finished",
+    "Command palette…",
+    "General",
+    "Hide activity",
+    "Its settings",
+    "Library",
+    "Library",
+    "Library",
+    "Main",
+    "Movie",
+    "New project",
+    "New project",
+    "New project…",
+    "Open",
+    "Plugins",
+    "Search",
+    "Settings",
+    "Shortcuts",
+    "Show activity",
+    "Show its log",
+    "Updates",
+    "episode",
+    "episodes"
+  ],
+  "components/shell/TextMenu.tsx": [
+    "Copy",
+    "Cut",
+    "Delete",
+    "Edit",
+    "Paste",
+    "Redo",
+    "Select all",
+    "Undo"
+  ],
+  "components/shell/UpdateDialog.tsx": [
+    " · released {x}",
+    "Installed. Restart to finish.",
+    "Installing…",
+    "Remind me later",
+    "Restart now",
+    "Simulated",
+    "Skip this version",
+    "Update now",
+    "Updating…",
+    "You have {x}{x}",
+    "is available",
+    "{x} of {x}"
+  ],
+  "components/shell/WindowControls.tsx": [
+    "Close",
+    "Close",
+    "Maximize",
+    "Maximize",
+    "Minimize",
+    "Minimize",
+    "Restore",
+    "Restore"
+  ],
+  "components/shell/palette-items.ts": [
+    "File missing",
+    "Open {x}",
+    "formatScreenTime(",
+    "plural("
+  ],
+  "components/ui/confirm-dialog.tsx": [
+    "Cancel"
+  ],
+  "components/ui/dialog.tsx": [
+    "Close"
+  ],
+  "components/ui/error-state.tsx": [
+    "Open logs",
+    "Something went wrong while showing this.",
+    "This couldn't be loaded",
+    "Try again"
+  ],
+  "components/ui/search-field.tsx": [
+    "Clear the search"
+  ],
+  "components/ui/sheet.tsx": [
+    "Close"
+  ],
+  "components/ui/shelf.tsx": [
+    "Scroll back",
+    "Scroll on"
+  ],
+  "components/ui/topbar.tsx": [
+    "Back to",
+    "Back to {x}",
+    "Back to {x}",
+    "Show the rail",
+    "Show the rail"
+  ],
+  "features/not-found.tsx": [
+    "Back to Library",
+    "Nothing here",
+    "This page doesn't exist anymore. The project or episode may have been removed."
+  ],
+  "features/route-error.tsx": [
+    "Something went wrong here"
+  ],
+  "lib/actions.ts": [
+    "Added {x} {x}",
+    "Couldn't add files",
+    "Couldn't open logs",
+    "Nothing new to add",
+    "file",
+    "files"
+  ],
+  "lib/events.ts": [
+    "AutoScene withdrew Plugin “{x}”",
+    "Export finished",
+    "Export finished with errors",
+    "NVIDIA acceleration couldn't be downloaded",
+    "NVIDIA acceleration is ready",
+    "Show",
+    "Show in folder",
+    "Show in folder",
+    "saved {x}",
+    "{x} failed"
+  ],
+  "lib/jobs.ts": [
+    "Couldn't {x} the job",
+    "a plugin run",
+    "an export",
+    "building a preview",
+    "building previews",
+    "{x} exports",
+    "{x} plugin runs"
+  ],
+  "lib/os.ts": [
+    "Copied {x}",
+    "Couldn't copy",
+    "Couldn't copy the {x}",
+    "Couldn't open link",
+    "Couldn't show it"
+  ],
+  "lib/projects.ts": [
+    "Added {x} {x}",
+    "Couldn't add files",
+    "Those files are already in this project",
+    "episode",
+    "episodes",
+    "file",
+    "file",
+    "files",
+    "files"
+  ],
+  "router.tsx": [
+    "Cast",
+    "Cast · Review",
+    "Exports",
+    "Plugins",
+    "Settings · {x}"
+  ],
+  "state/plugin-review.ts": [
+    "Couldn't open {x}"
+  ],
+  "state/updates.ts": [
+    "AutoScene is up to date",
+    "Couldn't check for updates",
+    "Version {x}"
+  ]
+}

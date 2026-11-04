@@ -10,6 +10,7 @@ import { QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider } from "@tanstack/react-router"
 import { Toaster } from "@/components/ui/toaster"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { LanguageRoot, startLanguage } from "@/lib/i18n"
 import { detectMaterial, isMac, isTauri, isWindows } from "@/lib/platform"
 import { queryClient } from "@/lib/queries"
 
@@ -25,13 +26,16 @@ async function boot() {
     const { installMockBackend } = await import("@/mocks/backend")
     installMockBackend()
   }
-  const { router } = await import("./router")
+  // The language loads behind the splash, so the first paint already speaks it.
+  const [{ router }] = await Promise.all([import("./router"), startLanguage()])
 
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={400} skipDelayDuration={150}>
-          <RouterProvider router={router} />
+          <LanguageRoot>
+            <RouterProvider router={router} />
+          </LanguageRoot>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>

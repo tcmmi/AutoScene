@@ -48,6 +48,10 @@ pub enum PluginError {
     /// than the one AutoScene has.").
     #[error("{0}")]
     Catalog(String),
+    /// The catalog withdrew this version of the plugin `name`; `reason` is
+    /// the catalog's own sentence.
+    #[error("AutoScene withdrew {name}. {reason}")]
+    Withdrawn { name: String, reason: String },
     #[error("{}", .0.user_message())]
     Db(#[from] as_db::DbError),
     #[error("{}", as_core::io_message(.0))]
@@ -64,6 +68,7 @@ impl PluginError {
             Self::Failed { message, detail: Some(detail) } => format!("{message}: {detail}"),
             Self::Crashed { name, detail } => format!("{name} crashed: {detail}"),
             Self::Keychain { detail: Some(detail), .. } => format!("keychain: {detail}"),
+            Self::Withdrawn { name, reason } => format!("plugin withdrawn: {name}: {reason}"),
             Self::Db(e) => format!("plugin registry: {e}"),
             Self::Io(e) => format!("plugin files: {e}"),
             e => e.to_string(),

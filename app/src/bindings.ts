@@ -1480,6 +1480,11 @@ export type PluginInfo = {
 	 *  needs another AutoScene.
 	 */
 	broken: string | null,
+	/**
+	 *  Why AutoScene withdrew its version, in the catalog's words: it
+	 *  doesn't run, whatever else it is.
+	 */
+	withdrawn: string | null,
 	/**  What it says it does: declared by its author, not enforced. */
 	permissions: Permission[],
 	networkHosts: string[],
@@ -1551,6 +1556,11 @@ export type PluginReview = {
 	allowed: boolean,
 	/**  It is a uv script, and uv isn't installed: it won't run until it is. */
 	uvMissing: boolean,
+	/**
+	 *  Where AutoScene's catalog says the plugin was built from, when the
+	 *  catalog reviewed it.
+	 */
+	catalog: ReviewCatalog | null,
 };
 
 /**  Where a plugin's files are. */
@@ -1697,6 +1707,18 @@ export type RelinkSummary = {
 	missing: number,
 };
 
+/**  What AutoScene's catalog says of a plugin it reviewed. */
+export type ReviewCatalog = {
+	/**  When the catalog that lists it was published (Unix ms). */
+	published: number | null,
+	/**  The repository it was built from: `https://github.com/<owner>/<repo>`. */
+	repository: string,
+	/**  The commit it was built from, 40 hex digits. */
+	commit: string,
+	/**  Its folder in the repository; empty or `.` for the top. */
+	path: string,
+};
+
 /**
  *  How a plugin runs. This AutoScene installs `process` plugins and, from
  *  manifest version 2, `service` and `none` ones. Also what the person
@@ -1830,7 +1852,7 @@ export type TrackFilter =
 
 /**  Who stands behind a plugin. */
 export type Trust = 
-/**  AutoScene reviewed it: an AutoScene Plugins key signed it. */
+/**  AutoScene reviewed it: its catalog lists the package's lock. */
 "reviewed" | 
 /**  Its author signed it, with the key its first install pinned. */
 "pinned" | 

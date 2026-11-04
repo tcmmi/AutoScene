@@ -38,8 +38,8 @@ use as_plugin::{
 use parking_lot::{Condvar, Mutex};
 use tauri::{AppHandle, Manager};
 
-use super::PluginHost;
 use super::calls::AppCalls;
+use super::{PluginHost, runnable};
 use crate::events::{PageEvent, PluginPageEvent, ServiceStatus};
 use crate::state::AppState;
 
@@ -484,7 +484,13 @@ impl PluginHost {
         let (host, plugin) = (self.clone(), id.clone());
         let starting = std::thread::Builder::new().name("plugin-service-start".into()).spawn(move || {
             let events = host.service_events(&plugin, start);
-            let started = host.store.get(&plugin).and_then(|p| host.services.start.start(&host, &p, events, &cancel));
+            // Past what every run of a plugin passes (a withdrawal, say), as
+            // it is now: its page may have opened before. The setting going
+            // off stops it and closes its pages itself.
+            let started = host.store.get(&plugin).and_then(|p| {
+                runnable(&p, true)?;
+                host.services.start.start(&host, &p, events, &cancel)
+            });
             host.settle(&plugin, start, started);
         });
         if let Err(e) = starting {
@@ -866,6 +872,28 @@ mod tests {
         assert!(m.closed.is_cancelled());
         assert!(starter.made.lock()[0].stopped.load(Ordering::SeqCst));
         assert!(host.services.current(&id).is_none());
+        alone(&host);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_withdrawn_plugins_service_starts_no_more() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-service-withdrawn-{}", std::process::id()));
+        let starter = Starter::default();
+        let (lib, host, _) = host_starting(&tmp, starter.clone());
+        let id = served(&host, &lib, &tmp, "dev.a.service");
+        // Its page opened before the catalog withdrew it, and its service stopped.
+        let m = page_of(&host, &id);
+        host.service(&m, None).unwrap();
+        starter.made.lock()[0].stop(Duration::ZERO);
+        let reason = "It sent export paths to a server.";
+        let withdrawn =
+            as_plugin::catalog::Withdrawal { id: id.clone(), versions: "*".into(), reason: reason.into(), since: 1 };
+        let state = as_plugin::catalog::CatalogState { withdrawn: vec![withdrawn], ..Default::default() };
+        host.store.set_catalog(Arc::new(as_plugin::catalog::Catalog::new(None, state)));
+        assert_eq!(host.service(&m, None).err().unwrap().message, format!("AutoScene withdrew Service. {reason}"));
+        assert_eq!(starter.asked.load(Ordering::SeqCst), 1);
         alone(&host);
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();

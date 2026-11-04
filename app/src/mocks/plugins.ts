@@ -78,6 +78,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     folder: `${DATA}\\plugins\\${o.id}\\${o.version}+1a2b3c4d`,
     enabled: true,
     broken: null,
+    withdrawn: null,
     permissions: [],
     networkHosts: [],
     gpu: false,
@@ -370,7 +371,7 @@ function review(p: MockPlugin, allow: boolean): PluginReview {
       }
     : null
   const needsUnreviewed = !reviewed(next)
-  return { ticketId, plugin: info(next, allow), update, needsUnreviewed, allowed: !needsUnreviewed || allow, uvMissing: false }
+  return { ticketId, plugin: info(next, allow), update, needsUnreviewed, allowed: !needsUnreviewed || allow, uvMissing: false, catalog: null }
 }
 
 export function inspectPackage(path: string, allow: boolean): PluginReview {

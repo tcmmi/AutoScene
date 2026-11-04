@@ -66,7 +66,7 @@ use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext, RunMessage
 use as_plugin::service::STOP_GRACE;
 use as_plugin::store::RECORD_VERSION;
 use as_plugin::{
-    ActionContext, ActionKind, Caller, CommandSpec, Extra, Grants, HostCalls, HostMethod, Installed, Keys, Launch,
+    ActionContext, ActionKind, Approval, Caller, CommandSpec, Extra, Grants, HostCalls, HostMethod, Installed, Launch,
     Manifest, OsKeyring, PageSpec, Permission, PluginError, PluginId, PluginResult, Record, RuntimeKind, SettingSpec,
     Source, Store, Ticket, Trigger, Trust, package, runtime,
 };
@@ -209,6 +209,9 @@ pub struct PluginInfo {
     /// Why it can't run at all: its files are missing or changed, or it
     /// needs another AutoScene.
     pub broken: Option<String>,
+    /// Why AutoScene withdrew its version, in the catalog's words: it
+    /// doesn't run, whatever else it is.
+    pub withdrawn: Option<String>,
     /// What it says it does: declared by its author, not enforced.
     pub permissions: Vec<Permission>,
     pub network_hosts: Vec<String>,
@@ -282,6 +285,34 @@ pub struct PluginReview {
     pub allowed: bool,
     /// It is a uv script, and uv isn't installed: it won't run until it is.
     pub uv_missing: bool,
+    /// Where AutoScene's catalog says the plugin was built from, when the
+    /// catalog reviewed it.
+    pub catalog: Option<ReviewCatalog>,
+}
+
+/// What AutoScene's catalog says of a plugin it reviewed.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewCatalog {
+    /// When the catalog that lists it was published (Unix ms).
+    pub published: f64,
+    /// The repository it was built from: `https://github.com/<owner>/<repo>`.
+    pub repository: String,
+    /// The commit it was built from, 40 hex digits.
+    pub commit: String,
+    /// Its folder in the repository; empty or `.` for the top.
+    pub path: String,
+}
+
+impl From<&Approval> for ReviewCatalog {
+    fn from(a: &Approval) -> Self {
+        Self {
+            published: a.published as f64 * 1000.0,
+            repository: a.repo.clone(),
+            commit: a.commit.clone(),
+            path: a.path.clone(),
+        }
+    }
 }
 
 /// What an update changes.
@@ -318,7 +349,7 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
     let page_events: PageEvents = Box::new(move |e: PluginPageEvent| {
         let _ = e.emit_to(&to, "main");
     });
-    match Store::open(paths, library.shared_db(), Keys::builtin(), version, Arc::new(OsKeyring)) {
+    match Store::open(paths, library.shared_db(), version, Arc::new(OsKeyring)) {
         Ok(store) => {
             let start = Box::new(services::ProgramStart(app.clone()));
             let host = Arc::new(PluginHost::new(store, pages, page_events, start));
@@ -661,20 +692,24 @@ impl Drop for Changing<'_> {
     }
 }
 
-/// Whether `p` may run now: turned on, not broken, and reviewed by
-/// AutoScene unless `allow_unreviewed` (the setting) lets the others run.
+/// Whether `p` may run now: not broken, not withdrawn by AutoScene's
+/// catalog, turned on, and reviewed by AutoScene unless `allow_unreviewed`
+/// (the setting) lets the others run.
 pub fn active(p: &Installed, allow_unreviewed: bool) -> bool {
     runnable(p, allow_unreviewed).is_ok()
 }
 
 /// The manifest of `p` while it may run (see [`active`]), else why it may
-/// not.
+/// not. Every run, page and service of a plugin starts past it.
 fn runnable(p: &Installed, allow_unreviewed: bool) -> PluginResult<&Manifest> {
     let m = match (&p.manifest, &p.broken) {
         (Some(m), None) => m,
         (_, Some(broken)) => return Err(PluginError::Invalid(broken.clone())),
         (None, None) => return Err(PluginError::Invalid(as_plugin::store::MISSING.into())),
     };
+    if let Some(reason) = &p.withdrawn {
+        return Err(PluginError::Withdrawn { name: m.name.clone(), reason: reason.clone() });
+    }
     if !p.record.enabled {
         return Err(PluginError::Invalid(format!("{} is turned off.", m.name)));
     }
@@ -736,6 +771,7 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
         active: active(p, allow_unreviewed),
         blocked_reason: blocked(p, allow_unreviewed).filter(|_| p.broken.is_none()).map(|e| e.to_string()),
         broken: p.broken.clone(),
+        withdrawn: p.withdrawn.clone(),
         // What its plugin.json says now: a loaded folder's may have changed.
         permissions: m.map_or_else(|| p.record.permissions.clone(), |m| m.permissions.clone()),
         network_hosts: m.map_or_else(|| p.record.network_hosts.clone(), |m| m.network_hosts.clone()),
@@ -780,6 +816,7 @@ pub fn review(t: &Ticket, store: &Store, allow_unreviewed: bool) -> PluginReview
         needs_unreviewed,
         allowed: !needs_unreviewed || allow_unreviewed,
         uv_missing: plugin.uv_script && runtime::find_uv().is_none(),
+        catalog: t.approval.as_ref().map(ReviewCatalog::from),
         plugin,
     }
 }
@@ -818,6 +855,8 @@ fn as_installed(t: &Ticket) -> Installed {
         dir,
         broken: None,
         extra: Extra::agreed(m.runtime.kind),
+        // A version the catalog withdrew is never staged.
+        withdrawn: None,
     }
 }
 
@@ -1222,6 +1261,7 @@ mod tests {
             dir: PathBuf::new(),
             broken: None,
             extra: Extra::default(),
+            withdrawn: None,
         }
     }
 
@@ -1289,7 +1329,7 @@ mod tests {
         let root = tmp.join("library").display().to_string();
         lib.update_settings(&AppSettings { library_root: root, ..lib.settings().unwrap() }).unwrap();
         let app = semver::Version::parse("1.0.3-BETA").unwrap();
-        let store = Store::open(&paths, lib.shared_db(), Keys::new(&[]).unwrap(), app, secrets).unwrap();
+        let store = Store::open(&paths, lib.shared_db(), app, secrets).unwrap();
         let pages = Pages::new(Arc::new(MemoryKit::default()), Vec::new());
         (lib, Arc::new(PluginHost::reaching(store, pages, page_events, Box::new(net), start)))
     }
@@ -1522,6 +1562,78 @@ mod tests {
         }
         // Settings shows the folder as what it is.
         assert_eq!(trust(&plugins[3].record), Trust::Unreviewed);
+    }
+
+    #[test]
+    fn a_withdrawn_plugin_is_not_active_and_says_why() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-withdrawn-{}", std::process::id()));
+        let (lib, host) = host_in(&tmp);
+        let reason = "It sent export paths to a server.";
+        let why = format!("AutoScene withdrew Plugin dev.a.leaky. {reason}");
+        let withdraw = |mut p: Installed| {
+            p.withdrawn = Some(reason.to_owned());
+            p
+        };
+        // Whatever it is: reviewed, loaded from a folder, or turned off.
+        let mut off = plugin("dev.a.leaky", Trust::Reviewed, false);
+        off.record.enabled = false;
+        for p in
+            [plugin("dev.a.leaky", Trust::Reviewed, false), loaded(plugin("dev.a.leaky", Trust::Pinned, false)), off]
+        {
+            let p = withdraw(p);
+            for allow in [false, true] {
+                assert!(!active(&p, allow));
+                let e = runnable(&p, allow).unwrap_err();
+                assert!(matches!(e, PluginError::Withdrawn { .. }), "{e:?}");
+                assert_eq!(e.to_string(), why);
+            }
+            // Settings says so, and that it doesn't run; nothing of it runs after an export.
+            let shown = info(&p, &host.store, true);
+            assert_eq!((shown.withdrawn.as_deref(), shown.active), (Some(reason), false));
+            assert!(after_export_runs(&[after(p, &["post"])], true).is_empty());
+        }
+        // A broken one says first what is wrong with its files.
+        let mut broken = withdraw(plugin("dev.a.leaky", Trust::Reviewed, false));
+        broken.broken = Some(as_plugin::store::MISSING.into());
+        assert_eq!(runnable(&broken, true).unwrap_err().to_string(), as_plugin::store::MISSING);
+        assert_eq!(info(&broken, &host.store, true).withdrawn.as_deref(), Some(reason));
+        // Its page doesn't open, and a withdrawal of none is no withdrawal.
+        let page = withdraw(paged(&tmp.join("paged"), "dev.a.leaky", Trust::Reviewed, false));
+        assert_eq!(
+            runnable(&page, true).unwrap_err().to_string(),
+            format!("AutoScene withdrew Page dev.a.leaky. {reason}")
+        );
+        assert!(active(&plugin("dev.a.leaky", Trust::Reviewed, false), false));
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_review_says_where_the_catalog_says_a_reviewed_plugin_was_built_from() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-review-catalog-{}", std::process::id()));
+        let (lib, host) = host_in(&tmp);
+        // The store's verdict gives the approval (its tests check that); a
+        // folder is never reviewed, so its ticket stands in for a package's.
+        let mut t = folder(&host, &tmp, &manifest("dev.a.reviewed", false));
+        assert!(review(&t, &host.store, true).catalog.is_none());
+        let commit = "c".repeat(40);
+        t.approval = Some(Approval {
+            published: 1_790_000_000,
+            repo: "https://github.com/tcmmi/autoscene-plugins".into(),
+            commit: commit.clone(),
+            path: "plugins/reviewed".into(),
+        });
+        let shown = serde_json::to_value(review(&t, &host.store, true).catalog).unwrap();
+        let catalog = serde_json::json!({
+            "published": 1_790_000_000_000.0,
+            "repository": "https://github.com/tcmmi/autoscene-plugins",
+            "commit": commit,
+            "path": "plugins/reviewed"
+        });
+        assert_eq!(shown, catalog);
+        host.store.discard(t);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

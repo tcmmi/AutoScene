@@ -1097,6 +1097,7 @@ mod tests {
             dir: PathBuf::from("/plugins/poster"),
             broken: None,
             extra: Extra::default(),
+            withdrawn: None,
         }
     }
 

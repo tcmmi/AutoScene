@@ -1,21 +1,25 @@
 //! Who stands behind a plugin package. A package may hold a minisign
 //! signature of its `files.lock`, which hashes every file, and the public key
-//! of the author who signed it (`author.pub`). [`judge`] gives it one of
-//! three trusts:
+//! of the author who signed it (`author.pub`). It has one of three trusts:
 //!
-//! - Reviewed: an AutoScene Plugins key compiled into the app
-//!   ([`crate::keys::REVIEW_KEYS`]) signed it.
+//! - Reviewed: AutoScene's catalog lists its lock, by the lock's SHA-256,
+//!   for its plugin and version ([`crate::catalog`]). The store asks the
+//!   catalog first ([`crate::store::verdict`]), and reads no signature then:
+//!   the files the catalog reviewed are the ones the lock hashes.
 //! - Pinned: its author signed it, with the key in its `author.pub`. The
 //!   first install pins that key, and an update must be signed by the same
-//!   one. A package never becomes Reviewed by a key it brings along.
+//!   one. A package never becomes Reviewed by a key it brings along, nor by
+//!   any key that signed it.
 //! - Unreviewed: nobody signed it, or a key AutoScene doesn't know did.
 //!
+//! [`judge`] gives a package the catalog doesn't list one of the last two.
 //! The signature's trusted comment names the plugin, its version and the
 //! lock's SHA-256 ([`trusted_comment`]), so a signature for one plugin or
 //! version is refused on another. Only prehashed signatures are taken (what
 //! minisign makes by default), never legacy ones. A signature that fails
-//! under a key AutoScene knows (a review key, the package's author key or the
-//! pinned one) refuses the package: it is never taken for an unsigned one.
+//! under a key AutoScene knows (the package's author key or the pinned one)
+//! refuses the package: it is never taken for an unsigned one. The catalog's
+//! keys sign no package: their signatures carry another comment.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -24,7 +28,6 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::error::{PluginError, PluginResult};
-use crate::keys::REVIEW_KEYS;
 use crate::manifest::{Manifest, PluginId, invalid};
 use crate::package::sha256_hex;
 
@@ -32,32 +35,12 @@ use crate::package::sha256_hex;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Trust {
-    /// AutoScene reviewed it: an AutoScene Plugins key signed it.
+    /// AutoScene reviewed it: its catalog lists the package's lock.
     Reviewed,
     /// Its author signed it, with the key its first install pinned.
     Pinned,
     /// Nobody AutoScene knows signed it.
     Unreviewed,
-}
-
-/// The review keys a package's signature is checked against.
-#[derive(Clone, Debug)]
-pub struct Keys {
-    review: Vec<PublicKey>,
-}
-
-impl Keys {
-    /// The AutoScene Plugins keys compiled into the app ([`REVIEW_KEYS`]).
-    pub fn builtin() -> Self {
-        Self::new(REVIEW_KEYS).expect("keys::REVIEW_KEYS are minisign public keys")
-    }
-
-    /// Review keys of one's own (tests, `asp verify --review-key`), each the
-    /// base64 line of a minisign `.pub` file.
-    pub fn new(review: &[&str]) -> PluginResult<Self> {
-        let review = review.iter().map(|key| read_key(key).map(|(key, _)| key)).collect::<PluginResult<_>>()?;
-        Ok(Self { review })
-    }
 }
 
 /// An author's minisign public key: the base64 line of its `.pub` file (the
@@ -105,16 +88,16 @@ fn key_id_of(raw: &[u8]) -> String {
 /// the author key its plugin is pinned to, if it is installed. `m` is its
 /// manifest, whose id and version the signature must name.
 ///
-/// A package of a pinned plugin must be Reviewed, or signed by the pinned key
+/// It is never Reviewed: that is the catalog's to say, before it is judged.
+/// A package of a pinned plugin must be signed by the pinned key
 /// (`author.pub` may then be left out); one that is unsigned or signed by
 /// another key is [`PluginError::KeyChanged`]. A signature that can't be read
 /// or names another plugin, version or lock is
 /// [`PluginError::BadSignature`], and so is one that is legacy or fails under
-/// a key AutoScene knows (a review key, the package's `author.pub` or the
-/// pinned key). One by a key AutoScene doesn't know, with no `author.pub` and
-/// no pin, counts as unsigned.
+/// a key AutoScene knows (the package's `author.pub` or the pinned key). One
+/// by a key AutoScene doesn't know (a catalog key's too), with no
+/// `author.pub` and no pin, counts as unsigned.
 pub fn judge(
-    keys: &Keys,
     lock_bytes: &[u8],
     sig: Option<&str>,
     author_key: Option<&str>,
@@ -131,15 +114,6 @@ pub fn judge(
     let signature = Signature::decode(sig).map_err(|e| bad(format!("the signature can't be read: {e}")))?;
     if signature.trusted_comment() != trusted_comment(&m.id, &m.version, &sha256_hex(lock_bytes)) {
         return Err(bad("signed for another plugin or version"));
-    }
-    for key in &keys.review {
-        match key.verify(lock_bytes, &signature, false) {
-            // author.pub lies outside the lock, so the review doesn't cover
-            // it: it makes no pin, and an existing one stays.
-            Ok(()) => return Ok(Verdict { trust: Trust::Reviewed, author_key: pinned.cloned() }),
-            Err(SignatureError::UnexpectedKeyId) => {}
-            Err(e) => return Err(bad(format!("review key: {e}"))),
-        }
     }
     let Some(author_key) = author_key else {
         let Some(pin) = pinned else { return Ok(unreviewed()) };
@@ -251,10 +225,6 @@ mod tests {
         }
     }
 
-    fn reviewed_by(reviewer: &Signer) -> Keys {
-        Keys::new(&[&reviewer.public()]).unwrap()
-    }
-
     /// The base64 `text` with the bytes at `at` replaced by `bytes`.
     fn rebytes(text: &str, at: usize, bytes: &[u8]) -> String {
         let mut raw = STANDARD.decode(text).unwrap();
@@ -285,35 +255,34 @@ mod tests {
     }
 
     #[test]
-    fn a_package_signed_by_a_review_key_is_reviewed() {
-        let (current, next, author) = (Signer::new(), Signer::new(), Signer::new());
-        let keys = Keys::new(&[&current.public(), &next.public()]).unwrap();
+    fn a_package_signed_with_a_catalog_key_is_only_what_its_author_key_makes_it() {
+        // A key of AutoScene's catalog, which signs indexes, never packages.
+        let (catalog, author) = (Signer::new(), Signer::new());
         let m = hello("1.2.0");
-        let reviewed = Verdict { trust: Trust::Reviewed, author_key: None };
-        for reviewer in [&current, &next] {
-            assert_eq!(judge(&keys, LOCK, Some(&reviewer.sign(LOCK, &m)), None, &m, None).unwrap(), reviewed);
-        }
-        // The author's key beside it makes no pin, and an existing pin is
-        // kept: the review doesn't cover author.pub.
-        let sig = current.sign(LOCK, &m);
-        assert_eq!(judge(&keys, LOCK, Some(&sig), Some(&author.public()), &m, None).unwrap(), reviewed);
+        let sig = catalog.sign(LOCK, &m);
+        // Alone, it is a key AutoScene doesn't know.
+        let unreviewed = Verdict { trust: Trust::Unreviewed, author_key: None };
+        assert_eq!(judge(LOCK, Some(&sig), None, &m, None).unwrap(), unreviewed);
+        // As the package's author.pub, it is an author's key like any other.
+        let pinned = Verdict { trust: Trust::Pinned, author_key: Some(catalog.author_key()) };
+        assert_eq!(judge(LOCK, Some(&sig), Some(&catalog.public()), &m, None).unwrap(), pinned);
+        // On a plugin pinned to its author, it is another key.
         let pin = author.author_key();
-        assert_eq!(
-            judge(&keys, LOCK, Some(&sig), Some(&Signer::new().public()), &m, Some(&pin)).unwrap(),
-            Verdict { trust: Trust::Reviewed, author_key: Some(pin) }
-        );
+        let r = judge(LOCK, Some(&sig), None, &m, Some(&pin));
+        assert_eq!(key_changed(r), (pin.key_id.clone(), catalog.author_key().key_id));
+        // An index's signature of the lock names no plugin.
+        let index = catalog.sign_as(LOCK, &crate::catalog::index_comment(1, 1, 1_800_000_000));
+        let r = judge(LOCK, Some(&index), Some(&catalog.public()), &m, None);
+        assert_eq!(bad_signature(r), "signed for another plugin or version");
     }
 
     #[test]
     fn an_author_signed_package_is_pinned_to_its_key() {
-        let (author, reviewer) = (Signer::new(), Signer::new());
+        let author = Signer::new();
         let m = hello("1.2.0");
         let sig = author.sign(LOCK, &m);
         let pinned = Verdict { trust: Trust::Pinned, author_key: Some(author.author_key()) };
-        // Review keys that didn't sign it are passed over.
-        for keys in [Keys::builtin(), reviewed_by(&reviewer)] {
-            assert_eq!(judge(&keys, LOCK, Some(&sig), Some(&author.public()), &m, None).unwrap(), pinned);
-        }
+        assert_eq!(judge(LOCK, Some(&sig), Some(&author.public()), &m, None).unwrap(), pinned);
         // An update signed with the pinned key keeps it; author.pub may end
         // in a line break, or be left out: the pin checks the signature.
         let update = hello("1.3.0");
@@ -321,7 +290,7 @@ mod tests {
         let file = format!("{}\r\n", author.public());
         let pin = author.author_key();
         for author_key in [Some(file.as_str()), None] {
-            assert_eq!(judge(&Keys::builtin(), LOCK, Some(&sig), author_key, &update, Some(&pin)).unwrap(), pinned);
+            assert_eq!(judge(LOCK, Some(&sig), author_key, &update, Some(&pin)).unwrap(), pinned);
         }
     }
 
@@ -329,31 +298,30 @@ mod tests {
     fn an_update_signed_by_another_author_is_refused() {
         let (author, other) = (Signer::new(), Signer::new());
         let m = hello("1.3.0");
-        let keys = Keys::builtin();
         let pin = author.author_key();
         let other_id = other.author_key().key_id;
         // With the other key beside it, and without.
         let sig = other.sign(LOCK, &m);
         for author_key in [Some(other.public()), None] {
-            let r = judge(&keys, LOCK, Some(&sig), author_key.as_deref(), &m, Some(&pin));
+            let r = judge(LOCK, Some(&sig), author_key.as_deref(), &m, Some(&pin));
             assert_eq!(key_changed(r), (pin.key_id.clone(), other_id.clone()));
         }
         // Beside the pinned key, which didn't make it.
-        let r = judge(&keys, LOCK, Some(&sig), Some(&author.public()), &m, Some(&pin));
+        let r = judge(LOCK, Some(&sig), Some(&author.public()), &m, Some(&pin));
         assert!(bad_signature(r).starts_with(&format!("author key {}:", pin.key_id)));
         // Another key that took the pinned key's id is still another key.
         let id = &STANDARD.decode(&pin.base64).unwrap()[2..10];
         let lookalike = rebytes(&other.public(), 2, id);
         let sig = with_sig_bytes(&sig, 2, id);
-        let r = judge(&keys, LOCK, Some(&sig), Some(&lookalike), &m, Some(&pin));
+        let r = judge(LOCK, Some(&sig), Some(&lookalike), &m, Some(&pin));
         assert_eq!(key_changed(r), (pin.key_id.clone(), pin.key_id.clone()));
         // Without that key beside it, the pinned key finds it didn't make it.
-        let r = judge(&keys, LOCK, Some(&sig), None, &m, Some(&pin));
+        let r = judge(LOCK, Some(&sig), None, &m, Some(&pin));
         assert!(bad_signature(r).starts_with(&format!("pinned key {}:", pin.key_id)));
         // A pin that doesn't read is no key, so even the pinned author's own
         // signature doesn't match it.
         let broken = AuthorKey { base64: "RWQ not a key".into(), ..pin.clone() };
-        let r = judge(&keys, LOCK, Some(&author.sign(LOCK, &m)), None, &m, Some(&broken));
+        let r = judge(LOCK, Some(&author.sign(LOCK, &m)), None, &m, Some(&broken));
         assert_eq!(key_changed(r), (pin.key_id.clone(), pin.key_id.clone()));
     }
 
@@ -363,15 +331,14 @@ mod tests {
         let m = hello("1.3.0");
         let pin = author.author_key();
         for author_key in [None, Some(author.public())] {
-            let r = judge(&Keys::builtin(), LOCK, None, author_key.as_deref(), &m, Some(&pin));
+            let r = judge(LOCK, None, author_key.as_deref(), &m, Some(&pin));
             assert_eq!(key_changed(r), (pin.key_id.clone(), "none".to_owned()));
         }
     }
 
     #[test]
     fn a_signature_for_another_version_is_refused() {
-        let (reviewer, author) = (Signer::new(), Signer::new());
-        let keys = reviewed_by(&reviewer);
+        let (stranger, author) = (Signer::new(), Signer::new());
         let m = hello("1.2.0");
         let lock = sha256_hex(LOCK);
         let expected = trusted_comment(&m.id, "1.2.0", &lock);
@@ -386,50 +353,49 @@ mod tests {
             "timestamp:1762041600\tfile:files.lock\thashed".to_owned(),
         ];
         for comment in &comments {
-            for signer in [&reviewer, &author] {
-                let r = judge(&keys, LOCK, Some(&signer.sign_as(LOCK, comment)), Some(&author.public()), &m, None);
+            for signer in [&stranger, &author] {
+                let r = judge(LOCK, Some(&signer.sign_as(LOCK, comment)), Some(&author.public()), &m, None);
                 assert_eq!(bad_signature(r), "signed for another plugin or version", "{comment}");
             }
         }
         // A signature for 1.2.0 whose trusted comment was rewritten to name
-        // 1.3.0: the comment has a signature of its own, under every key.
+        // 1.3.0: the comment has a signature of its own, under every key
+        // AutoScene knows.
         let (update, pin) = (hello("1.3.0"), author.author_key());
-        for (signer, author_key, pinned) in
-            [(&reviewer, None, None), (&author, Some(author.public()), None), (&author, None, Some(&pin))]
-        {
+        for (author_key, pinned) in [(Some(author.public()), None), (None, Some(&pin))] {
             let author_key = author_key.as_deref();
-            let sig = signer.sign(LOCK, &m);
-            assert!(judge(&keys, LOCK, Some(&sig), author_key, &m, pinned).is_ok());
+            let sig = author.sign(LOCK, &m);
+            assert!(judge(LOCK, Some(&sig), author_key, &m, pinned).is_ok());
             let rewritten = sig.replace(&expected, &trusted_comment(&m.id, "1.3.0", &lock));
             assert_ne!(rewritten, sig);
-            let r = judge(&keys, LOCK, Some(&rewritten), author_key, &update, pinned);
+            let r = judge(LOCK, Some(&rewritten), author_key, &update, pinned);
             assert!(bad_signature(r).ends_with(&SignatureError::InvalidSignature.to_string()));
         }
     }
 
     #[test]
     fn a_changed_lock_fails_its_signature() {
-        let (reviewer, author) = (Signer::new(), Signer::new());
-        let keys = reviewed_by(&reviewer);
+        let author = Signer::new();
         let m = hello("1.2.0");
         let changed = String::from_utf8(LOCK.to_vec()).unwrap().replace(r#""exec":false"#, r#""exec":true"#);
         let changed = changed.as_bytes();
         let names_changed = trusted_comment(&m.id, &m.version, &sha256_hex(changed));
-        for (signer, author_key) in [(&reviewer, None), (&author, Some(author.public()))] {
+        let pin = author.author_key();
+        for (author_key, pinned) in [(Some(author.public()), None), (None, Some(&pin))] {
             let author_key = author_key.as_deref();
-            let sig = signer.sign(LOCK, &m);
-            assert!(judge(&keys, LOCK, Some(&sig), author_key, &m, None).is_ok());
+            let sig = author.sign(LOCK, &m);
+            assert!(judge(LOCK, Some(&sig), author_key, &m, pinned).is_ok());
             // The trusted comment names the lock it was signed for.
-            bad_signature(judge(&keys, changed, Some(&sig), author_key, &m, None));
+            bad_signature(judge(changed, Some(&sig), author_key, &m, pinned));
             // The trusted comment rewritten to name the changed lock.
             let rewritten = sig.replace(&trusted_comment(&m.id, &m.version, &sha256_hex(LOCK)), &names_changed);
             assert_ne!(rewritten, sig);
-            bad_signature(judge(&keys, changed, Some(&rewritten), author_key, &m, None));
+            bad_signature(judge(changed, Some(&rewritten), author_key, &m, pinned));
             // Signed with a trusted comment for the changed lock.
-            let sig = signer.sign_as(LOCK, &names_changed);
-            bad_signature(judge(&keys, changed, Some(&sig), author_key, &m, None));
+            let sig = author.sign_as(LOCK, &names_changed);
+            bad_signature(judge(changed, Some(&sig), author_key, &m, pinned));
         }
-        let r = judge(&keys, LOCK, Some("untrusted comment: hello\nRWQ=\n"), None, &m, None);
+        let r = judge(LOCK, Some("untrusted comment: hello\nRWQ=\n"), None, &m, None);
         assert!(bad_signature(r).starts_with("the signature can't be read"));
     }
 
@@ -442,38 +408,31 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&LOCK_BLAKE2B[i..i + 2], 16).unwrap())
             .collect();
-        let (reviewer, author) = (Signer::new(), Signer::new());
-        let keys = reviewed_by(&reviewer);
+        let author = Signer::new();
         let m = hello("1.2.0");
         let comment = trusted_comment(&m.id, &m.version, &sha256_hex(&hash));
         let pin = author.author_key();
-        for (signer, author_key, pinned) in
-            [(&reviewer, None, None), (&author, Some(author.public()), None), (&author, None, Some(&pin))]
-        {
-            let legacy = with_sig_bytes(&signer.sign_as(LOCK, &comment), 0, b"Ed");
-            let key = PublicKey::from_base64(&signer.public()).unwrap();
+        for (author_key, pinned) in [(Some(author.public()), None), (None, Some(&pin))] {
+            let legacy = with_sig_bytes(&author.sign_as(LOCK, &comment), 0, b"Ed");
+            let key = PublicKey::from_base64(&author.public()).unwrap();
             assert!(key.verify(&hash, &Signature::decode(&legacy).unwrap(), true).is_ok(), "a good legacy signature");
-            bad_signature(judge(&keys, &hash, Some(&legacy), author_key.as_deref(), &m, pinned));
+            bad_signature(judge(&hash, Some(&legacy), author_key.as_deref(), &m, pinned));
         }
     }
 
     #[test]
     fn unsigned_and_unknown_key_packages_are_unreviewed() {
-        let (stranger, reviewer) = (Signer::new(), Signer::new());
-        let keys = reviewed_by(&reviewer);
+        let stranger = Signer::new();
         let m = hello("1.2.0");
         let unreviewed = Verdict { trust: Trust::Unreviewed, author_key: None };
         // Unsigned, also with a key beside it, which signed nothing.
-        assert_eq!(judge(&keys, LOCK, None, None, &m, None).unwrap(), unreviewed);
-        assert_eq!(judge(&keys, LOCK, None, Some(&stranger.public()), &m, None).unwrap(), unreviewed);
-        // Signed by a key it doesn't bring along, and by a review key this
-        // AutoScene doesn't have.
+        assert_eq!(judge(LOCK, None, None, &m, None).unwrap(), unreviewed);
+        assert_eq!(judge(LOCK, None, Some(&stranger.public()), &m, None).unwrap(), unreviewed);
+        // Signed by a key it doesn't bring along.
         let sig = stranger.sign(LOCK, &m);
-        assert_eq!(judge(&keys, LOCK, Some(&sig), None, &m, None).unwrap(), unreviewed);
-        let sig = reviewer.sign(LOCK, &m);
-        assert_eq!(judge(&Keys::builtin(), LOCK, Some(&sig), None, &m, None).unwrap(), unreviewed);
+        assert_eq!(judge(LOCK, Some(&sig), None, &m, None).unwrap(), unreviewed);
         // A key beside it that can't be read doesn't make it unsigned.
-        let r = judge(&keys, LOCK, Some(&stranger.sign(LOCK, &m)), Some("RWQ not a key"), &m, None);
+        let r = judge(LOCK, Some(&stranger.sign(LOCK, &m)), Some("RWQ not a key"), &m, None);
         assert_eq!(bad_signature(r), "author.pub isn't a minisign public key");
     }
 
@@ -502,12 +461,7 @@ mod tests {
             file.as_str(),
         ] {
             assert!(key_id(bad).is_err(), "{bad}");
-            assert!(Keys::new(&[bad]).is_err(), "{bad}");
+            assert!(read_key(bad).is_err(), "{bad}");
         }
-    }
-
-    #[test]
-    fn the_review_keys_are_minisign_keys() {
-        assert_eq!(Keys::builtin().review.len(), REVIEW_KEYS.len());
     }
 }

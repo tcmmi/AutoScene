@@ -269,6 +269,7 @@ fn install(into: &Path, name: &str) -> Result<Installed, String> {
         dir,
         broken: None,
         extra: Extra::agreed(RuntimeKind::None),
+        withdrawn: None,
     })
 }
 

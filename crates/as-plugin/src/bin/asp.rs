@@ -4,7 +4,7 @@
 //! asp keygen <dir> [--force] [--unencrypted]
 //! asp pack <plugin-folder> <out.asp>
 //! asp sign <in.asp> --key <asp.key> [--out <out.asp>]
-//! asp verify <in.asp> [--review-key <RW…>]…
+//! asp verify <in.asp> [--catalog <index.json> [--online-key <RW…>]… [--offline-key <RW…>]…]
 //! asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
 //! ```
 //!
@@ -31,8 +31,12 @@
 //!   version ([`trust::trusted_comment`]), and adds the signature and
 //!   `author.pub` (in place, or as `--out`).
 //! - `verify` checks a package as AutoScene installs it, and names the trust
-//!   it would get there: Reviewed (by one of AutoScene's keys, or a key given
-//!   with `--review-key`), Pinned to its author's key, or Unreviewed.
+//!   it would get there: Reviewed when the catalog `--catalog` lists its
+//!   lock, Pinned to its author's key, or Unreviewed. That catalog is an
+//!   `index.json` with its `index.json.minisig` beside it, taken as a fresh
+//!   AutoScene takes it: signed by one of AutoScene's catalog keys (or a key
+//!   given with `--online-key` or `--offline-key`) and living. A version it
+//!   withdrew fails.
 //!
 //! `pack` and `verify` check each platform the plugin runs on as AutoScene
 //! does there, warn of one it can't run on, and fail when it runs on none.
@@ -51,11 +55,12 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use as_plugin::keys::REVIEW_KEYS;
+use as_plugin::catalog::{self, Catalog, CatalogKeys, CatalogState, Checked};
 use as_plugin::manifest::{self, Parsed};
 use as_plugin::package::{self, AUTHOR_KEY, LOCK, MANIFEST, MAX_BANNER, PictureFormat, SIG, file_in};
-use as_plugin::trust::{self, Keys, Trust, Verdict};
-use as_plugin::{FilesLock, Launch, LockedFile, Manifest, PluginError, Unpacked, current_platform};
+use as_plugin::store;
+use as_plugin::trust::{self, Trust, Verdict};
+use as_plugin::{FilesLock, KeyRole, Launch, LockedFile, Manifest, PluginError, Unpacked, current_platform};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use minisign::{KeyPair, PublicKey, SecretKey};
@@ -69,7 +74,7 @@ const USAGE: &str = "\
 usage: asp keygen <dir> [--force] [--unencrypted]
        asp pack <plugin-folder> <out.asp>
        asp sign <in.asp> --key <asp.key> [--out <out.asp>]
-       asp verify <in.asp> [--review-key <RW…>]…
+       asp verify <in.asp> [--catalog <index.json> [--online-key <RW…>]… [--offline-key <RW…>]…]
        asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]";
 
 /// The secret key `keygen` writes beside `author.pub`.
@@ -123,8 +128,15 @@ fn run(args: &[OsString]) -> Result<(), Failure> {
             sign(&a.paths[0], Path::new(key), &out)
         }
         "verify" => {
-            let a = Args::read(rest, 1, &[], &["--review-key"])?;
-            verify(&a.paths[0], &a.values("--review-key"))
+            let a = Args::read(rest, 1, &[], &["--catalog", "--online-key", "--offline-key"])?;
+            let given = [(KeyRole::Online, "--online-key"), (KeyRole::Offline, "--offline-key")];
+            let keys: Vec<(KeyRole, &OsString)> =
+                given.iter().flat_map(|&(role, option)| a.values(option).into_iter().map(move |k| (role, k))).collect();
+            let index = a.value("--catalog").map(Path::new);
+            if index.is_none() && !keys.is_empty() {
+                return Err(usage("--online-key and --offline-key check the index --catalog names"));
+            }
+            verify(&a.paths[0], index, &keys)
         }
         "init" => {
             let a = Args::read(rest, 1, &["--page", "--service", "--action"], &["--id", "--name"])?;
@@ -341,22 +353,21 @@ fn sign(input: &Path, key: &Path, out: &Path) -> Result<(), Failure> {
     let signature = minisign::sign(Some(&public), &secret, lock.as_slice(), Some(&comment), None)?.into_string();
     let author_key = format!("{}\n", public.to_base64());
     // As AutoScene would judge it, before it is written.
-    let verdict = trust::judge(&Keys::builtin(), lock, Some(&signature), Some(&author_key), m, None)?;
+    let verdict = trust::judge(lock, Some(&signature), Some(&author_key), m, None)?;
     let beside = [(SIG, signature.as_bytes()), (AUTHOR_KEY, author_key.as_bytes())];
     save(out, &dir, &unpacked.lock, lock, &beside)?;
     println!("Signed {} {} into {}: {}.", m.id, m.version, out.display(), trust_text(&verdict));
     Ok(())
 }
 
-/// Checks the package `path` and says the trust AutoScene would give it,
-/// with its own review keys and the `review` ones.
-fn verify(path: &Path, review: &[&OsString]) -> Result<(), Failure> {
-    // A key pasted, or read from a .pub file, may end in a space or a CR.
-    let review = review
-        .iter()
-        .map(|k| k.to_str().map(str::trim).ok_or_else(|| failed("That isn't a minisign public key.")))
-        .collect::<Result<Vec<&str>, Failure>>()?;
-    let keys = Keys::new(&REVIEW_KEYS.iter().copied().chain(review).collect::<Vec<_>>())?;
+/// Checks the package `path` and says the trust AutoScene would give it by
+/// the catalog `index` (none: no catalog), checked against AutoScene's
+/// catalog keys and the `keys` given.
+fn verify(path: &Path, index: Option<&Path>, keys: &[(KeyRole, &OsString)]) -> Result<(), Failure> {
+    let catalog = match index {
+        Some(index) => read_catalog(index, keys)?,
+        None => Catalog::none(),
+    };
     let scratch = tempfile::tempdir()?;
     let dir = scratch.path().join("plugin");
     let (unpacked, parsed) = open(path, &dir)?;
@@ -367,9 +378,43 @@ fn verify(path: &Path, review: &[&OsString]) -> Result<(), Failure> {
     package::check_pictures(&dir, &unpacked.lock, m)?;
     warn_of_banner(&dir, m)?;
     let (sig, author_key) = (unpacked.signature.as_deref(), unpacked.author_key.as_deref());
-    let verdict = trust::judge(&keys, &unpacked.lock_bytes, sig, author_key, m, None)?;
+    let lock = Some(unpacked.lock_bytes.as_slice());
+    let (verdict, _) = store::verdict(m, lock, sig, author_key, None, &catalog, catalog::now())?;
     println!("{} {}: {}", m.id, m.version, trust_text(&verdict));
     Ok(())
+}
+
+/// The catalog of the index `path` (an `index.json`, with its
+/// `index.json.minisig` beside it), as an AutoScene that holds none takes
+/// it: signed by one of AutoScene's catalog keys or of `keys`, and living.
+fn read_catalog(path: &Path, keys: &[(KeyRole, &OsString)]) -> Result<Catalog, Failure> {
+    // A key pasted, or read from a .pub file, may end in a space or a CR.
+    let keys = keys
+        .iter()
+        .map(|&(role, k)| {
+            Ok((role, k.to_str().map(str::trim).ok_or_else(|| failed("That isn't a minisign public key."))?))
+        })
+        .collect::<Result<Vec<(KeyRole, &str)>, Failure>>()?;
+    let keys = CatalogKeys::builtin().with(&keys)?;
+    let mut sig_path = path.as_os_str().to_owned();
+    sig_path.push(".minisig");
+    let sig_path = PathBuf::from(sig_path);
+    // Read no further than the check takes: it refuses a larger file.
+    let bytes = read_at_most(path, catalog::MAX_INDEX_BYTES)?;
+    let sig = String::from_utf8_lossy(&read_at_most(&sig_path, catalog::MAX_SIG_BYTES)?).into_owned();
+    let (held, now) = (CatalogState::default(), catalog::now());
+    let Checked::Newer(accepted) = catalog::check(&bytes, &sig, &keys, &held, now)? else {
+        unreachable!("an empty state holds no index to be the same as");
+    };
+    let state = held.after(&accepted, now);
+    Ok(Catalog::new(Some(accepted.index), state))
+}
+
+/// The file `path`, to a byte more than `max`.
+fn read_at_most(path: &Path, max: u64) -> Result<Vec<u8>, Failure> {
+    let mut bytes = Vec::new();
+    File::open(path).and_then(|f| f.take(max + 1).read_to_end(&mut bytes)).map_err(at(path))?;
+    Ok(bytes)
 }
 
 /// Reviewed, Pinned (key <id>) or Unreviewed.

@@ -1,12 +1,7 @@
-//! The keys AutoScene trusts for plugins, compiled into the app: the review
-//! keys a package one of them signed is Reviewed by (see [`crate::trust`]),
-//! and the keys of AutoScene's plugin catalog, with where it is published
-//! (see [`crate::catalog`]).
-
-/// The AutoScene Plugins keys (current, then next), each the base64 line of
-/// a minisign `.pub` file. Not the updater key. Empty until the first
-/// review.
-pub const REVIEW_KEYS: &[&str] = &[];
+//! The keys AutoScene trusts for plugins, compiled into the app: those of
+//! its plugin catalog, with where it is published (see [`crate::catalog`]).
+//! They sign the catalog, never a package: a package is Reviewed when the
+//! catalog lists its lock (see [`crate::store::verdict`]).
 
 /// What a catalog key may do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -9,10 +9,11 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use as_plugin::keys::REVIEW_KEYS;
+use as_plugin::catalog::{self, index_comment};
+use as_plugin::keys::CATALOG_KEYS;
 use as_plugin::manifest;
 use as_plugin::package::{self, AUTHOR_KEY, LOCK, SIG};
-use as_plugin::trust::{self, Keys, Trust};
+use as_plugin::trust::{self, Trust};
 use as_plugin::{Launch, RuntimeKind, current_platform};
 use semver::Version;
 use serde_json::{Value, json};
@@ -221,7 +222,7 @@ fn keygen_pack_sign_verify_round_trip() {
     let app = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
     let m = manifest::parse(&fs::read(into.join("plugin.json")).unwrap(), &app).unwrap().manifest;
     let (sig, author) = (unpacked.signature.as_deref(), unpacked.author_key.as_deref());
-    let verdict = trust::judge(&Keys::builtin(), &unpacked.lock_bytes, sig, author, &m, None).unwrap();
+    let verdict = trust::judge(&unpacked.lock_bytes, sig, author, &m, None).unwrap();
     assert_eq!((verdict.trust, verdict.author_key.unwrap().key_id), (Trust::Pinned, id.clone()));
 
     // Signed in place, also over a signature.
@@ -682,12 +683,68 @@ fn grafted(package: &Path, from: &Path, names: &[&str], out: &Path) {
     zip.finish().unwrap();
 }
 
+/// A catalog key pair, as the catalog's CI or its owner holds one.
+struct CatalogKey(minisign::KeyPair);
+
+impl CatalogKey {
+    fn new() -> Self {
+        Self(minisign::KeyPair::generate_unencrypted_keypair().unwrap())
+    }
+
+    fn public(&self) -> String {
+        self.0.pk.to_base64()
+    }
+
+    /// Writes `index` to `path` and its signature beside it, as the catalog's
+    /// CI publishes them.
+    fn publish(&self, index: &Value, path: &Path) {
+        let bytes = serde_json::to_vec_pretty(index).unwrap();
+        let n = |key: &str| index[key].as_u64().unwrap();
+        let comment = index_comment(n("epoch"), n("seq"), n("expires"));
+        let sig = minisign::sign(None, &self.0.sk, bytes.as_slice(), Some(&comment), None).unwrap();
+        fs::write(path, &bytes).unwrap();
+        fs::write(format!("{}.minisig", path.display()), sig.into_string()).unwrap();
+    }
+}
+
+/// An index that lists the package `listed` as version 1.2.0 of Hello
+/// Export, withdraws `withdrawn`, and runs out `days` from now.
+fn index_of(listed: &Path, withdrawn: Value, days: i64) -> Value {
+    let lock = package::sha256_hex(&entries(listed)[LOCK]);
+    let now = catalog::now();
+    let expires = now.checked_add_signed(days * 86_400).unwrap();
+    json!({
+        "catalogVersion": 1,
+        "epoch": 1,
+        "seq": 1,
+        "published": now.min(expires) - 60,
+        "expires": expires,
+        "plugins": [{
+            "id": "dev.autoscene.hello-export",
+            "version": "1.2.0",
+            "lock": lock,
+            "package": {
+                "urls": ["https://github.com/tcmmi/autoscene-plugins/releases/download/x/hello-export.asp"],
+                "size": fs::metadata(listed).unwrap().len(),
+                "sha256": package::sha256_hex(&fs::read(listed).unwrap()),
+            },
+            "authorKey": null,
+            "name": "Hello Export",
+            "author": "AutoScene",
+            "engines": ">=1.0.0, <2",
+            "source": {"repo": "https://github.com/tcmmi/AutoScene", "commit": "c".repeat(40), "path": "hello"},
+            "approved": now.min(expires) - 60,
+        }],
+        "withdrawn": withdrawn,
+    })
+}
+
 #[test]
 fn verify_names_the_trust_a_package_would_get() {
     let tmp = tempfile::tempdir().unwrap();
     let place = |name: &str| tmp.path().join(name);
-    let (author, reviewer) = (keygen(&place("author")), keygen(&place("reviewer")));
-    let (author_id, reviewer_id) = (trust::key_id(&author).unwrap(), trust::key_id(&reviewer).unwrap());
+    let (author, stranger) = (keygen(&place("author")), keygen(&place("stranger")));
+    let (author_id, stranger_id) = (trust::key_id(&author).unwrap(), trust::key_id(&stranger).unwrap());
     let src = uv_plugin(&place("hello"));
     let unsigned = place("unsigned.asp");
     asp(&["pack", text(&src), text(&unsigned)]).ok();
@@ -696,28 +753,80 @@ fn verify_names_the_trust_a_package_would_get() {
         asp(&["sign", text(&unsigned), "--key", text(&key), "--out", text(&place(out))]).ok();
     };
     sign("author", "by-author.asp");
-    sign("reviewer", "by-reviewer.asp");
-    let trust = |package: &str, review: &[&str]| {
+    sign("stranger", "by-stranger.asp");
+    let trust = |package: &str, more: &[&str]| {
         let package = place(package);
         let mut args = vec!["verify", text(&package)];
-        args.extend(review.iter().flat_map(|&key| ["--review-key", key]));
+        args.extend(more);
         asp(&args).ok().trim().strip_prefix("dev.autoscene.hello-export 1.2.0: ").unwrap().to_owned()
     };
+    // The catalog's two keys, and an index of each that lists the package's lock.
+    let (online, offline) = (CatalogKey::new(), CatalogKey::new());
+    let (by_online, by_offline) = (place("online.json"), place("offline.json"));
+    online.publish(&index_of(&unsigned, json!([]), 29), &by_online);
+    offline.publish(&index_of(&unsigned, json!([]), 29), &by_offline);
+    let (online_key, offline_key) = (online.public(), offline.public());
 
     assert_eq!(trust("unsigned.asp", &[]), "Unreviewed");
-    assert_eq!(trust("unsigned.asp", &[&reviewer]), "Unreviewed");
     assert_eq!(trust("by-author.asp", &[]), format!("Pinned (key {author_id})"));
-    assert_eq!(trust("by-author.asp", &[&reviewer]), format!("Pinned (key {author_id})"));
-    assert_eq!(trust("by-reviewer.asp", &[&reviewer]), "Reviewed");
-    assert_eq!(trust("by-reviewer.asp", &[&author, &reviewer]), "Reviewed");
-    // As pasted, or read from a .pub file with Windows line ends.
-    assert_eq!(trust("by-reviewer.asp", &[&format!(" {reviewer}\r")]), "Reviewed");
-    // AutoScene's own keys are always asked; until the first review there
-    // are none, and a review key AutoScene doesn't have reads as an
-    // author's.
-    if REVIEW_KEYS.is_empty() {
-        assert_eq!(trust("by-reviewer.asp", &[]), format!("Pinned (key {reviewer_id})"));
+    assert_eq!(trust("by-stranger.asp", &[]), format!("Pinned (key {stranger_id})"));
+    // Each is the lock the catalog lists, signed or not: no key pins it.
+    let reviewed = ["--catalog", text(&by_online), "--online-key", &online_key];
+    for package in ["unsigned.asp", "by-author.asp", "by-stranger.asp"] {
+        assert_eq!(trust(package, &reviewed), "Reviewed", "{package}");
     }
+    assert_eq!(trust("unsigned.asp", &["--catalog", text(&by_offline), "--offline-key", &offline_key]), "Reviewed");
+    // As pasted, or read from a .pub file with Windows line ends.
+    let pasted = format!(" {online_key}\r");
+    assert_eq!(trust("unsigned.asp", &["--catalog", text(&by_online), "--online-key", &pasted]), "Reviewed");
+    // AutoScene's own keys are always asked; until the catalog opens there
+    // are none, and an index signed by another key is refused.
+    let err = asp(&["verify", text(&unsigned), "--catalog", text(&by_online)]).failed(1);
+    if CATALOG_KEYS.is_empty() {
+        assert_eq!(err, "asp: The catalog is signed with a key AutoScene doesn't know.\n");
+    }
+    // A catalog that lists another lock reviews none of them.
+    let other = place("other.asp");
+    let other_src = uv_plugin(&place("other"));
+    fs::write(other_src.join("lib/data.txt"), b"other").unwrap();
+    asp(&["pack", text(&other_src), text(&other)]).ok();
+    let elsewhere = place("elsewhere.json");
+    online.publish(&index_of(&other, json!([]), 29), &elsewhere);
+    let listed_elsewhere = ["--catalog", text(&elsewhere), "--online-key", &online_key];
+    assert_eq!(trust("unsigned.asp", &listed_elsewhere), "Unreviewed");
+    assert_eq!(trust("by-author.asp", &listed_elsewhere), format!("Pinned (key {author_id})"));
+    // A version it withdrew fails, signed or not, though it lists the lock.
+    let reason = "It sent export paths to a server.";
+    let withdrawn = json!([{"id": "dev.autoscene.hello-export", "versions": "<=1.2.0", "reason": reason, "since": 1}]);
+    let pulled = place("withdrawn.json");
+    online.publish(&index_of(&unsigned, withdrawn, 29), &pulled);
+    for package in ["unsigned.asp", "by-author.asp"] {
+        let run = asp(&["verify", text(&place(package)), "--catalog", text(&pulled), "--online-key", &online_key]);
+        let why = format!("AutoScene withdrew Hello Export. {reason}");
+        assert_eq!(run.failed(1), format!("asp: {why} (plugin withdrawn: Hello Export: {reason})\n"));
+    }
+    // A catalog that ran out, or isn't there, is no catalog to go by.
+    let ran_out = place("ran-out.json");
+    online.publish(&index_of(&unsigned, json!([]), -1), &ran_out);
+    let err = asp(&["verify", text(&unsigned), "--catalog", text(&ran_out), "--online-key", &online_key]).failed(1);
+    assert!(err.starts_with("asp: The catalog ran out on "), "{err}");
+    fs::remove_file(format!("{}.minisig", by_online.display())).unwrap();
+    let err = asp(&["verify", text(&unsigned), "--catalog", text(&by_online), "--online-key", &online_key]).failed(1);
+    assert!(err.starts_with(&format!("asp: {}.minisig: ", by_online.display())), "{err}");
+    // A catalog larger than AutoScene takes is read no further.
+    let large = place("large.json");
+    fs::write(&large, vec![b' '; usize::try_from(catalog::MAX_INDEX_BYTES).unwrap() + 1]).unwrap();
+    fs::write(
+        format!("{}.minisig", large.display()),
+        b"untrusted comment: x
+",
+    )
+    .unwrap();
+    let err = asp(&["verify", text(&unsigned), "--catalog", text(&large), "--online-key", &online_key]).failed(1);
+    assert!(err.starts_with("asp: The catalog is too large."), "{err}");
+    // A catalog key goes with a catalog.
+    let err = asp(&["verify", text(&unsigned), "--online-key", &online_key]).failed(2);
+    assert!(err.starts_with("asp: --online-key and --offline-key check the index --catalog names\n"), "{err}");
 
     // Signed by the author's key, but not for this lock: AutoScene refuses it.
     fs::write(src.join("lib/data.txt"), b"changed").unwrap();
@@ -731,8 +840,9 @@ fn verify_names_the_trust_a_package_would_get() {
         "asp: The package was changed after it was signed. (plugin signature: signed for another plugin or version)\n"
     );
 
-    // Neither a review key nor a package that isn't one.
-    let err = asp(&["verify", text(&unsigned), "--review-key", "RWQ not a key"]).failed(1);
+    // Neither a catalog key nor a package that isn't one.
+    let not_a_key = ["verify", text(&unsigned), "--catalog", text(&by_offline), "--offline-key", "RWQ not a key"];
+    let err = asp(&not_a_key).failed(1);
     assert_eq!(err, "asp: That isn't a minisign public key.\n");
     let err = asp(&["verify", text(&place("author").join("asp.key"))]).failed(1);
     assert_eq!(err, "asp: The plugin package is damaged.\n");

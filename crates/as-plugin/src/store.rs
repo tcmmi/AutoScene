@@ -30,12 +30,21 @@
 //! folder is loaded where it is ([`Store::stage_folder`]) and is never
 //! removed.
 //!
+//! What AutoScene reviewed is what its catalog lists ([`Store::set_catalog`],
+//! [`verdict`]): a package whose lock the living index lists, for its plugin
+//! and version, installs as Reviewed. A version the catalog withdrew doesn't
+//! install, and one installed is listed as withdrawn
+//! ([`Installed::withdrawn`]), whatever its source, so it doesn't run. A
+//! withdrawal, and where the catalog says a plugin was built from, never go
+//! into its rows: they come from the catalog in hand, so a withdrawal holds
+//! for the rows AutoScene 1.0 wrote too.
+//!
 //! An update never takes away the trust its plugin had: a plugin AutoScene
 //! reviewed takes only reviewed versions, and one pinned to its author's key
 //! only versions that key signed or AutoScene reviewed, which keep the pin
-//! ([`trust::judge`]). An unreviewed one takes any, and one its author signed
-//! pins the key. None goes back to an older version or changes its files
-//! under the same one. A row this
+//! or take the one the catalog names ([`verdict`]). An unreviewed one takes
+//! any, and one its author signed pins the key. None goes back to an older
+//! version or changes its files under the same one. A row this
 //! AutoScene can't read (a later AutoScene's) is listed as such and never
 //! written over, and so is a plugin that doesn't work with this AutoScene
 //! (one put back to an older version).
@@ -52,13 +61,14 @@ use as_core::AppPaths;
 use as_db::LibraryDb;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::calls::HostCalls;
+use crate::catalog::{self, Catalog};
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{
     self, Manifest, Parsed, Permission, PluginId, RuntimeKind, SettingKind, SettingSpec, SettingValue,
@@ -72,7 +82,7 @@ use crate::protocol::{ActionContext, AppContext, PluginContext, RunMessage, Serv
 use crate::runtime::RunSpec;
 use crate::secrets::{self, SecretStore};
 use crate::service::{READY_WAIT, ServiceSpec};
-use crate::trust::{self, AuthorKey, Keys, Trust, Verdict};
+use crate::trust::{self, AuthorKey, Trust, Verdict};
 
 /// The [`Record`] version this AutoScene reads and writes. A row of another
 /// is a later AutoScene's: listed as needing it, and never written over.
@@ -110,7 +120,7 @@ pub struct Record {
     pub version: String,
     pub source: Source,
     pub trust: Trust,
-    /// The author key its updates must be signed with (see [`trust::judge`]).
+    /// The author key its updates must be signed with (see [`verdict`]).
     pub author_key: Option<AuthorKey>,
     /// What it said it does when the person installed it.
     pub permissions: Vec<Permission>,
@@ -190,6 +200,9 @@ pub struct Installed {
     pub broken: Option<String>,
     /// What the person agreed to beside its record.
     pub extra: Extra,
+    /// Why AutoScene withdrew its version, in the catalog's words: it
+    /// doesn't run. Also of a broken plugin, by its record's version.
+    pub withdrawn: Option<String>,
 }
 
 impl Installed {
@@ -210,6 +223,9 @@ pub struct Ticket {
     pub warnings: Vec<String>,
     /// The trust it gets, and the author key it is pinned to after.
     pub verdict: Verdict,
+    /// What the catalog says of it, when it reviewed it: checked again at
+    /// [`Store::commit`].
+    pub approval: Option<Approval>,
     /// Its lock and the lock's exact bytes; none for a folder.
     pub lock: Option<FilesLock>,
     pub lock_bytes: Vec<u8>,
@@ -224,13 +240,28 @@ pub struct Ticket {
     pub created: Instant,
 }
 
+/// Where AutoScene's catalog says a package it reviewed was built from,
+/// for the review dialog.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Approval {
+    /// When the index that lists it was published, in Unix seconds.
+    pub published: u64,
+    /// `https://github.com/<owner>/<repo>`.
+    pub repo: String,
+    /// The commit, 40 lowercase hex digits.
+    pub commit: String,
+    /// Its folder in the repository; empty or `.` for the top.
+    pub path: String,
+}
+
 /// The plugins installed in one app data folder.
 pub struct Store {
     root: PathBuf,
     data: PathBuf,
     logs: PathBuf,
     db: Arc<LibraryDb>,
-    keys: Keys,
+    /// What AutoScene's catalog reviewed and withdrew ([`Store::set_catalog`]).
+    catalog: RwLock<Arc<Catalog>>,
     /// The version of this AutoScene, which each plugin must work with.
     app: Version,
     /// Where the values of secret settings are kept.
@@ -248,8 +279,8 @@ pub struct Store {
 }
 
 impl Store {
-    /// Opens the plugins of `paths` (registered in `db`, judged by `keys`,
-    /// with their secrets in `secrets`) for the AutoScene of version `app`,
+    /// Opens the plugins of `paths` (registered in `db`, with their secrets
+    /// in `secrets`) for the AutoScene of version `app`, with no catalog yet,
     /// and moves into `.trash` what an install or uninstall that never
     /// finished left: staged folders, versions a row no longer names, and
     /// folders of plugins without a row. A plugin whose row a later
@@ -262,7 +293,6 @@ impl Store {
     pub fn open(
         paths: &AppPaths,
         db: Arc<LibraryDb>,
-        keys: Keys,
         app: Version,
         secrets: Arc<dyn SecretStore>,
     ) -> PluginResult<Self> {
@@ -271,7 +301,7 @@ impl Store {
             data: paths.plugin_data(),
             logs: paths.plugin_logs(),
             db,
-            keys,
+            catalog: RwLock::new(Arc::new(Catalog::none())),
             app,
             secrets,
             library: OnceLock::new(),
@@ -295,6 +325,17 @@ impl Store {
         leftovers.extend(store.sweep()?);
         *store.leftovers.lock() = leftovers;
         Ok(store)
+    }
+
+    /// Judges plugins by `catalog` from now on: what it reviewed, and what it
+    /// withdrew. A ticket staged before is judged by it at its commit.
+    pub fn set_catalog(&self, catalog: Arc<Catalog>) {
+        *self.catalog.write() = catalog;
+    }
+
+    /// The catalog plugins are judged by: none until [`Store::set_catalog`].
+    pub fn catalog(&self) -> Arc<Catalog> {
+        Arc::clone(&self.catalog.read())
     }
 
     /// Removes what [`Store::open`] moved out of the way. Each lies in
@@ -391,8 +432,9 @@ impl Store {
 
     /// Unpacks the package `archive` and checks it for this AutoScene: its
     /// manifest, the files its command starts on this computer, its pages,
-    /// its icon and banner, and its signature, and that it may replace the installed
-    /// version. A package that fails leaves no folder.
+    /// its icon and banner, its trust (the catalog's, or its signature's),
+    /// and that it may replace the installed version. A version the catalog
+    /// withdrew is refused. A package that fails leaves no folder.
     pub fn stage(&self, archive: &Path) -> PluginResult<Ticket> {
         let id = Uuid::now_v7();
         let staged = self.root.join(STAGING).join(id.simple().to_string());
@@ -415,7 +457,9 @@ impl Store {
         let previous = self.record(&m.id)?;
         let Unpacked { lock, lock_bytes, signature, author_key } = unpacked;
         let pin = previous.as_ref().and_then(|p| p.author_key.as_ref());
-        let verdict = trust::judge(&self.keys, &lock_bytes, signature.as_deref(), author_key.as_deref(), &m, pin)?;
+        let (sig, author_pub) = (signature.as_deref(), author_key.as_deref());
+        let (verdict, approval) =
+            verdict(&m, Some(&lock_bytes), sig, author_pub, pin, &self.catalog(), catalog::now())?;
         if let Some(p) = &previous {
             check_update(p, &m, verdict.trust, Some(&package::sha256_hex(&lock_bytes)))?;
         }
@@ -426,6 +470,7 @@ impl Store {
             manifest: m,
             warnings,
             verdict,
+            approval,
             lock: Some(lock),
             lock_bytes,
             signature,
@@ -439,7 +484,8 @@ impl Store {
 
     /// Checks the plugin in the developer's folder `dir` for this AutoScene,
     /// to load it where it is: it has no lock, so it is Unreviewed, and its
-    /// files are read as they are each time.
+    /// files are read as they are each time. A version the catalog withdrew
+    /// is refused here too.
     pub fn stage_folder(&self, dir: &Path) -> PluginResult<Ticket> {
         let dir = std::path::absolute(dir)?;
         if !dir.is_dir() {
@@ -467,13 +513,14 @@ impl Store {
         package::check_pages(&dir, None, &m.pages)?;
         let previous = self.record(&m.id)?;
         let pin = previous.as_ref().and_then(|p| p.author_key.as_ref());
-        let verdict = trust::judge(&self.keys, &[], None, None, &m, pin).map_err(|e| match e {
-            // What judge says of an unsigned update: the folder isn't signed at all.
-            PluginError::KeyChanged { .. } => {
-                invalid("The installed version is signed by its author. Uninstall it to load a folder.")
-            }
-            e => e,
-        })?;
+        let (verdict, approval) =
+            verdict(&m, None, None, None, pin, &self.catalog(), catalog::now()).map_err(|e| match e {
+                // What judge says of an unsigned update: the folder isn't signed at all.
+                PluginError::KeyChanged { .. } => {
+                    invalid("The installed version is signed by its author. Uninstall it to load a folder.")
+                }
+                e => e,
+            })?;
         if let Some(p) = &previous {
             check_update(p, &m, verdict.trust, None)?;
         }
@@ -482,6 +529,7 @@ impl Store {
             manifest: m,
             warnings,
             verdict,
+            approval,
             lock: None,
             lock_bytes: Vec::new(),
             signature: None,
@@ -495,10 +543,12 @@ impl Store {
 
     /// Installs the plugin of `t`. One AutoScene hasn't reviewed needs
     /// `allow_unreviewed` (the setting) and `accept_unreviewed` (the
-    /// person's typed yes). Its files and signature are checked again, and
-    /// what it replaces is the installed version now, which may have
-    /// changed since it was staged. Whatever fails, the plugin stays as it
-    /// was, and the staged folder is removed.
+    /// person's typed yes). Its files and its trust are checked again, by
+    /// the catalog of now, and what it replaces is the installed version
+    /// now, which may have changed since it was staged. One the catalog
+    /// reviewed when it was staged and doesn't now, or withdrew meanwhile,
+    /// is refused. Whatever fails, the plugin stays as it was, and the staged
+    /// folder is removed.
     pub fn commit(&self, t: Ticket, allow_unreviewed: bool, accept_unreviewed: bool) -> PluginResult<Installed> {
         let installed = self.install(&t, allow_unreviewed, accept_unreviewed);
         if installed.is_err() {
@@ -522,7 +572,19 @@ impl Store {
         let _changing = self.changing.lock();
         let previous = self.record(&m.id)?;
         let pin = previous.as_ref().and_then(|p| p.author_key.as_ref());
-        let verdict = trust::judge(&self.keys, &t.lock_bytes, t.signature.as_deref(), t.author_pub.as_deref(), m, pin)?;
+        let lock = package.is_some().then_some(t.lock_bytes.as_slice());
+        let (sig, author_pub) = (t.signature.as_deref(), t.author_pub.as_deref());
+        let judged = verdict(m, lock, sig, author_pub, pin, &self.catalog(), catalog::now());
+        // The person said yes to a plugin AutoScene reviewed: when the
+        // catalog no longer does, that is why, not what the plugin's
+        // signature (unread while it was reviewed) or pin would say now.
+        let (verdict, _) = match judged {
+            Err(e @ PluginError::Withdrawn { .. }) => return Err(e),
+            r if t.approval.is_some() && !matches!(r, Ok((_, Some(_)))) => {
+                return Err(invalid("The catalog changed while this plugin waited. Open it again."));
+            }
+            r => r?,
+        };
         allowed(verdict.trust, allow_unreviewed, accept_unreviewed)?;
         let lock_sha256 = package.is_some().then(|| package::sha256_hex(&t.lock_bytes));
         if let Some(p) = &previous {
@@ -1114,15 +1176,24 @@ impl Store {
     fn installed(&self, id: PluginId, value: &str) -> Installed {
         match read_row(&id, value) {
             Some(record) => self.load(record),
-            None => Installed {
-                dir: self.root.join(id.as_str()),
-                record: unreadable(id, value),
-                manifest: None,
-                warnings: Vec::new(),
-                broken: Some(NEWER.into()),
-                extra: Extra::default(),
-            },
+            None => {
+                let record = unreadable(id, value);
+                Installed {
+                    dir: self.root.join(record.id.as_str()),
+                    withdrawn: self.withdrawn(&record.id, &record.version),
+                    record,
+                    manifest: None,
+                    warnings: Vec::new(),
+                    broken: Some(NEWER.into()),
+                    extra: Extra::default(),
+                }
+            }
         }
+    }
+
+    /// Why the catalog withdrew version `version` of `id`, if it did.
+    fn withdrawn(&self, id: &PluginId, version: &str) -> Option<String> {
+        self.catalog().withdrawal(id, version).map(|w| w.reason.clone())
     }
 
     /// The plugin of `record`, with the manifest in its folder, while it
@@ -1155,7 +1226,11 @@ impl Store {
             Ok(Parsed { manifest, warnings }) => (Some(manifest), warnings, None),
             Err(broken) => (None, Vec::new(), Some(broken)),
         };
-        Installed { record, manifest, warnings, dir, broken, extra }
+        // The version that runs: a loaded folder's plugin.json may name
+        // another than its record. A broken plugin is matched by its record's.
+        let version = manifest.as_ref().map_or(record.version.as_str(), |m| m.version.as_str());
+        let withdrawn = self.withdrawn(&record.id, version);
+        Installed { record, manifest, warnings, dir, broken, extra, withdrawn }
     }
 
     /// Removes `path` (a file or folder), best-effort. It is moved into
@@ -1359,6 +1434,47 @@ pub(crate) fn installed_lock(dir: &Path, sha256: &str) -> Result<FilesLock, Stri
     package::read_lock(&bytes).map_err(|_| CHANGED.into())
 }
 
+/// The trust of the plugin of manifest `m` by AutoScene's `catalog` at
+/// `now`, and the catalog's approval of it when it reviewed it. `lock` is a
+/// package's `files.lock` (none for a loaded folder), `sig` and `author_pub`
+/// its `files.lock.minisig` and `author.pub`, and `pin` the author key its
+/// plugin is pinned to, when it is installed.
+///
+/// A version the catalog withdrew is [`PluginError::Withdrawn`], whatever
+/// else it is. A package whose lock the living catalog lists for its plugin
+/// and version is Reviewed, and its signature isn't read: the files the
+/// catalog reviewed are the ones its lock hashes. It is pinned to the author
+/// key the catalog names, or keeps its pin when the catalog names none.
+/// Anything else is [`trust::judge`]'s.
+pub fn verdict(
+    m: &Manifest,
+    lock: Option<&[u8]>,
+    sig: Option<&str>,
+    author_pub: Option<&str>,
+    pin: Option<&AuthorKey>,
+    catalog: &Catalog,
+    now: u64,
+) -> PluginResult<(Verdict, Option<Approval>)> {
+    if let Some(w) = catalog.withdrawal(&m.id, &m.version) {
+        return Err(PluginError::Withdrawn { name: m.name.clone(), reason: w.reason.clone() });
+    }
+    let approved = lock.and_then(|lock| catalog.approval(&m.id, &m.version, &package::sha256_hex(lock), now));
+    let Some(entry) = approved else {
+        return Ok((trust::judge(lock.unwrap_or_default(), sig, author_pub, m, pin)?, None));
+    };
+    let author_key = match &entry.author_key {
+        Some(base64) => Some(AuthorKey { base64: base64.clone(), key_id: trust::key_id(base64)? }),
+        None => pin.cloned(),
+    };
+    let approval = Approval {
+        published: catalog.index().map_or(0, |i| i.published),
+        repo: entry.source.repo.clone(),
+        commit: entry.source.commit.clone(),
+        path: entry.source.path.clone(),
+    };
+    Ok((Verdict { trust: Trust::Reviewed, author_key }, Some(approval)))
+}
+
 /// Whether a plugin of `trust` may be installed: one AutoScene hasn't
 /// reviewed needs the setting that allows them, and the person's yes.
 fn allowed(trust: Trust, allow_unreviewed: bool, accept_unreviewed: bool) -> PluginResult<()> {
@@ -1374,7 +1490,7 @@ fn allowed(trust: Trust, allow_unreviewed: bool, accept_unreviewed: bool) -> Plu
 /// SHA-256 `lock_sha256` (none for a folder), may replace the installed
 /// `previous`: a reviewed plugin takes only reviewed versions, none goes
 /// back to an older version, and a package's version installs again only
-/// with the same files (a repair). The pin is [`trust::judge`]'s.
+/// with the same files (a repair). The pin is [`verdict`]'s.
 fn check_update(previous: &Record, m: &Manifest, trust: Trust, lock_sha256: Option<&str>) -> PluginResult<()> {
     if previous.trust == Trust::Reviewed && trust != Trust::Reviewed {
         return Err(invalid("AutoScene reviewed the installed version of this plugin, and not this one."));
@@ -1492,11 +1608,14 @@ mod tests {
     use zip::write::SimpleFileOptions;
 
     use super::*;
+    use crate::catalog::{CatalogState, Entry, Index, PackageRef, SourceRef, Withdrawal};
     use crate::package::{AUTHOR_KEY, SIG};
     use crate::protocol::{ActionKind, Trigger};
     use crate::secrets::MemorySecrets;
 
     const ID: &str = "dev.autoscene.hello-export";
+    const DAY: u64 = 86_400;
+    const LEAKY: &str = "It sent export paths to a server.";
 
     type Files = Vec<(String, Vec<u8>)>;
 
@@ -1527,11 +1646,7 @@ mod tests {
         }
 
         fn store(&self) -> Store {
-            self.store_with(Keys::new(&[]).unwrap())
-        }
-
-        fn store_with(&self, keys: Keys) -> Store {
-            Store::open(&self.paths, Arc::clone(&self.db), keys, app(), self.secrets.clone()).unwrap()
+            Store::open(&self.paths, Arc::clone(&self.db), app(), self.secrets.clone()).unwrap()
         }
 
         /// The id the keychain keeps its secrets under.
@@ -1713,6 +1828,84 @@ mod tests {
         pairs.iter().map(|(key, value)| (key.to_string(), value.clone())).collect()
     }
 
+    /// The catalog's entry of the package at `path`, as its CI writes it:
+    /// its plugin, version and lock, built from AutoScene's repository.
+    fn entry_of(path: &Path) -> Entry {
+        let mut zip = zip::ZipArchive::new(File::open(path).unwrap()).unwrap();
+        let mut read = |name: &str| {
+            let mut bytes = Vec::new();
+            zip.by_name(name).unwrap().read_to_end(&mut bytes).unwrap();
+            bytes
+        };
+        let m: Value = serde_json::from_slice(&read(MANIFEST)).unwrap();
+        let lock = package::sha256_hex(&read(LOCK));
+        Entry {
+            id: PluginId::parse(m["id"].as_str().unwrap()).unwrap(),
+            version: m["version"].as_str().unwrap().to_owned(),
+            lock,
+            package: PackageRef {
+                urls: vec!["https://github.com/tcmmi/autoscene-plugins/releases/download/x/x.asp".into()],
+                size: fs::metadata(path).unwrap().len(),
+                sha256: package::sha256_hex(&fs::read(path).unwrap()),
+            },
+            author_key: None,
+            name: "Hello Export".into(),
+            summary: String::new(),
+            author: "AutoScene".into(),
+            license: None,
+            platforms: Vec::new(),
+            runtime: "process".into(),
+            gpu: false,
+            uv_script: true,
+            permissions: vec!["exports:read".into()],
+            hosts: Vec::new(),
+            engines: ">=1.0.0, <2".into(),
+            source: SourceRef {
+                repo: "https://github.com/tcmmi/AutoScene".into(),
+                commit: "c".repeat(40),
+                path: "examples/plugins/hello-export".into(),
+            },
+            icon: None,
+            approved: catalog::now() - DAY,
+        }
+    }
+
+    /// A catalog published a day ago that runs out at `expires`, listing
+    /// `plugins` and withdrawing `withdrawn`.
+    fn catalog_of(plugins: Vec<Entry>, withdrawn: Vec<Withdrawal>, expires: u64) -> Arc<Catalog> {
+        let published = catalog::now() - DAY;
+        let index = Index {
+            catalog_version: 1,
+            epoch: 1,
+            seq: 1,
+            published,
+            expires,
+            epoch_certificate: None,
+            plugins,
+            withdrawn: withdrawn.clone(),
+        };
+        let state = CatalogState { v: 1, epoch: 1, seq: 1, published, expires, withdrawn, ..CatalogState::default() };
+        Arc::new(Catalog::new(Some(index), state))
+    }
+
+    /// Has `store` judge by a living catalog that lists `packages`.
+    fn reviewed(store: &Store, packages: &[&Path]) {
+        let entries = packages.iter().map(|p| entry_of(p)).collect();
+        store.set_catalog(catalog_of(entries, Vec::new(), catalog::now() + 29 * DAY));
+    }
+
+    /// The catalog's withdrawal of the versions `versions` of Hello Export.
+    fn withdrawal(versions: &str) -> Withdrawal {
+        Withdrawal { id: id(), versions: versions.into(), reason: LEAKY.into(), since: catalog::now() - DAY }
+    }
+
+    fn withdrawn(r: PluginResult<Ticket>) -> String {
+        match r {
+            Err(e @ PluginError::Withdrawn { .. }) => e.to_string(),
+            r => panic!("expected Withdrawn, got {r:?}"),
+        }
+    }
+
     #[test]
     fn an_install_is_all_or_nothing() {
         let place = Place::new();
@@ -1859,8 +2052,8 @@ mod tests {
         let p = install(&place.store(), &place.unsigned("1.0.0")).unwrap();
         // It works with ">=1.0.0, <2".
         let broken_on = |app: &str| {
-            let (keys, app) = (Keys::new(&[]).unwrap(), Version::parse(app).unwrap());
-            let store = Store::open(&place.paths, Arc::clone(&place.db), keys, app, place.secrets.clone()).unwrap();
+            let app = Version::parse(app).unwrap();
+            let store = Store::open(&place.paths, Arc::clone(&place.db), app, place.secrets.clone()).unwrap();
             store.get(&id()).unwrap().broken
         };
         assert_eq!(broken_on("0.9.0").as_deref(), Some(NEWER));
@@ -2102,8 +2295,8 @@ mod tests {
     #[test]
     fn unreviewed_needs_the_setting_and_the_consent() {
         let place = Place::new();
-        let (review, author) = (key_pair(), key_pair());
-        let store = place.store_with(Keys::new(&[&review.pk.to_base64()]).unwrap());
+        let author = key_pair();
+        let store = place.store();
         for (package, trust) in [
             (place.unsigned("1.0.0"), Trust::Unreviewed),
             (place.package(&hello("1.0.0"), Some(&author), true), Trust::Pinned),
@@ -2123,7 +2316,9 @@ mod tests {
         assert!(matches!(store.commit(t, false, true), Err(PluginError::NotAllowed)));
 
         // One AutoScene reviewed needs neither.
-        let t = store.stage(&place.package(&hello("1.0.0"), Some(&review), false)).unwrap();
+        let package = place.unsigned("1.0.0");
+        reviewed(&store, &[&package]);
+        let t = store.stage(&package).unwrap();
         assert_eq!(t.verdict.trust, Trust::Reviewed);
         assert_eq!(store.commit(t, false, false).unwrap().record.trust, Trust::Reviewed);
     }
@@ -2131,18 +2326,24 @@ mod tests {
     #[test]
     fn a_pinned_plugin_takes_a_reviewed_update_and_keeps_its_pin() {
         let place = Place::new();
-        let (review, author) = (key_pair(), key_pair());
-        let store = place.store_with(Keys::new(&[&review.pk.to_base64()]).unwrap());
+        let (other, author) = (key_pair(), key_pair());
+        let store = place.store();
         let p = install(&store, &place.package(&hello("1.0.0"), Some(&author), true)).unwrap();
         let pin = p.record.author_key.clone();
         assert!(pin.is_some());
-        let p = install(&store, &place.package(&hello("1.1.0"), Some(&review), false)).unwrap();
+        // Signed by another key: the catalog's review is what counts.
+        let update = place.package(&hello("1.1.0"), Some(&other), false);
+        assert!(matches!(store.stage(&update), Err(PluginError::KeyChanged { .. })));
+        reviewed(&store, &[&update]);
+        let p = install(&store, &update).unwrap();
         assert_eq!((p.record.trust, &p.record.author_key), (Trust::Reviewed, &pin));
         // Reviewed now, it takes no version its author alone signed.
         let e = store.stage(&place.package(&hello("1.2.0"), Some(&author), true)).unwrap_err();
         assert_eq!(e.to_string(), "AutoScene reviewed the installed version of this plugin, and not this one.");
 
-        // An unreviewed plugin takes a signed update, which pins its key.
+        // An unreviewed plugin takes a signed update, which pins its key
+        // (with no catalog, which lists those files).
+        store.set_catalog(Arc::new(Catalog::none()));
         store.uninstall(&id(), false).unwrap();
         install(&store, &place.unsigned("1.0.0")).unwrap();
         let p = install(&store, &place.package(&hello("1.1.0"), Some(&author), true)).unwrap();
@@ -2171,10 +2372,17 @@ mod tests {
     #[test]
     fn a_reviewed_plugin_takes_only_reviewed_updates() {
         let place = Place::new();
-        let (review, author) = (key_pair(), key_pair());
-        let store = place.store_with(Keys::new(&[&review.pk.to_base64()]).unwrap());
-        let reviewed = |version: &str| place.package(&hello(version), Some(&review), false);
-        store.commit(store.stage(&reviewed("1.0.0")).unwrap(), false, false).unwrap();
+        let author = key_pair();
+        let store = place.store();
+        // The versions the catalog lists: files of their own.
+        let listed = |version: &str| {
+            let mut files = hello(version);
+            files[1].1 = b"print('reviewed')\n".to_vec();
+            place.package(&files, None, false)
+        };
+        let (first, second) = (listed("1.0.0"), listed("1.1.0"));
+        reviewed(&store, &[&first, &second]);
+        store.commit(store.stage(&first).unwrap(), false, false).unwrap();
         for update in [place.unsigned("1.1.0"), place.package(&hello("1.1.0"), Some(&author), true)] {
             let e = store.stage(&update).unwrap_err();
             assert_eq!(e.to_string(), "AutoScene reviewed the installed version of this plugin, and not this one.");
@@ -2182,8 +2390,263 @@ mod tests {
         let dev = place.folder("hello-export", &hello("1.1.0"));
         assert!(store.stage_folder(&dev).is_err());
 
-        let p = store.commit(store.stage(&reviewed("1.1.0")).unwrap(), false, false).unwrap();
+        let p = store.commit(store.stage(&second).unwrap(), false, false).unwrap();
         assert_eq!((p.record.version.as_str(), p.record.trust), ("1.1.0", Trust::Reviewed));
+    }
+
+    #[test]
+    fn a_package_the_catalog_lists_is_reviewed() {
+        let place = Place::new();
+        let store = place.store();
+        let (package, signed) = (place.unsigned("1.0.0"), place.package(&hello("1.0.0"), Some(&key_pair()), true));
+        assert_eq!(store.stage(&package).unwrap().verdict.trust, Trust::Unreviewed);
+        assert_eq!(store.stage(&signed).unwrap().verdict.trust, Trust::Pinned);
+        reviewed(&store, &[&package]);
+        // Unsigned or signed, it is the lock the catalog lists: no pin.
+        let reviewed = Verdict { trust: Trust::Reviewed, author_key: None };
+        let approval = Approval {
+            published: store.catalog().index().unwrap().published,
+            repo: "https://github.com/tcmmi/AutoScene".into(),
+            commit: "c".repeat(40),
+            path: "examples/plugins/hello-export".into(),
+        };
+        for package in [&signed, &package] {
+            let t = store.stage(package).unwrap();
+            assert_eq!((&t.verdict, t.approval.as_ref()), (&reviewed, Some(&approval)));
+            store.discard(t);
+        }
+        let p = store.commit(store.stage(&package).unwrap(), false, false).unwrap();
+        assert_eq!((p.record.trust, p.record.author_key.as_ref()), (Trust::Reviewed, None));
+        assert_eq!(store.get(&id()).unwrap().record.trust, Trust::Reviewed);
+        // A loaded folder of the same files has no lock: never reviewed, not
+        // even by an entry of the empty lock's hash.
+        store.uninstall(&id(), false).unwrap();
+        let empty = Entry { lock: package::sha256_hex(b""), ..entry_of(&package) };
+        store.set_catalog(catalog_of(vec![entry_of(&package), empty], Vec::new(), catalog::now() + DAY));
+        let t = store.stage_folder(&place.folder("hello-export", &hello("1.0.0"))).unwrap();
+        assert_eq!((t.verdict.trust, t.approval.is_none()), (Trust::Unreviewed, true));
+    }
+
+    #[test]
+    fn a_package_the_catalog_lists_under_another_lock_is_not() {
+        let place = Place::new();
+        let store = place.store();
+        let package = place.unsigned("1.0.0");
+        let mut changed = hello("1.0.0");
+        changed[1].1 = b"print('bye')\n".to_vec();
+        let changed = place.package(&changed, None, false);
+        reviewed(&store, &[&package]);
+        let t = store.stage(&changed).unwrap();
+        assert_eq!((t.verdict.trust, t.approval.is_none()), (Trust::Unreviewed, true));
+        store.discard(t);
+        // Its lock, listed for another version or another plugin, isn't its.
+        let entry = entry_of(&package);
+        let other = PluginId::parse("dev.autoscene.other").unwrap();
+        let elsewhere = [Entry { version: "1.0.1".into(), ..entry.clone() }, Entry { id: other, ..entry }];
+        store.set_catalog(catalog_of(elsewhere.to_vec(), Vec::new(), catalog::now() + DAY));
+        let t = store.stage(&package).unwrap();
+        assert_eq!((t.verdict.trust, t.approval.is_none()), (Trust::Unreviewed, true));
+    }
+
+    #[test]
+    fn a_catalog_past_its_expiry_reviews_nothing_new() {
+        let place = Place::new();
+        let store = place.store();
+        let (first, update) = (place.unsigned("1.0.0"), place.unsigned("1.1.0"));
+        reviewed(&store, &[&first, &update]);
+        install(&store, &first).unwrap();
+        let ran_out = catalog_of(vec![entry_of(&first), entry_of(&update)], Vec::new(), catalog::now() - 1);
+        store.set_catalog(ran_out);
+        // What it reviewed stays so; what it lists isn't reviewed any more.
+        assert_eq!(store.get(&id()).unwrap().record.trust, Trust::Reviewed);
+        let e = store.stage(&update).unwrap_err();
+        assert_eq!(e.to_string(), "AutoScene reviewed the installed version of this plugin, and not this one.");
+        store.uninstall(&id(), false).unwrap();
+        let t = store.stage(&first).unwrap();
+        assert_eq!((t.verdict.trust, t.approval.is_none()), (Trust::Unreviewed, true));
+    }
+
+    #[test]
+    fn a_withdrawn_version_is_refused_and_listed_as_withdrawn() {
+        let place = Place::new();
+        let store = place.store();
+        let (old, listed, fixed) = (place.unsigned("1.0.0"), place.unsigned("1.0.3"), place.unsigned("1.0.5"));
+        let p = install(&store, &old).unwrap();
+        assert_eq!(p.withdrawn, None);
+        let entries = vec![entry_of(&listed), entry_of(&fixed)];
+        store.set_catalog(catalog_of(entries, vec![withdrawal("<=1.0.4")], catalog::now() + DAY));
+        // Listed as withdrawn, in the catalog's words.
+        let listed_now = store.list().unwrap();
+        assert_eq!(listed_now[0].withdrawn.as_deref(), Some(LEAKY));
+        assert_eq!(store.get(&id()).unwrap().withdrawn.as_deref(), Some(LEAKY));
+        // It doesn't install again, not even as the catalog lists it.
+        let why = format!("AutoScene withdrew Hello Export. {LEAKY}");
+        for package in [&old, &listed] {
+            assert_eq!(withdrawn(store.stage(package)), why);
+        }
+        assert_eq!(place.plugins(), holding(&p), "a refused package leaves nothing");
+        // Its fixed version does, reviewed.
+        let fixed = install(&store, &fixed).unwrap();
+        assert_eq!((fixed.record.trust, fixed.withdrawn.as_deref()), (Trust::Reviewed, None));
+        // A broken plugin is matched by its record's version.
+        store.uninstall(&id(), false).unwrap();
+        store.set_catalog(catalog_of(Vec::new(), Vec::new(), catalog::now() + DAY));
+        let p = install(&store, &old).unwrap();
+        store.set_catalog(catalog_of(Vec::new(), vec![withdrawal("<=1.0.4")], catalog::now() + DAY));
+        fs::remove_dir_all(&p.dir).unwrap();
+        let p = store.get(&id()).unwrap();
+        assert_eq!((p.broken.as_deref(), p.withdrawn.as_deref()), (Some(MISSING), Some(LEAKY)));
+        // It goes as any other.
+        store.uninstall(&id(), false).unwrap();
+        assert!(store.list().unwrap().is_empty());
+        // So is a row of a later AutoScene.
+        let later = format!(r#"{{"v":99,"id":"{ID}","version":"1.0.0"}}"#);
+        place.db.set_setting(&format!("{ROW}{ID}"), &later).unwrap();
+        let p = store.get(&id()).unwrap();
+        assert_eq!((p.broken.as_deref(), p.withdrawn.as_deref()), (Some(NEWER), Some(LEAKY)));
+    }
+
+    #[test]
+    fn withdrawal_holds_for_a_loaded_folder_too() {
+        let place = Place::new();
+        let store = place.store();
+        let dev = place.folder("hello-export", &hello("1.0.0"));
+        store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
+        store.set_catalog(catalog_of(Vec::new(), vec![withdrawal("*")], catalog::now() + DAY));
+        assert_eq!(store.get(&id()).unwrap().withdrawn.as_deref(), Some(LEAKY));
+        assert_eq!(withdrawn(store.stage_folder(&dev)), format!("AutoScene withdrew Hello Export. {LEAKY}"));
+        // Also once the index ran out, or its file is gone: the state keeps it.
+        let ran_out = catalog_of(Vec::new(), vec![withdrawal("*")], catalog::now() - 1);
+        let lost = Arc::new(Catalog::new(None, ran_out.state().clone()));
+        for catalog in [ran_out, lost] {
+            store.set_catalog(catalog);
+            assert_eq!(store.get(&id()).unwrap().withdrawn.as_deref(), Some(LEAKY));
+            assert!(matches!(store.stage_folder(&dev), Err(PluginError::Withdrawn { .. })));
+        }
+        assert!(dev.join("plugin.json").is_file());
+        // The version its plugin.json names now counts, not its record's.
+        store.set_catalog(catalog_of(Vec::new(), vec![withdrawal("<=1.0.4")], catalog::now() + DAY));
+        for (version, withdrawn) in [("2.0.0", None), ("1.0.0", Some(LEAKY))] {
+            fs::write(dev.join("plugin.json"), &hello(version)[0].1).unwrap();
+            let p = store.get(&id()).unwrap();
+            assert_eq!(p.record.version, "1.0.0");
+            assert_eq!((p.manifest.unwrap().version, p.withdrawn.as_deref()), (version.to_owned(), withdrawn));
+        }
+    }
+
+    #[test]
+    fn a_reviewed_version_pins_the_key_the_catalog_names() {
+        let place = Place::new();
+        let store = place.store();
+        let (author, catalogued) = (key_pair(), key_pair());
+        let key = |pair: &KeyPair| {
+            let base64 = pair.pk.to_base64();
+            AuthorKey { key_id: trust::key_id(&base64).unwrap(), base64 }
+        };
+        let p = install(&store, &place.package(&hello("1.0.0"), Some(&author), true)).unwrap();
+        assert_eq!(p.record.author_key, Some(key(&author)));
+        // Unsigned, and listed with another author key: that key is the pin.
+        let update = place.unsigned("1.1.0");
+        let entry = Entry { author_key: Some(catalogued.pk.to_base64()), ..entry_of(&update) };
+        store.set_catalog(catalog_of(vec![entry], Vec::new(), catalog::now() + DAY));
+        let t = store.stage(&update).unwrap();
+        assert_eq!(t.verdict, Verdict { trust: Trust::Reviewed, author_key: Some(key(&catalogued)) });
+        let p = store.commit(t, false, false).unwrap();
+        assert_eq!((p.record.trust, p.record.author_key), (Trust::Reviewed, Some(key(&catalogued))));
+    }
+
+    #[test]
+    fn a_pinned_plugin_takes_an_unsigned_version_the_catalog_reviewed() {
+        let place = Place::new();
+        let store = place.store();
+        let author = key_pair();
+        let p = install(&store, &place.package(&hello("1.0.0"), Some(&author), true)).unwrap();
+        let pin = p.record.author_key.clone();
+        let update = place.unsigned("1.1.0");
+        assert!(matches!(store.stage(&update), Err(PluginError::KeyChanged { .. })));
+        reviewed(&store, &[&update]);
+        let p = store.commit(store.stage(&update).unwrap(), false, false).unwrap();
+        assert_eq!((p.record.trust, p.record.author_key), (Trust::Reviewed, pin));
+    }
+
+    #[test]
+    fn a_review_that_the_catalog_dropped_while_it_waited_is_not_installed() {
+        let place = Place::new();
+        let store = place.store();
+        let package = place.unsigned("1.0.0");
+        reviewed(&store, &[&package]);
+        // The catalog no longer lists it: even with the setting and a yes.
+        let t = store.stage(&package).unwrap();
+        assert!(t.approval.is_some());
+        store.set_catalog(Arc::new(Catalog::none()));
+        let e = store.commit(t, true, true).unwrap_err();
+        assert_eq!(e.to_string(), "The catalog changed while this plugin waited. Open it again.");
+        assert!(store.list().unwrap().is_empty());
+        assert_eq!(place.plugins(), [".staging", ".trash"]);
+        // The catalog withdrew it.
+        reviewed(&store, &[&package]);
+        let t = store.stage(&package).unwrap();
+        store.set_catalog(catalog_of(vec![entry_of(&package)], vec![withdrawal("*")], catalog::now() + DAY));
+        assert!(matches!(store.commit(t, true, true), Err(PluginError::Withdrawn { .. })));
+        assert!(store.list().unwrap().is_empty());
+        assert_eq!(place.plugins(), [".staging", ".trash"]);
+        // A newer index that still lists it.
+        reviewed(&store, &[&package]);
+        let t = store.stage(&package).unwrap();
+        reviewed(&store, &[&place.unsigned("1.1.0"), &package]);
+        assert_eq!(store.commit(t, false, false).unwrap().record.trust, Trust::Reviewed);
+    }
+
+    #[test]
+    fn a_dropped_review_is_the_reason_whatever_else_the_package_says() {
+        let place = Place::new();
+        let store = place.store();
+        let dropped = "The catalog changed while this plugin waited. Open it again.";
+        // An unsigned version of a pinned plugin, which only the review let through.
+        let author = key_pair();
+        install(&store, &place.package(&hello("1.0.0"), Some(&author), true)).unwrap();
+        let update = place.unsigned("1.1.0");
+        reviewed(&store, &[&update]);
+        let t = store.stage(&update).unwrap();
+        store.set_catalog(Arc::new(Catalog::none()));
+        assert_eq!(store.commit(t, true, true).unwrap_err().to_string(), dropped);
+        assert_eq!(store.get(&id()).unwrap().record.version, "1.0.0");
+        // A package whose signature is another lock's: unread while it was reviewed.
+        store.uninstall(&id(), false).unwrap();
+        let package = place.package(&hello("1.0.0"), Some(&author), true);
+        reviewed(&store, &[&package]);
+        let mut t = store.stage(&package).unwrap();
+        let other = b"another lock";
+        let comment = trust::trusted_comment(&id(), "1.0.0", &package::sha256_hex(other));
+        let stale = minisign::sign(Some(&author.pk), &author.sk, &other[..], Some(&comment), None).unwrap();
+        t.signature = Some(stale.into_string());
+        store.set_catalog(Arc::new(Catalog::none()));
+        assert_eq!(store.commit(t, true, true).unwrap_err().to_string(), dropped);
+        assert!(store.list().unwrap().is_empty());
+        assert_eq!(place.plugins(), [".staging", ".trash"]);
+    }
+
+    #[test]
+    fn catalog_rows_never_read_as_plugins() {
+        let place = Place::new();
+        let store = place.store();
+        // The catalog's row sorts outside the registry's and the settings'.
+        for prefix in [ROW, SETTINGS_ROW, EXTRA_ROW] {
+            assert!(!"plugins_catalog".starts_with(prefix));
+        }
+        assert!("plugins_catalog" > "plugin/");
+        let state = CatalogState { withdrawn: vec![withdrawal("*")], ..CatalogState::default() };
+        let row = serde_json::to_string(&state).unwrap();
+        place.db.set_setting("plugins_catalog", &row).unwrap();
+        assert!(store.list().unwrap().is_empty());
+        install(&store, &place.unsigned("1.0.0")).unwrap();
+        let listed = store.list().unwrap();
+        assert_eq!(listed.iter().map(|p| p.record.id.as_str()).collect::<Vec<_>>(), [ID]);
+        // Its withdrawals count only once the catalog is in hand.
+        assert_eq!(listed[0].withdrawn, None);
+        store.uninstall(&id(), false).unwrap();
+        assert_eq!(place.db.setting("plugins_catalog").unwrap().as_deref(), Some(row.as_str()));
+        assert!(store.list().unwrap().is_empty());
     }
 
     #[test]
@@ -2643,7 +3106,7 @@ mod tests {
         let place = Place::new();
         install(&place.store(), &place.package(&with_secrets("1.0.0", &["token"]), None, false)).unwrap();
         place.store().secret_set(&id(), "token", "hunter2").unwrap();
-        let locked = Store::open(&place.paths, Arc::clone(&place.db), Keys::new(&[]).unwrap(), app(), Arc::new(Locked));
+        let locked = Store::open(&place.paths, Arc::clone(&place.db), app(), Arc::new(Locked));
         let store = locked.unwrap();
         let said = "Your system's keychain can't be used: it is locked.";
         assert_eq!(store.secret(&id(), "token").unwrap_err().to_string(), said);
@@ -2666,7 +3129,7 @@ mod tests {
         install(&place.store(), &place.package(&token, None, false)).unwrap();
         place.store().secret_set(&id(), "token", "owner-token").unwrap();
         // The keychain refuses to remove it: the plugin goes, its secret stays.
-        let locked = Store::open(&place.paths, Arc::clone(&place.db), Keys::new(&[]).unwrap(), app(), Arc::new(Locked));
+        let locked = Store::open(&place.paths, Arc::clone(&place.db), app(), Arc::new(Locked));
         locked.unwrap().uninstall(&id(), false).unwrap();
         assert_eq!(place.secrets.len(), 1);
         // A plugin of that id installed next (by anyone: the pin went) never reads it.
@@ -2872,7 +3335,7 @@ mod tests {
         assert_eq!(ours.secrets.len(), 1);
         // A library that never kept a secret writes no id, and asks no keychain.
         let none = Place::new();
-        let locked = Store::open(&none.paths, Arc::clone(&none.db), Keys::new(&[]).unwrap(), app(), Arc::new(Locked));
+        let locked = Store::open(&none.paths, Arc::clone(&none.db), app(), Arc::new(Locked));
         let locked = locked.unwrap();
         install(&locked, &none.package(&token, None, false)).unwrap();
         assert_eq!(locked.secret(&id(), "token").unwrap(), None);

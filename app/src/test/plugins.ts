@@ -16,6 +16,7 @@ export function pluginInfo(o: Partial<PluginInfo> & Pick<PluginInfo, "id" | "nam
     active: true,
     blockedReason: null,
     broken: null,
+    withdrawn: null,
     permissions: [],
     networkHosts: [],
     gpu: false,

@@ -62,5 +62,5 @@ pub use protocol::{
 pub use runtime::RunSpec;
 pub use secrets::{MemorySecrets, OsKeyring, SecretStore};
 pub use service::{OnEvent, ProcessService, Service, ServiceEvent, ServiceSpec};
-pub use store::{Extra, Installed, Record, Source, Store, Ticket};
-pub use trust::{AuthorKey, Keys, Trust, Verdict};
+pub use store::{Approval, Extra, Installed, Record, Source, Store, Ticket};
+pub use trust::{AuthorKey, Trust, Verdict};

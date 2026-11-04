@@ -21,7 +21,7 @@ use as_plugin::runtime::{
     RunSpec, TERM_GRACE,
 };
 use as_plugin::{
-    ActionContext, ActionKind, AppContext, CallCode, CallError, Caller, Grants, HostCalls, HostMethod, Keys, Launch,
+    ActionContext, ActionKind, AppContext, CallCode, CallError, Caller, Grants, HostCalls, HostMethod, Launch,
     MemorySecrets, PluginContext, PluginError, PluginId, PluginResult, RunMessage, SettingValue, Store, ToolPaths,
     Trigger, current_platform,
 };
@@ -311,7 +311,7 @@ fn an_installed_plugin_runs_in_its_own_folders_with_its_settings() {
     let paths = AppPaths::at(tmp.path().join("data"));
     let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
     let app = Version::parse("1.0.3-BETA").unwrap();
-    let store = Store::open(&paths, db, Keys::new(&[]).unwrap(), app, Arc::new(MemorySecrets::default())).unwrap();
+    let store = Store::open(&paths, db, app, Arc::new(MemorySecrets::default())).unwrap();
     // The stand-in plugin in a developer's folder, loaded from there.
     let work = tmp.path().join("work");
     fs::create_dir(&work).unwrap();
@@ -388,7 +388,7 @@ fn a_secret_from_a_call_never_reaches_the_log_or_env() {
     let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
     let app = Version::parse("1.0.3-BETA").unwrap();
     let secrets = Arc::new(MemorySecrets::default());
-    let store = Arc::new(Store::open(&paths, db, Keys::new(&[]).unwrap(), app, secrets).unwrap());
+    let store = Arc::new(Store::open(&paths, db, app, secrets).unwrap());
     // The stand-in plugin, of protocol 2 with a secret setting, loaded from its folder.
     let work = tmp.path().join("work");
     fs::create_dir(&work).unwrap();

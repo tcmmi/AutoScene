@@ -171,7 +171,7 @@ describe("PluginsPage", () => {
     fireEvent.click(load)
     await waitFor(() => expect(load.querySelector(".animate-spin")).not.toBeNull())
     expect(screen.getByRole("button", { name: /Install a plugin/ }).querySelector(".animate-spin")).toBeNull()
-    checked({ ticketId: "t", plugin: pluginInfo({ id: "dev.me.mine", name: "Mine" }), update: null, needsUnreviewed: true, allowed: true, uvMissing: false })
+    checked({ ticketId: "t", plugin: pluginInfo({ id: "dev.me.mine", name: "Mine" }), update: null, needsUnreviewed: true, allowed: true, uvMissing: false, catalog: null })
     await waitFor(() => expect(load.querySelector(".animate-spin")).toBeNull())
   })
 

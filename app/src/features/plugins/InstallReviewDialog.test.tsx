@@ -36,6 +36,7 @@ const review = (o: Partial<PluginReview> = {}): PluginReview => ({
   needsUnreviewed: true,
   allowed: true,
   uvMissing: false,
+  catalog: null,
   ...o,
 })
 

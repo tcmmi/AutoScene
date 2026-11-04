@@ -77,7 +77,8 @@ impl From<ProjectError> for AppError {
 }
 
 /// As for [`ProjectError`]. A signature that fails or an author key that
-/// changed says only that to the person; the log has which and why.
+/// changed says only that to the person; the log has which and why. A
+/// plugin AutoScene withdrew is news, not noise: the log has it too.
 impl From<PluginError> for AppError {
     fn from(e: PluginError) -> Self {
         let code = match &e {
@@ -97,12 +98,14 @@ impl From<PluginError> for AppError {
             | PluginError::NotAllowed
             | PluginError::UvMissing
             | PluginError::Denied(_)
-            | PluginError::Catalog(_) => ErrorCode::Invalid,
+            | PluginError::Catalog(_)
+            | PluginError::Withdrawn { .. } => ErrorCode::Invalid,
         };
         match (&e, code) {
             (PluginError::BadSignature(_) | PluginError::KeyChanged { .. } | PluginError::Keychain { .. }, _) => {
                 log::warn!("{}", e.detail());
             }
+            (PluginError::Withdrawn { .. }, _) => log::info!("{}", e.detail()),
             (_, ErrorCode::NotFound | ErrorCode::Invalid | ErrorCode::NotReady | ErrorCode::Cancelled) => {
                 log::debug!("{}", e.detail());
             }
@@ -136,11 +139,15 @@ mod tests {
             PluginError::UvMissing,
             PluginError::Denied("A run reads only the project it runs in.".into()),
             PluginError::Catalog("This catalog is older than the one AutoScene has.".into()),
+            PluginError::Withdrawn { name: "Leaky".into(), reason: "It sent export paths to a server.".into() },
         ];
         for e in invalid {
             let words = e.to_string();
             assert_eq!(said(e), (ErrorCode::Invalid, words));
         }
+        let withdrawn =
+            PluginError::Withdrawn { name: "Leaky".into(), reason: "It sent export paths to a server.".into() };
+        assert_eq!(said(withdrawn).1, "AutoScene withdrew Leaky. It sent export paths to a server.");
         assert_eq!(said(PluginError::NotFound("dev.a.b".into())).0, ErrorCode::NotFound);
         assert_eq!(said(PluginError::Closed), (ErrorCode::NotFound, "This page was closed.".into()));
         assert_eq!(

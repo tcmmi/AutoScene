@@ -898,9 +898,9 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::keys::{CATALOG_URLS, REVIEW_KEYS};
+    use crate::keys::CATALOG_URLS;
     use crate::manifest::{self, Manifest};
-    use crate::trust::{self, Keys, trusted_comment};
+    use crate::trust::{self, trusted_comment};
 
     const NOW: u64 = 1_800_000_000;
     const DAY: u64 = 86_400;
@@ -1144,11 +1144,10 @@ mod tests {
         let certificate = owner.offline.certify(1, &[], &[]);
         assert_eq!(refused(check(&bytes, &certificate, &owner.keys(), &held, NOW)), not_one);
         // And the other way round: an index's signature is no package's, not
-        // even when its key reviews packages.
+        // even with its key beside it as the package's author.pub.
         let lock = br#"{"lockVersion":1,"files":[]}"#;
         let sig = owner.online.sign(lock, &index_comment(1, 1, NOW + DAY));
-        let review = Keys::new(&[&owner.online.public()]).unwrap();
-        let judged = trust::judge(&review, lock, Some(&sig), None, &hello(), None);
+        let judged = trust::judge(lock, Some(&sig), Some(&owner.online.public()), &hello(), None);
         assert!(matches!(judged, Err(PluginError::BadSignature(_))), "{judged:?}");
         // Nor is an index's signature an epoch certificate.
         let unreadable = "The catalog's epoch certificate can't be read.";
@@ -1798,14 +1797,12 @@ mod tests {
     fn the_catalog_keys_are_minisign_keys_one_of_each_role() {
         // Each compiled key reads (builtin panics otherwise).
         assert_eq!(CatalogKeys::builtin().is_empty(), CATALOG_KEYS.is_empty());
-        // Empty until the catalog opens; then one online and one offline key,
-        // neither a review key.
+        // Empty until the catalog opens; then one online and one offline key.
         if !CATALOG_KEYS.is_empty() {
             let roles: Vec<KeyRole> = CATALOG_KEYS.iter().map(|(role, _)| *role).collect();
             assert_eq!(roles.len(), 2);
             assert!(roles.contains(&KeyRole::Online) && roles.contains(&KeyRole::Offline));
             assert_ne!(key_id(CATALOG_KEYS[0].1).unwrap(), key_id(CATALOG_KEYS[1].1).unwrap());
-            assert!(CATALOG_KEYS.iter().all(|(_, key)| !REVIEW_KEYS.contains(key)));
         }
         let urls = [
             "https://tcmmi.github.io/autoscene-plugins/",

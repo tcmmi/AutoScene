@@ -87,6 +87,7 @@ fn installed(dir: &Path, files: &[(String, Vec<u8>)], source: Source, lock_sha25
         dir: dir.to_path_buf(),
         broken: None,
         extra: Extra::agreed(RuntimeKind::None),
+        withdrawn: None,
     }
 }
 

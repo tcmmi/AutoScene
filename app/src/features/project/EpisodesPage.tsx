@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react"
+import type * as React from "react"
+import { useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import {
   DotsThree,
@@ -145,7 +146,33 @@ export function EpisodesPage() {
   )
 }
 
-function EpisodeRow({
+const CONTROLS = "button, a[href], input, textarea, select, [role=button], [role=combobox]"
+
+/**
+ * The row's own control under `target`, if the target is in the row at all.
+ * The menus a control opens are portals: React bubbles their events through
+ * the row, but their elements are not inside it.
+ */
+const controlIn = (row: HTMLElement, target: Element) => {
+  if (!row.contains(target)) return null
+  const control = target.closest(CONTROLS)
+  return control && row.contains(control) ? control : null
+}
+
+/**
+ * A click anywhere on the row opens it, except on the row's own controls and in
+ * the menus they open (the Select's options and the ⋯ menu's entries, the
+ * disabled ones too: a click reaches those). A press that began on a control
+ * doesn't open it either, wherever it ends: slide off a button and release is
+ * the way to back out of it, and the browser sends that click to the cell or
+ * the row around, not to the button. The row keeps the press for the click.
+ */
+const opensFromRow = (e: React.MouseEvent<HTMLElement>, began: boolean, open: () => void) => {
+  if (began || !e.currentTarget.contains(e.target as Element) || controlIn(e.currentTarget, e.target as Element)) return
+  open()
+}
+
+export function EpisodeRow({
   media: m,
   ambiguous,
   projectId,
@@ -170,11 +197,29 @@ function EpisodeRow({
       .catch((e) => toast.error("Couldn't change the audio track", { description: errorMessage(e) }))
   }
 
+  // Whether the press now being clicked began on a control or in a menu a control opened.
+  const pressed = useRef(false)
   const items = { projectId, media: m, onOpen, onRemove }
   return (
     <ContextArea menu={<EpisodeItems kit={contextKit} {...items} openShortcut={["Enter"]} />}>
         <li
-          onClick={ready ? onOpen : undefined}
+          onPointerDown={
+            ready
+              ? (e) => {
+                  const target = e.target as Element
+                  pressed.current = !e.currentTarget.contains(target) || controlIn(e.currentTarget, target) !== null
+                }
+              : undefined
+          }
+          onClick={
+            ready
+              ? (e) => {
+                  const began = pressed.current
+                  pressed.current = false
+                  opensFromRow(e, began, onOpen)
+                }
+              : undefined
+          }
           tabIndex={ready ? 0 : undefined}
           aria-label={ready ? `Open ${m.label ? `${m.label} ` : ""}${releaseTitle(m.fileName)}` : undefined}
           onKeyDown={(e) => {
@@ -230,14 +275,13 @@ function EpisodeRow({
                 ))}
               </div>
             )}
-            {/* Narrow windows: the state under the name. Here and in the cells below, a click
-                beside the row's own controls does nothing: the arrow, not the row's hand. */}
-            <div className="mt-2.5 cursor-default @3xl:hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Narrow windows: the state under the name. */}
+            <div className="mt-2.5 @3xl:hidden">
               <StatusCell media={m} projectId={projectId} />
             </div>
           </div>
 
-          <div className="hidden cursor-default @3xl:block" onClick={(e) => e.stopPropagation()}>
+          <div className="hidden @3xl:block">
             {audio.length > 1 ? (
               <Select
                 size="sm"
@@ -252,11 +296,11 @@ function EpisodeRow({
             )}
           </div>
 
-          <div className="hidden cursor-default @3xl:block" onClick={(e) => e.stopPropagation()}>
+          <div className="hidden @3xl:block">
             <StatusCell media={m} projectId={projectId} />
           </div>
 
-          <div className="cursor-default" onClick={(e) => e.stopPropagation()}>
+          <div>
             <DropdownMenu>
               <DropdownMenuTrigger
                 aria-label={`${m.fileName} options`}

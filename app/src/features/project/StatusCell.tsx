@@ -30,19 +30,16 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
   const { data: settings } = useSettings()
   const { data: project } = useProject(projectId)
   const people = (settings?.findBodies ?? false) && !(project?.fastScan ?? false) && project?.content !== "anime"
-  const retry = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const retry = () => {
     commands.mediaRetry(projectId, m.id).catch((err) => toast.error("Couldn't retry", { description: errorMessage(err) }))
   }
-  const analyze = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const analyze = () => {
     commands
       .mediaAnalyze(projectId, m.id, null)
       .catch((err) => toast.error("Couldn't start the analysis", { description: errorMessage(err) }))
   }
   // The job whose state is shown here, never another one of the media's.
-  const cancel = (job: JobInfo) => (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const cancel = (job: JobInfo) => () => {
     cancelJob(job)
   }
 
@@ -185,7 +182,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
  * and nothing runs it (it failed, was stopped, or was cut short): it goes on
  * from where it was.
  */
-function PeopleLine({ media: m, onContinue }: { media: MediaItem; onContinue: (e: React.MouseEvent) => void }) {
+function PeopleLine({ media: m, onContinue }: { media: MediaItem; onContinue: () => void }) {
   const failed = m.bodies === "failed"
   return (
     <span className="inline-flex items-center gap-2 pl-5 text-xs">

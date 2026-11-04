@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { toast } from "sonner"
 import type { PluginInfo, PluginReview } from "@/bindings"
 import { ArrowCounterClockwise, CircleNotch, FolderOpen, MagnifyingGlass, Plus, PuzzlePiece, X } from "@/components/icons"
 import { Button } from "@/components/ui/button"
@@ -9,7 +8,6 @@ import { Page } from "@/components/ui/page"
 import { Switch } from "@/components/ui/switch"
 import { TopBar } from "@/components/ui/topbar"
 import { plural } from "@/features/cast/cast"
-import { InstallReviewDialog } from "@/features/plugins/InstallReviewDialog"
 import { useLoadAgain } from "@/features/plugins/load-again"
 import { PluginCard } from "@/features/plugins/PluginCard"
 import { allowUnreviewed } from "@/features/plugins/plugin-actions"
@@ -17,8 +15,9 @@ import { FIND_FROM, pluginMatches } from "@/features/plugins/plugin-items"
 import { UninstallDialog } from "@/features/plugins/UninstallDialog"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
 import { commands, errorMessage } from "@/lib/ipc"
-import { pickFolder, pickPluginFile } from "@/lib/media"
+import { baseName, pickFolder, pickPluginFile } from "@/lib/media"
 import { usePlugins, useSettings } from "@/lib/queries"
+import { usePluginReview } from "@/state/plugin-review"
 
 const ALLOW = "Allow plugins that AutoScene has not reviewed"
 
@@ -34,7 +33,6 @@ export function PluginsPage() {
   const { data: plugins, error, isFetching, refetch } = usePlugins()
   const allowed = settings?.allowUnreviewedPlugins ?? false
   const [checking, setChecking] = useState<"file" | "folder" | null>(null)
-  const [review, setReview] = useState<PluginReview | null>(null)
   const [removing, setRemoving] = useState<PluginInfo | null>(null)
   const [query, setQuery] = useState("")
   // A card's folder is read again on its own: the header's buttons don't spin for it.
@@ -53,9 +51,8 @@ export function PluginsPage() {
     if (!path) return
     setChecking(what)
     try {
-      setReview(await check(path))
-    } catch (e) {
-      toast.error("Couldn't open the plugin", { description: errorMessage(e) })
+      // The review opens in the shell's dialog, once it is read.
+      await usePluginReview.getState().openReview(() => check(path), baseName(path))
     } finally {
       setChecking(null)
     }
@@ -184,8 +181,6 @@ export function PluginsPage() {
           </SettingsGroup>
         </div>
 
-        <InstallReviewDialog review={review} onClose={() => setReview(null)} />
-        {again.dialog}
         <UninstallDialog p={removing} onClose={() => setRemoving(null)} />
       </div>
     </Page>

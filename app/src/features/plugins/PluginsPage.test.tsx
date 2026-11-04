@@ -10,7 +10,9 @@ import { AppMenu } from "@/components/shell/AppMenu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
+import { usePluginReview } from "@/state/plugin-review"
 import { pluginInfo } from "@/test/plugins"
+import { InstallReviewDialog } from "./InstallReviewDialog"
 import { PluginHero } from "./PluginSettingsPage"
 import { PluginsPage } from "./PluginsPage"
 
@@ -37,6 +39,7 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     pluginsAllowUnreviewed: vi.fn((on: boolean) => Promise.resolve(settings(on))),
     pluginSetEnabled: vi.fn(),
     pluginUninstall: vi.fn(() => Promise.resolve(null)),
+    pluginInspect: vi.fn(),
     pluginInspectFolder: vi.fn(),
     pluginDiscard: vi.fn(() => Promise.resolve(null)),
     pluginSettingsGet: vi.fn(() => Promise.resolve({})),
@@ -45,7 +48,11 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     revealPath: vi.fn(() => Promise.resolve()),
   },
 }))
-vi.mock("@/lib/media", () => ({ pickFolder: vi.fn(() => Promise.resolve("D:\\Plugins\\mine")), pickPluginFile: vi.fn() }))
+vi.mock("@/lib/media", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/media")>()),
+  pickFolder: vi.fn(() => Promise.resolve("D:\\Plugins\\mine")),
+  pickPluginFile: vi.fn(() => Promise.resolve("D:\\Downloads\\Notify.asp")),
+}))
 vi.mock("@/lib/os", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/os")>()), reveal, openExternalUrl, copyText }))
 vi.mock("@/lib/actions", () => ({ useAppActions: () => ({ goSettings: vi.fn(), goPlugin }) }))
 // The window's menu, around the rows' own entries.
@@ -54,12 +61,13 @@ vi.mock("@/components/ui/page", () => ({ Page: ({ children }: { children: React.
 const BANNER = "data:image/jpeg;base64,/9j/4AAQ"
 const ICON = "data:image/svg+xml;base64,PHN2Zy8+"
 
-/** `ui` (Plugins, unless said otherwise) at `/plugins`, in the app's router: a plugin's screen says which it is. */
+/** `ui` (Plugins, unless said otherwise) at `/plugins`, in the app's router: a plugin's screen says which it is. The shell's review dialog is there too. */
 function show(ui: React.ReactNode = <PluginsPage />) {
   const root = createRootRoute({
     component: () => (
       <>
         {ui}
+        <InstallReviewDialog />
         <Outlet />
       </>
     ),
@@ -113,7 +121,9 @@ beforeEach(() => {
   queryClient.clear()
   vi.clearAllMocks()
   // A review a failed case left unasked must not answer the next one.
+  vi.mocked(commands.pluginInspect).mockReset()
   vi.mocked(commands.pluginInspectFolder).mockReset()
+  usePluginReview.setState({ review: null, loading: false, queue: [] })
   // The router puts each place at its top, which jsdom can't scroll.
   vi.spyOn(window, "scrollTo").mockImplementation(() => {})
   state.plugins = []
@@ -431,6 +441,7 @@ describe("PluginsPage", () => {
     act(() => read(review))
     expect(await screen.findByRole("dialog")).toBeTruthy()
     // A package that is broken has no folder to load.
+    usePluginReview.getState().close()
     cleanup()
     state.plugins = [pluginInfo({ id: "dev.a.pkg", name: "Pkg", broken: "Needs a newer AutoScene." })]
     queryClient.clear()
@@ -572,6 +583,30 @@ describe("PluginsPage", () => {
     expect(screen.getByRole("button", { name: /Install a plugin/ }).querySelector(".animate-spin")).toBeNull()
     checked({ ticketId: "t", plugin: pluginInfo({ id: "dev.me.mine", name: "Mine" }), update: null, needsUnreviewed: true, allowed: true, uvMissing: false, catalog: null })
     await waitFor(() => expect(load.querySelector(".animate-spin")).toBeNull())
+  })
+
+  it("opens the review of the package it picked, in the shell's dialog", async () => {
+    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
+    show()
+    const install = await screen.findByRole("button", { name: /Install a plugin/ })
+    // A package that can't be read is named by its file.
+    vi.mocked(commands.pluginInspect).mockRejectedValueOnce({ code: "invalid", message: "Not a plugin package." })
+    fireEvent.click(install)
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Couldn't open Notify.asp", { description: "Not a plugin package." }))
+    expect(screen.queryByRole("dialog")).toBeNull()
+
+    vi.mocked(commands.pluginInspect).mockResolvedValueOnce({
+      ticketId: "t",
+      plugin: pluginInfo({ id: "dev.me.notify", name: "Notify" }),
+      update: null,
+      needsUnreviewed: false,
+      allowed: true,
+      uvMissing: false,
+      catalog: null,
+    })
+    fireEvent.click(install)
+    expect(await screen.findByRole("heading", { name: "Install Notify?" })).toBeTruthy()
+    expect(commands.pluginInspect).toHaveBeenLastCalledWith("D:\\Downloads\\Notify.asp")
   })
 
   it("uninstalls a plugin, and what it kept only when asked", async () => {

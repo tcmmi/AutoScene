@@ -65,6 +65,9 @@ export function pluginPicture(src: string | null | undefined): string | null {
   return src != null && PICTURE_URL.test(src) ? src : null
 }
 
+/** A plugin package by its name: `.asp`, in any case. */
+export const isPluginPackage = (path: string) => path.toLowerCase().endsWith(".asp")
+
 /** From how many installed plugins Plugins offers to find one, as Cast does from six characters. */
 export const FIND_FROM = 6
 

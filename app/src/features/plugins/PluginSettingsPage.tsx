@@ -155,7 +155,6 @@ export function PluginHero({ p }: { p: PluginInfo }) {
       </ContextArea>
       {/* Outside the right-click area, which a right-click in them would reach
           through their portal. Gone, it leaves for Plugins. */}
-      {again.dialog}
       <UninstallDialog p={removing ? p : null} onClose={() => setRemoving(false)} onUninstalled={() => navigate({ to: "/plugins" })} />
     </>
   )

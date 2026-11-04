@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { Outlet } from "@tanstack/react-router"
 import { NewProjectDialog } from "@/features/library/NewProjectDialog"
+import { InstallReviewDialog } from "@/features/plugins/InstallReviewDialog"
 import { RelinkDialog } from "@/features/project/RelinkDialog"
 import { useGlobalBindings } from "@/lib/actions"
 import { installBrowserGuards } from "@/lib/browser-guards"
@@ -50,6 +51,7 @@ export function AppShell() {
         <UpdateDialog />
         <NewProjectDialog />
         <RelinkDialog />
+        <InstallReviewDialog />
         <DropZone />
         <FastScanNotice />
         <TextMenu />

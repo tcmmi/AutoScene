@@ -185,7 +185,7 @@ function PluginSettings({ p }: { p: PluginInfo }) {
  * this screen already is), on a calm banner. Broken is a fault, in red.
  */
 function Fix({ p }: { p: PluginInfo }) {
-  const { checking, loadAgain, dialog } = useLoadAgain()
+  const { checking, loadAgain } = useLoadAgain()
   // The backend refuses a folder's review while unreviewed plugins are off.
   const allowed = useSettings().data?.allowUnreviewedPlugins ?? false
   const blocked = p.broken == null && p.enabled && p.blockedReason != null
@@ -213,7 +213,6 @@ function Fix({ p }: { p: PluginInfo }) {
           </Button>
         )
       )}
-      {dialog}
     </div>
   )
 }

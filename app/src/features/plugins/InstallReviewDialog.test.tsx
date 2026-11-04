@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { PluginInfo, PluginReview, PluginUpdate } from "@/bindings"
 import { commands } from "@/lib/ipc"
+import { usePluginReview } from "@/state/plugin-review"
 import { pluginInfo } from "@/test/plugins"
 import { InstallReviewDialog } from "./InstallReviewDialog"
 
@@ -40,16 +41,27 @@ const review = (o: Partial<PluginReview> = {}): PluginReview => ({
   ...o,
 })
 
+/** The review as the shell shows it: from the store. `onClose` is called when the store lets it go. */
 function show(r: PluginReview) {
   const onClose = vi.fn()
-  render(<InstallReviewDialog review={r} onClose={onClose} />)
+  stops.push(usePluginReview.subscribe((s, before) => before.review && !s.review && onClose()))
+  usePluginReview.setState({ review: r })
+  render(<InstallReviewDialog />)
   return onClose
 }
 
+const stops: Array<() => void> = []
+
 const install = () => screen.getByRole("button", { name: "Install" }) as HTMLButtonElement
 
-beforeEach(() => vi.clearAllMocks())
-afterEach(cleanup)
+beforeEach(() => {
+  vi.clearAllMocks()
+  usePluginReview.setState({ review: null, loading: false, queue: [] })
+})
+afterEach(() => {
+  cleanup()
+  stops.splice(0).forEach((stop) => stop())
+})
 
 describe("the install review", () => {
   it("needs the name typed for an unreviewed plugin", async () => {

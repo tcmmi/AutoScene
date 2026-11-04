@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
 import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
+import { usePluginReview } from "@/state/plugin-review"
 import { PluginIcon } from "./PluginIcon"
 import { allowUnreviewed } from "./plugin-actions"
 import { MAX_RAIL_PAGES } from "./page-items"
@@ -20,20 +21,25 @@ import { checkedWhen, permissionLabel, reviewedPackage, trustLabel, trustLine } 
  * adds. One AutoScene hasn't reviewed needs the setting (which can be turned
  * on here), its name typed, and the person's yes in the dialog AutoScene
  * then shows outside the page. Closed without installing, the review goes,
- * and the files it unpacked.
+ * and the files it unpacked. It shows what `usePluginReview` holds, from
+ * wherever that was asked for, so the shell mounts it once.
  */
-export function InstallReviewDialog({ review, onClose }: { review: PluginReview | null; onClose: () => void }) {
+export function InstallReviewDialog() {
+  const review = usePluginReview((s) => s.review)
+  const close = usePluginReview((s) => s.close)
   // While it installs it stays open: closed, it would install all the same.
   const [busy, setBusy] = useState(false)
-  const cancel = () => {
-    // One gone already is no error; one left goes when it expires.
-    if (review) void commands.pluginDiscard(review.ticketId).catch(() => undefined)
-    onClose()
-  }
   return (
-    <Dialog open={review != null} onOpenChange={(open) => !open && !busy && cancel()}>
+    <Dialog open={review != null} onOpenChange={(open) => !open && !busy && close()}>
       {review && (
-        <ReviewForm key={review.ticketId} review={review} busy={busy} setBusy={setBusy} onCancel={cancel} onInstalled={onClose} />
+        <ReviewForm
+          key={review.ticketId}
+          review={review}
+          busy={busy}
+          setBusy={setBusy}
+          onCancel={() => close()}
+          onInstalled={() => close({ installed: true })}
+        />
       )}
     </Dialog>
   )

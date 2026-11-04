@@ -104,6 +104,7 @@ const notify = catalogPlugin({
   author: "Example Dev",
   permissions: ["exports:read", "network"],
   hosts: ["discord.com"],
+  runtime: "wasm",
 })
 
 beforeEach(() => {
@@ -150,6 +151,19 @@ describe("Browse", () => {
     expect(screen.getByText("Nothing matches")).toBeTruthy()
     fireEvent.click(screen.getByText("Clear the search", { selector: "button" }))
     expect(names()).toEqual(["Poster Maker", "Discord Notify"])
+  })
+
+  it("marks the catalog plugins that run in a sandbox, and no others", async () => {
+    show()
+    expect(within(await card("Discord Notify")).getByText("Sandboxed")).toBeTruthy()
+    expect(within(await card("Poster Maker")).queryByText("Sandboxed")).toBeNull()
+  })
+
+  it.each(["", "none", "service", "WASM", "wasi", "process"])("does not mark a catalog plugin whose runtime is %j", async (runtime) => {
+    state.catalog = catalogView([catalogPlugin({ ...poster, runtime })])
+    show()
+    expect(await card("Poster Maker")).toBeTruthy()
+    expect(screen.queryByText("Sandboxed")).toBeNull()
   })
 
   it("installs from the catalog through the review", async () => {

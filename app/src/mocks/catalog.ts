@@ -2,9 +2,10 @@
  * AutoScene's plugin catalog for the browser backend, shaped like
  * `plugins/catalog.rs`: an index of four reviewed plugins (Poster Maker,
  * new; Hello Export 1.1.0, an update that asks for the network and
- * discord.com; Discord Notify 1.0.1; and Big Model, whose first run
- * downloads 312 MB from huggingface.co, checked an hour ago. What each offers
- * is worked out against the mock's installed plugins when it is shown.
+ * discord.com; Discord Notify 1.0.1, which runs in the sandbox; and Big
+ * Model, whose first run downloads 312 MB from huggingface.co), checked an
+ * hour ago. What each offers is worked out against the mock's installed
+ * plugins when it is shown.
  * Getting one (`catalog_get`) takes a quarter of a second, in five steps of
  * `catalog:progress`, and gives its review; `catalog_cancel` ends it.
  *
@@ -85,6 +86,7 @@ const ENTRIES: Entry[] = [
     permissions: ["exports:read", "network"],
     hosts: ["discord.com"],
     sizeBytes: 21_904,
+    runtime: "wasm",
   }),
   entry({
     id: BIG_ID,

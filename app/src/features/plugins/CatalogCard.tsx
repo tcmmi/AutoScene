@@ -27,8 +27,9 @@ function offerOf(p: CatalogPlugin): "install" | "update" | "installed" | "elsewh
 /**
  * A plugin the catalog offers, in the language of an installed plugin's
  * card: its icon as the art (the catalog carries no banners), else its
- * name. Under it AutoScene's caption: "Reviewed by AutoScene", who it is by
- * and its version, its summary, and what it may do in one line; then
+ * name. Under it AutoScene's caption: "Reviewed by AutoScene" (and
+ * "Sandboxed" when it runs in the sandbox), who it is by and its version,
+ * its summary, and what it may do in one line; then
  * Install…, Update…, or that it is installed. The art opens what the button
  * does, or the plugin's settings once it is installed. An installed plugin
  * AutoScene withdrew says "Withdrawn" in place of "Reviewed by AutoScene"
@@ -89,14 +90,22 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="mt-3 flex min-h-8 items-center justify-between gap-3 pl-0.5">
-          {withdrawn ? (
-            <Badge tone="danger" className="min-w-0 truncate">
-              Withdrawn
-            </Badge>
-          ) : (
-            <Badge className="min-w-0 truncate">Reviewed by AutoScene</Badge>
-          )}
+        <div className="mt-3 flex min-h-8 items-start justify-between gap-3 pl-0.5">
+          <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+            {withdrawn ? (
+              <Badge tone="danger" className="min-w-0 truncate">
+                Withdrawn
+              </Badge>
+            ) : (
+              <Badge className="min-w-0 truncate">Reviewed by AutoScene</Badge>
+            )}
+            {/* Only what the index says runs in the sandbox; an entry without a runtime is a program. */}
+            {p.runtime === "wasm" && (
+              <Badge tone="outline" className="shrink-0">
+                Sandboxed
+              </Badge>
+            )}
+          </div>
           <Offer offer={offer} withdrawn={withdrawn} getting={getting} act={act} />
         </div>
         <TruncatedText className="mt-1.5 pl-0.5 text-sm text-fg-2">{`By ${p.author} · version ${p.version}`}</TruncatedText>

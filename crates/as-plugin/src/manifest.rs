@@ -2599,12 +2599,17 @@ mod tests {
         assert_eq!((p.manifest.manifest_version, p.warnings.len()), (2, 0));
     }
 
-    /// The `plugin.json` of each example plugin.
+    /// The `plugin.json` of each example plugin: in its folder, or in its
+    /// `plugin/` beside its source for a WebAssembly one.
     fn examples() -> Vec<Value> {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins");
         let mut found: Vec<PathBuf> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).collect();
         found.sort();
-        found.iter().map(|d| serde_json::from_slice(&std::fs::read(d.join("plugin.json")).unwrap()).unwrap()).collect()
+        let manifest = |d: &PathBuf| {
+            let file = d.join("plugin.json");
+            if file.is_file() { file } else { d.join("plugin/plugin.json") }
+        };
+        found.iter().map(|d| serde_json::from_slice(&std::fs::read(manifest(d)).unwrap()).unwrap()).collect()
     }
 
     #[test]

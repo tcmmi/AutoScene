@@ -82,6 +82,52 @@ jobs:
           cargo run -p autoscene-app --bin export-bindings --features export-bindings
           git diff --exit-code app/src/bindings.ts app/src/plugin-kit/protocol.ts
 
+  # The two WebAssembly examples, built from their source as their READMEs
+  # say, then checked, packed and run as AutoScene runs them. A component runs
+  # the same on every system, so Linux is enough; the app isn't built.
+  wasm-examples:
+    name: WebAssembly examples
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      # The pinned nightly of rust-toolchain.toml, with the wasm32-wasip2 target.
+      - name: Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # setup-uv and uv as the plugin catalog pins them, exactly.
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.13.7"
+      # Workspaces of their own, which the rust job's fmt and clippy don't see.
+      - name: Lint the test guest and the Rust example
+        run: |
+          for manifest in crates/as-plugin/tests/guest/Cargo.toml examples/plugins/discord-notify-wasm/Cargo.toml; do
+            cargo fmt --check --manifest-path "$manifest"
+            cargo clippy --release --locked --target wasm32-wasip2 --manifest-path "$manifest" -- -D warnings
+          done
+      - name: Build the examples
+        run: |
+          cd examples/plugins/discord-notify-wasm
+          cargo build --release --locked --target wasm32-wasip2
+          cp target/wasm32-wasip2/release/discord_notify_wasm.wasm plugin/plugin.wasm
+          cd ../clip-list-py
+          uv tool run --from componentize-py==0.25.1 componentize-py -d wit -w plugin componentize app -o plugin/plugin.wasm
+      - name: Check and pack them
+        run: |
+          for plugin in discord-notify-wasm clip-list-py; do
+            cargo run -p as-plugin --features cli --bin asp -- check "examples/plugins/$plugin/plugin"
+            cargo run -p as-plugin --features cli --bin asp -- pack "examples/plugins/$plugin/plugin" "$RUNNER_TEMP/$plugin.asp"
+          done
+      # The examples' own tests, and the examples' test of asp_cli.rs, which
+      # packs and verifies the WebAssembly ones only when they are built.
+      - name: Run them
+        env:
+          AUTOSCENE_WASM_EXAMPLES: ${{ github.workspace }}/examples/plugins
+          AUTOSCENE_REQUIRE_WASM_EXAMPLES: "1"
+        run: |
+          cargo test -p as-plugin --features cli --test wasm_examples
+          cargo test -p as-plugin --features cli --test asp_cli -- the_example_plugins_pack_and_parse
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest

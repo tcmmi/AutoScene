@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 2,
+  "id": "dev.autoscene.clip-list-py",
+  "version": "1.0.0",
+  "name": "Clip List",
+  "description": "Saves a list of an export's clips in its folder, from AutoScene's sandbox. An example plugin in Python.",
+  "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
+  "repository": "https://github.com/tcmmi/AutoScene",
+  "engines": { "autoscene": ">=1.0.0, <2", "protocol": 2 },
+  "runtime": { "type": "wasm", "component": "plugin.wasm" },
+  "permissions": ["exports:write"],
+  "contributes": {
+    "exportActions": [
+      { "id": "list", "title": "Save a clip list", "description": "Saves each clip's name, episode and frames in the export's folder." }
+    ]
+  }
+}

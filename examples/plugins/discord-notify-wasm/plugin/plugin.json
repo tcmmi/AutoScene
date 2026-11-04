@@ -1,0 +1,27 @@
+{
+  "manifestVersion": 2,
+  "id": "dev.autoscene.discord-notify-wasm",
+  "version": "1.0.0",
+  "name": "Discord Notify (sandboxed)",
+  "description": "Tells a Discord channel that an export is done, through a webhook, from AutoScene's sandbox. An example plugin.",
+  "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
+  "repository": "https://github.com/tcmmi/AutoScene",
+  "engines": { "autoscene": ">=1.0.0, <2", "protocol": 2 },
+  "runtime": { "type": "wasm", "component": "plugin.wasm" },
+  "permissions": ["network"],
+  "network": { "hosts": ["discord.com"] },
+  "contributes": {
+    "exportActions": [
+      { "id": "post", "title": "Post to Discord", "description": "Posts the export's name and how many clips it made." }
+    ],
+    "settings": [
+      {
+        "key": "webhook",
+        "type": "secret",
+        "title": "Webhook URL",
+        "description": "From the channel's settings: Integrations, Webhooks, Copy Webhook URL. Anyone with it can post to the channel.",
+        "placeholder": "https://discord.com/api/webhooks/…"
+      }
+    ]
+  }
+}

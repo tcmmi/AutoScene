@@ -1,0 +1,27 @@
+[package]
+name = "discord-notify-wasm"
+description = "An example AutoScene plugin: Discord Notify as a WebAssembly component"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+# A folder of its own: built for wasm32-wasip2, never as part of
+# AutoScene's workspace (which excludes `examples`).
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# The bindings for wit/plugin.wit.
+wit-bindgen = "=0.63.0"
+# wasi:http, for the post: std doesn't reach it.
+wasip2 = "=2.0.1"
+
+# A small component that builds the same, byte for byte, every time on one
+# system and in one folder (it keeps the path of src/lib.rs for panics).
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1

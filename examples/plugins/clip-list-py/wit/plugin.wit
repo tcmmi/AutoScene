@@ -1,0 +1,135 @@
+// The world of an AutoScene WebAssembly plugin. It carries the protocol of
+// crates/as-plugin/src/protocol.rs as typed calls instead of JSON lines.
+// 1.x grows only by functions marked @since: a record, variant or enum that
+// run takes or returns never changes once released (wit-frozen/ keeps each
+// released world as it shipped).
+package autoscene:plugin@1.0.0;
+
+/// The data of a run, field for field as the protocol has it.
+interface types {
+    /// A setting's value (protocol.rs SettingValue: bool, number or text).
+    variant setting-value {
+        boolean(bool),
+        number(f64),
+        text(string),
+    }
+
+    record plugin-context {
+        id: string,
+        version: string,
+        /// Always "/data": the plugin's own folder, read and write.
+        data-dir: string,
+    }
+
+    record app-context {
+        version: string,
+        /// windows-x86_64, macos-aarch64, linux-x86_64, ...
+        platform: string,
+    }
+
+    enum action-kind { export-action, command }
+
+    /// What started the run.
+    enum trigger { menu, after-export, palette, page }
+
+    record action-context {
+        kind: action-kind,
+        /// The contribution's id in the manifest.
+        id: string,
+        trigger: trigger,
+    }
+
+    record project-context {
+        id: string,
+        title: string,
+        /// "/project", read only, with project:read; else none.
+        folder: option<string>,
+    }
+
+    record clip-context {
+        name: string,
+        /// Where the clip is, under /export, once it was written and while
+        /// the export's folder is given; else none.
+        path: option<string>,
+        status: string,
+        media-id: string,
+        episode: string,
+        /// The first frame of the episode the clip shows.
+        start: u64,
+        /// The frame after its last one.
+        end: u64,
+        /// The episode's frame rate as a fraction (24000/1001), if known.
+        fps: option<string>,
+    }
+
+    record export-context {
+        id: string,
+        label: option<string>,
+        preset: string,
+        /// "/export" with exports:read (read only) or exports:write (read
+        /// and write); else none.
+        out-dir: option<string>,
+        /// Unix milliseconds.
+        created-at: s64,
+        /// The one file a merged export wrote, under /export, while the
+        /// export's folder is given.
+        merged-file: option<string>,
+        clips: list<clip-context>,
+    }
+
+    record run-request {
+        /// The protocol version the plugin declared (engines.protocol).
+        protocol: u32,
+        run-id: string,
+        plugin: plugin-context,
+        app: app-context,
+        /// Each of the plugin's settings, set or default, sorted by key.
+        /// Never a secret setting: those come through host.secret.
+        settings: list<tuple<string, setting-value>>,
+        action: action-context,
+        project: option<project-context>,
+        /// The export an export action runs on. `%` escapes the WIT keyword.
+        %export: option<export-context>,
+        /// What a page handed its run, as JSON text (trigger page only; at
+        /// most 64 KiB).
+        input: option<string>,
+    }
+
+    /// protocol.rs PluginMessage::Error.
+    record run-error {
+        /// Shown to the person.
+        message: string,
+        /// Goes to the plugin's log.
+        detail: option<string>,
+    }
+
+    enum log-level { debug, info, warn, error }
+}
+
+/// What AutoScene offers a running plugin.
+interface host {
+    use types.{log-level};
+
+    /// How far the run is (0 to 1, or not known) and what it does now.
+    progress: func(fraction: option<f64>, stage: option<string>);
+
+    /// A line for the plugin's log.
+    log: func(level: log-level, message: string);
+
+    /// True once the person pressed Stop. A plugin that runs on for
+    /// 5 seconds after that is ended.
+    cancelled: func() -> bool;
+
+    /// The value of the plugin's secret setting `key`, or none when it
+    /// isn't set (or the plugin has no such setting).
+    secret: func(key: string) -> option<string>;
+}
+
+world plugin {
+    use types.{run-request, run-error};
+
+    import host;
+
+    /// One run per action: ok with the message to show, or the error.
+    export run: func(request: run-request) -> result<option<string>, run-error>;
+}

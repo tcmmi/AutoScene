@@ -1,9 +1,10 @@
 # Writing AutoScene plugins
 
-A plugin adds to AutoScene: a program that AutoScene runs for the person (on
-an export, from the command palette, by itself after every export, or from
-one of the plugin's pages), pages of its own that AutoScene shows full
-screen, or both. It describes itself in a `plugin.json`, and AutoScene draws
+A plugin adds to AutoScene: code that AutoScene runs for the person (on an
+export, from the command palette, by itself after every export, or from one
+of the plugin's pages), pages of its own that AutoScene shows full screen,
+or both. The code is a program, or a WebAssembly component that runs in a
+sandbox. It describes itself in a `plugin.json`, and AutoScene draws
 what it adds (menu entries, palette commands, its settings, a tile for its
 page). It ships as a package, an `.asp` file, which the `asp` tool makes and
 signs. AutoScene's plugin catalog lists the versions AutoScene reviewed (see
@@ -11,8 +12,8 @@ signs. AutoScene's plugin catalog lists the versions AutoScene reviewed (see
 
 This guide is for plugin authors. It describes AutoScene's plugins as they
 are now: versions 1 and 2 of the manifest and of the protocol. Version 2
-adds pages, services, secret settings, and calls from a plugin into
-AutoScene. A plugin of version 1 works as it always did.
+adds pages, services, WebAssembly plugins, secret settings, and calls from
+a plugin into AutoScene. A plugin of version 1 works as it always did.
 
 The design started from moongetsu's prototype in
 [PR #93](https://github.com/tcmmi/AutoScene/pull/93): the review before an
@@ -33,6 +34,9 @@ How a plugin runs is its `runtime.type`:
   one of its pages is open, and answers the page's requests (see
   [Services](#services)).
 - **`none`** (version 2): no program at all, only pages.
+- **`wasm`** (version 2): a WebAssembly component, which AutoScene runs in
+  a sandbox once per run: it sees only its own folder and what its
+  permissions give it (see [WebAssembly plugins](#webassembly-plugins)).
 
 It can add:
 
@@ -58,9 +62,12 @@ AutoScene checks each call against what the person agreed to.
 change and send anything they can. AutoScene checks what the program asks
 it for, but not what the program does itself: its own files, its own
 connections. For a program, the permissions a plugin names are a promise
-shown before it is installed, not a wall. **A page runs in a sandbox**: it
-gets nothing but what it asks AutoScene for, and AutoScene checks each ask
-(see [What AutoScene enforces](#what-autoscene-enforces)). Write a plugin so
+shown before it is installed, not a wall. **A WebAssembly plugin runs in a
+sandbox**: its permissions are walls, and it sees nothing else of the
+computer (see [WebAssembly plugins](#webassembly-plugins)). **A page runs
+in a sandbox** too: it gets nothing but what it asks AutoScene for, and
+AutoScene checks each ask (see
+[What AutoScene enforces](#what-autoscene-enforces)). Write a plugin so
 that what it does matches what it says.
 
 ## Quick start
@@ -91,14 +98,19 @@ that what it does matches what it says.
    [Signing](#signing-with-asp)).
 
 Or let `asp init` make a plugin to start from: `asp init my-plugin` makes
-one with a page, `--service` one whose page talks to its service, and
-`--action` one with an export action (see
-[Developing a plugin](#developing-a-plugin)).
+one with a page, `--service` one whose page talks to its service,
+`--action` one with an export action, and `--wasm rust` or `--wasm python`
+a WebAssembly plugin (see [Developing a plugin](#developing-a-plugin) and
+[WebAssembly plugins](#webassembly-plugins)).
 
 The other examples, in `examples/plugins`:
 
+- `clip-list-py`: a WebAssembly plugin in Python that saves a list of an
+  export's clips in its folder.
 - `discord-notify`: an export action that posts to the internet through
   AutoScene (`net.fetch`), with its webhook as a secret setting.
+- `discord-notify-wasm`: its twin as a WebAssembly plugin in Rust, which
+  reaches only Discord.
 - `hello-page`: two pages and no program: a note in the rail, and a
   project's episodes and clips.
 - `hello-service`: a page whose service counts the words it is sent.
@@ -111,7 +123,8 @@ The other examples, in `examples/plugins`:
    under it.
 2. When the job starts, AutoScene checks again that the plugin may run. It
    starts the program, in the plugin's data folder, and sends it the run
-   line on stdin.
+   line on stdin. (A WebAssembly plugin's run is a call instead: see
+   [WebAssembly plugins](#webassembly-plugins).)
 3. The plugin works, and writes progress and log lines to stdout. Activity
    shows "Starting <name>", then each stage the plugin names.
 4. The plugin writes one result line, or one error line, and exits.
@@ -192,8 +205,9 @@ from a page. AutoScene then says so, and a page's `actions.run` gives
 plugin wait or run, with "<name> is running. Wait for it to finish, or
 stop it in Activity."
 
-There is no time limit. A plugin may run as long as it needs, and the
-person can stop it in Activity.
+A program has no time limit: it may run as long as it needs, and the
+person can stop it in Activity. A WebAssembly plugin's run has one (see
+[Stop and limits](#stop-and-limits)).
 
 ### Cancel and the end of a run
 
@@ -227,6 +241,310 @@ Each export action can be turned on in the plugin's settings, under
 then runs once an export finishes with every clip made: never after an
 export that failed, was cancelled, or made only some of its clips. It runs
 as a job of its own, so a plugin never fails an export or holds it up.
+
+## WebAssembly plugins
+
+A plugin of runtime `wasm` (version 2) is a WebAssembly component (WASI
+0.2) of the world `autoscene:plugin@1.0.0`, which
+`crates/as-plugin/wit/plugin.wit` defines. AutoScene runs it in a sandbox
+of its own: a component sees only its own folder and what its permissions
+give it, and nothing else of the computer. AutoScene checks and compiles
+the component when it checks the package (or the folder, when it is
+loaded), and keeps the compiled code. A component never runs as a program,
+and no code of it runs before its first run does.
+
+A run is one call: AutoScene calls the component's `run` with what the run
+line of a program would hold (see [The run line](#the-run-line)), and the
+component returns the message to show, or an error. While it runs it may
+call AutoScene's `host`: report its progress, write a line to its log, ask
+whether the person pressed Stop, and read one of its secret settings.
+
+```wit
+export run: func(request: run-request) -> result<option<string>, run-error>;
+```
+
+It may have export actions, commands, settings, secret settings and
+pages, as any plugin of version 2. `asp init --wasm rust` and `asp init
+--wasm python` make one to start from, and `asp check` checks a component
+as AutoScene does. The examples `discord-notify-wasm` (Rust) and
+`clip-list-py` (Python), in `examples/plugins`, show one each.
+
+### Quick start in Rust
+
+1. Install [rustup](https://rustup.rs) and `asp` (see [Quick
+   start](#quick-start)). Then:
+
+   ```bash
+   asp init my-plugin --wasm rust
+   cd my-plugin
+   cargo build --release --target wasm32-wasip2
+   ```
+
+   `rust-toolchain.toml`, which asp writes, names the Rust and the
+   `wasm32-wasip2` target; the first build fetches both.
+2. Copy the component into the plugin's folder, `plugin/`. In PowerShell:
+
+   ```powershell
+   Copy-Item target/wasm32-wasip2/release/my_plugin.wasm plugin/plugin.wasm
+   ```
+
+   In a shell on Linux or macOS:
+
+   ```bash
+   cp target/wasm32-wasip2/release/my_plugin.wasm plugin/plugin.wasm
+   ```
+
+   The file cargo builds is named after the crate; the `README.md` asp
+   wrote names it.
+3. Check it: `asp check plugin`.
+4. In AutoScene, turn on **Settings → Plugins → Allow plugins that
+   AutoScene has not reviewed**, then **Load a folder…** and pick
+   `plugin`. AutoScene runs the component that is there at each run: a new
+   build counts at the next one. Run **Say hello** from the palette.
+5. Pack it to share: `asp pack plugin my-plugin.asp`, and sign it (see
+   [Signing](#signing-with-asp)).
+
+The crate pins `wit-bindgen` (the bindings of `wit/plugin.wit`) exactly.
+For WASI beyond what Rust's standard library reaches, such as wasi:http for
+a request, add `wasip2`, as `discord-notify-wasm` does.
+
+### Python
+
+```bash
+asp init my-plugin --wasm python
+cd my-plugin
+uv tool run --from componentize-py==0.25.1 componentize-py -d wit -w plugin componentize app -o plugin/plugin.wasm
+asp check plugin
+```
+
+`app.py` is the plugin: a class `WitWorld` with a method `run`, which
+returns the message or raises `Err(types.RunError(…))`. The component
+holds a whole Python, about 18 MB. A Python plugin can't use the network in
+this version.
+
+### JavaScript
+
+`asp init` has no template for JavaScript yet.
+[jco](https://github.com/bytecodealliance/jco) 1.41.0 builds a component
+from a script against `wit/plugin.wit` (take it from either template):
+
+```bash
+jco componentize app.js --wit wit --world-name plugin -o plugin/plugin.wasm
+```
+
+Without the network permission, add `-d http -d fetch-event`, so that it
+doesn't import wasi:http. With the QuickJS engine, pass `--backend quickjs
+--backend-qjs-disable-async` both: without the second, the component needs
+a newer AutoScene.
+
+### runtime of a WebAssembly plugin
+
+```json
+"runtime": {
+  "type": "wasm",
+  "component": "plugin.wasm",
+  "limits": { "memoryMb": 512, "minutes": 30 }
+}
+```
+
+| Field | What it is |
+|---|---|
+| `component` | The component: a `.wasm` file in the package, by its [package path](#paths). |
+| `limits.memoryMb` | The memory a run may use in all, in MB: 16 to 4096, 512 if left out. |
+| `limits.minutes` | How long a run may take: 1 to 1440 minutes, 30 if left out. |
+
+A WebAssembly plugin names no `command` ("A WebAssembly plugin names its
+component, not a command.") and can't use the graphics card ("A
+WebAssembly plugin can't use the graphics card."). It runs the same on every
+platform, so `platforms` only limits where AutoScene installs it, which
+`asp pack` warns of. `limits` on any other runtime is ignored, with a
+warning.
+
+### What a run sees
+
+| | In the sandbox |
+|---|---|
+| `/data` | The plugin's data folder (`plugin-data/<id>`), to read and write. A run starts there. |
+| `/export` | The export's folder, with `exports:read` to read and with `exports:write` to read, change and delete in. |
+| `/project` | The project's folder, with `project:read`, to read. |
+| Its request | The run's `run-request`: the plugin, the app, the settings (sorted by key, never a secret), the action, and the project and export it runs on, with the names of the export's clips. A clip's or a joined file's `path` is `/export/<name>` while `/export` is there, else none. |
+| Its environment | `AUTOSCENE_PLUGIN_ID` and `AUTOSCENE_PROTOCOL`, nothing else. Its one argument is its id. |
+| stdin | Empty. |
+| Clocks and random | Yes; at most 1 MB of random bytes at once. |
+| Everything else | None: no other folder (no `/tmp`: use `/data`), no socket, no name lookup, no program, no FFmpeg, no episode file. |
+
+A run starts in `/data`, but use absolute paths, such as `/data/state.json`:
+not every toolchain honours the folder a run starts in. A folder of the
+export or the project that is gone when the run starts fails the run ("The
+export's folder is gone."). Its secret settings come through
+`host.secret(key)`, never in the request: AutoScene reads them from the
+keychain when the run starts, and only the plugin's own reach it.
+`/data/page-state.json` is what its pages keep (see [What a page
+keeps](#what-a-page-keeps)): a component may read it and must not write it,
+though nothing stops it.
+
+A run started from a page gets `trigger` `page` and what the page handed
+it as `input`, JSON text of at most 64 KiB (see
+[actions.run](#what-a-page-may-ask)). A WebAssembly plugin's pages work as
+any plugin's, but `service.request` is refused ("service.request needs a
+plugin that runs a service."): a WebAssembly plugin has no service in this
+version.
+
+### What a run may do
+
+Its permissions are walls here, not promises:
+
+| Permission | A WebAssembly plugin |
+|---|---|
+| (always) | `/data`, clocks, random, its log; the names of its project, export and clips |
+| `exports:read` | `/export`, read only: the export's whole folder |
+| `exports:write` | `/export`, to read, change and delete in |
+| `project:read` | `/project`, read only: the project's folder |
+| `network` and `network.hosts` | Requests over wasi:http to those hosts only (see [Network](#network)) |
+| no `network` | Every request over wasi:http is refused; sockets are off in any case |
+
+The review says so: it starts with "It runs in a sandbox. It sees only its
+own folder and what is listed here.", heads the list "What it may do
+(enforced)", and adds "It can't start programs or see your other files.",
+the plugin's limits ("It may use up to 512 MB of memory. A run stops after
+30 minutes.") and "Not limited: what it sends to those sites, and how much
+it writes." Under how it runs it says "A WebAssembly plugin. AutoScene
+checked and compiled it." Settings → Plugins marks it **Sandboxed**. An
+update that leaves the sandbox says so in red: "The installed version ran
+in a sandbox. This version runs with your user rights."
+
+**What the sandbox doesn't limit:**
+
+- how much a plugin writes under `/data`, or under `/export` with
+  `exports:write`: there is no quota;
+- what it sends to the hosts it names;
+- the memory AutoScene keeps for it, which is bounded (100,000 open files,
+  streams and timers at once) but not counted in `limits.memoryMb`;
+- a hole in wasmtime, the engine that runs it, would be a way out. Its
+  version is pinned exactly and kept current.
+
+### Network
+
+A WebAssembly plugin makes its requests over wasi:http, and AutoScene sends
+each one itself, with the rules of
+[`net.fetch`](#through-autoscene-to-the-internet):
+
+- `https://` only, on port 443, to a host `network.hosts` names exactly
+  (no wildcards), which the person agreed to. A WebAssembly plugin's hosts
+  must be public names: one such as `localhost`, `nas.lan` or `10.0.0.1`
+  refuses it ("A WebAssembly plugin reaches only public host names:
+  nas.lan isn't one.").
+- Only the public addresses of the name are dialed: never this computer,
+  the local network or a link-local address. The certificate is checked
+  against Mozilla's roots, never the system's.
+- A redirect isn't followed: the plugin gets the 3xx, and its next
+  request is checked like the first.
+- It can't set `Host` or the other headers that say how a request travels.
+- At most 8 requests at once, answers being read included; one more gets
+  `connection-limit-reached`.
+- Timeouts: 10 seconds for the name, 30 for the connection, 60 for the
+  answer's head and 60 between two parts of its body. A plugin may ask for
+  shorter ones, never longer.
+- No proxy: a computer that reaches the internet only through one can't
+  reach it this way.
+- Stop ends each request at once, and no request starts after it.
+
+A refused request fails with wasi:http's `HTTP-request-denied`, and the
+plugin decides what to say.
+
+### Stop and limits
+
+- **Stop** makes `host.cancelled()` true. A plugin that still runs 5
+  seconds later is ended: interrupted where its code runs, or dropped
+  where it waits for AutoScene or WASI (a sleep, a read, a request).
+  Activity then says "Cancelled.", also when it returned within those 5
+  seconds. Turning the plugin off, uninstalling it, turning off "Allow
+  plugins that AutoScene has not reviewed" and quitting AutoScene stop it
+  the same way.
+- **Time:** a run still going after `limits.minutes` is ended the same
+  way: "<name> ran for longer than 30 minutes and was stopped."
+- **Memory:** all its memories and tables together may grow to
+  `limits.memoryMb`. A run that needs more is ended: "<name> needed more
+  than 512 MB of memory and was stopped." Its stack may use 1 MB.
+- A run ends when `run` returns: nothing of it keeps running, and nothing
+  waits 10 seconds after its result as for a program.
+
+The first run of a component AutoScene hasn't compiled yet, or whose
+compiled code is gone, shows "Getting <name> ready" while it compiles.
+That counts in neither limit.
+
+### Errors and the log
+
+- **The result:** `ok` with a message shows it as a program's result line
+  does: its first line, at most 300 characters. `ok` with none shows
+  nothing more.
+- **An error:** `err` shows its `message` as a failed job; its `detail` goes
+  to the plugin's log and AutoScene's. An empty message shows "<name>
+  failed.".
+- **A trap** (a Rust panic, say) is a crash: "<name> stopped unexpectedly."
+  The trap and its WebAssembly backtrace are in the plugin's log, after
+  `[host] trapped:`.
+- **The log:** what it writes to stdout and stderr goes to the plugin's
+  log, marked `[stdout]` and `[stderr]`, and so do `host.log`'s lines,
+  marked with their level. A line longer than 64 KB is cut.
+- `host.progress` shows at most 10 reports a second in Activity; the last
+  one always shows.
+
+### Check a component with asp check
+
+```text
+asp check <plugin.wasm | plugin-folder | in.asp>
+```
+
+`asp check` checks a component as AutoScene does before it runs it, and
+runs none of it: a plugin folder's or a package's against its
+`plugin.json`, a bare `.wasm` file on its own. It lists what the component
+imports, with the permission each needs to do anything:
+
+```text
+plugin.wasm: a WebAssembly component of autoscene:plugin@1.0 (99 KB)
+imports:
+  autoscene:plugin/host@1.0.0
+  …
+  wasi:http/outgoing-handler@0.2.12   needs "network"
+  wasi:http/types@0.2.12              needs "network"
+```
+
+It warns of a component that imports wasi:http without the network
+permission ("It imports wasi:http but doesn't ask for network: every
+request it makes is refused.") and of the permission without the import.
+It fails, with exit code 1, on what AutoScene would refuse: a file that
+isn't a component ("Build it for wasm32-wasip2 or with componentize-py."),
+one larger than 64 MB, one that imports what AutoScene doesn't offer or
+doesn't export `run`, and one built for a newer world or WASI, which it
+names with what this AutoScene offers. `asp pack` and `asp verify` run the
+same check, and `asp verify` adds "Runs in a sandbox.".
+
+### Staying compatible
+
+- **The world grows only by functions.** A 1.x world adds functions marked
+  `@since`; a record, variant or enum that `run` takes or returns never
+  changes once released, so a component built against 1.0 runs in every
+  AutoScene of 1.x. `crates/as-plugin/wit-frozen/` keeps each released
+  world as it shipped, and a test runs a component built against it.
+- **An import AutoScene doesn't offer refuses the plugin:** "The plugin
+  uses <import>, which AutoScene doesn't offer." It offers its world and
+  WASI 0.2, up to 0.2.12 in this version.
+- **A newer world or WASI needs a newer AutoScene.** So does a component
+  that uses the component model's async features (WASI 0.3): build it for
+  WASI 0.2 (`wasm32-wasip2`). A WASI 0.1 module (`wasm32-wasip1`) isn't a
+  component, and is refused.
+
+### Reproducible builds
+
+A Rust component builds the same, byte for byte, from the same source,
+lock and Rust, on one system and in one folder: the template's
+`Cargo.lock`, `rust-toolchain.toml` and release profile see to it. A build
+on another system or in another folder can differ, because a component
+keeps the paths of its source files for its panic messages (`src\lib.rs`
+on Windows, `src/lib.rs` elsewhere). Python and JavaScript builds don't:
+two builds of one source differ. The plugin catalog builds each plugin
+from its source itself, so it doesn't depend on that.
 
 ## The protocol (versions 1 and 2)
 
@@ -1228,13 +1546,14 @@ did, and with `"manifestVersion": 2` it reads the same, but for one warning
 | A setting of the type `secret` | Skipped, with the warning `Skipped the setting "<key>": secret settings need "manifestVersion": 2.` | Read, when something can ask for it (see [Secret settings](#secret-settings)). |
 | `"runtime": { "type": "service" }` | Refused: `The plugin's runtime.type "service" needs "manifestVersion": 2.` | Read; it needs protocol 2. |
 | `"runtime": { "type": "none" }` | Refused, as `service` is. | Read. |
-| A host in `network.hosts` that can't be on the internet | Read. | Read, with the warning `net.fetch can't reach <host>.` |
+| `"runtime": { "type": "wasm" }` | Refused, as `service` is. | Read (see [WebAssembly plugins](#webassembly-plugins)). |
+| A host in `network.hosts` that can't be on the internet | Read. | Read, with the warning `net.fetch can't reach <host>.`; refused for a WebAssembly plugin (see [Network](#network)). |
 | `resources` | Skipped, with the warning `Skipped resources: they need "manifestVersion": 2.` | Read (see [Large files](#large-files)). |
 
 AutoScene 1.0 reads only version 1 and protocol 1: it refuses a version 2
 manifest, and protocol 2, with "This plugin needs a newer AutoScene." So
 does this AutoScene with a `manifestVersion` above 2, a protocol above 2,
-or a `runtime.type` it doesn't know (`wasm`, say).
+or a `runtime.type` it doesn't know.
 
 ### Fields
 
@@ -1250,7 +1569,7 @@ or a `runtime.type` it doesn't know (`wasm`, say).
 | `repository` | no | An `https://` link to its source, which its menu opens: a GitHub repository (`https://github.com/<owner>/<repo>`, or a `/tree/…` or `/blob/…` in it) at once, any other link after the person says yes. |
 | `engines` | yes | `autoscene`: the AutoScene versions it works with. `protocol`: the protocol its program speaks, `1` or `2`; `2` for a service, and for pages that start runs. |
 | `platforms` | no | The platforms it runs on. Left out or empty: everywhere it has a command for. |
-| `runtime` | yes | `type`: `"process"`, or in version 2 `"service"` or `"none"`. `command`: the command per platform. `gpu`: `true` when it uses the graphics card (default `false`). A plugin of `none` has neither. |
+| `runtime` | yes | `type`: `"process"`, or in version 2 `"service"`, `"none"` or `"wasm"`. `command`: the command per platform. `gpu`: `true` when it uses the graphics card (default `false`). A plugin of `none` has neither. A plugin of `wasm` has `component` and `limits` instead (see [its runtime](#runtime-of-a-webassembly-plugin)). |
 | `permissions` | no | What it says it does (see below). |
 | `network` | no | `{ "hosts": [...] }`: where it connects, with the `network` permission. |
 | `contributes` | no | Its `exportActions`, `commands`, `settings` and, in version 2, `pages`. |
@@ -1281,11 +1600,12 @@ AutoScene."
 
 A plugin of runtime `none` runs no program: it has no `command`, `gpu` or
 export actions and commands ("A plugin whose runtime.type is none runs no
-program: remove runtime.command."), works on every platform (its
-`platforms` are ignored, with a warning), and needs a page. The other
-runtimes need a `command`; a `service` without a page gets the warning "Its
-service never starts: a service runs while one of its pages is open, and it
-has none."
+program: remove runtime.command."), works on every platform (its `platforms`
+are ignored, with a warning), and needs a page. A WebAssembly plugin names
+its component instead (see [its runtime](#runtime-of-a-webassembly-plugin)).
+The other runtimes need a `command`; a `service` without a page gets the
+warning "Its service never starts: a service runs while one of its pages is
+open, and it has none."
 
 `command` maps a platform to the command that starts the plugin there. Its
 keys are the platforms (`windows-x86_64`, `windows-aarch64`,
@@ -1355,15 +1675,16 @@ rights: it can read, change and send anything you can." and the heading
 "What it says it does (not enforced)": AutoScene checks the program's calls
 against it, but not what the program does itself. For a plugin of runtime
 `none`, it shows under "What its pages may use", with "AutoScene checks
-these each time its pages ask." An update that names a permission or a host
-the version before didn't marks it "New" in its review. The review also
-says how the plugin runs (a uv script fetches Python and its packages on
-its first run; a page-only plugin "Runs no program. Its pages run in a
-sandbox."; a service "Keeps its program running while its page is open."),
-that AutoScene gets uv first when it isn't here yet and how much that
-downloads, and what the plugin's large files take and where they come
-from. It lists its pages and where they show, and shows the plugin's
-`description` under "In its own words".
+these each time its pages ask." For a WebAssembly plugin, the review says
+that they are enforced (see [What a run may do](#what-a-run-may-do)). An
+update that names a permission or a host the version before didn't marks it
+"New" in its review. The review also says how the plugin runs (a uv script
+fetches Python and its packages on its first run; a page-only plugin "Runs
+no program. Its pages run in a sandbox."; a service "Keeps its program
+running while its page is open."), that AutoScene gets uv first when it
+isn't here yet and how much that downloads, and what the plugin's large
+files take and where they come from. It lists its pages and where they show,
+and shows the plugin's `description` under "In its own words".
 
 What each permission lets a plugin ask AutoScene for:
 
@@ -1372,7 +1693,8 @@ What each permission lets a plugin ask AutoScene for:
 - `project:read`: `project.get`, and `files.resolve` of an episode.
 - `network`: `net.fetch`, to the hosts of `network.hosts`.
 - `exports:write`: nothing AutoScene answers yet; a program says with it
-  that it writes beside the exported clips.
+  that it writes beside the exported clips. A WebAssembly plugin gets the
+  export's folder to change with it.
 
 A permission this AutoScene doesn't know refuses the plugin: it may stand
 for more than the person agreed to.
@@ -1381,7 +1703,8 @@ for more than the person agreed to.
 scheme, no port), shown under "Talks to the internet". It is ignored, with
 a warning, without the `network` permission. In version 2, a host
 `net.fetch` can never reach gets a warning (see
-[Through AutoScene to the internet](#through-autoscene-to-the-internet)).
+[Through AutoScene to the internet](#through-autoscene-to-the-internet)),
+and refuses a WebAssembly plugin (see [Network](#network)).
 
 ### contributes
 
@@ -1494,7 +1817,7 @@ a scope this AutoScene doesn't know, a platform this AutoScene doesn't
 know, and in a version 1 manifest `pages`, `banner`, `resources` and
 secret settings, which need `"manifestVersion": 2`. A higher
 `manifestVersion` or `engines.protocol`, or a `runtime.type` other than
-`process`, `service` and `none`, needs a newer AutoScene.
+`process`, `service`, `none` and `wasm`, needs a newer AutoScene.
 
 The review lists the warnings under "Skipped in its plugin.json", and so
 do the plugin's settings.
@@ -1532,7 +1855,12 @@ AutoScene goes by the lock, never by what the zip says of itself. The zip
 must hold exactly the listed files (folders only on their way to them),
 each of its listed size and SHA-256. Whether a file may run comes from its
 `exec`, never from the zip: on macOS and Linux a program unpacks as 0755,
-everything else as 0644. Refused too: encrypted entries, links,
+everything else as 0644. A WebAssembly plugin's component is never
+marked to run ("The plugin's files.lock marks plugin.wasm to run. A
+component isn't a program: remove its exec flag."), and a package that
+holds precompiled code, a `.cwasm` file, is refused: "The package holds
+precompiled code (plugin.cwasm). Ship the .wasm file: AutoScene compiles it
+itself." Refused too: encrypted entries, links,
 compression other than stored or deflate, data before the zip, local
 headers that disagree with the zip's directory, and names that differ only
 in case.
@@ -1559,6 +1887,7 @@ top.
 | `files.lock.minisig` | 4 KB |
 | `author.pub` | 1 KB |
 | `plugin.json` | 256 KB |
+| A WebAssembly plugin's component | 64 MB |
 
 ### Making a package with asp pack
 
@@ -1579,7 +1908,9 @@ AutoScene would there: it warns of each platform the plugin can't run on,
 and fails when that is all of them. It warns of what its manifest's
 version skips (pages or a secret setting in version 1, say). A plugin made
 for another AutoScene than the one asp comes with gets a warning, not an
-error. It checks the package as
+error. A WebAssembly plugin's component gets the checks of
+[asp check](#check-a-component-with-asp-check): what AutoScene would refuse
+fails the pack, and its warnings are printed. It checks the package as
 AutoScene would before it writes it, so a package AutoScene would refuse
 is never written.
 
@@ -1719,11 +2050,14 @@ off, such plugins don't run, their actions and pages aren't offered, their
 runs stop, their pages close and their services stop. The review can turn
 it on, after the same question.
 
-Trust is about who made a plugin, not about what it may do. A page runs in
-a sandbox whatever its trust: it gets only what it asks AutoScene for, and
-AutoScene checks its permissions each time it asks. A program, a run's or a
-service's, still runs with the person's rights, whatever its trust (see
-[What AutoScene enforces](#what-autoscene-enforces)).
+Trust is about who made a plugin, not about what it may do. A WebAssembly
+plugin runs in its sandbox whatever its trust, and still needs "Allow
+plugins that AutoScene has not reviewed", and its name typed, when AutoScene
+hasn't reviewed it. A page runs in a sandbox whatever its trust: it gets
+only what it asks AutoScene for, and AutoScene checks its permissions each
+time it asks. A program, a run's or a service's, still runs with the
+person's rights, whatever its trust (see [What AutoScene
+enforces](#what-autoscene-enforces)).
 
 Signing doesn't make a plugin safe. It makes its updates come from the same
 author: a Pinned plugin takes an update only when it is signed with its
@@ -1835,14 +2169,15 @@ plugin and what is accepted. In short:
 
 ## What AutoScene enforces
 
-What holds a plugin depends on what runs: a program, or a page.
+What holds a plugin depends on what runs: a program, a WebAssembly
+component, or a page.
 
-| | A program (`process`, `service`) | A page (any runtime) |
-|---|---|---|
-| Its calls into AutoScene | Checked, each one | Checked, each one |
-| Files | Its own: whatever the person may read and write | Only `files.resolve` (with a permission), `files.open` and `files.save` (the person's step) |
-| The internet | `net.fetch`: checked. Its own connections: not | Only `net.fetch`; the CSP blocks the rest, but for the side channels below |
-| The rest of the computer | Whatever the person may do | Nothing: the frame's sandbox |
+| | A program (`process`, `service`) | A component (`wasm`) | A page (any runtime) |
+|---|---|---|---|
+| Its calls into AutoScene | Checked, each one | Only its progress, its log, Stop and its own secrets | Checked, each one |
+| Files | Its own: whatever the person may read and write | `/data`, and the export's and the project's folders as its permissions give them | Only `files.resolve` (with a permission), `files.open` and `files.save` (the person's step) |
+| The internet | `net.fetch`: checked. Its own connections: not | Only wasi:http to its hosts, checked; no socket | Only `net.fetch`; the CSP blocks the rest, but for the side channels below |
+| The rest of the computer | Whatever the person may do | Nothing: no program, no other file, no environment | Nothing: the frame's sandbox |
 
 **What AutoScene checks**, on every call of a page, a run and a service
 (see [Host methods](#host-methods)), before it reads anything:
@@ -1882,6 +2217,10 @@ could send. The numbers for macOS (WKWebView) and Linux (WebKitGTK) come
 from the red team's run in CI on all three systems, and go here once it has
 run.
 
+**What a component may still do**: write as much as it likes in its
+folders, and send what it reads to the hosts it names (see
+[What a run may do](#what-a-run-may-do)).
+
 **What nothing checks**: what a plugin's program does itself. It reads,
 changes and sends what the person can, whatever its permissions say, and
 what it sets up outside AutoScene may outlive it (see
@@ -1898,11 +2237,14 @@ asp keygen <dir> [--force] [--unencrypted]
 asp pack <plugin-folder> <out.asp>
 asp sign <in.asp> --key <asp.key> [--out <out.asp>]
 asp verify <in.asp> [--catalog <index.json> [--online-key <RW…>]… [--offline-key <RW…>]…]
-asp init <dir> [--page | --service | --action] [--id <id>] [--name <name>]
+asp init <dir> [--page | --service | --action | --wasm <rust|python>] [--id <id>] [--name <name>]
+asp check <plugin.wasm | plugin-folder | in.asp>
 ```
 
-`asp init` is under [Developing a plugin](#developing-a-plugin), and `asp
-catalog`, which keeps the catalog, in [CATALOG.md](CATALOG.md#asp-catalog).
+`asp init` is under [Developing a plugin](#developing-a-plugin), `asp
+check` under [WebAssembly plugins](#check-a-component-with-asp-check), and
+`asp catalog`, which keeps the catalog, in
+[CATALOG.md](CATALOG.md#asp-catalog).
 
 1. **Make a key once**, outside any plugin folder:
 
@@ -1935,12 +2277,13 @@ catalog`, which keeps the catalog, in [CATALOG.md](CATALOG.md#asp-catalog).
    ```
 
    It prints Reviewed, Pinned with the key's id, or Unreviewed, with the
-   warnings AutoScene would show. `--catalog` judges it by a catalog's
-   `index.json` (with its `index.json.minisig` beside it), as an AutoScene
-   that holds no catalog takes it: Reviewed when it lists the package's
-   lock, and an error when it withdrew the version. `--online-key` and
-   `--offline-key` add catalog keys to AutoScene's own, to try a catalog of
-   your own.
+   warnings AutoScene would show. For a WebAssembly plugin it checks the
+   component too, and adds "Runs in a sandbox.". `--catalog` judges it by a
+   catalog's `index.json` (with its `index.json.minisig` beside it), as an
+   AutoScene that holds no catalog takes it: Reviewed when it lists the
+   package's lock, and an error when it withdrew the version. `--online-key`
+   and `--offline-key` add catalog keys to AutoScene's own, to try a catalog
+   of your own.
 
 The keys and the signature are minisign's formats; asp signs the prehashed
 way, which is all AutoScene takes.
@@ -1956,7 +2299,7 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
 - **Start with `asp init`**:
 
   ```bash
-  asp init my-plugin [--page | --service | --action] [--id dev.yourname.my-plugin] [--name "My Plugin"]
+  asp init my-plugin [--page | --service | --action | --wasm <rust|python>] [--id dev.yourname.my-plugin] [--name "My Plugin"]
   ```
 
   It makes a plugin in a new folder (or an empty one) that packs, loads and
@@ -1968,6 +2311,12 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
     (`main.py`, with `autoscene.py` and `main.py.lock`) to count words.
   - `--action`: a process plugin of protocol 2 with the export action
     "Count the clips" (`main.py`, `autoscene.py`, `main.py.lock`).
+  - `--wasm rust` and `--wasm python`: a WebAssembly plugin with the
+    command "Say hello". Its source (`src/lib.rs` with `Cargo.toml`,
+    `Cargo.lock` and `rust-toolchain.toml`, or `app.py`) and its world,
+    `wit/plugin.wit`, sit beside the plugin's folder, `plugin/`, which holds
+    `plugin.json` and, once built, `plugin.wasm`. Load, check and pack
+    `plugin` (see [WebAssembly plugins](#webassembly-plugins)).
 
   Each form also writes a `README.md` with the next steps,
   `.autoscene/plugin.schema.json` and `.vscode/settings.json`, so the
@@ -1983,7 +2332,8 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
   plugins, so turning the plugin off and on shows a new action, setting or
   page. A permission or a host it asks for since, or a changed
   `runtime.type`, counts only once the folder is loaded again. A uv script
-  still needs its `.lock`.
+  still needs its `.lock`. A WebAssembly plugin's component is compiled
+  again once it changed.
 - **Reload a page** from its ⋯ menu (**Reload the page**), or a right-click
   on it, to load what you changed. Its service runs on: turn the plugin off
   and on to start it again.
@@ -2006,6 +2356,9 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
   marked `[stdout]`, `[stderr]` and `[<level>]` for its log lines;
   AutoScene's own are marked `[host]`, `[result]` and `[failed]`, with the
   exit status at the end, and a call and its answer `[call]` and `[reply]`.
+  A WebAssembly plugin's lines are marked the same way, and a trap
+  `[host] trapped:`, with its backtrace (see
+  [Errors and the log](#errors-and-the-log)).
   A log over 1 MB is moved to `<id>.log.1` when the next run starts. A
   service has a log of its own (see [Services](#services)).
 - **AutoScene's own log**, `logs/app.log` in its data folder, has the
@@ -2086,6 +2439,7 @@ AutoScene's data folder is `%LOCALAPPDATA%\AutoScene` on Windows,
 | `plugins/<id>/<version>+<8 hex>/` | An installed package's files, with its `files.lock` (and signature). |
 | `plugin-data/<id>/` | The plugin's own files; each run and its service start there. |
 | `plugin-data/<id>/page-state.json` | What `state.*` keeps (see [What a page keeps](#what-a-page-keeps)). |
+| `cache/plugin-code/<id>/` | A WebAssembly plugin's compiled code. AutoScene makes it again when it's gone. |
 | `logs/plugins/<id>.log` | Its log, and the one before in `<id>.log.1`. |
 | `logs/plugins/<id>.service.log` | Its service's log, and the one before in `<id>.service.log.1`. |
 | `cache/plugin-resources/<id>/` | The large files it names (see [Large files](#large-files)). |
@@ -2095,12 +2449,12 @@ AutoScene's data folder is `%LOCALAPPDATA%\AutoScene` on Windows,
 | `runtimes/uv-cache/`, `runtimes/uv-python/` | What uv fetched for scripts: their packages, and Pythons. |
 | `library.db` | In the `settings` table: its record (`plugin.<id>`), the settings the person changed (`plugin_settings.<id>`), the runtime the person agreed to and the names of the secrets set (`plugin_extra.<id>`), the id the keychain keeps this data folder's secrets under (`plugins_keychain`), and what AutoScene took of the catalog (`plugins_catalog`). |
 
-The values of secret settings are in the system's keychain, not in the
-data folder (see [Secret settings](#secret-settings)). An uninstall
-removes the plugin's files, its rows and its secrets; its data folder,
-with `page-state.json`, only when the person asks (**Delete what it kept
-too**). AutoScene 1.0 doesn't know `plugin_extra.<id>` or the keychain: a
-plugin uninstalled there leaves both, and a newer AutoScene removes them
+The values of secret settings are in the system's keychain, not in the data
+folder (see [Secret settings](#secret-settings)). An uninstall removes the
+plugin's files, its compiled code, its rows and its secrets; its data
+folder, with `page-state.json`, only when the person asks (**Delete what it
+kept too**). AutoScene 1.0 doesn't know `plugin_extra.<id>` or the keychain:
+a plugin uninstalled there leaves both, and a newer AutoScene removes them
 when it starts.
 
 AutoScene checks a package's files when it installs them. Afterwards it
@@ -2111,10 +2465,17 @@ folders it has no record of.
 
 ## Not in this version
 
-- **WebAssembly plugins**: `runtime.type` `wasm`, a plugin whose
-  permissions are enforced for its program too, needs a newer AutoScene.
 - **Shortcuts** for plugin commands.
+- **A WebAssembly plugin that stays and answers calls**, as a service
+  does: a WebAssembly plugin may have pages, but not a service.
+- **The network for Python WebAssembly plugins.**
+- **A JavaScript template** for `asp init --wasm` (see
+  [JavaScript](#javascript)).
+- **Proxies for WebAssembly network plugins**: their requests never go
+  through one.
 - **WebAssembly and workers inside pages**: a page's CSP allows neither.
 - **An npm package of the SDK**: a page gets `sdk.js` and `theme.css` from
   AutoScene at `/_as/`, and their types from `asp init`.
 - **A light theme for pages**: a page gets AutoScene's dark theme only.
+- **Extra walls for process plugins** (Windows AppContainer, Linux
+  Landlock). If they come, they will be called hardening, never a sandbox.

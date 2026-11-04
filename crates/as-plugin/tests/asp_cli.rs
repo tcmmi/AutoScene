@@ -1833,23 +1833,49 @@ fn squeezed(requirement: &str) -> String {
     requirement.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase()
 }
 
+/// The folder `AUTOSCENE_WASM_EXAMPLES` names: the examples, with each
+/// WebAssembly one's component built into its `plugin/plugin.wasm` (the CI
+/// job `wasm-examples` builds them). None when it isn't set.
+fn built_wasm_examples() -> Option<PathBuf> {
+    std::env::var_os("AUTOSCENE_WASM_EXAMPLES").filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
 #[test]
 fn the_example_plugins_pack_and_parse() {
     let tmp = tempfile::tempdir().unwrap();
     let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/plugins");
+    let built = built_wasm_examples();
     let app = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
     // Each is checked by how it runs: an example added here is added below.
     let runtimes = [
+        ("clip-list-py", RuntimeKind::Wasm),
         ("discord-notify", RuntimeKind::Process),
+        ("discord-notify-wasm", RuntimeKind::Wasm),
         ("hello-export", RuntimeKind::Process),
         ("hello-page", RuntimeKind::None),
         ("hello-service", RuntimeKind::Service),
     ];
     assert_eq!(names(&examples), runtimes.map(|(name, _)| name));
     for (name, runtime) in runtimes {
+        // A WebAssembly example keeps its source beside the plugin folder
+        // AutoScene loads, `plugin/`, which holds its component once built.
+        let folder = match (runtime, &built) {
+            (RuntimeKind::Wasm, Some(built)) => built.join(name).join("plugin"),
+            (RuntimeKind::Wasm, None) => {
+                // Not built here: its plugin.json, as AutoScene reads it.
+                let file = examples.join(name).join("plugin/plugin.json");
+                let parsed = manifest::parse(&fs::read(file).unwrap(), &app).unwrap();
+                assert!(parsed.warnings.is_empty(), "{name}: {:?}", parsed.warnings);
+                let m = parsed.manifest;
+                assert_eq!((m.id.as_str(), m.runtime.kind), (format!("dev.autoscene.{name}").as_str(), runtime));
+                assert_eq!((m.manifest_version, m.engines.protocol), (2, 2), "{name}");
+                continue;
+            }
+            _ => examples.join(name),
+        };
         // docs/PLUGINS.md packs them as they are: without a warning.
         let out = tmp.path().join(format!("{name}.asp"));
-        assert_eq!(asp(&["pack", text(&examples.join(name)), text(&out)]).warnings(), "", "{name}");
+        assert_eq!(asp(&["pack", text(&folder), text(&out)]).warnings(), "", "{name}");
         let into = tmp.path().join(name);
         let lock = package::unpack(&out, &into).unwrap().lock;
         let parsed = manifest::parse(&fs::read(into.join("plugin.json")).unwrap(), &app).unwrap();
@@ -1882,12 +1908,38 @@ fn the_example_plugins_pack_and_parse() {
                 assert!(!into.join("main.py").exists(), "{name}");
                 assert!(!m.pages.is_empty(), "{name}");
             }
-            // No example runs in the sandbox yet: one that does says here what it packs.
-            RuntimeKind::Wasm => unreachable!("{name} is a WebAssembly plugin"),
+            // One component, the same on every platform, never marked to run.
+            RuntimeKind::Wasm => {
+                assert_eq!(m.launches().len(), 6, "{name}");
+                for (platform, launch) in m.launches() {
+                    let launch = launch.unwrap();
+                    assert_eq!(launch, Launch::Wasm { component: "plugin.wasm".into() }, "{name} on {platform}");
+                    package::check_launch(&lock, &launch, platform).unwrap();
+                }
+                let listed: Vec<_> = lock.files.iter().map(|f| (f.path.as_str(), f.exec)).collect();
+                assert_eq!(listed, [("plugin.json", false), ("plugin.wasm", false)], "{name}");
+            }
         }
         // Each page is a file of the package, as AutoScene checks it.
         package::check_pages(&into, Some(&lock), &m.pages).unwrap();
-        assert_eq!(asp(&["verify", text(&out)]).ok(), format!("{} {}: Unreviewed\n", m.id, m.version));
+        let sandboxed = if m.is_sandboxed() { "Runs in a sandbox.\n" } else { "" };
+        assert_eq!(asp(&["verify", text(&out)]).ok(), format!("{} {}: Unreviewed\n{sandboxed}", m.id, m.version));
+    }
+}
+
+/// The WebAssembly examples are built against the world this AutoScene
+/// serves: each `wit/plugin.wit` is the crate's, byte for byte.
+#[test]
+fn the_examples_carry_the_current_world() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let world = fs::read(crate_dir.join("wit/plugin.wit")).unwrap();
+    let examples = crate_dir.join("../../examples/plugins");
+    let with_world: Vec<String> =
+        names(&examples).into_iter().filter(|name| examples.join(name).join("wit").exists()).collect();
+    assert_eq!(with_world, ["clip-list-py", "discord-notify-wasm"]);
+    for name in with_world {
+        let copy = fs::read(examples.join(&name).join("wit/plugin.wit")).unwrap();
+        assert!(copy == world, "{name}: copy crates/as-plugin/wit/plugin.wit to its wit/ again");
     }
 }
 

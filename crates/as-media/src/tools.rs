@@ -99,6 +99,47 @@ impl Tools {
         Self { ffmpeg, ffprobe: PathBuf::new(), version: "stand-in".into(), caps: OnceLock::new() }
     }
 
+    /// Tools like [`Tools::picky`]'s that hang on nothing, but whose first
+    /// `-encoders` never ends, as on a disk that is cold.
+    #[cfg(test)]
+    pub(crate) fn cold(dir: &Path) -> Self {
+        let warm_tools = Self::picky(dir, "not-in-any-run");
+        let (warm, then) = (dir.join("warm"), warm_tools.ffmpeg.display().to_string());
+        let warm = warm.display();
+        #[cfg(windows)]
+        let ffmpeg = {
+            let p = dir.join("cold-ffmpeg.cmd");
+            let script = [
+                "@echo off".to_string(),
+                r#"echo %* | findstr /C:"-encoders" >NUL || goto go"#.to_string(),
+                format!(r#"if exist "{warm}" goto go"#),
+                format!(r#"echo x > "{warm}""#),
+                ":stay".to_string(),
+                "goto stay".to_string(),
+                ":go".to_string(),
+                format!(r#"call "{then}" %*"#),
+                String::new(),
+            ]
+            .join("\r\n");
+            std::fs::write(&p, script).unwrap();
+            p
+        };
+        #[cfg(unix)]
+        let ffmpeg = {
+            let p = dir.join("cold-ffmpeg");
+            let script = [
+                "#!/bin/sh".to_string(),
+                format!(r#"case "$*" in *-encoders*) [ -e '{warm}' ] || {{ : > '{warm}'; exec sleep 60; }};; esac"#),
+                format!(r#"exec '{then}' "$@""#),
+                String::new(),
+            ]
+            .join("\n");
+            write_script(&p, &script);
+            p
+        };
+        Self { ffmpeg, ..warm_tools }
+    }
+
     /// Tools that answer the lists (`-encoders`: NVENC and AMF H.264, HEVC
     /// NVENC; `-hwaccels`: cuda) and let every other ffmpeg run succeed at
     /// once, except one whose arguments contain `hang_on`: that one writes a

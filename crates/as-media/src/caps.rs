@@ -9,6 +9,12 @@
 //! capability instead of stopping at the first export or scan. Checks of one
 //! driver run one after another (the hang needs several at once); only
 //! different drivers are checked side by side.
+//!
+//! The build's lists are another matter: they start no driver, so one that
+//! overruns says something about a cold disk or a virus scanner, not about
+//! what ffmpeg can do. It gets a second, longer try, and a list that stays
+//! unknown takes hardware away but never software encoding, which an export
+//! can't do without for the rest of the session.
 
 use std::collections::HashSet;
 use std::process::{Command, Output};
@@ -115,11 +121,15 @@ const DECODERS: &[(&str, &str, &str)] = if cfg!(target_os = "macos") {
 struct Waits {
     /// `-encoders` and `-hwaccels`: the build's lists, no hardware involved.
     list: Duration,
+    /// The second try of a list that overran, with ffmpeg in the disk's cache
+    /// by then.
+    list_again: Duration,
     /// A run that starts a hardware encoder or decoder.
     smoke: Duration,
 }
 
-const WAITS: Waits = Waits { list: Duration::from_secs(10), smoke: Duration::from_secs(20) };
+const WAITS: Waits =
+    Waits { list: Duration::from_secs(10), list_again: Duration::from_secs(30), smoke: Duration::from_secs(20) };
 
 /// The checks of one detection. After a check hung, the others that would
 /// start the same driver aren't tried: they would only hang too, and each
@@ -158,13 +168,15 @@ impl Caps {
 
     fn detect_within(tools: &Tools, waits: Waits) -> Self {
         let checks = &Checks { tools, waits, hung: Mutex::default() };
-        let listed = |flag: &str| -> String {
-            let out = checks.run(tools.ffmpeg().arg(flag), flag, waits.list, None);
-            out.map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default()
+        let listed = |flag: &str| -> Option<String> {
+            let list = |limit| checks.run(tools.ffmpeg().arg(flag), flag, limit, None);
+            let out = list(waits.list).or_else(|| list(waits.list_again));
+            out.map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
         };
         let enc_list = listed("-encoders");
-        let present: HashSet<&str> = enc_list.lines().filter_map(|l| l.split_whitespace().nth(1)).collect();
-        let hwaccels = listed("-hwaccels");
+        let present: HashSet<&str> =
+            enc_list.iter().flat_map(|list| list.lines()).filter_map(|l| l.split_whitespace().nth(1)).collect();
+        let hwaccels = listed("-hwaccels").unwrap_or_default();
 
         let candidates: Vec<_> = HW_ENCODERS.iter().filter(|(n, ..)| present.contains(n)).collect();
         // One driver's encoders one after another: it is several NVIDIA
@@ -191,7 +203,10 @@ impl Caps {
             .find(|(_, device, _)| checks.smoke_device(device))
             .map(|(accel, _, fmt)| HwDecode { hwaccel: (*accel).into(), output_format: (*fmt).into() });
 
-        let sw_encoders = SW_ENCODERS.iter().filter(|n| present.contains(*n)).map(|n| (*n).to_string()).collect();
+        // Not knowing is no "no": every build AutoScene takes has them, and an
+        // export of one that hasn't says so itself.
+        let sw_encoders =
+            SW_ENCODERS.iter().filter(|n| enc_list.is_none() || present.contains(*n)).map(|n| (*n).to_string()).collect();
         let nvenc_lossless = if hw_encoders.iter().any(|e| e.name == "hevc_nvenc") {
             NVENC_LOSSLESS.iter().filter(|&&fmt| checks.smoke_lossless(fmt)).map(|&fmt| fmt.to_string()).collect()
         } else {
@@ -299,24 +314,47 @@ mod tests {
         const { assert!(WAITS.list.as_secs() >= 5 && WAITS.list.as_secs() <= 15) };
         const { assert!(WAITS.smoke.as_secs() >= 15 && WAITS.smoke.as_secs() <= 30) };
         const { assert!(WAITS.list.as_millis() < WAITS.smoke.as_millis()) };
+        const { assert!(WAITS.list.as_millis() < WAITS.list_again.as_millis()) };
     }
 
     /// Lists and driver runs have limits of their own: with an ffmpeg that
-    /// hangs on everything, the lists end at `list` (a `smoke` of half a
-    /// minute would show), and nothing is available.
+    /// hangs on everything, each list ends after its two tries (a `smoke` of
+    /// half a minute would show). No hardware is available, and software
+    /// encoding stays: exports would otherwise fail until a restart.
     #[test]
-    fn detection_with_an_ffmpeg_that_hangs_ends_with_nothing_available() {
+    fn detection_with_an_ffmpeg_that_hangs_leaves_software_encoding_only() {
         let dir = tempfile::tempdir().unwrap();
         let tools = Tools::hung(dir.path());
-        let waits = Waits { list: Duration::from_millis(500), smoke: Duration::from_secs(30) };
+        let waits = Waits {
+            list: Duration::from_millis(500),
+            list_again: Duration::from_millis(700),
+            smoke: Duration::from_secs(30),
+        };
         let start = Instant::now();
         let caps = Caps::detect_within(&tools, waits);
         let took = start.elapsed();
-        assert!(caps.decode.is_none() && caps.hw_encoders.is_empty() && caps.sw_encoders.is_empty(), "{caps:?}");
+        assert!(caps.decode.is_none() && caps.hw_encoders.is_empty(), "{caps:?}");
         assert!(caps.nvenc_lossless.is_empty());
-        // Two lists, one wait each; far from the 60 s the stand-in sleeps.
-        assert!(took >= Duration::from_secs(1), "{took:?}");
-        assert!(took < Duration::from_secs(10), "the lists waited {took:?}");
+        assert_eq!(caps.sw_encoders, SW_ENCODERS);
+        assert!(caps.has_sw("libx264"));
+        // Two lists, two tries each; far from the 60 s the stand-in sleeps.
+        assert!(took >= Duration::from_millis(2400), "{took:?}");
+        assert!(took < Duration::from_secs(12), "the lists waited {took:?}");
+    }
+
+    /// A list that overran once, as on a cold disk, says what the build has
+    /// the second time: its hardware isn't lost for the session.
+    #[test]
+    fn a_list_that_overran_once_is_read_the_second_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::cold(dir.path());
+        let waits =
+            Waits { list: Duration::from_secs(10), list_again: Duration::from_secs(30), smoke: Duration::from_secs(30) };
+        let caps = Caps::detect_within(&tools, waits);
+        let names: Vec<_> = caps.hw_encoders.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["h264_nvenc", "hevc_nvenc", "h264_amf"], "{caps:?}");
+        // The list was read, so what it leaves out isn't assumed.
+        assert!(caps.sw_encoders.is_empty(), "{caps:?}");
     }
 
     /// The lists come at once and every driver run hangs: each driver
@@ -326,7 +364,8 @@ mod tests {
     fn a_driver_that_hangs_costs_one_wait_and_leaves_nothing_available() {
         let dir = tempfile::tempdir().unwrap();
         let tools = Tools::picky(dir.path(), "-frames:v");
-        let waits = Waits { list: Duration::from_secs(30), smoke: Duration::from_secs(4) };
+        let waits =
+            Waits { list: Duration::from_secs(30), list_again: Duration::from_secs(30), smoke: Duration::from_secs(4) };
         let caps = Caps::detect_within(&tools, waits);
         assert!(caps.decode.is_none() && caps.hw_encoders.is_empty() && caps.nvenc_lossless.is_empty(), "{caps:?}");
         // h264_nvenc and h264_amf; hevc_nvenc, CUDA and the lossless layouts
@@ -340,7 +379,8 @@ mod tests {
     fn a_hung_amd_check_leaves_nvidia_encoding_and_decoding_available() {
         let dir = tempfile::tempdir().unwrap();
         let tools = Tools::picky(dir.path(), "h264_amf");
-        let waits = Waits { list: Duration::from_secs(30), smoke: Duration::from_secs(3) };
+        let waits =
+            Waits { list: Duration::from_secs(30), list_again: Duration::from_secs(30), smoke: Duration::from_secs(3) };
         let caps = Caps::detect_within(&tools, waits);
         let names: Vec<_> = caps.hw_encoders.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["h264_nvenc", "hevc_nvenc"], "{caps:?}");
@@ -385,7 +425,11 @@ mod tests {
     fn after_a_check_hung_the_same_drivers_others_are_not_tried() {
         let dir = tempfile::tempdir().unwrap();
         let tools = Tools::hung(dir.path());
-        let waits = Waits { list: Duration::from_millis(500), smoke: Duration::from_millis(600) };
+        let waits = Waits {
+            list: Duration::from_millis(500),
+            list_again: Duration::from_millis(500),
+            smoke: Duration::from_millis(600),
+        };
         let checks = Checks { tools: &tools, waits, hung: Mutex::default() };
         let start = Instant::now();
         assert!(!checks.smoke_device("cuda"));

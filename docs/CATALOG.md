@@ -183,7 +183,8 @@ Its dates must hold at the moment it is checked:
 | `resourceHosts` | no | The hosts those files come from, lowercase: at most 48, each a name on the internet (no address, no `localhost`). Left out when empty. `asp catalog add` writes each once; AutoScene doesn't check that. |
 
 Texts lose control characters and invisible ones before they are cut; a
-`name`, `author` or `license` with nothing left is refused.
+`name` or `author` with nothing left refuses the whole index (see below). A
+`license` with nothing left is read as none.
 
 ### A withdrawal (`withdrawn`)
 

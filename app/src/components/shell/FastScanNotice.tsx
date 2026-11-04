@@ -167,14 +167,13 @@ export function FastScanNotice() {
         >
           <Art />
           <div className="min-h-0 overflow-y-auto px-7 pt-4 pb-6">
-            <div aria-hidden className="flex items-center justify-between gap-4">
-              <p className="eyebrow flex min-w-0 items-center gap-2 text-fg-2 [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-fg-1">
-                {c.class === "processor" || platform === "macos" ? <Cpu /> : <GraphicsCard />}
-                <span className="truncate">{deviceLabel(c, platform)}</span>
-              </p>
-              {/* The still's credit, as the footage picker gives it under its preview. */}
-              <p className="shrink-0 text-2xs text-fg-3">Tears of Steel · Blender Foundation · CC BY 3.0</p>
-            </div>
+            <p
+              aria-hidden
+              className="eyebrow flex min-w-0 items-center gap-2 text-fg-2 [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-fg-1"
+            >
+              {c.class === "processor" || platform === "macos" ? <Cpu /> : <GraphicsCard />}
+              <span className="truncate">{deviceLabel(c, platform)}</span>
+            </p>
             <D.Title className="display mt-1.5 text-3xl text-fg-1">Fast Scan is on</D.Title>
             <D.Description className="mt-2.5 text-lg text-fg-2">
               <span className="sr-only">{deviceLabel(c, platform)}. </span>
@@ -225,15 +224,16 @@ export function FastScanNotice() {
 }
 
 /**
- * Where the faces are in `public/footage/live-1.webp` (672×281), the footage
- * picker's Tears of Steel still: two Fast Scan is sure of, one it is not.
+ * Where the faces are in `public/fast-scan-notice.webp`, in the dialog's own
+ * 540×180: live action and anime Fast Scan is sure of, and a painted 3D face
+ * it is not, which is the cost it pays and why 3D animation keeps the full scan.
  */
 const FACES = [
-  { x: 120, y: 50, w: 108, h: 122, sure: true },
-  { x: 268, y: 38, w: 108, h: 124, sure: true },
-  { x: 512, y: 118, w: 88, h: 96, sure: false },
+  { x: 41, y: 12, w: 82, h: 100, sure: true },
+  { x: 223, y: 9, w: 86, h: 98, sure: true },
+  { x: 404, y: 10, w: 92, h: 94, sure: false },
 ]
-/** A shot's frames along the picture's foot, and the few Fast Scan looks at (one a second). */
+/** A shot's frames along the picture's foot, and the few Fast Scan looks at (one a second): each sits under a face. */
 const FRAMES = 64
 const LOOKS = new Set([7, 31, 55])
 
@@ -246,14 +246,15 @@ function Art() {
   return (
     <div aria-hidden className="relative aspect-[3/1] w-full shrink-0 overflow-hidden">
       <div className="absolute inset-0 [mask-image:linear-gradient(180deg,#000_45%,transparent_100%)]">
-        <img src="/footage/live-1.webp" alt="" className="absolute inset-0 size-full object-cover" />
-        <svg viewBox="0 0 672 281" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 size-full">
+        <img src="/fast-scan-notice.webp" alt="" className="absolute inset-0 size-full object-cover" />
+        <svg viewBox="0 0 540 180" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 size-full">
           {FACES.map((f) => (
             <Corners key={f.x} {...f} />
           ))}
         </svg>
       </div>
-      <div className="absolute inset-x-7 bottom-3 flex h-3 items-end justify-between">
+      {/* In percent, so a narrow window keeps each gold frame under its face. */}
+      <div className="absolute inset-x-[5.2%] bottom-3 flex h-3 items-end justify-between">
         {Array.from({ length: FRAMES }, (_, i) =>
           LOOKS.has(i) ? (
             <span
@@ -273,7 +274,7 @@ function Art() {
 
 /** The app's way of marking a found face: gold corners, or thin dashed white ones where it is less sure. */
 function Corners({ x, y, w, h, sure }: { x: number; y: number; w: number; h: number; sure: boolean }) {
-  const l = 14
+  const l = 11
   const d = [
     `M${x} ${y + l}V${y}H${x + l}`,
     `M${x + w - l} ${y}H${x + w}V${y + l}`,
@@ -288,10 +289,10 @@ function Corners({ x, y, w, h, sure }: { x: number; y: number; w: number; h: num
       strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ filter: "drop-shadow(0 0 4px rgb(224 180 92 / 0.6))" }}
+      style={{ filter: "drop-shadow(0 0 3px rgb(224 180 92 / 0.6))" }}
     />
   ) : (
     // Found, but less surely: the cost Fast Scan pays, shown and not only said.
-    <path d={d} fill="none" stroke="rgb(255 255 255 / 0.5)" strokeWidth={1.5} strokeDasharray="3 4" strokeLinecap="round" />
+    <path d={d} fill="none" stroke="rgb(255 255 255 / 0.85)" strokeWidth={1.5} strokeDasharray="3 3.5" strokeLinecap="round" />
   )
 }

@@ -537,6 +537,7 @@ version = "1.0.3-BETA"
 dependencies = [
  "as-api",
  "as-core",
+ "as-db",
  "as-engine",
  "as-export",
  "as-jobs",
@@ -547,7 +548,9 @@ dependencies = [
  "base64 0.23.1",
  "libc",
  "log",
+ "minisign",
  "parking_lot",
+ "rusqlite",
  "semver",
  "serde",
  "serde_json",

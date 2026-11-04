@@ -2630,14 +2630,18 @@ mod tests {
     fn catalog_rows_never_read_as_plugins() {
         let place = Place::new();
         let store = place.store();
-        // The catalog's row sorts outside the registry's and the settings'.
-        for prefix in [ROW, SETTINGS_ROW, EXTRA_ROW] {
-            assert!(!"plugins_catalog".starts_with(prefix));
+        // The catalog's rows (the app's, and a debug build's own) sort
+        // outside the registry's and the settings'.
+        for name in ["plugins_catalog", "plugins_catalog.dev"] {
+            for prefix in [ROW, SETTINGS_ROW, EXTRA_ROW] {
+                assert!(!name.starts_with(prefix));
+            }
+            assert!(name > "plugin/");
         }
-        assert!("plugins_catalog" > "plugin/");
         let state = CatalogState { withdrawn: vec![withdrawal("*")], ..CatalogState::default() };
         let row = serde_json::to_string(&state).unwrap();
         place.db.set_setting("plugins_catalog", &row).unwrap();
+        place.db.set_setting("plugins_catalog.dev", &row).unwrap();
         assert!(store.list().unwrap().is_empty());
         install(&store, &place.unsigned("1.0.0")).unwrap();
         let listed = store.list().unwrap();

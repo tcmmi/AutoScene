@@ -121,6 +121,14 @@ pub struct AppSettings {
     /// place.
     #[serde(default)]
     pub gpu: String,
+    /// Checks the plugin catalog once a day for new versions and withdrawn
+    /// plugins. On by default.
+    #[serde(default = "yes")]
+    pub plugin_catalog_checks: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// The keys the person chose: an editor's keys to start from, and their own

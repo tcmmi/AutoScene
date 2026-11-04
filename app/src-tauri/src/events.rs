@@ -113,6 +113,16 @@ pub struct PluginsChanged {
     pub plugin_id: Option<String>,
 }
 
+/// AutoScene checked its plugin catalog (at start, once a day, or when the
+/// person asked): what it offers may have changed. `withdrawn`: the
+/// installed plugins this check withdrew, whose runs and pages stopped.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "catalog:changed")]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogChanged {
+    pub withdrawn: Vec<String>,
+}
+
 /// Something for one open plugin page (its session): that its plugin's
 /// settings changed, or that it was closed. Sent to the main webview only.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]

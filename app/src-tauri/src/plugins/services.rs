@@ -625,8 +625,9 @@ mod tests {
     use as_plugin::RequestContext;
     use serde_json::{Value, json};
 
+    use super::super::catalog::tests::{Key, NOW, Served, index, withdrawal};
     use super::super::pages;
-    use super::super::tests::{Heard, host_starting};
+    use super::super::tests::{CATALOG_AT, Heard, closed, host_cataloged, host_starting};
     use super::*;
 
     /// A service that answers each request with its method, counts the
@@ -893,6 +894,39 @@ mod tests {
         let state = as_plugin::catalog::CatalogState { withdrawn: vec![withdrawn], ..Default::default() };
         host.store.set_catalog(Arc::new(as_plugin::catalog::Catalog::new(None, state)));
         assert_eq!(host.service(&m, None).err().unwrap().message, format!("AutoScene withdrew Service. {reason}"));
+        assert_eq!(starter.asked.load(Ordering::SeqCst), 1);
+        alone(&host);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_withdrawn_plugin_s_pages_close_and_its_service_stops() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-service-withdrawn-new-{}", std::process::id()));
+        let starter = Starter::default();
+        let (key, site) = (Key::new(), Arc::new(Served::default()));
+        let (lib, host, heard) = host_cataloged(&tmp, starter.clone(), &key, &site);
+        let id = served(&host, &lib, &tmp, "dev.a.service");
+        let m = page_of(&host, &id);
+        host.service(&m, None).unwrap();
+        // An index that withdraws nothing leaves it be.
+        let jobs = JobRunner::new(&[(Class::Plugin, 1)], |_| {});
+        site.index(CATALOG_AT, &key, &index(1, vec![], vec![]));
+        let (_, withdrawn, _) = super::super::catalog::apply(&host, &jobs, NOW, true);
+        assert!(withdrawn.is_empty() && !m.closed.is_cancelled());
+        assert!(host.services.current(&id).is_some());
+
+        // The next withdraws it: its page closes and says why, and its program ends.
+        site.index(CATALOG_AT, &key, &index(2, vec![], vec![withdrawal("dev.a.service", "*")]));
+        let (_, withdrawn, changed) = super::super::catalog::apply(&host, &jobs, NOW + 60, true);
+        assert_eq!((withdrawn, changed), (vec![id.clone()], true));
+        assert!(m.closed.is_cancelled());
+        assert!(starter.made.lock()[0].stopped.load(Ordering::SeqCst));
+        assert!(host.services.current(&id).is_none());
+        let why = "AutoScene withdrew Service. It sent export paths to a server.";
+        assert_eq!(closed(&heard), [(m.token.clone(), why.to_owned())]);
+        // Nothing of it opens or starts again.
+        assert_eq!(pages::open(&host, &lib, &id, "main", None).err().unwrap().message, why);
         assert_eq!(starter.asked.load(Ordering::SeqCst), 1);
         alone(&host);
         drop((host, lib));

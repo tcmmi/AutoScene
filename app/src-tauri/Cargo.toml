@@ -34,6 +34,8 @@ tauri-build.workspace = true
 [dependencies]
 as-core.workspace = true
 as-api.workspace = true
+# The catalog's row (plugins/catalog.rs).
+as-db.workspace = true
 as-engine.workspace = true
 as-export.workspace = true
 as-jobs.workspace = true
@@ -43,6 +45,8 @@ as-plugin.workspace = true
 as-project.workspace = true
 base64.workspace = true
 parking_lot.workspace = true
+# Which catalog version is newer than the one installed (plugins/catalog.rs).
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 specta.workspace = true
@@ -65,8 +69,10 @@ tauri-plugin-single-instance = "=3.0.0-alpha.2"
 tauri-plugin-window-state = "=3.0.0-alpha.2"
 
 [dev-dependencies]
-# The plugin host's tests open a plugin store for an AutoScene version.
-semver.workspace = true
+# The catalog's tests sign the indexes they serve.
+minisign.workspace = true
+# The catalog's tests make writing its row fail, with a trigger.
+rusqlite.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # A plugin page's saved file is marked as a download (plugins/calls.rs).

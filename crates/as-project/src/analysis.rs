@@ -244,6 +244,7 @@ pub(crate) mod tests {
             shortcuts: Default::default(),
             allow_unreviewed_plugins: false,
             gpu: String::new(),
+            plugin_catalog_checks: true,
         })
         .unwrap();
         let file = dir.path().join("Show - 01.mkv");

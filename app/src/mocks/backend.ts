@@ -11,6 +11,7 @@
 import { emit } from "@tauri-apps/api/event"
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks"
 import { isFinished } from "@/state/activity"
+import { catalogList, catalogRefresh } from "./catalog"
 import {
   castEdit,
   castGet,
@@ -201,6 +202,7 @@ let settings: AppSettings = {
   audioLanguage: "eng",
   allowUnreviewedPlugins: false,
   gpu: initialGpu,
+  pluginCatalogChecks: true,
 }
 /** A graphics card chosen while an analysis runs applies from the next one (`?mockHardware=busy`). */
 let gpuPending = false
@@ -210,6 +212,8 @@ followFastScan()
 
 /** Whether plugins AutoScene hasn't reviewed may run (changed only by `plugins_allow_unreviewed`). */
 const allows = () => settings.allowUnreviewedPlugins ?? false
+/** Whether the plugin catalog is checked every day (on by default). */
+const checksCatalog = () => settings.pluginCatalogChecks ?? true
 
 /** Canned AniList answers (no network in the mock). */
 const ANILIST_SERIES: AniListMedia[] = [
@@ -1422,6 +1426,14 @@ const handlers: Record<string, Handler> = {
   },
   plugin_page_call: ({ session, method, params }) => pageCall(String(session), String(method), String(params), pagePlaces),
   plugin_page_heartbeat: () => null,
+  // The catalog: an index checked an hour ago (see mocks/catalog.ts, `?mockCatalog=`).
+  catalog_list: () => catalogList(checksCatalog()),
+  catalog_refresh: () => {
+    const { view, withdrawn } = catalogRefresh(checksCatalog())
+    void emit("catalog:changed", { withdrawn })
+    if (withdrawn.length > 0) void emit("plugins:changed", { pluginId: null })
+    return view
+  },
   plugin_run: ({ pluginId, actionId, kind, projectId, exportId }) =>
     startPluginJob(String(pluginId), String(actionId), kind as ActionKind, (projectId as string | null) ?? null, (exportId as string | null) ?? null),
   jobs_list: () => jobs,

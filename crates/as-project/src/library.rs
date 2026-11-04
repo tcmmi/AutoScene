@@ -44,6 +44,7 @@ const KEY_ALLOW_UNREVIEWED: &str = "allow_unreviewed_plugins";
 /// The graphics the analysis runs on: unset Automatic, `cpu`, or a card's
 /// key (`as_infer::hardware::key`).
 const KEY_GPU: &str = "gpu";
+const KEY_CATALOG_CHECKS: &str = "plugin_catalog_checks";
 /// Most series and films people cut are watched in their original English
 /// track; dubbed tracks are often flagged "default" too, so a language
 /// preference beats the file's flag.
@@ -193,6 +194,7 @@ impl Library {
             shortcuts: self.shortcuts()?,
             allow_unreviewed_plugins: self.allows_unreviewed_plugins()?,
             gpu: self.gpu(),
+            plugin_catalog_checks: self.db.setting(KEY_CATALOG_CHECKS)?.as_deref() != Some("0"),
         })
     }
 
@@ -324,6 +326,7 @@ impl Library {
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
         // `allow_unreviewed_plugins` stays: see `set_allows_unreviewed_plugins`.
         // Fast Scan's default too: see `set_scan_default`.
+        self.db.set_setting(KEY_CATALOG_CHECKS, if s.plugin_catalog_checks { "1" } else { "0" })?;
         // Keys a newer app stored, that this one can't read, stay unless
         // they were changed here.
         let unreadable =
@@ -764,6 +767,7 @@ mod tests {
             shortcuts: Default::default(),
             allow_unreviewed_plugins: false,
             gpu: String::new(),
+            plugin_catalog_checks: true,
         })
         .unwrap();
         assert_eq!(lib.audio_language().unwrap(), "deu", "stored as an ISO 639-2 code");
@@ -1547,6 +1551,31 @@ mod tests {
     }
 
     #[test]
+    fn catalog_checks_are_on_by_default_and_kept() {
+        let (dir, lib) = lib();
+        assert!(lib.settings().unwrap().plugin_catalog_checks);
+        // Off through the settings, and so after a restart.
+        let off = AppSettings { plugin_catalog_checks: false, ..lib.settings().unwrap() };
+        assert!(!lib.update_settings(&off).unwrap().plugin_catalog_checks);
+        drop(lib);
+        let reopened = Library::open(&AppPaths::at(dir.path().join("data"))).unwrap();
+        assert!(!reopened.settings().unwrap().plugin_catalog_checks);
+        let on = AppSettings { plugin_catalog_checks: true, ..reopened.settings().unwrap() };
+        assert!(reopened.update_settings(&on).unwrap().plugin_catalog_checks);
+        // A page that doesn't send it (an older one) reads as on.
+        let older: AppSettings = serde_json::from_value(serde_json::json!({
+            "libraryRoot": dir.path().join("Library").display().to_string(),
+            "exportPresetId": "h264-edit",
+        }))
+        .unwrap();
+        assert!(older.plugin_catalog_checks);
+        // The row is outside what the plugin store reads as plugins.
+        for prefix in ["plugin.", "plugin_settings.", "plugin_extra."] {
+            assert!(!KEY_CATALOG_CHECKS.starts_with(prefix));
+        }
+    }
+
+    #[test]
     fn keeps_settings_while_the_library_drive_is_away() {
         let (dir, lib) = lib();
         // The library's folder is in use, then its drive goes: a file stands
@@ -1577,6 +1606,7 @@ mod tests {
             shortcuts: Default::default(),
             allow_unreviewed_plugins: false,
             gpu: String::new(),
+            plugin_catalog_checks: true,
         };
         assert!(matches!(lib.update_settings(&bad), Err(ProjectError::Invalid(_))));
         assert_eq!(lib.settings().unwrap().export_preset_id, "h264-edit");

@@ -879,10 +879,14 @@ fn date(secs: u64) -> String {
     at.and_then(|t| t.split('T').next().map(str::to_owned)).unwrap_or_else(|| secs.to_string())
 }
 
+/// What [`check`] says of an index only a later AutoScene reads, so the
+/// app can tell the person to update rather than that something failed.
+pub const NEEDS_NEWER_APP: &str = "This catalog needs a newer AutoScene.";
+
 /// An index only a later AutoScene reads. Not [`PluginError::TooNew`],
 /// whose sentence is about a plugin.
 fn needs_newer_app() -> PluginError {
-    catalog("This catalog needs a newer AutoScene.")
+    catalog(NEEDS_NEWER_APP)
 }
 
 fn not_offline() -> PluginError {

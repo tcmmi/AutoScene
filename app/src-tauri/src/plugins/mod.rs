@@ -46,8 +46,14 @@
 //! A change of the plugin stops it before its files change, and so do
 //! turning it off, the setting going off for one AutoScene hasn't reviewed,
 //! and quitting ([`PluginHost::shutdown`]).
+//!
+//! AutoScene's catalog says which plugins it reviewed and which it withdrew
+//! ([`catalog`]). It is read before the window opens and checked at start
+//! and every day; a plugin it newly withdraws stops as one turned off does
+//! ([`PluginHost::stop_withdrawn`]).
 
 pub mod calls;
+pub mod catalog;
 pub mod pages;
 pub mod services;
 
@@ -82,6 +88,7 @@ use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::{PageEvent, PluginPageEvent};
 use crate::state::AppState;
 use crate::work::job_error;
+use catalog::CatalogHost;
 use services::{Services, StartService};
 
 /// How long a checked package waits for the person's yes. Its unpacked
@@ -102,6 +109,8 @@ pub type PageEvents = Box<dyn Fn(PluginPageEvent) + Send + Sync>;
 /// The plugins of this app, and what they are doing.
 pub struct PluginHost {
     pub store: Store,
+    /// AutoScene's catalog, which the store judges plugins by.
+    pub catalog: CatalogHost,
     /// The open plugin pages, which the asp scheme serves ([`pages`]).
     pub pages: Pages,
     /// Where an open page hears that it was closed, and why.
@@ -351,8 +360,12 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
     });
     match Store::open(paths, library.shared_db(), version, Arc::new(OsKeyring)) {
         Ok(store) => {
+            // Read before the window opens: a package opened at launch is
+            // judged by the catalog held. It is small, and never fetched here.
+            let catalog = CatalogHost::builtin(paths, library.shared_db());
+            store.set_catalog(Arc::new(catalog.load()));
             let start = Box::new(services::ProgramStart(app.clone()));
-            let host = Arc::new(PluginHost::new(store, pages, page_events, start));
+            let host = Arc::new(PluginHost::new(store, catalog, pages, page_events, start));
             pages::watch(app.clone(), Arc::downgrade(&host));
             services::reap(Arc::downgrade(&host));
             Some(host)
@@ -373,16 +386,23 @@ pub fn host(state: &AppState) -> AppResult<Arc<PluginHost>> {
 }
 
 impl PluginHost {
-    /// The host of `store`, with no page open yet in `pages`, whose open
-    /// pages hear what becomes of them through `page_events`, and whose
-    /// services start through `start`.
-    pub fn new(store: Store, pages: Pages, page_events: PageEvents, start: Box<dyn StartService>) -> Self {
-        Self::reaching(store, pages, page_events, Box::new(UreqTransport::new()), start)
+    /// The host of `store`, judged by `catalog`, with no page open yet in
+    /// `pages`, whose open pages hear what becomes of them through
+    /// `page_events`, and whose services start through `start`.
+    pub fn new(
+        store: Store,
+        catalog: CatalogHost,
+        pages: Pages,
+        page_events: PageEvents,
+        start: Box<dyn StartService>,
+    ) -> Self {
+        Self::reaching(store, catalog, pages, page_events, Box::new(UreqTransport::new()), start)
     }
 
     /// [`PluginHost::new`], whose plugins' `net.fetch` calls go to `net`.
     fn reaching(
         store: Store,
+        catalog: CatalogHost,
         pages: Pages,
         page_events: PageEvents,
         net: Box<dyn Transport>,
@@ -390,6 +410,7 @@ impl PluginHost {
     ) -> Self {
         Self {
             store,
+            catalog,
             pages,
             page_events,
             tickets: Mutex::default(),
@@ -478,13 +499,44 @@ impl PluginHost {
     /// Stops the runs of `id`, running or still waiting, closes its pages
     /// and stops its service (it was turned off, or uninstalled).
     pub fn stop(&self, jobs: &JobRunner, id: &PluginId) {
+        self.stop_saying(jobs, id, "It was turned off.");
+    }
+
+    /// [`PluginHost::stop`], telling its pages `reason`.
+    fn stop_saying(&self, jobs: &JobRunner, id: &PluginId, reason: &str) {
         let stop: Vec<JobId> = self.runs().into_iter().filter(|(_, p)| p == id).map(|(job, _)| job).collect();
         if !stop.is_empty() {
             jobs.cancel_where(|j| stop.contains(&j.id));
         }
         // Its pages first: a service starts only for a page still open.
-        self.close_pages(|m| m.plugin == *id, "It was turned off.");
+        self.close_pages(|m| m.plugin == *id, reason);
         self.services.stop(id, STOP_GRACE);
+    }
+
+    /// The installed plugins the catalog withdrew, as the store judges them
+    /// now.
+    pub fn withdrawn(&self) -> HashSet<PluginId> {
+        let plugins = self.store.list().unwrap_or_else(|e| {
+            log::warn!("listing plugins for their withdrawals: {}", e.detail());
+            Vec::new()
+        });
+        plugins.into_iter().filter(|p| p.withdrawn.is_some()).map(|p| p.record.id).collect()
+    }
+
+    /// The catalog withdrew `ids`: their runs stop, running or still
+    /// waiting, their pages close and say why, and their services stop.
+    pub fn stop_withdrawn(&self, jobs: &JobRunner, ids: &[PluginId]) {
+        for id in ids {
+            let reason = match self.store.get(id) {
+                Ok(p) => match runnable(&p, true) {
+                    Err(e @ PluginError::Withdrawn { .. }) => e.to_string(),
+                    _ => format!("AutoScene withdrew {}.", name(&p)),
+                },
+                Err(_) => "AutoScene withdrew it.".to_owned(),
+            };
+            log::warn!("{id} was withdrawn by AutoScene's catalog: its runs and its pages stop");
+            self.stop_saying(jobs, id, &reason);
+        }
     }
 
     /// The setting that lets plugins AutoScene hasn't reviewed run went
@@ -1138,7 +1190,7 @@ fn export_context(project: &Project, export: &ExportSummary) -> ProjectResult<Ex
 }
 
 /// The name `value` (a unit enum) has in JSON: what the UI calls it too.
-fn serde_name(value: &impl Serialize) -> String {
+pub(crate) fn serde_name(value: &impl Serialize) -> String {
     serde_json::to_value(value).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
 }
 
@@ -1218,7 +1270,7 @@ mod tests {
 
     /// The `plugin.json` of a plugin `id` with the export actions `post` and
     /// `tag`.
-    fn manifest(id: &str, gpu: bool) -> serde_json::Value {
+    pub(super) fn manifest(id: &str, gpu: bool) -> serde_json::Value {
         serde_json::json!({
             "manifestVersion": 1,
             "id": id,
@@ -1299,12 +1351,12 @@ mod tests {
     }
 
     fn host_with(tmp: &Path, net: impl Transport + 'static, page_events: PageEvents) -> (Library, Arc<PluginHost>) {
-        host_of(tmp, net, page_events, Box::new(NoStart), Arc::new(as_plugin::MemorySecrets::default()))
+        host_of(tmp, net, page_events, Box::new(NoStart), Arc::new(as_plugin::MemorySecrets::default()), None)
     }
 
     /// [`host_in`], whose secrets `secrets` keeps.
     pub(super) fn host_keeping(tmp: &Path, secrets: Arc<dyn as_plugin::SecretStore>) -> (Library, Arc<PluginHost>) {
-        host_of(tmp, UreqTransport::new(), Box::new(|_: PluginPageEvent| {}), Box::new(NoStart), secrets)
+        host_of(tmp, UreqTransport::new(), Box::new(|_: PluginPageEvent| {}), Box::new(NoStart), secrets, None)
     }
 
     /// [`host_hearing`], whose services start through `start`.
@@ -1313,7 +1365,25 @@ mod tests {
         let keep = heard.clone();
         let page_events = Box::new(move |e: PluginPageEvent| keep.lock().push(e));
         let secrets = Arc::new(as_plugin::MemorySecrets::default());
-        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, Box::new(start), secrets);
+        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, Box::new(start), secrets, None);
+        (lib, host, heard)
+    }
+
+    /// [`host_starting`], whose catalog is checked with `key` at one
+    /// address, which `served` serves.
+    pub(super) fn host_cataloged(
+        tmp: &Path,
+        start: impl StartService + 'static,
+        key: &catalog::tests::Key,
+        served: &Arc<catalog::tests::Served>,
+    ) -> (Library, Arc<PluginHost>, Heard) {
+        let heard = Heard::default();
+        let keep = heard.clone();
+        let page_events = Box::new(move |e: PluginPageEvent| keep.lock().push(e));
+        let secrets = Arc::new(as_plugin::MemorySecrets::default());
+        let fetch: Arc<dyn catalog::Fetch> = Arc::new(served.clone());
+        let checked = Some((key.keys(), fetch));
+        let (lib, host) = host_of(tmp, UreqTransport::new(), page_events, Box::new(start), secrets, checked);
         (lib, host, heard)
     }
 
@@ -1323,6 +1393,7 @@ mod tests {
         page_events: PageEvents,
         start: Box<dyn StartService>,
         secrets: Arc<dyn as_plugin::SecretStore>,
+        checked: Option<(as_plugin::CatalogKeys, Arc<dyn catalog::Fetch>)>,
     ) -> (Library, Arc<PluginHost>) {
         let paths = AppPaths::at(tmp.join("data"));
         let lib = Library::open(&paths).unwrap();
@@ -1330,12 +1401,21 @@ mod tests {
         lib.update_settings(&AppSettings { library_root: root, ..lib.settings().unwrap() }).unwrap();
         let app = semver::Version::parse("1.0.3-BETA").unwrap();
         let store = Store::open(&paths, lib.shared_db(), app, secrets).unwrap();
+        let (keys, fetch) = checked.unwrap_or_else(|| {
+            let none: Arc<dyn catalog::Fetch> = Arc::new(Arc::new(catalog::tests::Served::default()));
+            (as_plugin::CatalogKeys::new(&[]).unwrap(), none)
+        });
+        let urls = vec![CATALOG_AT.to_owned()];
+        let catalog = CatalogHost::new(&paths, lib.shared_db(), keys, urls, fetch);
         let pages = Pages::new(Arc::new(MemoryKit::default()), Vec::new());
-        (lib, Arc::new(PluginHost::reaching(store, pages, page_events, Box::new(net), start)))
+        (lib, Arc::new(PluginHost::reaching(store, catalog, pages, page_events, Box::new(net), start)))
     }
 
+    /// Where a test's catalog is served.
+    pub(super) const CATALOG_AT: &str = "https://catalog.example/";
+
     /// No service starts in the tests that don't start one.
-    struct NoStart;
+    pub(super) struct NoStart;
 
     impl StartService for NoStart {
         fn start(
@@ -1818,6 +1898,72 @@ mod tests {
             assert!(start.elapsed() < Duration::from_secs(10), "a stopped run stays in running");
             thread::sleep(Duration::from_millis(5));
         }
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_plugin_withdrawn_by_a_new_index_has_its_runs_stopped() {
+        use catalog::tests::{Key, NOW, Served, index, withdrawal};
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-withdrawn-runs-{}", std::process::id()));
+        let (key, site) = (Key::new(), Arc::new(Served::default()));
+        let (lib, host, _) = host_cataloged(&tmp, NoStart, &key, &site);
+        let ids = ["dev.a.leaky", "dev.a.kept"].map(|id| {
+            let t = folder(&host, &tmp, &manifest(id, false));
+            host.store.commit(t, true, true).unwrap().record.id
+        });
+        let jobs = JobRunner::new(&[(Class::Plugin, 2)], |_| {});
+        let (tx, started) = mpsc::channel();
+        let runs = ids.each_ref().map(|id| {
+            let (host, tx, id) = (host.clone(), tx.clone(), id.clone());
+            let p = plugin(id.as_str(), Trust::Unreviewed, false);
+            jobs.submit(job_spec(p.manifest.as_ref().unwrap(), "Post", None, None), move |ctx| {
+                let _running = host.hold(ctx, &id)?;
+                tx.send(()).unwrap();
+                while !ctx.cancel.is_cancelled() {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(JobError::Cancelled)
+            })
+        });
+        for _ in runs {
+            started.recv_timeout(Duration::from_secs(10)).unwrap();
+        }
+        let states = || runs.map(|run| jobs.jobs().into_iter().find(|j| j.id == run).unwrap().state);
+        let wait_for = |want: [JobState; 2]| {
+            let start = Instant::now();
+            while states() != want {
+                assert!(start.elapsed() < Duration::from_secs(10), "{:?} never became {want:?}", states());
+                thread::sleep(Duration::from_millis(5));
+            }
+        };
+
+        // The first index withdraws nothing: both run on.
+        site.index(CATALOG_AT, &key, &index(1, vec![], vec![]));
+        let (view, withdrawn, changed) = catalog::apply(&host, &jobs, NOW, true);
+        assert!(withdrawn.is_empty() && !changed);
+        assert!(view.status.ready && !view.status.out_of_date && view.status.error.is_none());
+        assert_eq!(states(), [JobState::Running; 2]);
+
+        // The next withdraws one: its run stops, the other's goes on, and it is said withdrawn.
+        site.index(CATALOG_AT, &key, &index(2, vec![], vec![withdrawal("dev.a.leaky", "*")]));
+        let (_, withdrawn, changed) = catalog::apply(&host, &jobs, NOW + 60, true);
+        assert_eq!((withdrawn, changed), (vec![ids[0].clone()], true));
+        wait_for([JobState::Cancelled, JobState::Running]);
+        let leaky = host.store.get(&ids[0]).unwrap();
+        assert_eq!(leaky.withdrawn.as_deref(), Some("It sent export paths to a server."));
+        assert!(!active(&leaky, true) && active(&host.store.get(&ids[1]).unwrap(), true));
+        // Fetched again, the same index stops nothing more; a failed check
+        // keeps what it withdrew.
+        let (_, withdrawn, changed) = catalog::apply(&host, &jobs, NOW + 120, true);
+        assert!(withdrawn.is_empty() && !changed);
+        site.down(CATALOG_AT);
+        let (view, withdrawn, changed) = catalog::apply(&host, &jobs, NOW + 180, true);
+        assert!(withdrawn.is_empty() && !changed && view.status.error.is_some());
+        assert!(host.store.get(&ids[0]).unwrap().withdrawn.is_some());
+        assert_eq!(states(), [JobState::Cancelled, JobState::Running]);
+        jobs.cancel_where(|_| true);
+        wait_for([JobState::Cancelled; 2]);
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
     }

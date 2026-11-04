@@ -185,12 +185,13 @@ pub async fn settings_update(
     let state = state.inner().clone();
     let lib = state.library.clone();
     let before = lib.finds_bodies();
-    let (saved, gpu_changed) = blocking(move || {
+    let (checked_before, saved, gpu_changed) = blocking(move || {
         // Only a new library folder is checked: every other change sends
         // back the one in use.
         if settings.library_root.trim() != lib.library_root()?.display().to_string() {
             paths::check(settings.library_root.trim())?;
         }
+        let checked = lib.settings()?.plugin_catalog_checks;
         let gpu_before = lib.gpu();
         let saved = lib.update_settings(&settings)?;
         // From the next analysis on; an idle engine stops here, off the UI
@@ -199,7 +200,7 @@ pub async fn settings_update(
         if gpu_changed {
             state.choose_gpu(&saved.gpu);
         }
-        Ok((saved, gpu_changed))
+        Ok((checked, saved, gpu_changed))
     })
     .await?;
     if gpu_changed {
@@ -208,6 +209,13 @@ pub async fn settings_update(
     // Finding people by their bodies changes every cast.
     if saved.find_bodies != before {
         work::bodies_setting_changed(&app, saved.find_bodies);
+    }
+    // The daily catalog checks went on: one that is due runs now.
+    if saved.plugin_catalog_checks != checked_before {
+        let after = saved.plugin_catalog_checks;
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::plugins::catalog::checks_changed(&app, checked_before, after);
+        });
     }
     Ok(saved)
 }

@@ -1,0 +1,1400 @@
+//! AutoScene's plugin catalog as this app holds it ([`CatalogHost`]): its
+//! signed index, fetched at start and once a day while the setting is on,
+//! and "Check now" whatever the setting says.
+//!
+//! What AutoScene took of the catalog is a row of `library.db` ([`ROW`], a
+//! [`CatalogState`]): the number and hash of the index held, when it was
+//! fetched and last tried, why the last try failed, and the plugins it
+//! withdrew. The index itself is kept in `cache/catalog/`. The row is
+//! written before the file, so a crash between them leaves a file the row
+//! doesn't name: it isn't used, and the next fetch brings the index again.
+//! A lost or changed file loses what the catalog reviewed until then, never
+//! what it withdrew. A row a later AutoScene wrote turns the catalog off in
+//! this one, which never writes over it.
+//!
+//! Each check tries every address and keeps the newest index that checks
+//! out ([`as_plugin::catalog::check`]). The store then judges plugins by it
+//! ([`as_plugin::Store::set_catalog`]), and the runs of a plugin it newly
+//! withdrew stop, with its pages and its service ([`refresh_and_apply`]).
+//!
+//! Debug builds read `~/.autoscene/catalog.json`, which names other
+//! addresses (http too) and more keys: a catalog of one's own to try the
+//! app against. What it takes is kept apart ([`DEV_ROW`], `cache/catalog-dev`):
+//! debug and release builds share the data folder, and a release build
+//! never sees its numbers or its withdrawals. Release builds don't have this
+//! code at all.
+
+use std::collections::{HashMap, HashSet};
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
+use as_core::{AppPaths, CancelToken};
+use as_db::LibraryDb;
+use as_jobs::JobRunner;
+use as_plugin::catalog::{
+    self, Catalog, CatalogKeys, CatalogState, Checked, Entry, MAX_INDEX_BYTES, MAX_SIG_BYTES, NEEDS_NEWER_APP, Offer,
+    STATE_VERSION,
+};
+use as_plugin::keys::CATALOG_URLS;
+use as_plugin::manifest::current_platform;
+use as_plugin::{Installed, PluginError, PluginId, PluginResult};
+use parking_lot::Mutex;
+use semver::Version;
+use serde::Serialize;
+use serde_json::Value;
+use specta::Type;
+use tauri::{AppHandle, Manager};
+use tauri_specta::Event;
+
+use super::{PluginHost, serde_name};
+use crate::error::AppResult;
+use crate::events::{CatalogChanged, PluginsChanged};
+use crate::plugins;
+use crate::state::AppState;
+
+/// The row of `library.db` that holds what AutoScene took of the catalog.
+/// Outside `plugin.` and `plugin_settings.`, which the store reads as
+/// plugins and their settings.
+pub const ROW: &str = "plugins_catalog";
+/// [`ROW`] of a catalog of one's own (the debug override). Outside the
+/// store's rows too.
+pub const DEV_ROW: &str = "plugins_catalog.dev";
+/// How long after the start the first check waits.
+pub const FIRST_CHECK: Duration = Duration::from_secs(10);
+/// How often the catalog is checked while the app is open.
+pub const EVERY: Duration = Duration::from_secs(24 * 3600);
+/// How long after a failed check the next one waits.
+pub const RETRY: Duration = Duration::from_secs(3600);
+/// A start checks, unless the last good fetch is younger than this.
+pub const STARTUP_FRESH: Duration = Duration::from_secs(3600);
+/// How often the loop looks whether a check is due.
+pub const TICK: Duration = Duration::from_secs(600);
+/// How long one GET may take, its body included.
+pub const BUDGET: Duration = Duration::from_secs(30);
+
+/// The files of the index held, in its folder.
+const INDEX: &str = "index.json";
+const SIG: &str = "index.json.minisig";
+
+/// What a check says when an address didn't answer as it should (the log
+/// has what went wrong).
+const UNREACHABLE: &str = "AutoScene couldn't reach its plugin catalog.";
+
+/// Gets a file of the catalog: its whole body, at most `max` bytes, or why
+/// not (for the log).
+pub trait Fetch: Send + Sync {
+    fn get(&self, url: &str, max: u64) -> Result<Vec<u8>, String>;
+}
+
+/// [`Fetch`] from the internet, within [`BUDGET`] each.
+pub struct UreqFetch;
+
+impl Fetch for UreqFetch {
+    fn get(&self, url: &str, max: u64) -> Result<Vec<u8>, String> {
+        as_models::net::get_capped(url, max, BUDGET, &CancelToken::new())
+    }
+}
+
+/// The catalog of this app: where it is fetched from, the keys it is checked
+/// with, and what was taken of it.
+pub struct CatalogHost {
+    keys: CatalogKeys,
+    /// Each ends in `/`; `index.json` and its signature are appended.
+    urls: Vec<String>,
+    /// [`ROW`], or [`DEV_ROW`] for a catalog of one's own.
+    row: &'static str,
+    /// `cache/catalog` (`cache/catalog-dev`): the index held, and its signature.
+    dir: PathBuf,
+    db: Arc<LibraryDb>,
+    fetch: Arc<dyn Fetch>,
+    /// One check at a time: the daily one and "Check now" take turns.
+    one: Mutex<()>,
+    /// One [`apply`] at a time, from what the store judged by before to the
+    /// catalog it judges by after: a withdrawal is new to one of them only,
+    /// and an older catalog is never set over a newer one.
+    applying: Mutex<()>,
+    /// A later AutoScene wrote the row: the catalog is off here.
+    newer_row: AtomicBool,
+}
+
+impl CatalogHost {
+    /// The catalog of the data folder `paths`, whose row is in `db`, checked
+    /// with `keys` at `urls` through `fetch`.
+    pub fn new(
+        paths: &AppPaths,
+        db: Arc<LibraryDb>,
+        keys: CatalogKeys,
+        urls: Vec<String>,
+        fetch: Arc<dyn Fetch>,
+    ) -> Self {
+        Self::open(paths, db, keys, urls, fetch, false)
+    }
+
+    /// [`CatalogHost::new`]; `dev` keeps what it takes in [`DEV_ROW`] and
+    /// `cache/catalog-dev`.
+    fn open(
+        paths: &AppPaths,
+        db: Arc<LibraryDb>,
+        keys: CatalogKeys,
+        urls: Vec<String>,
+        fetch: Arc<dyn Fetch>,
+        dev: bool,
+    ) -> Self {
+        let host = Self {
+            keys,
+            urls,
+            row: if dev { DEV_ROW } else { ROW },
+            dir: paths.cache().join(if dev { "catalog-dev" } else { "catalog" }),
+            db,
+            fetch,
+            one: Mutex::new(()),
+            applying: Mutex::new(()),
+            newer_row: AtomicBool::new(false),
+        };
+        // Whose the row is decides whether the catalog is on.
+        host.row();
+        host
+    }
+
+    /// This app's catalog: the compiled keys and addresses, and in debug
+    /// builds those of `~/.autoscene/catalog.json`, kept apart.
+    pub fn builtin(paths: &AppPaths, db: Arc<LibraryDb>) -> Self {
+        #[cfg(debug_assertions)]
+        if let Some(o) = dev::read(&dev::path()) {
+            let (keys, urls) = dev::configured(o);
+            return Self::open(paths, db, keys, urls, Arc::new(UreqFetch), true);
+        }
+        Self::new(paths, db, CatalogKeys::builtin(), compiled_urls(), Arc::new(UreqFetch))
+    }
+
+    /// Whether this build checks the catalog: it has keys and addresses,
+    /// and the row is this AutoScene's.
+    pub fn ready(&self) -> bool {
+        !self.keys.is_empty() && !self.urls.is_empty() && !self.newer_row()
+    }
+
+    /// Whether a later AutoScene wrote the row.
+    pub fn newer_row(&self) -> bool {
+        self.newer_row.load(Ordering::Relaxed)
+    }
+
+    /// The catalog as it was taken: the row, and the index kept, if it is
+    /// still the one the row names. Never the network.
+    pub fn load(&self) -> Catalog {
+        let state = self.row();
+        self.with_cache(state, None)
+    }
+
+    /// Checks the catalog at every address at `now`: the newest index that
+    /// checks out is taken, or the one held is again. `Err` when none did,
+    /// with the catalog held (its row says why). `current` is the catalog in
+    /// hand: its index stays while the row still names it, whatever became
+    /// of the file.
+    pub fn refresh(&self, now: u64, current: &Catalog) -> Result<Catalog, Box<Catalog>> {
+        let _one = self.one.lock();
+        let held = self.row();
+        if !self.ready() {
+            return Err(Box::new(self.with_cache(held, Some(current))));
+        }
+        let mut newest: Option<(Box<catalog::Accepted>, Vec<u8>, String)> = None;
+        let mut same = None;
+        let mut errors = Vec::new();
+        for base in &self.urls {
+            match self.check(base, &held, now) {
+                Ok((Checked::Newer(a), bytes, sig)) => {
+                    let number = (a.index.epoch, a.index.seq);
+                    if newest.as_ref().is_none_or(|(b, _, _)| number > (b.index.epoch, b.index.seq)) {
+                        newest = Some((a, bytes, sig));
+                    }
+                }
+                Ok((Checked::Same, bytes, sig)) => same = Some((bytes, sig)),
+                Err(e) => errors.push(e),
+            }
+        }
+        if let Some((a, bytes, sig)) = newest {
+            let state = held.after(&a, now);
+            // The row first: a cache it doesn't name is never used.
+            if self.write_row(&state)
+                && let Err(e) = self.write_cache(&bytes, &sig)
+            {
+                log::warn!("keeping the plugin catalog: {e}");
+            }
+            log::info!("plugin catalog epoch {} seq {} taken", a.index.epoch, a.index.seq);
+            return Ok(Catalog::new(Some(a.index), state));
+        }
+        if let Some((bytes, sig)) = same {
+            let state = CatalogState { fetched_at: now, checked_at: now, last_error: None, ..held };
+            self.write_row(&state);
+            let kept = self.with_cache(state.clone(), Some(current));
+            if kept.index().is_some() {
+                return Ok(kept);
+            }
+            // Its file was lost or changed: the same index, fetched again,
+            // takes its place.
+            return Ok(match catalog::reload(&bytes, &sig, &self.keys, &state) {
+                Ok(index) => {
+                    if let Err(e) = self.write_cache(&bytes, &sig) {
+                        log::warn!("keeping the plugin catalog: {e}");
+                    }
+                    Catalog::new(Some(index), state)
+                }
+                Err(e) => {
+                    log::warn!("the plugin catalog fetched again: {}", e.detail());
+                    kept
+                }
+            });
+        }
+        let error = errors.first().map_or_else(|| UNREACHABLE.to_owned(), PluginError::to_string);
+        let state = held.tried(now, Some(error));
+        self.write_row(&state);
+        Err(Box::new(self.with_cache(state, Some(current))))
+    }
+
+    /// Whether a check is due at `now`, with `daily` the setting, at the
+    /// app's start (`first`) or later: a start checks unless the last good
+    /// fetch is younger than [`STARTUP_FRESH`], then every [`EVERY`]; a
+    /// failed check waits [`RETRY`] before the next. A time still to come
+    /// was written while the clock ran ahead: it counts as long ago, so a
+    /// corrected clock checks at once.
+    pub fn due(&self, now: u64, daily: bool, first: bool) -> bool {
+        if !daily || !self.ready() {
+            return false;
+        }
+        let s = self.row();
+        let wait = if first { STARTUP_FRESH } else { EVERY };
+        let stale = s.fetched_at > now || now >= s.fetched_at.saturating_add(wait.as_secs());
+        let retry = s.last_error.is_none() || s.checked_at > now || now >= s.checked_at.saturating_add(RETRY.as_secs());
+        stale && retry
+    }
+
+    /// Fetches the index and its signature at `base`, and checks them
+    /// against `held`; gives them with what [`catalog::check`] made of them.
+    fn check(&self, base: &str, held: &CatalogState, now: u64) -> PluginResult<(Checked, Vec<u8>, String)> {
+        let get = |name: &str, max: u64| {
+            let url = format!("{base}{name}");
+            self.fetch.get(&url, max).map_err(|e| {
+                log::warn!("plugin catalog: {e}");
+                PluginError::Catalog(UNREACHABLE.into())
+            })
+        };
+        let bytes = get(INDEX, MAX_INDEX_BYTES)?;
+        let sig = String::from_utf8(get(SIG, MAX_SIG_BYTES)?)
+            .map_err(|_| PluginError::Catalog("The catalog's signature can't be read.".into()))?;
+        match catalog::check(&bytes, &sig, &self.keys, held, now) {
+            Ok(checked) => Ok((checked, bytes, sig)),
+            Err(e) => {
+                log::warn!("plugin catalog at {base}: {}", e.detail());
+                Err(e)
+            }
+        }
+    }
+
+    /// The row as it is now: empty when there is none or it can't be read.
+    /// One a later AutoScene wrote turns the catalog off here; its
+    /// withdrawals still hold if this one can read them.
+    fn row(&self) -> CatalogState {
+        let raw = match self.db.setting(self.row) {
+            Ok(raw) => raw,
+            Err(e) => {
+                log::warn!("reading the plugin catalog's row: {e}");
+                None
+            }
+        };
+        let Some(raw) = raw else { return CatalogState::default() };
+        let value: Value = match serde_json::from_str(&raw) {
+            Ok(value) => value,
+            Err(e) => {
+                log::warn!("the plugin catalog's row can't be read, so it counts as empty: {e}");
+                return CatalogState::default();
+            }
+        };
+        if value.get("v").and_then(Value::as_u64).is_some_and(|v| v > u64::from(STATE_VERSION))
+            && !self.newer_row.swap(true, Ordering::Relaxed)
+        {
+            log::warn!("a later AutoScene checked the plugin catalog: it is off in this one");
+        }
+        serde_json::from_value(value).unwrap_or_else(|e| {
+            log::warn!("the plugin catalog's row can't be read, so it counts as empty: {e}");
+            CatalogState::default()
+        })
+    }
+
+    /// Writes `state` as the row, unless a later AutoScene's is there.
+    /// Whether it was written.
+    fn write_row(&self, state: &CatalogState) -> bool {
+        if self.newer_row() {
+            return false;
+        }
+        let json = serde_json::to_string(state).expect("a catalog state serializes");
+        match self.db.set_setting(self.row, &json) {
+            Ok(()) => true,
+            Err(e) => {
+                log::warn!("writing the plugin catalog's row: {e}");
+                false
+            }
+        }
+    }
+
+    /// The catalog of `state`, with the index it names: that of `current`
+    /// if it is that one, or else the one kept if it is, signed and sound.
+    /// Without it, what `state` withdrew holds.
+    fn with_cache(&self, state: CatalogState, current: Option<&Catalog>) -> Catalog {
+        if state.sha256.is_none() || self.keys.is_empty() || self.newer_row() {
+            return Catalog::new(None, state);
+        }
+        // Checked by its hash when it was taken: not read again.
+        let same = current.filter(|c| c.state().sha256 == state.sha256);
+        if let Some(index) = same.and_then(Catalog::index) {
+            return Catalog::new(Some(index.clone()), state);
+        }
+        let kept = read_capped(&self.dir.join(INDEX), MAX_INDEX_BYTES).and_then(|bytes| {
+            let sig = String::from_utf8(read_capped(&self.dir.join(SIG), MAX_SIG_BYTES)?)
+                .map_err(|_| PluginError::Catalog("The catalog's signature can't be read.".into()))?;
+            catalog::reload(&bytes, &sig, &self.keys, &state)
+        });
+        match kept {
+            Ok(index) => Catalog::new(Some(index), state),
+            Err(e) => {
+                log::info!("the plugin catalog kept isn't used: {}", e.detail());
+                Catalog::new(None, state)
+            }
+        }
+    }
+
+    /// Keeps the index `bytes` and its signature `sig`, each written beside
+    /// and then moved over the one before.
+    fn write_cache(&self, bytes: &[u8], sig: &str) -> std::io::Result<()> {
+        std::fs::create_dir_all(&self.dir)?;
+        for (name, data) in [(INDEX, bytes), (SIG, sig.as_bytes())] {
+            let tmp = self.dir.join(format!("{name}.tmp"));
+            std::fs::write(&tmp, data)?;
+            std::fs::rename(&tmp, self.dir.join(name))?;
+        }
+        Ok(())
+    }
+}
+
+/// The file at `path`, if it has at most `max` bytes.
+fn read_capped(path: &Path, max: u64) -> PluginResult<Vec<u8>> {
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?.take(max + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max {
+        return Err(PluginError::Catalog("The catalog is too large.".into()));
+    }
+    Ok(bytes)
+}
+
+/// Checks the catalog when it is due, from [`FIRST_CHECK`] after the start
+/// on, looking every [`TICK`] (which copes with sleep and with a day that
+/// passes while the app is open).
+pub fn start(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(FIRST_CHECK).await;
+        let mut first = true;
+        loop {
+            let app2 = app.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                let state = app2.state::<AppState>();
+                let (Some(host), Ok(s)) = (state.plugins.clone(), state.library.settings()) else { return };
+                if let Some((_, withdrawn, changed)) =
+                    tick(&host, &state.jobs, catalog::now(), s.plugin_catalog_checks, first)
+                {
+                    tell(&app2, &withdrawn, changed);
+                }
+            })
+            .await;
+            first = false;
+            tokio::time::sleep(TICK).await;
+        }
+    });
+}
+
+/// The daily checks went from `before` to `after` (Settings): when they
+/// went on and a check is due, it runs now, and the page hears what it
+/// withdrew.
+pub fn checks_changed(app: &AppHandle, before: bool, after: bool) {
+    let state = app.state::<AppState>();
+    let Some(host) = state.plugins.clone() else { return };
+    if let Some((_, withdrawn, changed)) = turned_on(&host, &state.jobs, catalog::now(), before, after) {
+        tell(app, &withdrawn, changed);
+    }
+}
+
+/// Checks the catalog now and judges plugins by what it says; tells the
+/// page what it withdrew. A failed check is no error: the view says why.
+pub fn refresh_and_apply(app: &AppHandle) -> AppResult<CatalogView> {
+    let state = app.state::<AppState>();
+    let host = plugins::host(&state)?;
+    let daily = state.library.settings()?.plugin_catalog_checks;
+    let (view, withdrawn, changed) = apply(&host, &state.jobs, catalog::now(), daily);
+    tell(app, &withdrawn, changed);
+    Ok(view)
+}
+
+/// Tells the page what a check withdrew, and whether the plugins withdrawn
+/// `changed`.
+fn tell(app: &AppHandle, withdrawn: &[PluginId], changed: bool) {
+    if changed {
+        let _ = PluginsChanged { plugin_id: None }.emit(app);
+    }
+    let _ = CatalogChanged { withdrawn: withdrawn.iter().map(ToString::to_string).collect() }.emit(app);
+}
+
+/// What [`apply`] gives: the view; the installed plugins the new index
+/// withdrew; and whether the plugins withdrawn changed.
+pub(super) type Applied = (CatalogView, Vec<PluginId>, bool);
+
+/// A look of [`start`]'s loop at `now`, with `daily` the setting, `first`
+/// at the app's start: [`apply`] when a check is due.
+pub(super) fn tick(host: &PluginHost, jobs: &JobRunner, now: u64, daily: bool, first: bool) -> Option<Applied> {
+    host.catalog.due(now, daily, first).then(|| apply(host, jobs, now, daily))
+}
+
+/// [`checks_changed`] on `host` at `now`: when the setting went on, a look
+/// as on any day but the first.
+pub(super) fn turned_on(host: &PluginHost, jobs: &JobRunner, now: u64, before: bool, after: bool) -> Option<Applied> {
+    if before || !after {
+        return None;
+    }
+    tick(host, jobs, now, true, false)
+}
+
+/// [`refresh_and_apply`] on `host` at `now`, with `daily` the setting: the
+/// view; the installed plugins the new index withdrew, whose runs stopped,
+/// on `jobs`, with their pages and their services; and whether the
+/// plugins withdrawn changed. One at a time.
+pub(super) fn apply(host: &PluginHost, jobs: &JobRunner, now: u64, daily: bool) -> Applied {
+    let _applying = host.catalog.applying.lock();
+    let before = host.withdrawn();
+    let catalog = host.catalog.refresh(now, &host.store.catalog()).unwrap_or_else(|held| *held);
+    host.store.set_catalog(Arc::new(catalog));
+    let after = host.withdrawn();
+    let mut new: Vec<PluginId> = after.difference(&before).cloned().collect();
+    new.sort_unstable();
+    host.stop_withdrawn(jobs, &new);
+    (view(host, now, daily), new, after != before)
+}
+
+/// The catalog as Settings shows it.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogView {
+    pub status: CatalogStatus,
+    /// What it offers, by plugin, while its index lives; none otherwise.
+    pub plugins: Vec<CatalogPlugin>,
+}
+
+/// Where AutoScene stands with its catalog. Times are Unix ms.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogStatus {
+    /// This build has the catalog's keys, and this AutoScene owns its row.
+    pub ready: bool,
+    /// It is checked once a day (the setting).
+    pub daily: bool,
+    pub published: Option<f64>,
+    pub expires: Option<f64>,
+    /// When the index held was last fetched and checked out.
+    pub fetched_at: Option<f64>,
+    /// When AutoScene last tried.
+    pub checked_at: Option<f64>,
+    /// There is no index, or it ran out.
+    pub out_of_date: bool,
+    /// Why the last check failed.
+    pub error: Option<String>,
+    /// A later AutoScene checked the catalog, or its index needs one.
+    pub needs_newer_app: bool,
+}
+
+/// What the catalog offers of one plugin: the newest version this AutoScene
+/// runs here, or the newest it can't. Times are Unix ms.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogPlugin {
+    pub id: String,
+    pub name: String,
+    pub summary: String,
+    pub author: String,
+    pub license: Option<String>,
+    pub version: String,
+    /// Empty: all.
+    pub platforms: Vec<String>,
+    pub permissions: Vec<String>,
+    pub hosts: Vec<String>,
+    pub gpu: bool,
+    pub uv_script: bool,
+    pub runtime: String,
+    /// Where the catalog built it from.
+    pub repository: String,
+    pub commit: String,
+    pub path: String,
+    /// A `data:` URL the catalog's checks passed.
+    pub icon: Option<String>,
+    pub size_bytes: f64,
+    pub approved: f64,
+    /// The version installed.
+    pub installed: Option<String>,
+    /// It runs here and is newer than the one installed.
+    pub update: bool,
+    /// What it asks that the installed one wasn't granted.
+    pub adds_permissions: Vec<String>,
+    pub adds_hosts: Vec<String>,
+    pub runs_here: bool,
+    pub needs_newer_app: bool,
+}
+
+/// The catalog of `host` at `now`, with `daily` the setting.
+pub fn view(host: &PluginHost, now: u64, daily: bool) -> CatalogView {
+    let catalog = host.store.catalog();
+    let state = catalog.state();
+    let living = catalog.living(now);
+    let installed: HashMap<PluginId, Installed> = host
+        .store
+        .list()
+        .unwrap_or_else(|e| {
+            log::warn!("listing plugins for the catalog: {}", e.detail());
+            Vec::new()
+        })
+        .into_iter()
+        .map(|p| (p.record.id.clone(), p))
+        .collect();
+    let plugins = if living {
+        let app = host.store.app_version();
+        let listed = catalog.ids().into_iter().filter_map(|id| listed(&catalog, id, installed.get(id), app));
+        listed.collect()
+    } else {
+        Vec::new()
+    };
+    let status = CatalogStatus {
+        ready: host.catalog.ready(),
+        daily,
+        published: ms(state.published),
+        expires: ms(state.expires),
+        fetched_at: ms(state.fetched_at),
+        checked_at: ms(state.checked_at),
+        out_of_date: !living,
+        error: state.last_error.clone(),
+        needs_newer_app: host.catalog.newer_row() || state.last_error.as_deref() == Some(NEEDS_NEWER_APP),
+    };
+    CatalogView { status, plugins }
+}
+
+/// What `catalog` offers of `id` to the AutoScene `app`, with `installed`
+/// the version installed. One it withdrew every version of is listed only
+/// while it is installed.
+fn listed(catalog: &Catalog, id: &PluginId, installed: Option<&Installed>, app: &Version) -> Option<CatalogPlugin> {
+    let (entry, runs_here, needs_newer_app) = match catalog.offer(id, app, current_platform()) {
+        Some(Offer::Here(e)) => (e, true, false),
+        Some(Offer::NeedsNewerApp(e)) => (e, false, true),
+        Some(Offer::NotHere(e)) => (e, false, false),
+        None => {
+            installed?;
+            let entries = catalog.index()?.plugins.iter().filter(|e| &e.id == id);
+            let newest = entries
+                .filter_map(|e| Some((e, Version::parse(&e.version).ok()?)))
+                .max_by(|(_, a), (_, b)| a.cmp_precedence(b));
+            (newest?.0, false, false)
+        }
+    };
+    let record = installed.map(|p| &p.record);
+    let granted: HashSet<String> = record.map(|r| r.permissions.iter().map(serde_name).collect()).unwrap_or_default();
+    let hosts: HashSet<&str> = record.map(|r| r.network_hosts.iter().map(String::as_str).collect()).unwrap_or_default();
+    let new = |names: &[String], has: &dyn Fn(&str) -> bool| -> Vec<String> {
+        if record.is_none() { Vec::new() } else { names.iter().filter(|n| !has(n)).cloned().collect() }
+    };
+    Some(CatalogPlugin {
+        id: entry.id.to_string(),
+        name: entry.name.clone(),
+        summary: entry.summary.clone(),
+        author: entry.author.clone(),
+        license: entry.license.clone(),
+        version: entry.version.clone(),
+        platforms: entry.platforms.clone(),
+        permissions: entry.permissions.clone(),
+        hosts: entry.hosts.clone(),
+        gpu: entry.gpu,
+        uv_script: entry.uv_script,
+        runtime: entry.runtime.clone(),
+        repository: entry.source.repo.clone(),
+        commit: entry.source.commit.clone(),
+        path: entry.source.path.clone(),
+        icon: entry.icon.clone(),
+        size_bytes: entry.package.size as f64,
+        approved: entry.approved as f64 * 1000.0,
+        installed: record.map(|r| r.version.clone()),
+        update: runs_here && record.is_some_and(|r| newer(entry, &r.version)),
+        adds_permissions: new(&entry.permissions, &|p| granted.contains(p)),
+        adds_hosts: new(&entry.hosts, &|h| hosts.contains(h)),
+        runs_here,
+        needs_newer_app,
+    })
+}
+
+/// Whether `entry` is a newer version than `installed`.
+fn newer(entry: &Entry, installed: &str) -> bool {
+    match (Version::parse(&entry.version), Version::parse(installed)) {
+        (Ok(offered), Ok(installed)) => offered.cmp_precedence(&installed).is_gt(),
+        _ => false,
+    }
+}
+
+/// Unix seconds `secs` as Unix ms, none for 0 (never).
+fn ms(secs: u64) -> Option<f64> {
+    (secs > 0).then_some(secs as f64 * 1000.0)
+}
+
+/// The compiled catalog's addresses.
+fn compiled_urls() -> Vec<String> {
+    CATALOG_URLS.iter().map(|u| (*u).to_owned()).collect()
+}
+
+/// `~/.autoscene/catalog.json`, a catalog of one's own: debug builds only,
+/// release builds don't have this code.
+#[cfg(debug_assertions)]
+mod dev {
+    use std::path::{Path, PathBuf};
+
+    use as_core::AppPaths;
+    use as_plugin::catalog::CatalogKeys;
+    use as_plugin::keys::KeyRole;
+    use serde::Deserialize;
+
+    use super::compiled_urls;
+
+    pub fn path() -> PathBuf {
+        AppPaths::legacy_dot_dir().join("catalog.json")
+    }
+
+    #[derive(Debug, Default, Deserialize)]
+    pub struct Override {
+        /// They replace the compiled addresses (http too).
+        #[serde(default)]
+        urls: Vec<String>,
+        /// They are added to the compiled keys.
+        #[serde(default)]
+        keys: Vec<OverrideKey>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct OverrideKey {
+        role: Role,
+        /// The base64 line of a minisign `.pub` file.
+        key: String,
+    }
+
+    #[derive(Clone, Copy, Debug, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    enum Role {
+        Online,
+        Offline,
+    }
+
+    /// The override at `path`: none when there is no file, or it can't be
+    /// read.
+    pub fn read(path: &Path) -> Option<Override> {
+        let raw = std::fs::read_to_string(path).ok()?;
+        match serde_json::from_str::<Override>(&raw) {
+            Ok(o) => {
+                log::warn!(
+                    "the plugin catalog follows the dev override in ~/.autoscene/catalog.json, \
+                     and keeps what it takes apart (plugins_catalog.dev, cache/catalog-dev)"
+                );
+                Some(o)
+            }
+            Err(e) => {
+                log::warn!("ignoring ~/.autoscene/catalog.json: {e}");
+                None
+            }
+        }
+    }
+
+    /// The keys and addresses of the compiled catalog, with what `o` changes.
+    pub fn configured(o: Override) -> (CatalogKeys, Vec<String>) {
+        let keys = CatalogKeys::builtin();
+        let extra: Vec<(KeyRole, &str)> = o
+            .keys
+            .iter()
+            .map(|k| (if matches!(k.role, Role::Online) { KeyRole::Online } else { KeyRole::Offline }, k.key.as_str()))
+            .collect();
+        let keys = keys.clone().with(&extra).unwrap_or_else(|e| {
+            log::warn!("ignoring the keys of ~/.autoscene/catalog.json: {}", e.detail());
+            keys
+        });
+        let urls = if o.urls.is_empty() {
+            compiled_urls()
+        } else {
+            o.urls.into_iter().map(|u| if u.ends_with('/') { u } else { format!("{u}/") }).collect()
+        };
+        (keys, urls)
+    }
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    use std::sync::Barrier;
+
+    use as_jobs::Class;
+    use as_plugin::keys::KeyRole;
+    use minisign::KeyPair;
+    use serde_json::json;
+
+    use super::super::tests::{CATALOG_AT, NoStart, host_cataloged};
+    use super::*;
+
+    pub const NOW: u64 = 1_800_000_000;
+    pub const DAY: u64 = 86_400;
+    const A: &str = "https://a.example/";
+    const B: &str = "https://b.example/";
+
+    /// A minisign key pair, as `asp keygen` makes one.
+    pub struct Key(KeyPair);
+
+    impl Key {
+        pub fn new() -> Self {
+            Self(KeyPair::generate_unencrypted_keypair().unwrap())
+        }
+
+        pub fn keys(&self) -> CatalogKeys {
+            CatalogKeys::new(&[(KeyRole::Online, &self.0.pk.to_base64())]).unwrap()
+        }
+
+        /// The index `index` as the catalog's CI publishes it: its bytes
+        /// and their signature.
+        pub fn sign(&self, index: &Value) -> (Vec<u8>, String) {
+            let bytes = serde_json::to_vec(index).unwrap();
+            let n = |key: &str| index[key].as_u64().unwrap();
+            let comment = catalog::index_comment(n("epoch"), n("seq"), n("expires"));
+            let sig = minisign::sign(Some(&self.0.pk), &self.0.sk, &bytes[..], Some(&comment), None).unwrap();
+            (bytes, sig.into_string())
+        }
+    }
+
+    /// An index of `seq` (epoch 1), published a day ago, running out in 29
+    /// days, that lists `plugins` and withdraws `withdrawn`.
+    pub fn index(seq: u64, plugins: Vec<Value>, withdrawn: Vec<Value>) -> Value {
+        json!({
+            "catalogVersion": 1,
+            "epoch": 1,
+            "seq": seq,
+            "published": NOW - DAY,
+            "expires": NOW + 29 * DAY,
+            "plugins": plugins,
+            "withdrawn": withdrawn,
+        })
+    }
+
+    /// An entry of `id` at `version`, as the catalog's CI writes one.
+    pub fn entry(id: &str, version: &str) -> Value {
+        json!({
+            "id": id,
+            "version": version,
+            "lock": as_plugin::package::sha256_hex(version.as_bytes()),
+            "package": {
+                "urls": [format!("https://github.com/tcmmi/autoscene-plugins/releases/download/{id}-{version}/{id}.asp")],
+                "size": 4096,
+                "sha256": "b".repeat(64),
+            },
+            "authorKey": null,
+            "name": "Hello Export",
+            "summary": "Says hello after an export.",
+            "author": "AutoScene",
+            "license": "MIT",
+            "platforms": [],
+            "runtime": "process",
+            "gpu": false,
+            "uvScript": true,
+            "permissions": ["exports:read", "network"],
+            "hosts": ["discord.com"],
+            "engines": ">=1.0.0, <2",
+            "source": {
+                "repo": "https://github.com/tcmmi/autoscene",
+                "commit": "c".repeat(40),
+                "path": "examples/plugins/hello-export",
+            },
+            "icon": null,
+            "approved": NOW - 2 * DAY,
+        })
+    }
+
+    pub fn withdrawal(id: &str, versions: &str) -> Value {
+        json!({"id": id, "versions": versions, "reason": "It sent export paths to a server.", "since": NOW - DAY})
+    }
+
+    /// Serves files by their address, and counts the asks.
+    #[derive(Default)]
+    pub struct Served {
+        pub files: Mutex<HashMap<String, Result<Vec<u8>, String>>>,
+        pub asked: Mutex<Vec<String>>,
+    }
+
+    impl Served {
+        /// Serves `index`, signed by `key`, at `base`.
+        pub fn index(&self, base: &str, key: &Key, index: &Value) {
+            let (bytes, sig) = key.sign(index);
+            let mut files = self.files.lock();
+            files.insert(format!("{base}{INDEX}"), Ok(bytes));
+            files.insert(format!("{base}{SIG}"), Ok(sig.into_bytes()));
+        }
+
+        /// `base` doesn't answer.
+        pub fn down(&self, base: &str) {
+            self.files.lock().insert(format!("{base}{INDEX}"), Err(format!("{base}{INDEX}: connection refused")));
+        }
+    }
+
+    impl Fetch for Arc<Served> {
+        fn get(&self, url: &str, max: u64) -> Result<Vec<u8>, String> {
+            self.asked.lock().push(url.to_owned());
+            let got = self.files.lock().get(url).cloned().unwrap_or_else(|| Err(format!("{url}: 404")));
+            got.and_then(|b| if b.len() as u64 > max { Err(format!("{url}: more than {max} bytes")) } else { Ok(b) })
+        }
+    }
+
+    /// A catalog in `tmp`, checked with `keys` at `urls` through `served`.
+    fn host(tmp: &Path, keys: CatalogKeys, urls: &[&str], served: &Arc<Served>) -> (Arc<LibraryDb>, CatalogHost) {
+        let paths = AppPaths::at(tmp.join("data"));
+        std::fs::create_dir_all(&paths.data).unwrap();
+        let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
+        let urls = urls.iter().map(|u| (*u).to_owned()).collect();
+        let host = CatalogHost::new(&paths, db.clone(), keys, urls, Arc::new(served.clone()));
+        (db, host)
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let tmp = std::env::temp_dir().join(format!("autoscene-catalog-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        tmp
+    }
+
+    fn row(db: &LibraryDb) -> Option<CatalogState> {
+        db.setting(ROW).unwrap().map(|raw| serde_json::from_str(&raw).unwrap())
+    }
+
+    fn seq(c: &Catalog) -> Option<u64> {
+        c.index().map(|i| i.seq)
+    }
+
+    const HELLO: &str = "dev.autoscene.hello-export";
+
+    #[test]
+    fn the_newest_index_of_all_addresses_is_kept() {
+        let tmp = scratch("newest");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(3, vec![entry(HELLO, "1.0.0")], vec![]));
+        served.index(B, &key, &index(5, vec![entry(HELLO, "1.1.0")], vec![]));
+        let (db, host) = host(&tmp, key.keys(), &[A, B], &served);
+        let taken = host.refresh(NOW, &Catalog::none()).unwrap();
+        assert_eq!(seq(&taken), Some(5));
+        assert_eq!(row(&db).unwrap().seq, 5);
+        // An address that falls behind afterwards changes nothing.
+        let later = host.refresh(NOW + 60, &Catalog::none()).unwrap();
+        assert_eq!(seq(&later), Some(5));
+        assert_eq!((row(&db).unwrap().fetched_at, row(&db).unwrap().last_error), (NOW + 60, None));
+        assert_eq!(seq(&host.load()), Some(5));
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn an_address_that_fails_does_not_stop_the_others() {
+        let tmp = scratch("fails");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.down(A);
+        served.index(B, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![]));
+        let (db, host) = host(&tmp, key.keys(), &[A, B], &served);
+        assert_eq!(seq(&host.refresh(NOW, &Catalog::none()).unwrap()), Some(2));
+        // One signed by another key is refused, the other still taken.
+        let other = Key::new();
+        served.index(A, &other, &index(9, vec![], vec![]));
+        served.index(B, &key, &index(3, vec![], vec![]));
+        assert_eq!(seq(&host.refresh(NOW, &Catalog::none()).unwrap()), Some(3));
+        assert_eq!(row(&db).unwrap().last_error, None);
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn nothing_but_the_failure_is_written_when_no_index_checks_out() {
+        let tmp = scratch("failure");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![withdrawal("dev.example.leaky", "*")]));
+        let (db, host) = host(&tmp, key.keys(), &[A, B], &served);
+        host.refresh(NOW, &Catalog::none()).unwrap();
+        let held = row(&db).unwrap();
+        let kept = std::fs::read(tmp.join("data/cache/catalog").join(INDEX)).unwrap();
+
+        // Both addresses fail: one is down, the other serves an older index.
+        served.down(A);
+        served.index(B, &key, &index(1, vec![], vec![]));
+        let failed = host.refresh(NOW + 3600, &Catalog::none()).unwrap_err();
+        let after = row(&db).unwrap();
+        assert_eq!(
+            after,
+            CatalogState { checked_at: NOW + 3600, last_error: Some(UNREACHABLE.into()), ..held.clone() }
+        );
+        // The index held is still the one in hand, and on disk.
+        assert_eq!(seq(&failed), Some(2));
+        assert!(failed.withdrawal(&PluginId::parse("dev.example.leaky").unwrap(), "1.0.0").is_some());
+        assert_eq!(std::fs::read(tmp.join("data/cache/catalog").join(INDEX)).unwrap(), kept);
+        // The first address's error is the one said.
+        served.index(A, &key, &index(1, vec![], vec![]));
+        host.refresh(NOW + 7200, &Catalog::none()).unwrap_err();
+        let said = row(&db).unwrap().last_error.unwrap();
+        assert_eq!(said, "This catalog is older than the one AutoScene has.");
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_row_is_written_before_the_cache() {
+        let tmp = scratch("order");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![withdrawal("dev.example.leaky", "*")]));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        // The row can't be written: no cache is either, as a crash between
+        // the two would leave the file without the withdrawals.
+        let sql = rusqlite::Connection::open(AppPaths::at(tmp.join("data")).library_db()).unwrap();
+        sql.execute_batch(
+            "CREATE TRIGGER no_row BEFORE INSERT ON settings WHEN NEW.key = 'plugins_catalog'
+             BEGIN SELECT RAISE(ABORT, 'no'); END;",
+        )
+        .unwrap();
+        let taken = host.refresh(NOW, &Catalog::none()).unwrap();
+        assert_eq!(seq(&taken), Some(2), "the index fetched is used all the same");
+        assert!(row(&db).is_none());
+        assert!(!tmp.join("data/cache/catalog").exists());
+        sql.execute_batch("DROP TRIGGER no_row;").unwrap();
+        drop(sql);
+        // The cache can't be written: a file stands where its folder goes.
+        std::fs::create_dir_all(tmp.join("data/cache")).unwrap();
+        std::fs::write(tmp.join("data/cache/catalog"), b"").unwrap();
+        let taken = host.refresh(NOW + 30, &Catalog::none()).unwrap();
+        assert_eq!(seq(&taken), Some(2), "the index fetched is used all the same");
+        let held = row(&db).unwrap();
+        assert_eq!((held.seq, held.withdrawn.len()), (2, 1));
+        // At the next start the index is gone, its withdrawals stay, and
+        // the next fetch takes the same index again.
+        let loaded = host.load();
+        assert!(loaded.index().is_none());
+        assert!(loaded.withdrawal(&PluginId::parse("dev.example.leaky").unwrap(), "2.0.0").is_some());
+        std::fs::remove_file(tmp.join("data/cache/catalog")).unwrap();
+        assert_eq!(seq(&host.refresh(NOW + 60, &Catalog::none()).unwrap()), Some(2));
+        assert_eq!(seq(&host.load()), Some(2));
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_lost_cache_keeps_the_withdrawals() {
+        let tmp = scratch("lost");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![withdrawal("dev.example.leaky", "<=1.0.4")]));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        host.refresh(NOW, &Catalog::none()).unwrap();
+        assert_eq!(seq(&host.load()), Some(2));
+        std::fs::remove_dir_all(tmp.join("data/cache/catalog")).unwrap();
+        let loaded = host.load();
+        let leaky = PluginId::parse("dev.example.leaky").unwrap();
+        assert!(loaded.index().is_none() && !loaded.living(NOW));
+        assert!(loaded.withdrawal(&leaky, "1.0.4").is_some());
+        assert!(loaded.withdrawal(&leaky, "1.0.5").is_none());
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_cache_changed_on_disk_is_not_used() {
+        let tmp = scratch("changed");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![withdrawal("dev.example.leaky", "*")]));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        host.refresh(NOW, &Catalog::none()).unwrap();
+        // Another index, signed by the same key, in its place: not the one the row names.
+        let (bytes, sig) = key.sign(&index(2, vec![entry(HELLO, "9.0.0")], vec![]));
+        let dir = tmp.join("data/cache/catalog");
+        std::fs::write(dir.join(INDEX), bytes).unwrap();
+        std::fs::write(dir.join(SIG), sig).unwrap();
+        let loaded = host.load();
+        assert!(loaded.index().is_none());
+        assert!(loaded.withdrawal(&PluginId::parse("dev.example.leaky").unwrap(), "1.0.0").is_some());
+        // A changed byte of the one it names, too.
+        host.refresh(NOW + 60, &Catalog::none()).unwrap();
+        assert!(host.load().index().is_some());
+        let mut bytes = std::fs::read(dir.join(INDEX)).unwrap();
+        *bytes.last_mut().unwrap() = b' ';
+        std::fs::write(dir.join(INDEX), bytes).unwrap();
+        assert!(host.load().index().is_none());
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_row_from_a_newer_autoscene_turns_the_catalog_off_and_is_never_written() {
+        let tmp = scratch("newer-row");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![]));
+        let paths = AppPaths::at(tmp.join("data"));
+        std::fs::create_dir_all(&paths.data).unwrap();
+        let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
+        let mut later = serde_json::to_value(CatalogState {
+            v: STATE_VERSION + 1,
+            withdrawn: vec![serde_json::from_value(withdrawal("dev.example.leaky", "*")).unwrap()],
+            ..CatalogState::default()
+        })
+        .unwrap();
+        later["somethingNew"] = json!(true);
+        let written = later.to_string();
+        db.set_setting(ROW, &written).unwrap();
+        let host = CatalogHost::new(&paths, db.clone(), key.keys(), vec![A.into()], Arc::new(served.clone()));
+        assert!(!host.ready() && host.newer_row());
+        // Nothing is fetched, at start or when the person asks, and the row stays as it is.
+        assert!(!host.due(NOW, true, true));
+        let held = host.refresh(NOW, &Catalog::none()).unwrap_err();
+        assert!(served.asked.lock().is_empty());
+        assert_eq!(db.setting(ROW).unwrap().unwrap(), written);
+        // What it withdrew still holds, if this AutoScene can read it.
+        assert!(held.withdrawal(&PluginId::parse("dev.example.leaky").unwrap(), "1.0.0").is_some());
+        assert!(host.load().index().is_none());
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_row_from_a_newer_autoscene_never_reads_the_index_kept() {
+        let tmp = scratch("newer-row-cache");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![withdrawal("dev.example.leaky", "*")]));
+        let (db, first) = host(&tmp, key.keys(), &[A], &served);
+        let taken = first.refresh(NOW, &Catalog::none()).unwrap();
+        assert_eq!(seq(&first.load()), Some(2));
+        drop(first);
+        // A later AutoScene took the same index: its row names the file kept.
+        let later = CatalogState { v: STATE_VERSION + 1, ..row(&db).unwrap() };
+        db.set_setting(ROW, &serde_json::to_string(&later).unwrap()).unwrap();
+        let paths = AppPaths::at(tmp.join("data"));
+        let host = CatalogHost::new(&paths, db.clone(), key.keys(), vec![A.into()], Arc::new(served.clone()));
+        assert!(host.newer_row());
+        let loaded = host.load();
+        assert!(loaded.index().is_none());
+        assert!(loaded.withdrawal(&PluginId::parse("dev.example.leaky").unwrap(), "1.0.0").is_some());
+        // Nor the one in hand.
+        assert!(host.refresh(NOW + 60, &taken).unwrap_err().index().is_none());
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_failed_check_keeps_the_index_in_hand() {
+        let tmp = scratch("in-hand");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![]));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        let taken = host.refresh(NOW, &Catalog::none()).unwrap();
+        // Its file is gone (it couldn't be written, or can't be read now),
+        // and the next check fails.
+        std::fs::remove_dir_all(tmp.join("data/cache/catalog")).unwrap();
+        served.down(A);
+        let failed = host.refresh(NOW + 3600, &taken).unwrap_err();
+        assert_eq!(seq(&failed), Some(2));
+        assert!(failed.living(NOW + 3600));
+        assert_eq!(failed.state().last_error.as_deref(), Some(UNREACHABLE));
+        // Without it, there is none.
+        assert!(host.refresh(NOW + 7200, &Catalog::none()).unwrap_err().index().is_none());
+        // One the row doesn't name isn't kept.
+        let other = CatalogState { sha256: Some("0".repeat(64)), ..taken.state().clone() };
+        let stale = Catalog::new(taken.index().cloned(), other);
+        assert!(host.refresh(NOW + 10_800, &stale).unwrap_err().index().is_none());
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_catalog_of_one_s_own_keeps_what_it_took_apart() {
+        let tmp = scratch("dev-row");
+        let (dev_key, real_key, served) = (Key::new(), Key::new(), Arc::new(Served::default()));
+        served.index(A, &dev_key, &index(50, vec![], vec![withdrawal(HELLO, "*")]));
+        served.index(B, &real_key, &index(3, vec![entry(HELLO, "1.0.0")], vec![]));
+        let paths = AppPaths::at(tmp.join("data"));
+        std::fs::create_dir_all(&paths.data).unwrap();
+        let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
+        let fetch = || -> Arc<dyn Fetch> { Arc::new(served.clone()) };
+        // A debug build follows the override, on the data folder a release build uses too.
+        let dev = CatalogHost::open(&paths, db.clone(), dev_key.keys(), vec![A.into()], fetch(), true);
+        let taken = dev.refresh(NOW, &Catalog::none()).unwrap();
+        assert_eq!(seq(&taken), Some(50));
+        assert!(row(&db).is_none());
+        assert!(!tmp.join("data/cache/catalog").exists());
+        // The release build takes its own catalog, and the dev one's withdrawal isn't in it.
+        let release = CatalogHost::new(&paths, db.clone(), real_key.keys(), vec![B.into()], fetch());
+        assert!(release.due(NOW, true, true));
+        let taken = release.refresh(NOW + 60, &Catalog::none()).unwrap();
+        assert_eq!(seq(&taken), Some(3));
+        assert!(taken.withdrawal(&PluginId::parse(HELLO).unwrap(), "1.0.0").is_none());
+        assert_eq!((row(&db).unwrap().seq, row(&db).unwrap().withdrawn.len()), (3, 0));
+        // Each keeps its own, in its own folder.
+        assert_eq!(seq(&dev.load()), Some(50));
+        assert_eq!(seq(&release.load()), Some(3));
+        let dev_row: CatalogState = serde_json::from_str(&db.setting(DEV_ROW).unwrap().unwrap()).unwrap();
+        assert_eq!(dev_row.seq, 50);
+        assert!(tmp.join("data/cache/catalog-dev").join(INDEX).exists());
+        drop((db, dev, release));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_check_is_due_at_start_after_a_day_or_an_hour_after_a_failure() {
+        let tmp = scratch("due");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        // Never checked: due at start, and later, but only with the setting on.
+        assert!(host.due(NOW, true, true) && host.due(NOW, true, false));
+        assert!(!host.due(NOW, false, true));
+        let set = |s: CatalogState| db.set_setting(ROW, &serde_json::to_string(&s).unwrap()).unwrap();
+        let good = CatalogState { v: 1, fetched_at: NOW, checked_at: NOW, ..CatalogState::default() };
+        set(good.clone());
+        // A start checks once the last good fetch is an hour old; later checks wait a day.
+        assert!(!host.due(NOW + 3599, true, true));
+        assert!(host.due(NOW + 3600, true, true));
+        assert!(!host.due(NOW + 3600, true, false));
+        assert!(!host.due(NOW + DAY - 1, true, false));
+        assert!(host.due(NOW + DAY, true, false));
+        // A failed check waits an hour before the next, at start too.
+        set(good.tried(NOW + DAY, Some(UNREACHABLE.into())));
+        assert!(!host.due(NOW + DAY + 3599, true, false) && !host.due(NOW + DAY + 3599, true, true));
+        assert!(host.due(NOW + DAY + 3600, true, false));
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn times_written_while_the_clock_ran_ahead_count_as_long_ago() {
+        let tmp = scratch("due-ahead");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        let set = |s: CatalogState| db.set_setting(ROW, &serde_json::to_string(&s).unwrap()).unwrap();
+        // An index taken while the clock was 20 days ahead; the clock is right again.
+        let ahead =
+            CatalogState { v: 1, fetched_at: NOW + 20 * DAY, checked_at: NOW + 20 * DAY, ..CatalogState::default() };
+        set(ahead.clone());
+        assert!(host.due(NOW + 2 * DAY, true, true) && host.due(NOW + 2 * DAY, true, false));
+        assert!(!host.due(NOW + 2 * DAY, false, true));
+        // A failure tried then doesn't hold the next check back either.
+        set(CatalogState { fetched_at: NOW, ..ahead.tried(NOW + 20 * DAY, Some(UNREACHABLE.into())) });
+        assert!(host.due(NOW + 2 * DAY, true, false));
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn without_keys_nothing_is_fetched() {
+        let tmp = scratch("no-keys");
+        let served = Arc::new(Served::default());
+        served.index(A, &Key::new(), &index(2, vec![], vec![]));
+        let (db, host) = host(&tmp, CatalogKeys::new(&[]).unwrap(), &[A], &served);
+        assert!(!host.ready());
+        assert!(!host.due(NOW, true, true));
+        assert!(host.refresh(NOW, &Catalog::none()).is_err());
+        assert!(served.asked.lock().is_empty());
+        assert!(row(&db).is_none());
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// Release builds don't have the override's code (`mod dev`), so only a
+    /// debug build can test it.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn the_override_names_other_addresses_and_more_keys() {
+        let tmp = scratch("override");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("catalog.json");
+        let key = Key::new();
+        let (bytes, sig) = key.sign(&index(2, vec![], vec![]));
+        let takes = |keys: &CatalogKeys| catalog::check(&bytes, &sig, keys, &CatalogState::default(), NOW).is_ok();
+        // Without one: none, and the compiled keys don't take its index.
+        assert!(dev::read(&path).is_none());
+        assert!(!takes(&CatalogKeys::builtin()));
+        assert_eq!(compiled_urls(), CATALOG_URLS);
+        // Its addresses replace the compiled ones, its keys are added.
+        let o = json!({"urls": ["http://127.0.0.1:8123"], "keys": [{"role": "online", "key": key.0.pk.to_base64()}]});
+        std::fs::write(&path, o.to_string()).unwrap();
+        let (keys, urls) = dev::configured(dev::read(&path).unwrap());
+        assert!(takes(&keys));
+        assert_eq!(urls, ["http://127.0.0.1:8123/"]);
+        // No addresses: the compiled ones.
+        std::fs::write(&path, json!({"keys": []}).to_string()).unwrap();
+        assert_eq!(dev::configured(dev::read(&path).unwrap()).1, CATALOG_URLS);
+        // One that can't be read is no override.
+        std::fs::write(&path, "{not json").unwrap();
+        assert!(dev::read(&path).is_none());
+        // Keys that aren't keys are left out, the addresses still taken.
+        let bad = json!({"urls": [A], "keys": [{"role": "online", "key": key.0.pk.to_base64()}, {"role": "offline", "key": "RWnope"}]});
+        std::fs::write(&path, bad.to_string()).unwrap();
+        let (keys, urls) = dev::configured(dev::read(&path).unwrap());
+        assert!(!takes(&keys));
+        assert_eq!(urls, [A]);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_view_offers_the_newest_version_and_says_what_an_update_adds() {
+        let tmp = scratch("view-index");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        let mut newer = entry(HELLO, "2.0.0");
+        newer["engines"] = json!(">=9.0.0");
+        let mut future = entry("dev.a.future", "2.0.0");
+        future["engines"] = json!(">=9.0.0");
+        let mut elsewhere = entry("dev.a.elsewhere", "2.0.0");
+        let other = if current_platform() == "linux-x86_64" { "windows-x86_64" } else { "linux-x86_64" };
+        elsewhere["platforms"] = json!([other]);
+        let plugins = vec![entry(HELLO, "1.1.0"), newer, entry("dev.a.leaky", "1.0.0"), future, elsewhere];
+        served.index(A, &key, &index(2, plugins, vec![withdrawal("dev.a.leaky", "*")]));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        let catalog = host.refresh(NOW, &Catalog::none()).unwrap();
+        let app = Version::parse("1.0.3-BETA").unwrap();
+        let hello = PluginId::parse(HELLO).unwrap();
+        // Not installed: the newest version this AutoScene runs, and nothing "added".
+        let shown = listed(&catalog, &hello, None, &app).unwrap();
+        assert_eq!((shown.version.as_str(), shown.runs_here, shown.update), ("1.1.0", true, false));
+        assert_eq!((shown.approved, shown.size_bytes), ((NOW - 2 * DAY) as f64 * 1000.0, 4096.0));
+        assert!(shown.adds_permissions.is_empty() && shown.installed.is_none());
+        // Installed at 1.0.0 with no grants: an update, and what it asks is new.
+        let mut installed = super::super::tests::plugin(HELLO, as_plugin::Trust::Reviewed, false);
+        let shown = listed(&catalog, &hello, Some(&installed), &app).unwrap();
+        assert_eq!((shown.installed.as_deref(), shown.update), (Some("1.0.0"), true));
+        assert_eq!(
+            (shown.adds_permissions, shown.adds_hosts),
+            (vec!["exports:read".to_owned(), "network".to_owned()], vec!["discord.com".to_owned()])
+        );
+        // Granted already, nothing is new; at 1.1.0 there is no update.
+        installed.record.permissions = serde_json::from_value(json!(["exports:read", "network"])).unwrap();
+        installed.record.network_hosts = vec!["discord.com".into()];
+        installed.record.version = "1.1.0".into();
+        let shown = listed(&catalog, &hello, Some(&installed), &app).unwrap();
+        assert!(shown.adds_permissions.is_empty() && shown.adds_hosts.is_empty() && !shown.update);
+        // A plugin it withdrew whole is listed only while it is installed, and offered nowhere.
+        let leaky = PluginId::parse("dev.a.leaky").unwrap();
+        assert!(listed(&catalog, &leaky, None, &app).is_none());
+        let installed = super::super::tests::plugin("dev.a.leaky", as_plugin::Trust::Reviewed, false);
+        let shown = listed(&catalog, &leaky, Some(&installed), &app).unwrap();
+        assert!(!shown.runs_here && !shown.update && !shown.needs_newer_app);
+        // A newer version that needs a newer AutoScene, or another computer, is no update.
+        for (id, needs_newer_app) in [("dev.a.future", true), ("dev.a.elsewhere", false)] {
+            let installed = super::super::tests::plugin(id, as_plugin::Trust::Reviewed, false);
+            let shown = listed(&catalog, &PluginId::parse(id).unwrap(), Some(&installed), &app).unwrap();
+            assert_eq!(shown.installed.as_deref(), Some("1.0.0"));
+            assert_eq!((shown.version.as_str(), shown.runs_here), ("2.0.0", false));
+            assert_eq!((shown.update, shown.needs_newer_app), (false, needs_newer_app), "{id}");
+        }
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    fn jobs() -> JobRunner {
+        JobRunner::new(&[(Class::Plugin, 1)], |_| {})
+    }
+
+    fn host_scratch(name: &str) -> PathBuf {
+        let tmp = std::env::temp_dir().join(format!("autoscene-catalog-host-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        tmp
+    }
+
+    #[test]
+    fn the_view_says_a_newer_autoscene_is_needed_when_the_check_said_so() {
+        let tmp = host_scratch("needs-newer");
+        let (key, site) = (Key::new(), Arc::new(Served::default()));
+        let (lib, host, _) = host_cataloged(&tmp, NoStart, &key, &site);
+        let mut later = index(1, vec![], vec![]);
+        later["catalogVersion"] = json!(2);
+        site.index(CATALOG_AT, &key, &later);
+        let (view, _, _) = apply(&host, &jobs(), NOW, true);
+        assert_eq!(view.status.error.as_deref(), Some(NEEDS_NEWER_APP));
+        assert!(view.status.needs_newer_app && view.status.ready && !host.catalog.newer_row());
+        // Any other failure doesn't say it.
+        site.down(CATALOG_AT);
+        let (view, _, _) = apply(&host, &jobs(), NOW + 3600, true);
+        assert!(view.status.error.is_some() && !view.status.needs_newer_app);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_loop_checks_at_start_unless_the_last_fetch_is_fresh_then_daily() {
+        let tmp = host_scratch("tick");
+        let (key, site) = (Key::new(), Arc::new(Served::default()));
+        let (lib, host, _) = host_cataloged(&tmp, NoStart, &key, &site);
+        site.index(CATALOG_AT, &key, &index(1, vec![], vec![]));
+        let jobs = jobs();
+        let asked = || site.asked.lock().len();
+        assert!(tick(&host, &jobs, NOW, false, true).is_none(), "the setting is off");
+        assert_eq!(asked(), 0);
+        assert!(tick(&host, &jobs, NOW, true, true).is_some());
+        assert_eq!(host.store.catalog().state().seq, 1);
+        // A start within the hour fetches nothing; one later does.
+        let n = asked();
+        assert!(tick(&host, &jobs, NOW + 1800, true, true).is_none());
+        assert_eq!(asked(), n);
+        assert!(tick(&host, &jobs, NOW + 3600, true, true).is_some());
+        // After the start, a day passes between checks.
+        assert!(tick(&host, &jobs, NOW + 7200, true, false).is_none());
+        assert!(tick(&host, &jobs, NOW + 3600 + DAY, true, false).is_some());
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn turning_the_checks_on_checks_when_one_is_due() {
+        let tmp = host_scratch("turned-on");
+        let (key, site) = (Key::new(), Arc::new(Served::default()));
+        let (lib, host, _) = host_cataloged(&tmp, NoStart, &key, &site);
+        site.index(CATALOG_AT, &key, &index(1, vec![], vec![withdrawal(HELLO, "*")]));
+        let jobs = jobs();
+        // Left on, or turned off: nothing.
+        assert!(turned_on(&host, &jobs, NOW, true, true).is_none());
+        assert!(turned_on(&host, &jobs, NOW, true, false).is_none());
+        assert!(turned_on(&host, &jobs, NOW, false, false).is_none());
+        assert!(site.asked.lock().is_empty());
+        // Turned on, never checked: it checks, and the store judges by it.
+        assert!(turned_on(&host, &jobs, NOW, false, true).is_some());
+        assert!(host.store.catalog().withdrawal(&PluginId::parse(HELLO).unwrap(), "1.0.0").is_some());
+        // Turned on again within the day: not due.
+        assert!(turned_on(&host, &jobs, NOW + 3600, false, true).is_none());
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn two_checks_at_once_stop_a_withdrawn_plugin_once() {
+        let tmp = host_scratch("at-once");
+        let (key, site) = (Key::new(), Arc::new(Served::default()));
+        let (lib, host, _) = host_cataloged(&tmp, NoStart, &key, &site);
+        let t = super::super::tests::folder(&host, &tmp, &super::super::tests::manifest("dev.a.leaky", false));
+        host.store.commit(t, true, true).unwrap();
+        let jobs = jobs();
+        // Every other index withdraws it: each of those is new to one check only.
+        for round in 0..20 {
+            let withdrawn = if round % 2 == 0 { vec![withdrawal("dev.a.leaky", "*")] } else { vec![] };
+            site.index(CATALOG_AT, &key, &index(round + 1, vec![], withdrawn));
+            let barrier = Barrier::new(2);
+            let said: Vec<Vec<PluginId>> = std::thread::scope(|s| {
+                let both = [0, 1].map(|_| {
+                    s.spawn(|| {
+                        barrier.wait();
+                        apply(&host, &jobs, NOW + round, true).1
+                    })
+                });
+                both.map(|h| h.join().unwrap()).into()
+            });
+            let total: usize = said.iter().map(Vec::len).sum();
+            assert_eq!(total, usize::from(round % 2 == 0), "round {round}: {said:?}");
+            assert_eq!(host.withdrawn().is_empty(), round % 2 == 1);
+            assert_eq!(host.store.catalog().state().seq, round + 1, "the newest is the one in hand");
+        }
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+}

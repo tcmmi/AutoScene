@@ -330,6 +330,13 @@ export const commands = {
 	 *  when that run waits or runs already. It reports as a job.
 	 */
 	pluginRun: (pluginId: string, actionId: string, kind: ActionKind, projectId: string | null, exportId: string | null) => __TAURI_INVOKE<string | null>("plugin_run", { pluginId, actionId, kind, projectId, exportId }),
+	/**  The catalog as AutoScene holds it. Never the network. */
+	catalogList: () => __TAURI_INVOKE<CatalogView>("catalog_list"),
+	/**
+	 *  Checks the catalog now, also while the daily checks are off. A check
+	 *  that fails is no error: the view says why.
+	 */
+	catalogRefresh: () => __TAURI_INVOKE<CatalogView>("catalog_refresh"),
 	/**
 	 *  Keep `value` in the system's keychain as a plugin's secret setting
 	 *  `key`, in place of the one before. The value never comes back: the
@@ -393,6 +400,7 @@ export const events = {
 	analysisChanged: makeEvent<AnalysisChanged>("analysis:changed"),
 	anilistChanged: makeEvent<AniListChanged>("anilist:changed"),
 	castChanged: makeEvent<CastChanged>("cast:changed"),
+	catalogChanged: makeEvent<CatalogChanged>("catalog:changed"),
 	exportChanged: makeEvent<ExportChanged>("export:changed"),
 	hardwareChanged: makeEvent<HardwareChanged>("hardware:changed"),
 	jobChanged: makeEvent<JobChanged>("job:changed"),
@@ -590,6 +598,11 @@ export type AppSettings = {
 	 *  place.
 	 */
 	gpu?: string,
+	/**
+	 *  Checks the plugin catalog once a day for new versions and withdrawn
+	 *  plugins. On by default.
+	 */
+	pluginCatalogChecks?: boolean,
 };
 
 export type AudioCodec = { codec: "none" } | 
@@ -684,6 +697,79 @@ export type CastEdit =
 { op: "body_not_them"; bodies: number[]; characterId: CharacterId } | 
 /**  These bodies aren't people (a coat on a chair, a shadow). */
 { op: "not_a_person"; bodies: number[] };
+
+/**
+ *  AutoScene checked its plugin catalog (at start, once a day, or when the
+ *  person asked): what it offers may have changed. `withdrawn`: the
+ *  installed plugins this check withdrew, whose runs and pages stopped.
+ */
+export type CatalogChanged = {
+	withdrawn: string[],
+};
+
+/**
+ *  What the catalog offers of one plugin: the newest version this AutoScene
+ *  runs here, or the newest it can't. Times are Unix ms.
+ */
+export type CatalogPlugin = {
+	id: string,
+	name: string,
+	summary: string,
+	author: string,
+	license: string | null,
+	version: string,
+	/**  Empty: all. */
+	platforms: string[],
+	permissions: string[],
+	hosts: string[],
+	gpu: boolean,
+	uvScript: boolean,
+	runtime: string,
+	/**  Where the catalog built it from. */
+	repository: string,
+	commit: string,
+	path: string,
+	/**  A `data:` URL the catalog's checks passed. */
+	icon: string | null,
+	sizeBytes: number | null,
+	approved: number | null,
+	/**  The version installed. */
+	installed: string | null,
+	/**  It runs here and is newer than the one installed. */
+	update: boolean,
+	/**  What it asks that the installed one wasn't granted. */
+	addsPermissions: string[],
+	addsHosts: string[],
+	runsHere: boolean,
+	needsNewerApp: boolean,
+};
+
+/**  Where AutoScene stands with its catalog. Times are Unix ms. */
+export type CatalogStatus = {
+	/**  This build has the catalog's keys, and this AutoScene owns its row. */
+	ready: boolean,
+	/**  It is checked once a day (the setting). */
+	daily: boolean,
+	published: number | null,
+	expires: number | null,
+	/**  When the index held was last fetched and checked out. */
+	fetchedAt: number | null,
+	/**  When AutoScene last tried. */
+	checkedAt: number | null,
+	/**  There is no index, or it ran out. */
+	outOfDate: boolean,
+	/**  Why the last check failed. */
+	error: string | null,
+	/**  A later AutoScene checked the catalog, or its index needs one. */
+	needsNewerApp: boolean,
+};
+
+/**  The catalog as Settings shows it. */
+export type CatalogView = {
+	status: CatalogStatus,
+	/**  What it offers, by plugin, while its index lives; none otherwise. */
+	plugins: CatalogPlugin[],
+};
 
 /**  A person the analysis found across the project's media. */
 export type Character = {

@@ -110,6 +110,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::plugins::plugin_settings_get,
             commands::plugins::plugin_settings_set,
             commands::plugins::plugin_run,
+            commands::catalog::catalog_list,
+            commands::catalog::catalog_refresh,
             commands::plugins::plugin_secret_set,
             commands::plugins::plugin_secret_clear,
             commands::plugins::plugin_page_open,
@@ -138,6 +140,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             events::PackChanged,
             events::PluginsChanged,
             events::PluginPageEvent,
+            events::CatalogChanged,
             updater::UpdateProgress,
         ])
         // The name parts the pack export's templates can use: its buttons read them.
@@ -315,6 +318,7 @@ The log is in {}",
                 }
             };
             let handle = app.handle().clone();
+            // Reads the plugin catalog held, before the window opens.
             app.manage(state::AppState::new(&handle, library, &paths));
             // After the state: the page calls commands as soon as it loads.
             window::create_main(app)?;
@@ -325,6 +329,7 @@ The log is in {}",
             }
             // Resume interrupted indexing and previews; locate ffmpeg and probe
             // the hardware off the UI thread so the first job starts warm.
+            let checks = handle.clone();
             std::thread::spawn(move || {
                 // What this computer analyses on (its log line names it), so
                 // the probe never meets the first click.
@@ -342,6 +347,8 @@ The log is in {}",
                     plugins.store.remove_leftovers();
                 }
             });
+            // The plugin catalog, checked shortly after the start and then daily.
+            plugins::catalog::start(checks);
             Ok(())
         })
         .build(tauri::generate_context!())

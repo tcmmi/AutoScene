@@ -5,6 +5,8 @@
 //! `crates/as-plugin/wit` (`guest.wasm`), and against the world 1.0.0 as it
 //! first shipped, `wit-frozen/1.0.0` (`guest-frozen.wasm`), which every
 //! later AutoScene must still run. Its lock decides its crates (`--locked`).
+//! Beside them, `guests.sources` says what they were built from, so a test
+//! tells a stale guest from a fault.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,5 +48,10 @@ pub fn build(out: &Path) -> Result<()> {
         fs::copy(&built, out.join(name)).with_context(|| format!("copying {}", built.display()))?;
         println!("{} ({} KiB)", out.join(name).display(), fs::metadata(out.join(name))?.len() / 1024);
     }
+    // What they were built from: a test refuses guests built from other
+    // sources (as_testkit::fixture_file).
+    let stamp = out.join(Path::new(as_testkit::WASM_GUESTS_STAMP).file_name().expect("a file name"));
+    fs::write(&stamp, as_testkit::wasm_guest_sources() + "\n")
+        .with_context(|| format!("writing {}", stamp.display()))?;
     Ok(())
 }

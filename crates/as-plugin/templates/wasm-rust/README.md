@@ -7,8 +7,10 @@ it sees only what its permissions give it.
 ## What is in this folder
 
 - `src/lib.rs` is the plugin. AutoScene calls its `run` for each run of
-  **Say hello**, in the palette.
-- `wit/plugin.wit` is the world `autoscene:plugin@1.0.0`: what AutoScene
+  **Say hello**, in the palette, and its `on_event` for each run of an
+  event in `contributes.events` that the person turned on (it has none
+  yet).
+- `wit/plugin.wit` is the world `autoscene:plugin@1.1.0`: what AutoScene
   hands a run, what it offers it, and what the plugin returns. Keep it as
   asp wrote it.
 - `plugin/` is the plugin as AutoScene loads and packs it: `plugin.json`,

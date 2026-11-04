@@ -17,10 +17,11 @@ use std::time::{Duration, Instant};
 
 use as_core::CancelToken;
 use as_plugin::log::{MAX_LOG_BYTES, RESERVE};
+use as_plugin::manifest::EventKind;
 use as_plugin::manifest::{RuntimeKind, WasmLimits, parse_for_any_app};
 use as_plugin::package::sha256_hex;
 use as_plugin::page_state;
-use as_plugin::protocol::{ClipContext, ExportContext, ProjectContext};
+use as_plugin::protocol::{ClipContext, EpisodeCounts, EventContext, ExportContext, ProjectContext};
 use as_plugin::runtime::MAX_LINE_BYTES;
 use as_plugin::scratch::{self, Scratch};
 use as_plugin::wasm::{self, CANCEL_GRACE, Grants, Limits, Net, PROGRESS_GAP, WasmSpec};
@@ -54,6 +55,8 @@ struct Guest {
     secret_keys: Vec<String>,
     secrets: BTreeMap<String, String>,
     limits: Limits,
+    /// The protocol its manifest declares.
+    protocol: u32,
     message: RunMessage,
 }
 
@@ -84,6 +87,7 @@ fn guest_from(fixture: &str, action: &str) -> Option<Guest> {
         secret_keys: vec!["token".into()],
         secrets: BTreeMap::new(),
         limits: Limits::of(WasmLimits::default()),
+        protocol: 2,
         message,
     })
 }
@@ -169,6 +173,19 @@ impl Guest {
         self
     }
 
+    /// Its run made the run of the event `id`: an analysis of 7 episodes
+    /// done and 1 failed, in its project, without an export.
+    fn event(mut self, id: &str) -> Self {
+        self.message.action = ActionContext { kind: ActionKind::Event, id: id.into(), trigger: Trigger::Event };
+        self.message.export = None;
+        self.message.event = Some(EventContext {
+            kind: EventKind::AnalysisFinished,
+            at: 1_762_150_000_000,
+            episodes: EpisodeCounts { done: 7, failed: 1 },
+        });
+        self
+    }
+
     fn spec(&self) -> WasmSpec {
         WasmSpec {
             name: NAME.into(),
@@ -183,7 +200,7 @@ impl Guest {
                 permissions: self.permissions.clone(),
                 hosts: Vec::new(),
                 secrets: self.secret_keys.clone(),
-                protocol: 2,
+                protocol: self.protocol,
             },
             limits: self.limits,
             secrets: self.secrets.clone(),
@@ -247,6 +264,17 @@ impl Guest {
 }
 
 fn wasm_manifest(network: bool) -> Manifest {
+    manifest_with(network, |_| {})
+}
+
+/// [`wasm_manifest`] that waits for an analysis to finish.
+fn waiting_manifest() -> Manifest {
+    manifest_with(false, |m| {
+        m["contributes"]["events"] = json!([{"id": "done", "title": "Tell", "on": "analysisFinished"}]);
+    })
+}
+
+fn manifest_with(network: bool, edit: impl FnOnce(&mut serde_json::Value)) -> Manifest {
     let mut m = json!({
         "manifestVersion": 2, "id": ID, "version": "1.2.0", "name": NAME,
         "description": "Tries the sandbox.", "author": {"name": "AutoScene"},
@@ -258,6 +286,7 @@ fn wasm_manifest(network: bool) -> Manifest {
         m["permissions"] = json!(["network"]);
         m["network"] = json!({"hosts": ["discord.com"]});
     }
+    edit(&mut m);
     parse_for_any_app(m.to_string().as_bytes()).unwrap().manifest
 }
 
@@ -838,7 +867,7 @@ fn a_component_is_prepared_once_for_its_code() {
     fs::create_dir_all(&code).unwrap();
     fs::write(code.join("older.cwasm"), b"old").unwrap();
     let (checked, file) = wasm::prepare(&g.component, Some(&sha256_hex(&bytes)), &code, &wasm_manifest(false)).unwrap();
-    assert!(checked.imports.iter().any(|i| i == "autoscene:plugin/host@1.0.0"), "{:?}", checked.imports);
+    assert!(checked.imports.iter().any(|i| i == "autoscene:plugin/host@1.1.0"), "{:?}", checked.imports);
     // The guest can fetch, and its manifest has no network: every request is refused.
     assert_eq!(
         checked.warnings,
@@ -874,7 +903,7 @@ fn a_core_module_is_refused() {
 
 #[test]
 fn a_newer_world_minor_needs_a_newer_autoscene() {
-    let e = wasm::check(&component(r#"(component (import "autoscene:plugin/host@1.1.0" (instance)))"#), None);
+    let e = wasm::check(&component(r#"(component (import "autoscene:plugin/host@1.2.0" (instance)))"#), None);
     assert!(matches!(e, Err(PluginError::TooNew(ref f)) if f == "world"), "{e:?}");
 }
 
@@ -916,9 +945,95 @@ fn a_run_of_another_type_is_refused() {
 }
 
 #[test]
-fn a_guest_of_the_frozen_1_0_world_still_runs() {
+fn a_1_0_guest_runs_under_the_1_1_host() {
+    // One host, in one process, runs a guest of each world.
+    let Some(frozen) = guest_from("wasm/guest-frozen.wasm", "world") else { return };
+    let Some(newest) = guest("world") else { return };
+    assert_eq!((frozen.runs(), newest.runs()), ("1.0.0".into(), "1.1.0".into()));
     let Some(g) = guest_from("wasm/guest-frozen.wasm", "hello") else { return };
     assert!(g.runs().starts_with("hello dev.autoscene.test-guest"));
+    // It imports the 1.0.0 host, which the 1.1.0 one serves, and its
+    // records reach it as they did.
+    let bytes = fs::read(&frozen.component).unwrap();
+    let checked = wasm::check(&bytes, Some(&wasm_manifest(false))).unwrap();
+    assert!(checked.imports.iter().any(|i| i == "autoscene:plugin/host@1.0.0"), "{:?}", checked.imports);
+    let Some(g) = guest_from("wasm/guest-frozen.wasm", "context") else { return };
+    let said = g.with(&[Permission::ExportsRead]).runs();
+    assert!(said.contains("Clip 1"), "{said}");
+}
+
+#[test]
+fn an_event_reaches_on_event() {
+    let Some(g) = guest("ignored") else { return };
+    let g = g.event("done").with(&[Permission::ProjectRead]);
+    let (r, reports) = g.run();
+    let said = "event done analysisFinished at=1762150000000 done=7 failed=1\n\
+                project=p1 Breaking /project\n\
+                settings=alpha,greeting\n\
+                protocol=2 run=run-1 plugin=dev.autoscene.test-guest /data true";
+    assert_eq!(g.said(), said);
+    // The person sees it on one line.
+    assert_eq!(r.unwrap(), Some(said.replace('\n', " ")));
+    assert!(reports.iter().any(|(stage, f)| stage == "Telling" && *f == Some(1.0)), "{reports:?}");
+    assert!(g.log().contains("event done"));
+    // Without project:read, its project has no folder.
+    let Some(g) = guest("ignored") else { return };
+    let said = g.event("done").runs();
+    assert!(said.contains("\nproject=p1 Breaking -\n"), "{said}");
+    // Its error is the run's, as one of run's.
+    let Some(g) = guest("ignored") else { return };
+    let (r, _) = g.event("fail").run();
+    let Err(PluginError::Failed { message, .. }) = r else { panic!("{r:?}") };
+    assert_eq!(message, "The event failed on purpose.");
+}
+
+#[test]
+fn a_1_0_guest_is_never_sent_an_event() {
+    const NO_ON_EVENT: &str = "The plugin waits for events, but its component has no on-event: \
+                               build it against the wit/plugin.wit that asp init writes.";
+    // Its check refuses a manifest that waits for events; one of 1.1.0 passes.
+    let Some(g) = guest_from("wasm/guest-frozen.wasm", "ignored") else { return };
+    let frozen = fs::read(&g.component).unwrap();
+    let e = wasm::check(&frozen, Some(&waiting_manifest())).unwrap_err();
+    assert_eq!(e.to_string(), NO_ON_EVENT);
+    let sha256 = sha256_hex(&frozen);
+    let e = wasm::prepare(&g.component, Some(&sha256), &g.path("code"), &waiting_manifest()).unwrap_err();
+    assert_eq!(e.to_string(), NO_ON_EVENT);
+    let Some(newest) = guest("ignored") else { return };
+    assert!(wasm::check(&fs::read(&newest.component).unwrap(), Some(&waiting_manifest())).is_ok());
+
+    // And an event's run that reaches it all the same starts nothing.
+    let g = g.event("done");
+    let (r, reports) = g.run();
+    let Err(PluginError::Invalid(why)) = r else { panic!("{r:?}") };
+    assert_eq!(why, NO_ON_EVENT);
+    assert!(reports.iter().all(|(stage, _)| stage.starts_with("Getting")), "{reports:?}");
+    assert_eq!(fs::read_dir(g.path("data")).unwrap().count(), 0);
+    assert!(g.log().contains("[host] couldn't start: The plugin waits for events"), "{}", g.log());
+}
+
+#[test]
+fn export_status_says_how_a_joined_export_went() {
+    // A joined export whose one file failed: each clip was cut, and no file
+    // was made. Its clips look as those of an export that went whole, and
+    // export-status tells it apart.
+    let Some(mut g) = guest("export-status") else { return };
+    let export = g.message.export.as_mut().unwrap();
+    export.status = Some("failed".into());
+    assert!(export.merged_file.is_none() && export.clips.iter().all(|c| c.status == "done"));
+    assert_eq!(g.runs(), "export status failed");
+    let Some(mut g) = guest("export-status") else { return };
+    g.message.export.as_mut().unwrap().status = Some("partial".into());
+    assert_eq!(g.runs(), "export status partial");
+    // None without an export, and for a plugin of protocol 1, whose run
+    // line has no status either.
+    let Some(mut g) = guest("export-status") else { return };
+    g.message.export = None;
+    assert_eq!(g.runs(), "export status none");
+    let Some(mut g) = guest("export-status") else { return };
+    g.message.export.as_mut().unwrap().status = Some("done".into());
+    g.protocol = 1;
+    assert_eq!(g.runs(), "export status none");
 }
 
 #[test]

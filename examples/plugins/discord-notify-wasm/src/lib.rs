@@ -2,7 +2,8 @@
 //! internet from AutoScene's sandbox.
 //!
 //! Its export action `post` tells a Discord channel that an export is
-//! done, through the channel's webhook. The webhook's URL is the secret
+//! done, and its event `analysis-done` that a project's episodes are all
+//! analysed, through the channel's webhook. The webhook's URL is the secret
 //! setting `webhook`: AutoScene keeps it in the system's keychain and hands
 //! it over only when the plugin asks (`host::secret`). The post goes over
 //! wasi:http, which AutoScene sends itself, and only to the hosts
@@ -12,7 +13,7 @@
 wit_bindgen::generate!({ world: "plugin", path: "wit" });
 
 use autoscene::plugin::host::{self, LogLevel};
-use autoscene::plugin::types::ExportContext;
+use autoscene::plugin::types::{EventContext, ExportContext};
 use wasip2::http::outgoing_handler;
 use wasip2::http::types::{ErrorCode, Fields, Method, OutgoingBody, OutgoingRequest, Scheme};
 
@@ -30,16 +31,19 @@ impl Guest for Plugin {
                 let Some(export) = &request.export else {
                     return Err(error("Post to Discord runs on an export.", None));
                 };
-                let url = webhook()?;
-                if host::cancelled() {
-                    return Err(error("Stopped before it posted.", None));
-                }
-                host::progress(None, Some("Posting to Discord"));
-                post(&url, &body(export))?;
-                host::log(LogLevel::Info, "Posted to Discord.");
-                Ok(Some("Posted to Discord.".into()))
+                send(&exported(export))
             }
             other => Err(error(&format!("Discord Notify has no action {other}."), None)),
+        }
+    }
+
+    fn on_event(request: EventRequest) -> Result<Option<String>, RunError> {
+        match request.id.as_str() {
+            "analysis-done" => {
+                let project = request.project.as_ref().map(|p| p.title.as_str());
+                send(&analysed(project, &request.event))
+            }
+            other => Err(error(&format!("Discord Notify has no event {other}."), None)),
         }
     }
 }
@@ -79,16 +83,51 @@ fn webhook() -> Result<String, RunError> {
     Ok(url)
 }
 
-/// The post for `export`: its name and how many clips it made. Mentions in
-/// it never ping anyone.
-fn body(export: &ExportContext) -> String {
+/// Posts `content` to the webhook from the keychain.
+fn send(content: &str) -> Result<Option<String>, RunError> {
+    let url = webhook()?;
+    if host::cancelled() {
+        return Err(error("Stopped before it posted.", None));
+    }
+    host::progress(None, Some("Posting to Discord"));
+    post(&url, &body(content))?;
+    host::log(LogLevel::Info, "Posted to Discord.");
+    Ok(Some("Posted to Discord.".into()))
+}
+
+/// What to say of `export`: its name and how many clips it made.
+fn exported(export: &ExportContext) -> String {
     let made = export.clips.iter().filter(|c| c.status == "done").count();
-    let clips = if made == 1 { "1 clip".to_owned() } else { format!("{made} clips") };
-    let content = match &export.label {
+    let clips = count(made, "clip", "clips");
+    match &export.label {
         Some(label) => format!("Export {label} is done: {clips}."),
         None => format!("An export is done: {clips}."),
+    }
+}
+
+/// What to say when the analysis of `project`'s episodes finished: how
+/// many were analysed, and how many failed.
+fn analysed(project: Option<&str>, event: &EventContext) -> String {
+    let episodes = event.episodes;
+    let done = count(episodes.done as usize, "episode", "episodes");
+    let what = match episodes.failed {
+        0 => format!("{done} analysed"),
+        failed => format!("{done} analysed, {failed} failed"),
     };
-    format!(r#"{{"content":{},"allowed_mentions":{{"parse":[]}}}}"#, json_string(&content))
+    match project {
+        Some(title) => format!("{title}: {what}."),
+        None => format!("A project: {what}."),
+    }
+}
+
+/// `n` and the word for one or more.
+fn count(n: usize, one: &str, more: &str) -> String {
+    if n == 1 { format!("1 {one}") } else { format!("{n} {more}") }
+}
+
+/// The post that says `content`. Mentions in it never ping anyone.
+fn body(content: &str) -> String {
+    format!(r#"{{"content":{},"allowed_mentions":{{"parse":[]}}}}"#, json_string(content))
 }
 
 /// `text` as a JSON string.

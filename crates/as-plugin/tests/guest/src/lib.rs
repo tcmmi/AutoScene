@@ -3,7 +3,8 @@
 //! Each action (`action.id`) does one thing a plugin may or may not do,
 //! and says how it went; the settings carry its inputs: `paths`, `urls`
 //! and `links` (one per line), `bytes` and `timeout-ms` (what a request
-//! asks for as each of its timeouts).
+//! asks for as each of its timeouts). Built against the current world, it
+//! also has `on-event`, which says what reached it (mode `event`).
 
 #[cfg(not(feature = "frozen"))]
 wit_bindgen::generate!({ world: "plugin", path: "../../wit" });
@@ -540,8 +541,44 @@ impl Guest for TestGuest {
                 let some = host::secret("token").is_some();
                 Ok(Some(format!("secret token is {}", if some { "some" } else { "none" })))
             }
+            // How its export went (host.export-status, since 1.1.0).
+            #[cfg(not(feature = "frozen"))]
+            "export-status" => {
+                Ok(Some(format!("export status {}", host::export_status().as_deref().unwrap_or("none"))))
+            }
+            // The world it was built against.
+            "world" => Ok(Some(if cfg!(feature = "frozen") { "1.0.0" } else { "1.1.0" }.into())),
             other => Err(err(format!("unknown action {other}"))),
         }
+    }
+
+    #[cfg(not(feature = "frozen"))]
+    fn on_event(req: EventRequest) -> Result<Option<String>, RunError> {
+        host::progress(Some(1.0), Some("Telling"));
+        host::log(LogLevel::Info, &format!("event {}", req.id));
+        if req.id == "fail" {
+            return Err(err("The event failed on purpose."));
+        }
+        let e = &req.event;
+        let project = req
+            .project
+            .as_ref()
+            .map_or_else(|| "none".into(), |p| format!("{} {} {}", p.id, p.title, p.folder.as_deref().unwrap_or("-")));
+        let settings: Vec<&str> = req.settings.iter().map(|(k, _)| k.as_str()).collect();
+        let lines = [
+            format!("event {} {} at={} done={} failed={}", req.id, e.kind, e.at, e.episodes.done, e.episodes.failed),
+            format!("project={project}"),
+            format!("settings={}", settings.join(",")),
+            format!(
+                "protocol={} run={} plugin={} {} {}",
+                req.protocol,
+                req.run_id,
+                req.plugin.id,
+                req.plugin.data_dir,
+                fs::read_dir("/data").is_ok()
+            ),
+        ];
+        Ok(Some(lines.join("\n")))
     }
 }
 

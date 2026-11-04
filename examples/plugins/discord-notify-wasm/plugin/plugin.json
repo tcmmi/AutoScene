@@ -3,7 +3,7 @@
   "id": "dev.autoscene.discord-notify-wasm",
   "version": "1.0.0",
   "name": "Discord Notify (sandboxed)",
-  "description": "Tells a Discord channel that an export is done, through a webhook, from AutoScene's sandbox. An example plugin.",
+  "description": "Tells a Discord channel that an export is done, or that a project is analysed, through a webhook, from AutoScene's sandbox. An example plugin.",
   "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
   "repository": "https://github.com/tcmmi/AutoScene",
   "engines": { "autoscene": ">=1.0.0, <2", "protocol": 2 },
@@ -13,6 +13,14 @@
   "contributes": {
     "exportActions": [
       { "id": "post", "title": "Post to Discord", "description": "Posts the export's name and how many clips it made." }
+    ],
+    "events": [
+      {
+        "id": "analysis-done",
+        "title": "Post when an analysis finishes",
+        "description": "Posts the project's name and how many episodes were analysed.",
+        "on": "analysisFinished"
+      }
     ],
     "settings": [
       {

@@ -920,10 +920,6 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
                 "events" if manifest_version < 2 => {
                     w.push(r#"Skipped contributes.events: events need "manifestVersion": 2."#.into());
                 }
-                // A component is told through a function of a later world.
-                "events" if kind == RuntimeKind::Wasm => {
-                    w.push("Skipped contributes.events: a WebAssembly plugin's events need a newer AutoScene.".into());
-                }
                 "events" => {}
                 key => w.push(format!("Skipped contributes.{}, which this AutoScene doesn't know.", shown(key))),
             }
@@ -983,8 +979,9 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             }
         }
         unique(pages.iter().map(|p| p.id.as_str()), "contributes.pages", "id")?;
-        // Skipped above, whatever they hold, in version 1 and for a component.
-        let waits = if manifest_version >= 2 && kind != RuntimeKind::Wasm { c.list("events")? } else { &[] };
+        // Skipped above, whatever they hold, in version 1. A component is
+        // told through its on-event, which its check looks for.
+        let waits = if manifest_version >= 2 { c.list("events")? } else { &[] };
         if waits.len() > MAX_EVENTS {
             return Err(invalid(format!("The plugin adds more than {MAX_EVENTS} events.")));
         }
@@ -2574,10 +2571,10 @@ mod tests {
         let p = with(|v| v["contributes"]["events"] = json!("anything")).unwrap();
         assert_eq!(p.manifest.events, []);
         assert_eq!(p.warnings, [r#"Skipped contributes.events: events need "manifestVersion": 2."#]);
-        // A component is told through a function of a later world.
+        // A component waits for them too: through its on-event (world
+        // 1.1.0), which the check of its component looks for.
         let p = with_events(done, |v| v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"})).unwrap();
-        assert_eq!(p.manifest.events, []);
-        assert_eq!(p.warnings, ["Skipped contributes.events: a WebAssembly plugin's events need a newer AutoScene."]);
+        assert_eq!((p.manifest.events.len(), p.warnings), (1, Vec::<String>::new()));
     }
 
     #[test]

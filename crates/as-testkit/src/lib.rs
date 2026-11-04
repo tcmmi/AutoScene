@@ -44,9 +44,23 @@ pub fn load_truth() -> Option<Truth> {
 /// (`wasm/guest.wasm`, from `cargo xtask wasm-guests`). `None` (the test
 /// skips) only when it isn't there and `AUTOSCENE_REQUIRE_FIXTURES` is
 /// unset, as for [`load_truth`].
+///
+/// A test guest (`wasm/*.wasm`) built from other sources than this tree's
+/// fails, whatever the setting: its tests would fail with no word of why.
 pub fn fixture_file(rel: &str) -> Option<PathBuf> {
     let p = fixtures_dir().join(rel);
     if p.is_file() {
+        if rel.starts_with("wasm/") && rel.ends_with(".wasm") {
+            let stamp = fixtures_dir().join(WASM_GUESTS_STAMP);
+            let built = std::fs::read_to_string(&stamp).unwrap_or_default();
+            if built.trim() != wasm_guest_sources() {
+                panic!(
+                    "{} is stale: it was built from other sources than this tree's \
+                     (run `cargo xtask wasm-guests`)",
+                    p.display()
+                );
+            }
+        }
         return Some(p);
     }
     let task = if rel.starts_with("wasm/") { "wasm-guests" } else { "fixtures" };
@@ -55,6 +69,41 @@ pub fn fixture_file(rel: &str) -> Option<PathBuf> {
     }
     eprintln!("{rel} missing; run `cargo xtask {task}` (skipping)");
     None
+}
+
+/// Where `cargo xtask wasm-guests` writes [`wasm_guest_sources`] for the
+/// guests it built, under [`fixtures_dir`].
+pub const WASM_GUESTS_STAMP: &str = "wasm/guests.sources";
+
+/// What the test guests are built from, in this tree: the worlds, the
+/// guest's crate and its lock (`crates/as-plugin/tests/guest`). A hash of
+/// their text (line ends as LF), which isn't kept secret from anyone: it
+/// only tells a stale guest.
+pub fn wasm_guest_sources() -> String {
+    const SOURCES: [&str; 5] = [
+        "crates/as-plugin/wit/plugin.wit",
+        "crates/as-plugin/wit-frozen/1.0.0/plugin.wit",
+        "crates/as-plugin/tests/guest/Cargo.toml",
+        "crates/as-plugin/tests/guest/Cargo.lock",
+        "crates/as-plugin/tests/guest/src/lib.rs",
+    ];
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    // FNV-1a, 64 bits: no crate needed, and the same on every platform.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |bytes: &[u8]| {
+        for b in bytes {
+            hash ^= u64::from(*b);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        }
+    };
+    for rel in SOURCES {
+        let text = std::fs::read_to_string(root.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"));
+        let text = text.replace("\r\n", "\n");
+        feed(rel.as_bytes());
+        feed(&(text.len() as u64).to_le_bytes());
+        feed(text.as_bytes());
+    }
+    format!("{hash:016x}")
 }
 
 /// CI sets `AUTOSCENE_REQUIRE_FIXTURES` so missing fixtures fail instead of skip.

@@ -148,8 +148,7 @@
       },
       "then": {
         "properties": {
-          "runtime": { "required": ["component"], "properties": { "command": false, "gpu": { "const": false } } },
-          "contributes": { "properties": { "events": false } }
+          "runtime": { "required": ["component"], "properties": { "command": false, "gpu": { "const": false } } }
         }
       }
     },
@@ -360,7 +359,7 @@
           "items": { "$ref": "#/$defs/page" }
         },
         "events": {
-          "description": "Moments its program may run on by itself, each once the person turns it on in the plugin's settings (manifest version 2; not for a WebAssembly plugin yet).",
+          "description": "Moments its program may run on by itself, each once the person turns it on in the plugin's settings (manifest version 2; a WebAssembly plugin's component needs on-event, world 1.1.0).",
           "type": "array",
           "maxItems": 4,
           "items": { "$ref": "#/$defs/event" }

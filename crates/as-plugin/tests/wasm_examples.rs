@@ -19,8 +19,8 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 
 use as_core::CancelToken;
-use as_plugin::manifest::{RuntimeKind, WasmLimits};
-use as_plugin::protocol::{ClipContext, ExportContext};
+use as_plugin::manifest::{EventKind, RuntimeKind, WasmLimits};
+use as_plugin::protocol::{ClipContext, EpisodeCounts, EventContext, ExportContext, ProjectContext};
 use as_plugin::wasm::{self, Dial, Grants, Limits, Net, NetLimits, Resolve, WasmSpec};
 use as_plugin::{
     ActionContext, ActionKind, AppContext, Permission, PluginContext, PluginError, PluginId, PluginResult, RunMessage,
@@ -49,13 +49,16 @@ fn component(name: &str) -> Option<PathBuf> {
 
 /// A run of an example's export action `action`, in folders of its own:
 /// `data/` (its `/data`), `export/` (the export's folder, with two clips),
-/// `code/` and `logs/`.
+/// `code/` and `logs/`. With `event`, the run of its event `action` instead,
+/// told of an analysis that ended so, in the project titled `project`.
 struct Run {
     dir: TempDir,
     component: PathBuf,
     id: &'static str,
     action: &'static str,
     label: Option<String>,
+    event: Option<EpisodeCounts>,
+    project: Option<String>,
     permissions: Vec<Permission>,
     hosts: Vec<String>,
     secrets: BTreeMap<String, String>,
@@ -75,6 +78,8 @@ impl Run {
             id,
             action,
             label: None,
+            event: None,
+            project: None,
             permissions: Vec::new(),
             hosts: Vec::new(),
             secrets: BTreeMap::new(),
@@ -98,7 +103,7 @@ impl Run {
             end,
             fps: Some("24000/1001".into()),
         };
-        let message = RunMessage {
+        let mut message = RunMessage {
             event: None,
             protocol: 2,
             run_id: "run-1".into(),
@@ -126,6 +131,16 @@ impl Run {
             }),
             input: None,
         };
+        if let Some(episodes) = self.event {
+            message.action = ActionContext { kind: ActionKind::Event, id: self.action.into(), trigger: Trigger::Event };
+            message.event = Some(EventContext { kind: EventKind::AnalysisFinished, at: 1_762_150_000_000, episodes });
+            message.export = None;
+            message.project = self.project.clone().map(|title| ProjectContext {
+                id: "p1".into(),
+                title,
+                folder: host(self.path("project")),
+            });
+        }
         WasmSpec {
             name: self.id.into(),
             component: self.component.clone(),
@@ -392,5 +407,44 @@ fn the_discord_example_posts_to_its_webhook() {
     }
     assert_eq!(discord.posts().len(), 5);
     // Neither a post nor a refusal writes the secret to the log.
+    assert!(!run.log().contains("s3cret-token"), "{}", run.log());
+}
+
+#[test]
+fn the_discord_example_posts_when_an_analysis_finishes() {
+    let Some(component) = component("discord-notify-wasm") else { return };
+    let discord = Discord::start();
+    let mut run = Run::of(component, "dev.autoscene.discord-notify-wasm", "analysis-done");
+    run.event = Some(EpisodeCounts { done: 7, failed: 1 });
+    run.project = Some("Breaking \"Bad\" @here".into());
+    run.permissions = vec![Permission::Network];
+    run.hosts = vec!["discord.com".into()];
+    run.secrets.insert("webhook".into(), "https://discord.com/api/webhooks/1234/s3cret-token".into());
+
+    assert_eq!(run.run(discord.net()).unwrap().as_deref(), Some("Posted to Discord."));
+    let contents = |posts: Vec<Post>| -> Vec<serde_json::Value> {
+        posts.iter().map(|p| serde_json::from_str::<serde_json::Value>(&p.body).unwrap()).collect()
+    };
+    assert_eq!(
+        contents(discord.posts()),
+        [serde_json::json!({
+            "content": "Breaking \"Bad\" @here: 7 episodes analysed, 1 failed.",
+            "allowed_mentions": { "parse": [] },
+        })]
+    );
+    let post = &discord.posts()[0];
+    assert_eq!((post.method.as_str(), post.path.as_str()), ("POST", "/api/webhooks/1234/s3cret-token"));
+
+    // One episode, none failed; and an event it doesn't have.
+    run.event = Some(EpisodeCounts { done: 1, failed: 0 });
+    run.run(discord.net()).unwrap();
+    let last = contents(discord.posts()).pop().unwrap();
+    assert_eq!(last["content"], "Breaking \"Bad\" @here: 1 episode analysed.");
+    run.action = "export-done";
+    match run.run(discord.net()) {
+        Err(PluginError::Failed { message, .. }) => assert_eq!(message, "Discord Notify has no event export-done."),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(discord.posts().len(), 2);
     assert!(!run.log().contains("s3cret-token"), "{}", run.log());
 }

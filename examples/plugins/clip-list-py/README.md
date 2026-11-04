@@ -16,8 +16,9 @@ are all it sees: no other file, no program, no network.
 
 ## What is in this folder
 
-- `app.py` is the plugin. AutoScene calls its `run` for each run.
-- `wit/plugin.wit` is the world `autoscene:plugin@1.0.0`, a copy of
+- `app.py` is the plugin. AutoScene calls its `run` for each run. It has
+  no events, so its `on_event` only says so.
+- `wit/plugin.wit` is the world `autoscene:plugin@1.1.0`, a copy of
   `crates/as-plugin/wit/plugin.wit`; a test keeps the two the same.
 - `plugin/` is the plugin as AutoScene loads and packs it: `plugin.json`,
   and `plugin.wasm` once you built it.

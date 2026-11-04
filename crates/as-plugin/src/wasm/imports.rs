@@ -9,7 +9,7 @@ use crate::error::{PluginError, PluginResult};
 use crate::manifest::{Manifest, Permission};
 
 /// The minor of `autoscene:plugin@1` this AutoScene serves.
-pub const WORLD_MINOR: u64 = 0;
+pub const WORLD_MINOR: u64 = 1;
 /// The newest WASI 0.2 patch this AutoScene offers (wasmtime 50.0.1
 /// carries `wasi:*@0.2.12`).
 pub const WASI_PATCH: u64 = 12;
@@ -123,11 +123,14 @@ mod tests {
         let mut names = STD.to_vec();
         names.extend(["autoscene:plugin/host@1.0.0", "autoscene:plugin/types@1.0.0", "wasi:http/types@0.2.10"]);
         assert_eq!(checked(&names).unwrap(), Vec::<String>::new());
+        // A plugin of 1.1.0 (with on-event) as well as one of 1.0.0.
+        let newest = ["autoscene:plugin/host@1.1.0", "autoscene:plugin/types@1.1.0"];
+        assert_eq!(checked(&newest).unwrap(), Vec::<String>::new());
     }
 
     #[test]
     fn a_newer_world_or_wasi_needs_a_newer_autoscene() {
-        for name in ["autoscene:plugin/host@1.1.0", "autoscene:plugin/host@2.0.0", "autoscene:plugin/extra@1.1.0"] {
+        for name in ["autoscene:plugin/host@1.2.0", "autoscene:plugin/host@2.0.0", "autoscene:plugin/extra@1.2.0"] {
             assert!(matches!(checked(&[name]), Err(PluginError::TooNew(f)) if f == "world"), "{name}");
         }
         for name in ["wasi:io/streams@0.2.13", "wasi:http/handler@0.3.0", "wasi:cli/run@1.0.0"] {
@@ -177,15 +180,15 @@ mod tests {
             )
         );
         assert_eq!(
-            too_new("autoscene:plugin/host@1.1.0").as_deref(),
+            too_new("autoscene:plugin/host@1.2.0").as_deref(),
             Some(
-                "autoscene:plugin/host@1.1.0 needs a newer AutoScene: this one offers autoscene:plugin up to 1.0. \
+                "autoscene:plugin/host@1.2.0 needs a newer AutoScene: this one offers autoscene:plugin up to 1.1. \
                  Build it against the wit/plugin.wit that asp init writes, or wait for a newer AutoScene."
             )
         );
         // A newer major of either is newer too.
         assert!(too_new("wasi:cli/environment@1.0.0").is_some_and(|s| s.contains("WASI up to 0.2.12")));
-        assert!(too_new("autoscene:plugin/host@2.0.0").is_some_and(|s| s.contains("autoscene:plugin up to 1.0")));
+        assert!(too_new("autoscene:plugin/host@2.0.0").is_some_and(|s| s.contains("autoscene:plugin up to 1.1")));
         for fine_or_unknown in ["wasi:cli/environment@0.2.12", "example:thing/api@1.0.0", "run"] {
             assert_eq!(too_new(fine_or_unknown), None, "{fine_or_unknown}");
         }

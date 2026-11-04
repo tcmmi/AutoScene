@@ -2,7 +2,7 @@
 
 The WebAssembly twin of [discord-notify](../discord-notify): an example
 AutoScene plugin, written in Rust, that tells a Discord channel an export is
-done. It runs in AutoScene's sandbox, so what `plugin/plugin.json` asks for
+done, or that a project's episodes are analysed. It runs in AutoScene's sandbox, so what `plugin/plugin.json` asks for
 is all it can reach: Discord, over https, and nothing on the computer but
 its own folder. [docs/PLUGINS.md](../../../docs/PLUGINS.md) describes the
 sandbox.
@@ -10,11 +10,16 @@ sandbox.
 - **Post to Discord** (each export's menu, or after every export): posts
   "Export <name> is done: <n> clips." through the channel's webhook. It
   never posts a file, a path or a frame, and its posts never ping anyone.
+- **Post when an analysis finishes** (an event, under "Runs by itself" in
+  its settings, off until you turn it on): once a project's new episodes
+  are all analysed, posts "<project>: <n> episodes analysed." (with
+  ", <m> failed" when some failed).
 
 ## What is in this folder
 
-- `src/lib.rs` is the plugin. AutoScene calls its `run` for each run.
-- `wit/plugin.wit` is the world `autoscene:plugin@1.0.0`, a copy of
+- `src/lib.rs` is the plugin. AutoScene calls its `run` for each run of
+  **Post to Discord**, and its `on_event` for each run of its event.
+- `wit/plugin.wit` is the world `autoscene:plugin@1.1.0`, a copy of
   `crates/as-plugin/wit/plugin.wit`; a test keeps the two the same.
 - `plugin/` is the plugin as AutoScene loads and packs it: `plugin.json`,
   and `plugin.wasm` once you built it.

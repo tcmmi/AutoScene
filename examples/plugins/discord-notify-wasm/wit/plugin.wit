@@ -1,9 +1,10 @@
 // The world of an AutoScene WebAssembly plugin. It carries the protocol of
 // crates/as-plugin/src/protocol.rs as typed calls instead of JSON lines.
-// 1.x grows only by functions marked @since: a record, variant or enum that
-// run takes or returns never changes once released (wit-frozen/ keeps each
-// released world as it shipped).
-package autoscene:plugin@1.0.0;
+// 1.x grows only by what is marked @since (1.1.0: on-event and the records
+// it takes, and host.export-status): a record, variant or enum that a function takes or returns
+// never changes once released (wit-frozen/ keeps each released world as it
+// shipped), and a component of an older 1.x runs on.
+package autoscene:plugin@1.1.0;
 
 /// The data of a run, field for field as the protocol has it.
 interface types {
@@ -104,6 +105,44 @@ interface types {
     }
 
     enum log-level { debug, info, warn, error }
+
+    /// How the analyses of a project's episodes ended: those cancelled
+    /// aren't counted.
+    @since(version = 1.1.0)
+    record episode-counts {
+        done: u32,
+        failed: u32,
+    }
+
+    /// What happened (protocol.rs EventContext).
+    @since(version = 1.1.0)
+    record event-context {
+        /// What the event waits for, as `on` in plugin.json names it:
+        /// "analysisFinished".
+        kind: string,
+        /// When it happened (Unix milliseconds).
+        at: s64,
+        /// The episodes whose analysis ended since the project last told
+        /// of one (analysisFinished).
+        episodes: episode-counts,
+    }
+
+    /// One run of an event the person turned on.
+    @since(version = 1.1.0)
+    record event-request {
+        /// The protocol version the plugin declared (engines.protocol).
+        protocol: u32,
+        run-id: string,
+        plugin: plugin-context,
+        app: app-context,
+        /// As a run-request's settings.
+        settings: list<tuple<string, setting-value>>,
+        /// The event's id in the manifest (contributes.events).
+        id: string,
+        /// The project it happened in.
+        project: option<project-context>,
+        event: event-context,
+    }
 }
 
 /// What AutoScene offers a running plugin.
@@ -123,13 +162,28 @@ interface host {
     /// The value of the plugin's secret setting `key`, or none when it
     /// isn't set (or the plugin has no such setting).
     secret: func(key: string) -> option<string>;
+
+    /// How the export the run is on went, as protocol 2's export.status
+    /// says: "done", "partial" (some of what it was to make is missing) or
+    /// "failed" (it made nothing). export-context can't say it, as its
+    /// record never changes, and its clips can't either: a joined export
+    /// whose one file failed has every clip "done". None when the run has
+    /// no export, and for a plugin of protocol 1.
+    @since(version = 1.1.0)
+    export-status: func() -> option<string>;
 }
 
 world plugin {
-    use types.{run-request, run-error};
+    use types.{run-request, run-error, event-request};
 
     import host;
 
     /// One run per action: ok with the message to show, or the error.
     export run: func(request: run-request) -> result<option<string>, run-error>;
+
+    /// One run per event the person turned on (contributes.events): ok
+    /// with the message to show, or the error. A plugin of the world
+    /// 1.0.0, which has no on-event, is never sent one.
+    @since(version = 1.1.0)
+    export on-event: func(request: event-request) -> result<option<string>, run-error>;
 }

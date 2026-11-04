@@ -1,6 +1,6 @@
 //! A run as a WebAssembly plugin gets it: the protocol's run message
-//! ([`RunMessage`]) as the world's `run-request`, with its folders named as
-//! the plugin sees them.
+//! ([`RunMessage`]) as the world's `run-request`, or an event's as its
+//! `event-request`, with its folders named as the plugin sees them.
 //!
 //! Its data folder is `/data`; the export's folder `/export` and the
 //! project's `/project`, each only while the run's grants give it
@@ -12,7 +12,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use super::bindings::autoscene::plugin::types as wit;
+use super::bindings::Request;
+use super::bindings::v1_1::autoscene::plugin::types as wit;
 use crate::calls::Grants;
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{Permission, SettingValue};
@@ -68,13 +69,11 @@ pub(crate) fn guest_path(root: &Path, guest_root: &str, host: &str) -> Option<St
     Some(path)
 }
 
-/// `message` as the world's request, its folders as `mounts` gives them.
-/// Its protocol is the one the plugin declared, and a setting `grants`
-/// names a secret is left out. A run of an event has no request in the 1.0
-/// world: its plugin's events are skipped when its `plugin.json` is read,
-/// so none is queued.
-pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) -> PluginResult<wit::RunRequest> {
-    let in_export = |path: &str| mounts.export.as_deref().and_then(|root| guest_path(root, "/export", path));
+/// `message` as the world's request, its folders as `mounts` gives them:
+/// an event's run as an `event-request` for `on-event`, any other as a
+/// `run-request` for `run`. Its protocol is the one the plugin declared,
+/// and a setting `grants` names a secret is left out.
+pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) -> PluginResult<Request> {
     let settings = message
         .settings
         .iter()
@@ -88,10 +87,42 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
             (key.clone(), value)
         })
         .collect();
-    // Every kind and trigger has its case in the 1.0 world; one that a
-    // later protocol adds needs a newer world (or a function of its own),
-    // never a case that a 1.0 plugin doesn't know.
-    let no_event = || PluginError::Invalid("A WebAssembly plugin's events need a newer AutoScene.".into());
+    let plugin = wit::PluginContext {
+        id: message.plugin.id.as_str().to_owned(),
+        version: message.plugin.version.clone(),
+        data_dir: "/data".into(),
+    };
+    let app = wit::AppContext { version: message.app.version.clone(), platform: message.app.platform.clone() };
+    let project = message.project.as_ref().map(|p| wit::ProjectContext {
+        id: p.id.clone(),
+        title: p.title.clone(),
+        folder: mounts.project.as_ref().map(|_| "/project".into()),
+    });
+    // An event has a function of its own: the cases of the 1.0 world's
+    // action-kind and trigger never grow (a 1.0 plugin wouldn't know one).
+    let no_event = || PluginError::Invalid("An event's run says what happened.".into());
+    let is_event = matches!(message.action.kind, ActionKind::Event) || matches!(message.action.trigger, Trigger::Event);
+    if is_event {
+        let (ActionKind::Event, Trigger::Event, Some(event)) =
+            (message.action.kind, message.action.trigger, &message.event)
+        else {
+            return Err(no_event());
+        };
+        return Ok(Request::Event(wit::EventRequest {
+            protocol: grants.protocol,
+            run_id: message.run_id.clone(),
+            plugin,
+            app,
+            settings,
+            id: message.action.id.clone(),
+            project,
+            event: wit::EventContext {
+                kind: event.kind.name().into(),
+                at: event.at,
+                episodes: wit::EpisodeCounts { done: event.episodes.done, failed: event.episodes.failed },
+            },
+        }));
+    }
     let kind = match message.action.kind {
         ActionKind::ExportAction => wit::ActionKind::ExportAction,
         ActionKind::Command => wit::ActionKind::Command,
@@ -104,22 +135,15 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
         Trigger::Page => wit::Trigger::Page,
         Trigger::Event => return Err(no_event()),
     };
-    Ok(wit::RunRequest {
+    let in_export = |path: &str| mounts.export.as_deref().and_then(|root| guest_path(root, "/export", path));
+    Ok(Request::Run(wit::RunRequest {
         protocol: grants.protocol,
         run_id: message.run_id.clone(),
-        plugin: wit::PluginContext {
-            id: message.plugin.id.as_str().to_owned(),
-            version: message.plugin.version.clone(),
-            data_dir: "/data".into(),
-        },
-        app: wit::AppContext { version: message.app.version.clone(), platform: message.app.platform.clone() },
+        plugin,
+        app,
         settings,
         action: wit::ActionContext { kind, id: message.action.id.clone(), trigger },
-        project: message.project.as_ref().map(|p| wit::ProjectContext {
-            id: p.id.clone(),
-            title: p.title.clone(),
-            folder: mounts.project.as_ref().map(|_| "/project".into()),
-        }),
+        project,
         export: message.export.as_ref().map(|e| wit::ExportContext {
             id: e.id.clone(),
             label: e.label.clone(),
@@ -144,7 +168,7 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
         }),
         // A page's input is at most 64 KiB: `actions.run` takes no more.
         input: message.input.as_ref().map(|v| v.to_string()),
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -155,9 +179,11 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::manifest::EventKind;
     use crate::manifest::{PluginId, RuntimeKind};
     use crate::protocol::{
-        ActionContext, AppContext, ClipContext, ExportContext, PluginContext, ProjectContext, ToolPaths,
+        ActionContext, AppContext, ClipContext, EpisodeCounts, EventContext, ExportContext, PluginContext,
+        ProjectContext, ToolPaths,
     };
 
     fn grants(permissions: &[Permission]) -> Grants {
@@ -231,6 +257,14 @@ mod tests {
         }
     }
 
+    /// The `run-request` of a run that isn't an event's.
+    fn run(r: PluginResult<Request>) -> wit::RunRequest {
+        match r.unwrap() {
+            Request::Run(r) => r,
+            Request::Event(_) => panic!("an event's request"),
+        }
+    }
+
     fn folders() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("export")).unwrap();
@@ -295,7 +329,7 @@ mod tests {
         let dir = folders();
         let m = message(dir.path());
         let g = grants(&[Permission::ExportsRead, Permission::ProjectRead]);
-        let r = request(&m, &mounts(&m, &g).unwrap(), &g).unwrap();
+        let r = run(request(&m, &mounts(&m, &g).unwrap(), &g));
         assert_eq!((r.protocol, r.run_id.as_str(), r.plugin.data_dir.as_str()), (2, "run-1", "/data"));
         assert_eq!(r.plugin.id, "dev.autoscene.hello");
         // Sorted by key, and never a secret.
@@ -320,7 +354,7 @@ mod tests {
         let dir = folders();
         let m = message(dir.path());
         let g = grants(&[]);
-        let r = request(&m, &mounts(&m, &g).unwrap(), &g).unwrap();
+        let r = run(request(&m, &mounts(&m, &g).unwrap(), &g));
         assert_eq!(r.project.unwrap().folder, None);
         let e = r.export.unwrap();
         assert_eq!((e.out_dir, e.merged_file), (None, None));
@@ -335,17 +369,49 @@ mod tests {
         m.action = ActionContext { kind: ActionKind::Command, id: "count".into(), trigger: Trigger::Page };
         m.input = Some(json!({"words": ["a", "b"]}));
         let g = grants(&[]);
-        let r = request(&m, &Mounts::default(), &g).unwrap();
+        let r = run(request(&m, &Mounts::default(), &g));
         assert!(matches!(r.action.kind, wit::ActionKind::Command));
         assert!(matches!(r.action.trigger, wit::Trigger::Page));
         assert_eq!(r.input.as_deref(), Some(r#"{"words":["a","b"]}"#));
         for (trigger, wit) in [(Trigger::AfterExport, "Trigger::AfterExport"), (Trigger::Palette, "Trigger::Palette")] {
             m.action.trigger = trigger;
-            assert_eq!(format!("{:?}", request(&m, &Mounts::default(), &g).unwrap().action.trigger), wit);
+            assert_eq!(format!("{:?}", run(request(&m, &Mounts::default(), &g)).action.trigger), wit);
         }
-        // An event's run has no request in the 1.0 world.
+    }
+
+    #[test]
+    fn an_event_s_run_is_an_event_request() {
+        let dir = folders();
+        let mut m = message(dir.path());
         m.action = ActionContext { kind: ActionKind::Event, id: "done".into(), trigger: Trigger::Event };
-        let refused = request(&m, &Mounts::default(), &g).unwrap_err().to_string();
-        assert_eq!(refused, "A WebAssembly plugin's events need a newer AutoScene.");
+        m.export = None;
+        m.event = Some(EventContext {
+            kind: EventKind::AnalysisFinished,
+            at: 1_762_150_000_000,
+            episodes: EpisodeCounts { done: 7, failed: 1 },
+        });
+        let g = grants(&[Permission::ProjectRead]);
+        let Request::Event(e) = request(&m, &mounts(&m, &g).unwrap(), &g).unwrap() else {
+            panic!("not an event's request");
+        };
+        assert_eq!((e.protocol, e.run_id.as_str(), e.id.as_str()), (2, "run-1", "done"));
+        assert_eq!((e.plugin.id.as_str(), e.plugin.data_dir.as_str()), ("dev.autoscene.hello", "/data"));
+        let keys: Vec<&str> = e.settings.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["alpha", "mid", "zeta"]);
+        let p = e.project.unwrap();
+        assert_eq!((p.id.as_str(), p.folder.as_deref()), ("p1", Some("/project")));
+        let said = (e.event.kind.as_str(), e.event.at, e.event.episodes.done, e.event.episodes.failed);
+        assert_eq!(said, ("analysisFinished", 1_762_150_000_000, 7, 1));
+        // An event's run that doesn't say what happened, or a run that is
+        // half an event's, has no request.
+        for (kind, trigger, event) in [
+            (ActionKind::Event, Trigger::Event, None),
+            (ActionKind::Event, Trigger::Menu, m.event.clone()),
+            (ActionKind::Command, Trigger::Event, m.event.clone()),
+        ] {
+            let half = RunMessage { action: ActionContext { kind, id: "done".into(), trigger }, event, ..m.clone() };
+            let refused = request(&half, &Mounts::default(), &g).unwrap_err().to_string();
+            assert_eq!(refused, "An event's run says what happened.");
+        }
     }
 }

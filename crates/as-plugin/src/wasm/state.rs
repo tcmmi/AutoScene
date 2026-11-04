@@ -13,7 +13,7 @@ use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{FsPerms, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpCtxView, WasiHttpView};
 
-use super::bindings::autoscene::plugin::{host, types};
+use super::bindings::v1_1::autoscene::plugin::{host, types};
 use super::convert::Mounts;
 use super::limits::Limiter;
 use super::net::Guard;
@@ -41,6 +41,8 @@ pub(crate) struct State {
     progress: watch::Sender<Progress>,
     log: Arc<Mutex<PluginLog>>,
     secrets: BTreeMap<String, String>,
+    /// How the run's export went (`host.export-status`).
+    export_status: Option<String>,
 }
 
 impl State {
@@ -53,6 +55,7 @@ impl State {
         progress: watch::Sender<Progress>,
         log: Arc<Mutex<PluginLog>>,
         secrets: BTreeMap<String, String>,
+        export_status: Option<String>,
         guard: Guard,
     ) -> Self {
         let mut table = ResourceTable::new();
@@ -69,6 +72,7 @@ impl State {
             progress,
             log,
             secrets,
+            export_status,
         }
     }
 }
@@ -165,5 +169,9 @@ impl host::Host for State {
 
     fn secret(&mut self, key: String) -> Option<String> {
         self.secrets.get(&key).cloned()
+    }
+
+    fn export_status(&mut self) -> Option<String> {
+        self.export_status.clone()
     }
 }

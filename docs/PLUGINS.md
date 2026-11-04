@@ -265,8 +265,9 @@ runs already isn't queued again, and keeps what it was told.
 ## WebAssembly plugins
 
 A plugin of runtime `wasm` (version 2) is a WebAssembly component (WASI
-0.2) of the world `autoscene:plugin@1.0.0`, which
-`crates/as-plugin/wit/plugin.wit` defines. AutoScene runs it in a sandbox
+0.2) of the world `autoscene:plugin@1.1.0`, which
+`crates/as-plugin/wit/plugin.wit` defines (a component of 1.0.0 runs too,
+see [Staying compatible](#staying-compatible)). AutoScene runs it in a sandbox
 of its own: a component sees only its own folder and what its permissions
 give it, and nothing else of the computer. AutoScene checks and compiles
 the component when it checks the package (or the folder, when it is
@@ -275,16 +276,19 @@ and no code of it runs before its first run does.
 
 A run is one call: AutoScene calls the component's `run` with what the run
 line of a program would hold (see [The run line](#the-run-line)), and the
-component returns the message to show, or an error. While it runs it may
-call AutoScene's `host`: report its progress, write a line to its log, ask
+component returns the message to show, or an error. The run of one of its
+events (see [Runs by itself](#runs-by-itself)) calls its `on-event`
+instead, with the event's id and what happened. While it runs it may call
+AutoScene's `host`: report its progress, write a line to its log, ask
 whether the person pressed Stop, and read one of its secret settings.
 
 ```wit
 export run: func(request: run-request) -> result<option<string>, run-error>;
+export on-event: func(request: event-request) -> result<option<string>, run-error>;
 ```
 
-It may have export actions, commands, settings, secret settings and
-pages, as any plugin of version 2. `asp init --wasm rust` and `asp init
+It may have export actions, commands, events, settings, secret settings
+and pages, as any plugin of version 2. `asp init --wasm rust` and `asp init
 --wasm python` make one to start from, and `asp check` checks a component
 as AutoScene does. The examples `discord-notify-wasm` (Rust) and
 `clip-list-py` (Python), in `examples/plugins`, show one each.
@@ -388,7 +392,7 @@ warning.
 | `/export` | The export's folder, with `exports:read` to read and with `exports:write` to read, change and delete in. |
 | `/project` | The project's folder, with `project:read`, to read. |
 | `/resources` | The large files its `plugin.json` names under `resources`, to read, once AutoScene got them; only when it names some. Beside each, AutoScene keeps a `<name>.verified` and a `<name>.lock` of its own; a file a version before named is gone before a run. |
-| Its request | The run's `run-request`: the plugin, the app, the settings (sorted by key, never a secret), the action, and the project and export it runs on, with the names of the export's clips. A clip's or a joined file's `path` is `/export/<name>` while `/export` is there, else none. |
+| Its request | The run's `run-request`: the plugin, the app, the settings (sorted by key, never a secret), the action, and the project and export it runs on, with the names of the export's clips. A clip's or a joined file's `path` is `/export/<name>` while `/export` is there, else none. An event's run gets an `event-request` instead: the plugin, the app, the settings, the event's `id`, its project, and `event`, what happened (`kind` as `on` names it, `at` in Unix milliseconds, and `episodes`, how many analyses ended `done` and `failed`), as the run line's `event` has it. |
 | Its environment | `AUTOSCENE_PLUGIN_ID` and `AUTOSCENE_PROTOCOL`, nothing else. Its one argument is its id. |
 | stdin | Empty. |
 | Clocks and random | Yes; at most 1 MB of random bytes at once. |
@@ -399,7 +403,10 @@ not every toolchain honours the folder a run starts in. A folder of the
 export or the project that is gone when the run starts fails the run ("The
 export's folder is gone."). Its secret settings come through
 `host.secret(key)`, never in the request: AutoScene reads them from the
-keychain when the run starts, and only the plugin's own reach it.
+keychain when the run starts, and only the plugin's own reach it. How the
+export went (protocol 2's `export.status`: `done`, `partial` or `failed`)
+comes through `host.export-status()` (world 1.1.0), as the request's
+`export-context` never changes.
 `/data/page-state.json` is what its pages keep (see [What a page
 keeps](#what-a-page-keeps)): a component may read it and must not write it,
 though nothing stops it.
@@ -528,9 +535,9 @@ runs none of it: a plugin folder's or a package's against its
 imports, with the permission each needs to do anything:
 
 ```text
-plugin.wasm: a WebAssembly component of autoscene:plugin@1.0 (99 KB)
+plugin.wasm: a WebAssembly component of autoscene:plugin@1.1 (99 KB)
 imports:
-  autoscene:plugin/host@1.0.0
+  autoscene:plugin/host@1.1.0
   …
   wasi:http/outgoing-handler@0.2.12   needs "network"
   wasi:http/types@0.2.12              needs "network"
@@ -544,17 +551,29 @@ its `plugin.json` skipped.
 It fails, with exit code 1, on what AutoScene would refuse: a file that
 isn't a component ("Build it for wasm32-wasip2 or with componentize-py."),
 one larger than 64 MB, one that imports what AutoScene doesn't offer or
-doesn't export `run`, and one built for a newer world or WASI, which it
-names with what this AutoScene offers. `asp pack` and `asp verify` run the
+doesn't export `run`, one built for a newer world or WASI, which it
+names with what this AutoScene offers, and a plugin with `events` whose
+component has no `on-event` ("The plugin waits for events, but its
+component has no on-event: build it against the wit/plugin.wit that asp
+init writes."). `asp pack` and `asp verify` run the
 same check, and `asp verify` adds "Runs in a sandbox.".
 
 ### Staying compatible
 
-- **The world grows only by functions.** A 1.x world adds functions marked
-  `@since`; a record, variant or enum that `run` takes or returns never
-  changes once released, so a component built against 1.0 runs in every
-  AutoScene of 1.x. `crates/as-plugin/wit-frozen/` keeps each released
-  world as it shipped, and a test runs a component built against it.
+- **The world grows only by what is marked `@since`.** A 1.x world adds
+  functions and the records they take; a record, variant or enum that
+  `run` takes or returns never changes once released, so a component built
+  against 1.0 runs in every AutoScene of 1.x. 1.1.0 adds `on-event` and its
+  `event-request`. A component of 1.0.0 has no `on-event`: it runs as
+  before, and can't have events. `crates/as-plugin/wit-frozen/` keeps each
+  released world as it shipped, and a test runs a component built against
+  it beside one of the newest world.
+- **How an export went.** `export-context` has no `status`, as its record
+  never changes. Its clips can't tell it either: an export joined into one
+  file whose file failed has every clip `done`. So 1.1.0 adds
+  `host.export-status()`, which gives the run line's `export.status`:
+  `done`, `partial` or `failed`, and none without an export. An export
+  action with `afterFailed` asks it.
 - **An import AutoScene doesn't offer refuses the plugin:** "The plugin
   uses <import>, which AutoScene doesn't offer." It offers its world and
   WASI 0.2, up to 0.2.12 in this version.
@@ -1602,7 +1621,7 @@ did, and with `"manifestVersion": 2` it reads the same, but for one warning
 |---|---|---|
 | `"engines": { "protocol": 2 }` | Read. | Read. |
 | `contributes.pages` | Skipped, with the warning `Skipped contributes.pages: pages need "manifestVersion": 2.` | Read (see [Pages](#pages)). |
-| `contributes.events` | Skipped, with the warning `Skipped contributes.events: events need "manifestVersion": 2.` | Read, but for a WebAssembly plugin (see [contributes](#contributes)). |
+| `contributes.events` | Skipped, with the warning `Skipped contributes.events: events need "manifestVersion": 2.` | Read (see [contributes](#contributes)). |
 | `"afterFailed": true` on an export action | Ignored, with the warning `Ignored contributes.exportActions[0].afterFailed: it needs "manifestVersion": 2.` | Read; it needs protocol 2. |
 | A setting of the type `secret` | Skipped, with the warning `Skipped the setting "<key>": secret settings need "manifestVersion": 2.` | Read, when something can ask for it (see [Secret settings](#secret-settings)). |
 | `"runtime": { "type": "service" }` | Refused: `The plugin's runtime.type "service" needs "manifestVersion": 2.` | Read; it needs protocol 2. |
@@ -1802,9 +1821,9 @@ and refuses a WebAssembly plugin (see [Network](#network)).
   it on. `on` names what it waits for: `analysisFinished` (a project's
   episodes are all analysed). One this AutoScene doesn't know is
   skipped with the warning `Skipped the event "<id>": "<on>" needs a newer AutoScene.`
-  A program of protocol 1 or 2 may have events; a plugin that runs none
-  (`none`) may not, and a WebAssembly plugin's are skipped with a warning
-  until a later AutoScene.
+  A program of protocol 1 or 2 may have events, and so may a WebAssembly
+  plugin whose component has `on-event` (world 1.1.0); a plugin that runs
+  none (`none`) may not.
 - **`commands`** (at most 16): each an entry in the palette's Plugins group.
   With `"needsProject": true` it is offered only inside a project, and runs
   with it; otherwise it runs with the open project, if any.
@@ -2552,8 +2571,6 @@ folders it has no record of.
 - **Shortcuts** for plugin commands.
 - **A WebAssembly plugin that stays and answers calls**, as a service
   does: a WebAssembly plugin may have pages, but not a service.
-- **Events for WebAssembly plugins**: their `contributes.events` are
-  skipped with a warning.
 - **The network for Python WebAssembly plugins.**
 - **A JavaScript template** for `asp init --wasm` (see
   [JavaScript](#javascript)).

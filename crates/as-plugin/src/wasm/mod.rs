@@ -37,6 +37,7 @@
 //! wasmtime carries. No code of the plugin runs before its run does: a
 //! check compiles and links it, and never instantiates it.
 
+mod bindings;
 mod cache;
 mod convert;
 mod engine;
@@ -74,10 +75,7 @@ use crate::runtime::{DRAIN, MAX_LINE_BYTES, MAX_MESSAGE_CHARS, MAX_STAGE_CHARS, 
 use crate::scratch::Scratch;
 use crate::store::CHANGED;
 
-mod bindings {
-    #![allow(missing_docs, clippy::all, clippy::pedantic)]
-    wasmtime::component::bindgen!({ world: "plugin", path: "wit", exports: { default: async } });
-}
+use self::bindings::{Called, Pre};
 
 /// How often the engine's epoch moves on: how soon wasm code that runs
 /// notices a stop or its deadline, and hands its thread back to the run.
@@ -100,6 +98,9 @@ pub const MAX_DETAIL_CHARS: usize = 4 << 10;
 
 const NOT_A_COMPONENT: &str =
     "The plugin's component isn't a WebAssembly component. Build it for wasm32-wasip2 or with componentize-py.";
+/// A plugin that waits for events has a component of 1.0.0, which can't be
+/// told of one.
+const NO_ON_EVENT: &str = "The plugin waits for events, but its component has no on-event: build it against the wit/plugin.wit that asp init writes.";
 
 /// One run of a WebAssembly plugin.
 pub struct WasmSpec {
@@ -328,24 +329,29 @@ fn import_names(engine: &Engine, component: &Component) -> Vec<String> {
     component.component_type().imports(engine).map(|(name, _)| name.to_owned()).collect()
 }
 
-/// The checks of [`compiled`] past compiling: imports, link and `run`.
+/// The checks of [`compiled`] past compiling: imports, link, `run`, and
+/// `on-event` when `m` waits for events.
 fn checked(engine: &Engine, component: &Component, m: Option<&Manifest>) -> PluginResult<Checked> {
     let names = import_names(engine, component);
     let warnings = imports::check(names.iter().map(String::as_str), m)?;
-    pre(engine, component)?;
+    let pre = pre(engine, component)?;
+    if m.is_some_and(|m| !m.events.is_empty()) && !pre.takes_events() {
+        return Err(PluginError::Invalid(NO_ON_EVENT.into()));
+    }
     Ok(Checked { imports: names, warnings })
 }
 
-/// `component` linked against what AutoScene offers, with its `run` found:
-/// ready to instantiate, which runs nothing yet.
-fn pre(engine: &Engine, component: &Component) -> PluginResult<bindings::PluginPre<state::State>> {
+/// `component` linked against what AutoScene offers, with the exports of
+/// the world it was built for found ([`Pre`]): ready to instantiate, which
+/// runs nothing yet.
+fn pre(engine: &Engine, component: &Component) -> PluginResult<Pre> {
     let doesnt_fit = |e: wasmtime::Error| {
         let text = format!("{e:#}");
         tracing::debug!(error = %text, "a plugin's component doesn't link");
         PluginError::Invalid(format!("The plugin's component doesn't fit this AutoScene: {}", first_line(&text)))
     };
     let linker = engine::linker(engine)?;
-    bindings::PluginPre::new(linker.instantiate_pre(component).map_err(doesnt_fit)?).map_err(doesnt_fit)
+    Pre::new(engine, component, linker.instantiate_pre(component).map_err(doesnt_fit)?).map_err(doesnt_fit)
 }
 
 fn first_line(text: &str) -> &str {
@@ -412,9 +418,9 @@ enum Stop {
     Deadline,
 }
 
-/// How the call of a plugin's `run` ended.
+/// How the call of a plugin's `run` or `on-event` ended.
 enum Ended {
-    Returned(wasmtime::Result<Result<Option<String>, bindings::autoscene::plugin::types::RunError>>),
+    Returned(Called),
     Stopped(Stop),
 }
 
@@ -441,6 +447,10 @@ fn run_in(
     secrets.retain(|key, _| grants.secrets.contains(key));
     let mounts = convert::mounts(&message, &grants)?;
     let request = convert::request(&message, &mounts, &grants)?;
+    // Never sent: the manifest's events were refused at install without it.
+    if !pre.takes(&request) {
+        return Err(PluginError::Invalid(NO_ON_EVENT.into()));
+    }
     let folders = (data_dir.as_path(), resources_dir.as_deref(), tmp);
     let wasi = state::wasi(message.plugin.id.as_str(), grants.protocol, folders, &mounts, log)?;
 
@@ -451,7 +461,19 @@ fn run_in(
     let hosts: &[String] = if grants.has(Permission::Network) { &grants.hosts } else { &[] };
     let guard = net::Guard::new(Arc::new(net), hosts, cancel.clone());
     let told = guard.told();
-    let state = state::State::new(wasi, limits.memory, cancel.clone(), deadline, progress, log.clone(), secrets, guard);
+    // How its export went, as the run line of protocol 2 has it.
+    let export_status = message.export.as_ref().filter(|_| grants.protocol >= 2).and_then(|e| e.status.clone());
+    let state = state::State::new(
+        wasi,
+        limits.memory,
+        cancel.clone(),
+        deadline,
+        progress,
+        log.clone(),
+        secrets,
+        export_status,
+        guard,
+    );
     let mut store = Store::new(engine, state);
     store.limiter(|s| &mut s.limiter);
     // Each tick of the epoch: end the run past its deadline or its grace
@@ -483,11 +505,8 @@ fn run_in(
         }
     };
     let ended = rt.block_on(async {
-        let call = async {
-            // Start functions run here, within the limits.
-            let plugin = pre.instantiate_async(&mut store).await?;
-            plugin.call_run(&mut store, &request).await
-        };
+        // Start functions run in it, within the limits.
+        let call = pre.call(&mut store, &request);
         tokio::pin!(call);
         let stop = stopped(cancel, deadline, &stop_seen);
         tokio::pin!(stop);

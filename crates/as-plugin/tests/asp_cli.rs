@@ -1869,6 +1869,14 @@ fn the_example_plugins_pack_and_parse() {
                 let m = parsed.manifest;
                 assert_eq!((m.id.as_str(), m.runtime.kind), (format!("dev.autoscene.{name}").as_str(), runtime));
                 assert_eq!((m.manifest_version, m.engines.protocol), (2, 2), "{name}");
+                // Its component imports the world 1.1, which AutoScene
+                // offers from 1.2.0 on: from that version, its engines say
+                // so, as asp init writes them. Before, they can't, as this
+                // AutoScene would refuse it as too new.
+                if (app.major, app.minor) >= (1, 2) {
+                    let older = Version::new(1, 1, 99);
+                    assert!(m.requirement_met(&older).is_err(), "{name}: engines.autoscene must start at 1.2.0");
+                }
                 continue;
             }
             _ => examples.join(name),
@@ -2499,8 +2507,8 @@ fn init_refuses_a_folder_that_is_not_empty() {
 }
 
 /// What asp says of a component built against a newer world.
-const NEWER_WORLD: &str = "asp: autoscene:plugin/host@1.1.0 needs a newer AutoScene: this one offers \
-                           autoscene:plugin up to 1.0. Build it against the wit/plugin.wit that asp init \
+const NEWER_WORLD: &str = "asp: autoscene:plugin/host@1.2.0 needs a newer AutoScene: this one offers \
+                           autoscene:plugin up to 1.1. Build it against the wit/plugin.wit that asp init \
                            writes, or wait for a newer AutoScene.\n";
 /// What asp says of a component built with a newer WASI.
 const NEWER_WASI: &str = "asp: wasi:cli/environment@0.2.19 needs a newer AutoScene: this one offers WASI up \
@@ -2535,7 +2543,7 @@ fn verify_and_check_refuse_a_package_autoscene_would_refuse() {
             r#"(component (import "example:thing/api@1.0.0" (instance)))"#,
             "asp: The plugin uses example:thing/api@1.0.0, which AutoScene doesn't offer.\n",
         ),
-        (r#"(component (import "autoscene:plugin/host@1.1.0" (instance)))"#, NEWER_WORLD),
+        (r#"(component (import "autoscene:plugin/host@1.2.0" (instance)))"#, NEWER_WORLD),
         (r#"(component (import "wasi:cli/environment@0.2.19" (instance)))"#, NEWER_WASI),
     ] {
         let dir = wasm_plugin(&place("wrong"), &component(wat), |_| {});
@@ -2587,11 +2595,11 @@ fn check_lists_imports_and_refuses_unknown_ones() {
     let bare = asp(&["check", text(&file)]);
     assert_eq!((bare.code, bare.err.as_str()), (Some(0), ""));
     let kb = guest.len().div_ceil(1024);
-    let head = format!("guest.wasm: a WebAssembly component of autoscene:plugin@1.0 ({kb} KB)\nimports:\n");
+    let head = format!("guest.wasm: a WebAssembly component of autoscene:plugin@1.1 ({kb} KB)\nimports:\n");
     assert!(bare.out.starts_with(&head), "{}", bare.out);
     let imports: Vec<&str> = bare.out.lines().skip(2).collect();
     for line in [
-        "  autoscene:plugin/host@1.0.0",
+        "  autoscene:plugin/host@1.1.0",
         "  wasi:filesystem/preopens@0.2.12",
         r#"  wasi:http/outgoing-handler@0.2.12   needs "network""#,
         r#"  wasi:http/types@0.2.12              needs "network""#,
@@ -2626,7 +2634,7 @@ fn check_lists_imports_and_refuses_unknown_ones() {
             r#"(component (import "example:thing/api@1.0.0" (instance)))"#,
             "asp: The plugin uses example:thing/api@1.0.0, which AutoScene doesn't offer.\n",
         ),
-        (r#"(component (import "autoscene:plugin/host@1.1.0" (instance)))"#, NEWER_WORLD),
+        (r#"(component (import "autoscene:plugin/host@1.2.0" (instance)))"#, NEWER_WORLD),
         (r#"(component (import "wasi:cli/environment@0.2.19" (instance)))"#, NEWER_WASI),
     ] {
         let wrong = component(wat);
@@ -2672,6 +2680,52 @@ fn check_warns_about_http_without_network() {
     let platforms = "warning: platforms limits where AutoScene installs it, \
                      though a WebAssembly plugin runs the same on every platform.\n";
     assert_eq!(asp(&["pack", text(&dir), text(&package)]).warnings(), format!("{platforms}{warning}"));
+}
+
+#[test]
+fn events_without_on_event_are_refused_at_pack() {
+    let Some(newest) = guest() else { return };
+    let Some(frozen) = as_testkit::fixture_file("wasm/guest-frozen.wasm").map(|path| fs::read(path).unwrap()) else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let place = |name: &str| tmp.path().join(name);
+    let waits = |m: &mut Value| {
+        m["contributes"]["events"] = json!([{"id": "done", "title": "Tell", "on": "analysisFinished"}]);
+    };
+    let warning = "warning: It imports wasi:http but doesn't ask for network: every request it makes is refused.\n";
+
+    // A component of 1.0.0 has no on-event: check and pack refuse a plugin
+    // that waits for events with it, and pack writes nothing.
+    let file = place("frozen.wasm");
+    fs::write(&file, &frozen).unwrap();
+    let alone = asp(&["check", text(&file)]);
+    assert_eq!((alone.code, alone.err.as_str()), (Some(0), ""));
+    assert!(alone.out.starts_with("frozen.wasm: a WebAssembly component of autoscene:plugin@1.0 ("), "{}", alone.out);
+    let said = "asp: The plugin waits for events, but its component has no on-event: \
+                build it against the wit/plugin.wit that asp init writes.\n";
+    let dir = wasm_plugin(&place("frozen"), &frozen, waits);
+    assert_eq!(asp(&["check", text(&dir)]).failed(1), said);
+    let out = place("frozen.asp");
+    assert_eq!(asp(&["pack", text(&dir), text(&out)]).failed(1), said);
+    assert!(!out.exists());
+    // Without events it is a plugin as before.
+    let dir = wasm_plugin(&place("frozen-actions"), &frozen, |_| {});
+    assert_eq!(asp(&["pack", text(&dir), text(&out)]).warnings(), warning);
+
+    // One of 1.1.0 has it, and packs.
+    let dir = wasm_plugin(&place("newest"), &newest, waits);
+    let checked = asp(&["check", text(&dir)]);
+    assert_eq!((checked.code, checked.err.as_str()), (Some(0), warning));
+    assert!(
+        checked.out.starts_with("plugin.wasm: a WebAssembly component of autoscene:plugin@1.1 ("),
+        "{}",
+        checked.out
+    );
+    let package = place("newest.asp");
+    assert_eq!(asp(&["pack", text(&dir), text(&package)]).warnings(), warning);
+    let verified = asp(&["verify", text(&package)]);
+    assert_eq!((verified.code, verified.err.as_str()), (Some(0), warning));
 }
 
 #[test]

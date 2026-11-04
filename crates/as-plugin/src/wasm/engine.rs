@@ -82,6 +82,6 @@ pub(crate) fn linker(engine: &Engine) -> PluginResult<Linker<State>> {
     let mut linker = Linker::new(engine);
     wasmtime_wasi::p2::add_to_linker_async(&mut linker).map_err(failed)?;
     wasmtime_wasi_http::p2::add_only_http_to_linker_async(&mut linker).map_err(failed)?;
-    bindings::Plugin::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s).map_err(failed)?;
+    bindings::v1_1::Plugin::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s).map_err(failed)?;
     Ok(linker)
 }

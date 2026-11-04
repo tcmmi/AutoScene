@@ -1,5 +1,6 @@
 //! An AutoScene plugin that runs in AutoScene's sandbox. AutoScene calls
-//! `run` once for each run of one of its actions (`plugin/plugin.json`).
+//! `run` once for each run of one of its actions, and `on_event` for each of
+//! its events that the person turned on (`plugin/plugin.json`).
 
 wit_bindgen::generate!({ world: "plugin", path: "wit" });
 
@@ -19,6 +20,13 @@ impl Guest for Plugin {
                 detail: None,
             }),
         }
+    }
+
+    fn on_event(request: EventRequest) -> Result<Option<String>, RunError> {
+        Err(RunError {
+            message: format!("{} isn't an event of this plugin.", request.id),
+            detail: None,
+        })
     }
 }
 

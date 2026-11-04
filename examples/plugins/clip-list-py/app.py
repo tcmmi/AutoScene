@@ -37,6 +37,10 @@ class WitWorld(wit_world.WitWorld):
         host.log(types.LogLevel.INFO, f"Wrote {len(lines)} clips to {name}.")
         return "Saved the clip list."
 
+    def on_event(self, request: types.EventRequest) -> str | None:
+        # plugin/plugin.json names no event, so AutoScene sends none.
+        raise Err(types.RunError(message=f"Clip List has no event {request.id}.", detail=None))
+
 
 def file_name(text: str) -> str:
     """`text` as a file name on every system: what one can't hold becomes `_`."""

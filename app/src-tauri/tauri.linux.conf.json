@@ -1,0 +1,23 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/autoscene.desktop",
+        "files": {
+          "/usr/share/mime/packages/autoscene-plugin.xml": "linux/autoscene-plugin.xml"
+        },
+        "postInstallScript": "linux/postinst.sh",
+        "postRemoveScript": "linux/postrm.sh"
+      },
+      "rpm": {
+        "desktopTemplate": "linux/autoscene.desktop",
+        "files": {
+          "/usr/share/mime/packages/autoscene-plugin.xml": "linux/autoscene-plugin.xml"
+        },
+        "postInstallScript": "linux/postinst.sh",
+        "postRemoveScript": "linux/postrm.sh"
+      }
+    }
+  }
+}

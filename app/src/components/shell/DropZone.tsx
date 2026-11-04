@@ -5,11 +5,10 @@ import { FolderPlus, PuzzlePiece } from "@/components/icons"
 import { toast } from "sonner"
 import { isPluginPagePath } from "@/features/plugins/page-items"
 import { isPluginPackage } from "@/features/plugins/plugin-items"
+import { busyReviewing, reviewPackages } from "@/features/plugins/review-packages"
 import { commands, errorMessage } from "@/lib/ipc"
-import { baseName } from "@/lib/media"
 import { isTauri } from "@/lib/platform"
 import { useNewProject } from "@/state/new-project"
-import { usePluginReview } from "@/state/plugin-review"
 
 /**
  * Files and folders dropped anywhere on the window: inside a project they are
@@ -23,25 +22,6 @@ import { usePluginReview } from "@/state/plugin-review"
  * On a plugin's page a drop adds nothing and shows nothing: the window takes
  * every drop, also one meant for the page, which never gets it.
  */
-const busyReviewing = () => {
-  const { review, loading } = usePluginReview.getState()
-  return review != null || loading
-}
-
-/** Queues every dropped package for review and says what happens to them. */
-function reviewPackages(paths: string[]) {
-  const label = baseName(paths[0])
-  const waits = busyReviewing()
-  const rest = paths.length - 1
-  const reviews = paths.map((p) => usePluginReview.getState().openReview(() => commands.pluginInspect(p), baseName(p)))
-  if (waits) {
-    toast(paths.length === 1 ? `${label} waits for the review open now` : `${paths.length} plugins wait for the review open now`)
-    return
-  }
-  const id = toast.loading(rest > 0 ? `Reading ${label}… ${rest} more wait their turn` : `Reading ${label}…`)
-  void reviews[0].finally(() => toast.dismiss(id))
-}
-
 export function DropZone() {
   // What is dragged over the window: files for a project, plugin packages, or
   // both (which nothing takes).

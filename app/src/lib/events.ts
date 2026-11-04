@@ -26,6 +26,7 @@ import { exportsQuery, qk, queryClient } from "./queries"
  * | catalog:progress | the install review's download (progress only)      |
  * | plugin-page:event | an open plugin page (PluginFrame listens)         |
  * | hardware:changed | hardware (the graphics the analysis runs on)       |
+ * | plugins:opened   | packages opened from outside (useOpenedPackages listens) |
  */
 export function startEventBridge(where: { goPlugins: () => void }): () => void {
   const unlisten: Promise<() => void>[] = []

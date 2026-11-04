@@ -29,7 +29,7 @@ const store = () => usePluginReview.getState()
 
 beforeEach(() => {
   vi.clearAllMocks()
-  usePluginReview.setState({ review: null, loading: false, queue: [], getting: null })
+  usePluginReview.setState({ review: null, loading: false, queue: [], getting: null, current: null })
 })
 afterEach(() => vi.useRealTimers())
 
@@ -72,6 +72,35 @@ describe("the install review store", () => {
     store().close({ installed: true })
     await queued
     expect(store().review?.ticketId).toBe("d")
+  })
+
+  it("one asked for again with its path while it waits, is read or is shown is not queued twice", async () => {
+    const a = String.raw`D:\a.asp`
+    const b = String.raw`D:\b.asp`
+    const loadA = vi.fn(() => Promise.resolve(review("a")))
+    const loadB = vi.fn(() => Promise.resolve(review("b")))
+    const first = store().openReview(loadA, "a.asp", a)
+    expect(store().pending(a)).toBe(true)
+    // While it is read, and once it is shown.
+    await store().openReview(loadA, "a.asp", a)
+    await first
+    expect(store().review?.ticketId).toBe("a")
+    await store().openReview(loadA, "a.asp", a)
+    expect(loadA).toHaveBeenCalledOnce()
+    // While it waits.
+    void store().openReview(loadB, "b.asp", b)
+    void store().openReview(loadB, "b.asp", b)
+    expect(store().queue).toHaveLength(1)
+    expect(store().pending(b)).toBe(true)
+
+    store().close()
+    await vi.waitFor(() => expect(store().review?.ticketId).toBe("b"))
+    expect(loadB).toHaveBeenCalledOnce()
+    // Closed, it can be asked for again.
+    expect(store().pending(a)).toBe(false)
+    store().close()
+    await store().openReview(loadA, "a.asp", a)
+    expect(loadA).toHaveBeenCalledTimes(2)
   })
 
   it("closing discards the ticket", async () => {

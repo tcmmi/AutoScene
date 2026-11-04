@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { Outlet } from "@tanstack/react-router"
 import { NewProjectDialog } from "@/features/library/NewProjectDialog"
 import { InstallReviewDialog } from "@/features/plugins/InstallReviewDialog"
+import { useOpenedPackages } from "@/features/plugins/use-opened-packages"
 import { RelinkDialog } from "@/features/project/RelinkDialog"
 import { useAppActions, useGlobalBindings } from "@/lib/actions"
 import { installBrowserGuards } from "@/lib/browser-guards"
@@ -31,6 +32,7 @@ export function AppShell() {
   useGlobalBindings()
   useKeymapSync()
   useLayerSafetyNet()
+  useOpenedPackages()
   useEffect(() => startUpdateSchedule(), [])
   // The bridge lives as long as the window: it asks for where to go when it needs to.
   const { goPlugins } = useAppActions()

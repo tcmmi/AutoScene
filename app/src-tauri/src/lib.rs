@@ -115,6 +115,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::catalog::catalog_refresh,
             commands::catalog::catalog_get,
             commands::catalog::catalog_cancel,
+            commands::plugins::plugins_take_opened,
             commands::plugins::plugin_secret_set,
             commands::plugins::plugin_secret_clear,
             commands::plugins::plugin_page_open,
@@ -145,6 +146,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             events::PluginPageEvent,
             events::CatalogChanged,
             events::CatalogProgress,
+            events::PluginsOpened,
             updater::UpdateProgress,
         ])
         // The name parts the pack export's templates can use: its buttons read them.
@@ -255,12 +257,12 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .runtime(tauri_runtime_wry::Wry::default())
-        // Must be first: a second launch just focuses the running window.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.set_focus();
-            }
+        // Must be first: a second launch just focuses the running window,
+        // and hands over the plugin packages it was started with.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            let args = argv.into_iter().skip(1).map(std::ffi::OsString::from);
+            plugins::opened::offer(app, plugins::opened::packages(args, Some(std::path::Path::new(&cwd))));
+            show_main(app);
         }))
         .plugin(log_plugin)
         // Size and place come back, never the frame: the window's chrome is ours
@@ -297,6 +299,13 @@ pub fn run() {
     builder
         .setup(move |app| {
             specta.mount_events(app);
+            // The plugin packages this start was asked to open (`main` took
+            // `--engine` already); the page takes them once it loads.
+            let cwd = std::env::current_dir().ok();
+            plugins::opened::offer(
+                app.handle(),
+                plugins::opened::packages(std::env::args_os().skip(1), cwd.as_deref()),
+            );
             // The data folder's path names the user (their home folder), so
             // it's logged at debug: release logs, which people share, keep
             // info and up.
@@ -364,11 +373,20 @@ The log is in {}",
         })
         .build(tauri::generate_context!())
         .expect("error while building AutoScene")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                // Never leave ffmpeg processes running after the window closes.
-                state::shutdown_work(app);
+        .run(|app, event| match event {
+            // Never leave ffmpeg processes running after the window closes.
+            tauri::RunEvent::Exit => state::shutdown_work(app),
+            // Files the system asks the running app to open (macOS). Activating
+            // the app doesn't bring back a minimized window: the review would
+            // open where the person can't see it.
+            tauri::RunEvent::Opened { urls } => {
+                let found = plugins::opened::from_urls(&urls);
+                if !found.is_empty() {
+                    plugins::opened::offer(app, found);
+                    show_main(app);
+                }
             }
+            _ => {}
         });
 }
 
@@ -408,6 +426,14 @@ fn stand_in(name: &str) -> Option<fn() -> as_project::computer::Machine> {
         "unknown" => || Machine::Windows(None),
         _ => return None,
     })
+}
+
+/// Brings the window up, out of the Dock or taskbar, and to the front.
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
 }
 
 #[cfg(test)]

@@ -52,6 +52,7 @@ import {
   useRunningCount,
 } from "@/state/activity"
 import { useNewProject } from "@/state/new-project"
+import { usePluginReview } from "@/state/plugin-review"
 import { useUi } from "@/state/ui"
 
 /** How many projects the rail shows (most recently touched first, plus the open one). */
@@ -177,15 +178,18 @@ export function Rail() {
 /**
  * The Plugins tile. Its menu installs a plugin, and loads a folder while
  * AutoScene may run plugins it hasn't reviewed. While a plugin is read it
- * spins, wherever the install started; the window shows the review over
+ * spins, wherever the install started (also a drop or a package opened from
+ * outside); the window shows the review over
  * whatever is open.
  */
 function PluginsTile({ active }: { active: boolean }) {
   const flow = usePluginInstall()
+  // Read for a review, however it was asked for: picked, dropped or opened from outside.
+  const reading = usePluginReview((s) => s.loading)
   return (
     <RailLink
       to="/plugins"
-      icon={flow.checking ? <CircleNotch className="animate-spin" /> : <PuzzlePiece />}
+      icon={flow.checking || reading ? <CircleNotch className="animate-spin" /> : <PuzzlePiece />}
       label="Plugins"
       active={active}
       menu={<InstallItems flow={flow} />}

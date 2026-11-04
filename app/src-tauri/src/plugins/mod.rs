@@ -65,6 +65,7 @@
 
 pub mod calls;
 pub mod catalog;
+pub mod opened;
 pub mod pages;
 pub mod services;
 

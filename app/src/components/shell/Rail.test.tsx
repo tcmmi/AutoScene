@@ -156,6 +156,15 @@ describe("the rail", () => {
     expect(tile().querySelector(".animate-spin")).toBeNull()
   })
 
+  it("the Plugins tile spins while a package dropped or opened from outside is read", async () => {
+    show()
+    await waitFor(() => expect(tile().querySelector(".animate-spin")).toBeNull())
+    act(() => usePluginReview.setState({ loading: true }))
+    await waitFor(() => expect(tile().querySelector(".animate-spin")).not.toBeNull())
+    act(() => usePluginReview.setState({ loading: false }))
+    await waitFor(() => expect(tile().querySelector(".animate-spin")).toBeNull())
+  })
+
   it("opens one picker at a time", async () => {
     let picked: (path: string | null) => void = () => {}
     vi.mocked(pickPluginFile).mockReturnValueOnce(new Promise((resolve) => (picked = resolve)))

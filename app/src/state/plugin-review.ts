@@ -30,7 +30,7 @@ export type Getting = { pluginId: string; label: string; done: number | null; to
  */
 export type ReviewOutcome = "shown" | "done" | "failed" | "cancelled" | "skipped"
 
-type Waiting = ReviewAsk & { load: () => Promise<PluginReview>; settled: (outcome: ReviewOutcome) => void }
+type Waiting = ReviewAsk & { load: () => Promise<PluginReview>; key: string | null; settled: (outcome: ReviewOutcome) => void }
 
 /** Whether a get of `pluginId` from the catalog waits or comes: its buttons wait for it. */
 export const getsPlugin = (s: { queue: ReadonlyArray<Pick<ReviewAsk, "get">>; getting: Getting | null }, pluginId: string) =>
@@ -45,15 +45,21 @@ type PluginReviewState = {
   queue: Waiting[]
   /** The catalog package being got for the next review, while it comes. */
   getting: Getting | null
+  /** What the one read or shown now was asked for with (its path), while it is read or shown. */
+  current: string | null
   /**
    * Reads a package or folder for a review (`label` names it when that
    * fails: its file or plugin) and shows it. Reviews come one at a time: one
    * asked for while another is read or shown waits until that one is closed.
    * The promise ends when this one has been read, or failed to be, not when
    * it is closed, with how it came out. A get of a plugin whose get already
-   * waits or comes is skipped: a second click doesn't ask twice.
+   * waits or comes is skipped: a second click doesn't ask twice. `key` (its
+   * path) makes a second ask for the same one, while it waits, is read or is
+   * shown, skipped too: see `pending`.
    */
-  openReview: (load: () => Promise<PluginReview>, ask: string | ReviewAsk) => Promise<ReviewOutcome>
+  openReview: (load: () => Promise<PluginReview>, ask: string | ReviewAsk, key?: string) => Promise<ReviewOutcome>
+  /** Whether the one asked for with `key` waits, is read or is shown now. */
+  pending: (key: string) => boolean
   /** How far the package of `pluginId` came (`catalog:progress`), in bytes. */
   progress: (pluginId: string, done: number | null, total: number | null) => void
   /** Ends the get under way (it fails as cancelled, which says nothing). */
@@ -72,15 +78,15 @@ type PluginReviewState = {
  */
 export const usePluginReview = create<PluginReviewState>((set, get) => {
   /** The read under way: its get's Cancel. */
-  let current: Waiting | null = null
+  let reading: Waiting | null = null
   /** Reads the next waiting one, when nothing is read or shown. */
   const next = () => {
     const { review, loading, queue } = get()
     if (review || loading || queue.length === 0) return
     const [head, ...rest] = queue
-    current = head
+    reading = head
     const getting = head.get ? { pluginId: head.get.pluginId, label: head.label, done: null, total: null, installing: false } : null
-    set({ loading: true, queue: rest, getting })
+    set({ loading: true, queue: rest, getting, current: head.key })
     // `async` so that a load which throws at once is a failed one.
     const loaded = (async () => head.load())()
     let gaveUp = false
@@ -110,14 +116,14 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
           set((s) => ({ getting: s.getting && { ...s.getting, installing: true } }))
           done = await head.install(read).catch(() => false)
         }
-        current = null
+        reading = null
         set({ review: done ? null : read, loading: false, getting: null })
         head.settled(done ? "done" : "shown")
         if (done) next()
       },
       (e: unknown) => {
         clearTimeout(timer)
-        current = null
+        reading = null
         set({ loading: false, getting: null })
         // Cancelled by the person: nothing went wrong.
         const cancelled = isAppError(e) && e.code === "cancelled"
@@ -127,23 +133,31 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
       },
     )
   }
+  const pending = (key: string) => {
+    const { review, loading, queue, current } = get()
+    return ((review != null || loading) && current === key) || queue.some((w) => w.key === key)
+  }
   return {
     review: null,
     loading: false,
     queue: [],
     getting: null,
-    openReview: (load, ask) =>
+    current: null,
+    pending,
+    openReview: (load, ask, key) =>
       new Promise<ReviewOutcome>((settled) => {
         const what = typeof ask === "string" ? { label: ask } : ask
         if (what.get && getsPlugin(get(), what.get.pluginId)) return settled("skipped")
-        set((s) => ({ queue: [...s.queue, { ...what, load, settled }] }))
+        // The same package asked for again (opened twice) is not reviewed twice.
+        if (key != null && pending(key)) return settled("skipped")
+        set((s) => ({ queue: [...s.queue, { ...what, key: key ?? null, load, settled }] }))
         next()
       }),
     progress: (pluginId, done, total) =>
       set((s) => (s.getting?.pluginId === pluginId && !s.getting.installing ? { getting: { ...s.getting, done, total } } : {})),
     cancelGet: () => {
       if (get().getting?.installing) return
-      current?.get?.cancel()
+      reading?.get?.cancel()
     },
     close: (opts) => {
       const { review } = get()

@@ -59,6 +59,7 @@ import {
   setPluginEnabled,
   setPluginSecret,
   setPluginValues,
+  takeOpenedPackages,
   tellPageServer,
   uninstallPlugin,
 } from "./plugins"
@@ -1405,6 +1406,8 @@ ${url}`
   },
   plugin_inspect: ({ path }) => inspectPackage(String(path), allows()),
   plugin_inspect_folder: ({ path }) => inspectFolder(String(path), allows()),
+  // `?mockOpened=1`: AutoScene was started with a package, taken once.
+  plugins_take_opened: () => takeOpenedPackages(),
   plugin_install: ({ ticketId, acceptUnreviewed }) => {
     const p = installPlugin(String(ticketId), allows(), Boolean(acceptUnreviewed))
     void emit("plugins:changed", { pluginId: p.id })

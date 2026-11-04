@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AutoScene's plugin packages. *.asp is also the stock application/x-asp (classic
+  ASP web pages, weight 50), so the glob is weighted below it: a file named .asp
+  is only an AutoScene plugin when it also sniffs as a zip, of which this is a
+  sub-class. An ASP page stays an ASP page.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-autoscene-plugin">
+    <comment>AutoScene plugin</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.asp" weight="40"/>
+  </mime-type>
+</mime-info>

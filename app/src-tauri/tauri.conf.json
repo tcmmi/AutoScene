@@ -39,6 +39,20 @@
     "publisher": "AutoScene",
     "category": "Video",
     "shortDescription": "Frame-exact character scenepacks from series and movies",
+    "fileAssociations": [
+      {
+        "ext": ["asp"],
+        "name": "AutoScene plugin",
+        "description": "AutoScene plugin",
+        "mimeType": "application/x-autoscene-plugin",
+        "role": "Viewer",
+        "rank": "Owner",
+        "exportedType": {
+          "identifier": "com.autoscene.plugin",
+          "conformsTo": ["public.data"]
+        }
+      }
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

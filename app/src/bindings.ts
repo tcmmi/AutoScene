@@ -359,6 +359,12 @@ export const commands = {
 	 */
 	catalogCancel: (pluginId: string) => __TAURI_INVOKE<null>("catalog_cancel", { pluginId }),
 	/**
+	 *  The plugin packages opened from outside AutoScene since the page last
+	 *  asked (a double-click on one, a start with one), oldest first. Each only
+	 *  opens the install review: `plugin_inspect` checks its path again.
+	 */
+	pluginsTakeOpened: () => __TAURI_INVOKE<string[]>("plugins_take_opened"),
+	/**
 	 *  Keep `value` in the system's keychain as a plugin's secret setting
 	 *  `key`, in place of the one before. The value never comes back: the
 	 *  plugin's info says only which are set.
@@ -433,6 +439,7 @@ export const events = {
 	packChanged: makeEvent<PackChanged>("pack:changed"),
 	pluginPageEvent: makeEvent<PluginPageEvent>("plugin-page:event"),
 	pluginsChanged: makeEvent<PluginsChanged>("plugins:changed"),
+	pluginsOpened: makeEvent<PluginsOpened>("plugins:opened"),
 	portraitsChanged: makeEvent<PortraitsChanged>("portraits:changed"),
 	updateProgress: makeEvent<UpdateProgress>("update:progress"),
 };
@@ -1889,6 +1896,13 @@ export type PluginUpdate = {
 export type PluginsChanged = {
 	pluginId: string | null,
 };
+
+/**
+ *  Plugin packages were opened from outside AutoScene (a double-click, a
+ *  start with one): the page takes them with `plugins_take_opened` and
+ *  opens the install review of each.
+ */
+export type PluginsOpened = Record<string, never>;
 
 /**
  *  Character covers of a project got sharp portraits (the cast itself is

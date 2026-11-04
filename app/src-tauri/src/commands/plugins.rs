@@ -187,6 +187,15 @@ pub async fn plugin_inspect(state: State<'_, AppState>, path: String) -> AppResu
     .await
 }
 
+/// The plugin packages opened from outside AutoScene since the page last
+/// asked (a double-click on one, a start with one), oldest first. Each only
+/// opens the install review: `plugin_inspect` checks its path again.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugins_take_opened() -> AppResult<Vec<String>> {
+    Ok(plugins::opened::take().into_iter().filter_map(|p| p.into_os_string().into_string().ok()).collect())
+}
+
 /// Check the plugin in the folder `path` to load it where it is (a
 /// developer's), for the review dialog. Only while plugins AutoScene hasn't
 /// reviewed are allowed: a folder is never reviewed.

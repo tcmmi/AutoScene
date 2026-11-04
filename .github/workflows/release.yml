@@ -16,6 +16,8 @@ on:
       - .github/scripts/latest-json.mjs
       - xtask/src/sidecars.rs
       - app/src-tauri/tauri*.json
+      - app/src-tauri/linux/**
+      - app/src-tauri/windows/**
   workflow_dispatch:
 
 permissions:
@@ -186,8 +188,9 @@ jobs:
           name: dmg-window-screenshots
           path: ${{ runner.temp }}/dmg-shots/*
           retention-days: 14
-      # The deb carries the 512 px icon for app menus and docks.
-      - name: Linux icons
+      # The deb carries the 512 px icon for app menus and docks, and opens
+      # plugin packages: the .asp type and a menu entry that takes it.
+      - name: Linux icons and .asp files
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -195,6 +198,29 @@ jobs:
           dpkg -c "$deb" | tee "$RUNNER_TEMP/deb-contents.txt" | grep usr/share/icons/hicolor
           grep -q 'usr/share/icons/hicolor/512x512/apps/.*\.png$' "$RUNNER_TEMP/deb-contents.txt" \
             || { echo "::error::no 512x512 icon in the deb"; exit 1; }
+          grep -q 'usr/share/mime/packages/autoscene-plugin\.xml$' "$RUNNER_TEMP/deb-contents.txt" \
+            || { echo "::error::the deb doesn't define the .asp type"; exit 1; }
+          files=$(mktemp -d)
+          dpkg-deb -x "$deb" "$files"
+          grep -qx 'MimeType=application/x-autoscene-plugin;' "$files"/usr/share/applications/*.desktop \
+            || { echo "::error::the deb's menu entry doesn't open .asp files"; exit 1; }
+          # %F hands the opened files to the app; without it AutoScene starts with no package.
+          grep -qE '^Exec=.* %F$' "$files"/usr/share/applications/*.desktop \
+            || { echo "::error::the deb's menu entry doesn't pass the files it opens"; exit 1; }
+      # The app says it opens plugin packages (bundle > fileAssociations).
+      - name: macOS .asp files
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          plist=target/release/bundle/macos/AutoScene.app/Contents/Info.plist
+          # The type (.asp files are com.autoscene.plugin) and the document
+          # type that says AutoScene opens it: the type alone opens nothing.
+          plutil -extract UTExportedTypeDeclarations json -o - "$plist" \
+            | node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(t.some((d) => d.UTTypeIdentifier === "com.autoscene.plugin" && (d.UTTypeTagSpecification?.["public.filename-extension"] ?? []).includes("asp")) ? 0 : 1)' \
+            || { plutil -p "$plist"; echo "::error::Info.plist doesn't declare com.autoscene.plugin for .asp"; exit 1; }
+          plutil -extract CFBundleDocumentTypes json -o - "$plist" \
+            | node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(t.some((d) => (d.LSItemContentTypes ?? []).includes("com.autoscene.plugin")) ? 0 : 1)' \
+            || { plutil -p "$plist"; echo "::error::Info.plist doesn't say AutoScene opens com.autoscene.plugin"; exit 1; }
       - name: Collect
         shell: bash
         run: |

@@ -29,7 +29,7 @@ async function inspect(what: "file" | "folder", pick: () => Promise<string | nul
     if (!path) return
     useInstallFlow.setState({ checking: what })
     // The review opens in the shell's dialog, once it is read; one that can't be read is named by its file.
-    await usePluginReview.getState().openReview(() => check(path), baseName(path))
+    await usePluginReview.getState().openReview(() => check(path), baseName(path), path)
   } finally {
     useInstallFlow.setState({ checking: null, busy: false })
   }

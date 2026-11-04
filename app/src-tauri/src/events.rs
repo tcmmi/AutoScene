@@ -134,6 +134,13 @@ pub struct CatalogProgress {
     pub total: f64,
 }
 
+/// Plugin packages were opened from outside AutoScene (a double-click, a
+/// start with one): the page takes them with `plugins_take_opened` and
+/// opens the install review of each.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "plugins:opened")]
+pub struct PluginsOpened {}
+
 /// Something for one open plugin page (its session): that its plugin's
 /// settings changed, or that it was closed. Sent to the main webview only.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]

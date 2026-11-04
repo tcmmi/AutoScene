@@ -394,6 +394,18 @@ export function nextPluginPackage(): string {
   return PACKAGES[offered++ % PACKAGES.length].path
 }
 
+let openedTaken = false
+
+/**
+ * The packages AutoScene was started with (`plugins_take_opened`): none, or
+ * with `?mockOpened=1` the first package the dialog offers, taken once.
+ */
+export function takeOpenedPackages(): string[] {
+  if (openedTaken || new URLSearchParams(window.location.search).get("mockOpened") !== "1") return []
+  openedTaken = true
+  return [PACKAGES[0].path]
+}
+
 function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = null): PluginReview {
   const previous = installed.get(p.id)
   const ticketId = crypto.randomUUID()

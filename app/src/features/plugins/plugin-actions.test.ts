@@ -5,12 +5,12 @@ import { commands } from "@/lib/ipc"
 import { takePackSave } from "./pack-saves"
 import { qk, queryClient } from "@/lib/queries"
 import { pluginInfo } from "@/test/plugins"
-import { runPackAction, setPluginEnabled } from "./plugin-actions"
+import { allowUnreviewed, runPackAction, setPluginEnabled } from "./plugin-actions"
 
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
 vi.mock("@/lib/ipc", async (importOriginal) => {
   const ipc = await importOriginal<typeof import("@/lib/ipc")>()
-  return { ...ipc, commands: { ...ipc.commands, packActionRun: vi.fn(), pluginSetEnabled: vi.fn() } }
+  return { ...ipc, commands: { ...ipc.commands, packActionRun: vi.fn(), pluginSetEnabled: vi.fn(), pluginsAllowUnreviewed: vi.fn() } }
 })
 
 const run = { pluginId: "dev.example.fcpxml", pluginName: "FCPXML", actionId: "fcpxml", title: "Save as FCPXML…" }
@@ -81,5 +81,43 @@ describe("turning a plugin on or off", () => {
     expect(toast.error).toHaveBeenLastCalledWith("Couldn't turn the plugin on", { description: "The plugin's folder is locked." })
     await setPluginEnabled(pluginInfo({ id: "dev.a.one", name: "One" }), false)
     expect(toast.error).toHaveBeenLastCalledWith("Couldn't turn the plugin off", { description: "The plugin's folder is locked." })
+  })
+})
+
+describe("allowing plugins AutoScene hasn't reviewed", () => {
+  const answer = (allowed: boolean) => ({ allowUnreviewedPlugins: allowed }) as never
+  /** The system's dialog, open until `yes` answers it. */
+  function dialog() {
+    let yes!: (settings: never) => void
+    const open = new Promise<never>((done) => (yes = done))
+    return { open, yes }
+  }
+
+  it("opens one system dialog however often it is asked while that dialog is open", async () => {
+    const { open, yes } = dialog()
+    vi.mocked(commands.pluginsAllowUnreviewed).mockReturnValue(open)
+    const first = allowUnreviewed(true)
+    const second = allowUnreviewed(true)
+    expect(commands.pluginsAllowUnreviewed).toHaveBeenCalledOnce()
+    yes(answer(true))
+    expect(await Promise.all([first, second])).toEqual([true, true])
+  })
+
+  it("asks again once the dialog is answered, and a failed ask doesn't stay in the way", async () => {
+    vi.mocked(commands.pluginsAllowUnreviewed).mockRejectedValueOnce(new Error("no"))
+    expect(await allowUnreviewed(true)).toBe(false)
+    vi.mocked(commands.pluginsAllowUnreviewed).mockResolvedValue(answer(true))
+    expect(await allowUnreviewed(true)).toBe(true)
+    expect(commands.pluginsAllowUnreviewed).toHaveBeenCalledTimes(2)
+  })
+
+  it("turning them off never waits for a dialog", async () => {
+    const { open, yes } = dialog()
+    vi.mocked(commands.pluginsAllowUnreviewed).mockReturnValueOnce(open)
+    const on = allowUnreviewed(true)
+    vi.mocked(commands.pluginsAllowUnreviewed).mockResolvedValue(answer(false))
+    expect(await allowUnreviewed(false)).toBe(false)
+    yes(answer(false))
+    await on
   })
 })

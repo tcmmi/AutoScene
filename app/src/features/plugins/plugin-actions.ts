@@ -55,12 +55,22 @@ export async function runPackAction(
   }
 }
 
+/** The yes AutoScene is asking for now, while the system's dialog is open. */
+let asking: Promise<boolean> | null = null
+
 /**
  * Let plugins AutoScene hasn't reviewed run, or not (off, their runs stop).
  * On, AutoScene asks first, in a dialog of the system's own: whether they
- * may run now.
+ * may run now. Asked again while that dialog is open, wherever from, it
+ * waits for the same answer: the system would stack a second dialog.
  */
-export async function allowUnreviewed(on: boolean): Promise<boolean> {
+export function allowUnreviewed(on: boolean): Promise<boolean> {
+  if (!on) return saveAllowUnreviewed(false)
+  asking ??= saveAllowUnreviewed(true).finally(() => (asking = null))
+  return asking
+}
+
+async function saveAllowUnreviewed(on: boolean): Promise<boolean> {
   try {
     const settings = await commands.pluginsAllowUnreviewed(on)
     queryClient.setQueryData(qk.settings, settings)

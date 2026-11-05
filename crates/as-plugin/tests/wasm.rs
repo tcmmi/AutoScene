@@ -197,6 +197,7 @@ impl Guest {
             cache: self.path("code"),
             data_dir: self.path("data"),
             resources_dir: self.resources.clone(),
+            temp_root: self.path("scratch"),
             log_path: self.path("logs/plugin.log"),
             grants: Grants {
                 runtime: RuntimeKind::Wasm,
@@ -582,13 +583,41 @@ fn tmp_is_the_run_s_scratch_folder() {
         assert!(Instant::now() < until, "{} is still there", dir.display());
         thread::sleep(Duration::from_millis(20));
     }
-    // Each run has a /tmp of its own, in the system's temp folder: the
+    // Each run has a /tmp of its own, in the folder its spec names: the
     // second finds nothing the first left.
     for _ in 0..2 {
         let Some(g) = guest("escape") else { return };
         let said = g.text("paths", "/tmp/probe.txt").runs();
         denied(&said, "read /tmp/probe.txt:");
         allowed(&said, "write /tmp/probe.txt:");
+    }
+}
+
+/// A plugin's /tmp is never in the system's temp folder, which may be memory:
+/// where the disk has no room for it, it has no /tmp at all.
+#[test]
+fn tmp_is_made_where_the_spec_says() {
+    let Some(g) = guest("escape") else { return };
+    let g = g.text("paths", "/tmp\n/tmp/probe.txt");
+    let taken = g.path("taken");
+    fs::write(&taken, "a file, where the folder would go").unwrap();
+    let spec = WasmSpec { temp_root: taken, ..g.spec() };
+    let r = wasm::run(spec, &CancelToken::new(), &|_, _| {});
+    assert!(matches!(r, Ok(Some(_))), "{r:?}");
+    denied(&g.said(), "write /tmp/probe.txt:");
+    // Where it can be made, it is, and nothing stays when the run ends.
+    let Some(g) = guest("escape") else { return };
+    let g = g.text("paths", "/tmp\n/tmp/probe.txt");
+    let root = g.path("deep").join("plugin-scratch");
+    let spec = WasmSpec { temp_root: root.clone(), ..g.spec() };
+    let r = wasm::run(spec, &CancelToken::new(), &|_, _| {});
+    assert!(matches!(r, Ok(Some(_))), "{r:?}");
+    allowed(&g.said(), "write /tmp/probe.txt:");
+    assert!(root.is_dir(), "{}", root.display());
+    let until = Instant::now() + Duration::from_secs(30);
+    while fs::read_dir(&root).unwrap().next().is_some() {
+        assert!(Instant::now() < until, "a scratch folder stayed in {}", root.display());
+        thread::sleep(Duration::from_millis(20));
     }
 }
 

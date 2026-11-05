@@ -1,9 +1,13 @@
-//! A run's scratch folder: a folder of its own in the system's temp folder,
-//! which AutoScene empties when the run ends.
+//! A run's scratch folder: a folder of its own, which AutoScene empties when
+//! the run ends.
 //!
 //! A run of a plugin of protocol 2, each start of a service and every run of
 //! a WebAssembly plugin get one ([`Scratch`]): `<temp>/as-<8 of a-z0-9>`,
-//! made as `mkdtemp` makes one. A name that is taken (by a folder, a file or
+//! made as `mkdtemp` makes one. `<temp>` is the system's temp folder, but for
+//! a WebAssembly plugin: on some systems that folder is memory, and all that
+//! keeps a sandboxed plugin from filling it is its limit on time. Its folder
+//! is on the disk instead ([`Scratch::on_disk`]), in AutoScene's data folder.
+//! A name that is taken (by a folder, a file or
 //! a link) is never used, and another is tried; on Linux and macOS only its
 //! user may enter it. It holds the run's [`MARKER`] and the run's temp
 //! folder [`TEMP`], and the plugin is given that one alone: a WebAssembly
@@ -98,6 +102,18 @@ impl Scratch {
         match TEMP_ROOT.with_borrow(Clone::clone) {
             Some(root) => Self::new_in(&root),
             None => Self::new_in(&std::env::temp_dir()),
+        }
+    }
+
+    /// A new scratch folder in `root`, which is made when it isn't there:
+    /// for a run that shouldn't use the system's temp folder.
+    pub fn on_disk(root: &Path) -> io::Result<Self> {
+        match TEMP_ROOT.with_borrow(Clone::clone) {
+            Some(root) => Self::new_in(&root),
+            None => {
+                fs::create_dir_all(root)?;
+                Self::new_in(root)
+            }
         }
     }
 
@@ -573,6 +589,23 @@ mod tests {
         let marker = s.marker.take();
         assert!(remove_retrying(&root, marker, &[], |_| {}));
         assert!(fs::symlink_metadata(&root).is_err(), "{} is still there", root.display());
+    }
+
+    #[test]
+    fn a_scratch_folder_on_the_disk_is_made_where_it_is_asked_for() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("data").join("plugin-scratch");
+        let s = Scratch::on_disk(&root).unwrap();
+        assert_eq!(s.root().parent(), Some(root.as_path()));
+        assert!(is_scratch_name(s.root().file_name().unwrap()));
+        // A file where the folder should be: no scratch folder, and no other.
+        let file = temp.path().join("file");
+        fs::write(&file, "").unwrap();
+        assert!(Scratch::on_disk(&file).is_err());
+        // A thread told where to make them makes them there.
+        let elsewhere = tempfile::tempdir().unwrap();
+        let there = with_temp_root(elsewhere.path(), || Scratch::on_disk(&root)).unwrap();
+        assert_eq!(there.root().parent(), Some(elsewhere.path()));
     }
 
     #[test]

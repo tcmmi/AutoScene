@@ -209,10 +209,12 @@ a WebAssembly plugin gets a temp folder of its own, and AutoScene removes it
 when the run ends. A Stop in the middle of a frame dump leaves nothing
 behind.
 
-- **Where.** In the system's temp folder, on the drive temp files went to
-  anyway: `<temp>/as-<8 letters and digits>/t`. On macOS and Linux only the
-  person's user may enter it. The path is short on purpose, so Python's
-  sockets still fit in it.
+- **Where.** A program's is in the system's temp folder, on the drive temp
+  files went to anyway: `<temp>/as-<8 letters and digits>/t`. The path is
+  short on purpose, so Python's sockets still fit in it. A WebAssembly
+  plugin's is in AutoScene's data folder,
+  `plugin-scratch/as-<8 letters and digits>/t`, so it is always on the disk.
+  On macOS and Linux only the person's user may enter either.
 - **How a plugin finds it.** The run or serve line's `plugin.tempDir` and
   `AUTOSCENE_RUN_TEMP` name it. `TEMP` and `TMP` on Windows, and `TMPDIR` on
   macOS and Linux, point to it, so Python's `tempfile`, PyTorch and FFmpeg
@@ -230,9 +232,10 @@ behind.
   folder is there for the next run. A helper that outlives the run loses
   it too, with the temp files it expected to find.
 - **It has no size limit**, as the data folder has none. But on Linux the
-  system's temp folder may be a `tmpfs`, which lives in RAM, and a frame dump
-  there fills the computer's memory. Large output belongs in the data folder,
-  or in the export's folder.
+  system's temp folder may be a `tmpfs`, which lives in RAM, and a program's
+  frame dump there fills the computer's memory. Large output belongs in the
+  data folder, or in the export's folder. A WebAssembly plugin's `/tmp` isn't
+  in that folder, so what it writes takes disk space, not memory.
 - **Without one.** When it can't be made (a full drive, a temp folder that
   is gone), the run goes on and the plugin's log says why: a program keeps
   the system's temp folder, without `plugin.tempDir` or
@@ -607,8 +610,9 @@ much AutoScene reviewed it (see [Trust](#trust)).
 
 **What the sandbox doesn't limit:**
 
-- how much a plugin writes under `/data`, or under `/export` with
-  `exports:write`: there is no quota;
+- how much a plugin writes under `/data` and `/tmp`, or under `/export` with
+  `exports:write`: there is no quota. All of it goes to the disk, and what
+  is in `/tmp` goes when the run ends;
 - what it sends to the hosts it names;
 - the memory AutoScene keeps for it, which is bounded (100,000 open files,
   streams and timers at once) but not counted in `limits.memoryMb`;
@@ -2890,9 +2894,10 @@ AutoScene's data folder is `%LOCALAPPDATA%\AutoScene` on Windows,
 | `cache/plugin-downloads/` | A package coming from the catalog, until it is checked. Emptied at each start. |
 | `runtimes/uv-<version>/` | AutoScene's uv (see [AutoScene's uv](#autoscenes-uv)). |
 | `runtimes/uv-cache/`, `runtimes/uv-python/` | What uv fetched for scripts: their packages, and Pythons. |
+| `plugin-scratch/` | The scratch folder of each run of a WebAssembly plugin (see [The scratch folder](#the-scratch-folder)). Emptied as runs end, and at each start. |
 | `library.db` | In the `settings` table: its record (`plugin.<id>`), the settings the person changed (`plugin_settings.<id>`), the runtime the person agreed to and the names of the secrets set (`plugin_extra.<id>`), the id the keychain keeps this data folder's secrets under (`plugins_keychain`), and what AutoScene took of the catalog (`plugins_catalog`). |
 
-A run's scratch folder is in the system's temp folder, not here (see
+A program's scratch folder is in the system's temp folder, not here (see
 [The scratch folder](#the-scratch-folder)). The values of secret settings are
 in the system's keychain, not in the data folder (see
 [Secret settings](#secret-settings)). An uninstall removes the

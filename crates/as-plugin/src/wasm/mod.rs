@@ -151,6 +151,9 @@ pub struct WasmSpec {
     /// ([`crate::resources`]), seen read only as `/resources`; none when it
     /// names none, and then there is no `/resources`.
     pub resources_dir: Option<PathBuf>,
+    /// Where its run's scratch folder is made, seen as `/tmp`: on the disk,
+    /// as nothing limits what it writes there ([`Scratch::on_disk`]).
+    pub temp_root: PathBuf,
     /// The plugin's log file.
     pub log_path: PathBuf,
     pub grants: Grants,
@@ -228,7 +231,7 @@ pub fn run_with(
         return Err(PluginError::Cancelled);
     }
     // Removed as it drops, once the run's store is gone.
-    let scratch = Scratch::new();
+    let scratch = Scratch::on_disk(&spec.temp_root);
     run_in_tmp(spec, net, scratch.as_ref().map(Scratch::path), cancel, report)
 }
 

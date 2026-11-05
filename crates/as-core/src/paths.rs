@@ -81,6 +81,13 @@ impl AppPaths {
     pub fn plugin_data(&self) -> PathBuf {
         self.data.join("plugin-data")
     }
+    /// The scratch folders of WebAssembly plugins' runs: on the disk, as the
+    /// system's temp folder may be memory (a `tmpfs`), and nothing bounds
+    /// what a sandboxed plugin writes there. Emptied as runs end, and at
+    /// each start.
+    pub fn plugin_scratch(&self) -> PathBuf {
+        self.data.join("plugin-scratch")
+    }
     /// Plugins' logs, a file per plugin id.
     pub fn plugin_logs(&self) -> PathBuf {
         self.logs().join("plugins")

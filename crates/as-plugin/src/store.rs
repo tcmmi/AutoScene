@@ -383,6 +383,8 @@ pub struct Store {
     code: PathBuf,
     /// Where the large files plugins name are kept ([`crate::resources`]).
     resources: PathBuf,
+    /// Where WebAssembly plugins' runs make their scratch folders.
+    scratch: PathBuf,
     db: Arc<LibraryDb>,
     /// What AutoScene's catalog reviewed and withdrew ([`Store::set_catalog`]).
     catalog: RwLock<Arc<Catalog>>,
@@ -430,6 +432,7 @@ impl Store {
             logs: paths.plugin_logs(),
             code: paths.plugin_code(),
             resources: paths.plugin_resources(),
+            scratch: paths.plugin_scratch(),
             db,
             catalog: RwLock::new(Arc::new(Catalog::none())),
             app,
@@ -491,7 +494,8 @@ impl Store {
     /// Removes what [`Store::open`] moved out of the way. Each lies in
     /// `.trash` under a name of its own, so what is staged, installed or
     /// thrown away meanwhile is never touched: this may run beside them.
-    /// Then the extra rows it found left from before, after their secrets.
+    /// Then the extra rows it found left from before, after their secrets,
+    /// and the scratch folders WebAssembly plugins' runs left.
     pub fn remove_leftovers(&self) {
         let leftovers = std::mem::take(&mut *self.leftovers.lock());
         for path in leftovers {
@@ -505,6 +509,7 @@ impl Store {
                 tracing::warn!(plugin = %id, error = %e.detail(), "a plugin's old extra row stays");
             }
         }
+        crate::scratch::sweep(&self.scratch);
     }
 
     /// Moves into `.trash` each folder under `plugins/<id>/` its row doesn't
@@ -1358,6 +1363,7 @@ impl Store {
             cache: self.cache_dir(id),
             data_dir: self.data_dir(id),
             resources_dir: None,
+            temp_root: self.scratch.clone(),
             log_path: self.log_path(id),
             grants,
             limits: Limits::of(m.runtime.limits.unwrap_or_default()),
@@ -2778,6 +2784,8 @@ mod tests {
         assert_eq!(spec.component, p.dir.join("plugin.wasm"));
         assert_eq!(spec.component_sha256, Some(package::sha256_hex(&guest)));
         assert_eq!((&spec.cache, &spec.data_dir), (&store.cache_dir(&id()), &store.data_dir(&id())));
+        // Its /tmp is on the disk, whatever the system's temp folder is.
+        assert_eq!(spec.temp_root, place.paths.plugin_scratch());
         assert_eq!(spec.limits, Limits::of(crate::manifest::WasmLimits::default()));
         assert_eq!(
             (spec.grants.runtime, spec.grants.permissions.clone()),
@@ -3057,6 +3065,22 @@ mod tests {
     }
 
     #[cfg(feature = "wasm")]
+    #[test]
+    fn scratch_folders_sandboxed_runs_left_are_swept() {
+        let place = Place::new();
+        let root = place.paths.plugin_scratch();
+        // A run that crashed left its folder, and a folder that is no run's.
+        let left = root.join("as-k3j9x0qa");
+        fs::create_dir_all(left.join(crate::scratch::TEMP)).unwrap();
+        fs::write(left.join(crate::scratch::MARKER), "").unwrap();
+        fs::write(left.join(crate::scratch::TEMP).join("frame.png"), "frame").unwrap();
+        let other = root.join("kept");
+        fs::create_dir_all(&other).unwrap();
+        place.store().remove_leftovers();
+        assert!(!left.exists());
+        assert!(other.is_dir());
+    }
+
     #[test]
     fn leftover_compiled_plugins_are_swept() {
         let Some(guest) = guest() else { return };

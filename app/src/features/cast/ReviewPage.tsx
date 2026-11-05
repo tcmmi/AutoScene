@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
+import { Trans, useTranslation } from "react-i18next"
 import { CaretRight, Check, Checks, Play, Prohibit, User, X } from "@/components/icons"
 import type { Character } from "@/bindings"
 import { Artwork } from "@/components/ui/artwork"
@@ -17,7 +18,7 @@ import { firstFailure, portraitQuery, queryClient, useCast, useCastTracks, useMe
 import { timecode } from "@/lib/timecode"
 import { REVIEW_SHORTCUTS, digitOf, useShortcutKeys, useShortcuts } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
-import { castEdit, plural } from "./cast"
+import { castEdit, characterLabel } from "./cast"
 
 /**
  * Faces the analysis wasn't sure about, one at a time: confirm the
@@ -28,6 +29,7 @@ import { castEdit, plural } from "./cast"
 const SETTLE_MS = 350
 
 export function ReviewPage() {
+  const { t } = useTranslation("cast")
   const { pid } = useParams({ from: "/p/$pid/cast/review" })
   const { c } = useSearch({ from: "/p/$pid/cast/review" })
   const navigate = useNavigate()
@@ -154,19 +156,19 @@ export function ReviewPage() {
     <>
       {suggestion && (
         <ContextMenuItem onSelect={() => void decide.yes()} shortcut={keys("review.yes")}>
-          <Check /> Yes, {suggestion.label}
+          <Check /> {t("review.yes", { name: characterLabel(suggestion) })}
         </ContextMenuItem>
       )}
       {suggestion && (
         <ContextMenuItem onSelect={() => void decide.no()} shortcut={keys("review.no")}>
-          <X /> No, someone else
+          <X /> {t("review.no")}
         </ContextMenuItem>
       )}
       <ContextMenuItem onSelect={() => void decide.notFace()} shortcut={keys("review.notFace")}>
-        <Prohibit /> Not a face
+        <Prohibit /> {t("faces.notAFace")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => void decide.skip()} shortcut={keys("review.skip")}>
-        <CaretRight /> Skip for now
+        <CaretRight /> {t("review.skipForNow")}
       </ContextMenuItem>
       <ContextMenuSeparator />
       {picks.map(
@@ -174,18 +176,18 @@ export function ReviewPage() {
           p &&
           p.id !== suggestion?.id && (
             <ContextMenuItem key={p.id} onSelect={() => void decide.pick(i)} shortcut={[String(i + 1)]}>
-              <User /> It's {p.label}
+              <User /> {t("review.itsThem", { name: characterLabel(p) })}
             </ContextMenuItem>
           ),
       )}
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={() => void decide.watch()}>
-        <Play /> Watch this moment
+        <Play /> {t("faces.watchMoment")}
       </ContextMenuItem>
     </>
   )
 
-  const toolbar = <TopBar back={{ label: "Cast", to: `/p/${pid}/cast` }} title="Review faces" />
+  const toolbar = <TopBar back={{ label: t("title"), to: `/p/${pid}/cast` }} title={t("review.title")} />
 
   const failure = firstFailure(queue, castQuery, mediaQuery)
   if (failure) {
@@ -202,21 +204,21 @@ export function ReviewPage() {
       <Page topbar={toolbar}>
         <EmptyState
           icon={<Checks />}
-          title={done > 0 ? "All reviewed" : "Nothing to review"}
+          title={done > 0 ? t("review.allDone") : t("review.nothing")}
           description={
             skipped.size > 0
-              ? `${plural(skipped.size, "face")} skipped; they stay in the list for later.`
+              ? t("review.skipped", { count: skipped.size })
               : done > 0
-                ? `${plural(done, "decision")} saved. They stick, whatever later analyses find.`
-                : "Faces the analysis isn't sure about show up here."
+                ? t("review.saved", { count: done })
+                : t("review.waiting")
           }
           actions={
             skipped.size > 0 ? (
-              <Button onClick={() => setSkipped(new Set())}>Show skipped faces</Button>
+              <Button onClick={() => setSkipped(new Set())}>{t("review.showSkipped")}</Button>
             ) : (
               <Button asChild>
                 <Link to="/p/$pid/cast" params={{ pid }}>
-                  Back to the cast
+                  {t("character.backToCast")}
                 </Link>
               </Button>
             )
@@ -245,8 +247,8 @@ export function ReviewPage() {
         <div className="flex items-center gap-4">
           <Progress className="flex-1" value={total > 0 ? done / total : null} />
           <span className="timecode shrink-0 text-sm text-fg-2">
-            {done} of {total}
-            {skipped.size > 0 && <span className="text-fg-3"> · {skipped.size} skipped</span>}
+            {t("review.progress", { done, total })}
+            {skipped.size > 0 && <span className="text-fg-3"> · {t("review.skippedCount", { count: skipped.size })}</span>}
           </span>
         </div>
 
@@ -254,17 +256,19 @@ export function ReviewPage() {
           <>
             <h2 className="display mt-[min(40px,4vh)] text-center text-5xl text-fg-1">
               {suggestion ? (
-                <>
-                  Is this <span className={cn(!suggestion.name && "italic")}>{suggestion.label}</span>?
-                </>
+                <Trans
+                  t={t}
+                  i18nKey="review.isThis"
+                  values={{ name: characterLabel(suggestion) }}
+                  components={{ x: <span className={cn(!suggestion.name && "italic")} /> }}
+                />
               ) : (
-                "Who is this?"
+                t("review.whoIsThis")
               )}
             </h2>
             {suggestion && (
               <p className="mt-2 text-center text-md text-fg-2">
-                {(current.score ?? 0) >= 0.45 ? "Looks a lot like them" : "Might be them"} — the analysis wasn't sure enough to decide
-                alone.
+                {(current.score ?? 0) >= 0.45 ? t("review.lookALot") : t("review.mightBe")}
               </p>
             )}
 
@@ -274,7 +278,7 @@ export function ReviewPage() {
                 <Artwork
                   key={current.id}
                   path={portrait.data ?? current.thumb}
-                  alt="The face to decide on"
+                  alt={t("review.faceAlt")}
                   className="size-[min(300px,32vh)] rounded-[32px] bg-inset shadow-[0_40px_80px_-30px_rgb(0_0_0/0.9),inset_0_0_0_1px_rgb(255_255_255/0.12)]"
                   imgClassName="object-[50%_30%]"
                   fallback={
@@ -298,7 +302,7 @@ export function ReviewPage() {
                     }
                     className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium text-fg-2 transition-colors hover:bg-white/[0.08] hover:text-fg-1"
                   >
-                    <Play weight="fill" className="size-3" /> Watch
+                    <Play weight="fill" className="size-3" /> {t("review.watch")}
                   </button>
                 </figcaption>
               </figure>
@@ -318,7 +322,7 @@ export function ReviewPage() {
                       )
                     }
                   >
-                    <Check weight="bold" /> Yes, {suggestion.label}
+                    <Check weight="bold" /> {t("review.yes", { name: characterLabel(suggestion) })}
                     <Kbd keys={keys("review.yes")} className="ml-1" />
                   </Button>
                   <Button
@@ -331,7 +335,7 @@ export function ReviewPage() {
                       )
                     }
                   >
-                    No, someone else <Kbd keys={keys("review.no")} className="ml-1" />
+                    {t("review.no")} <Kbd keys={keys("review.no")} className="ml-1" />
                   </Button>
                 </>
               )}
@@ -341,10 +345,10 @@ export function ReviewPage() {
                 disabled={busy}
                 onClick={() => void answer(current.id, () => castEdit(pid, { op: "not_a_face", tracks: [current.id] }))}
               >
-                Not a face <Kbd keys={keys("review.notFace")} className="ml-1" />
+                {t("faces.notAFace")} <Kbd keys={keys("review.notFace")} className="ml-1" />
               </Button>
               <Button size="lg" variant="ghost" onClick={() => setSkipped((s) => new Set(s).add(current.id))}>
-                Skip <Kbd keys={keys("review.skip")} className="ml-1" />
+                {t("review.skip")} <Kbd keys={keys("review.skip")} className="ml-1" />
               </Button>
             </div>
           </>
@@ -352,7 +356,7 @@ export function ReviewPage() {
 
         {current && picks.some(Boolean) && (
           <div className="mt-14">
-            <h3 className="mb-4 text-center text-md font-semibold text-fg-2">Or someone else</h3>
+            <h3 className="mb-4 text-center text-md font-semibold text-fg-2">{t("review.orSomeoneElse")}</h3>
             <div className="flex flex-wrap justify-center gap-2.5">
               {picks.map(
                 (p, i) =>
@@ -370,7 +374,7 @@ export function ReviewPage() {
                     >
                       <Avatar path={p.coverSmall} />
                       <span className={cn("max-w-[140px] truncate text-sm font-medium", p.name ? "text-fg-1" : "text-fg-2")}>
-                        {p.label}
+                        {characterLabel(p)}
                       </span>
                       <Kbd keys={[String(i + 1)]} />
                     </button>
@@ -395,7 +399,7 @@ function Suggestion({ character: c }: { character: Character }) {
         <div className="size-[min(300px,32vh)] overflow-hidden rounded-[32px] bg-inset shadow-[0_40px_80px_-30px_rgb(0_0_0/0.9),inset_0_0_0_1px_rgb(255_255_255/0.12)]">
           {c.cover && <img src={assetUrl(c.cover)} alt="" className="size-full object-cover object-[50%_30%]" />}
         </div>
-        <figcaption className={cn("display mt-3 text-2xl", c.name ? "text-fg-1" : "text-fg-2 italic")}>{c.label}</figcaption>
+        <figcaption className={cn("display mt-3 text-2xl", c.name ? "text-fg-1" : "text-fg-2 italic")}>{characterLabel(c)}</figcaption>
       </figure>
     </>
   )

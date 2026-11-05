@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { AniListMedia, AniListMerge, AniListSuggestion, Character, ProjectId } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -7,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { commands, errorMessage } from "@/lib/ipc"
 import { qk, queryClient, useProject } from "@/lib/queries"
 import { cn } from "@/lib/utils"
-import { namesCredit, namesSource } from "./cast"
+import { characterLabel, namesCredit, namesSource } from "./cast"
 
 type Stage = "search" | "chain" | "suggestions"
 
@@ -27,6 +28,7 @@ export function AniListDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { t } = useTranslation(["cast", "common"])
   const [stage, setStage] = useState<Stage>("search")
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
@@ -43,8 +45,6 @@ export function AniListDialog({
   const { data: project } = useProject(pid)
   const source = namesSource(project?.content, project?.kind) ?? "AniList"
   const film = source === "Fandom"
-  // Fandom's wikis are found through Wikidata: both see the search.
-  const who = film ? "Wikidata and Fandom" : source
   // Each opening starts at the search: suggestions shown before may be from
   // a series turned down since (the dialog stays mounted between openings).
   const [wasOpen, setWasOpen] = useState(open)
@@ -59,7 +59,10 @@ export function AniListDialog({
       setMerges([])
     }
   }
-  const nameOf = (id: string) => characters.find((c) => c.id === id)?.label ?? "a character"
+  const nameOf = (id: string) => {
+    const found = characters.find((x) => x.id === id)
+    return found ? characterLabel(found) : t("names.aCharacter")
+  }
 
   // The suggested search text is filled once the dialog opens (unless the
   // person typed meanwhile); nothing is sent before the Search click.
@@ -75,7 +78,7 @@ export function AniListDialog({
   const run = (work: () => Promise<void>) => {
     setBusy(true)
     void work()
-      .catch((e) => toast.error(`${source} couldn't answer`, { description: errorMessage(e) }))
+      .catch((e) => toast.error(t("names.couldntAnswer", { source }), { description: errorMessage(e) }))
       .finally(() => setBusy(false))
   }
 
@@ -103,7 +106,7 @@ export function AniListDialog({
       setAuto(s.auto)
       setStage("suggestions")
       if (s.auto) {
-        toast.success(`Named ${s.names.length} characters from ${source}`)
+        toast.success(t("names.named", { count: s.names.length, source }))
         void queryClient.invalidateQueries({ queryKey: qk.cast(pid) })
       }
     })
@@ -118,29 +121,32 @@ export function AniListDialog({
   const apply = () =>
     run(async () => {
       await commands.anilistApply(pid, rev, keptNames, keptMerges)
-      toast.success("Names applied")
+      toast.success(t("names.applied"))
       void queryClient.invalidateQueries({ queryKey: qk.cast(pid) })
       onOpenChange(false)
     })
 
   const title = {
-    search: `Names from ${source}`,
-    chain: film ? "This film?" : "This series?",
-    suggestions: "Name suggestions",
+    search: t("names.fromSource", { source }),
+    chain: film ? t("names.thisFilm") : t("names.thisSeries"),
+    suggestions: t("names.suggestions"),
   }[stage]
+  // Fandom's wikis are found through Wikidata: both see the search. The credit the licence asks for ends it.
+  const credit = namesCredit(source) ?? ""
+  const description = (film ? t("names.descriptionFilm", { credit }) : t("names.descriptionSeries", { source, credit })).trim()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         title={title}
-        description={`${who} ${film ? "see" : "sees"} only what you send: the search text, then the cast and images of the ${film ? "film" : "series"} you confirm. ${namesCredit(source) ?? ""}`.trim()}
+        description={description}
       >
         {stage === "search" && (
           <>
             <div className="flex gap-2">
-              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={film ? "Film to search for" : "Series to search for"} aria-label="Search text" />
+              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={film ? t("names.searchFilm") : t("names.searchSeries")} aria-label={t("names.searchLabel")} />
               <Button busy={busy} disabled={!text.trim()} onClick={search}>
-                Search
+                {t("names.search")}
               </Button>
             </div>
             <ul className="mt-4 max-h-72 space-y-1 overflow-y-auto">
@@ -154,7 +160,7 @@ export function AniListDialog({
                   >
                     <span className="text-md text-fg-1">{m.title}</span>
                     <span className="ml-2 text-sm text-fg-3">
-                      {[m.format, m.year, m.episodes != null ? `${m.episodes} ep` : null].filter(Boolean).join(" · ")}
+                      {[m.format, m.year, m.episodes != null ? t("names.episodesShort", { n: m.episodes }) : null].filter(Boolean).join(" · ")}
                     </span>
                   </button>
                 </li>
@@ -162,9 +168,7 @@ export function AniListDialog({
             </ul>
             {searched !== null && results.length === 0 && !busy && (
               <p className="mt-1 text-sm text-fg-2">
-                {film
-                  ? `Nothing found for “${searched}”: only a film whose franchise has a Fandom wiki can be named.`
-                  : `${source} has nothing for “${searched}”.`}
+                {film ? t("names.nothingFilm", { query: searched }) : t("names.nothingSeries", { source, query: searched })}
               </p>
             )}
           </>
@@ -172,9 +176,7 @@ export function AniListDialog({
         {stage === "chain" && (
           <>
             <p className="text-md text-fg-2">
-              {chain.length > 1
-                ? `The whole chain is kept (${chain.length} series — sequels share their cast):`
-                : "Its cast is matched to your characters:"}
+              {chain.length > 1 ? t("names.chain", { count: chain.length }) : t("names.chainOne")}
             </p>
             <ul className="mt-3 space-y-1">
               {chain.map((m) => (
@@ -185,10 +187,10 @@ export function AniListDialog({
             </ul>
             <DialogFooter className="mt-5">
               <Button variant="ghost" disabled={busy} onClick={() => setStage("search")}>
-                Back
+                {t("pick.back")}
               </Button>
               <Button busy={busy} onClick={suggest}>
-                Match the cast
+                {t("names.matchCast")}
               </Button>
             </DialogFooter>
           </>
@@ -196,10 +198,10 @@ export function AniListDialog({
         {stage === "suggestions" && (
           <>
             {names.length === 0 && merges.length === 0 ? (
-              <p className="text-md text-fg-2">No portrait matched a character closely enough.</p>
+              <p className="text-md text-fg-2">{t("names.noMatch")}</p>
             ) : (
               <>
-                {!auto && <p className="mb-3 text-sm text-fg-2">Click one that's wrong to leave it out.</p>}
+                {!auto && <p className="mb-3 text-sm text-fg-2">{t("names.clickWrong")}</p>}
                 <ul className="max-h-72 space-y-1 overflow-y-auto">
                   {names.map((n) => {
                     const leftOut = out.has(`n:${n.characterId}`)
@@ -237,7 +239,7 @@ export function AniListDialog({
                             leftOut && "line-through opacity-45",
                           )}
                         >
-                          Merge {nameOf(m.from)} into {nameOf(m.into)}
+                          {t("names.merge", { from: nameOf(m.from), into: nameOf(m.into) })}
                         </button>
                       </li>
                     )
@@ -247,13 +249,13 @@ export function AniListDialog({
             )}
             <DialogFooter className="mt-5">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
-                {auto ? "Close" : "Not now"}
+                {auto ? t("common:action.close") : t("names.notNow")}
               </Button>
               {!auto && (names.length > 0 || merges.length > 0) && (
                 <Button busy={busy} disabled={keptNames.length === 0 && keptMerges.length === 0} onClick={apply}>
                   {keptNames.length + keptMerges.length === names.length + merges.length
-                    ? "Apply"
-                    : `Apply ${keptNames.length + keptMerges.length}`}
+                    ? t("names.apply")
+                    : t("names.applyN", { n: keptNames.length + keptMerges.length })}
                 </Button>
               )}
             </DialogFooter>

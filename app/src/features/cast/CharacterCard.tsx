@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { Check, CheckCircle, User, UserFocus } from "@/components/icons"
 import type { Character } from "@/bindings"
 import { Artwork } from "@/components/ui/artwork"
@@ -7,8 +8,9 @@ import { Badge } from "@/components/ui/badge"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { contextKit } from "@/components/ui/menu-actions"
+import { fmt } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { formatScreenTime, plural } from "./cast"
+import { characterLabel } from "./cast"
 import { CharacterItems } from "./character-actions"
 
 /**
@@ -43,6 +45,8 @@ export function CharacterCard({
   /** What a right-click on the card offers while it is selected. */
   selectionMenu?: React.ReactNode
 }) {
+  const { t } = useTranslation("cast")
+  const label = characterLabel(c)
   // Their episode is being analysed again: the faces come back when it's done.
   const refinding = c.tracks === 0 && c.waiting > 0
   const menu =
@@ -55,7 +59,7 @@ export function CharacterCard({
           <>
             <ContextMenuSeparator />
             <ContextMenuItem onSelect={onSelect}>
-              <CheckCircle /> Select
+              <CheckCircle /> {t("selection.select")}
             </ContextMenuItem>
           </>
         )}
@@ -92,7 +96,7 @@ export function CharacterCard({
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/15 to-transparent" />
             {c.unsure > 0 && (
               <Badge tone="media" className="absolute top-2.5 right-2.5">
-                +{c.unsure} to review
+                {t("card.moreToReview", { count: c.unsure })}
               </Badge>
             )}
             {(selected || selecting) && (
@@ -107,19 +111,19 @@ export function CharacterCard({
                 {selected && (
                   <>
                     <Check className="size-3.5" weight="bold" />
-                    <span className="sr-only">Selected</span>
+                    <span className="sr-only">{t("selection.selected")}</span>
                   </>
                 )}
               </span>
             )}
             <div className="absolute inset-x-0 bottom-0 p-3.5">
-              <div className={cn("display truncate text-2xl leading-7", c.name ? "text-white" : "text-white/70 italic")}>{c.label}</div>
+              <div className={cn("display truncate text-2xl leading-7", c.name ? "text-white" : "text-white/70 italic")}>{label}</div>
               <div className="mt-0.5 truncate text-xs text-white/70">
                 {refinding ? (
-                  "Being found again…"
+                  t("card.refinding")
                 ) : (
                   <>
-                    {formatScreenTime(c.screenSec ?? 0)} · {plural(c.shots, "shot")}
+                    {fmt.screenTime(c.screenSec ?? 0)} · {t("count.shots", { count: c.shots })}
                   </>
                 )}
               </div>
@@ -150,6 +154,8 @@ export function CharacterRow({
   onSelect?: () => void
   selectionMenu?: React.ReactNode
 }) {
+  const { t } = useTranslation("cast")
+  const label = characterLabel(c)
   const refinding = c.tracks === 0 && c.waiting > 0
   const menu =
     selected && selectionMenu ? (
@@ -161,7 +167,7 @@ export function CharacterRow({
           <>
             <ContextMenuSeparator />
             <ContextMenuItem onSelect={onSelect}>
-              <CheckCircle /> Select
+              <CheckCircle /> {t("selection.select")}
             </ContextMenuItem>
           </>
         )}
@@ -194,16 +200,16 @@ export function CharacterRow({
           />
           <div className="min-w-0">
             <div className={cn("truncate text-md font-medium", c.name ? "text-fg-1" : "text-fg-2 italic")}>
-              {c.label}
+              {label}
             </div>
             <div className="text-xs text-fg-3">
-              {refinding ? "Being found again…" : `${formatScreenTime(c.screenSec ?? 0)} · ${plural(c.shots, "shot")}`}
+              {refinding ? t("card.refinding") : `${fmt.screenTime(c.screenSec ?? 0)} · ${t("count.shots", { count: c.shots })}`}
             </div>
           </div>
         </div>
         {c.unsure > 0 && (
           <span className="flex items-center gap-1.5 rounded-full border border-accent-line bg-accent-subtle px-2.5 py-0.5 text-xs font-semibold text-accent">
-            {c.unsure} to review
+            {t("card.toReview", { count: c.unsure })}
           </span>
         )}
       </Link>

@@ -1,9 +1,10 @@
 import { useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import type { Character } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { castEdit } from "./cast"
+import { castEdit, characterLabel } from "./cast"
 
 export function RenameCharacterDialog({
   pid,
@@ -34,6 +35,7 @@ function RenameForm({
   character: Character
   onDone: () => void
 }) {
+  const { t } = useTranslation(["cast", "common"])
   const [name, setName] = useState(character.name ?? "")
   const [busy, setBusy] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -61,8 +63,8 @@ function RenameForm({
 
   return (
     <DialogContent
-      title={`Rename ${character.label}`}
-      description="Give this character a name, or clear it to keep their numbered label."
+      title={t("rename.title", { name: characterLabel(character) })}
+      description={t("rename.description")}
     >
       <form
         onSubmit={(e) => {
@@ -75,17 +77,17 @@ function RenameForm({
           ref={inputRef}
           autoFocus
           value={name}
-          placeholder={character.label}
+          placeholder={characterLabel(character)}
           onChange={(e) => setName(e.target.value)}
-          aria-label="Character name"
+          aria-label={t("rename.nameLabel")}
           disabled={busy}
         />
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onDone} disabled={busy}>
-            Cancel
+            {t("common:action.cancel")}
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>
-            Save
+            {t("rename.save")}
           </Button>
         </DialogFooter>
       </form>

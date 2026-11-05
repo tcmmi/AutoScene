@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { UserPlus } from "@/components/icons"
 import type { Character } from "@/bindings"
 import { Avatar } from "@/components/ui/avatar"
@@ -6,8 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useCast } from "@/lib/queries"
+import { fmt } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
-import { formatScreenTime, plural } from "./cast"
+import { characterLabel, characterNames, folded } from "./cast"
 
 export type Pick = { kind: "existing"; id: string } | { kind: "new"; name: string }
 
@@ -34,16 +36,17 @@ export function PickCharacter({
   confirm?: (target: Character) => { question: string; detail: string; action: string }
   onPick: (p: Pick) => void
 }) {
+  const { t } = useTranslation("cast")
   const { data: cast } = useCast(pid)
   const [query, setQuery] = useState("")
   // The row arrows moved to (an index into `options`); null: none yet.
   const [active, setActive] = useState<number | null>(null)
   const [pending, setPending] = useState<Character | null>(null)
-  const q = query.trim().toLowerCase()
-  const options = (cast?.characters ?? []).filter((c) => c.id !== exclude && (!q || c.label.toLowerCase().includes(q)))
+  const q = folded(query.trim())
+  const options = (cast?.characters ?? []).filter((c) => c.id !== exclude && (!q || characterNames(c).some((name) => folded(name).includes(q))))
   // Enter takes the row the arrows chose, else an exact name — never just
   // the first partial match (typing a new name must not pick an old one).
-  const exact = options.findIndex((c) => c.label.toLowerCase() === q)
+  const exact = options.findIndex((c) => characterNames(c).some((name) => folded(name) === q))
   const selected = active ?? (exact >= 0 ? exact : null)
   const reset = () => {
     setQuery("")
@@ -66,7 +69,7 @@ export function PickCharacter({
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setPending(null)}>
-                Back
+                {t("pick.back")}
               </Button>
               <Button variant="primary" autoFocus onClick={() => onPick({ kind: "existing", id: pending.id })}>
                 {asked.action}
@@ -77,7 +80,7 @@ export function PickCharacter({
           <>
             <Input
               autoFocus
-              placeholder={allowNew ? "Search, or type a new name" : "Search"}
+              placeholder={allowNew ? t("pick.searchOrNew") : t("pick.search")}
               value={query}
               role="combobox"
               aria-expanded
@@ -112,7 +115,7 @@ export function PickCharacter({
                   <span className="flex size-10 items-center justify-center rounded-full border border-dashed border-white/25 text-fg-3">
                     <UserPlus className="size-4" />
                   </span>
-                  {query.trim() ? <>New character “{query.trim()}”</> : "New character"}
+                  {query.trim() ? t("pick.newCharacterNamed", { name: query.trim() }) : t("pick.newCharacter")}
                 </button>
               )}
               {options.map((c, i) => (
@@ -130,14 +133,14 @@ export function PickCharacter({
                 >
                   <Avatar path={c.coverSmall} className="size-10 picture-edge" />
                   <span className="min-w-0 flex-1">
-                    <span className={cn("block truncate text-md font-medium", c.name ? "text-fg-1" : "text-fg-2")}>{c.label}</span>
+                    <span className={cn("block truncate text-md font-medium", c.name ? "text-fg-1" : "text-fg-2")}>{characterLabel(c)}</span>
                     <span className="block text-xs text-fg-3">
-                      {formatScreenTime(c.screenSec ?? 0)} · {plural(c.shots, "shot")}
+                      {fmt.screenTime(c.screenSec ?? 0)} · {t("count.shots", { count: c.shots })}
                     </span>
                   </span>
                 </button>
               ))}
-              {!allowNew && options.length === 0 && <p className="px-3 py-4 text-md text-fg-3">Nobody matches.</p>}
+              {!allowNew && options.length === 0 && <p className="px-3 py-4 text-md text-fg-3">{t("pick.nobody")}</p>}
             </div>
           </>
         )}

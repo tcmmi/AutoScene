@@ -1,6 +1,7 @@
 import type * as React from "react"
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import {
   CaretDown,
@@ -27,6 +28,7 @@ import { TopBar } from "@/components/ui/topbar"
 import { AnalysisStatus } from "@/features/project/AnalysisStatus"
 import { ProjectLoadError } from "@/features/project/ProjectLoadError"
 import { ProjectNav } from "@/features/project/ProjectNav"
+import { fmt } from "@/lib/i18n"
 import { modKey } from "@/lib/platform"
 import { firstFailure, useCast, useMediaList, useProject, useSettings } from "@/lib/queries"
 import { CAST_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
@@ -46,7 +48,6 @@ import {
   findCharacters,
   isNarrowed,
   namesSource,
-  plural,
   setHiddenAll,
   splitHidden,
   splitTiers,
@@ -61,6 +62,7 @@ const lastFind = new Map<string, CastFind>()
 
 /** Everyone the analysis found, most screen time first. */
 export function CastPage() {
+  const { t, i18n } = useTranslation(["cast", "common"])
   const { pid } = useParams({ from: "/p/$pid/cast" })
   const projectQuery = useProject(pid)
   const castQuery = useCast(pid)
@@ -80,10 +82,13 @@ export function CastPage() {
     setFindState(f)
   }
   const navigate = useNavigate()
-  const { shown: everyoneShown, hidden: everyoneHidden } = splitHidden(cast)
+  const { shown: everyoneShown, hidden: everyoneHidden } = useMemo(() => splitHidden(cast), [cast])
   const narrowed = isNarrowed(find)
-  const shown = findCharacters(everyoneShown, find)
-  const hidden = findCharacters(everyoneHidden, find)
+  // Labels come from the catalog, so a selection click doesn't ask it again for every character.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- the language is why a label, so a search and the name order, differs.
+  const shown = useMemo(() => findCharacters(everyoneShown, find), [everyoneShown, find, i18n.language])
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- the same.
+  const hidden = useMemo(() => findCharacters(everyoneHidden, find), [everyoneHidden, find, i18n.language])
   const { main: mainShown, supporting: supportingShown } = splitTiers(shown)
   // The order the cards are on screen, main cast first: a Shift-click's range
   // is what lies between on screen, not in the backend's order.
@@ -125,8 +130,8 @@ export function CastPage() {
     const done = await setHiddenAll(pid, ids, hidden)
     // They leave the grid at once: the toast says where they went and takes them back.
     if (hidden && done > 0) {
-      toast(`Hid ${plural(done, "character")}`, {
-        action: { label: "Undo", onClick: () => void setHiddenAll(pid, ids.slice(0, done), false) },
+      toast(t("selection.hid", { count: done }), {
+        action: { label: t("common:action.undo"), onClick: () => void setHiddenAll(pid, ids.slice(0, done), false) },
       })
     }
   }
@@ -145,20 +150,21 @@ export function CastPage() {
     <>
       {toHide.length > 0 && (
         <ContextMenuItem onSelect={() => void setHidden(toHide, true)}>
-          <EyeSlash /> Hide {plural(toHide.length, "character")}
+          <EyeSlash /> {t("selection.hide", { count: toHide.length })}
         </ContextMenuItem>
       )}
       {toShow.length > 0 && (
         <ContextMenuItem onSelect={() => void setHidden(toShow, false)}>
-          <Eye /> Show {plural(toShow.length, "character")} in the cast
+          <Eye /> {t("selection.showInCast", { count: toShow.length })}
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={selectAll} shortcut={[modKey, "A"]}>
-        <SelectionAll /> Select all
+        <SelectionAll /> {t("selection.selectAll")}
       </ContextMenuItem>
+      {/* i18n-ignore: the legend printed on a key; its own name for it belongs to the shortcuts namespace */}
       <ContextMenuItem onSelect={clearSelection} shortcut={["Esc"]}>
-        <X /> Clear selection
+        <X /> {t("selection.clear")}
       </ContextMenuItem>
     </>
   )
@@ -195,27 +201,27 @@ export function CastPage() {
         <>
           {cast && cast.unsure > 0 && (
             <ContextMenuItem onSelect={() => void navigate({ to: "/p/$pid/cast/review", params: { pid } })}>
-              <UserFocus /> Review {plural(cast.unsure, "face")}
+              <UserFocus /> {t("faces.review", { count: cast.unsure })}
             </ContextMenuItem>
           )}
           {cast && cast.unassigned > 0 && (
             <ContextMenuItem onSelect={() => void navigate({ to: "/p/$pid/cast/$cid", params: { pid, cid: "unassigned" } })}>
-              <User /> Everyone else
+              <User /> {t("everyoneElse.title")}
             </ContextMenuItem>
           )}
           {anilist && (
             <ContextMenuItem onSelect={() => setAnilistOpen(true)}>
-              <MagnifyingGlass /> Names from {source}
+              <MagnifyingGlass /> {t("names.fromSource", { source })}
             </ContextMenuItem>
           )}
           {hidden.length > 0 && (
             <ContextMenuItem onSelect={() => setShowHidden((v) => !v)}>
-              {showHidden ? <EyeSlash /> : <Eye />} {showHidden ? "Fold the hidden characters" : "Show the hidden characters"}
+              {showHidden ? <EyeSlash /> : <Eye />} {showHidden ? t("page.foldHidden") : t("page.showHidden")}
             </ContextMenuItem>
           )}
           {cards.length > 0 && (
             <ContextMenuItem onSelect={selectAll} shortcut={[modKey, "A"]}>
-              <SelectionAll /> Select every character
+              <SelectionAll /> {t("page.selectEvery")}
             </ContextMenuItem>
           )}
         </>
@@ -223,14 +229,18 @@ export function CastPage() {
     >
       <header className="flex flex-wrap items-end justify-between gap-6 px-10 pt-10 pb-8">
         <div>
-          <h1 className="display text-5xl text-fg-1">Cast</h1>
+          <h1 className="display text-5xl text-fg-1">{t("title")}</h1>
           {cast && (
             <p className="mt-2 text-md text-fg-2">
               {narrowed
-                ? `${shown.length.toLocaleString("en-GB")} of ${plural(everyoneShown.length, "character")}`
-                : plural(shown.length, "character")}
+                ? t("page.narrowed", { shown: fmt.count(shown.length), count: everyoneShown.length })
+                : t("count.characters", { count: shown.length })}
               {cast.mediaTotal > 0 &&
-                ` · faces from ${cast.mediaDone} of ${plural(cast.mediaTotal, project?.kind === "movie" ? "file" : "episode")}`}
+                ` · ${
+                  project?.kind === "movie"
+                    ? t("page.facesFromFiles", { done: cast.mediaDone, count: cast.mediaTotal })
+                    : t("page.facesFromEpisodes", { done: cast.mediaDone, count: cast.mediaTotal })
+                }`}
             </p>
           )}
         </div>
@@ -239,7 +249,7 @@ export function CastPage() {
             <Segmented
               value={view}
               onChange={setView}
-              aria-label="View layout"
+              aria-label={t("page.viewLayout")}
               options={[
                 { value: "grid", label: <SquaresFour weight="bold" /> },
                 { value: "list", label: <ListBullets weight="bold" /> },
@@ -248,13 +258,13 @@ export function CastPage() {
           )}
           {anilist && (
             <Button variant="secondary" size="lg" onClick={() => setAnilistOpen(true)}>
-              <MagnifyingGlass weight="bold" /> Names from {source}
+              <MagnifyingGlass weight="bold" /> {t("names.fromSource", { source })}
             </Button>
           )}
           {cast && cast.unsure > 0 && (
             <Button variant="primary" size="lg" asChild>
               <Link to="/p/$pid/cast/review" params={{ pid }}>
-                <UserFocus weight="bold" /> Review {plural(cast.unsure, "face")}
+                <UserFocus weight="bold" /> {t("faces.review", { count: cast.unsure })}
               </Link>
             </Button>
           )}
@@ -281,11 +291,11 @@ export function CastPage() {
         ) : everyoneShown.length === 0 ? (
           <EmptyState
             icon={<Users />}
-            title={running.length > 0 ? "Looking for characters" : "No characters yet"}
+            title={running.length > 0 ? t("page.looking") : t("page.none")}
             description={
               (media?.length ?? 0) === 0
-                ? "Add episodes to this project. Characters appear here as they are analysed."
-                : "Characters appear here as soon as the first episode's faces are analysed."
+                ? t("page.noEpisodes")
+                : t("page.waitingForFaces")
             }
           />
         ) : (
@@ -294,12 +304,12 @@ export function CastPage() {
               <div className="flex flex-col items-start gap-4 py-4">
                 <p className="text-md text-fg-3">
                   {find.query.trim()
-                    ? `Nobody matches “${find.query.trim()}”.`
+                    ? t("page.noMatch", { query: find.query.trim() })
                     : find.show === "named"
-                      ? "Nobody here has a name yet."
-                      : "No faces wait for review."}
+                      ? t("page.noNamed")
+                      : t("page.noReview")}
                 </p>
-                <Button onClick={() => setFind({ ...find, query: "", show: "all" })}>Show everyone</Button>
+                <Button onClick={() => setFind({ ...find, query: "", show: "all" })}>{t("page.showEveryone")}</Button>
               </div>
             )}
             {shown.length > 0 && (
@@ -308,8 +318,8 @@ export function CastPage() {
                   <div className="space-y-10">
                     <section>
                       <div className="mb-4 flex items-center justify-between">
-                        <h2 className="text-sm font-semibold tracking-wide uppercase text-fg-2">Main cast</h2>
-                        <span className="text-xs text-fg-3">{plural(mainShown.length, "character")}</span>
+                        <h2 className="text-sm font-semibold tracking-wide uppercase text-fg-2">{t("page.mainCast")}</h2>
+                        <span className="text-xs text-fg-3">{t("count.characters", { count: mainShown.length })}</span>
                       </div>
                       <CardGrid className="grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
                         {mainShown.map((c) => {
@@ -321,8 +331,8 @@ export function CastPage() {
 
                     <section>
                       <div className="mb-4 flex items-center justify-between">
-                        <h2 className="text-sm font-semibold tracking-wide uppercase text-fg-2">Supporting and recurring</h2>
-                        <span className="text-xs text-fg-3">{plural(supportingShown.length, "character")}</span>
+                        <h2 className="text-sm font-semibold tracking-wide uppercase text-fg-2">{t("page.supportingCast")}</h2>
+                        <span className="text-xs text-fg-3">{t("count.characters", { count: supportingShown.length })}</span>
                       </div>
                       <CardGrid className="grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-3.5 gap-y-4">
                         {supportingShown.map((c) => {
@@ -350,8 +360,8 @@ export function CastPage() {
                   <div className="space-y-8">
                     <section>
                       <div className="mb-3 flex items-center justify-between">
-                        <h2 className="text-sm font-semibold tracking-wide uppercase text-fg-2">Main cast</h2>
-                        <span className="text-xs text-fg-3">{plural(mainShown.length, "character")}</span>
+                        <h2 className="text-sm font-semibold tracking-wide uppercase text-fg-2">{t("page.mainCast")}</h2>
+                        <span className="text-xs text-fg-3">{t("count.characters", { count: mainShown.length })}</span>
                       </div>
                       <div className="divide-y divide-white/[0.06] rounded-2xl border border-white/10 bg-white/[0.02] p-2">
                         {mainShown.map((c) => {
@@ -363,8 +373,8 @@ export function CastPage() {
 
                     <section>
                       <div className="mb-3 flex items-center justify-between">
-                        <h2 className="text-sm font-semibold tracking-wide uppercase text-fg-2">Supporting and recurring</h2>
-                        <span className="text-xs text-fg-3">{plural(supportingShown.length, "character")}</span>
+                        <h2 className="text-sm font-semibold tracking-wide uppercase text-fg-2">{t("page.supportingCast")}</h2>
+                        <span className="text-xs text-fg-3">{t("count.characters", { count: supportingShown.length })}</span>
                       </div>
                       <div className="divide-y divide-white/[0.06] rounded-2xl border border-white/10 bg-white/[0.02] p-2">
                         {supportingShown.map((c) => {
@@ -397,7 +407,7 @@ export function CastPage() {
                   aria-expanded={showHidden}
                 >
                   <CaretDown weight="bold" className={cn("size-3.5 transition-transform", !showHidden && "-rotate-90")} />
-                  Hidden <span className="font-medium text-fg-3">{hidden.length}</span>
+                  {t("page.hidden")} <span className="font-medium text-fg-3">{hidden.length}</span>
                 </button>
                 {showHidden && (
                   view === "grid" ? (
@@ -420,21 +430,21 @@ export function CastPage() {
         )}
       </div>
       {selected.size > 0 && (
-        <div className="glass-strong fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 animate-pop-in items-center gap-1 rounded-full py-1.5 pr-1.5 pl-5">
-          <span className="pr-2 text-md font-semibold text-fg-1">{plural(selected.size, "character")}</span>
+        <div className="glass-strong fixed bottom-6 left-1/2 z-40 flex w-max max-w-[calc(100vw-3rem)] -translate-x-1/2 animate-pop-in items-center gap-1 rounded-full py-1.5 pr-1.5 pl-5">
+          <span className="pr-2 text-md font-semibold whitespace-nowrap text-fg-1">{t("count.characters", { count: selected.size })}</span>
           {toHide.length > 0 && (
             <Button size="sm" variant="ghost" onClick={() => void setHidden(toHide, true)}>
-              <EyeSlash /> Hide
+              <EyeSlash /> {t("selection.hide")}
             </Button>
           )}
           {toShow.length > 0 && (
             <Button size="sm" variant="ghost" onClick={() => void setHidden(toShow, false)}>
-              <Eye /> Show in the cast
+              <Eye /> {t("selection.showInCast")}
             </Button>
           )}
           <span className="mx-1 h-5 w-px bg-white/15" />
-          <Button size="sm" variant="ghost" onClick={clearSelection} aria-label="Clear selection">
-            Clear
+          <Button size="sm" variant="ghost" onClick={clearSelection} aria-label={t("selection.clear")}>
+            {t("selection.clearShort")}
           </Button>
         </div>
       )}

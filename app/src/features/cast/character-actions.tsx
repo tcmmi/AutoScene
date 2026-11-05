@@ -1,4 +1,5 @@
 import { useNavigate } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { ArrowsMerge, Eye, EyeSlash, Image, Package, PencilSimple, User, UserFocus } from "@/components/icons"
 import type { Character } from "@/bindings"
 import type { MenuKit } from "@/components/ui/menu-actions"
@@ -29,43 +30,44 @@ export function CharacterItems({
   onMerge?: () => void
 }) {
   const navigate = useNavigate()
+  const { t } = useTranslation("cast")
   const { Item, Separator } = kit
   return (
     <>
       {open && (
         <Item onSelect={() => void navigate({ to: "/p/$pid/cast/$cid", params: { pid, cid: c.id } })}>
-          <User /> Open character
+          <User /> {t("character.open")}
         </Item>
       )}
       <Item
         disabled={c.shots === 0}
         onSelect={() => void navigate({ to: "/p/$pid/cast/$cid/pack", params: { pid, cid: c.id } })}
       >
-        <Package /> Build a scenepack
+        <Package /> {t("character.buildPack")}
       </Item>
       {c.unsure > 0 && (
         <Item onSelect={() => void navigate({ to: "/p/$pid/cast/review", params: { pid }, search: { c: c.id } })}>
-          <UserFocus /> Review {c.unsure} {c.unsure === 1 ? "face" : "faces"}
+          <UserFocus /> {t("faces.review", { count: c.unsure })}
         </Item>
       )}
       <Separator />
       {onRename && (
         <Item onSelect={onRename}>
-          <PencilSimple /> Rename
+          <PencilSimple /> {t("character.rename")}
         </Item>
       )}
       {onChoosePicture && (
         <Item disabled={c.tracks === 0} onSelect={onChoosePicture}>
-          <Image /> Choose picture…
+          <Image /> {t("character.choosePicture")}
         </Item>
       )}
       {onMerge && (
         <Item onSelect={onMerge}>
-          <ArrowsMerge /> Same person as…
+          <ArrowsMerge /> {t("character.samePersonAs")}
         </Item>
       )}
       <Item onSelect={() => void castEdit(pid, { op: "set_hidden", characterId: c.id, hidden: !c.hidden })}>
-        {c.hidden ? <Eye /> : <EyeSlash />} {c.hidden ? "Show in the cast" : "Hide from the cast"}
+        {c.hidden ? <Eye /> : <EyeSlash />} {c.hidden ? t("selection.showInCast") : t("character.hideFromCast")}
       </Item>
     </>
   )

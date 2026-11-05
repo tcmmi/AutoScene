@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { toast } from "sonner"
 import type { Cast, CastEdit, Character, ContentKind, FaceTrackItem, JobInfo, ProjectKind } from "@/bindings"
 import { clickSelect } from "@/lib/grid"
-import { fmt } from "@/lib/i18n"
+import { fmt, i18n, t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { useActivity, isFinished } from "@/state/activity"
 
@@ -11,7 +11,7 @@ export async function castEdit(pid: string, edit: CastEdit): Promise<string | nu
   try {
     return await commands.castEdit(pid, edit)
   } catch (e) {
-    toast.error("Couldn't change the cast", { description: errorMessage(e) })
+    toast.error(t("cast:editFailed"), { description: errorMessage(e) })
     return undefined
   }
 }
@@ -32,8 +32,8 @@ export function namesSource(
 /** Where a source's names and pictures come from, as its licence asks it
  *  to be said (`null`: nothing to say). */
 export function namesCredit(source: ReturnType<typeof namesSource>): string | null {
-  if (source === "TVmaze") return "Names and pictures: TVmaze.com (CC BY-SA)."
-  if (source === "Fandom") return "Names and pictures: the film's Fandom wiki (CC BY-SA), found through Wikidata."
+  if (source === "TVmaze") return t("cast:names.creditTvmaze")
+  if (source === "Fandom") return t("cast:names.creditFandom")
   return null
 }
 
@@ -86,14 +86,27 @@ export function plural(n: number, one: string, many = `${one}s`): string {
 /**
  * What the cast says of the user's decisions whose faces a later analysis
  * didn't find again (`Cast.unplaced`): they wait and are tried again.
- * Nothing when there are none.
+ * Nothing when there are none. The words are the catalog's (`cast:unplaced`).
  */
 export function unplacedNote(n: number): string | null {
-  if (!(n > 0)) return null
-  const count = n.toLocaleString("en-GB")
-  return n === 1
-    ? `${count} of your decisions waits for a face the latest analysis didn't find again. It's tried again at the next analysis.`
-    : `${count} of your decisions wait for faces the latest analysis didn't find again. They're tried again at the next analysis.`
+  return n > 0 ? t("cast:unplaced", { count: n }) : null
+}
+
+/** A character's name, or "Character 12" in the UI's language for one nobody named (`Character.number`). */
+export function characterLabel(c: Pick<Character, "name" | "number">): string {
+  return c.name ?? t("cast:unnamed", { n: c.number })
+}
+
+/**
+ * The words a search matches a character by: its name, or for an unnamed one
+ * its label in the UI's language and the English "Character 12", so a person
+ * who types the English still finds it while AutoScene speaks another language.
+ */
+export function characterNames(c: Pick<Character, "name" | "number">): string[] {
+  if (c.name != null) return [c.name]
+  const label = characterLabel(c)
+  const english = t("cast:unnamed", { n: c.number, lng: "en" })
+  return label === english ? [label] : [label, english]
 }
 
 /** Visible characters first (as the backend sorts them), hidden ones apart. */
@@ -145,8 +158,15 @@ export function isNarrowed(find: CastFind): boolean {
 }
 
 /** Lower case without accents: "Zoë" is found by "zoe". */
-const folded = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
-const byName = new Intl.Collator("en-GB", { numeric: true, sensitivity: "base" })
+export const folded = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+// The language's own order ("Ș" after "S" in Romanian), one collator per language.
+const collators = new Map<string, Intl.Collator>()
+function byName(a: string, b: string): number {
+  const lng = i18n.language
+  let collator = collators.get(lng)
+  if (!collator) collators.set(lng, (collator = new Intl.Collator(lng, { numeric: true, sensitivity: "base" })))
+  return collator.compare(a, b)
+}
 
 /**
  * The characters `find` asks for, in its order. Named ones come before the
@@ -155,15 +175,18 @@ const byName = new Intl.Collator("en-GB", { numeric: true, sensitivity: "base" }
  */
 export function findCharacters(characters: Character[], find: CastFind): Character[] {
   const q = folded(find.query.trim())
+  // A label asks the catalog: make each once per call, not once per comparison.
+  const labels = new Map<string, string>()
+  const label = (c: Character) => labels.get(c.id) ?? (labels.set(c.id, characterLabel(c)), labels.get(c.id) as string)
   const found = characters.filter(
     (c) =>
-      (!q || folded(c.label).includes(q)) &&
+      (!q || characterNames(c).some((name) => folded(name).includes(q))) &&
       (find.show !== "named" || c.name != null) &&
       (find.show !== "review" || c.unsure > 0),
   )
   if (find.order === "shots") return found.sort((a, b) => b.shots - a.shots)
   if (find.order === "name") {
-    return found.sort((a, b) => Number(a.name == null) - Number(b.name == null) || byName.compare(a.label, b.label))
+    return found.sort((a, b) => Number(a.name == null) - Number(b.name == null) || byName(label(a), label(b)))
   }
   return found
 }

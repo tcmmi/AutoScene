@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { Cast, ProjectId } from "@/bindings"
 import { ArrowsMerge, Check, CircleNotch, Users } from "@/components/icons"
@@ -8,7 +9,7 @@ import { commands, errorMessage } from "@/lib/ipc"
 import { qk, queryClient, useAniListNames, useProject, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { AniListDialog } from "./AniListDialog"
-import { namesCredit, namesSource, plural } from "./cast"
+import { characterLabel, namesCredit, namesSource } from "./cast"
 
 /**
  * Names for an anime project's cast from AniList, for an animation
@@ -19,6 +20,7 @@ import { namesCredit, namesSource, plural } from "./cast"
  * is on.
  */
 export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: Cast | undefined; className?: string }) {
+  const { t } = useTranslation("cast")
   const { data: settings } = useSettings()
   const { data: project } = useProject(pid)
   const source = namesSource(project?.content, project?.kind)
@@ -54,24 +56,24 @@ export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: C
       .finally(() => setBusy(false))
   }
   const give = () =>
-    act("The names weren't given", async () => {
+    act(t("names.giveFailed"), async () => {
       // What was shown and kept, and what was left out: a look-up that ran
       // since gives nothing unseen.
       const leftNames = names.filter((n) => out.has(n.characterId))
       const leftMerges = merges.filter((m) => out.has(m.from))
       await commands.anilistAccept(pid, kept, keptMerges, leftNames, leftMerges)
-      toast.success(kept.length > 0 ? `Named ${plural(kept.length, "character")} from ${source}` : "Characters merged")
+      toast.success(kept.length > 0 ? t("names.named", { count: kept.length, source }) : t("names.merged"))
       refresh()
     })
   const dismiss = () =>
-    act("The names are still waiting", async () => {
+    act(t("names.dismissFailed"), async () => {
       await commands.anilistDismiss(pid)
       refresh()
     })
   // Not this series: it is turned down (its names go with it), and the
   // search by hand opens for the right one.
   const wrongSeries = () =>
-    act("The series wasn't turned down", async () => {
+    act(t("names.rejectFailed"), async () => {
       if (data.seriesId != null) await commands.anilistReject(pid, data.seriesId)
       refresh()
       setSearching(true)
@@ -85,21 +87,19 @@ export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: C
             <Users weight="fill" className="size-5 shrink-0 text-accent" />
             <div className="min-w-0 flex-1">
               <p className="text-md font-medium text-fg-1">
-                {names.length > 0
-                  ? `${source} has names for ${plural(names.length, "character")}`
-                  : `${source} sees one person in two characters`}
+                {names.length > 0 ? t("names.hasNames", { source, count: names.length }) : t("names.seesOne", { source })}
               </p>
               <p className="text-sm text-fg-2">
-                From the cast of {data.series ?? "the series"}. Click one that's wrong to leave it out.{" "}
+                {data.series != null ? t("names.fromCast", { series: data.series }) : t("names.fromCastUnknown")}{" "}
                 {namesCredit(source)}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <Button variant="ghost" disabled={busy} onClick={wrongSeries}>
-                {source === "Fandom" ? "Wrong film…" : "Wrong series…"}
+                {source === "Fandom" ? t("names.wrongFilm") : t("names.wrongSeries")}
               </Button>
               <Button variant="ghost" disabled={busy} onClick={dismiss}>
-                Not now
+                {t("names.notNow")}
               </Button>
               <Button
                 variant="primary"
@@ -108,7 +108,7 @@ export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: C
                 onClick={give}
               >
                 <Check weight="bold" />
-                {names.length > 0 ? (kept.length === names.length ? "Give names" : `Give ${kept.length}`) : "Merge"}
+                {names.length > 0 ? (kept.length === names.length ? t("names.giveNames") : t("names.giveN", { n: kept.length })) : t("pick.merge")}
               </Button>
             </div>
           </div>
@@ -129,13 +129,15 @@ export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: C
                   >
                     <Avatar path={c?.coverSmall} className="size-7 bg-raised" />
                     <span className={cn("text-sm text-fg-1", leftOut && "line-through")}>{n.name}</span>
-                    <span className="text-sm text-fg-3">{c?.label ?? "a character"}</span>
+                    <span className="text-sm text-fg-3">{c ? characterLabel(c) : t("names.aCharacter")}</span>
                   </button>
                 </li>
               )
             })}
             {merges.map((m) => {
               const leftOut = out.has(m.from)
+              const from = character(m.from)
+              const into = character(m.into)
               return (
                 <li key={m.from}>
                   <button
@@ -147,8 +149,11 @@ export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: C
                       leftOut && "line-through opacity-45",
                     )}
                   >
-                    <ArrowsMerge className="size-4 text-fg-3" /> {character(m.from)?.label ?? "A character"} is{" "}
-                    {character(m.into)?.label ?? "another"}
+                    <ArrowsMerge className="size-4 text-fg-3" />{" "}
+                    {t("names.same", {
+                      from: from ? characterLabel(from) : t("names.aCharacterStart"),
+                      into: into ? characterLabel(into) : t("names.another"),
+                    })}
                   </button>
                 </li>
               )
@@ -158,7 +163,7 @@ export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: C
       ) : (
         data.looking && (
           <p role="status" className={cn("flex items-center gap-2.5 text-sm text-fg-2", className)}>
-            <CircleNotch className="size-4 animate-spin" /> Looking up the characters' names on {source}…
+            <CircleNotch className="size-4 animate-spin" /> {t("names.looking", { source })}
           </p>
         )
       )}

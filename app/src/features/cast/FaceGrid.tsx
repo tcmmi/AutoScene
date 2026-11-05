@@ -1,4 +1,5 @@
 import { memo, useCallback, useLayoutEffect, useRef } from "react"
+import { useTranslation } from "react-i18next"
 import { Check, Play } from "@/components/icons"
 import type { FaceTrackItem, MediaItem } from "@/bindings"
 import { Badge } from "@/components/ui/badge"
@@ -83,7 +84,7 @@ export function FaceGrid({
 }
 
 const Face = memo(function Face({
-  track: t,
+  track,
   index,
   media: m,
   selected,
@@ -102,13 +103,14 @@ const Face = memo(function Face({
   /** Watch this face's moment (the face itself, not its place in the grid). */
   onWatch: (t: FaceTrackItem) => void
 }) {
-  const where = m?.fps ? `${m.label ? `${m.label} · ` : ""}${timecode(t.start, m.fps, false)}` : ""
+  const { t } = useTranslation("cast")
+  const where = m?.fps ? `${m.label ? `${m.label} · ` : ""}${timecode(track.start, m.fps, false)}` : ""
   return (
-    <Tooltip label={where} hint="Click to select · Double-click to watch" side="top" delay={600} disabled={!where}>
+    <Tooltip label={where} hint={t("faces.selectHint")} side="top" delay={600} disabled={!where}>
       <ContextArea
         menu={
-          <ContextMenuItem onSelect={() => onWatch(t)}>
-            <Play /> Watch this moment
+          <ContextMenuItem onSelect={() => onWatch(track)}>
+            <Play /> {t("faces.watchMoment")}
           </ContextMenuItem>
         }
       >
@@ -121,7 +123,7 @@ const Face = memo(function Face({
             if (e.key === "Enter") onOpen(index)
           }}
           aria-pressed={selected}
-          aria-label={`Face${where ? ` at ${where}` : ""}`}
+          aria-label={where ? t("faces.ariaAt", { where }) : t("faces.aria")}
           className={cn(
             "group relative block aspect-square w-full overflow-hidden rounded-xl bg-inset outline-none picture-edge",
             "ring-offset-2 ring-offset-canvas transition-[box-shadow,opacity,transform] duration-[var(--dur-fast)]",
@@ -130,15 +132,15 @@ const Face = memo(function Face({
           )}
         >
           <img
-            src={assetUrl(t.thumb)}
+            src={assetUrl(track.thumb)}
             alt=""
             loading="lazy"
             decoding="async"
             draggable={false}
-            className={cn("size-full object-cover", (t.quality ?? 0) < 0.3 && "opacity-70")}
+            className={cn("size-full object-cover", (track.quality ?? 0) < 0.3 && "opacity-70")}
           />
-          {t.assign === "pinned" && !selected && (
-            <span className="absolute top-2 left-2 size-2 rounded-full bg-white shadow-[0_0_6px_rgb(255_255_255/0.6)]" aria-label="Confirmed" />
+          {track.assign === "pinned" && !selected && (
+            <span className="absolute top-2 left-2 size-2 rounded-full bg-white shadow-[0_0_6px_rgb(255_255_255/0.6)]" aria-label={t("faces.confirmed")} />
           )}
           <span
             className={cn(

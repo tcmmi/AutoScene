@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import {
   ArrowLeft,
   ArrowsMerge,
@@ -50,12 +51,13 @@ import { type BodyVerdict, formatShotLength } from "@/features/shots/shots"
 import { BAND_ID, ShotBand, ShotStack } from "@/features/shots/ShotStack"
 import { useAmbient } from "@/lib/ambient"
 import { useFittedTitle } from "@/lib/fit-text"
+import { fmt } from "@/lib/i18n"
 import { assetUrl } from "@/lib/media"
 import { modKey } from "@/lib/platform"
 import { firstFailure, useCast, useCastTracks, useCharacterShots, useMediaList, useProject } from "@/lib/queries"
 import { FACES_SHORTCUTS, SHOTS_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
-import { castEdit, formatScreenTime, plural } from "./cast"
+import { castEdit, characterLabel } from "./cast"
 import { CharacterItems } from "./character-actions"
 import { ChoosePictureDialog } from "./ChoosePictureDialog"
 import { FaceGrid } from "./FaceGrid"
@@ -83,6 +85,7 @@ const cardButton = (key: string) => `[data-card="${key}"] button`
 
 /** One character (or everyone nobody claimed): faces, decisions, export. */
 export function CharacterPage() {
+  const { t } = useTranslation(["cast", "common"])
   const { pid, cid } = useParams({ from: "/p/$pid/cast/$cid" })
   const navigate = useNavigate()
   const projectQuery = useProject(pid)
@@ -93,6 +96,7 @@ export function CharacterPage() {
   const { data: media } = mediaQuery
   const everyone = cid === "unassigned"
   const character = cast?.characters.find((c) => c.id === cid)
+  const label = character ? characterLabel(character) : ""
   const tracks = useCastTracks(pid, everyone ? { kind: "unassigned" } : { kind: "character", id: cid })
   const maybe = useCastTracks(pid, { kind: "unsure", id: cid }, !everyone)
   const [picked, setSelected] = useState<Set<number>>(new Set())
@@ -136,7 +140,7 @@ export function CharacterPage() {
   )
 
   const toolbar = (
-    <TopBar overlay back={{ label: "Cast", to: `/p/${pid}/cast` }} title={everyone ? "Everyone else" : (character?.label ?? " ")} />
+    <TopBar overlay back={{ label: t("title"), to: `/p/${pid}/cast` }} title={everyone ? t("everyoneElse.title") : (label || " ")} />
   )
 
   const failure = firstFailure(projectQuery, castQuery, mediaQuery, tracks)
@@ -154,12 +158,12 @@ export function CharacterPage() {
       <Page topbar={toolbar}>
         <EmptyState
           icon={<Users />}
-          title="This character isn't in the cast any more"
-          description="It may have been merged into someone else."
+          title={t("character.goneTitle")}
+          description={t("character.goneDescription")}
           actions={
             <Button asChild>
               <Link to="/p/$pid/cast" params={{ pid }}>
-                <ArrowLeft /> Back to the cast
+                <ArrowLeft /> {t("character.backToCast")}
               </Link>
             </Button>
           }
@@ -178,27 +182,28 @@ export function CharacterPage() {
   const selectionMenu = selected.size > 0 && (
     <>
       <ContextMenuItem onSelect={() => setMoveOpen(true)}>
-        <UserPlus /> Move {plural(selected.size, "face")} to…
+        <UserPlus /> {t("faces.move", { count: selected.size })}
       </ContextMenuItem>
       {character && (
         <ContextMenuItem onSelect={() => void edit({ op: "not_them", tracks: ids, characterId: character.id })}>
-          <Prohibit /> Not {character.label}
+          <Prohibit /> {t("character.not", { name: label })}
         </ContextMenuItem>
       )}
       <ContextMenuItem onSelect={() => void edit({ op: "not_a_face", tracks: ids })}>
-        <X /> Not a face
+        <X /> {t("faces.notAFace")}
       </ContextMenuItem>
       {character && selected.size === 1 && (
         <ContextMenuItem onSelect={() => void edit({ op: "set_cover", characterId: character.id, track: ids[0] })}>
-          <Image /> Use as picture
+          <Image /> {t("faces.useAsPicture")}
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={() => setSelected(new Set(list.map((t) => t.id)))} shortcut={[modKey, "A"]}>
-        <SelectionAll /> Select all
+        <SelectionAll /> {t("selection.selectAll")}
       </ContextMenuItem>
+      {/* i18n-ignore: the legend printed on a key; its own name for it belongs to the shortcuts namespace */}
       <ContextMenuItem onSelect={() => setSelected(new Set())} shortcut={["Esc"]}>
-        <X /> Clear selection
+        <X /> {t("selection.clear")}
       </ContextMenuItem>
     </>
   )
@@ -217,12 +222,12 @@ export function CharacterPage() {
       <ContextMenuSeparator />
       {!everyone && (
         <ContextMenuItem onSelect={() => chooseView(view === "shots" ? "faces" : "shots")}>
-          {view === "shots" ? <UserFocus /> : <FilmStrip />} {view === "shots" ? "Show their faces" : "Show their shots"}
+          {view === "shots" ? <UserFocus /> : <FilmStrip />} {view === "shots" ? t("character.showFaces") : t("character.showShots")}
         </ContextMenuItem>
       )}
       {view === "faces" && list.length > 0 && (
         <ContextMenuItem onSelect={() => setSelected(new Set(list.map((t) => t.id)))} shortcut={[modKey, "A"]}>
-          <SelectionAll /> Select every face
+          <SelectionAll /> {t("character.selectEveryFace")}
         </ContextMenuItem>
       )}
     </>
@@ -234,7 +239,7 @@ export function CharacterPage() {
         ? { op: "body_not_them", bodies, characterId: character.id }
         : { op: "not_a_person", bodies }
     void castEdit(pid, e).then((r) => {
-      if (r !== undefined) toast(verdict === "not_them" ? `Not ${character.label}: out of their shots` : "Not a person: out of their shots")
+      if (r !== undefined) toast(verdict === "not_them" ? t("character.notThemToast", { name: characterLabel(character) }) : t("character.notAPersonToast"))
     })
   }
 
@@ -260,20 +265,20 @@ export function CharacterPage() {
       <section className="px-10 pt-2 pb-28">
         <div className="mb-5 flex items-center justify-between gap-4">
           {everyone ? (
-            <h2 className="text-xl font-semibold text-fg-1">Faces nobody claimed</h2>
+            <h2 className="text-xl font-semibold text-fg-1">{t("everyoneElse.heading")}</h2>
           ) : (
             <Segmented<View>
-              aria-label="Show"
+              aria-label={t("character.show")}
               value={view}
               onChange={chooseView}
               options={[
-                { value: "shots", label: "Shots" },
-                { value: "faces", label: "Faces" },
+                { value: "shots", label: t("character.shots") },
+                { value: "faces", label: t("character.faces") },
               ]}
             />
           )}
           {view === "faces" && list.length > 0 && (
-            <span className="text-sm text-fg-3">Click to select · Shift for a range · double-click to watch</span>
+            <span className="text-sm text-fg-3">{t("character.facesHint")}</span>
           )}
         </div>
         {view === "shots" && character ? (
@@ -285,7 +290,7 @@ export function CharacterPage() {
             ))}
           </div>
         ) : list.length === 0 ? (
-          <p className="text-md text-fg-3">No faces here.</p>
+          <p className="text-md text-fg-3">{t("character.noFaces")}</p>
         ) : (
           <ContextArea menu={selectionMenu}>
             <div>
@@ -296,27 +301,27 @@ export function CharacterPage() {
       </section>
 
       {view === "faces" && selected.size > 0 && (
-        <div className="glass-strong fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 animate-pop-in items-center gap-1 rounded-full py-1.5 pr-1.5 pl-5">
-          <span className="pr-2 text-md font-semibold text-fg-1">{plural(selected.size, "face")}</span>
+        <div className="glass-strong fixed bottom-6 left-1/2 z-40 flex w-max max-w-[calc(100vw-3rem)] -translate-x-1/2 animate-pop-in items-center gap-1 rounded-full py-1.5 pr-1.5 pl-5">
+          <span className="pr-2 text-md font-semibold whitespace-nowrap text-fg-1">{t("count.faces", { count: selected.size })}</span>
           <Button size="sm" variant="ghost" onClick={() => setMoveOpen(true)}>
-            <UserPlus /> Move to…
+            <UserPlus /> {t("faces.moveShort")}
           </Button>
           {character && (
             <Button size="sm" variant="ghost" onClick={() => void edit({ op: "not_them", tracks: ids, characterId: character.id })}>
-              <Prohibit /> Not {character.label}
+              <Prohibit /> {t("character.not", { name: label })}
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={() => void edit({ op: "not_a_face", tracks: ids })}>
-            <X /> Not a face
+            <X /> {t("faces.notAFace")}
           </Button>
           {character && selected.size === 1 && (
             <Button size="sm" variant="ghost" onClick={() => void edit({ op: "set_cover", characterId: character.id, track: ids[0] })}>
-              <Image /> Use as picture
+              <Image /> {t("faces.useAsPicture")}
             </Button>
           )}
           <span className="mx-1 h-5 w-px bg-white/15" />
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} aria-label="Clear selection">
-            Clear
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} aria-label={t("selection.clear")}>
+            {t("selection.clearShort")}
           </Button>
         </div>
       )}
@@ -325,7 +330,7 @@ export function CharacterPage() {
         pid={pid}
         open={moveOpen}
         onOpenChange={setMoveOpen}
-        title={`Move ${plural(selected.size, "face")} to…`}
+        title={t("faces.move", { count: selected.size })}
         exclude={character?.id}
         allowNew
         onPick={async (target) => {
@@ -340,13 +345,13 @@ export function CharacterPage() {
           pid={pid}
           open={mergeOpen}
           onOpenChange={setMergeOpen}
-          title={`${character.label} is the same person as…`}
-          description="Every face of both becomes one character. It keeps a name if either has one."
+          title={t("pick.mergeTitle", { name: label })}
+          description={t("pick.mergeDescription")}
           exclude={character.id}
           confirm={(target) => ({
-            question: `Merge ${character.label} into ${target.label}?`,
-            detail: "This can't be undone. Faces you said aren't them stay apart.",
-            action: "Merge",
+            question: t("pick.mergeQuestion", { from: label, into: characterLabel(target) }),
+            detail: t("pick.mergeDetail"),
+            action: t("pick.merge"),
           })}
           onPick={async (target) => {
             setMergeOpen(false)
@@ -375,6 +380,7 @@ function Shots({
   onOpen: (s: { mediaId: string; start: number }) => void
   onBody: (bodies: number[], verdict: BodyVerdict) => void
 }) {
+  const { t } = useTranslation("cast")
   const shots = useCharacterShots(pid, character.id)
   const cards = useMemo(() => stackCards(shots.data ?? NO_GROUPS), [shots.data])
   const count = useMemo(() => cards.reduce((sum, c) => sum + c.shots.length, 0), [cards])
@@ -442,19 +448,19 @@ function Shots({
     )
   }
   if (shots.isError && shots.data === undefined) {
-    return <ErrorState error={shots.error} title="Their shots couldn't be loaded" onRetry={() => void shots.refetch()} />
+    return <ErrorState error={shots.error} title={t("shots.loadFailed")} onRetry={() => void shots.refetch()} />
   }
   if (cards.length === 0) {
     return (
       <p className="text-md text-fg-3">
-        {character.waiting > 0 ? "Their episode is being analysed again; the shots come back when it's done." : "No shots yet."}
+        {character.waiting > 0 ? t("shots.waiting") : t("shots.none")}
       </p>
     )
   }
   return (
     <>
       <p className="mb-4 text-sm text-fg-3">
-        {plural(count, "shot")} · {formatShotLength(seconds)} in all · hover to scrub
+        {t("shots.summary", { count, length: formatShotLength(seconds) })}
       </p>
       <div ref={grid}>
         <VirtualGrid
@@ -467,7 +473,7 @@ function Shots({
               {c.shots.length > 1 ? (
                 <ShotStack card={c} media={media.get(c.mediaId)} open={c === opened} onToggle={toggle} onWatch={watch} />
               ) : (
-                <ShotCard shot={c.shots[0]} media={media.get(c.mediaId)} name={character.label} onOpen={watchCard} onBody={onBody} />
+                <ShotCard shot={c.shots[0]} media={media.get(c.mediaId)} name={characterLabel(character)} onOpen={watchCard} onBody={onBody} />
               )}
             </div>
           )}
@@ -480,7 +486,7 @@ function Shots({
                     <ShotBand
                       card={opened}
                       media={media.get(opened.mediaId)}
-                      name={character.label}
+                      name={characterLabel(character)}
                       columns={columns}
                       notch={column * (itemWidth + gap) + itemWidth / 2}
                       onOpen={watchInBand}
@@ -515,6 +521,7 @@ function Header({
   onChoosePicture: () => void
   onMerge: () => void
 }) {
+  const { t } = useTranslation("cast")
   const [editing, setEditing] = useState(false)
   const heroPath = backdrop ?? c?.coverSmall
   const ambient = useAmbient(heroPath)
@@ -562,10 +569,10 @@ function Header({
         <div ref={setRow} className="flex flex-wrap items-end justify-between gap-8">
           <div className="flex min-w-0 items-end gap-7">
             {c && choosable ? (
-              <Tooltip label="Choose picture" side="bottom">
+              <Tooltip label={t("header.choosePictureTip")} side="bottom">
                 <button
                   onClick={onChoosePicture}
-                  aria-label={`Choose a picture for ${c.label}`}
+                  aria-label={t("choosePicture.title", { name: characterLabel(c) })}
                   className="group/portrait shrink-0 rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-accent-line"
                 >
                   {portrait}
@@ -576,17 +583,17 @@ function Header({
             )}
             <div className="min-w-0 pb-1">
               {everyone ? (
-                <h1 className="display text-6xl leading-none text-white">Everyone else</h1>
+                <h1 className="display text-6xl leading-none text-white">{t("everyoneElse.title")}</h1>
               ) : editing && c ? (
                 <NameField character={c} pid={pid} onDone={() => setEditing(false)} />
               ) : (
-                <Tooltip label="Rename" side="bottom">
+                <Tooltip label={t("character.rename")} side="bottom">
                   {/* Its margins reach 1rem past the column it sizes; so may it, or the name is cut 1rem short. */}
                   <button
                     onClick={() => setEditing(true)}
                     className="group -mx-2 flex max-w-[calc(100%+1rem)] items-center gap-3 rounded-xl px-2 text-left transition-colors hover:bg-white/[0.06]"
                   >
-                    <HeroName row={row} named={!!c?.name} text={c?.label ?? " "} />
+                    <HeroName row={row} named={!!c?.name} text={c ? characterLabel(c) : " "} />
                     <PencilSimple className="size-5 shrink-0 text-white/60 opacity-0 transition-opacity group-hover:opacity-100" />
                   </button>
                 </Tooltip>
@@ -594,16 +601,16 @@ function Header({
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 {everyone ? (
                   <>
-                    <Badge tone="media">{plural(faces, "face")}</Badge>
-                    <span className="text-sm text-white/70">Extras, background faces and anyone seen too briefly to tell</span>
+                    <Badge tone="media">{t("count.faces", { count: faces })}</Badge>
+                    <span className="text-sm text-white/70">{t("everyoneElse.about")}</span>
                   </>
                 ) : c ? (
                   <>
-                    <Badge tone="media">{formatScreenTime(c.screenSec ?? 0)} on screen</Badge>
-                    <Badge tone="media">{plural(c.shots, "shot")}</Badge>
-                    <Badge tone="media">{plural(c.media, "episode")}</Badge>
-                    <Badge tone="media">{plural(c.tracks, "face")}</Badge>
-                    {!c.name && <span className="pl-1 text-sm text-white/60">Click the name to rename</span>}
+                    <Badge tone="media">{t("header.onScreen", { time: fmt.screenTime(c.screenSec ?? 0) })}</Badge>
+                    <Badge tone="media">{t("count.shots", { count: c.shots })}</Badge>
+                    <Badge tone="media">{t("count.episodes", { count: c.media })}</Badge>
+                    <Badge tone="media">{t("count.faces", { count: c.tracks })}</Badge>
+                    {!c.name && <span className="pl-1 text-sm text-white/60">{t("header.clickToRename")}</span>}
                   </>
                 ) : null}
               </div>
@@ -614,20 +621,20 @@ function Header({
               {c.shots > 0 ? (
                 <Button size="lg" variant="primary" asChild>
                   <Link to="/p/$pid/cast/$cid/pack" params={{ pid, cid: c.id }}>
-                    <Package weight="bold" /> Build a scenepack
+                    <Package weight="bold" /> {t("character.buildPack")}
                   </Link>
                 </Button>
               ) : (
                 <Button size="lg" variant="primary" disabled>
-                  <Package weight="bold" /> Build a scenepack
+                  <Package weight="bold" /> {t("character.buildPack")}
                 </Button>
               )}
               <Button size="lg" variant="glass" onClick={onMerge}>
-                <ArrowsMerge /> Same person as…
+                <ArrowsMerge /> {t("character.samePersonAs")}
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon-lg" variant="glass" aria-label={`${c.label} options`}>
+                  <Button size="icon-lg" variant="glass" aria-label={t("character.options", { name: characterLabel(c) })}>
                     <DotsThree weight="bold" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -667,6 +674,7 @@ function HeroName({ row, named, text }: { row: HTMLDivElement | null; named: boo
 }
 
 function NameField({ character: c, pid, onDone }: { character: Character; pid: string; onDone: () => void }) {
+  const { t } = useTranslation("cast")
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => {
     ref.current?.focus()
@@ -681,8 +689,8 @@ function NameField({ character: c, pid, onDone }: { character: Character; pid: s
     <Input
       ref={ref}
       defaultValue={c.name ?? ""}
-      placeholder={c.label}
-      aria-label="Character name"
+      placeholder={characterLabel(c)}
+      aria-label={t("rename.nameLabel")}
       className="display h-16 w-[min(520px,60vw)] rounded-2xl border-white/20 bg-black/30 px-4 text-5xl backdrop-blur-md"
       onBlur={() => void save()}
       onKeyDown={(e) => {
@@ -707,6 +715,8 @@ function Maybe({
   media: Map<string, MediaItem>
   onOpen: (t: FaceTrackItem) => void
 }) {
+  const { t } = useTranslation("cast")
+  const label = characterLabel(c)
   const [all, setAll] = useState(false)
   const [dismissed, setDismissed] = useState<Set<number>>(new Set())
   // The face whose moment plays in its card: one at a time.
@@ -735,12 +745,12 @@ function Maybe({
       menu={
         <>
           <ContextMenuItem onSelect={() => void navigate({ to: "/p/$pid/cast/review", params: { pid }, search: { c: c.id } })}>
-            <UserFocus /> Review one by one
+            <UserFocus /> {t("maybe.reviewOneByOne")}
           </ContextMenuItem>
           <ContextMenuItem
             onSelect={() => void handleAction({ op: "assign", tracks: activeTracks.map((t) => t.id), characterId: c.id }, activeTracks.map((t) => t.id))}
           >
-            <Check /> All are {c.label}
+            <Check /> {t("maybe.allAre", { name: label })}
           </ContextMenuItem>
         </>
       }
@@ -748,33 +758,30 @@ function Maybe({
       <section className="mx-10 mb-10 rounded-3xl border border-accent-line/60 bg-[linear-gradient(135deg,rgb(224_180_92/0.1),rgb(255_255_255/0.02)_60%)] p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="display text-3xl text-fg-1">Maybe {c.label}?</h2>
-            <p className="mt-1 text-sm text-fg-2">
-              {plural(activeTracks.length, "face")} {activeTracks.length === 1 ? "looks" : "look"} like {c.label}, but not clearly enough to
-              decide alone.
-            </p>
+            <h2 className="display text-3xl text-fg-1">{t("maybe.title", { name: label })}</h2>
+            <p className="mt-1 text-sm text-fg-2">{t("maybe.lookLike", { count: activeTracks.length, name: label })}</p>
           </div>
           <div className="flex shrink-0 gap-2">
             <Button variant="secondary" asChild>
               <Link to="/p/$pid/cast/review" params={{ pid }} search={{ c: c.id }}>
-                <UserFocus /> Review one by one
+                <UserFocus /> {t("maybe.reviewOneByOne")}
               </Link>
             </Button>
             <Button
               variant="accent"
               onClick={() => void handleAction({ op: "assign", tracks: activeTracks.map((t) => t.id), characterId: c.id }, activeTracks.map((t) => t.id))}
             >
-              <Check weight="bold" /> All are {c.label}
+              <Check weight="bold" /> {t("maybe.allAre", { name: label })}
             </Button>
           </div>
         </div>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3">
           <AnimatePresence mode="popLayout">
-            {shown.map((t) => {
-              const m = media.get(t.mediaId)
+            {shown.map((face) => {
+              const m = media.get(face.mediaId)
               return (
                 <motion.div
-                  key={t.id}
+                  key={face.id}
                   layout
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -783,68 +790,68 @@ function Maybe({
                 >
                   <FacePreview
                     pid={pid}
-                    track={t}
+                    track={face}
                     media={m}
-                    open={peek === t.id}
-                    onOpenChange={(o) => setPeek((p) => (o ? t.id : p === t.id ? null : p))}
+                    open={peek === face.id}
+                    onOpenChange={(o) => setPeek((p) => (o ? face.id : p === face.id ? null : p))}
                   >
                     <ContextArea
                       menu={
                         <>
-                          <ContextMenuItem onSelect={() => void handleAction({ op: "assign", tracks: [t.id], characterId: c.id }, [t.id])}>
-                            <Check /> Yes, {c.label}
+                          <ContextMenuItem onSelect={() => void handleAction({ op: "assign", tracks: [face.id], characterId: c.id }, [face.id])}>
+                            <Check /> {t("maybe.yes", { name: label })}
                           </ContextMenuItem>
-                          <ContextMenuItem onSelect={() => void handleAction({ op: "not_them", tracks: [t.id], characterId: c.id }, [t.id])}>
-                            <X /> Not {c.label}
+                          <ContextMenuItem onSelect={() => void handleAction({ op: "not_them", tracks: [face.id], characterId: c.id }, [face.id])}>
+                            <X /> {t("character.not", { name: label })}
                           </ContextMenuItem>
                           <ContextMenuSeparator />
-                          <ContextMenuItem onSelect={() => onOpen(t)}>
-                            <Play /> Watch this moment
+                          <ContextMenuItem onSelect={() => onOpen(face)}>
+                            <Play /> {t("faces.watchMoment")}
                           </ContextMenuItem>
                         </>
                       }
                     >
                       <div className="group relative aspect-square overflow-hidden rounded-xl bg-inset picture-edge transition-transform duration-100 ease-out hover:scale-[1.03] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent-line">
                         <Tooltip
-                          label={m?.label ?? "This face"}
-                          hint={canPlayMoment(m) ? "Double-click to watch · Space plays it here" : "Double-click to watch"}
+                          label={m?.label ?? t("faces.thisFace")}
+                          hint={canPlayMoment(m) ? t("faces.watchOrPlayHint") : t("faces.watchHint")}
                           side="top"
                           delay={600}
                           // The moment's card says the same, where the tooltip would be.
-                          disabled={peek === t.id}
+                          disabled={peek === face.id}
                         >
                           <button
                             type="button"
-                            onDoubleClick={() => onOpen(t)}
+                            onDoubleClick={() => onOpen(face)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") onOpen(t)
+                              if (e.key === "Enter") onOpen(face)
                               // Space plays the moment here, as resting the pointer on the face does.
                               if (e.key === " " && canPlayMoment(m)) {
                                 e.preventDefault()
-                                if (!e.repeat) setPeek((p) => (p === t.id ? null : t.id))
+                                if (!e.repeat) setPeek((p) => (p === face.id ? null : face.id))
                               }
                             }}
-                            aria-label={`Face${m?.label ? ` in ${m.label}` : ""}`}
+                            aria-label={m?.label ? t("faces.ariaIn", { where: m.label }) : t("faces.aria")}
                             // Opens on a double-click, like a file in a list: the arrow; its Yes / Not buttons show the hand.
                             className="block size-full cursor-default outline-none"
                           >
-                            <img src={assetUrl(t.thumb)} alt="" loading="lazy" className="size-full object-cover" />
+                            <img src={assetUrl(face.thumb)} alt="" loading="lazy" className="size-full object-cover" />
                           </button>
                         </Tooltip>
                         <div className="absolute inset-x-1 bottom-1 flex justify-between gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                          <Tooltip label={`Yes, ${c.label}`} side="top">
+                          <Tooltip label={t("maybe.yes", { name: label })} side="top">
                             <button
-                              onClick={() => void handleAction({ op: "assign", tracks: [t.id], characterId: c.id }, [t.id])}
-                              aria-label={`Yes, ${c.label}`}
+                              onClick={() => void handleAction({ op: "assign", tracks: [face.id], characterId: c.id }, [face.id])}
+                              aria-label={t("maybe.yes", { name: label })}
                               className="flex h-7 flex-1 items-center justify-center rounded-lg bg-black/60 text-white backdrop-blur-md hover:bg-accent hover:text-on-accent active:scale-95 transition-transform"
                             >
                               <Check className="size-3.5" />
                             </button>
                           </Tooltip>
-                          <Tooltip label={`Not ${c.label}`} side="top">
+                          <Tooltip label={t("character.not", { name: label })} side="top">
                             <button
-                              onClick={() => void handleAction({ op: "not_them", tracks: [t.id], characterId: c.id }, [t.id])}
-                              aria-label={`Not ${c.label}`}
+                              onClick={() => void handleAction({ op: "not_them", tracks: [face.id], characterId: c.id }, [face.id])}
+                              aria-label={t("character.not", { name: label })}
                               className="flex h-7 flex-1 items-center justify-center rounded-lg bg-black/60 text-white backdrop-blur-md hover:bg-danger hover:text-white active:scale-95 transition-transform"
                             >
                               <X className="size-3.5" />
@@ -861,7 +868,7 @@ function Maybe({
         </div>
         {activeTracks.length > 12 && (
           <button onClick={() => setAll((v) => !v)} className="mt-4 text-sm font-medium text-fg-2 hover:text-fg-1">
-            {all ? "Show fewer" : `Show ${plural(activeTracks.length - shown.length, "more face")}`}
+            {all ? t("maybe.showFewer") : t("maybe.showMore", { count: activeTracks.length - shown.length })}
           </button>
         )}
       </section>

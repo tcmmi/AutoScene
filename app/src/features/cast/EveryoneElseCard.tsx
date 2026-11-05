@@ -1,8 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { User } from "@/components/icons"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem } from "@/components/ui/context-menu"
-import { plural } from "./cast"
 
 /** Reusable card / row for "Everyone else" (unassigned faces) across Grid and List views. */
 export function EveryoneElseCard({
@@ -17,13 +17,14 @@ export function EveryoneElseCard({
   compact?: boolean
 }) {
   const navigate = useNavigate()
+  const { t } = useTranslation("cast")
   if (unassigned <= 0) return null
 
   // An item that navigates, not one wrapping a link: the item adds its
   // shortcut beside its children, and a Slot takes a single child only.
   const menu = (
     <ContextMenuItem onSelect={() => void navigate({ to: "/p/$pid/cast/$cid", params: { pid, cid: "unassigned" } })}>
-      <User /> Open everyone else
+      <User /> {t("everyoneElse.open")}
     </ContextMenuItem>
   )
 
@@ -40,8 +41,8 @@ export function EveryoneElseCard({
               <User />
             </div>
             <div>
-              <div className="text-md font-medium text-fg-1">Everyone else</div>
-              <div className="text-xs text-fg-3">{plural(unassigned, "face")} nobody claimed</div>
+              <div className="text-md font-medium text-fg-1">{t("everyoneElse.title")}</div>
+              <div className="text-xs text-fg-3">{t("everyoneElse.unclaimed", { count: unassigned })}</div>
             </div>
           </div>
         </Link>
@@ -69,8 +70,8 @@ export function EveryoneElseCard({
         >
           <User />
         </span>
-        <span className={compact ? "display text-lg text-fg-1" : "display text-2xl text-fg-1"}>Everyone else</span>
-        <span className={compact ? "text-2xs text-fg-3" : "text-xs text-fg-3"}>{plural(unassigned, "face")}</span>
+        <span className={compact ? "display text-lg text-fg-1" : "display text-2xl text-fg-1"}>{t("everyoneElse.title")}</span>
+        <span className={compact ? "text-2xs text-fg-3" : "text-xs text-fg-3"}>{t("count.faces", { count: unassigned })}</span>
       </Link>
     </ContextArea>
   )

@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useReducedMotion } from "motion/react"
+import { useTranslation } from "react-i18next"
 import { HoverCard } from "radix-ui"
 import type { FaceTrackItem, MediaItem } from "@/bindings"
 import { FrameClock } from "@/lib/frame-clock"
@@ -69,6 +70,7 @@ export function FacePreview({
  * moment's first frame shows; when the file can't play, it never shows.
  */
 function Moment({ pid, track, label, onFail }: { pid: string; track: FaceTrackItem; label?: string; onFail: () => void }) {
+  const { t } = useTranslation("cast")
   const map = useFrameMap(pid, track.mediaId, true)
   const data = map.data
   const clock = useMemo(() => {
@@ -118,8 +120,8 @@ function Moment({ pid, track, label, onFail }: { pid: string; track: FaceTrackIt
       fail.current()
     }
     // Back to the start once the last frame shows, not when the shot after it does.
-    const check = (t: number) => {
-      if (!v.seeking && loopsBack(clock, loop, t)) begin()
+    const check = (time: number) => {
+      if (!v.seeking && loopsBack(clock, loop, time)) begin()
     }
     v.addEventListener("loadedmetadata", begin)
     v.addEventListener("seeked", onSeeked)
@@ -180,7 +182,7 @@ function Moment({ pid, track, label, onFail }: { pid: string; track: FaceTrackIt
         />
         <div className="flex items-baseline justify-between gap-3 px-1.5 pt-1.5 pb-0.5">
           <span className="timecode truncate text-xs font-medium text-fg-1">{where}</span>
-          <span className="shrink-0 text-2xs text-fg-3">Double-click to watch</span>
+          <span className="shrink-0 text-2xs text-fg-3">{t("faces.watchHint")}</span>
         </div>
       </HoverCard.Content>
     </HoverCard.Portal>

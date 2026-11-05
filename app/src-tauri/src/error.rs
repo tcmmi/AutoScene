@@ -213,9 +213,33 @@ mod tests {
     }
 
     #[test]
+    fn a_project_error_reaches_the_ui_with_its_key_and_its_english() {
+        let e = AppError::from(ProjectError::NotFound(as_core::msg!("episode.removed", "This episode was removed.")));
+        assert_eq!((e.code, e.msg.key.as_str()), (ErrorCode::NotFound, "episode.removed"));
+        assert_eq!(e.message, "This episode was removed.");
+        assert_eq!(e.msg.text, e.message);
+
+        let name = "E01";
+        let said = as_core::msg!("episode.notIndexed", "{{name}} isn't indexed yet.", name = name);
+        let e = AppError::from(ProjectError::NotReady(said.clone()));
+        assert_eq!((e.code, &e.msg), (ErrorCode::NotReady, &said));
+        assert_eq!(e.message, "E01 isn't indexed yet.");
+
+        let e = AppError::from(ProjectError::Db(as_db::DbError::TooNew));
+        assert_eq!((e.code, e.msg.key.as_str()), (ErrorCode::Internal, "db.tooNew"));
+        assert!(e.message.contains("Update AutoScene"), "{e}");
+
+        let e = AppError::from(ProjectError::Cancelled);
+        assert_eq!(
+            (e.code, e.msg.key.as_str(), e.message.as_str()),
+            (ErrorCode::Cancelled, "job.cancelled", "cancelled")
+        );
+    }
+
+    #[test]
     fn words_without_a_key_yet_keep_their_english() {
-        let e = AppError::from(ProjectError::NotFound("This episode was removed.".into()));
-        assert_eq!((e.msg.key.as_str(), e.message.as_str()), ("", "This episode was removed."));
+        let e = AppError::from(ProjectError::Invalid(Msg::plain("A panic's own words.")));
+        assert_eq!((e.msg.key.as_str(), e.message.as_str()), ("", "A panic's own words."));
         assert_eq!(e.msg.text, e.message);
     }
 

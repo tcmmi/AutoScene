@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
+import { say } from "@/lib/i18n"
 import { baseName, mediaTitle } from "@/lib/media"
 import { useRelink } from "@/state/relink"
 import { relinkAnyway } from "./relink"
@@ -17,7 +18,7 @@ export function RelinkDialog() {
       {question && (
         <DialogContent
           title={t("relink.questionTitle", { file: baseName(question.path), episode: mediaTitle(question.media) })}
-          description={t("relink.questionDescription", { reason: question.reason })}
+          description={t("relink.questionDescription", { reason: say(question.reason) })}
         >
           <DialogFooter>
             <Button variant="ghost" disabled={busy} onClick={close}>

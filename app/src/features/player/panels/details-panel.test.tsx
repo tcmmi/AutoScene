@@ -288,7 +288,7 @@ describe("the Cast tab's analysis block", () => {
   })
 
   it("says shot detection failed, with its error, and offers to try again", async () => {
-    await press({ shots: "failed", shotsError: "The file ends early.", faces: "pending" }, "Try again")
+    await press({ shots: "failed", shotsError: { key: "", args: {}, text: "The file ends early." }, faces: "pending" }, "Try again")
     expect(within(cast()).getByText("Shot detection failed.").className).toContain("text-danger")
     expect(within(cast()).getByText("The file ends early.")).toBeTruthy()
   })
@@ -324,7 +324,7 @@ describe("the Cast tab's analysis block", () => {
   })
 
   it("says why finding characters failed and offers to try again", async () => {
-    await press({ faces: "failed", facesError: "The face model couldn't be loaded." }, "Try again")
+    await press({ faces: "failed", facesError: { key: "", args: {}, text: "The face model couldn't be loaded." } }, "Try again")
     expect(within(cast()).getByText("The face model couldn't be loaded.").className).toContain("text-danger")
   })
 

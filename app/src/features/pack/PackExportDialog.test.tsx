@@ -12,6 +12,7 @@ import { useActivity } from "@/state/activity"
 import { PackExportDialog } from "./PackExportDialog"
 import { DEFAULT_SPEC } from "./spec"
 import type { Pack } from "./use-pack"
+import { inLanguage } from "@/test/i18n"
 
 const prores: ExportPreset = {
   id: "prores-hq",
@@ -64,7 +65,13 @@ function pack(naming: PackNaming): Pack {
           {
             presetId: "bit-perfect",
             bytes: 9e8,
-            apart: naming.merge ? "Bit-Perfect makes a file per shot here: their episodes' pictures differ in size or format." : null,
+            apart: naming.merge
+              ? {
+                  key: "export.lossless.apart",
+                  args: { why: { key: "export.lossless.pictures", args: {}, text: "their episodes' pictures differ in size or format" } },
+                  text: "Bit-Perfect makes a file per shot here: their episodes' pictures differ in size or format.",
+                }
+              : null,
           },
         ],
         folder: naming.folder ? "Walter" : null,
@@ -418,6 +425,38 @@ describe("PackExportDialog", () => {
       await user.tab({ shift: true })
       expect(document.activeElement).toBe(expected)
     }
+  })
+
+  it("says why Bit-Perfect makes a file per shot in the UI's language, its reason included", async () => {
+    await inLanguage("ro", {
+      backend: { export: { lossless: { apart: "Bit-Perfect face câte un fișier: {{why}}.", pictures: "imaginile diferă" } } },
+    })
+    vi.mocked(commands.settingsGet).mockResolvedValueOnce({
+      libraryRoot: "C:\\Library",
+      exportPresetId: "bit-perfect",
+      audioLanguage: "eng",
+    })
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(true))} open onOpenChange={() => {}} />, { wrapper })
+    expect(await screen.findByText("Bit-Perfect face câte un fișier: imaginile diferă.")).toBeTruthy()
+  })
+
+  it.each([
+    ["allFfv1", "These pictures can't be stored exactly as HEVC.", "Aceste imagini rămân FFV1."],
+    ["someFfv1", "Some of these pictures can't be stored exactly as HEVC.", "Unele imagini rămân FFV1."],
+  ])("says the format's note in the UI's language: %s", async (key, text, romanian) => {
+    await inLanguage("ro", { backend: { export: { lossless: { [key]: romanian } } } })
+    vi.mocked(commands.settingsGet).mockResolvedValueOnce({
+      libraryRoot: "C:\\Library",
+      exportPresetId: "bit-perfect",
+      audioLanguage: "eng",
+    })
+    const p = pack(naming(false))
+    const data = p.plan.data as NonNullable<Pack["plan"]["data"]>
+    const note = { key: `export.lossless.${key}`, args: {}, text }
+    const noted = { ...p, plan: { ...p.plan, data: { ...data, sizes: data.sizes.map((s) => ({ ...s, note })) } } } as Pack
+    render(<PackExportDialog pid="p" character={walter} pack={noted} open onOpenChange={() => {}} />, { wrapper })
+    expect(await screen.findByText(romanian)).toBeTruthy()
+    expect(document.body.textContent).not.toContain("[object Object]")
   })
 
   it("a broken template keeps the dialog as it was", async () => {

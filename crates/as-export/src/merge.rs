@@ -24,7 +24,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use as_core::{CancelToken, FrameIndex, FrameRange, Rational};
+use as_core::{CancelToken, FrameIndex, FrameRange, Msg, Rational, msg};
 use as_media::filters::TONEMAP_SDR;
 use as_media::frames::MAX_SIDE;
 use as_media::{AudioStream, Caps, ExactFormat, HdrKind, MediaError, MediaInfo, Tools, run_ffmpeg};
@@ -297,24 +297,24 @@ pub fn plan_merge(caps: &Caps, preset: &ExportPreset, sources: &[MergeSource]) -
 /// Why clips like `sources` can't share one Bit-Perfect file, as far as
 /// their probes tell (`None`: they can, unless what they decode to differs;
 /// see [`plan_lossless_merge`]).
-pub fn lossless_merge_blocker(sources: &[MergeSource]) -> Option<String> {
+pub fn lossless_merge_blocker(sources: &[MergeSource]) -> Option<Msg> {
     let first = sources.first()?;
     let picture = |s: &MergeSource| {
         let v = &s.info.video;
         (v.width, v.height, v.sar, v.pix_fmt.clone(), v.rotation, v.field_order.clone())
     };
     if sources.iter().any(|s| picture(s) != picture(first)) {
-        return Some("their episodes' pictures differ in size or format".into());
+        return Some(msg!("export.lossless.pictures", "their episodes' pictures differ in size or format"));
     }
     // The colour each copy would be tagged with (untagged sources get what
     // editors assume for their codec).
     let colour = |s: &MergeSource| lossless::assumed_colour(s.info);
     if sources.iter().any(|s| colour(s) != colour(first)) {
-        return Some("their episodes' colours are tagged differently".into());
+        return Some(msg!("export.lossless.colours", "their episodes' colours are tagged differently"));
     }
     let sounds: Vec<&AudioStream> = sources.iter().filter_map(|s| audio_stream(s.info, s.audio_ordinal)).collect();
     if sounds.iter().any(|a| (a.sample_rate, a.channels) != (sounds[0].sample_rate, sounds[0].channels)) {
-        return Some("their episodes' sound differs in its rate or channels".into());
+        return Some(msg!("export.lossless.sound", "their episodes' sound differs in its rate or channels"));
     }
     None
 }
@@ -329,7 +329,7 @@ pub fn plan_lossless_merge(caps: &Caps, sources: &[MergeSource], exact: &[ExactF
     check_ranges(sources)?;
     let unlike = |why: &str| Err(ExportError::Inexact(format!("its clips can't share one file: {why}")));
     if let Some(why) = lossless_merge_blocker(sources) {
-        return unlike(&why);
+        return unlike(&why.text);
     }
     let keepers = sources
         .iter()

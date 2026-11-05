@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use as_api::{AniListMedia, AniListMerge, AniListNames, AniListSuggestion, AniListSuggestions, CastEdit};
-use as_core::{CancelToken, CharacterId, ProjectId};
+use as_core::{CancelToken, CharacterId, Msg, ProjectId, msg};
 use as_engine::Engine;
 use as_models::ModelStore;
 use as_project::anilist::{CastMember, Looks, Media, MergeProposal, NameSuggestion, Source, Suggested};
@@ -70,7 +70,7 @@ fn portraits(
         }
     }
     if let Some(e) = failed.filter(|_| portraits.is_empty()) {
-        return Err(ProjectError::Invalid(format!("embedding the portraits: {}", e.detail())));
+        return Err(portraits_failed(&e));
     }
     Ok(portraits)
 }
@@ -87,22 +87,26 @@ fn embedded(
         Ok(emb) => Ok(Ok(emb)),
         Err(e @ as_engine::EngineError::Failed { .. }) => Ok(Err(e)),
         Err(as_engine::EngineError::Cancelled) => Err(ProjectError::Cancelled),
-        Err(e) => Err(ProjectError::Invalid(format!("embedding the portraits: {}", e.detail()))),
+        Err(e) => Err(portraits_failed(&e)),
     }
+}
+
+fn portraits_failed(e: &as_engine::EngineError) -> ProjectError {
+    ProjectError::Invalid(msg!("names.portraitsFailed", "embedding the portraits: {{why}}", why = e.detail()))
 }
 
 /// The portraits' embedder (CCIP), downloaded first when it isn't yet: an
 /// animation project's face pass never needs it.
 fn embedder_ready(models: &ModelStore, cancel: &CancelToken) -> ProjectResult<()> {
     let ccip = as_models::ids::ANIME_CCIP;
-    if models.installed(ccip).map_err(|e| ProjectError::Invalid(e.to_string()))?.is_some() {
+    if models.installed(ccip).map_err(|e| ProjectError::Invalid(Msg::plain(e.to_string())))?.is_some() {
         return Ok(());
     }
     models.install(ccip, cancel, |_, _| {}).map_err(|e| match e {
         as_models::ModelError::Cancelled => ProjectError::Cancelled,
         e => {
             log::warn!("names: {}", e.detail());
-            ProjectError::NotReady(e.to_string())
+            ProjectError::NotReady(Msg::plain(e.to_string()))
         }
     })?;
     Ok(())
@@ -194,7 +198,7 @@ pub fn look_up(app: &AppHandle, id: ProjectId, rerun: bool) {
         let mut gave = false;
         loop {
             let done = catch_unwind(AssertUnwindSafe(|| look_up_now(lib, &state.engine, &state.models, id)))
-                .unwrap_or_else(|_| Err(ProjectError::Invalid("the look-up stopped unexpectedly".into())));
+                .unwrap_or_else(|_| Err(ProjectError::Invalid(Msg::plain("the look-up stopped unexpectedly"))));
             gave |= matches!(done, Ok(true));
             let mut runs = state.anilist.lock();
             match (runs.get(&id), &done) {

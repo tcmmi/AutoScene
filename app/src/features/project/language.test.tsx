@@ -260,7 +260,7 @@ describe("relinking in another language", () => {
       },
     })
     render(<RelinkDialog />)
-    act(() => useRelink.getState().ask({ pid: "p", media, path: "D:/x/other.mkv", reason: "It is shorter." }))
+    act(() => useRelink.getState().ask({ pid: "p", media, path: "D:/x/other.mkv", reason: { key: "", text: "It is shorter." } }))
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText("Folosești „other.mkv” pentru S01E01 · E01?")).toBeTruthy()
     expect(within(dialog).getByText("Nu pare același episod. It is shorter. Dacă îl folosești oricum, e analizat din nou.")).toBeTruthy()

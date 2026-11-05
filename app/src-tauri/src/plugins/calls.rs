@@ -1177,7 +1177,7 @@ mod tests {
 
         fn export(&self, _: &Project, id: ExportId) -> ProjectResult<ExportSummary> {
             let e = self.exports.iter().find(|e| e.id == id);
-            e.cloned().ok_or_else(|| ProjectError::NotFound("This export no longer exists.".into()))
+            e.cloned().ok_or_else(|| ProjectError::NotFound(as_core::Msg::plain("This export no longer exists.")))
         }
     }
 

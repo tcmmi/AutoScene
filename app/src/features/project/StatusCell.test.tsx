@@ -62,7 +62,7 @@ function episode(bodies: StageState): MediaItem {
     faces: "ready",
     faceCount: 30,
     bodies,
-    bodiesError: bodies === "failed" ? "The engine stopped." : null,
+    bodiesError: bodies === "failed" ? { key: "", args: {}, text: "The engine stopped." } : null,
   } as MediaItem
 }
 

@@ -499,7 +499,7 @@ pub struct ImportCandidate {
     /// Why it can't be imported: a path (its name or a folder's) that isn't
     /// valid Unicode, which media can't keep as the text they keep their
     /// path in. Such a file is listed, never added.
-    pub refused: Option<String>,
+    pub refused: Option<Msg>,
 }
 
 // ---------------------------------------------------------------------------
@@ -547,7 +547,7 @@ pub struct MediaItem {
     pub position: u32,
     pub size_bytes: f64,
     pub status: MediaStatus,
-    pub error: Option<String>,
+    pub error: Option<Msg>,
     pub info: Option<MediaInfo>,
     /// Decoded frame count (from the frame index).
     pub frames: Option<u32>,
@@ -566,19 +566,19 @@ pub struct MediaItem {
     pub added_at: i64,
     /// Shot detection.
     pub shots: StageState,
-    pub shots_error: Option<String>,
+    pub shots_error: Option<Msg>,
     /// Number of shots once detected.
     pub shot_count: Option<u32>,
     /// Face analysis (characters).
     pub faces: StageState,
-    pub faces_error: Option<String>,
+    pub faces_error: Option<Msg>,
     /// Face tracks once found.
     pub face_count: Option<u32>,
     /// People followed by their bodies (when the setting is on).
     #[serde(default = "pending")]
     pub bodies: StageState,
     #[serde(default)]
-    pub bodies_error: Option<String>,
+    pub bodies_error: Option<Msg>,
 }
 
 fn pending() -> StageState {
@@ -965,7 +965,7 @@ pub enum Relink {
     Reindex,
     /// Another video (`reason` says how). Taken anyway with `force`: it is
     /// analysed again, the decisions on its faces are kept.
-    Different { reason: String },
+    Different { reason: Msg },
 }
 
 /// Missing media looked for in a folder.
@@ -1047,7 +1047,7 @@ pub struct MergedFile {
     pub verified: bool,
     pub bytes: Option<f64>,
     /// Why it couldn't be made.
-    pub error: Option<String>,
+    pub error: Option<Msg>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -1064,7 +1064,7 @@ pub struct ExportItem {
     pub verified: bool,
     pub encoder: Option<String>,
     pub bytes: Option<f64>,
-    pub error: Option<String>,
+    pub error: Option<Msg>,
 }
 
 /// What an export would make, worked out before it starts.
@@ -1092,14 +1092,14 @@ pub struct PresetSize {
     /// Why this preset makes a file per clip of what was to be one file
     /// (Bit-Perfect can't join episodes whose pictures or sound differ).
     #[serde(default)]
-    pub apart: Option<String>,
+    pub apart: Option<Msg>,
     /// The files' extension when it isn't the preset's container's
     /// (Bit-Perfect keeps some pictures as FFV1 in an MKV).
     #[serde(default)]
     pub ext: Option<String>,
     /// What people should know about this preset for these clips.
     #[serde(default)]
-    pub note: Option<String>,
+    pub note: Option<Msg>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]

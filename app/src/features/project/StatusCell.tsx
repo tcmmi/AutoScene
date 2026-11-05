@@ -5,7 +5,7 @@ import type { JobInfo, MediaItem } from "@/bindings"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip } from "@/components/ui/tooltip"
 import { formatEta, formatPercent } from "@/lib/format"
-import { t } from "@/lib/i18n"
+import { say, t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { cancelJob, cancelLabel } from "@/lib/jobs"
 import { useProject, useSettings } from "@/lib/queries"
@@ -62,7 +62,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
   if (m.status === "failed") {
     return (
       <span className="inline-flex items-center gap-2 text-sm">
-        <Tooltip label={m.error ?? t("project:status.indexingFailed")}>
+        <Tooltip label={m.error ? say(m.error) : t("project:status.indexingFailed")}>
           <span className="inline-flex items-center gap-1.5 text-danger">
             <Warning className="size-3.5" /> {t("project:status.failed")}
           </span>
@@ -118,7 +118,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
   if (m.shots === "failed") {
     return (
       <span className="inline-flex items-center gap-2 text-sm">
-        <Tooltip label={m.shotsError ?? t("project:status.shotsFailed")}>
+        <Tooltip label={m.shotsError ? say(m.shotsError) : t("project:status.shotsFailed")}>
           <span className="inline-flex items-center gap-1.5 text-danger">
             <Warning className="size-3.5" /> {t("project:status.analysisFailed")}
           </span>
@@ -162,7 +162,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
       <span className="inline-flex flex-col gap-0.5 text-sm">
         {shots}
         <span className="inline-flex items-center gap-2 pl-5 text-xs">
-          <Tooltip label={m.facesError ?? t("project:status.charactersFailedWhy")}>
+          <Tooltip label={m.facesError ? say(m.facesError) : t("project:status.charactersFailedWhy")}>
             <span className="inline-flex items-center gap-1 text-danger">
               <Warning className="size-3" /> {t("project:status.charactersFailed")}
             </span>
@@ -195,7 +195,7 @@ function PeopleLine({ media: m, onContinue }: { media: MediaItem; onContinue: ()
   return (
     <span className="inline-flex items-center gap-2 pl-5 text-xs">
       {failed && (
-        <Tooltip label={m.bodiesError ?? t("project:status.peopleFailedWhy")}>
+        <Tooltip label={m.bodiesError ? say(m.bodiesError) : t("project:status.peopleFailedWhy")}>
           <span className="inline-flex items-center gap-1 text-danger">
             <Warning className="size-3" /> {t("project:status.peopleFailed")}
           </span>

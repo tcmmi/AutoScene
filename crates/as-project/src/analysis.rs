@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use as_analysis::signals::{self, FrameSignals};
 use as_analysis::{CHUNK, FusionParams, SegmentKind as Kind, TransitionKind, fuse};
 use as_api::{ContentKind, MediaInfo, Segment, SegmentKind, StageState};
-use as_core::{FrameIdx, MediaId};
+use as_core::{FrameIdx, MediaId, Msg, msg};
 
 use crate::{Project, ProjectError, ProjectResult};
 
@@ -94,9 +94,10 @@ impl Project {
             return Ok(false);
         }
         if old == ContentKind::Anime || content == ContentKind::Anime {
-            return Err(ProjectError::Invalid(
-                "Anime is analysed differently from the start. Add the videos as a new anime project instead.".into(),
-            ));
+            return Err(ProjectError::Invalid(msg!(
+                "analysis.animeFromTheStart",
+                "Anime is analysed differently from the start. Add the videos as a new anime project instead."
+            )));
         }
         let v = serde_json::to_value(content).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
         // Not while the cast is being grouped: a grouping that read the old
@@ -132,7 +133,7 @@ impl Project {
         Ok(self.db().put_shot_chunk(id, start, data)?)
     }
 
-    pub fn set_shots_state(&self, id: MediaId, state: StageState, error: Option<&str>) -> ProjectResult<()> {
+    pub fn set_shots_state(&self, id: MediaId, state: StageState, error: Option<&Msg>) -> ProjectResult<()> {
         Ok(self.db().set_shots_state(id, state, error)?)
     }
 
@@ -142,10 +143,19 @@ impl Project {
         let frames = self.frame_index(id)?.len() as usize;
         let mut all: Vec<FrameSignals> = Vec::with_capacity(frames);
         for (_, data) in self.db().shot_chunks(id)? {
-            all.extend(signals::decode(&data).ok_or_else(|| ProjectError::Invalid("unreadable shot signals".into()))?);
+            all.extend(
+                signals::decode(&data).ok_or_else(|| {
+                    ProjectError::Invalid(msg!("analysis.unreadableSignals", "unreadable shot signals"))
+                })?,
+            );
         }
         if all.len() != frames {
-            return Err(ProjectError::Invalid(format!("shot signals cover {} of {frames} frames", all.len())));
+            return Err(ProjectError::Invalid(msg!(
+                "analysis.signalsCover",
+                "shot signals cover {{covered}} of {{frames}} frames",
+                covered = all.len(),
+                frames = frames,
+            )));
         }
         let params = match self.content()? {
             ContentKind::Anime => FusionParams::anime(),

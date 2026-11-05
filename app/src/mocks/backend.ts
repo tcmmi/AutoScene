@@ -859,7 +859,7 @@ function underWay(kind: JobKind, mediaId: string) {
 function ingest(p: MockProject, m: MediaItem) {
   m.status = "indexing"
   const cancelled = () => {
-    Object.assign(m, { status: "failed", error: "Indexing was cancelled." })
+    Object.assign(m, { status: "failed", error: { key: "episode.indexingCancelled", args: {}, text: "Indexing was cancelled." } })
     refresh(p)
     void emit("media:changed", { projectId: p.id, mediaId: m.id })
     void emit("library:changed", { projectId: p.id })
@@ -1257,7 +1257,9 @@ const handlers: Record<string, Handler> = {
     const p = find(projectId)
     const m = findMedia(p, mediaId)
     const file = String(path)
-    if (!force && /other/i.test(file)) return { kind: "different", reason: "It's 40:00 long instead of 52:11." }
+    if (!force && /other/i.test(file)) {
+      return { kind: "different", reason: { key: "relink.length", args: { length: "40:00", was: "52:11" }, text: "It's 40:00 long instead of 52:11." } }
+    }
     m.path = file
     m.fileName = file.split(/[\\/]/).pop() ?? m.fileName
     m.status = "ready"

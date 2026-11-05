@@ -7,11 +7,11 @@ use as_api::{
     ClipOutcome, ExportItem, ExportPreset, ExportStatus, ExportSummary, MediaInfo, MediaItem, MediaStatus, MergedFile,
     ProxyState, Segment, SegmentKind, StageState, now_ms,
 };
-use as_core::{ExportId, FrameIdx, FrameRange, MediaId, ProjectId, Rational};
+use as_core::{ExportId, FrameIdx, FrameRange, MediaId, Msg, ProjectId, Rational};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 use rusqlite_migration::{M, Migrations};
 
-use crate::{Db, DbError, DbResult, enum_from_sql, enum_to_sql, json_from_sql, json_to_sql};
+use crate::{Db, DbError, DbResult, enum_from_sql, enum_to_sql, json_from_sql, json_to_sql, msg_from_sql};
 
 /// Append-only: never edit a released migration, add a new one.
 const STEPS: &[M<'static>] = &[
@@ -430,7 +430,7 @@ fn media_row(r: &Row, position: u32) -> DbResult<MediaItem> {
         episode,
         position,
         status: enum_from_sql(&r.get::<_, String>(6)?)?,
-        error: r.get(7)?,
+        error: msg_from_sql(r, 7)?,
         info: info.as_deref().map(json_from_sql).transpose()?,
         frames: r.get(9)?,
         duration_sec: r.get(10)?,
@@ -443,13 +443,13 @@ fn media_row(r: &Row, position: u32) -> DbResult<MediaItem> {
         poster_small: r.get(25)?,
         added_at: r.get(18)?,
         shots: enum_from_sql(&r.get::<_, String>(19)?)?,
-        shots_error: r.get(20)?,
+        shots_error: msg_from_sql(r, 20)?,
         shot_count: r.get(21)?,
         faces: enum_from_sql(&r.get::<_, String>(22)?)?,
-        faces_error: r.get(23)?,
+        faces_error: msg_from_sql(r, 23)?,
         face_count: r.get(24)?,
         bodies: enum_from_sql(&r.get::<_, String>(26)?)?,
-        bodies_error: r.get(27)?,
+        bodies_error: msg_from_sql(r, 27)?,
     })
 }
 
@@ -474,8 +474,32 @@ fn export_item_row(r: &Row) -> DbResult<ExportItem> {
         verified: r.get(7)?,
         encoder: r.get(8)?,
         bytes: r.get::<_, Option<i64>>(9)?.map(|b| b as f64),
-        error: r.get(10)?,
+        error: msg_from_sql(r, 10)?,
     })
+}
+
+/// A `merged` column: its `error` stays the English, because an older
+/// AutoScene can't read an export with anything else there. The [`Msg`] goes
+/// next to it as `errorMsg`, which an older one passes over.
+fn merged_to_sql(file: &MergedFile) -> String {
+    let mut json = serde_json::to_value(file).expect("DTOs always serialise");
+    if let Some(error) = &file.error {
+        json["error"] = serde_json::json!(error.text);
+        json["errorMsg"] = serde_json::json!(error);
+    }
+    json.to_string()
+}
+
+/// A `merged` column as [`merged_to_sql`] writes it, or as an older AutoScene
+/// did, with only the English.
+fn merged_from_sql(text: &str) -> DbResult<MergedFile> {
+    let mut file: serde_json::Value = json_from_sql(text)?;
+    if let Some(said) = file.get_mut("errorMsg").map(serde_json::Value::take) {
+        file["error"] = said;
+    } else if let Some(english) = file.get("error").and_then(serde_json::Value::as_str) {
+        file["error"] = serde_json::json!(Msg::plain(english));
+    }
+    serde_json::from_value(file).map_err(|e| DbError::Corrupt(e.to_string()))
 }
 
 /// Where plugins' shot filters keep their verdicts: one meta row per
@@ -712,11 +736,11 @@ impl ProjectDb {
         })
     }
 
-    pub fn set_media_status(&self, id: MediaId, status: MediaStatus, error: Option<&str>) -> DbResult<()> {
+    pub fn set_media_status(&self, id: MediaId, status: MediaStatus, error: Option<&Msg>) -> DbResult<()> {
         self.0.write(|tx| {
             tx.execute(
                 "UPDATE media SET status = ?2, error = ?3 WHERE id = ?1",
-                params![id.to_string(), enum_to_sql(status), error],
+                params![id.to_string(), enum_to_sql(status), error.map(json_to_sql)],
             )?;
             Ok(())
         })
@@ -898,11 +922,11 @@ impl ProjectDb {
 
     // -- shots --------------------------------------------------------------
 
-    pub fn set_shots_state(&self, id: MediaId, state: StageState, error: Option<&str>) -> DbResult<()> {
+    pub fn set_shots_state(&self, id: MediaId, state: StageState, error: Option<&Msg>) -> DbResult<()> {
         self.0.write(|tx| {
             tx.execute(
                 "UPDATE media SET shots = ?2, shots_error = ?3 WHERE id = ?1",
-                params![id.to_string(), enum_to_sql(state), error],
+                params![id.to_string(), enum_to_sql(state), error.map(json_to_sql)],
             )?;
             Ok(())
         })
@@ -1020,7 +1044,7 @@ impl ProjectDb {
             tx.execute(
                 "INSERT INTO exports (id, created_at, preset, out_dir, status, label, merged)
                  VALUES (?1, ?2, ?3, ?4, 'queued', ?5, ?6)",
-                params![id.to_string(), now_ms(), json_to_sql(preset), out_dir, label, merged.map(json_to_sql)],
+                params![id.to_string(), now_ms(), json_to_sql(preset), out_dir, label, merged.map(merged_to_sql)],
             )?;
             let mut st = tx.prepare(
                 "INSERT INTO export_items (export_id, media_id, start_frame, end_frame, name, status, audio_ordinal)
@@ -1058,7 +1082,7 @@ impl ProjectDb {
         item_id: i64,
         status: ExportStatus,
         outcome: Option<&ClipOutcome>,
-        error: Option<&str>,
+        error: Option<&Msg>,
     ) -> DbResult<()> {
         self.0.write(|tx| {
             tx.execute(
@@ -1071,7 +1095,7 @@ impl ProjectDb {
                     outcome.is_some_and(|o| o.verified),
                     outcome.map(|o| o.encoder.as_str()),
                     outcome.map(|o| o.bytes as i64),
-                    error,
+                    error.map(json_to_sql),
                 ],
             )?;
             Ok(())
@@ -1085,7 +1109,7 @@ impl ProjectDb {
         item_id: i64,
         status: ExportStatus,
         outcome: Option<&ClipOutcome>,
-        error: Option<&str>,
+        error: Option<&Msg>,
     ) -> DbResult<()> {
         self.0.write(|tx| {
             tx.execute(
@@ -1096,7 +1120,7 @@ impl ProjectDb {
                     enum_to_sql(status),
                     outcome.is_some_and(|o| o.verified),
                     outcome.map(|o| o.encoder.as_str()),
-                    error,
+                    error.map(json_to_sql),
                 ],
             )?;
             Ok(())
@@ -1107,7 +1131,7 @@ impl ProjectDb {
     /// `path` is the file's).
     pub fn set_export_merged(&self, id: ExportId, merged: &MergedFile, in_file: &[i64]) -> DbResult<()> {
         self.0.write(|tx| {
-            tx.execute("UPDATE exports SET merged = ?2 WHERE id = ?1", params![id.to_string(), json_to_sql(merged)])?;
+            tx.execute("UPDATE exports SET merged = ?2 WHERE id = ?1", params![id.to_string(), merged_to_sql(merged)])?;
             let mut st = tx.prepare("UPDATE export_items SET path = ?2 WHERE id = ?1")?;
             for item in in_file {
                 st.execute(params![item, merged.path])?;
@@ -1166,7 +1190,7 @@ impl ProjectDb {
                 status: enum_from_sql(&status)?,
                 items,
                 label,
-                merged: merged.as_deref().map(json_from_sql).transpose()?,
+                merged: merged.as_deref().map(merged_from_sql).transpose()?,
             }))
         })
     }
@@ -1517,7 +1541,7 @@ pub(crate) mod tests {
         db.store_segments(a, &[Segment { start: 0, end: 1000, kind: SegmentKind::Shot, tiny: false }]).unwrap();
         db.put_face_chunk(a, 0, 1000, &[track(10, 0.9)], &[], |_| Ok(())).unwrap();
         db.set_faces_state(a, StageState::Ready, None).unwrap();
-        db.set_bodies_state(a, StageState::Failed, Some("The file is missing.")).unwrap();
+        db.set_bodies_state(a, StageState::Failed, Some(&Msg::plain("The file is missing."))).unwrap();
         let key = "source_changed";
         let state = |db: &ProjectDb| {
             let m = db.media(a).unwrap().unwrap();
@@ -1713,13 +1737,14 @@ pub(crate) mod tests {
             bytes: 9e6,
         };
         db.update_export_item(ex.items[0].id, ExportStatus::Done, Some(&outcome), None).unwrap();
-        db.update_export_item(ex.items[1].id, ExportStatus::Failed, None, Some("disk full")).unwrap();
+        let full = as_core::msg!("file.diskFull", "The disk is full.");
+        db.update_export_item(ex.items[1].id, ExportStatus::Failed, None, Some(&full)).unwrap();
         db.set_export_status(eid, ExportStatus::Failed).unwrap();
 
         let ex = &db.exports(pid).unwrap()[0];
         assert!(ex.items[0].verified);
         assert_eq!(ex.items[0].path.as_deref(), Some("/out/a_1.mov"));
-        assert_eq!(ex.items[1].error.as_deref(), Some("disk full"));
+        assert_eq!(ex.items[1].error.as_ref(), Some(&full), "it keeps its key");
         assert_eq!(ex.status, ExportStatus::Failed);
         assert_eq!(ex.merged, None);
 
@@ -1735,6 +1760,82 @@ pub(crate) mod tests {
         .unwrap();
         let listed = db.exports(pid).unwrap();
         assert_eq!(listed.iter().map(|e| e.id).collect::<Vec<_>>(), [eid]);
+    }
+
+    #[test]
+    fn why_something_failed_comes_back_with_its_key_and_values() {
+        let db = ProjectDb::memory();
+        let m = db.add_media(&[new_media("/s/a.mkv", None, Some(1))]).unwrap().remove(0);
+        let why =
+            as_core::msg!("a.b", "Can't write to {{path}}: {{why}}", path = "D:/out", why = Msg::plain("no"), n = 12);
+        db.set_media_status(m, MediaStatus::Failed, Some(&why)).unwrap();
+        db.set_shots_state(m, StageState::Failed, Some(&why)).unwrap();
+        db.set_faces_state(m, StageState::Failed, Some(&why)).unwrap();
+        db.set_bodies_state(m, StageState::Failed, Some(&why)).unwrap();
+        let read = db.media(m).unwrap().unwrap();
+        let said = Some(&why);
+        assert_eq!(
+            (read.error.as_ref(), read.shots_error.as_ref(), read.faces_error.as_ref(), read.bodies_error.as_ref()),
+            (said, said, said, said)
+        );
+    }
+
+    #[test]
+    fn what_an_older_autoscene_wrote_reads_as_it_is() {
+        let db = ProjectDb::memory();
+        let m = db.add_media(&[new_media("/s/a.mkv", None, Some(1))]).unwrap().remove(0);
+        for english in ["Indexing was cancelled.", "", "12", "null", "\"quoted\"", "{\"key\": 1}"] {
+            db.0.write(|tx| {
+                tx.execute(
+                    "UPDATE media SET error = ?2, shots_error = ?2, faces_error = ?2, bodies_error = ?2 WHERE id = ?1",
+                    params![m.to_string(), english],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+            let read = db.media(m).unwrap().unwrap();
+            let said = Msg::plain(english);
+            assert_eq!(read.error.as_ref(), Some(&said));
+            assert_eq!(read.shots_error.as_ref(), Some(&said));
+            assert_eq!(read.faces_error.as_ref(), Some(&said));
+            assert_eq!(read.bodies_error.as_ref(), Some(&said));
+        }
+    }
+
+    #[test]
+    fn an_exports_old_english_reads_as_it_is() {
+        let db = ProjectDb::memory();
+        let m = db.add_media(&[new_media("/s/a.mkv", None, Some(1))]).unwrap().remove(0);
+        let preset = as_export::builtin_presets().remove(0);
+        let (pid, eid) = (ProjectId::new(), ExportId::new());
+        let item = [NewExportItem { media_id: m, start: 0, end: 9, name: "a".into(), audio_ordinal: None }];
+        let file = MergedFile { name: "x".into(), path: None, verified: false, bytes: None, error: None };
+        db.insert_export(eid, &preset, "/out", None, Some(&file), &item).unwrap();
+        let old = r#"{"name":"x","path":null,"verified":false,"bytes":null,"error":"The clips couldn't be joined."}"#;
+        db.0.write(|tx| {
+            tx.execute("UPDATE exports SET merged = ?2 WHERE id = ?1", params![eid.to_string(), old])?;
+            tx.execute("UPDATE export_items SET error = 'It failed.'", [])?;
+            Ok(())
+        })
+        .unwrap();
+        let ex = db.export(pid, eid).unwrap().unwrap();
+        assert_eq!(ex.merged.unwrap().error, Some(Msg::plain("The clips couldn't be joined.")));
+        assert_eq!(ex.items[0].error, Some(Msg::plain("It failed.")));
+
+        // A key goes in and comes out.
+        let why = as_core::msg!("file.diskFull", "The disk is full.");
+        db.set_export_merged(eid, &MergedFile { error: Some(why.clone()), ..file }, &[]).unwrap();
+        assert_eq!(db.export(pid, eid).unwrap().unwrap().merged.unwrap().error, Some(why));
+
+        // An older AutoScene reads the same column: its `error` is text there,
+        // and anything else would cost it the whole list of exports.
+        #[derive(serde::Deserialize)]
+        struct OlderFile {
+            error: Option<String>,
+        }
+        let stored: String = db.0.read(|c| Ok(c.query_row("SELECT merged FROM exports", [], |r| r.get(0))?)).unwrap();
+        let older: OlderFile = serde_json::from_str(&stored).unwrap();
+        assert_eq!(older.error.as_deref(), Some("The disk is full."));
     }
 
     #[test]
@@ -1763,7 +1864,7 @@ pub(crate) mod tests {
             bytes: 9e6,
         };
         db.update_export_part(ex.items[0].id, ExportStatus::Done, Some(&part), None).unwrap();
-        db.update_export_part(ex.items[1].id, ExportStatus::Failed, None, Some("gone")).unwrap();
+        db.update_export_part(ex.items[1].id, ExportStatus::Failed, None, Some(&Msg::plain("gone"))).unwrap();
         let ex = db.export(pid, eid).unwrap().unwrap();
         assert_eq!((ex.items[0].path.as_deref(), ex.items[0].bytes), (None, None), "a part isn't a file of its own");
         assert!(ex.items[0].verified);

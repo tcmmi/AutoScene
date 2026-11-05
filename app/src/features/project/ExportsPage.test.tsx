@@ -6,6 +6,7 @@ import type { ExportItem, ExportStatus, ExportSummary, JobInfo, MediaItem, Plugi
 import { AppMenu } from "@/components/shell/AppMenu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useActivity } from "@/state/activity"
+import { inLanguage } from "@/test/i18n"
 import { pluginInfo } from "@/test/plugins"
 import { ExportsPage } from "./ExportsPage"
 
@@ -39,7 +40,7 @@ vi.mock("@/lib/queries", () => ({
   firstFailure: () => null,
 }))
 
-const item = (id: number, status: ExportStatus, error: string | null = null) =>
+const item = (id: number, status: ExportStatus, error: ExportItem["error"] = null) =>
   ({ id, mediaId: "m", start: id * 100, end: id * 100 + 24, name: `Clip_${id}`, status, path: null, verified: status === "done", error }) as ExportItem
 
 const exported = (status: ExportStatus, items: ExportItem[]): ExportSummary =>
@@ -132,10 +133,20 @@ describe("an export's clip list", () => {
 
   it("keeps the clips that failed in sight while folded", () => {
     const items = six("done")
-    items[2] = item(3, "failed", "The source file is gone.")
+    items[2] = item(3, "failed", { key: "", args: {}, text: "The source file is gone." })
     show(exported("failed", items))
     expect(toggle().textContent).toBe("Show all 6 clips")
     expect(screen.getAllByText(/^Clip_/).map((e) => e.textContent)).toEqual(["Clip_3"])
+    expect(screen.getByText("The source file is gone.")).toBeTruthy()
+  })
+
+  it("says why a clip failed in the UI's language, and an old export's English as it is", async () => {
+    await inLanguage("ro", { backend: { export: { notJoined: "Nu a putut fi unit în fișier." } } })
+    const items = six("done")
+    items[1] = item(2, "failed", { key: "export.notJoined", args: {}, text: "It couldn't be joined into the file." })
+    items[2] = item(3, "failed", { key: "", args: {}, text: "The source file is gone." })
+    show(exported("failed", items))
+    expect(screen.getByText("Nu a putut fi unit în fișier.")).toBeTruthy()
     expect(screen.getByText("The source file is gone.")).toBeTruthy()
   })
 

@@ -696,7 +696,7 @@ mod tests {
 
         fn keep(&self, at: &Place, media: MediaId, basis: &str, given: &[(FrameIdx, bool)]) -> ProjectResult<bool> {
             if self.full.load(Ordering::SeqCst) {
-                return Err(ProjectError::Invalid("The disk is full.".into()));
+                return Err(ProjectError::Invalid(as_core::Msg::plain("The disk is full.")));
             }
             let mut kept = self.kept.lock();
             let row = kept.entry((at.character, media)).or_default();

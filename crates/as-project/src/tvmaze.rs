@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-use as_core::CancelToken;
+use as_core::{CancelToken, msg};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -132,11 +132,14 @@ fn on_image_server(url: &str) -> bool {
 
 fn unreachable(e: impl std::fmt::Display) -> ProjectError {
     tracing::warn!("tvmaze: {e}");
-    ProjectError::NotReady("TVmaze can't be reached right now. Check the internet connection and try again.".into())
+    ProjectError::NotReady(msg!(
+        "names.tvmaze.unreachable",
+        "TVmaze can't be reached right now. Check the internet connection and try again."
+    ))
 }
 
 fn busy() -> ProjectError {
-    ProjectError::NotReady("TVmaze is busy. Try again in a few minutes.".into())
+    ProjectError::NotReady(msg!("names.tvmaze.busy", "TVmaze is busy. Try again in a few minutes."))
 }
 
 static API_LIMITER: LazyLock<Arc<Limiter>> = LazyLock::new(|| Arc::new(Limiter::new(API_GAP)));
@@ -223,7 +226,7 @@ impl TvMaze {
     pub fn search(&self, text: &str, cancel: &CancelToken) -> ProjectResult<Vec<Media>> {
         let text = text.trim();
         if text.is_empty() {
-            return Err(ProjectError::Invalid("Type the name of the series to look for.".into()));
+            return Err(ProjectError::Invalid(msg!("names.typeSeries", "Type the name of the series to look for.")));
         }
         let hits: Vec<SearchHit> =
             self.request(&format!("/search/shows?q={}", query_part(text)), cancel)?.unwrap_or_default();
@@ -321,7 +324,7 @@ impl TvMaze {
 }
 
 fn not_on_tvmaze(id: u32) -> ProjectError {
-    ProjectError::NotFound(format!("TVmaze has no show {id}."))
+    ProjectError::NotFound(msg!("names.tvmaze.noShow", "TVmaze has no show {{id}}.", id = id))
 }
 
 impl Names for TvMaze {

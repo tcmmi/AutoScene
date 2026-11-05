@@ -7,11 +7,11 @@
 //! cast's revision; a clustering computed before it is not stored.
 
 use as_api::{SegmentKind, StageState, TrackAssign, TrackFilter, now_ms};
-use as_core::{CharacterId, FrameIdx, MediaId};
+use as_core::{CharacterId, FrameIdx, MediaId, Msg};
 use rusqlite::{OptionalExtension, Transaction, params, params_from_iter};
 
 use crate::project::ProjectDb;
-use crate::{DbError, DbResult, enum_from_sql, enum_to_sql};
+use crate::{DbError, DbResult, enum_from_sql, enum_to_sql, json_to_sql};
 
 /// A track from the face pass, ready to store.
 #[derive(Clone, Debug)]
@@ -391,11 +391,11 @@ pub(crate) fn ids_param(ids: &[i64]) -> Vec<rusqlite::types::Value> {
 impl ProjectDb {
     // -- face pass ----------------------------------------------------------
 
-    pub fn set_faces_state(&self, id: MediaId, state: StageState, error: Option<&str>) -> DbResult<()> {
+    pub fn set_faces_state(&self, id: MediaId, state: StageState, error: Option<&Msg>) -> DbResult<()> {
         self.0.write(|tx| {
             tx.execute(
                 "UPDATE media SET faces = ?2, faces_error = ?3 WHERE id = ?1",
-                params![id.to_string(), enum_to_sql(state), error],
+                params![id.to_string(), enum_to_sql(state), error.map(json_to_sql)],
             )?;
             Ok(())
         })

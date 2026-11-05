@@ -1188,7 +1188,7 @@ export type ExportItem = {
 	verified: boolean,
 	encoder: string | null,
 	bytes: number | null,
-	error: string | null,
+	error: Msg | null,
 };
 
 /**  What an export would make, worked out before it starts. */
@@ -1432,7 +1432,7 @@ export type ImportCandidate = {
 	 *  valid Unicode, which media can't keep as the text they keep their
 	 *  path in. Such a file is listed, never added.
 	 */
-	refused: string | null,
+	refused: Msg | null,
 };
 
 /**  A job was queued, started or finished. */
@@ -1574,7 +1574,7 @@ export type MediaItem = {
 	position: number,
 	sizeBytes: number | null,
 	status: MediaStatus,
-	error: string | null,
+	error: Msg | null,
 	info: MediaInfo | null,
 	/**  Decoded frame count (from the frame index). */
 	frames: number | null,
@@ -1593,17 +1593,17 @@ export type MediaItem = {
 	addedAt: number,
 	/**  Shot detection. */
 	shots: StageState,
-	shotsError: string | null,
+	shotsError: Msg | null,
 	/**  Number of shots once detected. */
 	shotCount: number | null,
 	/**  Face analysis (characters). */
 	faces: StageState,
-	facesError: string | null,
+	facesError: Msg | null,
 	/**  Face tracks once found. */
 	faceCount: number | null,
 	/**  People followed by their bodies (when the setting is on). */
 	bodies?: StageState,
-	bodiesError?: string | null,
+	bodiesError?: Msg | null,
 };
 
 export type MediaStatus = 
@@ -1635,7 +1635,7 @@ export type MergedFile = {
 	verified: boolean,
 	bytes: number | null,
 	/**  Why it couldn't be made. */
-	error: string | null,
+	error: Msg | null,
 };
 
 /**
@@ -2358,14 +2358,14 @@ export type PresetSize = {
 	 *  Why this preset makes a file per clip of what was to be one file
 	 *  (Bit-Perfect can't join episodes whose pictures or sound differ).
 	 */
-	apart?: string | null,
+	apart?: Msg | null,
 	/**
 	 *  The files' extension when it isn't the preset's container's
 	 *  (Bit-Perfect keeps some pictures as FFV1 in an MKV).
 	 */
 	ext?: string | null,
 	/**  What people should know about this preset for these clips. */
-	note?: string | null,
+	note?: Msg | null,
 };
 
 export type ProResProfile = "proxy" | "lt" | "standard" | "hq" | "p4444";
@@ -2422,7 +2422,7 @@ export type Relink =
  *  Another video (`reason` says how). Taken anyway with `force`: it is
  *  analysed again, the decisions on its faces are kept.
  */
-{ kind: "different"; reason: string };
+{ kind: "different"; reason: Msg };
 
 /**  Missing media looked for in a folder. */
 export type RelinkSummary = {

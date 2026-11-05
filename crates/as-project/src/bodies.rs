@@ -10,7 +10,7 @@ use as_analysis::PeopleParams;
 use as_analysis::bodies::{self, BodyDet, FoundBody, Showing};
 use as_analysis::tracks::{self, KnownFace};
 use as_api::{MediaInfo, SegmentKind, StageState};
-use as_core::{CharacterId, FrameIdx, FrameRange, MediaId};
+use as_core::{CharacterId, FrameIdx, FrameRange, MediaId, Msg, msg};
 use as_db::{BodyEditKind, BodyRow, BodySource, BodyUpdate, DbResult, IdentityBody, IdentityTrack, NewBody, ProjectDb};
 use as_identity::bodies::{BodyAssign, BodyIn, BodyOutcome, BodyParams, FaceOn, propagate};
 use as_identity::{CharKey, Outcome};
@@ -118,7 +118,7 @@ fn resolve(mut found: Vec<(u32, i64, BodyEditKind)>) -> Vec<(i64, BodyEditKind)>
 }
 
 impl Project {
-    pub fn set_bodies_state(&self, id: MediaId, state: StageState, error: Option<&str>) -> ProjectResult<()> {
+    pub fn set_bodies_state(&self, id: MediaId, state: StageState, error: Option<&Msg>) -> ProjectResult<()> {
         Ok(self.db().set_bodies_state(id, state, error)?)
     }
 
@@ -140,7 +140,10 @@ impl Project {
     pub fn bodies_plan(&self, id: MediaId) -> ProjectResult<BodiesPlan> {
         let (m, info, index) = self.ready_source(id)?;
         if m.faces != StageState::Ready {
-            return Err(ProjectError::NotReady("The faces of this media aren't found yet.".into()));
+            return Err(ProjectError::NotReady(msg!(
+                "analysis.facesNotFound",
+                "The faces of this media aren't found yet."
+            )));
         }
         let frames = index.len();
         let shots: Vec<(FrameIdx, FrameIdx)> =
@@ -194,7 +197,8 @@ impl Project {
         blob: &[u8],
         ids: &[i64],
     ) -> ProjectResult<usize> {
-        let found = bodies::decode(blob).ok_or_else(|| ProjectError::Invalid("unreadable people".into()))?;
+        let found = bodies::decode(blob)
+            .ok_or_else(|| ProjectError::Invalid(msg!("analysis.unreadablePeople", "unreadable people")))?;
         let rows: Vec<NewBody> = found.iter().map(|b| new_body(b, |f| ids.get(f as usize).copied())).collect();
         self.db().put_body_chunk(id, start, end, &rows)?;
         Ok(rows.len())
@@ -203,7 +207,8 @@ impl Project {
     /// Store one chunk of a people pass over faces found before: its faces
     /// are named by their track ids. Returns the number of people.
     pub fn store_body_chunk(&self, id: MediaId, start: FrameIdx, end: FrameIdx, blob: &[u8]) -> ProjectResult<usize> {
-        let found = bodies::decode(blob).ok_or_else(|| ProjectError::Invalid("unreadable people".into()))?;
+        let found = bodies::decode(blob)
+            .ok_or_else(|| ProjectError::Invalid(msg!("analysis.unreadablePeople", "unreadable people")))?;
         let rows: Vec<NewBody> = found.iter().map(|b| new_body(b, |f| Some(i64::from(f)))).collect();
         self.db().put_body_chunk(id, start, end, &rows)?;
         Ok(rows.len())

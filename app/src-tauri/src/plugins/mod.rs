@@ -2031,7 +2031,7 @@ fn export_outcome(export: &ExportSummary) -> Option<&'static str> {
     if !matches!(export.status, ExportStatus::Done | ExportStatus::Failed) {
         return None;
     }
-    let made = |path: &Option<String>, error: &Option<String>| path.is_some() && error.is_none();
+    let made = |path: &Option<String>, error: &Option<as_core::Msg>| path.is_some() && error.is_none();
     let clips_made = export.items.iter().filter(|i| i.status == ExportStatus::Done && made(&i.path, &i.error)).count();
     let (whole, some) = match &export.merged {
         // Its clips are parts of the one file.
@@ -4402,7 +4402,7 @@ mod tests {
                 verified: *made,
                 encoder: None,
                 bytes: None,
-                error: (!made).then(|| "It failed.".to_owned()),
+                error: (!made).then(|| as_core::Msg::plain("It failed.")),
             })
             .collect();
         ExportSummary {
@@ -4419,7 +4419,7 @@ mod tests {
                 path: made.then(|| "/out/All.mp4".to_owned()),
                 verified: made,
                 bytes: None,
-                error: (!made).then(|| "Joining failed.".to_owned()),
+                error: (!made).then(|| as_core::Msg::plain("Joining failed.")),
             }),
         }
     }

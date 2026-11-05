@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
-use as_core::{CancelToken, ProjectId};
+use as_core::{CancelToken, ProjectId, msg};
 use parking_lot::Mutex;
 use regex::Regex;
 use serde::de::DeserializeOwned;
@@ -725,11 +725,14 @@ pub struct AniList {
 
 fn unreachable(e: impl std::fmt::Display) -> ProjectError {
     tracing::warn!("anilist: {e}");
-    ProjectError::NotReady("AniList can't be reached right now. Check the internet connection and try again.".into())
+    ProjectError::NotReady(msg!(
+        "names.anilist.unreachable",
+        "AniList can't be reached right now. Check the internet connection and try again."
+    ))
 }
 
 fn busy() -> ProjectError {
-    ProjectError::NotReady("AniList is busy. Try again in a few minutes.".into())
+    ProjectError::NotReady(msg!("names.anilist.busy", "AniList is busy. Try again in a few minutes."))
 }
 
 /// `Cancelled` once `cancel` is (the opt-in went off, say).
@@ -807,7 +810,7 @@ impl AniList {
     pub fn search(&self, text: &str, cancel: &CancelToken) -> ProjectResult<Vec<Media>> {
         let text = text.trim();
         if text.is_empty() {
-            return Err(ProjectError::Invalid("Type the name of the series to look for.".into()));
+            return Err(ProjectError::Invalid(msg!("names.typeSeries", "Type the name of the series to look for.")));
         }
         let data: SearchData = self.request(&search_query(), serde_json::json!({ "search": text }), cancel)?;
         let found: Vec<Media> = data.page.media.into_iter().flatten().map(Media::from).collect();
@@ -980,7 +983,7 @@ impl Names for AniList {
 
 /// The error for footage no one names (live action, mixed).
 fn no_source() -> ProjectError {
-    ProjectError::Invalid("Names are looked up for anime and animation only.".into())
+    ProjectError::Invalid(msg!("names.animatedOnly", "Names are looked up for anime and animation only."))
 }
 
 /// Which file a picture is: its path, when it was written and its size.
@@ -1023,7 +1026,7 @@ pub(crate) fn store_picture(
 }
 
 fn not_on_anilist(id: u32) -> ProjectError {
-    ProjectError::NotFound(format!("AniList has no anime {id}."))
+    ProjectError::NotFound(msg!("names.anilist.noAnime", "AniList has no anime {{id}}.", id = id))
 }
 
 /// The `data` of an answer, or why there is none.
@@ -1032,11 +1035,17 @@ fn answer<T: DeserializeOwned>(reply: Reply) -> ProjectResult<T> {
     let messages = |a: &Answer<T>| a.errors.iter().filter_map(|e| e.message.as_deref()).collect::<Vec<_>>().join("; ");
     match parsed {
         Ok(Answer { data: Some(data), ref errors }) if reply.status == 200 && errors.is_empty() => Ok(data),
-        Ok(a) if reply.status == 404 => Err(ProjectError::NotFound(format!("AniList: {}", messages(&a)))),
+        Ok(a) if reply.status == 404 => {
+            Err(ProjectError::NotFound(msg!("names.anilist.notFound", "AniList: {{why}}", why = messages(&a))))
+        }
         Ok(a) if reply.status >= 500 => Err(unreachable(format!("HTTP {}: {}", reply.status, messages(&a)))),
         Ok(a) => {
             tracing::warn!(status = reply.status, "anilist: {}", messages(&a));
-            Err(ProjectError::Invalid(format!("AniList didn't take the request: {}", messages(&a))))
+            Err(ProjectError::Invalid(msg!(
+                "names.anilist.refused",
+                "AniList didn't take the request: {{why}}",
+                why = messages(&a)
+            )))
         }
         // Not AniList's answer (a proxy's page, a cut-off body).
         Err(e) => Err(unreachable(format!("HTTP {}: {e}", reply.status))),
@@ -1261,7 +1270,10 @@ impl Project {
     ) -> ProjectResult<(usize, usize)> {
         let k = self.keys()?;
         let Some(s) = self.anilist_suggested()? else {
-            return Err(ProjectError::NotReady("These names no longer wait: the series or the cast changed.".into()));
+            return Err(ProjectError::NotReady(msg!(
+                "names.noLongerWaiting",
+                "These names no longer wait: the series or the cast changed."
+            )));
         };
         let mut refused: Vec<(as_core::CharacterId, u32)> =
             self.db().meta(k.refused)?.and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default();
@@ -1596,7 +1608,10 @@ impl Project {
         merges: &[MergeProposal],
     ) -> ProjectResult<usize> {
         if self.db().cast_rev()? != rev {
-            return Err(ProjectError::NotReady("The cast changed; match the portraits again.".into()));
+            return Err(ProjectError::NotReady(msg!(
+                "names.castChanged",
+                "The cast changed; match the portraits again."
+            )));
         }
         let mut applied = 0;
         for m in merges {
@@ -1623,7 +1638,7 @@ impl Library {
         if self.names_from_anilist() {
             Ok(())
         } else {
-            Err(ProjectError::Invalid("Turn on character names in Settings first.".into()))
+            Err(ProjectError::Invalid(msg!("names.turnOn", "Turn on character names in Settings first.")))
         }
     }
 
@@ -1669,7 +1684,10 @@ impl Library {
         let project = self.project(id)?;
         // Another footage was set meanwhile: this series isn't its source's.
         if project.name_source()? != Some(source) {
-            return Err(ProjectError::NotReady("The footage changed meanwhile; search again.".into()));
+            return Err(ProjectError::NotReady(msg!(
+                "names.footageChanged",
+                "The footage changed meanwhile; search again."
+            )));
         }
         project.confirm_anilist_media(&chain.iter().map(|m| m.id).collect::<Vec<_>>(), false)?;
         Ok(chain)
@@ -1838,7 +1856,11 @@ impl Library {
         let media = project.anilist_media()?;
         drop(project);
         if media.is_empty() {
-            return Err(ProjectError::NotReady(format!("Confirm the series on {} first.", source.name())));
+            return Err(ProjectError::NotReady(msg!(
+                "names.confirmSeries",
+                "Confirm the series on {{source}} first.",
+                source = source.name(),
+            )));
         }
         let client = self.names(source);
         let cast = client.cast(&media, cancel)?;
@@ -2154,7 +2176,7 @@ mod tests {
         let (client, net, _) = client(dir.path());
         net.answer("\"search\":", 400, fixture("error_400.json"));
         let e = client.search("x", &CancelToken::new()).unwrap_err();
-        assert!(matches!(&e, ProjectError::Invalid(m) if m.contains("is not defined")), "{e:?}");
+        assert!(matches!(&e, ProjectError::Invalid(m) if m.text.contains("is not defined")), "{e:?}");
         assert!(matches!(client.search("  ", &CancelToken::new()), Err(ProjectError::Invalid(_))));
 
         net.answer(

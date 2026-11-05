@@ -64,7 +64,7 @@ pub enum PluginError {
     /// and `detail` says what went wrong (for the log).
     #[error("AutoScene couldn't get {what}. Check the internet connection, then try again.")]
     Download { what: String, detail: String },
-    #[error("{}", .0.user_message())]
+    #[error("{}", .0.user_message().text)]
     Db(#[from] as_db::DbError),
     #[error("{}", as_core::io_message(.0))]
     Io(#[from] std::io::Error),
@@ -93,6 +93,7 @@ impl PluginError {
 impl ToMsg for PluginError {
     fn msg(&self) -> Msg {
         match self {
+            Self::Db(e) => e.user_message(),
             Self::Io(e) => e.msg(),
             e => Msg::plain(e.to_string()),
         }

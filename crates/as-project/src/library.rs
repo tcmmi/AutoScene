@@ -7,7 +7,7 @@ use as_api::{
     AppSettings, ContentKind, ImportCandidate, NewProject, ProjectKind, ProjectSummary, ScanChoice, ScanDefaults,
     Shortcuts, UiLanguage, now_ms,
 };
-use as_core::{AppPaths, CancelToken, MediaId, ProjectId};
+use as_core::{AppPaths, CancelToken, MediaId, Msg, ProjectId, ToMsg, msg};
 use as_db::{LibraryDb, NewMedia, ProjectDb};
 use as_infer::computer::{self, Choice, Computer, Machine};
 use parking_lot::Mutex;
@@ -325,7 +325,7 @@ impl Library {
     pub fn update_settings(&self, s: &AppSettings) -> ProjectResult<AppSettings> {
         let root = PathBuf::from(s.library_root.trim());
         if !root.is_absolute() {
-            return Err(ProjectError::Invalid("Choose a full folder path for the library.".into()));
+            return Err(ProjectError::Invalid(msg!("library.fullPath", "Choose a full folder path for the library.")));
         }
         // The folder in use may be on a drive that isn't there right now:
         // other settings (keys, switches) are kept all the same.
@@ -333,7 +333,13 @@ impl Library {
         if let Err(e) = std::fs::create_dir_all(&root)
             && !unchanged
         {
-            return Err(ProjectError::Invalid(format!("Can't use {} as the library: {e}", root.display())));
+            tracing::warn!(folder = %root.display(), error = %e, "can't use the library folder");
+            return Err(ProjectError::Invalid(msg!(
+                "library.cantUse",
+                "Can't use {{path}} as the library: {{why}}",
+                path = root.display().to_string(),
+                why = e.msg(),
+            )));
         }
         self.db.set_setting(KEY_LIBRARY_ROOT, &root.display().to_string())?;
         if as_export::builtin_presets().iter().any(|p| p.id == s.export_preset_id) {
@@ -364,7 +370,8 @@ impl Library {
         self.set_nvidia_acceleration(s.nvidia_acceleration)?;
         self.db.set_setting(KEY_ANILIST, if s.anilist { "1" } else { "0" })?;
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
-        let discord = serde_json::to_string(&s.discord_rpc).map_err(|e| ProjectError::Invalid(e.to_string()))?;
+        let discord =
+            serde_json::to_string(&s.discord_rpc).map_err(|e| ProjectError::Invalid(Msg::plain(e.to_string())))?;
         self.db.set_setting(KEY_DISCORD_RPC, &discord)?;
         // `allow_unreviewed_plugins` stays: see `set_allows_unreviewed_plugins`.
         // Fast Scan's default too: see `set_scan_default`.
@@ -419,7 +426,9 @@ impl Library {
     }
 
     pub fn summary(&self, id: ProjectId) -> ProjectResult<ProjectSummary> {
-        self.db.project(id)?.ok_or_else(|| ProjectError::NotFound("This project no longer exists.".into()))
+        self.db
+            .project(id)?
+            .ok_or_else(|| ProjectError::NotFound(msg!("project.gone", "This project no longer exists.")))
     }
 
     /// Create the project folder and database and add `req.files` (status
@@ -438,7 +447,7 @@ impl Library {
     ) -> ProjectResult<(ProjectSummary, Arc<Project>, Vec<MediaId>)> {
         let title = req.title.trim();
         if title.is_empty() {
-            return Err(ProjectError::Invalid("Give the project a name.".into()));
+            return Err(ProjectError::Invalid(msg!("project.needsName", "Give the project a name.")));
         }
         // Before anything is made: a file that can't be imported stops it.
         let found = importable(&req.files, req.kind)?;
@@ -495,16 +504,17 @@ impl Library {
         let summary = self.summary(id)?;
         let dir = PathBuf::from(&summary.dir);
         if !dir.join(PROJECT_DB).is_file() {
-            return Err(ProjectError::NotFound(format!(
-                "The project folder {} is missing. Was it moved or deleted?",
-                dir.display()
+            return Err(ProjectError::NotFound(msg!(
+                "project.folderMissing",
+                "The project folder {{path}} is missing. Was it moved or deleted?",
+                path = dir.display().to_string(),
             )));
         }
         let project = Arc::new(Project::open(id, dir, self.find_bodies.clone())?);
         let mut open = self.open.lock();
         // Removed from the library while it opened: not kept open.
         if self.db.project(id)?.is_none() {
-            return Err(ProjectError::NotFound("This project no longer exists.".into()));
+            return Err(ProjectError::NotFound(msg!("project.gone", "This project no longer exists.")));
         }
         open.insert(id, project.clone());
         Ok(project)
@@ -513,7 +523,7 @@ impl Library {
     pub fn rename_project(&self, id: ProjectId, title: &str) -> ProjectResult<ProjectSummary> {
         let title = title.trim();
         if title.is_empty() {
-            return Err(ProjectError::Invalid("Give the project a name.".into()));
+            return Err(ProjectError::Invalid(msg!("project.needsName", "Give the project a name.")));
         }
         self.db.rename_project(id, title)?;
         if let Ok(p) = self.project(id) {
@@ -720,7 +730,12 @@ fn remove_dir_with_retry(dir: &Path) -> std::io::Result<()> {
 
 /// Why a file whose path isn't valid Unicode can't be imported: media keep
 /// their path as text, and such a path, turned into text, names no file.
-const NOT_UNICODE: &str = "Its name, or the name of a folder it's in, isn't valid Unicode. Rename it to import it.";
+fn not_unicode() -> Msg {
+    msg!(
+        "library.notUnicode",
+        "Its name, or the name of a folder it's in, isn't valid Unicode. Rename it to import it."
+    )
+}
 
 /// The videos `files` (files and folders) hold, in episode order — none
 /// when one of them can't be imported, with an error that names it.
@@ -729,14 +744,18 @@ fn importable(files: &[String], kind: ProjectKind) -> ProjectResult<Vec<ImportCa
     let refused: Vec<&str> = found.iter().filter(|c| c.refused.is_some()).map(|c| c.file_name.as_str()).collect();
     let why = match refused[..] {
         [] => return Ok(found),
-        [one] => format!(
-            "{one} can't be imported: its name, or the name of a folder it's in, isn't valid Unicode. \
-             Rename it and add it again."
+        [one] => msg!(
+            "library.notImported",
+            "{{name}} can't be imported: its name, or the name of a folder it's in, isn't valid Unicode. Rename it and add it again.",
+            name = one,
         ),
-        [first, ref rest @ ..] => format!(
-            "{first} and {} more can't be imported: their names, or the names of folders they're in, aren't \
-             valid Unicode. Rename them and add them again.",
-            rest.len()
+        // One English sentence for any count: other languages need their forms of "and {{count}} more".
+        [first, ref rest @ ..] => msg!(
+            "library.notImportedMore",
+            one = "{{name}} and {{count}} more can't be imported: their names, or the names of folders they're in, aren't valid Unicode. Rename them and add them again.",
+            other = "{{name}} and {{count}} more can't be imported: their names, or the names of folders they're in, aren't valid Unicode. Rename them and add them again.",
+            count = rest.len(),
+            name = first,
         ),
     };
     Err(ProjectError::Invalid(why))
@@ -766,7 +785,7 @@ pub(crate) fn scan_paths(paths: &[String], kind: ProjectKind, known: &HashSet<St
                 duplicate: known.contains(&path),
                 size_bytes: std::fs::metadata(&f).map(|m| m.len() as f64).unwrap_or(0.0),
                 label: as_db::episode_label(season, episode),
-                refused: f.to_str().is_none().then(|| NOT_UNICODE.into()),
+                refused: f.to_str().is_none().then(not_unicode),
                 path,
                 file_name,
                 season,
@@ -827,6 +846,19 @@ mod tests {
         (dir, lib)
     }
 
+    #[test]
+    fn a_library_folder_that_cant_be_made_gives_the_apps_reason_as_a_key() {
+        let (dir, lib) = lib();
+        let file = dir.path().join("a file");
+        std::fs::write(&file, b"x").unwrap();
+        let settings =
+            AppSettings { library_root: file.join("Library").display().to_string(), ..lib.settings().unwrap() };
+        let ProjectError::Invalid(said) = lib.update_settings(&settings).unwrap_err() else { panic!("not refused") };
+        assert_eq!(said.key, "library.cantUse");
+        assert!(!said.text.contains("os error"), "{}", said.text);
+        assert!(matches!(&said.args["why"], as_core::MsgArg::Msg(why) if why.key.starts_with("file.")), "{said:?}");
+    }
+
     fn touch(p: &Path) -> String {
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, b"x").unwrap();
@@ -884,7 +916,7 @@ mod tests {
         let found = lib.scan(&[show.display().to_string()], ProjectKind::Series, None).unwrap();
         assert_eq!(found.len(), 2);
         assert_eq!(found[0].refused, None);
-        assert!(found[1].refused.as_deref().is_some_and(|r| r.contains("Unicode")), "{:?}", found[1]);
+        assert!(found[1].refused.as_ref().is_some_and(|r| r.text.contains("Unicode")), "{:?}", found[1]);
         assert_eq!((found[1].episode, found[1].label.as_str()), (Some(2), "E02"), "named for the list");
 
         // Nothing is made or added while one is among them.
@@ -895,13 +927,13 @@ mod tests {
             files: vec![show.display().to_string()],
         };
         let Err(ProjectError::Invalid(why)) = lib.create_project(&req) else { panic!("created") };
-        assert!(why.starts_with("Show\u{FFFD} - 02.mkv can't") && why.contains("Rename it"), "{why}");
+        assert!(why.text.starts_with("Show\u{FFFD} - 02.mkv can't") && why.text.contains("Rename it"), "{why:?}");
         assert!(lib.projects().unwrap().is_empty());
         let (_, project, added) = lib.create_project(&NewProject { files: vec![good], ..req.clone() }).unwrap();
         assert_eq!(added.len(), 1);
         std::fs::write(not_unicode(&show, "Show", " - 03.mkv"), b"x").unwrap();
         let more = lib.add_media(&project, &[show.display().to_string()], ProjectKind::Series);
-        assert!(matches!(&more, Err(ProjectError::Invalid(why)) if why.contains("and 1 more")), "{more:?}");
+        assert!(matches!(&more, Err(ProjectError::Invalid(why)) if why.text.contains("and 1 more")), "{more:?}");
         assert_eq!(project.media_list_uncounted().unwrap().len(), 1);
     }
 

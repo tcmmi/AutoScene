@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use as_core::{Rational, Timecode};
+use as_core::{Msg, Rational, Timecode, msg};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
@@ -168,34 +168,51 @@ impl MediaInfo {
 /// report their time base's tick rate as `r_frame_rate` (`90000/1`, where
 /// half a tick is microseconds), so a lower average rate wins, and no
 /// window is narrower than half a frame at 240 fps.
-pub fn same_source(old: &MediaInfo, new: &MediaInfo) -> Result<(), String> {
+pub fn same_source(old: &MediaInfo, new: &MediaInfo) -> Result<(), Msg> {
     let (a, b) = (&old.video, &new.video);
     if old.container != new.container {
-        return Err("It's another kind of video file.".into());
+        return Err(msg!("relink.container", "It's another kind of video file."));
     }
     if a.codec != b.codec {
-        return Err(format!("Its picture is stored as {} instead of {}.", b.codec, a.codec));
+        return Err(msg!(
+            "relink.codec",
+            "Its picture is stored as {{codec}} instead of {{was}}.",
+            codec = &b.codec,
+            was = &a.codec
+        ));
     }
     if (a.width, a.height) != (b.width, b.height) || a.sar != b.sar {
-        return Err(format!("Its picture is {}×{} instead of {}×{}.", b.width, b.height, a.width, a.height));
+        return Err(msg!(
+            "relink.size",
+            "Its picture is {{width}}×{{height}} instead of {{wasWidth}}×{{wasHeight}}.",
+            width = b.width,
+            height = b.height,
+            wasWidth = a.width,
+            wasHeight = a.height,
+        ));
     }
     if a.r_frame_rate != b.r_frame_rate || a.time_base != b.time_base {
-        return Err("It plays at another frame rate.".into());
+        return Err(msg!("relink.frameRate", "It plays at another frame rate."));
     }
     let rate = a.r_frame_rate.to_f64();
     let fps = a.avg_frame_rate.map(Rational::to_f64).filter(|&avg| avg > 0.0 && avg < rate).unwrap_or(rate);
     let half_frame = if fps > 0.0 { 0.5 / fps.clamp(MIN_FPS, MAX_FPS) } else { 0.5 };
     if (old.start_sec - new.start_sec).abs() > half_frame {
-        return Err("It starts at another moment.".into());
+        return Err(msg!("relink.start", "It starts at another moment."));
     }
     if let (Some(x), Some(y)) = (old.duration_sec, new.duration_sec)
         && (x - y).abs() > half_frame
     {
-        return Err(format!("It's {} long instead of {}.", clock(y), clock(x)));
+        return Err(msg!(
+            "relink.length",
+            "It's {{length}} long instead of {{was}}.",
+            length = clock(y),
+            was = clock(x)
+        ));
     }
     let tracks = |i: &MediaInfo| i.audio.iter().map(|t| (t.codec.clone(), t.channels)).collect::<Vec<_>>();
     if tracks(old) != tracks(new) {
-        return Err("Its audio tracks are different.".into());
+        return Err(msg!("relink.audio", "Its audio tracks are different."));
     }
     Ok(())
 }
@@ -652,15 +669,42 @@ mod tests {
         // Within half a frame (about 0.02 s at 23.976).
         assert_eq!(same_source(&old, &episode("matroska,webm", 1920, "2531.410", &[("dts", 6), ("ac3", 2)])), Ok(()));
         let differs = |new: MediaInfo| same_source(&old, &new).unwrap_err();
-        assert_eq!(
-            differs(episode("matroska,webm", 1920, "2400.000", &[("dts", 6), ("ac3", 2)])),
-            "It's 40:00 long instead of 42:11."
-        );
-        assert!(differs(episode("matroska,webm", 1280, "2531.400", &[("dts", 6), ("ac3", 2)])).contains("1280×720"));
-        assert!(
-            differs(episode("mov,mp4,m4a,3gp,3g2,mj2", 1920, "2531.400", &[("dts", 6), ("ac3", 2)])).contains("kind")
-        );
-        assert!(differs(episode("matroska,webm", 1920, "2531.400", &[("dts", 6)])).contains("audio"));
+        let shorter = differs(episode("matroska,webm", 1920, "2400.000", &[("dts", 6), ("ac3", 2)]));
+        assert_eq!(shorter.text, "It's 40:00 long instead of 42:11.");
+        assert_eq!(shorter.key, "relink.length");
+        assert_eq!(shorter.args["length"], "40:00".into());
+        assert_eq!(shorter.args["was"], "42:11".into());
+        let smaller = differs(episode("matroska,webm", 1280, "2531.400", &[("dts", 6), ("ac3", 2)]));
+        assert!(smaller.text.contains("1280×720"), "{smaller:?}");
+        assert_eq!(smaller.key, "relink.size");
+        assert_eq!(smaller.args["width"], 1280_u32.into());
+        assert_eq!(smaller.args["wasWidth"], 1920_u32.into());
+        let container = differs(episode("mov,mp4,m4a,3gp,3g2,mj2", 1920, "2531.400", &[("dts", 6), ("ac3", 2)]));
+        assert!(container.text.contains("kind"), "{container:?}");
+        assert_eq!(container.key, "relink.container");
+        let audio = differs(episode("matroska,webm", 1920, "2531.400", &[("dts", 6)]));
+        assert!(audio.text.contains("audio"), "{audio:?}");
+        assert_eq!(audio.key, "relink.audio");
+    }
+
+    #[test]
+    fn what_tells_two_videos_apart_says_each_value() {
+        let old = episode("matroska,webm", 1920, "2531.400", &[("dts", 6)]);
+        let mut new = old.clone();
+        new.video.codec = "hevc".into();
+        let codec = same_source(&old, &new).unwrap_err();
+        assert_eq!(codec.key, "relink.codec");
+        assert_eq!(codec.args["codec"], "hevc".into());
+        assert_eq!(codec.args["was"], old.video.codec.as_str().into());
+        assert_eq!(codec.text, format!("Its picture is stored as hevc instead of {}.", old.video.codec));
+
+        let mut new = old.clone();
+        new.video.r_frame_rate = Rational::new(25, 1);
+        assert_eq!(same_source(&old, &new).unwrap_err().key, "relink.frameRate");
+
+        let mut new = old.clone();
+        new.start_sec += 5.0;
+        assert_eq!(same_source(&old, &new).unwrap_err().key, "relink.start");
     }
 
     #[test]

@@ -494,7 +494,10 @@ mod tests {
     impl Cuts for Fake {
         fn cut(&self, _: ProjectId, c: CharacterId, shown: &Shown, _: &PluginFilters) -> ProjectResult<PackCut> {
             if shown.stamp != "s1" || self.changed.load(Ordering::SeqCst) {
-                return Err(ProjectError::Invalid("The pack changed meanwhile. Check it and export again.".into()));
+                return Err(ProjectError::Invalid(msg!(
+                    "pack.changed",
+                    "The pack changed meanwhile. Check it and export again."
+                )));
             }
             let clip =
                 |start, end, name: &str| ClipRequest { media_id: self.media, start, end, name: Some(name.into()) };

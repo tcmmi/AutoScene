@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use as_core::{Msg, ToMsg, msg};
 use regex::Regex;
 
 /// Containers worth offering for import.
@@ -146,13 +147,17 @@ fn is_name_part(token: &str) -> bool {
     NAME_PARTS.iter().any(|(part, _)| *part == token)
 }
 
-/// `{a}, {b} or {c}`: parts as a message lists them.
-fn listed<'a>(parts: impl IntoIterator<Item = &'a str>, last: &str) -> String {
-    let parts: Vec<String> = parts.into_iter().map(|part| format!("{{{part}}}")).collect();
+/// `{part}`, as a message shows it.
+fn braced(part: &str) -> String {
+    format!("{{{part}}}")
+}
+
+/// Parts as a message lists them, its sentence joining the two: `{a}, {b}` and `{c}`.
+fn listed<'a>(parts: impl IntoIterator<Item = &'a str>) -> (String, String) {
+    let parts: Vec<String> = parts.into_iter().map(braced).collect();
     match parts.split_last() {
-        Some((end, [])) => end.clone(),
-        Some((end, rest)) => format!("{} {last} {end}", rest.join(", ")),
-        None => String::new(),
+        Some((end, rest)) => (rest.join(", "), end.clone()),
+        None => Default::default(),
     }
 }
 
@@ -181,19 +186,35 @@ fn closest_part(token: &str) -> Option<&'static str> {
     }
 }
 
-fn unknown_message(token: &str) -> String {
+fn unknown_message(token: &str) -> Msg {
     match closest_part(token) {
-        Some(part) => format!("“{{{token}}}” isn't a name part. Did you mean {{{part}}}?"),
+        Some(part) => msg!(
+            "name.didYouMean",
+            "“{{token}}” isn't a name part. Did you mean {{part}}?",
+            token = braced(token),
+            part = braced(part),
+        ),
         None => {
-            format!("“{{{token}}}” isn't a name part. Use {}.", listed(NAME_PARTS.iter().map(|(part, _)| *part), "or"))
+            let (parts, last) = listed(NAME_PARTS.iter().map(|(part, _)| *part));
+            msg!(
+                "name.unknownPart",
+                "“{{token}}” isn't a name part. Use {{parts}} or {{last}}.",
+                token = braced(token),
+                parts = parts,
+                last = last,
+            )
         }
     }
 }
 
-fn not_for_file_message(token: &str) -> String {
-    format!(
-        "“{{{token}}}” names a shot, not the file. The file's name can use {}.",
-        listed(FILE_PARTS.iter().copied(), "and")
+fn not_for_file_message(token: &str) -> Msg {
+    let (parts, last) = listed(FILE_PARTS.iter().copied());
+    msg!(
+        "name.notForFile",
+        "“{{token}}” names a shot, not the file. The file's name can use {{parts}} and {{last}}.",
+        token = braced(token),
+        parts = parts,
+        last = last,
     )
 }
 
@@ -206,14 +227,25 @@ pub const PACK_FILE_TEMPLATE: &str = "{series} {character} scenepack";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NameError {
-    #[error("{}", unknown_message(.0))]
+    #[error("{}", unknown_message(.0).text)]
     UnknownToken(String),
     #[error("A “{{” isn't closed with “}}”.")]
     Unclosed,
     #[error("The name would be empty.")]
     Empty,
-    #[error("{}", not_for_file_message(.0))]
+    #[error("{}", not_for_file_message(.0).text)]
     NotForFile(String),
+}
+
+impl ToMsg for NameError {
+    fn msg(&self) -> Msg {
+        match self {
+            Self::UnknownToken(token) => unknown_message(token),
+            Self::Unclosed => msg!("name.unclosed", "A “{” isn't closed with “}”."),
+            Self::Empty => msg!("name.empty", "The name would be empty."),
+            Self::NotForFile(token) => not_for_file_message(token),
+        }
+    }
 }
 
 /// A file name (without extension) from `template`, safe on Windows and
@@ -326,7 +358,33 @@ fn is_reserved_device(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use as_core::{MsgArg, ToMsg};
+
     use super::*;
+
+    #[test]
+    fn a_name_error_says_its_sentence_with_a_key() {
+        let said = |e: NameError| (e.msg(), e.to_string());
+        let (m, display) = said(NameError::UnknownToken("zzz".into()));
+        assert_eq!(m.key, "name.unknownPart");
+        assert_eq!(m.text, display);
+        assert_eq!(m.args["token"], MsgArg::from("{zzz}"));
+        assert_eq!(m.args["last"], MsgArg::from("{frame}"));
+        assert_eq!(m.args["parts"], MsgArg::from("{series}, {character}, {episode}, {index}, {tc}"));
+        let (m, display) = said(NameError::UnknownToken("Episode".into()));
+        assert_eq!(m.key, "name.didYouMean");
+        assert_eq!(m.args["part"], MsgArg::from("{episode}"));
+        assert_eq!(display, "“{Episode}” isn't a name part. Did you mean {episode}?");
+        let (m, display) = said(NameError::NotForFile("tc".into()));
+        assert_eq!(m.key, "name.notForFile");
+        assert_eq!(display, "“{tc}” names a shot, not the file. The file's name can use {series} and {character}.");
+        assert_eq!(m.text, display);
+        let (m, display) = said(NameError::Unclosed);
+        assert_eq!((m.key.as_str(), m.text.as_str()), ("name.unclosed", display.as_str()));
+        assert_eq!(display, "A “{” isn't closed with “}”.");
+        let (m, display) = said(NameError::Empty);
+        assert_eq!((m.key.as_str(), m.text.as_str()), ("name.empty", display.as_str()));
+    }
 
     fn parts<'a>(character: Option<&'a str>, index: (usize, usize)) -> NameParts<'a> {
         NameParts { series: "Breaking Bad", character, episode: "S01E03", index, tc: "00-12-03-05", frame: 17357 }

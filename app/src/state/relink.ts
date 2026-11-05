@@ -1,8 +1,8 @@
 import { create } from "zustand"
-import type { MediaItem } from "@/bindings"
+import type { MediaItem, Msg } from "@/bindings"
 
 /** A file chosen for a missing episode that doesn't look like it: asked about before it's taken. */
-export type RelinkQuestion = { pid: string; media: MediaItem; path: string; reason: string }
+export type RelinkQuestion = { pid: string; media: MediaItem; path: string; reason: Msg }
 
 type RelinkState = {
   question: RelinkQuestion | null

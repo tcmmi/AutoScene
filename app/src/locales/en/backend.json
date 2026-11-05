@@ -3,14 +3,83 @@
     "noticesFailed": "NVIDIA's notices couldn't be opened.",
     "removeFailed": "NVIDIA's files couldn't be removed."
   },
+  "analysis": {
+    "animeFromTheStart": "Anime is analysed differently from the start. Add the videos as a new anime project instead.",
+    "facesNotFound": "The faces of this media aren't found yet.",
+    "shotsNotFound": "Shots of this media aren't found yet.",
+    "signalsCover": "shot signals cover {{covered}} of {{frames}} frames",
+    "unreadablePeople": "unreadable people",
+    "unreadableSignals": "unreadable shot signals",
+    "unreadableTracks": "unreadable face tracks"
+  },
+  "cast": {
+    "characterGone": "This character doesn't exist any more.",
+    "keptChanging": "The cast kept changing while it was being grouped. Try again.",
+    "notInCast": "This character isn't in the cast any more."
+  },
+  "db": {
+    "busy": "Another program is using AutoScene's data. Close it and try again.",
+    "cannotOpen": "AutoScene couldn't open its data. Check that the drive is connected.",
+    "damaged": "AutoScene's data file is damaged. Details are in the log.",
+    "diskFull": "The disk is full.",
+    "driveFailed": "The drive couldn't be read or written. Details are in the log.",
+    "generic": "AutoScene couldn't read or save its data. Details are in the log.",
+    "permission": "AutoScene doesn't have permission to open its data.",
+    "readOnly": "AutoScene can't save its data there: the drive or folder is read-only.",
+    "tooNew": "This project was made by a newer version of AutoScene. Update AutoScene to open it.",
+    "upgradeFailed": "AutoScene couldn't update this project's data. Details are in the log."
+  },
   "episode": {
+    "fileNotFound": "That file can't be found.",
+    "indexDamaged": "Its frame index is damaged. Index it again.",
+    "indexingCancelled": "Indexing was cancelled.",
+    "moved": "{{name}} can't be found. Was it moved?",
+    "noAudioTrack": "That audio track doesn't exist.",
     "noPreviewNeeded": "This file doesn't need a separate preview.",
+    "notFound": "{{name}} can't be found.",
     "notIndexed": "{{name}} isn't indexed yet.",
+    "preview": {
+      "failed": "The preview couldn't be prepared for this file.",
+      "missing": "The preview file is missing. Preparing it again…",
+      "needed": "This format needs a preview copy for frame-accurate playback.",
+      "preparing": "Preparing preview…"
+    },
     "previewRefused": "This episode's preview can't be shown. Prepare it again.",
+    "removed": "This episode was removed.",
+    "stillIndexing": "Still indexing.",
     "stillStopping": "The work on this episode is still stopping. Try again in a moment."
   },
   "export": {
+    "cantWrite": "Can't write to {{path}}: {{why}}",
+    "csv": {
+      "mixedRates": "Clips of different frame rates can't share one cut list."
+    },
+    "edl": {
+      "mixedRates": "Clips of different frame rates can't share one EDL.",
+      "pastMidnight": "{{name}} runs past midnight in its episode's timecode, which an EDL can't hold.",
+      "tooFast": "An EDL holds at most 100 frames a second. Save a cut list (CSV) instead.",
+      "tooLong": "These clips run longer than the 23 hours an EDL can hold."
+    },
+    "episodeNotIndexed": "An episode of this export isn't indexed.",
+    "episodesRemoved": "This export's episodes were removed from the project.",
+    "fileNeedsName": "The file needs a name.",
+    "fullPath": "Choose a full folder path for the export.",
+    "gone": "This export no longer exists.",
     "listExtension": "Save it as a .{{ext}} file.",
+    "lossless": {
+      "allFfv1": "These pictures can't be stored exactly as HEVC, so they're kept as FFV1 in an MKV: DaVinci Resolve and VLC open it, After Effects doesn't.",
+      "apart": "Bit-Perfect makes a file per shot here: {{why}}.",
+      "colours": "their episodes' colours are tagged differently",
+      "pictures": "their episodes' pictures differ in size or format",
+      "someFfv1": "Some of these pictures can't be stored exactly as HEVC, so they're kept as FFV1 in an MKV: DaVinci Resolve and VLC open it, After Effects doesn't.",
+      "sound": "their episodes' sound differs in its rate or channels"
+    },
+    "noneExported": "None of the clips could be exported.",
+    "noneFinished": "No clip of this export has finished yet.",
+    "notJoined": "It couldn't be joined into the file.",
+    "nothing": "Nothing to export.",
+    "outside": "Frames {{start}}–{{end}} are outside {{name}}.",
+    "outsideRange": "Frames {{start}}–{{end}} are outside {{name}} (0–{{frames}}).",
     "unknownPreset": "Unknown export preset."
   },
   "file": {
@@ -28,11 +97,60 @@
     "tooBig": "The file is too big for that disk."
   },
   "internal": "Something went wrong. Details are in the log.",
+  "job": {
+    "cancelled": "cancelled"
+  },
+  "library": {
+    "cantUse": "Can't use {{path}} as the library: {{why}}",
+    "fullPath": "Choose a full folder path for the library.",
+    "notImported": "{{name}} can't be imported: its name, or the name of a folder it's in, isn't valid Unicode. Rename it and add it again.",
+    "notImportedMore_one": "{{name}} and {{count}} more can't be imported: their names, or the names of folders they're in, aren't valid Unicode. Rename them and add them again.",
+    "notImportedMore_other": "{{name}} and {{count}} more can't be imported: their names, or the names of folders they're in, aren't valid Unicode. Rename them and add them again.",
+    "notUnicode": "Its name, or the name of a folder it's in, isn't valid Unicode. Rename it to import it."
+  },
   "media": {
     "toolsMissing": "AutoScene's video tools are missing. Reinstall AutoScene.",
     "toolsTooOld": "AutoScene's video tools are out of date. Reinstall AutoScene."
   },
+  "name": {
+    "didYouMean": "“{{token}}” isn't a name part. Did you mean {{part}}?",
+    "empty": "The name would be empty.",
+    "notForFile": "“{{token}}” names a shot, not the file. The file's name can use {{parts}} and {{last}}.",
+    "unclosed": "A “{” isn't closed with “}”.",
+    "unknownPart": "“{{token}}” isn't a name part. Use {{parts}} or {{last}}."
+  },
+  "names": {
+    "anilist": {
+      "busy": "AniList is busy. Try again in a few minutes.",
+      "noAnime": "AniList has no anime {{id}}.",
+      "notFound": "AniList: {{why}}",
+      "refused": "AniList didn't take the request: {{why}}",
+      "unreachable": "AniList can't be reached right now. Check the internet connection and try again."
+    },
+    "animatedOnly": "Names are looked up for anime and animation only.",
+    "castChanged": "The cast changed; match the portraits again.",
+    "confirmSeries": "Confirm the series on {{source}} first.",
+    "fandom": {
+      "busy": "Wikidata or Fandom is busy. Try again in a few minutes.",
+      "noFilm": "Wikidata has no film Q{{id}} with a Fandom wiki.",
+      "noWiki": "No Fandom wiki was found for {{title}}.",
+      "unreachable": "Wikidata or Fandom can't be reached right now. Check the internet connection and try again."
+    },
+    "footageChanged": "The footage changed meanwhile; search again.",
+    "noLongerWaiting": "These names no longer wait: the series or the cast changed.",
+    "portraitsFailed": "embedding the portraits: {{why}}",
+    "turnOn": "Turn on character names in Settings first.",
+    "tvmaze": {
+      "busy": "TVmaze is busy. Try again in a few minutes.",
+      "noShow": "TVmaze has no show {{id}}.",
+      "unreachable": "TVmaze can't be reached right now. Check the internet connection and try again."
+    },
+    "typeFilm": "Type the name of the film to look for.",
+    "typeSeries": "Type the name of the series to look for."
+  },
   "pack": {
+    "changed": "The pack changed meanwhile. Check it and export again.",
+    "empty": "There's nothing in the pack to export.",
     "waitsForFilter": "The pack waits for “{{title}}” to check its shots."
   },
   "plugin": {
@@ -57,7 +175,21 @@
     "saveRunnable": "A plugin can't save a program, a script or a shortcut."
   },
   "project": {
+    "alreadyInProject": "That file is already in the project, as {{name}}.",
+    "folderMissing": "The project folder {{path}} is missing. Was it moved or deleted?",
+    "gone": "This project no longer exists.",
+    "needsName": "Give the project a name.",
     "stillStopping": "The work on this project is still stopping. Try again in a moment."
+  },
+  "relink": {
+    "audio": "Its audio tracks are different.",
+    "codec": "Its picture is stored as {{codec}} instead of {{was}}.",
+    "container": "It's another kind of video file.",
+    "frameRate": "It plays at another frame rate.",
+    "length": "It's {{length}} long instead of {{was}}.",
+    "picture": "At the same moment it shows another picture.",
+    "size": "Its picture is {{width}}×{{height}} instead of {{wasWidth}}×{{wasHeight}}.",
+    "start": "It starts at another moment."
   },
   "system": {
     "clipboardFailed": "Couldn't copy to the clipboard.",

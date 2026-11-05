@@ -12,7 +12,7 @@ use std::sync::Arc;
 use as_api::{
     AnalysisStage, CastEdit, ExportSummary, JobInfo, JobKind, JobState, MediaItem, MediaStatus, ProxyState, StageState,
 };
-use as_core::{CancelToken, ExportId, MediaId, ProjectId};
+use as_core::{CancelToken, ExportId, MediaId, Msg, ProjectId, ToMsg, msg};
 use as_engine::{Devices, EngineError, FacesEvent, FacesInput, ShotsEvent};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_models::ModelError;
@@ -152,7 +152,7 @@ pub fn queue_ingest(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) 
         });
         if matches!(result, Err(ProjectError::Cancelled))
             && !state.jobs.is_shutting_down()
-            && let Err(e) = project.set_media_failed(media_id, "Indexing was cancelled.")
+            && let Err(e) = project.set_media_failed(media_id, &indexing_cancelled())
         {
             log::warn!("marking a cancelled ingest: {}", e.detail());
         }
@@ -173,6 +173,10 @@ pub fn queue_ingest(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) 
     });
 }
 
+fn indexing_cancelled() -> Msg {
+    msg!("episode.indexingCancelled", "Indexing was cancelled.")
+}
+
 /// An ingest dropped before it started. Cancelled (from Activity), the
 /// media says so and offers Retry, as when it is stopped while indexing —
 /// not "Queued" with nothing to index it, and not indexed anyway on the
@@ -186,7 +190,7 @@ fn ingest_dropped(app: &AppHandle, project: &Project, media_id: MediaId) {
     {
         return;
     }
-    match project.set_media_failed(media_id, "Indexing was cancelled.") {
+    match project.set_media_failed(media_id, &indexing_cancelled()) {
         Ok(()) => media_changed(app, project, Some(media_id)),
         Err(e) => log::warn!("marking a cancelled ingest: {}", e.detail()),
     }
@@ -196,21 +200,21 @@ fn ingest_dropped(app: &AppHandle, project: &Project, media_id: MediaId) {
 enum StageError {
     Cancelled,
     /// Something about this media or the analysis itself.
-    Failed(String),
+    Failed(Msg),
     /// The environment (offline model download, an engine that can't start):
     /// the stage waits as pending and runs again on the next launch.
-    Later(String),
+    Later(Msg),
     /// A panic while the stage wasn't recorded running (before it started,
     /// or once it was done, grouping the cast): the stage stays as it is
     /// recorded, the job fails.
-    Bug(String),
+    Bug(Msg),
 }
 
 impl From<StageError> for JobError {
     fn from(e: StageError) -> Self {
         match e {
             StageError::Cancelled => JobError::Cancelled,
-            StageError::Failed(m) | StageError::Later(m) | StageError::Bug(m) => JobError::Failed(m),
+            StageError::Failed(m) | StageError::Later(m) | StageError::Bug(m) => JobError::Failed(m.text),
         }
     }
 }
@@ -225,19 +229,23 @@ fn guarded(
     run: impl FnOnce() -> Result<(), StageError>,
 ) -> Result<(), StageError> {
     catch_unwind(AssertUnwindSafe(run)).unwrap_or_else(|panic| {
-        let msg = as_jobs::panic_message(&*panic);
-        log::error!("analysis panicked: {msg}");
+        let said = as_jobs::panic_message(&*panic);
+        log::error!("analysis panicked: {said}");
+        let said = Msg::plain(said);
         match recorded() {
-            Some(StageState::Running) => Err(StageError::Failed(msg)),
-            _ => Err(StageError::Bug(msg)),
+            Some(StageState::Running) => Err(StageError::Failed(said)),
+            _ => Err(StageError::Bug(said)),
         }
     })
 }
 
 fn stage_error(e: ProjectError) -> StageError {
-    match job_error(e) {
-        JobError::Cancelled => StageError::Cancelled,
-        JobError::Failed(m) | JobError::FailedFirst(m) => StageError::Failed(m),
+    match e {
+        ProjectError::Cancelled => StageError::Cancelled,
+        e => {
+            log::warn!("{}", e.detail());
+            StageError::Failed(e.msg())
+        }
     }
 }
 
@@ -246,11 +254,11 @@ fn engine_error(e: EngineError) -> StageError {
         EngineError::Cancelled => StageError::Cancelled,
         e @ EngineError::Start { .. } => {
             log::warn!("analysis: {}", e.detail());
-            StageError::Later(e.to_string())
+            StageError::Later(Msg::plain(e.to_string()))
         }
         e => {
             log::warn!("analysis: {}", e.detail());
-            StageError::Failed(e.to_string())
+            StageError::Failed(Msg::plain(e.to_string()))
         }
     }
 }
@@ -260,7 +268,7 @@ fn engine_error(e: EngineError) -> StageError {
 fn record_stage(
     state: &AppState,
     r: &Result<(), StageError>,
-    set: impl FnOnce(StageState, Option<&str>) -> as_project::ProjectResult<()>,
+    set: impl FnOnce(StageState, Option<&Msg>) -> as_project::ProjectResult<()>,
 ) {
     let outcome = match r {
         Ok(()) | Err(StageError::Bug(_)) => return,
@@ -853,7 +861,7 @@ fn devices_reported(
 /// Download AI models on first use (verified; resumes an interrupted download).
 fn install_models(state: &AppState, ids: &[&str], ctx: &JobCtx) -> Result<(), StageError> {
     for &id in ids {
-        let installed = state.models.installed(id).map_err(|e| StageError::Failed(e.to_string()))?;
+        let installed = state.models.installed(id).map_err(|e| StageError::Failed(Msg::plain(e.to_string())))?;
         if installed.is_some() {
             continue;
         }
@@ -868,7 +876,7 @@ fn install_models(state: &AppState, ids: &[&str], ctx: &JobCtx) -> Result<(), St
                 ModelError::Cancelled => StageError::Cancelled,
                 e => {
                     log::warn!("{}", e.detail());
-                    StageError::Later(e.to_string())
+                    StageError::Later(Msg::plain(e.to_string()))
                 }
             })?;
     }
@@ -1145,7 +1153,7 @@ pub fn queue_export(app: &AppHandle, project: &Arc<Project>, export: &ExportSumm
         let tools = match state.tools() {
             Ok(t) => t,
             Err(e) => {
-                if let Err(fail) = project.fail_export(export_id, &e.message) {
+                if let Err(fail) = project.fail_export(export_id, &e.msg) {
                     log::warn!("marking export {export_id} failed: {}", fail.detail());
                 }
                 notify();
@@ -1159,18 +1167,18 @@ pub fn queue_export(app: &AppHandle, project: &Arc<Project>, export: &ExportSumm
         let result = catch_unwind(AssertUnwindSafe(run)).unwrap_or_else(|panic| {
             let msg = as_jobs::panic_message(&*panic);
             log::error!("export {export_id} panicked: {msg}");
-            Err(ProjectError::Invalid(msg))
+            Err(ProjectError::Invalid(Msg::plain(msg)))
         });
         if let Err(e) = &result
             && !matches!(e, ProjectError::Cancelled)
-            && let Err(fail) = project.abandon_export(export_id, &e.to_string())
+            && let Err(fail) = project.abandon_export(export_id, &e.msg())
         {
             log::warn!("marking export {export_id} failed: {}", fail.detail());
         }
         notify();
         let summary = result.map_err(job_error)?;
         if let Some(error) = summary.merged.as_ref().and_then(|f| f.error.clone()) {
-            return Err(JobError::Failed(error));
+            return Err(JobError::Failed(error.text));
         }
         let failed = summary.items.iter().filter(|i| i.error.is_some()).count();
         if failed > 0 {
@@ -1318,7 +1326,7 @@ mod tests {
 
     use super::{
         StageError, Unstarted, analysed_otherwise, ended_for_restart, failed_message, guarded, hand_over_restart,
-        start_over_now,
+        stage_error, start_over_now,
     };
     use crate::state::AnalysisRuns;
 
@@ -1326,11 +1334,19 @@ mod tests {
     fn a_stage_that_panics_fails_only_while_it_runs() {
         let breaks = || -> Result<(), StageError> { panic!("grouping broke") };
         let r = guarded(|| Some(StageState::Running), breaks);
-        assert!(matches!(r, Err(StageError::Failed(m)) if m == "grouping broke"), "recorded failed");
+        assert!(matches!(r, Err(StageError::Failed(m)) if m.text == "grouping broke"), "recorded failed");
         // Done before it broke (or not begun): it stays as it is recorded.
         let r = guarded(|| Some(StageState::Ready), breaks);
-        assert!(matches!(r, Err(StageError::Bug(m)) if m == "grouping broke"));
+        assert!(matches!(r, Err(StageError::Bug(m)) if m.text == "grouping broke"));
         assert!(matches!(guarded(|| unreachable!(), || Err(StageError::Cancelled)), Err(StageError::Cancelled)));
+    }
+
+    #[test]
+    fn a_stage_that_fails_keeps_the_key_of_what_went_wrong() {
+        let said = as_core::msg!("episode.stillIndexing", "Still indexing.");
+        let r = stage_error(as_project::ProjectError::NotReady(said.clone()));
+        assert!(matches!(r, StageError::Failed(m) if m == said));
+        assert!(matches!(stage_error(as_project::ProjectError::Cancelled), StageError::Cancelled));
     }
 
     #[test]

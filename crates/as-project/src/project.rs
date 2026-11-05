@@ -10,7 +10,9 @@ use as_api::{
     ImportCandidate, ListFormat, MediaItem, MediaStatus, MergedFile, PresetSize, ProjectKind, ProjectSummary,
     ProxyState, Relink, RelinkSummary,
 };
-use as_core::{CancelToken, ExportId, FrameCount, FrameIndex, FrameRange, MediaId, ProjectId, Timecode};
+use as_core::{
+    CancelToken, ExportId, FrameCount, FrameIndex, FrameRange, MediaId, Msg, ProjectId, Timecode, ToMsg, msg,
+};
 use as_db::{IngestRecord, NewExportItem, ProjectDb, Relinked};
 use as_export::LosslessCodec;
 use as_export::clip::PARTIAL_DIR;
@@ -344,7 +346,10 @@ impl Project {
     }
 
     pub fn media(&self, id: MediaId) -> ProjectResult<MediaItem> {
-        let mut m = self.db.media(id)?.ok_or_else(|| ProjectError::NotFound("This episode was removed.".into()))?;
+        let mut m = self
+            .db
+            .media(id)?
+            .ok_or_else(|| ProjectError::NotFound(msg!("episode.removed", "This episode was removed.")))?;
         if !Path::new(&m.path).is_file() {
             m.status = MediaStatus::Missing;
         }
@@ -357,9 +362,12 @@ impl Project {
     /// video is refused unless `force`. A file showing another picture at the
     /// poster's frame is another video, even at the very same size.
     pub fn relink(&self, tools: &Tools, id: MediaId, path: &Path, force: bool) -> ProjectResult<Relink> {
-        let m = self.db.media(id)?.ok_or_else(|| ProjectError::NotFound("This episode was removed.".into()))?;
+        let m = self
+            .db
+            .media(id)?
+            .ok_or_else(|| ProjectError::NotFound(msg!("episode.removed", "This episode was removed.")))?;
         if !path.is_file() {
-            return Err(ProjectError::NotFound("That file can't be found.".into()));
+            return Err(ProjectError::NotFound(msg!("episode.fileNotFound", "That file can't be found.")));
         }
         let new = path.display().to_string();
         if same_path(&m.path, &new) && Path::new(&m.path).is_file() {
@@ -377,7 +385,11 @@ impl Project {
             .find(|x| x.id != id && x.file_name.to_lowercase() == lower_name && same_path(&x.path, &new))
         {
             let name = if other.label.is_empty() { other.file_name } else { other.label };
-            return Err(ProjectError::Invalid(format!("That file is already in the project, as {name}.")));
+            return Err(ProjectError::Invalid(msg!(
+                "project.alreadyInProject",
+                "That file is already in the project, as {{name}}.",
+                name = name,
+            )));
         }
         let meta = std::fs::metadata(path)?;
         let found = as_media::probe(tools, path)?;
@@ -400,7 +412,9 @@ impl Project {
             false => None,
         };
         if same_picture == Some(false) && !force {
-            return Ok(Relink::Different { reason: "At the same moment it shows another picture.".into() });
+            return Ok(Relink::Different {
+                reason: msg!("relink.picture", "At the same moment it shows another picture."),
+            });
         }
         let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let mtime = meta
@@ -420,7 +434,7 @@ impl Project {
         };
         // All of it or nothing: never the new file on the old one's index.
         if !self.db.relink_media(id, &new, &file_name, meta.len(), mtime, how)? {
-            return Err(ProjectError::NotFound("This episode was removed.".into()));
+            return Err(ProjectError::NotFound(msg!("episode.removed", "This episode was removed.")));
         }
         tracing::info!(media = %id, file = %file_name, ?same_picture, "found again");
         if how == Relinked::Same {
@@ -579,7 +593,7 @@ impl Project {
         }
     }
 
-    pub fn set_media_failed(&self, id: MediaId, message: &str) -> ProjectResult<()> {
+    pub fn set_media_failed(&self, id: MediaId, message: &Msg) -> ProjectResult<()> {
         Ok(self.db.set_media_status(id, MediaStatus::Failed, Some(message))?)
     }
 
@@ -592,15 +606,18 @@ impl Project {
         if let Some(i) = self.indexes.lock().get(&id) {
             return Ok(i.clone());
         }
-        let blob = self.db.frame_index_blob(id)?.ok_or_else(|| ProjectError::NotReady("Still indexing.".into()))?;
+        let blob = self
+            .db
+            .frame_index_blob(id)?
+            .ok_or_else(|| ProjectError::NotReady(msg!("episode.stillIndexing", "Still indexing.")))?;
         let idx = Arc::new(FrameIndex::from_bytes(&blob).map_err(|e| {
             tracing::warn!(media = %id, error = %e, "stored frame index is damaged");
             // Failed, so its menu and the player offer to index it again.
-            let message = "Its frame index is damaged. Index it again.";
-            if let Err(e) = self.db.set_media_status(id, MediaStatus::Failed, Some(message)) {
+            let message = msg!("episode.indexDamaged", "Its frame index is damaged. Index it again.");
+            if let Err(e) = self.db.set_media_status(id, MediaStatus::Failed, Some(&message)) {
                 tracing::warn!(media = %id, error = %e, "marking a damaged index failed");
             }
-            ProjectError::Invalid(message.into())
+            ProjectError::Invalid(message)
         })?);
         self.indexes.lock().insert(id, idx.clone());
         Ok(idx)
@@ -611,11 +628,22 @@ impl Project {
         match m.status {
             MediaStatus::Ready => {}
             MediaStatus::Missing => {
-                return Err(ProjectError::NotFound(format!("{} can't be found. Was it moved?", m.file_name)));
+                return Err(ProjectError::NotFound(msg!(
+                    "episode.moved",
+                    "{{name}} can't be found. Was it moved?",
+                    name = &m.file_name,
+                )));
             }
-            _ => return Err(ProjectError::NotReady(format!("{} isn't indexed yet.", m.file_name))),
+            _ => {
+                return Err(ProjectError::NotReady(msg!(
+                    "episode.notIndexed",
+                    "{{name}} isn't indexed yet.",
+                    name = &m.file_name
+                )));
+            }
         }
-        let info = m.info.clone().ok_or_else(|| ProjectError::NotReady("Still indexing.".into()))?;
+        let info =
+            m.info.clone().ok_or_else(|| ProjectError::NotReady(msg!("episode.stillIndexing", "Still indexing.")))?;
         let index = self.frame_index(id)?;
         Ok((m, info, index))
     }
@@ -639,7 +667,7 @@ impl Project {
             // Back in the queue: a quit resumes it on the next launch. The app
             // marks it cancelled when a person stopped it.
             Err(ProjectError::Cancelled) => self.set_media_queued(id)?,
-            Err(e) => self.set_media_failed(id, &e.to_string())?,
+            Err(e) => self.set_media_failed(id, &e.msg())?,
         }
         result
     }
@@ -655,7 +683,11 @@ impl Project {
         let m = self.media(id)?;
         let path = PathBuf::from(&m.path);
         if !path.is_file() {
-            return Err(ProjectError::NotFound(format!("{} can't be found.", m.file_name)));
+            return Err(ProjectError::NotFound(msg!(
+                "episode.notFound",
+                "{{name}} can't be found.",
+                name = &m.file_name
+            )));
         }
         self.db.set_media_status(id, MediaStatus::Indexing, None)?;
         progress("Reading file", 0.0, None);
@@ -746,7 +778,7 @@ impl Project {
         if let Some(o) = ordinal
             && !m.info.as_ref().is_some_and(|i| i.audio.iter().any(|a| a.ordinal == o))
         {
-            return Err(ProjectError::Invalid("That audio track doesn't exist.".into()));
+            return Err(ProjectError::Invalid(msg!("episode.noAudioTrack", "That audio track doesn't exist.")));
         }
         self.db.set_audio(id, ordinal)?;
         if m.status != MediaStatus::Ready {
@@ -922,21 +954,31 @@ impl Project {
                 (m.path.clone(), false, index.t0())
             }
             ProxyState::Ready => {
-                let (p, t0) = self.db.proxy(id)?.ok_or_else(|| ProjectError::NotReady("Preparing preview…".into()))?;
+                let (p, t0) = self
+                    .db
+                    .proxy(id)?
+                    .ok_or_else(|| ProjectError::NotReady(msg!("episode.preview.preparing", "Preparing preview…")))?;
                 if !Path::new(&p).is_file() {
                     // The app queues a rebuild for media left `pending`.
                     self.db.set_proxy(id, ProxyState::Pending, None, None)?;
-                    return Err(ProjectError::NotReady("The preview file is missing. Preparing it again…".into()));
+                    return Err(ProjectError::NotReady(msg!(
+                        "episode.preview.missing",
+                        "The preview file is missing. Preparing it again…"
+                    )));
                 }
                 (p, true, t0)
             }
             ProxyState::Failed => {
-                return Err(ProjectError::NotReady("The preview couldn't be prepared for this file.".into()));
+                return Err(ProjectError::NotReady(msg!(
+                    "episode.preview.failed",
+                    "The preview couldn't be prepared for this file."
+                )));
             }
             _ => {
-                return Err(ProjectError::NotReady(
-                    "This format needs a preview copy for frame-accurate playback.".into(),
-                ));
+                return Err(ProjectError::NotReady(msg!(
+                    "episode.preview.needed",
+                    "This format needs a preview copy for frame-accurate playback."
+                )));
             }
         };
         let n = index.len();
@@ -970,7 +1012,7 @@ impl Project {
         out_dir: &Path,
     ) -> ProjectResult<ExportSummary> {
         if req.clips.is_empty() {
-            return Err(ProjectError::Invalid("Nothing to export.".into()));
+            return Err(ProjectError::Invalid(msg!("export.nothing", "Nothing to export.")));
         }
         check_export_dir(out_dir)?;
         let title = self.title()?;
@@ -998,7 +1040,7 @@ impl Project {
         };
         let apart = req.merge.is_some() && self.apart_reason(&preset, &req.clips)?.is_some();
         let merged = match req.merge.as_deref().map(str::trim).filter(|_| !apart) {
-            Some("") => return Err(ProjectError::Invalid("The file needs a name.".into())),
+            Some("") => return Err(ProjectError::Invalid(msg!("export.fileNeedsName", "The file needs a name."))),
             Some(name) => {
                 let name = unique_name(&safe_component(name, " ", 120), |n| taken(n, &promised));
                 Some(MergedFile { name, path: None, verified: false, bytes: None, error: None })
@@ -1017,13 +1059,7 @@ impl Project {
             }
             let (m, _, index) = &sources[&c.media_id];
             if c.start >= c.end || c.end > index.len() {
-                return Err(ProjectError::Invalid(format!(
-                    "Frames {}–{} are outside {} (0–{}).",
-                    c.start,
-                    c.end,
-                    m.file_name,
-                    index.len()
-                )));
+                return Err(ProjectError::Invalid(outside_range(c.start, c.end, &m.file_name, index.len())));
             }
             let base = match c.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
                 Some(n) => safe_component(n, " ", 120),
@@ -1043,8 +1079,7 @@ impl Project {
                 audio_ordinal: m.audio_ordinal,
             });
         }
-        std::fs::create_dir_all(out_dir)
-            .map_err(|e| ProjectError::Invalid(format!("Can't write to {}: {e}", out_dir.display())))?;
+        std::fs::create_dir_all(out_dir).map_err(|e| ProjectError::Invalid(cant_write(out_dir, &e)))?;
         let id = ExportId::new();
         self.db.insert_export(id, &preset, &out_str, req.label.as_deref(), merged.as_ref(), &items)?;
         self.export(id)
@@ -1070,9 +1105,12 @@ impl Project {
             }
             let (m, _, index) = &sources[&c.media_id];
             if c.start >= c.end || c.end > index.len() {
-                return Err(ProjectError::Invalid(format!(
-                    "Frames {}–{} are outside {}.",
-                    c.start, c.end, m.file_name
+                return Err(ProjectError::Invalid(msg!(
+                    "export.outside",
+                    "Frames {{start}}–{{end}} are outside {{name}}.",
+                    start = c.start,
+                    end = c.end,
+                    name = &m.file_name,
                 )));
             }
             let base = match c.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
@@ -1115,7 +1153,7 @@ impl Project {
     /// Why a Bit-Perfect file of `clips` is made a file per clip instead
     /// (their episodes' pictures or sound differ); `None` for other presets,
     /// or when they can share one.
-    pub(crate) fn apart_reason(&self, preset: &ExportPreset, clips: &[ClipRequest]) -> ProjectResult<Option<String>> {
+    pub(crate) fn apart_reason(&self, preset: &ExportPreset, clips: &[ClipRequest]) -> ProjectResult<Option<Msg>> {
         if preset.video != VideoCodec::Lossless {
             return Ok(None);
         }
@@ -1133,17 +1171,17 @@ impl Project {
                 MergeSource { info, index, range: FrameRange::new(c.start, c.end), audio_ordinal: m.audio_ordinal }
             })
             .collect();
-        Ok(lossless_merge_blocker(&merge).map(|why| apart_sentence(&why)))
+        Ok(lossless_merge_blocker(&merge).map(apart_sentence))
     }
 
     /// Mark an export failed before it could start (e.g. ffmpeg missing).
-    pub fn fail_export(&self, id: ExportId, message: &str) -> ProjectResult<()> {
+    pub fn fail_export(&self, id: ExportId, message: &Msg) -> ProjectResult<()> {
         let ex = self.export(id)?;
         for item in &ex.items {
             self.db.update_export_item(item.id, ExportStatus::Failed, None, Some(message))?;
         }
         if let Some(file) = ex.merged {
-            self.db.set_export_merged(id, &MergedFile { error: Some(message.into()), ..file }, &[])?;
+            self.db.set_export_merged(id, &MergedFile { error: Some(message.clone()), ..file }, &[])?;
         }
         Ok(self.db.set_export_status(id, ExportStatus::Failed)?)
     }
@@ -1167,7 +1205,9 @@ impl Project {
     }
 
     pub fn export(&self, id: ExportId) -> ProjectResult<ExportSummary> {
-        self.db.export(self.id, id)?.ok_or_else(|| ProjectError::NotFound("This export no longer exists.".into()))
+        self.db
+            .export(self.id, id)?
+            .ok_or_else(|| ProjectError::NotFound(msg!("export.gone", "This export no longer exists.")))
     }
 
     pub fn exports(&self) -> ProjectResult<Vec<ExportSummary>> {
@@ -1187,17 +1227,13 @@ impl Project {
         format: ListFormat,
         tools: Option<&Tools>,
     ) -> ProjectResult<(String, u32)> {
-        let list = match format {
-            ListFormat::Edl => "EDL",
-            ListFormat::Csv => "cut list",
-        };
         let ex = self.export(id)?;
         let made: Vec<&ExportItem> = match &ex.merged {
             Some(file) => ex.items.iter().filter(|i| file.path.is_some() && i.path == file.path).collect(),
             None => ex.items.iter().filter(|i| i.status == ExportStatus::Done).collect(),
         };
         if made.is_empty() {
-            return Err(ProjectError::Invalid("No clip of this export has finished yet.".into()));
+            return Err(ProjectError::Invalid(msg!("export.noneFinished", "No clip of this export has finished yet.")));
         }
         // Each episode once, however many clips it gives, with its start.
         let mut episodes: HashMap<MediaId, (MediaItem, Option<Timecode>)> = HashMap::new();
@@ -1218,19 +1254,32 @@ impl Project {
                 }
                 Err(e) => return Err(e),
             };
-            rates
-                .insert(m.fps.ok_or_else(|| ProjectError::Invalid("An episode of this export isn't indexed.".into()))?);
+            rates.insert(m.fps.ok_or_else(|| {
+                ProjectError::Invalid(msg!("export.episodeNotIndexed", "An episode of this export isn't indexed."))
+            })?);
             names.push((m.id, episode_name(&m)));
             e.insert((m, None));
         }
         let items: Vec<&ExportItem> = made.iter().copied().filter(|i| !removed.contains(&i.media_id)).collect();
         if items.is_empty() {
-            return Err(ProjectError::Invalid("This export's episodes were removed from the project.".into()));
+            return Err(ProjectError::Invalid(msg!(
+                "export.episodesRemoved",
+                "This export's episodes were removed from the project."
+            )));
         }
         let left_out = (made.len() - items.len()) as u32;
         let rate = match rates.into_iter().collect::<Vec<_>>()[..] {
             [rate] => rate,
-            _ => return Err(ProjectError::Invalid(format!("Clips of different frame rates can't share one {list}."))),
+            _ => {
+                return Err(ProjectError::Invalid(match format {
+                    ListFormat::Edl => {
+                        msg!("export.edl.mixedRates", "Clips of different frame rates can't share one EDL.")
+                    }
+                    ListFormat::Csv => {
+                        msg!("export.csv.mixedRates", "Clips of different frame rates can't share one cut list.")
+                    }
+                }));
+            }
         };
         for (m, start) in episodes.values_mut() {
             let path = Path::new(&m.path);
@@ -1274,15 +1323,19 @@ impl Project {
         let text = match format {
             ListFormat::Edl => write_cmx3600(ex.label.as_deref().unwrap_or(&ex.preset.name), &events).map_err(|e| {
                 ProjectError::Invalid(match e {
-                    EdlError::PastMidnight(i) => {
-                        format!(
-                            "{} runs past midnight in its episode's timecode, which an EDL can't hold.",
-                            items[i].name
-                        )
+                    EdlError::PastMidnight(i) => msg!(
+                        "export.edl.pastMidnight",
+                        "{{name}} runs past midnight in its episode's timecode, which an EDL can't hold.",
+                        name = &items[i].name,
+                    ),
+                    EdlError::TooLong => {
+                        msg!("export.edl.tooLong", "These clips run longer than the 23 hours an EDL can hold.")
                     }
-                    EdlError::TooLong => "These clips run longer than the 23 hours an EDL can hold.".into(),
                     EdlError::TooFast => {
-                        "An EDL holds at most 100 frames a second. Save a cut list (CSV) instead.".into()
+                        msg!(
+                            "export.edl.tooFast",
+                            "An EDL holds at most 100 frames a second. Save a cut list (CSV) instead."
+                        )
                     }
                 })
             })?,
@@ -1340,7 +1393,7 @@ impl Project {
                 Err(e) => {
                     failed = true;
                     tracing::warn!(clip = %item.name, error = %e, detail = %e.detail(), "clip export failed");
-                    self.db.update_export_item(item.id, ExportStatus::Failed, None, Some(&e.to_string()))?;
+                    self.db.update_export_item(item.id, ExportStatus::Failed, None, Some(&e.msg()))?;
                     // Its share is skipped, not made: no pace to learn from.
                     progress(&stage, None);
                 }
@@ -1380,7 +1433,7 @@ impl Project {
         let work = WorkDir(merge_work_dir(&out_dir, id));
         let fail = |item: &ExportItem, e: &ProjectError| -> ProjectResult<()> {
             tracing::warn!(clip = %item.name, error = %e, detail = %e.detail(), "clip export failed");
-            Ok(self.db.update_export_part(item.id, ExportStatus::Failed, None, Some(&e.to_string()))?)
+            Ok(self.db.update_export_part(item.id, ExportStatus::Failed, None, Some(&e.msg()))?)
         };
         let finish = |file: MergedFile, in_file: &[i64]| -> ProjectResult<ExportSummary> {
             let failed = file.error.is_some() || self.export(id)?.items.iter().any(|i| i.error.is_some());
@@ -1389,13 +1442,16 @@ impl Project {
             changed();
             self.export(id)
         };
-        let none_left = || MergedFile { error: Some("None of the clips could be exported.".into()), ..file.clone() };
+        let none_left = || MergedFile {
+            error: Some(msg!("export.noneExported", "None of the clips could be exported.")),
+            ..file.clone()
+        };
         if let Err(e) = std::fs::create_dir_all(&work.0) {
-            let e = ProjectError::Invalid(format!("Can't write to {}: {e}", out_dir.display()));
+            let e = ProjectError::Invalid(cant_write(&out_dir, &e));
             for item in &ex.items {
                 fail(item, &e)?;
             }
-            return finish(MergedFile { error: Some(e.to_string()), ..file }, &[]);
+            return finish(MergedFile { error: Some(e.msg()), ..file }, &[]);
         }
 
         // Each episode once, however many clips it gives (one that can't be
@@ -1407,8 +1463,7 @@ impl Project {
         // past its end is left out, before the plan would look it up.
         let outside = |item: &ExportItem, (path, _, index): &(PathBuf, MediaInfo, Arc<FrameIndex>)| {
             let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into());
-            let (start, end, n) = (item.start, item.end, index.len());
-            ProjectError::Invalid(format!("Frames {start}–{end} are outside {name} (0–{n})."))
+            ProjectError::Invalid(outside_range(item.start, item.end, &name, index.len()))
         };
         for item in &ex.items {
             let episode = match episodes.get(&item.media_id) {
@@ -1454,7 +1509,7 @@ impl Project {
                 for (item, ..) in &sources {
                     fail(item, &e)?;
                 }
-                return finish(MergedFile { error: Some(e.to_string()), ..file }, &[]);
+                return finish(MergedFile { error: Some(e.msg()), ..file }, &[]);
             }
         };
 
@@ -1538,17 +1593,17 @@ impl Project {
             Err(e) => {
                 tracing::warn!(error = %e, detail = %e.detail(), "joining the clips failed");
                 for item in ex.items.iter().filter(|i| in_file.contains(&i.id)) {
-                    let message = "It couldn't be joined into the file.";
-                    self.db.update_export_part(item.id, ExportStatus::Failed, None, Some(message))?;
+                    let message = msg!("export.notJoined", "It couldn't be joined into the file.");
+                    self.db.update_export_part(item.id, ExportStatus::Failed, None, Some(&message))?;
                 }
-                finish(MergedFile { error: Some(e.to_string()), ..file }, &[])
+                finish(MergedFile { error: Some(e.msg()), ..file }, &[])
             }
         }
     }
 
     /// An export that stopped on an error of its own (the database, the
     /// disk): what hadn't finished failed, so nothing stays "exporting".
-    pub fn abandon_export(&self, id: ExportId, message: &str) -> ProjectResult<()> {
+    pub fn abandon_export(&self, id: ExportId, message: &Msg) -> ProjectResult<()> {
         let ex = self.export(id)?;
         for item in &ex.items {
             let live = matches!(item.status, ExportStatus::Queued | ExportStatus::Running);
@@ -1562,7 +1617,7 @@ impl Project {
             }
         }
         if let Some(file) = ex.merged.filter(|f| f.path.is_none() && f.error.is_none()) {
-            self.db.set_export_merged(id, &MergedFile { error: Some(message.into()), ..file }, &[])?;
+            self.db.set_export_merged(id, &MergedFile { error: Some(message.clone()), ..file }, &[])?;
         }
         Ok(self.db.set_export_status(id, ExportStatus::Failed)?)
     }
@@ -1586,7 +1641,7 @@ impl Project {
 pub(crate) fn lossless_note<'a>(
     preset: &ExportPreset,
     infos: impl Iterator<Item = &'a MediaInfo>,
-) -> (Option<String>, Option<String>) {
+) -> (Option<String>, Option<Msg>) {
     if preset.video != VideoCodec::Lossless {
         return (None, None);
     }
@@ -1598,16 +1653,41 @@ pub(crate) fn lossless_note<'a>(
     }
     let all = ffv1 == codecs.len();
     let ext = all.then(|| "mkv".to_string());
-    let whose = if all { "These pictures" } else { "Some of these pictures" };
-    let note = format!(
-        "{whose} can't be stored exactly as HEVC, so they're kept as FFV1 in an MKV: DaVinci Resolve and VLC open it, After Effects doesn't."
-    );
+    let note = match all {
+        true => msg!(
+            "export.lossless.allFfv1",
+            "These pictures can't be stored exactly as HEVC, so they're kept as FFV1 in an MKV: DaVinci Resolve and VLC open it, After Effects doesn't."
+        ),
+        false => msg!(
+            "export.lossless.someFfv1",
+            "Some of these pictures can't be stored exactly as HEVC, so they're kept as FFV1 in an MKV: DaVinci Resolve and VLC open it, After Effects doesn't."
+        ),
+    };
     (ext, Some(note))
 }
 
 /// What the export dialog says when Bit-Perfect makes a file per clip.
-pub(crate) fn apart_sentence(why: &str) -> String {
-    format!("Bit-Perfect makes a file per shot here: {why}.")
+pub(crate) fn apart_sentence(why: Msg) -> Msg {
+    msg!("export.lossless.apart", "Bit-Perfect makes a file per shot here: {{why}}.", why = why)
+}
+
+/// Why a clip can't be cut from its episode: `frames` are all it has.
+fn outside_range(start: u32, end: u32, name: &str, frames: u32) -> Msg {
+    msg!(
+        "export.outsideRange",
+        "Frames {{start}}–{{end}} are outside {{name}} (0–{{frames}}).",
+        start = start,
+        end = end,
+        name = name,
+        frames = frames,
+    )
+}
+
+/// Why an export's folder can't be used, in the app's words. The system's
+/// own sentence goes to the log.
+fn cant_write(folder: &Path, why: &std::io::Error) -> Msg {
+    tracing::warn!(folder = %folder.display(), error = %why, "can't write to the export's folder");
+    msg!("export.cantWrite", "Can't write to {{path}}: {{why}}", path = folder.display().to_string(), why = why.msg())
 }
 
 fn merge_work_dir(out_dir: &Path, id: ExportId) -> PathBuf {
@@ -1619,7 +1699,7 @@ fn merge_work_dir(out_dir: &Path, id: ExportId) -> PathBuf {
 fn check_export_dir(out_dir: &Path) -> ProjectResult<()> {
     match out_dir.is_absolute() {
         true => Ok(()),
-        false => Err(ProjectError::Invalid("Choose a full folder path for the export.".into())),
+        false => Err(ProjectError::Invalid(msg!("export.fullPath", "Choose a full folder path for the export."))),
     }
 }
 
@@ -1740,9 +1820,46 @@ fn same_path(a: &str, b: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use as_core::Rational;
+    use as_core::{MsgArg, Rational};
 
     use super::*;
+
+    #[test]
+    fn the_apart_sentence_says_its_reason_first() {
+        let why = msg!("export.lossless.sound", "their episodes' sound differs in its rate or channels");
+        let said = apart_sentence(why.clone());
+        assert_eq!(said.key, "export.lossless.apart");
+        assert_eq!(said.args["why"], why.into());
+        assert_eq!(
+            said.text,
+            "Bit-Perfect makes a file per shot here: their episodes' sound differs in its rate or channels."
+        );
+    }
+
+    #[test]
+    fn the_lossless_note_is_one_whole_sentence_for_all_and_for_some() {
+        let lossless = as_export::builtin_presets().into_iter().find(|p| p.video == VideoCodec::Lossless).unwrap();
+        let exact = crate::analysis::tests::info();
+        let mut other = exact.clone();
+        other.video.pix_fmt = "bayer_rggb8".into();
+        let end = "can't be stored exactly as HEVC, so they're kept as FFV1 in an MKV: DaVinci Resolve and VLC open it, After Effects doesn't.";
+
+        let (ext, note) = lossless_note(&lossless, [&other, &other].into_iter());
+        let note = note.unwrap();
+        assert_eq!(ext.as_deref(), Some("mkv"));
+        assert_eq!((note.key.as_str(), note.text), ("export.lossless.allFfv1", format!("These pictures {end}")));
+        assert!(note.args.is_empty());
+
+        let (ext, note) = lossless_note(&lossless, [&exact, &other].into_iter());
+        let note = note.unwrap();
+        assert_eq!(ext, None);
+        assert_eq!(
+            (note.key.as_str(), note.text),
+            ("export.lossless.someFfv1", format!("Some of these pictures {end}"))
+        );
+
+        assert_eq!(lossless_note(&lossless, [&exact].into_iter()), (None, None));
+    }
 
     #[test]
     fn a_damaged_frame_index_asks_to_index_again() {
@@ -1767,7 +1884,7 @@ mod tests {
         assert!(e.to_string().contains("Index it again"), "{e}");
         let media = project.media(m).unwrap();
         assert_eq!(media.status, MediaStatus::Failed);
-        assert_eq!(media.error.as_deref(), Some(e.to_string().as_str()));
+        assert_eq!(media.error.as_ref().map(|m| m.text.as_str()), Some(e.to_string().as_str()));
     }
 
     #[test]
@@ -1948,7 +2065,10 @@ mod tests {
         };
         let preset = as_export::builtin_presets().into_iter().find(|p| p.id == "h264-edit").unwrap();
         let e = project.create_export(&req, preset, Path::new("Exports")).unwrap_err();
-        assert!(matches!(&e, ProjectError::Invalid(s) if s == "Choose a full folder path for the export."), "{e:?}");
+        assert!(
+            matches!(&e, ProjectError::Invalid(s) if s.text == "Choose a full folder path for the export."),
+            "{e:?}"
+        );
         assert!(project.exports().unwrap().is_empty());
     }
 
@@ -2083,7 +2203,10 @@ mod tests {
         let ex = record_export(&project, dir.path(), Some("Cut"), &[(m, 0, 24), (m, 48, 96), (m, 240, 264)]);
         // Until the file is made there's nothing to list.
         let e = project.export_list_file(ex.id, ListFormat::Edl, None).unwrap_err();
-        assert!(matches!(&e, ProjectError::Invalid(s) if s == "No clip of this export has finished yet."), "{e:?}");
+        assert!(
+            matches!(&e, ProjectError::Invalid(s) if s.text == "No clip of this export has finished yet."),
+            "{e:?}"
+        );
 
         // The second clip failed: the file was made without it.
         let file = MergedFile { path: Some(dir.path().join("Cut.mp4").display().to_string()), ..ex.merged.unwrap() };
@@ -2122,11 +2245,16 @@ mod tests {
         let ex = record_export(&project, dir.path(), None, &[(m, 0, 24), (other, 0, 24)]);
         all_done(&project, &ex);
         let e = project.export_list_file(ex.id, ListFormat::Edl, None).unwrap_err();
-        assert!(matches!(&e, ProjectError::Invalid(s) if s == "An episode of this export isn't indexed."), "{e:?}");
+        assert!(
+            matches!(&e, ProjectError::Invalid(s) if s.text == "An episode of this export isn't indexed."),
+            "{e:?}"
+        );
 
         index_at(&project, other, Rational::new(25, 1), None);
         let e = project.export_list_file(ex.id, ListFormat::Edl, None).unwrap_err();
-        assert!(matches!(&e, ProjectError::Invalid(s) if s == "Clips of different frame rates can't share one EDL."));
+        assert!(
+            matches!(&e, ProjectError::Invalid(s) if s.text == "Clips of different frame rates can't share one EDL.")
+        );
         let e = project.export_list_file(ex.id, ListFormat::Csv, None).unwrap_err();
         assert_eq!(e.to_string(), "Clips of different frame rates can't share one cut list.");
 
@@ -2176,7 +2304,7 @@ mod tests {
         project.remove_media(m).unwrap();
         let e = project.export_list_file(ex.id, ListFormat::Csv, None).unwrap_err();
         assert!(
-            matches!(&e, ProjectError::Invalid(s) if s == "This export's episodes were removed from the project."),
+            matches!(&e, ProjectError::Invalid(s) if s.text == "This export's episodes were removed from the project."),
             "{e:?}"
         );
     }
@@ -2235,6 +2363,66 @@ mod tests {
         let (csv, _) = project.export_list_file(ex.id, ListFormat::Csv, None).unwrap();
         assert!(csv.contains("\r\n2,E01,Show - 01.mkv,"), "{csv}");
         assert!(csv.contains(",23:59:59:00,00:00:01:00,01:00:00:23,01:00:02:23,"), "{csv}");
+    }
+
+    #[test]
+    fn a_failed_clip_and_a_failed_episode_keep_their_keys() {
+        let tools = Tools::locate(None).expect("ffmpeg on PATH");
+        let cancel = CancelToken::new();
+        let (dir, project, m) = crate::analysis::tests::project_with_media(2400);
+        let ex = record_export(&project, dir.path(), None, &[(m, 0, 24)]);
+        std::fs::remove_file(project.media(m).unwrap().path).unwrap();
+
+        let ran = project.run_export(&tools, ex.id, &cancel, &|_, _| {}, &|| {}).unwrap();
+        let why = ran.items[0].error.as_ref().unwrap();
+        assert_eq!(
+            (why.key.as_str(), why.text.as_str()),
+            ("episode.moved", "Show - 01.mkv can't be found. Was it moved?")
+        );
+
+        assert!(project.ingest(&tools, m, "eng", &cancel, &|_, _, _| {}).is_err());
+        let why = project.media(m).unwrap().error.unwrap();
+        assert_eq!((why.key.as_str(), why.text.as_str()), ("episode.notFound", "Show - 01.mkv can't be found."));
+    }
+
+    #[test]
+    fn a_file_whose_folder_cant_be_written_says_why_with_keys() {
+        let tools = Tools::locate(None).expect("ffmpeg on PATH");
+        let (dir, project, m) = crate::analysis::tests::project_with_media(2400);
+        let ex = record_export(&project, dir.path(), Some("Joined"), &[(m, 0, 24)]);
+        // Its work folder can't be made: a file has the name.
+        std::fs::write(dir.path().join(PARTIAL_DIR), b"x").unwrap();
+
+        let ran = project.run_export(&tools, ex.id, &CancelToken::new(), &|_, _| {}, &|| {}).unwrap();
+        let why = ran.merged.unwrap().error.unwrap();
+        assert_eq!(why.key, "export.cantWrite");
+        assert!(!why.text.contains("os error"), "{}", why.text);
+        assert!(matches!(&why.args["why"], MsgArg::Msg(reason) if reason.key.starts_with("file.")), "{why:?}");
+        assert_eq!(ran.items[0].error.as_ref(), Some(&why));
+    }
+
+    #[test]
+    fn a_folder_refused_for_an_export_gives_the_apps_reason_as_a_key() {
+        let full = std::io::Error::from(std::io::ErrorKind::StorageFull);
+        let said = cant_write(Path::new("D:/out"), &full);
+        assert_eq!(
+            (said.key.as_str(), said.text.as_str()),
+            ("export.cantWrite", "Can't write to D:/out: The disk is full.")
+        );
+        assert!(matches!(&said.args["why"], MsgArg::Msg(why) if why.key == "file.diskFull"), "{said:?}");
+    }
+
+    #[test]
+    fn an_export_that_stopped_stores_the_key_it_is_given() {
+        let (dir, project, m) = crate::analysis::tests::project_with_media(2400);
+        let said = msg!("file.diskFull", "The disk is full.");
+        for stop in [Project::fail_export, Project::abandon_export] {
+            let ex = record_export(&project, dir.path(), Some("Joined"), &[(m, 0, 24)]);
+            stop(&project, ex.id, &said).unwrap();
+            let ex = project.export(ex.id).unwrap();
+            assert_eq!(ex.items[0].error.as_ref(), Some(&said));
+            assert_eq!(ex.merged.unwrap().error.as_ref(), Some(&said));
+        }
     }
 
     #[test]

@@ -9,7 +9,7 @@ import { commands } from "@/lib/ipc"
 import { useNewProject } from "@/state/new-project"
 import { NewProjectDialog } from "./NewProjectDialog"
 
-const episode = (n: number, refused: string | null = null): ImportCandidate => ({
+const episode = (n: number, refused: ImportCandidate["refused"] = null): ImportCandidate => ({
   path: `D:\\Show\\Show - 0${n}.mkv`,
   fileName: `Show - 0${n}.mkv`,
   season: null,
@@ -46,7 +46,7 @@ function defaults(): ScanDefaults {
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }))
 vi.mock("@/lib/ipc", () => ({
   commands: {
-    importScan: vi.fn(() => Promise.resolve([episode(1), episode(2, "Its name isn't valid Unicode. Rename it to import it.")])),
+    importScan: vi.fn(() => Promise.resolve([episode(1), episode(2, { key: "", args: {}, text: "Its name isn't valid Unicode. Rename it to import it." })])),
     projectCreate: vi.fn(() => Promise.resolve({ id: "p" })),
     // `fastScan` is what live action starts with here.
     settingsGet: vi.fn(() => Promise.resolve({ findBodies: state.findBodies, fastScan: defaults().footage[0].fast })),

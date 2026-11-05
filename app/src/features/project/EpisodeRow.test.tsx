@@ -160,7 +160,7 @@ describe("an episode's row", () => {
   })
 
   it("an episode that isn't ready opens nothing and shows no hand", () => {
-    const { onOpen, row } = show(episode({ status: "failed", error: "Unreadable" }))
+    const { onOpen, row } = show(episode({ status: "failed", error: { key: "", args: {}, text: "Unreadable" } }))
     expect(hasHand(row)).toBe(false)
     expect(row.hasAttribute("tabindex")).toBe(false)
     fireEvent.click(screen.getByText("Show"))

@@ -34,6 +34,7 @@ import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { runPlugin } from "@/features/plugins/plugin-actions"
 import { type ExportActionItem, exportActionItems } from "@/features/plugins/plugin-items"
 import { formatBytes, formatDateTime, formatDuration, formatPercent } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickSaveFile } from "@/lib/media"
 import { copyText, reveal } from "@/lib/os"
@@ -338,7 +339,7 @@ function FileRow({ ex, status: ofExport, file }: { ex: ExportSummary; status: Ex
             </ContextMenuItem>
           )}
           {file.error && (
-            <ContextMenuItem onSelect={() => void copyText(file.error!, t("copied.error"))}>
+            <ContextMenuItem onSelect={() => void copyText(say(file.error!), t("copied.error"))}>
               <Copy /> {t("menu.copyError")}
             </ContextMenuItem>
           )}
@@ -355,7 +356,7 @@ function FileRow({ ex, status: ofExport, file }: { ex: ExportSummary; status: Ex
             </div>
           </Tooltip>
           <div className="mt-0.5 truncate text-xs text-fg-3">{what}</div>
-          {file.error && <div className="mt-0.5 truncate text-sm text-danger">{file.error}</div>}
+          {file.error && <div className="mt-0.5 truncate text-sm text-danger">{say(file.error)}</div>}
         </div>
         {file.path && (
           <Button size="sm" variant="secondary" onClick={() => reveal(file.path!)}>
@@ -399,7 +400,7 @@ function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: Expo
             </ContextMenuItem>
           )}
           {it.error && (
-            <ContextMenuItem onSelect={() => void copyText(it.error!, t("copied.error"))}>
+            <ContextMenuItem onSelect={() => void copyText(say(it.error!), t("copied.error"))}>
               <Copy /> {t("menu.copyError")}
             </ContextMenuItem>
           )}
@@ -421,7 +422,7 @@ function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: Expo
             {tc(it.start)} – {tc(it.end - 1)} · {t("exports.clip.frames", { count: it.end - it.start })}
             {it.bytes ? ` · ${formatBytes(it.bytes)}` : ""}
           </div>
-          {it.error && <div className="mt-0.5 truncate text-sm text-danger">{it.error}</div>}
+          {it.error && <div className="mt-0.5 truncate text-sm text-danger">{say(it.error)}</div>}
         </div>
         {ownFile && it.path && it.status === "done" && (
           <Button size="sm" variant="ghost" className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" onClick={() => reveal(it.path!)}>

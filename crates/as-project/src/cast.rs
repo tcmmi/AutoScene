@@ -14,7 +14,7 @@ use as_api::{
     Cast, CastEdit, Character, ContentKind, FaceTrackItem, MediaInfo, MediaStatus, Presence, SegmentKind, StageState,
     TrackAssign, TrackFilter,
 };
-use as_core::{CancelToken, CharacterId, FrameIdx, FrameRange, MediaId};
+use as_core::{CancelToken, CharacterId, FrameIdx, FrameRange, MediaId, Msg, msg};
 use as_db::{EditKind, IdentityTrack, NewTrack, OwnFace, TrackRow, TrackUpdate};
 use as_identity::{Assign, CharKey, Outcome, Params, Space, TrackIn, identify};
 use as_media::poster::{StillSize, extract_frame_jpegs};
@@ -874,7 +874,10 @@ impl Project {
     pub fn faces_plan(&self, id: MediaId, model: &str) -> ProjectResult<FacesPlan> {
         let (m, info, index) = self.ready_source(id)?;
         if m.shots != StageState::Ready {
-            return Err(ProjectError::NotReady("Shots of this media aren't found yet.".into()));
+            return Err(ProjectError::NotReady(msg!(
+                "analysis.shotsNotFound",
+                "Shots of this media aren't found yet."
+            )));
         }
         let animated = self.searched_harder(model)?;
         let key = self.faces_key_now(model)?;
@@ -929,8 +932,8 @@ impl Project {
         sprites: &[ShotSprite],
         bodies: &[u8],
     ) -> ProjectResult<usize> {
-        let found: Vec<FaceTrack> =
-            tracks::decode(blob).ok_or_else(|| ProjectError::Invalid("unreadable face tracks".into()))?;
+        let found: Vec<FaceTrack> = tracks::decode(blob)
+            .ok_or_else(|| ProjectError::Invalid(msg!("analysis.unreadableTracks", "unreadable face tracks")))?;
         let rival = rivals(&found.iter().map(|t| t.dets.as_slice()).collect::<Vec<_>>(), self.frame_size(id)?);
         // Anime tracks bound heads: the stored face height is the head's
         // times the provisional face share (see [`ANIME_FACE_PER_HEAD`]).
@@ -993,7 +996,7 @@ impl Project {
         }
     }
 
-    pub fn set_faces_state(&self, id: MediaId, state: StageState, error: Option<&str>) -> ProjectResult<()> {
+    pub fn set_faces_state(&self, id: MediaId, state: StageState, error: Option<&Msg>) -> ProjectResult<()> {
         Ok(self.db().set_faces_state(id, state, error)?)
     }
 
@@ -1189,7 +1192,10 @@ impl Project {
             }
             tracing::info!(attempt, "the cast changed while clustering; clustering again");
         }
-        Err(ProjectError::NotReady("The cast kept changing while it was being grouped. Try again.".into()))
+        Err(ProjectError::NotReady(msg!(
+            "cast.keptChanging",
+            "The cast kept changing while it was being grouped. Try again."
+        )))
     }
 
     /// One clustering, stored if the cast didn't change meanwhile.
@@ -1287,7 +1293,10 @@ impl Project {
             }
             tracing::info!(attempt, "the cast changed while placing faces; placing them again");
         }
-        Err(ProjectError::NotReady("The cast kept changing while it was being grouped. Try again.".into()))
+        Err(ProjectError::NotReady(msg!(
+            "cast.keptChanging",
+            "The cast kept changing while it was being grouped. Try again."
+        )))
     }
 
     fn reassign_once(&self) -> ProjectResult<bool> {
@@ -1471,7 +1480,7 @@ impl Project {
             if self.db().character_exists(c)? {
                 Ok(())
             } else {
-                Err(ProjectError::NotFound("This character doesn't exist any more.".into()))
+                Err(ProjectError::NotFound(msg!("cast.characterGone", "This character doesn't exist any more.")))
             }
         };
         match edit {

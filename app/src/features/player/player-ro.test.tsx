@@ -123,7 +123,7 @@ describe("the player in another language", () => {
           />
         </TooltipProvider>,
       )
-    view({ shots: "failed", shotsError: "Out of memory", faces: "pending" })
+    view({ shots: "failed", shotsError: { key: "", args: {}, text: "Out of memory" }, faces: "pending" })
     expect(screen.getByRole("region", { name: "Distribuția" })).toBeTruthy()
     expect(screen.getByText("Detectarea cadrelor a eșuat.")).toBeTruthy()
     // The reason the app gave stays as it was said.

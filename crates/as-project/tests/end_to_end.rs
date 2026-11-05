@@ -534,7 +534,8 @@ fn a_moved_episode_keeps_its_analysis() {
         .unwrap();
     assert!(encode.success());
     let r = project.relink(&tools, id, &other, false).unwrap();
-    assert_eq!(r, Relink::Different { reason: "At the same moment it shows another picture.".into() });
+    assert!(matches!(&r, Relink::Different { reason } if reason.key == "relink.picture"
+        && reason.text == "At the same moment it shows another picture."));
     // Even at the very same size as the episode's file (padded with an MP4
     // `free` box after everything else): asked about too.
     let padded = tmp.path().join("Show - 01 padded.mp4");
@@ -547,7 +548,8 @@ fn a_moved_episode_keeps_its_analysis() {
     std::fs::write(&padded, &bytes).unwrap();
     assert_eq!(project.media(id).unwrap().size_bytes, size as f64);
     let r = project.relink(&tools, id, &padded, false).unwrap();
-    assert_eq!(r, Relink::Different { reason: "At the same moment it shows another picture.".into() });
+    assert!(matches!(&r, Relink::Different { reason } if reason.key == "relink.picture"
+        && reason.text == "At the same moment it shows another picture."));
     assert_eq!(project.media(id).unwrap().path, copy.display().to_string());
     // Taken anyway: analysed again; the decision waits for a face like Walter's.
     assert_eq!(project.relink(&tools, id, &padded, true).unwrap(), Relink::Reindex);
@@ -626,8 +628,9 @@ fn a_clip_past_a_shortened_episode_is_left_out_of_the_file() {
     let ex = project.run_export(&tools, ex.id, &cancel, &|_, _| {}, &|| {}).unwrap();
     assert_eq!(ex.status, ExportStatus::Failed);
     assert_eq!((ex.items[0].status, ex.items[1].status), (ExportStatus::Done, ExportStatus::Failed));
-    let why = ex.items[1].error.clone().unwrap_or_default();
-    assert_eq!(why, format!("Frames 500–580 are outside Show - 01 short.mkv (0–{frames})."));
+    let why = ex.items[1].error.clone().unwrap();
+    assert_eq!(why.text, format!("Frames 500–580 are outside Show - 01 short.mkv (0–{frames})."));
+    assert_eq!(why.key, "export.outsideRange");
     let file = ex.merged.unwrap();
     assert_eq!(file.error, None);
     let path = file.path.expect("the file, of the other clip");
@@ -768,7 +771,7 @@ fn a_merged_export_is_one_file_with_every_clip() {
     let ex = project.run_export(&tools, queued.id, &cancel, &|_, _| {}, &|| {}).unwrap();
     assert_eq!(ex.status, ExportStatus::Failed);
     assert_eq!(ex.items[1].status, ExportStatus::Failed);
-    assert!(ex.items[1].error.as_deref().is_some_and(|e| e.contains("can't be found")), "{:?}", ex.items[1]);
+    assert!(ex.items[1].error.as_ref().is_some_and(|e| e.text.contains("can't be found")), "{:?}", ex.items[1]);
     assert!(ex.items[1].path.is_none());
     let file = ex.merged.unwrap();
     assert_eq!(file.error, None);

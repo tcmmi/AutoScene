@@ -5,12 +5,12 @@
 //! its media is analysed again.
 
 use as_api::StageState;
-use as_core::{CharacterId, FrameIdx, MediaId};
+use as_core::{CharacterId, FrameIdx, MediaId, Msg};
 use rusqlite::{OptionalExtension, Transaction, params, params_from_iter};
 
 use crate::cast::{ids_param, marks, parse_id};
 use crate::project::ProjectDb;
-use crate::{DbError, DbResult, enum_to_sql};
+use crate::{DbError, DbResult, enum_to_sql, json_to_sql};
 
 /// A body track from the analysis, ready to store.
 #[derive(Clone, Debug, PartialEq)]
@@ -217,11 +217,11 @@ pub(crate) fn drop_bodies_from(tx: &Transaction, id: MediaId, start: FrameIdx) -
 }
 
 impl ProjectDb {
-    pub fn set_bodies_state(&self, id: MediaId, state: StageState, error: Option<&str>) -> DbResult<()> {
+    pub fn set_bodies_state(&self, id: MediaId, state: StageState, error: Option<&Msg>) -> DbResult<()> {
         self.0.write(|tx| {
             tx.execute(
                 "UPDATE media SET bodies = ?2, bodies_error = ?3 WHERE id = ?1",
-                params![id.to_string(), enum_to_sql(state), error],
+                params![id.to_string(), enum_to_sql(state), error.map(json_to_sql)],
             )?;
             Ok(())
         })

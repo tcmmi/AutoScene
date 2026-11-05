@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch"
 import { newProjectHint, startsFast } from "@/lib/fast-scan"
 import { footageBlurb } from "@/lib/footage"
 import { formatBytes } from "@/lib/format"
-import { t as translate } from "@/lib/i18n"
+import { say, t as translate } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { fileStem, pickFolder, pickVideoFiles } from "@/lib/media"
 import { useScanDefaults, useSettings } from "@/lib/queries"
@@ -224,7 +224,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
                           {c.refused && (
                             <div className="mt-0.5 flex items-start gap-1.5 text-sm text-danger">
                               <Warning className="mt-0.5 size-3.5 shrink-0" />
-                              <span>{c.refused}</span>
+                              <span>{say(c.refused)}</span>
                             </div>
                           )}
                         </td>

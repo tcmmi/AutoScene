@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-use as_core::CancelToken;
+use as_core::{CancelToken, msg};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -558,17 +558,18 @@ fn on_image_server(url: &str) -> bool {
 
 fn unreachable(e: impl std::fmt::Display) -> ProjectError {
     tracing::warn!("fandom: {e}");
-    ProjectError::NotReady(
-        "Wikidata or Fandom can't be reached right now. Check the internet connection and try again.".into(),
-    )
+    ProjectError::NotReady(msg!(
+        "names.fandom.unreachable",
+        "Wikidata or Fandom can't be reached right now. Check the internet connection and try again."
+    ))
 }
 
 fn busy() -> ProjectError {
-    ProjectError::NotReady("Wikidata or Fandom is busy. Try again in a few minutes.".into())
+    ProjectError::NotReady(msg!("names.fandom.busy", "Wikidata or Fandom is busy. Try again in a few minutes."))
 }
 
 fn no_wiki(title: &str) -> ProjectError {
-    ProjectError::NotFound(format!("No Fandom wiki was found for {title}."))
+    ProjectError::NotFound(msg!("names.fandom.noWiki", "No Fandom wiki was found for {{title}}.", title = title))
 }
 
 static API_LIMITER: LazyLock<Arc<Limiter>> = LazyLock::new(|| Arc::new(Limiter::new(API_GAP)));
@@ -746,7 +747,7 @@ impl Fandom {
     pub fn search(&self, text: &str, cancel: &CancelToken) -> ProjectResult<Vec<Media>> {
         let text = text.trim();
         if text.is_empty() {
-            return Err(ProjectError::Invalid("Type the name of the film to look for.".into()));
+            return Err(ProjectError::Invalid(msg!("names.typeFilm", "Type the name of the film to look for.")));
         }
         let url = format!(
             "{WIKIDATA}?action=query&list=search&srsearch={}&srnamespace=0&srlimit={RESULTS}&format=json",
@@ -1025,7 +1026,7 @@ impl Fandom {
 }
 
 fn not_a_film(id: u32) -> ProjectError {
-    ProjectError::NotFound(format!("Wikidata has no film Q{id} with a Fandom wiki."))
+    ProjectError::NotFound(msg!("names.fandom.noFilm", "Wikidata has no film Q{{id}} with a Fandom wiki.", id = id))
 }
 
 /// A film's search text without the year at its end (`Toy Story 1995` →

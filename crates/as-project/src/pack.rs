@@ -32,7 +32,7 @@ use as_api::{
     PackExportRequest, PackFilter, PackFilterState, PackKey, PackNaming, PackOrder, PackPreview, PackReason, PackSpec,
     PackState, PackTotals, PresetSize, ShotGroup, ShotSize,
 };
-use as_core::{CharacterId, FrameIdx, FrameIndex, FrameRange, MediaId, Rational};
+use as_core::{CharacterId, FrameIdx, FrameIndex, FrameRange, MediaId, Rational, ToMsg, msg};
 use as_db::{PackBodyRow, PackRow};
 use as_export::preset::VideoCodec;
 use as_export::{EstimateClip, ExportPreset, MergeSource, estimate_bytes, lossless_merge_blocker};
@@ -307,7 +307,7 @@ impl Project {
         // Bit-Perfect joins only episodes alike; others make a file per clip.
         let apart = |p: &ExportPreset| {
             (file.is_some() && p.video == VideoCodec::Lossless)
-                .then(|| lossless_merge_blocker(&joined).map(|why| apart_sentence(&why)))
+                .then(|| lossless_merge_blocker(&joined).map(apart_sentence))
                 .flatten()
         };
         let sizes = presets
@@ -416,13 +416,16 @@ impl Project {
         naming: &PackNaming,
         stamp: &str,
     ) -> ProjectResult<Made> {
-        check_template(&naming.template).map_err(|e| ProjectError::Invalid(e.to_string()))?;
+        check_template(&naming.template).map_err(|e| ProjectError::Invalid(e.msg()))?;
         let made = self.make_pack(c, spec, filters)?;
         if made.pack.stamp != stamp {
-            return Err(ProjectError::Invalid("The pack changed meanwhile. Check it and export again.".into()));
+            return Err(ProjectError::Invalid(msg!(
+                "pack.changed",
+                "The pack changed meanwhile. Check it and export again."
+            )));
         }
         if made.pack.totals.clips == 0 {
-            return Err(ProjectError::Invalid("There's nothing in the pack to export.".into()));
+            return Err(ProjectError::Invalid(msg!("pack.empty", "There's nothing in the pack to export.")));
         }
         Ok(made)
     }
@@ -433,12 +436,12 @@ impl Project {
             return Ok(None);
         }
         let name = render_file_name(&naming.file, &self.title()?, label);
-        name.map(Some).map_err(|e| ProjectError::Invalid(e.to_string()))
+        name.map(Some).map_err(|e| ProjectError::Invalid(e.msg()))
     }
 
     /// The pack's clips (the ones it takes, in its order), named by `naming`.
     fn named_clips(&self, c: CharacterId, made: &Made, naming: &PackNaming) -> ProjectResult<Vec<ClipRequest>> {
-        check_template(&naming.template).map_err(|e| ProjectError::Invalid(e.to_string()))?;
+        check_template(&naming.template).map_err(|e| ProjectError::Invalid(e.msg()))?;
         let title = self.title()?;
         let label = self.db().character_label(c)?.ok_or_else(gone)?;
         let taken: Vec<&PackClip> = made.pack.clips.iter().filter(|c| c.included).collect();
@@ -459,7 +462,7 @@ impl Project {
                 tc: &tc,
                 frame: clip.start,
             };
-            let base = render_name(&naming.template, &parts).map_err(|e| ProjectError::Invalid(e.to_string()))?;
+            let base = render_name(&naming.template, &parts).map_err(|e| ProjectError::Invalid(e.msg()))?;
             // Two clips can't share a name (a template without {tc} or {index}).
             let mut name = base.clone();
             let mut n = 2;
@@ -649,7 +652,7 @@ fn with_defaults<T: Default + serde::Serialize + serde::de::DeserializeOwned>(js
 }
 
 fn gone() -> ProjectError {
-    ProjectError::NotFound("This character isn't in the cast any more.".into())
+    ProjectError::NotFound(msg!("cast.notInCast", "This character isn't in the cast any more."))
 }
 
 /// A shot of the character, worked out from their faces and bodies.
@@ -1790,6 +1793,29 @@ mod tests {
             p.project.pack_cut(p.walter, &spec, &PluginFilters::NONE, &naming, &now.stamp).unwrap().clips.len(),
             2
         );
+    }
+
+    #[test]
+    fn names_a_pack_cant_make_are_refused_with_their_keys() {
+        let p = pack();
+        let spec = PackSpec::default();
+        let filters = &PluginFilters::NONE;
+        let key = |e: ProjectError| e.msg().key;
+        let plan =
+            |n: &PackNaming| p.project.pack_plan(p.walter, &spec, filters, n, &[], &Caps::default()).unwrap_err();
+        let shots = PackNaming { template: "{series} {nme}".into(), merge: false, ..PackNaming::default() };
+
+        // Before the pack is looked at, when it's exported or cut.
+        let stamp = p.project.pack_choices(p.walter, &spec, filters).unwrap().stamp;
+        let cut = p.project.pack_cut(p.walter, &spec, filters, &shots, &stamp).err().unwrap();
+        assert_eq!(key(cut), "name.unknownPart");
+        // While the dialog plans it: the shots' names, then the file's.
+        assert_eq!(key(plan(&shots)), "name.unknownPart");
+        assert_eq!(key(plan(&PackNaming { file: "{series} {tc}".into(), ..PackNaming::default() })), "name.notForFile");
+        // Fine as a template, but this project's title leaves nothing to name a shot.
+        p.project.set_title(" ").unwrap();
+        let blank = PackNaming { template: "{series}".into(), merge: false, ..PackNaming::default() };
+        assert_eq!(key(plan(&blank)), "name.empty");
     }
 
     #[test]

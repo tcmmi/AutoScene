@@ -20,7 +20,10 @@ use as_analysis::{
 };
 use as_core::{CancelToken, FrameIndex, FrameRange};
 use as_infer::accel::AccelState;
+use as_infer::computer::{Choice, NVIDIA};
+use as_infer::hardware::{self, Hardware, Using};
 use as_infer::{Device, InferError, Runtime};
+use as_media::frames::Decoder;
 use as_media::{Source, Tools, frames};
 use as_models::{ModelStore, ids};
 use as_vision::{ArcFace, Ccip, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo, YuNet};
@@ -200,6 +203,8 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
         store: ModelStore::new(&cfg.models_dir),
         plain: rt.without_accel(),
         live_accel_off: false,
+        gpu: cfg.placement.gpu,
+        decoder: None,
         transnet: None,
         scrfd: Vec::new(),
         arcface: None,
@@ -358,6 +363,10 @@ struct Models {
     /// The live-action models landed on NVIDIA's engine and elsewhere once:
     /// they stay off it for this engine's life ([`split`]).
     live_accel_off: bool,
+    /// The graphics the person chose.
+    gpu: Choice,
+    /// Where Fast Scan decodes ([`Models::decoder`]), once a job asked.
+    decoder: Option<Decoder>,
     transnet: Option<TransNet>,
     /// One face detector per look of the last faces job.
     scrfd: Vec<Scrfd>,
@@ -383,6 +392,12 @@ enum Family {
 }
 
 impl Models {
+    /// Where Fast Scan decodes on this engine ([`fast_decoder`]), asked of
+    /// the driver only when a job needs it.
+    fn decoder(&mut self, rt: &Runtime) -> Decoder {
+        *self.decoder.get_or_insert_with(|| fast_decoder(&self.gpu, rt.hardware(), hardware::cuda_device))
+    }
+
     fn unload(&mut self) {
         (self.transnet, self.arcface) = (None, None);
         self.scrfd.clear();
@@ -707,6 +722,35 @@ fn run_faces(
     Ok(())
 }
 
+/// Where Fast Scan decodes: where the analysis runs. NVDEC on the NVIDIA card
+/// in use, and in software when the person chose the processor or the
+/// analysis runs on another maker's graphics: a decoder on any other card
+/// would wake it, and a laptop's separate card is what Processor only is
+/// chosen to spare. With several NVIDIA cards `cuda_device` names the one in
+/// use, and when it can't, software is what keeps the decode off the others.
+/// Only a runtime without cards to choose from (Linux) has nothing to stay on.
+fn fast_decoder(choice: &Choice, hw: &Hardware, cuda_device: impl FnOnce(u64) -> Option<u32>) -> Decoder {
+    if *choice == Choice::Processor {
+        return Decoder::Cpu;
+    }
+    if hw.using == Using::Processor && hw.gpus.is_empty() {
+        return Decoder::Nvdec;
+    }
+    let Some(card) = hw.gpu().filter(|g| g.vendor == NVIDIA) else {
+        return Decoder::Cpu;
+    };
+    if hw.gpus.iter().filter(|g| g.vendor == NVIDIA).count() == 1 {
+        return Decoder::Nvdec;
+    }
+    match card.luid.and_then(cuda_device) {
+        Some(device) => Decoder::NvdecOn(device),
+        None => {
+            tracing::warn!(card = %card.label, "CUDA doesn't name this card; decoding in software");
+            Decoder::Cpu
+        }
+    }
+}
+
 /// A faces job with Fast Scan: faces only, found as `as_analysis::fast` does.
 fn run_fast_faces(
     tools: &Tools,
@@ -719,7 +763,8 @@ fn run_fast_faces(
     if job.known.is_some() || job.bodies {
         return Err(AnalysisError::Internal("Fast Scan looks for faces alone".into()));
     }
-    let params = FastParams::default();
+    let params = FastParams { decoder: models.decoder(rt), ..FastParams::default() };
+    out.send(&Reply::Decoding { id: job.id, decoder: params.decoder });
     models.load_fast(rt, fast::frame_size(&job.info, &params))?;
     let (detector, embedder) = (models.yunet.as_mut().expect("loaded"), models.sface.as_mut().expect("loaded"));
     let device = detector.device();
@@ -731,7 +776,8 @@ fn run_fast_faces(
     let shots: Vec<FrameRange> = job.shots.iter().map(|&(s, e)| FrameRange::new(s, e)).collect();
     let started = Instant::now();
     let (id, file) = (job.id, job.path.file_name().unwrap_or_default());
-    tracing::info!(id, ?file, resume = job.resume, ?device, "finding faces (Fast Scan)");
+    let decoder = params.decoder;
+    tracing::info!(id, ?file, resume = job.resume, ?device, ?decoder, "finding faces (Fast Scan)");
     let mut found = 0usize;
     fast_face_tracks(
         tools,
@@ -784,7 +830,10 @@ fn run_anime_faces(
         return Err(AnalysisError::Internal("the anime pass looks for characters alone".into()));
     }
     let params = anime::Params::anime();
-    let fast_params = job.fast.then(FastParams::anime);
+    let fast_params = job.fast.then(|| FastParams { decoder: models.decoder(rt), ..FastParams::anime() });
+    if let Some(p) = &fast_params {
+        out.send(&Reply::Decoding { id: job.id, decoder: p.decoder });
+    }
     let (size, batch) = match &fast_params {
         Some(p) => (fast::frame_size(&job.info, p), FAST_DETECT_BATCH),
         None => (anime::frame_size(&job.info, &params), DETECT_BATCH),
@@ -819,7 +868,8 @@ fn run_anime_faces(
     let started = Instant::now();
     let (id, file) = (job.id, job.path.file_name().unwrap_or_default());
     let fast = job.fast;
-    tracing::info!(id, ?file, resume = job.resume, ?device, fast, "finding characters (anime)");
+    let decoder = fast_params.as_ref().map(|p| p.decoder);
+    tracing::info!(id, ?file, resume = job.resume, ?device, fast, ?decoder, "finding characters (anime)");
     let mut found = 0usize;
     let src = Source { path: Path::new(&job.path), info: &job.info, index: &index };
     let anime = anime::Anime { heads, persons: Some(persons), ccip };
@@ -902,6 +952,10 @@ fn run_embed(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use as_infer::hardware::{Kind, RawDevice};
+
     use super::*;
 
     #[test]
@@ -985,5 +1039,78 @@ mod tests {
         assert_eq!(guarded(|| panic!("frame {n} is missing")).unwrap_err(), "frame 3 is missing");
         assert!(guarded(|| Ok(())).unwrap().is_ok());
         assert!(guarded(|| Err(AnalysisError::Internal("no".into()))).unwrap().is_err());
+    }
+
+    const INTEL: u32 = 0x8086;
+    const AMD: u32 = 0x1002;
+
+    fn card(vendor: u32, device: u32, dxgi: u32, luid: u64) -> RawDevice {
+        let metadata = [("DxgiAdapterNumber", dxgi.to_string()), ("LUID", luid.to_string())];
+        let metadata = metadata.map(|(k, v)| (k.to_string(), v)).into();
+        RawDevice { kind: Kind::Gpu, vendor, device, metadata }
+    }
+
+    /// These cards on Windows, the first the one DirectML's default opens.
+    fn windows(cards: &[RawDevice]) -> Hardware {
+        let order: Vec<u64> = cards.iter().map(|c| c.metadata["LUID"].parse().unwrap()).collect();
+        Hardware::windows(cards, Some(&order))
+    }
+
+    /// [`fast_decoder`] for `choice`, where the driver gives every card it
+    /// is asked about CUDA device 1 and says which one that was.
+    fn decoder(hw: &Hardware, choice: Choice) -> (Decoder, Option<u64>) {
+        let mut asked = None;
+        let decoder = fast_decoder(&choice, &hw.clone().chosen(&choice), |luid| {
+            asked = Some(luid);
+            Some(1)
+        });
+        (decoder, asked)
+    }
+
+    #[test]
+    fn fast_scan_decodes_on_the_nvidia_card_in_use_and_on_no_other() {
+        let (intel, nvidia) = (card(INTEL, 0x46A6, 0, 10), card(NVIDIA, 0x24DD, 1, 20));
+        let (on_intel, on_nvidia) = (windows(&[intel.clone(), nvidia.clone()]), windows(&[nvidia, intel]));
+        let chosen = |vendor, device| Choice::Card { vendor, device, nth: 0 };
+
+        // Where the analysis runs on the NVIDIA card; one needs no number.
+        assert_eq!(decoder(&on_nvidia, Choice::Auto), (Decoder::Nvdec, None));
+        assert_eq!(decoder(&on_intel, chosen(NVIDIA, 0x24DD)), (Decoder::Nvdec, None));
+        // The processor, the built-in graphics: the card stays asleep.
+        assert_eq!(decoder(&on_nvidia, Choice::Processor), (Decoder::Cpu, None));
+        assert_eq!(decoder(&on_nvidia, chosen(INTEL, 0x46A6)), (Decoder::Cpu, None));
+        assert_eq!(decoder(&on_intel, Choice::Auto), (Decoder::Cpu, None));
+        // No NVIDIA card, a card DirectML picks itself, a Mac.
+        assert_eq!(decoder(&windows(&[card(AMD, 0x73BF, 0, 30)]), Choice::Auto), (Decoder::Cpu, None));
+        let unnumbered = |device| RawDevice { metadata: BTreeMap::new(), ..card(NVIDIA, device, 0, 0) };
+        let preferred = Hardware::windows(&[unnumbered(0x2204), unnumbered(0x2206)], None);
+        assert_eq!(decoder(&preferred, Choice::Auto), (Decoder::Cpu, None));
+        assert_eq!(decoder(&Hardware::mac(&[], "Apple M2"), Choice::Auto), (Decoder::Cpu, None));
+        // Without cards to choose from nothing was chosen (Linux), until
+        // the person says the processor.
+        assert_eq!(decoder(&Hardware::processor_only(&[]), Choice::Auto), (Decoder::Nvdec, None));
+        assert_eq!(decoder(&Hardware::processor_only(&[]), Choice::Processor), (Decoder::Cpu, None));
+    }
+
+    #[test]
+    fn of_two_nvidia_cards_fast_scan_decodes_on_the_chosen_one() {
+        let twins = windows(&[card(NVIDIA, 0x2204, 0, 40), card(NVIDIA, 0x2204, 1, 50)]);
+        let second = Choice::Card { vendor: NVIDIA, device: 0x2204, nth: 1 };
+        assert_eq!(decoder(&twins, second), (Decoder::NvdecOn(1), Some(50)));
+        assert_eq!(decoder(&twins, Choice::Auto), (Decoder::NvdecOn(1), Some(40)));
+        assert_eq!(decoder(&twins, Choice::Processor), (Decoder::Cpu, None));
+        // Where the driver can't say which is which, none of them.
+        assert_eq!(fast_decoder(&second, &twins.chosen(&second), |_| None), Decoder::Cpu);
+    }
+
+    #[test]
+    fn a_cpu_engine_never_builds_the_cuda_input_args() {
+        let cfg = crate::config(["--ort", "ort", "--models", "models", "--cpu"].map(Into::into)).unwrap();
+        let hw = windows(&[card(NVIDIA, 0x24DD, 0, 20)]).chosen(&cfg.placement.gpu);
+        let decoder = fast_decoder(&cfg.placement.gpu, &hw, |_| panic!("the driver isn't asked"));
+        assert!(frames::input_args(decoder).is_empty(), "{decoder:?}");
+        // Nor does a caller that names no decoder.
+        assert_eq!(FastParams::default().decoder, Decoder::Cpu);
+        assert_eq!(FastParams::anime().decoder, Decoder::Cpu);
     }
 }

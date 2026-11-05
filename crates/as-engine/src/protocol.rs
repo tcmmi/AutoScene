@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use as_infer::accel::AccelState;
 use as_infer::hardware::Hardware;
 use as_media::MediaInfo;
+use as_media::frames::Decoder;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -149,6 +150,12 @@ pub enum Reply {
         preferred: String,
         models: Vec<ModelDevice>,
     },
+    /// Where job `id` decodes, for a job that has a choice (Fast Scan), said
+    /// before its models load.
+    Decoding {
+        id: u64,
+        decoder: Decoder,
+    },
     Progress {
         id: u64,
         fraction: f64,
@@ -282,6 +289,17 @@ pub(crate) mod tests {
         assert!(
             matches!(serde_json::from_str::<Reply>(&line).unwrap(), Reply::Devices { models, .. } if models.len() == 1)
         );
+    }
+
+    #[test]
+    fn a_decoder_travels_with_its_device() {
+        let r = Reply::Decoding { id: 3, decoder: Decoder::NvdecOn(1) };
+        let line = serde_json::to_string(&r).unwrap();
+        assert_eq!(line, r#"{"event":"decoding","id":3,"decoder":{"nvdec_on":1}}"#);
+        assert!(matches!(
+            serde_json::from_str::<Reply>(&line).unwrap(),
+            Reply::Decoding { id: 3, decoder: Decoder::NvdecOn(1) }
+        ));
     }
 
     #[test]

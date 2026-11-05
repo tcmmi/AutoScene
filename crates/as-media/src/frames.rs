@@ -127,7 +127,8 @@ pub fn decode_still(tools: &Tools, path: &std::path::Path, cancel: &CancelToken)
 }
 
 /// Where [`decode_samples_with`] decodes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Decoder {
     /// In software, as [`decode_samples`] does.
     #[default]
@@ -138,6 +139,25 @@ pub enum Decoder {
     /// it doesn't suit (interlaced, HDR, rotated, neither H.264 nor HEVC)
     /// are decoded in software.
     Nvdec,
+    /// [`Self::Nvdec`] on this CUDA device, where several NVIDIA cards are
+    /// in the computer.
+    NvdecOn(u32),
+}
+
+/// The options that start `decoder` on the input: none in software. CUDA
+/// picks its own first device unless one is named.
+pub fn input_args(decoder: Decoder) -> Vec<String> {
+    let device = match decoder {
+        Decoder::Cpu => return Vec::new(),
+        Decoder::Nvdec => None,
+        Decoder::NvdecOn(device) => Some(device),
+    };
+    let mut args = ["-xerror", "-hwaccel", "cuda"].map(String::from).to_vec();
+    if let Some(device) = device {
+        args.extend(["-hwaccel_device".into(), device.to_string()]);
+    }
+    args.extend(["-hwaccel_output_format", "cuda"].map(String::from));
+    args
 }
 
 /// Whether NVDEC can decode `info` the way [`decode_samples`] would: its
@@ -181,7 +201,7 @@ pub fn decode_samples_with(
     chain.push("hwdownload,format=yuv420p,setsar=1,format=rgb24".into());
     // A frame the GPU can't decode stops it (rather than being dropped,
     // which would shift every later frame): software takes over from there.
-    let input = ["-xerror", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda"];
+    let input = input_args(decoder);
     let (mut delivered, mut refused) = (0u32, false);
     let gpu = decode_raw(tools, src, from, step, &input, &chain, (w * h * 3) as usize, cancel, |f, rgb| {
         let r = on_frame(f, rgb);
@@ -212,7 +232,7 @@ fn decode_raw(
     src: Source,
     from: FrameIdx,
     step: u32,
-    input: &[&str],
+    input: &[String],
     chain: &[String],
     size: usize,
     cancel: &CancelToken,
@@ -388,6 +408,43 @@ mod tests {
             "audio": [], "subtitles": []
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn the_input_names_the_gpu_only_for_a_gpu_decoder() {
+        assert!(input_args(Decoder::Cpu).is_empty());
+        assert_eq!(input_args(Decoder::Nvdec).join(" "), "-xerror -hwaccel cuda -hwaccel_output_format cuda");
+        assert_eq!(
+            input_args(Decoder::NvdecOn(1)).join(" "),
+            "-xerror -hwaccel cuda -hwaccel_device 1 -hwaccel_output_format cuda"
+        );
+    }
+
+    /// What ffmpeg was asked for when a decode went to `decoder`.
+    fn asked_of_ffmpeg(decoder: Decoder) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = Tools::recording(dir.path());
+        let info = info(64, 64, Rational::new(1, 1), 0);
+        let pts = (0..30).map(|i| i * 1000).collect();
+        let index = as_core::FrameIndex::from_pts(Rational::new(1, 24_000), Rational::new(24, 1), pts).unwrap();
+        let path = dir.path().join("clip.mp4");
+        let src = Source { path: &path, info: &info, index: &index };
+        // The stand-in gives no frames: what it was asked is all this is for.
+        let _ = decode_samples_with(&tools, src, 0, 3, (16, 16), decoder, &CancelToken::new(), |_, _| Ok(true));
+        std::fs::read_to_string(dir.path().join("asked")).unwrap()
+    }
+
+    /// The device reaches ffmpeg: a decode that dropped it would run on
+    /// CUDA's first card, and its frames wouldn't show it.
+    #[test]
+    fn a_decode_asks_ffmpeg_for_the_device_it_was_given() {
+        let on_99 = asked_of_ffmpeg(Decoder::NvdecOn(99));
+        assert!(on_99.contains("-hwaccel cuda -hwaccel_device 99 -hwaccel_output_format cuda"), "{on_99}");
+        let any = asked_of_ffmpeg(Decoder::Nvdec);
+        assert!(any.contains("-hwaccel cuda -hwaccel_output_format cuda"), "{any}");
+        assert!(!any.contains("-hwaccel_device"), "{any}");
+        let software = asked_of_ffmpeg(Decoder::Cpu);
+        assert!(software.contains("-filter:v") && !software.contains("-hwaccel"), "{software}");
     }
 
     #[test]

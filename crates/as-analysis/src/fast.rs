@@ -24,8 +24,8 @@
 //! a shot looks at depends on the shot alone, so a resumed run produces the
 //! same tracks as an uninterrupted one on the same device and runtime.
 //! Looking at this few frames, the pass is as fast as its frames are
-//! decoded: like Scener, it has an NVIDIA GPU decode them where there is one
-//! ([`FastParams::decoder`]).
+//! decoded: like Scener, it has an NVIDIA GPU decode them where the analysis
+//! runs on one ([`FastParams::decoder`]).
 //!
 //! Measured on `bench/identity` (2026-10-27): about three times as fast as
 //! the full pass on a 4K film (39–57 s against 133–149 s for its last
@@ -56,7 +56,9 @@ pub struct FastParams {
     /// Frames are decoded to fit this box: Scener searches at most 1280
     /// pixels along the longer side (`DEFAULT_YUNET_DETECT_MAX_EDGE`).
     pub decode_max: (u32, u32),
-    /// Where they are decoded (software where the GPU can't).
+    /// Where they are decoded (software where the GPU can't). Software
+    /// unless the caller knows the card the analysis runs on: the engine
+    /// follows the person's choice of graphics.
     pub decoder: Decoder,
     /// Candidates sit on a grid of this many frames a second ...
     pub grid_per_sec: f64,
@@ -114,7 +116,7 @@ impl Default for FastParams {
     fn default() -> Self {
         Self {
             decode_max: (1280, 1280),
-            decoder: Decoder::Nvdec,
+            decoder: Decoder::Cpu,
             grid_per_sec: 4.0,
             pool_secs: 1.0,
             max_gap_secs: 2.0,

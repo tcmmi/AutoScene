@@ -35,6 +35,7 @@ use as_infer::accel::{self, AccelState};
 use as_infer::computer::Choice;
 use as_infer::hardware::Hardware;
 use as_media::MediaInfo;
+use as_media::frames::Decoder;
 use parking_lot::Mutex;
 use thiserror::Error;
 
@@ -332,6 +333,8 @@ pub struct Engine {
     pack_broken: AtomicBool,
     /// Where the last job's models ran, as its engine last said.
     devices: Mutex<Option<Devices>>,
+    /// Where the last job with a choice decoded, as its engine last said.
+    decoder: Mutex<Option<Decoder>>,
     watch: OnceLock<Watch>,
 }
 
@@ -347,6 +350,7 @@ impl Engine {
             accel: Mutex::new(None),
             pack_broken: AtomicBool::new(false),
             devices: Mutex::new(None),
+            decoder: Mutex::new(None),
             watch: OnceLock::new(),
         }
     }
@@ -447,6 +451,12 @@ impl Engine {
     /// take ([`Devices::on_cpu`]).
     pub fn fell_back(&self) -> bool {
         self.devices.lock().as_ref().is_some_and(|d| !d.on_cpu().is_empty())
+    }
+
+    /// Where the last job with a choice (Fast Scan) decoded, as its engine
+    /// said; `None` before one did.
+    pub fn decoder(&self) -> Option<Decoder> {
+        *self.decoder.lock()
     }
 
     /// The devices an engine finds, starting one when none has started yet:
@@ -786,6 +796,9 @@ impl Engine {
                     Reply::Fatal { message, detail } => {
                         self.discard(slot);
                         return Err(EngineError::Start { message, detail });
+                    }
+                    Reply::Decoding { id: rid, decoder } if rid == id => {
+                        *self.decoder.lock() = Some(decoder);
                     }
                     r @ (Reply::Devices { id: rid, .. }
                     | Reply::Progress { id: rid, .. }

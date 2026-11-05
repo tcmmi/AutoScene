@@ -48,6 +48,8 @@ fn main() {
     }
     if std::env::var("DECODER").is_ok_and(|v| v == "cpu") {
         params.decoder = as_media::frames::Decoder::Cpu;
+    } else {
+        params.decoder = as_media::frames::Decoder::Nvdec;
     }
     if let Ok(v) = std::env::var("DET_THRESHOLD") {
         params.det_threshold = v.parse().expect("DET_THRESHOLD=<score>");

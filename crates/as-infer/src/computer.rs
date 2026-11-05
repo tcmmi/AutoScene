@@ -161,7 +161,8 @@ pub fn choose(machine: &Machine, choice: &Choice) -> Computer {
     }
 }
 
-const NVIDIA: u32 = 0x10DE;
+/// NVIDIA's PCI vendor id.
+pub const NVIDIA: u32 = 0x10DE;
 const AMD: u32 = 0x1002;
 const INTEL: u32 = 0x8086;
 /// Virtual adapters: VMware, VirtualBox, Parallels, QEMU, Red Hat (virtio,

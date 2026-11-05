@@ -20,6 +20,8 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::mpsc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -335,6 +337,93 @@ impl fmt::Display for Hardware {
             write!(f, "; {n} card{} found", if n == 1 { "" } else { "s" })?;
         }
         Ok(())
+    }
+}
+
+/// How long NVIDIA's driver gets to name its devices ([`cuda_device`]).
+const CUDA_PATIENCE: Duration = Duration::from_secs(10);
+
+/// The CUDA device number of the NVIDIA card with this LUID. CUDA numbers
+/// its devices its own way, fastest first, so only the driver can tell.
+/// `None` when it can't, or doesn't answer in [`CUDA_PATIENCE`]: this runs
+/// in the engine, and a driver that hangs mustn't stop a job.
+pub fn cuda_device(luid: u64) -> Option<u32> {
+    answered(CUDA_PATIENCE, move || nvcuda::device_of(luid)).flatten()
+}
+
+/// What `ask` returns, when it does so `within` this time; a thread that
+/// never ends stays behind.
+fn answered<T: Send + 'static>(within: Duration, ask: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(ask());
+    });
+    rx.recv_timeout(within).ok()
+}
+
+/// `nvcuda.dll`, the driver's own library, loaded at run time: a computer
+/// without an NVIDIA driver has none.
+#[cfg(windows)]
+mod nvcuda {
+    use core::ffi::{CStr, c_char, c_int, c_uint};
+    use std::mem::transmute;
+
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW};
+
+    type Export = unsafe extern "system" fn() -> isize;
+    type Init = unsafe extern "system" fn(c_uint) -> c_int;
+    type DeviceCount = unsafe extern "system" fn(*mut c_int) -> c_int;
+    type Device = unsafe extern "system" fn(*mut c_int, c_int) -> c_int;
+    type DeviceLuid = unsafe extern "system" fn(*mut c_char, *mut c_uint, c_int) -> c_int;
+
+    /// `CUDA_SUCCESS`.
+    const SUCCESS: c_int = 0;
+
+    /// The device whose LUID is `luid`. The DLL stays loaded for the life of
+    /// the process.
+    pub(super) fn device_of(luid: u64) -> Option<u32> {
+        let name: Vec<u16> = "nvcuda.dll\0".encode_utf16().collect();
+        // SAFETY: a NUL-terminated wide name, no file handle; System32 only.
+        let module = unsafe { LoadLibraryExW(name.as_ptr(), std::ptr::null_mut(), LOAD_LIBRARY_SEARCH_SYSTEM32) };
+        if module.is_null() {
+            return None;
+        }
+        // SAFETY: a loaded module and a NUL-terminated export name.
+        let export = |name: &CStr| unsafe { GetProcAddress(module, name.as_ptr().cast()) };
+        let (init, count, device, device_luid) =
+            (export(c"cuInit")?, export(c"cuDeviceGetCount")?, export(c"cuDeviceGet")?, export(c"cuDeviceGetLuid")?);
+        // SAFETY: each export has this signature (`cuda.h`).
+        let (init, count, device, device_luid) = unsafe {
+            (
+                transmute::<Export, Init>(init),
+                transmute::<Export, DeviceCount>(count),
+                transmute::<Export, Device>(device),
+                transmute::<Export, DeviceLuid>(device_luid),
+            )
+        };
+        let mut devices = 0;
+        // SAFETY: the driver's own functions, each given a valid out pointer.
+        if unsafe { init(0) } != SUCCESS || unsafe { count(&mut devices) } != SUCCESS {
+            return None;
+        }
+        let its = |ordinal: c_int| {
+            let (mut handle, mut bytes, mut node_mask) = (0, [0u8; 8], 0);
+            // SAFETY: valid out pointers; the LUID takes 8 bytes (`cuda.h`).
+            let told = unsafe {
+                device(&mut handle, ordinal) == SUCCESS
+                    && device_luid(bytes.as_mut_ptr().cast(), &mut node_mask, handle) == SUCCESS
+            };
+            told.then(|| u64::from_le_bytes(bytes))
+        };
+        (0..devices).find(|&ordinal| its(ordinal) == Some(luid)).and_then(|ordinal| u32::try_from(ordinal).ok())
+    }
+}
+
+/// Only Windows names cards by LUID.
+#[cfg(not(windows))]
+mod nvcuda {
+    pub(super) fn device_of(_: u64) -> Option<u32> {
+        None
     }
 }
 
@@ -689,5 +778,25 @@ mod tests {
         assert_eq!(back, hw);
         let old: Hardware = serde_json::from_str("{}").unwrap();
         assert_eq!(old, Hardware::default());
+    }
+
+    #[test]
+    fn a_question_nobody_answers_ends_empty_handed() {
+        assert_eq!(answered(Duration::from_secs(60), || 7), Some(7));
+        let (hold, held) = mpsc::channel::<()>();
+        assert_eq!(answered(Duration::from_millis(20), move || held.recv().is_ok()), None);
+        drop(hold);
+    }
+
+    /// The driver of this computer finds each NVIDIA card DirectML may open
+    /// by its LUID, and no other number; nothing to find without one.
+    #[cfg(windows)]
+    #[test]
+    fn the_driver_names_each_nvidia_card_by_its_luid() {
+        assert_eq!(cuda_device(0), None);
+        let computer::Machine::Windows(Some(adapters)) = computer::machine() else { return };
+        for card in adapters.iter().filter(|a| a.vendor == NVIDIA) {
+            assert!(cuda_device(card.luid).is_some(), "{card:?}");
+        }
     }
 }

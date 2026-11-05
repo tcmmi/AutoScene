@@ -557,9 +557,12 @@ fn samples_decoded_on_the_gpu_are_the_frames_the_cpu_decodes() {
             assert_eq!(n as usize, out.len(), "{file}");
             out
         };
-        let (cpu, gpu) = (codes(Decoder::Cpu), codes(Decoder::Nvdec));
+        let cpu = codes(Decoder::Cpu);
         assert_eq!(cpu.len() as u32, (idx.len() - from).div_ceil(3), "{file}: every 3rd frame from {from}");
-        assert_eq!(gpu, cpu, "{file} from {from}");
+        // Device 99 isn't there: software takes over.
+        for decoder in [Decoder::Nvdec, Decoder::NvdecOn(0), Decoder::NvdecOn(99)] {
+            assert_eq!(codes(decoder), cpu, "{file} from {from} with {decoder:?}");
+        }
         assert!(cpu.iter().all(|&(f, code)| code == Some(f as u16)), "{file}: each sample shows its own frame");
     }
 }

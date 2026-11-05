@@ -11,8 +11,9 @@ use as_engine::client::pack_failures;
 use as_engine::{Config, Engine, EngineError, FacesEvent, FacesInput, Launch, ShotsEvent};
 use as_infer::Placement;
 use as_infer::accel::{self, AccelState};
-use as_infer::computer::{self, Choice, Machine};
-use as_infer::hardware::Using;
+use as_infer::computer::{self, Choice, Machine, NVIDIA};
+use as_infer::hardware::{Gpu, Using};
+use as_media::frames::Decoder;
 use as_media::{MediaInfo, Tools, build_frame_index, probe};
 use as_testkit::{fixtures_dir, load_truth, models_dir, models_required, ort_dir};
 
@@ -24,21 +25,26 @@ struct Media {
 }
 
 fn setup(idle_exit: Option<Duration>) -> Option<(Engine, Media)> {
-    load_truth()?;
-    let ort = ort_dir()?;
+    let (ort, media) = media()?;
     let store = as_models::ModelStore::new(models_dir());
     if store.installed(as_models::ids::TRANSNET).unwrap().is_none() {
         assert!(!models_required(), "TransNetV2 missing (run `cargo xtask fetch-models`)");
         eprintln!("TransNetV2 missing; run `cargo xtask fetch-models` (skipping)");
         return None;
     }
+    Some((Engine::new(launch(ort, Choice::Auto, idle_exit)), media))
+}
+
+/// The runtime and the fixture a job needs, for a test that runs without models.
+fn media() -> Option<(PathBuf, Media)> {
+    load_truth()?;
+    let ort = ort_dir()?;
     let tools = Tools::locate(None).expect("ffmpeg");
     let path = fixtures_dir().join("cfr24_h264.mp4");
     let info = probe(&tools, &path).unwrap();
     let work = tempfile::tempdir().unwrap();
     let index = build_frame_index(&tools, &path, &info, work.path(), &CancelToken::new(), |_| {}).unwrap();
-    let engine = Engine::new(launch(ort, Choice::Auto, idle_exit));
-    Some((engine, Media { path, info, frames: index.len(), index: index.to_bytes() }))
+    Some((ort, Media { path, info, frames: index.len(), index: index.to_bytes() }))
 }
 
 /// How to start the engine binary on the device `gpu` chooses.
@@ -338,6 +344,48 @@ fn face_chunks_tile_the_media_even_across_a_kill() {
     face_chunks_tile(&engine, &m, FacesInput { anime: true, ..faces_input(&m, shots.clone(), false, None) });
     // Anime with Fast Scan (the same models, a few looks per shot).
     face_chunks_tile(&engine, &m, FacesInput { anime: true, fast: true, ..faces_input(&m, shots, false, None) });
+}
+
+/// A job with Fast Scan decodes where the engine's choice says, and says so
+/// before it loads a model: Processor only in software, for Fast Scan and for
+/// anime with Fast Scan, and a lone NVIDIA card on that card. So this holds
+/// the jobs themselves to it, models or not. With the models each runs to its end.
+#[test]
+fn a_fast_scan_job_decodes_where_the_choice_says() {
+    let Some((ort, m)) = media() else { return };
+    let store = as_models::ModelStore::new(models_dir());
+    let shots: Vec<(u32, u32)> = (0..m.frames).step_by(50).map(|s| (s, (s + 50).min(m.frames))).collect();
+    let decoded = |engine: &Engine, job, needs: &[&str]| {
+        let mut reached = 0;
+        let r = engine.faces(job, &CancelToken::new(), |e| {
+            if let FacesEvent::Chunk { start, end, .. } = e {
+                assert_eq!(start, reached);
+                reached = end;
+            }
+            Ok(())
+        });
+        if needs.iter().any(|id| store.installed(id).unwrap().is_none()) {
+            assert!(!models_required(), "{needs:?} missing (run `cargo xtask fetch-models`)");
+            assert!(r.is_err());
+        } else {
+            r.unwrap();
+            assert_eq!(reached, m.frames);
+        }
+        engine.decoder()
+    };
+    let fast = || FacesInput { fast: true, ..faces_input(&m, shots.clone(), false, None) };
+    let anime = || FacesInput { anime: true, ..fast() };
+    // An engine each: one that said nothing must not pass on the last one's word.
+    let processor = || Engine::new(launch(ort.clone(), Choice::Processor, None));
+    assert_eq!(decoded(&processor(), fast(), &as_models::ids::FAST_FACES), Some(Decoder::Cpu));
+    assert_eq!(decoded(&processor(), anime(), &as_models::ids::ANIME), Some(Decoder::Cpu));
+
+    let auto = Engine::new(launch(ort.clone(), Choice::Auto, None));
+    let hw = auto.probe(&CancelToken::new()).unwrap();
+    let nvidia = |g: &&Gpu| g.vendor == NVIDIA;
+    if hw.gpu().filter(nvidia).is_some() && hw.gpus.iter().filter(nvidia).count() == 1 {
+        assert_eq!(decoded(&auto, fast(), &as_models::ids::FAST_FACES), Some(Decoder::Nvdec));
+    }
 }
 
 fn face_chunks_tile(engine: &Engine, m: &Media, job: FacesInput) {

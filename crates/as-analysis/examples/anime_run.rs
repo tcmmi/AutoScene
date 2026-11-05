@@ -111,6 +111,8 @@ fn main() {
         let mut p = FastParams::anime();
         if std::env::var("DECODER").is_ok_and(|v| v == "cpu") {
             p.decoder = as_media::frames::Decoder::Cpu;
+        } else {
+            p.decoder = as_media::frames::Decoder::Nvdec;
         }
         if let Ok(v) = std::env::var("LOW_CONFIDENCE") {
             p.low_confidence = v.parse().expect("LOW_CONFIDENCE=<score>");

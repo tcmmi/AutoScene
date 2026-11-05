@@ -180,6 +180,42 @@ impl Tools {
     pub fn caps(&self) -> &Caps {
         self.caps.get_or_init(|| Caps::detect(self))
     }
+
+    /// Tools whose ffmpeg notes every run's arguments, a line each, in
+    /// `asked` in `dir`, and ends at once without a frame. It lists cuda
+    /// among its `-hwaccels`.
+    #[cfg(test)]
+    pub(crate) fn recording(dir: &Path) -> Self {
+        let asked = dir.join("asked");
+        let asked = asked.display();
+        #[cfg(windows)]
+        let ffmpeg = {
+            let path = dir.join("recording-ffmpeg.cmd");
+            let script = [
+                "@echo off".to_string(),
+                format!(r#"echo %* >> "{asked}""#),
+                r#"echo %* | findstr /C:"-hwaccels" >NUL && echo cuda"#.to_string(),
+                "exit /b 0".to_string(),
+                String::new(),
+            ]
+            .join("\r\n");
+            std::fs::write(&path, script).unwrap();
+            path
+        };
+        #[cfg(unix)]
+        let ffmpeg = {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.join("recording-ffmpeg");
+            let script = format!("#!/bin/sh\necho \"$*\" >> '{asked}'\ncase \"$*\" in *-hwaccels*) echo cuda;; esac\n");
+            std::fs::write(&path, script).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            // A process forked while the file was open for writing holds it
+            // until it has run its program ("text file busy").
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            path
+        };
+        Self { ffprobe: ffmpeg.clone(), ffmpeg, version: "stand-in".into(), caps: OnceLock::new() }
+    }
 }
 
 /// Where ffmpeg and ffprobe are (see [`Tools::locate`]), given the

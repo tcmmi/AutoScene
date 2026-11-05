@@ -25,7 +25,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use as_core::paths::name;
-use as_core::{CancelToken, FrameIndex, FrameRange, Rational, Timecode};
+use as_core::{CancelToken, FrameIndex, FrameRange, Rational, Timecode, msg};
 use as_media::filters::{deinterlace, picture_chain};
 use as_media::{Caps, CodecFamily, HdrKind, MediaInfo, Source, Tools, Vendor, run_ffmpeg};
 use serde::{Deserialize, Serialize};
@@ -244,7 +244,12 @@ pub(crate) fn resolve_encoding(
             Encoding { encoder: name, args, pix_fmt: pix_fmt.into() }
         }
         // Chosen per source, by what it decodes to (`crate::lossless::keeper`).
-        VideoCodec::Lossless => return Err(ExportError::BadPreset("lossless encoding follows each source".into())),
+        VideoCodec::Lossless => {
+            return Err(ExportError::BadPreset(msg!(
+                "export.why.followsSource",
+                "lossless encoding follows each source"
+            )));
+        }
     })
 }
 
@@ -317,11 +322,9 @@ fn lossless_recipe(tools: &Tools, job: &ClipJob) -> ExportResult<Recipe> {
     let ordinal = job.audio_ordinal.or_else(|| info.default_audio().map(|a| a.ordinal));
     let audio = match ordinal {
         Some(ord) => {
-            let a = exact
-                .audio
-                .iter()
-                .find(|a| a.ordinal == ord)
-                .ok_or_else(|| ExportError::Inexact(format!("its sound track {} can't be read", ord + 1)))?;
+            let a = exact.audio.iter().find(|a| a.ordinal == ord).ok_or_else(|| {
+                ExportError::Inexact(msg!("export.why.soundTrack", "its sound track {{n}} can't be read", n = ord + 1))
+            })?;
             Some((ord, a.sample_rate.max(1), lossless::pcm_codec(a)?))
         }
         None => None,
@@ -569,7 +572,7 @@ pub fn export_clip(
         return Err(ExportError::BadRange(format!("{range:?} outside 0..{}", index.len())));
     }
     if job.part.is_none() && preset.container == Container::Mp4 && preset.audio == AudioCodec::Pcm24 {
-        return Err(ExportError::BadPreset("uncompressed audio needs a MOV file".into()));
+        return Err(ExportError::BadPreset(msg!("export.why.needsMov", "uncompressed audio needs a MOV file")));
     }
     let n = range.len();
     let s = range.start;
@@ -715,7 +718,7 @@ pub fn export_clip(
         let _ = std::fs::remove_file(&part);
         tidy();
         tracing::error!(clip = %name(&out), reason = %last_err, "clip isn't the source exactly");
-        return Err(ExportError::Inexact(format!("it didn't come out exactly as the source ({last_err})")));
+        return Err(ExportError::Inexact(msg!("export.why.notTheSource", "it didn't come out exactly as the source")));
     }
     // Keep the best effort but say so: the UI marks it "unverified".
     let out = place(&part)?;

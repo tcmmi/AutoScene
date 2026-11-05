@@ -331,7 +331,8 @@ The UI's words are in a catalog, not in the code, so AutoScene can speak more th
   past 2^53 goes as text, as numbers are exact only up to there. `cargo xtask i18n` collects
   them into `locales/en/backend.json`, which nobody edits and CI checks. `AppError::new` takes a `Msg`, so no command
   fails without one; every `From<…> for AppError` goes through `ToMsg`. Words AutoScene didn't write are
-  `Msg::plain`, the same in every language. The UI says a `Msg` with `say()` (`@/lib/i18n`) and an error with
+  `Msg::plain`, the same in every language. What a plugin's author reads (`PluginError::Manifest`, a call's refusal)
+  stays English, under the key `plugin.invalid`, whose English is its `{{why}}` alone. The UI says a `Msg` with `say()` (`@/lib/i18n`) and an error with
   `errorMessage()`, never `.message`, which stays English: a plugin page's code hears that, through
   `englishMessage()`. Rust keeps a `Msg` as far as the screen; `e.message` is for logs and plugin pages.
 - A shortcut has no text field: its name is `shortcuts:<scope>.<id>.name`, and each key of a shortcut that does a few

@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ExportPreset } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
 import { inLanguage } from "@/test/i18n"
 import { ExportDialog } from "./ExportDialog"
@@ -48,6 +49,22 @@ afterEach(() => {
 })
 
 describe("ExportDialog", () => {
+  it("says the format and what it is for in the UI's language", async () => {
+    await inLanguage("ro", { backend: { fixture: { name: "Bit-Perfect românesc (fără pierderi)", description: "Fiecare cadru exact." } } })
+    vi.mocked(commands.exportPresets).mockResolvedValueOnce([
+      {
+        ...bitPerfect,
+        nameMsg: { key: "fixture.name", text: bitPerfect.name },
+        descriptionMsg: { key: "fixture.description", text: bitPerfect.description },
+      },
+    ])
+    const clips = [{ mediaId: "m", start: 0, end: 24, name: null, summary: "E01" }]
+    render(<ExportDialog projectId="p" clips={clips} open onOpenChange={() => {}} />, { wrapper })
+    expect(await screen.findByText(/^Fiecare cadru exact\./)).toBeTruthy()
+    expect(await screen.findByText(/in all as Bit-Perfect românesc\.$/)).toBeTruthy()
+    expect(screen.getByRole("combobox", { name: "Export format" }).textContent).toContain("Bit-Perfect românesc (fără pierderi)")
+  })
+
   it("says the format's note in the UI's language", async () => {
     await inLanguage("ro", { backend: { export: { lossless: { allFfv1: "Aceste imagini rămân FFV1." } } } })
     const clips = [{ mediaId: "m", start: 0, end: 24, name: null, summary: "E01" }]

@@ -9,7 +9,7 @@ import type { AppSettings, PluginInfo } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
-import { pluginInfo } from "@/test/plugins"
+import { plain, pluginInfo } from "@/test/plugins"
 import { PluginSettingsPage } from "./PluginSettingsPage"
 
 vi.mock("sonner", async (original) => {
@@ -218,7 +218,7 @@ describe("a plugin's settings", () => {
 
   it("a blocked plugin offers Allow them…, which asks the backend", async () => {
     const user = userEvent.setup()
-    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One", trust: "unreviewed", active: false, blockedReason: BLOCKED })]
+    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One", trust: "unreviewed", active: false, blockedReason: plain(BLOCKED) })]
     show("dev.a.one")
     const banner = await screen.findByRole("status")
     // Its own words: the backend's send people to Plugins, where this is.
@@ -244,8 +244,8 @@ describe("a plugin's settings", () => {
     const user = userEvent.setup()
     const broken = "Its program changed since it was loaded. Load its folder again to agree to it."
     state.plugins = [
-      pluginInfo({ id: "dev.a.folder", name: "Folder", source: "folder", trust: "unreviewed", active: false, broken }),
-      pluginInfo({ id: "dev.a.package", name: "Package", active: false, broken: "This plugin needs a newer AutoScene." }),
+      pluginInfo({ id: "dev.a.folder", name: "Folder", source: "folder", trust: "unreviewed", active: false, broken: plain(broken) }),
+      pluginInfo({ id: "dev.a.package", name: "Package", active: false, broken: plain("This plugin needs a newer AutoScene.") }),
     ]
     show("dev.a.folder")
     const banner = await screen.findByRole("status")
@@ -370,7 +370,7 @@ describe("a plugin AutoScene withdrew", () => {
 
   it("a withdrawn plugin that is also broken or not allowed has this one banner and no fix", async () => {
     // Broken, from a folder (which "Load its folder again…" would offer a fix for).
-    state.plugins = [{ ...leaky(), source: "folder", broken: "Its plugin.json is missing." }]
+    state.plugins = [{ ...leaky(), source: "folder", broken: plain("Its plugin.json is missing.") }]
     state.allow = true
     show("dev.example.leaky")
     await banner()
@@ -380,7 +380,7 @@ describe("a plugin AutoScene withdrew", () => {
     cleanup()
 
     // Not allowed (unreviewed, so off by the setting).
-    state.plugins = [{ ...leaky(), enabled: true, blockedReason: BLOCKED }]
+    state.plugins = [{ ...leaky(), enabled: true, blockedReason: plain(BLOCKED) }]
     queryClient.clear()
     show("dev.example.leaky")
     await banner()

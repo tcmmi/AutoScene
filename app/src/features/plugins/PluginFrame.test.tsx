@@ -1,10 +1,11 @@
 import type * as React from "react"
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { PageMount, PluginPageEvent } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
 import { ContextMenuItem } from "@/components/ui/context-menu"
 import { events } from "@/lib/ipc"
+import { inLanguage } from "@/test/i18n"
 import { replayMenu } from "./bridge"
 import { PluginFrame } from "./PluginFrame"
 
@@ -164,6 +165,17 @@ describe("a plugin page's frame", () => {
     port!.start()
     await waitFor(() => expect(heard).toEqual([{ t: "service", state: "ready" }]))
     port!.close()
+  })
+
+  it("a page that was closed says why in the UI's language", async () => {
+    await inLanguage("ro", { backend: { plugin: { closedBecause: { updating: "Se actualizează." } } } })
+    pluginPageOpen.mockResolvedValue(mount())
+    render(frame(""))
+    await waitFor(() => expect(events.pluginPageEvent.listen).toHaveBeenCalled())
+    const heard = vi.mocked(events.pluginPageEvent.listen).mock.calls[0][0]
+    const reason = { key: "plugin.closedBecause.updating", text: "It is being updated." }
+    act(() => heard({ event: "plugin-page:event", id: 1, payload: { session: SESSION, event: { type: "closed", reason } } }))
+    expect(within(await screen.findByRole("alert")).getByText("Se actualizează.")).toBeTruthy()
   })
 
   it("a cover says why aloud, takes the keyboard to its buttons, and puts the frame out of reach", async () => {

@@ -17,7 +17,7 @@
  * installed then, and the start-up check tells of it), `full`
  * (a get finds the drive full).
  */
-import type { CatalogPlugin, CatalogView, PluginReview } from "@/bindings"
+import type { CatalogPlugin, CatalogView, Msg, PluginReview } from "@/bindings"
 import { BIG_ID, LEAKY_ID, LEAKY_REASON, inspectCatalogPackage, mockPlugin } from "./plugins"
 
 type MockCatalog = "living" | "expired" | "offline" | "unset" | "newer" | "withdrawn" | "full"
@@ -171,6 +171,14 @@ function offer(e: Entry): CatalogPlugin {
   }
 }
 
+/** Why the last check of the mode `m` failed. */
+function failure(m: string, published: number): Msg | null {
+  if (m === "offline") return { key: "catalog.unreachable", text: UNREACHABLE }
+  if (m !== "expired") return null
+  const date = new Date(published + 30 * DAY).toISOString().slice(0, 10)
+  return { key: "catalog.ranOut", args: { date }, text: `The catalog ran out on ${date}.` }
+}
+
 /** `catalog_list`, with `daily` the setting. */
 export function catalogList(daily: boolean): CatalogView {
   const m = mode()
@@ -187,7 +195,7 @@ export function catalogList(daily: boolean): CatalogView {
       fetchedAt: held ? (m === "expired" ? published : fetchedAt) : null,
       checkedAt: held ? checkedAt : null,
       outOfDate: !living,
-      error: m === "expired" ? `The catalog ran out on ${new Date(published + 30 * DAY).toISOString().slice(0, 10)}.` : m === "offline" ? UNREACHABLE : null,
+      error: failure(m, published),
       needsNewerApp: m === "newer",
     },
     plugins: living ? [...ENTRIES, ...(m === "withdrawn" ? [LEAKY_ENTRY] : [])].map(offer) : [],

@@ -23,6 +23,7 @@ use std::fmt;
 use std::sync::mpsc;
 use std::time::Duration;
 
+use as_core::{Msg, msg};
 use serde::{Deserialize, Serialize};
 
 use crate::computer::{self, Choice};
@@ -65,9 +66,11 @@ pub struct Gpu {
     /// What Settings stores when it is chosen ([`key`]): stable across
     /// restarts, which LUIDs and adapter numbers aren't.
     pub key: String,
-    /// The driver's description, cleaned ("NVIDIA GeForce RTX 3060 Ti").
+    /// The driver's description, cleaned ("NVIDIA GeForce RTX 3060 Ti");
+    /// empty when it gives none.
     pub name: String,
-    /// The name, numbered among identical cards ("NVIDIA GeForce RTX 3090 (2)").
+    /// The name, numbered among identical cards ("NVIDIA GeForce RTX 3090 (2)"),
+    /// for the log: Settings says [`Gpu::said`].
     pub label: String,
     pub vendor: u32,
     pub device: u32,
@@ -81,6 +84,23 @@ pub struct Gpu {
     pub high_performance: Option<u32>,
     pub luid: Option<u64>,
 }
+
+impl Gpu {
+    /// What Settings calls it: the driver's words, or AutoScene's when it gave none.
+    pub fn said(&self) -> Msg {
+        if !self.name.is_empty() {
+            Msg::plain(&self.label)
+        } else if self.label == UNNAMED {
+            msg!("hardware.unnamedCard", "Graphics card")
+        } else {
+            msg!("hardware.unnamedCardNumbered", "Graphics card ({{n}})", n = self.nth + 1)
+        }
+    }
+}
+
+/// What a card without a name is called in the log and in the [`key`]
+/// Settings stores, in every language: a stored key must not change.
+const UNNAMED: &str = "Graphics card";
 
 /// What a choice of device opens.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,12 +211,10 @@ pub fn gpus_from(devices: &[RawDevice], order: &[u64]) -> Vec<Gpu> {
         let nth = gpus[..i].iter().filter(same).count() as u32;
         let twins = gpus.iter().filter(same).count();
         let g = &mut gpus[i];
-        if g.name.is_empty() {
-            g.name = "Graphics card".into();
-        }
         g.nth = nth;
-        g.key = key(g.vendor, g.device, &g.name, nth);
-        g.label = if twins > 1 { format!("{} ({})", g.name, nth + 1) } else { g.name.clone() };
+        let name = if g.name.is_empty() { UNNAMED } else { &g.name };
+        g.key = key(g.vendor, g.device, name, nth);
+        g.label = if twins > 1 { format!("{name} ({})", nth + 1) } else { name.to_owned() };
     }
     gpus
 }
@@ -302,7 +320,7 @@ impl Hardware {
     /// nothing (the processor, or a card DirectML picks itself).
     pub fn name(&self) -> &str {
         match self.using {
-            Using::Gpu { .. } => self.gpu().map_or("", |g| g.label.as_str()),
+            Using::Gpu { .. } => self.gpu().filter(|g| !g.name.is_empty()).map_or("", |g| g.label.as_str()),
             Using::Chip => &self.chip,
             Using::Preferred | Using::Processor => "",
         }
@@ -587,6 +605,22 @@ mod tests {
     }
 
     #[test]
+    fn a_card_without_a_name_keeps_its_key_and_settings_says_a_key_of_its_own() {
+        let unnamed = |n: &'static str, luid: &'static str| {
+            device(Kind::Gpu, NVIDIA, 0x24C9, &[("DxgiAdapterNumber", n), ("LUID", luid)])
+        };
+        let one = Hardware::windows(&[unnamed("0", "1")], Some(&[1]));
+        assert_eq!(one.name(), "", "the UI's words for a card it can't name");
+        let twins = Hardware::windows(&[unnamed("0", "1"), unnamed("1", "2")], Some(&[1, 2]));
+        let keys: Vec<&str> = twins.gpus.iter().map(|g| g.key.as_str()).collect();
+        assert_eq!(keys, ["10de:24c9:Graphics card", "10de:24c9:Graphics card#2"]);
+        let labels: Vec<&str> = twins.gpus.iter().map(|g| g.label.as_str()).collect();
+        assert_eq!(labels, ["Graphics card (1)", "Graphics card (2)"]);
+        let said = twins.gpus[1].said();
+        assert_eq!((said.key.as_str(), said.text.as_str()), ("hardware.unnamedCardNumbered", "Graphics card (2)"));
+    }
+
+    #[test]
     fn identical_cards_get_distinct_keys() {
         let twins = [
             cpu(),
@@ -598,6 +632,8 @@ mod tests {
         assert_eq!(keys, ["10de:2204:NVIDIA GeForce RTX 3090", "10de:2204:NVIDIA GeForce RTX 3090#2"]);
         let labels: Vec<&str> = hw.gpus.iter().map(|g| g.label.as_str()).collect();
         assert_eq!(labels, ["NVIDIA GeForce RTX 3090 (1)", "NVIDIA GeForce RTX 3090 (2)"]);
+        // The driver's words: no language says them differently.
+        assert_eq!(hw.gpus[1].said(), Msg::plain("NVIDIA GeForce RTX 3090 (2)"));
         // Each key opens its own card, and reads back as the same choice.
         for (i, g) in hw.gpus.iter().enumerate() {
             let choice = Choice::from_setting(&g.key);
@@ -617,7 +653,14 @@ mod tests {
         assert_eq!((hw.gpus[0].name.as_str(), hw.cpu.as_str()), ("NVIDIA GeForce RTX 3060 Ti", ""));
         let raw = [cpu(), device(Kind::Gpu, NVIDIA, 0x24C9, &[("DxgiAdapterNumber", " 0 "), ("LUID", "1")])];
         let hw = Hardware::windows(&raw, Some(&[1]));
-        assert_eq!((hw.gpus[0].name.as_str(), hw.gpus[0].dxgi), ("Graphics card", Some(0)));
+        assert_eq!((hw.gpus[0].name.as_str(), hw.gpus[0].dxgi), ("", Some(0)));
+        // The stored key keeps its words; Settings says a key of its own.
+        assert_eq!(hw.gpus[0].key, "10de:24c9:Graphics card");
+        assert_eq!(hw.gpus[0].label, "Graphics card");
+        assert_eq!(
+            (hw.gpus[0].said().key.as_str(), hw.gpus[0].said().text.as_str()),
+            ("hardware.unnamedCard", "Graphics card")
+        );
         assert_eq!(hw.cpu, "AMD Ryzen 7 5800X3D 8-Core Processor");
     }
 

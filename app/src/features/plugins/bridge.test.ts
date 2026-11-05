@@ -158,7 +158,8 @@ describe("the bridge to a plugin page", () => {
       message: "Count stopped unexpectedly.",
     })
     expect(pageMessage({ type: "settings" })).toEqual({ t: "settings" })
-    expect(pageMessage({ type: "closed", reason: "It was turned off." })).toEqual({ t: "closed", reason: "It was turned off." })
+    const reason = { key: "plugin.closedBecause.turnedOff", text: "It was turned off." }
+    expect(pageMessage({ type: "closed", reason })).toEqual({ t: "closed", reason: "It was turned off." })
   })
 
   it("a document that connects after its service changed hears its last state first", async () => {
@@ -281,7 +282,7 @@ describe("the bridge to a plugin page", () => {
     const call = vi.fn(
       async (): Promise<PageReply> => ({
         kind: "effect",
-        effect: { type: "toast", title, description: null, tone: "neutral" },
+        effect: { type: "toast", title: { key: "", text: title }, description: null, tone: "neutral" },
         result: { shown: true },
       }),
     )
@@ -291,8 +292,25 @@ describe("the bridge to a plugin page", () => {
     expect(await reply).toEqual({ t: "reply", id: 3, ok: true, result: { shown: true } })
     // Shown before the page hears the answer, with nothing added and no button.
     expect(toast).toHaveBeenCalledWith(title, { description: undefined })
-    showToast({ type: "toast", title: "Plugin “Page”: Couldn't save", description: "Disk full", tone: "error" })
+    showToast({ type: "toast", title: { key: "", text: "Plugin “Page”: Couldn't save" }, description: "Disk full", tone: "error" })
     expect(toast.error).toHaveBeenCalledWith("Plugin “Page”: Couldn't save", { description: "Disk full" })
+  })
+
+  it("a page's toast starts with its fixed word in the UI's language, and the plugin's words stay", async () => {
+    await inLanguage("ro", { backend: { plugin: { pageToast: "Pluginul „{{name}}”: {{text}}" } } })
+    const title = {
+      key: "plugin.pageToast",
+      args: { name: "AutoScene", text: "update now" },
+      text: "Plugin “AutoScene”: update now",
+    }
+    showToast({ type: "toast", title, description: null, tone: "neutral" })
+    expect(toast).toHaveBeenCalledWith("Pluginul „AutoScene”: update now", { description: undefined })
+  })
+
+  it("a page hears why it closed in English, whatever the UI speaks", async () => {
+    await inLanguage("ro", { backend: { plugin: { closedBecause: { turnedOff: "A fost oprit." } } } })
+    const reason = { key: "plugin.closedBecause.turnedOff", text: "It was turned off." }
+    expect(pageMessage({ type: "closed", reason })).toEqual({ t: "closed", reason: "It was turned off." })
   })
 
   it("a page's dialogs and right-clicks count only while it has the focus", async () => {

@@ -471,7 +471,7 @@ fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
 }
 
 fn invalid(message: impl Into<String>) -> PluginError {
-    PluginError::Invalid(message.into())
+    PluginError::Manifest(message.into())
 }
 
 fn denied(message: impl Into<String>) -> PluginError {
@@ -963,7 +963,7 @@ mod tests {
             assert!(matches!(&e, PluginError::Denied(_)), "{url}: {e:?}");
             assert_eq!(e.to_string(), why, "{url}");
         }
-        assert!(matches!(fetch(get("discord.com/api"), &named, UA, &t), Err(PluginError::Invalid(_))));
+        assert!(matches!(fetch(get("discord.com/api"), &named, UA, &t), Err(PluginError::Manifest(_))));
         let long = format!("https://discord.com/{}", "a".repeat(MAX_URL_BYTES));
         assert_eq!(fetch(get(&long), &named, UA, &t).unwrap_err().to_string(), "net.fetch's url is longer than 8 KB.");
         assert_eq!(t.sent().len(), 0);
@@ -1103,7 +1103,7 @@ mod tests {
             fetch(NetRequest { headers, ..get("https://discord.com/") }, &named, UA, &t)
         };
         let refused = |headers: Vec<(&str, String)>| match with(headers) {
-            Err(PluginError::Invalid(why)) => why,
+            Err(PluginError::Manifest(why)) => why,
             other => panic!("{other:?}"),
         };
         for name in [
@@ -1159,7 +1159,7 @@ mod tests {
             fetch(req, &named, UA, &t)
         };
         let refused = |r: PluginResult<NetResponse>| match r {
-            Err(PluginError::Invalid(why)) => why,
+            Err(PluginError::Manifest(why)) => why,
             other => panic!("{other:?}"),
         };
         let larger = "The body of a net.fetch is larger than 4 MB.";
@@ -1215,7 +1215,7 @@ mod tests {
         });
         let named = hosts(&["discord.com"]);
         let e = fetch(get("https://discord.com/"), &named, UA, &t).unwrap_err();
-        assert!(matches!(&e, PluginError::Invalid(_)), "{e:?}");
+        assert!(matches!(&e, PluginError::Manifest(_)), "{e:?}");
         assert_eq!(e.to_string(), "The answer is larger than 8 MB.");
         assert_eq!(read.load(Ordering::Relaxed), MAX_RESPONSE_BODY + 1);
         // One that says how long it is isn't read at all; for a HEAD, its

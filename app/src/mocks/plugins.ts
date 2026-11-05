@@ -28,6 +28,7 @@ import type {
   ReviewCatalog,
   SettingSpec,
   SettingValue,
+  Msg,
 } from "@/bindings"
 import type { HostMethod } from "@/plugin-kit/protocol"
 
@@ -36,6 +37,7 @@ type MockPlugin = Omit<PluginInfo, "active" | "blockedReason">
 
 const DATA = String.raw`C:\Users\you\AppData\Local\AutoScene`
 const NOT_ALLOWED = "Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins."
+const notAllowed: Msg = { key: "plugin.notAllowed", text: NOT_ALLOWED }
 
 /** A plain rounded square in `fill`, as a package's SVG icon arrives (base64). */
 const icon = (fill: string) =>
@@ -446,7 +448,7 @@ function info(p: MockPlugin, allow: boolean): PluginInfo {
   return {
     ...p,
     active: p.enabled && p.broken == null && p.withdrawn == null && !blocked,
-    blockedReason: blocked && p.broken == null ? NOT_ALLOWED : null,
+    blockedReason: blocked && p.broken == null ? notAllowed : null,
   }
 }
 
@@ -828,7 +830,7 @@ const sessions = new Map<string, { pluginId: string; pageId: string; projectId: 
 export function openPage(id: string, pageId: string, projectId: string | null, allow: boolean): PageMount {
   const p = get(id)
   const shown = info(p, allow)
-  if (!shown.active) throw { code: "invalid", message: p.broken ?? p.withdrawn ?? shown.blockedReason ?? `${p.name} is turned off.` }
+  if (!shown.active) throw { code: "invalid", message: p.broken?.text ?? p.withdrawn ?? shown.blockedReason?.text ?? `${p.name} is turned off.` }
   const page = p.pages.find((x) => x.id === pageId)
   if (!page) throw { code: "invalid", message: `${p.name} has no such page.` }
   if (page.scope === "project" && !projectId) throw { code: "invalid", message: "Open a project to see this page." }
@@ -1087,7 +1089,7 @@ export const pluginPageCall: Record<HostMethod, PageHandler> = {
     shown.set(s.session, [...last, now])
     const description = typeof params.description === "string" ? params.description : null
     const tone = params.tone === "error" ? "error" : "neutral"
-    const title = `Plugin “${s.plugin.name}”: ${text}`
+    const title: Msg = { key: "plugin.pageToast", args: { name: s.plugin.name, text }, text: `Plugin “${s.plugin.name}”: ${text}` }
     return { kind: "effect", effect: { type: "toast", title, description, tone }, result: { shown: true } }
   },
   "ui.navigate": (_, params) => {
@@ -1189,7 +1191,7 @@ export function pluginRun(
 ): { title: string; name: string; message: string } {
   const p = get(id)
   const shown = info(p, allow)
-  if (!shown.active) throw { code: "invalid", message: p.broken ?? p.withdrawn ?? shown.blockedReason ?? `${p.name} is turned off.` }
+  if (!shown.active) throw { code: "invalid", message: p.broken?.text ?? p.withdrawn ?? shown.blockedReason?.text ?? `${p.name} is turned off.` }
   const refuse = (message: string) => {
     throw { code: "invalid", message }
   }
@@ -1219,7 +1221,7 @@ export function packAction(
 ): { name: string; title: string; file: string } {
   const p = get(id)
   const shown = info(p, allow)
-  if (!shown.active) throw { code: "invalid", message: p.broken ?? shown.blockedReason ?? `${p.name} is turned off.` }
+  if (!shown.active) throw { code: "invalid", message: p.broken?.text ?? shown.blockedReason?.text ?? `${p.name} is turned off.` }
   const a = p.packActions.find((x) => x.id === action)
   if (!a) throw { code: "not_found", message: `${p.name} has no such pack action.` }
   return { name: p.name, title: a.title, file: a.file.name.replaceAll("{character}", character) }

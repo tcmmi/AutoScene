@@ -98,7 +98,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use as_api::{ExportStatus, ExportSummary, JobInfo, JobKind, JobState};
-use as_core::{AppPaths, CancelToken, CharacterId, ExportId, JobId, ProjectId, msg};
+use as_core::{AppPaths, CancelToken, CharacterId, ExportId, JobId, Msg, ProjectId, ToMsg, msg};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::net::{Transport, UreqTransport};
 use as_plugin::pages::{Mount, Pages};
@@ -391,10 +391,10 @@ pub struct PluginInfo {
     pub active: bool,
     /// Why it can't run while it is turned on (the setting keeps plugins
     /// AutoScene hasn't reviewed from running).
-    pub blocked_reason: Option<String>,
+    pub blocked_reason: Option<Msg>,
     /// Why it can't run at all: its files are missing or changed, or it
     /// needs another AutoScene.
-    pub broken: Option<String>,
+    pub broken: Option<Msg>,
     /// Why AutoScene withdrew its version, in the catalog's words: it
     /// doesn't run, whatever else it is.
     pub withdrawn: Option<String>,
@@ -441,7 +441,7 @@ pub struct PluginInfo {
     /// Where its service writes its log, when it runs one.
     pub service_log_path: Option<String>,
     /// What was skipped or changed in its `plugin.json`.
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Msg>,
     /// What the large files its `plugin.json` names take on the disk now,
     /// in bytes (by their sizes; 0 for one that names none or got none yet).
     pub resource_bytes: f64,
@@ -527,7 +527,7 @@ pub struct PluginReview {
     /// What the check of a WebAssembly plugin's component found that may
     /// surprise its author (its plugin.json's skipped parts are the
     /// plugin's `warnings`).
-    pub component_warnings: Vec<String>,
+    pub component_warnings: Vec<Msg>,
 }
 
 /// What AutoScene's catalog says of a plugin it reviewed.
@@ -791,7 +791,8 @@ impl PluginHost {
     /// meanwhile waits, then finds it gone.
     pub fn uninstall(&self, jobs: &JobRunner, id: &PluginId, delete_data: bool) -> PluginResult<()> {
         let name = self.store.get(id).ok().and_then(|p| p.manifest.map(|m| m.name));
-        let _changing = self.change(id, name.as_deref().unwrap_or(id.as_str()), "It is being uninstalled.")?;
+        let uninstalling = msg!("plugin.closedBecause.uninstalling", "It is being uninstalled.");
+        let _changing = self.change(id, name.as_deref().unwrap_or(id.as_str()), &uninstalling)?;
         self.store.uninstall(id, delete_data)?;
         self.resources.remove(id);
         self.stop(jobs, id);
@@ -897,7 +898,7 @@ impl PluginHost {
     /// between them. Another change of it goes first. Its service stops, so
     /// its program no longer holds its folder, and its open pages close and
     /// hear `reason` (it is being updated, or it was uninstalled).
-    pub fn change(&self, id: &PluginId, name: &str, reason: &str) -> PluginResult<Changing<'_>> {
+    pub fn change(&self, id: &PluginId, name: &str, reason: &Msg) -> PluginResult<Changing<'_>> {
         let mut busy = self.busy.lock();
         while busy.changing.contains(id) {
             self.freed.wait(&mut busy);
@@ -917,11 +918,11 @@ impl PluginHost {
     /// Stops the runs of `id`, running or still waiting, closes its pages
     /// and stops its service (it was turned off, or uninstalled).
     pub fn stop(&self, jobs: &JobRunner, id: &PluginId) {
-        self.stop_saying(jobs, id, "It was turned off.");
+        self.stop_saying(jobs, id, &msg!("plugin.closedBecause.turnedOff", "It was turned off."));
     }
 
     /// [`PluginHost::stop`], telling its pages `reason`.
-    fn stop_saying(&self, jobs: &JobRunner, id: &PluginId, reason: &str) {
+    fn stop_saying(&self, jobs: &JobRunner, id: &PluginId, reason: &Msg) {
         let stop: Vec<JobId> = self.runs().into_iter().filter(|(_, p)| p == id).map(|(job, _)| job).collect();
         if !stop.is_empty() {
             jobs.cancel_where(|j| stop.contains(&j.id));
@@ -947,10 +948,10 @@ impl PluginHost {
         for id in ids {
             let reason = match self.store.get(id) {
                 Ok(p) => match runnable(&p, true) {
-                    Err(e @ PluginError::Withdrawn { .. }) => e.to_string(),
-                    _ => format!("AutoScene withdrew {}.", name(&p)),
+                    Err(e @ PluginError::Withdrawn { .. }) => e.msg(),
+                    _ => msg!("plugin.closedBecause.withdrawn", "AutoScene withdrew {{name}}.", name = name(&p)),
                 },
-                Err(_) => "AutoScene withdrew it.".to_owned(),
+                Err(_) => msg!("plugin.closedBecause.withdrawnIt", "AutoScene withdrew it."),
             };
             log::warn!("{id} was withdrawn by AutoScene's catalog: its runs and its pages stop");
             self.stop_saying(jobs, id, &reason);
@@ -970,7 +971,7 @@ impl PluginHost {
         }
         // A page keeps the trust it opened with, and its service the trust of
         // the page it started for: a change of the plugin closes and stops them.
-        self.close_pages(|m| m.trust != Trust::Reviewed, &PluginError::NotAllowed.to_string());
+        self.close_pages(|m| m.trust != Trust::Reviewed, &PluginError::NotAllowed.msg());
         self.services.stop_where(|trust| trust != Trust::Reviewed, STOP_GRACE);
     }
 
@@ -991,14 +992,14 @@ impl PluginHost {
     /// crashed): its frames went with it, so every page closes, and its
     /// plugin's service may stop once it idles.
     pub fn close_all_pages(&self) {
-        self.close_pages(|_| true, "AutoScene's window loaded again.");
+        self.close_pages(|_| true, &msg!("plugin.closedBecause.windowReloaded", "AutoScene's window loaded again."));
     }
 
     /// Closes the open pages `close` picks, and tells each why (`reason`).
     /// They close under the busy lock, which a page is opened under
     /// ([`pages::open`]): a page that was opening as what closes it was
     /// stored is closed too. They are told after the lock is let go.
-    fn close_pages(&self, close: impl Fn(&Mount) -> bool, reason: &str) {
+    fn close_pages(&self, close: impl Fn(&Mount) -> bool, reason: &Msg) {
         let closed = {
             let _busy = self.busy.lock();
             self.pages.close_where(close)
@@ -1007,10 +1008,10 @@ impl PluginHost {
     }
 
     /// Tells each page of `sessions`, which closed, why (`reason`).
-    fn tell_closed(&self, sessions: Vec<String>, reason: &str) {
+    fn tell_closed(&self, sessions: Vec<String>, reason: &Msg) {
         for session in sessions {
             self.forget_page(&session);
-            (self.page_events)(PluginPageEvent { session, event: PageEvent::Closed { reason: reason.to_owned() } });
+            (self.page_events)(PluginPageEvent { session, event: PageEvent::Closed { reason: reason.clone() } });
         }
     }
 
@@ -1245,13 +1246,13 @@ fn runnable(p: &Installed, allow_unreviewed: bool) -> PluginResult<&Manifest> {
     let m = match (&p.manifest, &p.broken) {
         (Some(m), None) => m,
         (_, Some(broken)) => return Err(PluginError::Invalid(broken.clone())),
-        (None, None) => return Err(PluginError::Invalid(as_plugin::store::MISSING.into())),
+        (None, None) => return Err(PluginError::Invalid(as_plugin::store::missing())),
     };
     if let Some(reason) = &p.withdrawn {
         return Err(PluginError::Withdrawn { name: m.name.clone(), reason: reason.clone() });
     }
     if !p.record.enabled {
-        return Err(PluginError::Invalid(format!("{} is turned off.", m.name)));
+        return Err(PluginError::Invalid(msg!("plugin.turnedOff", "{{name}} is turned off.", name = &m.name)));
     }
     blocked(p, allow_unreviewed).map_or(Ok(m), Err)
 }
@@ -1310,7 +1311,7 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
         folder: p.dir.to_string_lossy().into_owned(),
         enabled: p.record.enabled,
         active: active(p, allow_unreviewed),
-        blocked_reason: blocked(p, allow_unreviewed).filter(|_| p.broken.is_none()).map(|e| e.to_string()),
+        blocked_reason: blocked(p, allow_unreviewed).filter(|_| p.broken.is_none()).map(|e| e.msg()),
         broken: p.broken.clone(),
         withdrawn: p.withdrawn.clone(),
         // What its plugin.json says now: a loaded folder's may have changed.
@@ -1420,7 +1421,8 @@ pub fn install(
     }
     // Its runs wait from here until the row names the new version. One that
     // started during the question loses the yes: the review kept asks again.
-    let changing = match host.change(&ticket.manifest.id, &ticket.manifest.name, "It is being updated.") {
+    let updating = msg!("plugin.closedBecause.updating", "It is being updated.");
+    let changing = match host.change(&ticket.manifest.id, &ticket.manifest.name, &updating) {
         Ok(changing) => changing,
         Err(busy) => {
             ticket.confirmed = false;
@@ -1706,8 +1708,10 @@ fn action_title(
     project_id: Option<ProjectId>,
     export_id: Option<ExportId>,
 ) -> PluginResult<String> {
-    let refused = |why: &str| Err(PluginError::Invalid(why.into()));
-    let no_such = || PluginError::Invalid(format!("{} has no such action.", m.name));
+    let refused = |why: Msg| Err(PluginError::Invalid(why));
+    let no_such = || PluginError::Invalid(msg!("plugin.noSuchAction", "{{name}} has no such action.", name = &m.name));
+    let not_on_export = || msg!("plugin.commandNotOnExport", "A command doesn't run on an export.");
+    let choose_export = || msg!("plugin.chooseExport", "Choose an export to run it on.");
     // A page names an action without its kind: one of the other kind is
     // said to be so.
     let is_command = || m.commands.iter().any(|c| c.id == action);
@@ -1717,7 +1721,7 @@ fn action_title(
         ActionKind::ShotFilter => {
             let f = m.shot_filters.iter().find(|f| f.id == action).ok_or_else(no_such)?;
             if project_id.is_none() || export_id.is_some() {
-                return refused("A shot filter checks a character's scenepack.");
+                return refused(msg!("plugin.filterNeedsPack", "A shot filter checks a character's scenepack."));
             }
             Ok(f.title.clone())
         }
@@ -1725,35 +1729,35 @@ fn action_title(
         ActionKind::PackAction => {
             let a = m.pack_actions.iter().find(|a| a.id == action).ok_or_else(no_such)?;
             if project_id.is_none() || export_id.is_some() {
-                return refused("A pack action saves a character's scenepack.");
+                return refused(msg!("plugin.packActionNeedsPack", "A pack action saves a character's scenepack."));
             }
             Ok(a.title.clone())
         }
         ActionKind::ExportAction => {
             let Some(a) = m.export_actions.iter().find(|a| a.id == action) else {
-                return if is_command() { refused("A command doesn't run on an export.") } else { Err(no_such()) };
+                return if is_command() { refused(not_on_export()) } else { Err(no_such()) };
             };
             if export_id.is_none() || project_id.is_none() {
-                return refused("Choose an export to run it on.");
+                return refused(choose_export());
             }
             Ok(a.title.clone())
         }
         ActionKind::Command => {
             let Some(c) = m.commands.iter().find(|c| c.id == action) else {
-                return if is_export_action() { refused("Choose an export to run it on.") } else { Err(no_such()) };
+                return if is_export_action() { refused(choose_export()) } else { Err(no_such()) };
             };
             if export_id.is_some() {
-                return refused("A command doesn't run on an export.");
+                return refused(not_on_export());
             }
             if c.needs_project && project_id.is_none() {
-                return refused("Open a project to run it in.");
+                return refused(msg!("plugin.openProject", "Open a project to run it in."));
             }
             Ok(c.title.clone())
         }
         ActionKind::Event => {
             let Some(e) = m.events.iter().find(|e| e.id == action) else { return Err(no_such()) };
             if export_id.is_some() || project_id.is_none() {
-                return refused("An event runs in the project where it happened.");
+                return refused(msg!("plugin.eventNeedsProject", "An event runs in the project where it happened."));
             }
             Ok(e.title.clone())
         }
@@ -2584,7 +2588,7 @@ mod tests {
             }
             progress(0, 4);
             if self.fails {
-                return Err(PluginError::Download { what: "uv".into(), detail: "connection refused".into() });
+                return Err(PluginError::Download { what: Msg::plain("uv"), detail: "connection refused".into() });
             }
             progress(4, 4);
             self.got.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2678,7 +2682,7 @@ mod tests {
             progress(0, total);
             if self.fails {
                 return Err(PluginError::Download {
-                    what: format!("{name}'s files"),
+                    what: Msg::plain(format!("{name}'s files")),
                     detail: "connection refused".into(),
                 });
             }
@@ -2726,7 +2730,7 @@ mod tests {
             _: as_plugin::OnEvent,
             _: &as_core::CancelToken,
         ) -> PluginResult<Arc<dyn as_plugin::Service>> {
-            Err(PluginError::Invalid("No service starts here.".into()))
+            Err(PluginError::Invalid(Msg::plain("No service starts here.")))
         }
     }
 
@@ -2944,7 +2948,7 @@ mod tests {
             .lock()
             .iter()
             .filter_map(|e| match &e.event {
-                PageEvent::Closed { reason } => Some((e.session.clone(), reason.clone())),
+                PageEvent::Closed { reason } => Some((e.session.clone(), reason.text.clone())),
                 _ => None,
             })
             .collect();
@@ -2961,7 +2965,7 @@ mod tests {
         let (first, second, other) = (open_page(&host, &one), open_page(&host, &one), open_page(&host, &two));
 
         // An update or an uninstall: its pages close before its files go, and say why.
-        let changing = host.change(&one.record.id, "One", "It is being updated.").unwrap();
+        let changing = host.change(&one.record.id, "One", &Msg::plain("It is being updated.")).unwrap();
         let mut both = [first.clone(), second.clone()];
         both.sort();
         let updated = |s: &String| (s.clone(), "It is being updated.".to_owned());
@@ -2972,7 +2976,7 @@ mod tests {
         let (again, _) =
             host.pages.open(&one, Grants::of(&one).unwrap(), &one.manifest.as_ref().unwrap().pages[0], None).unwrap();
         heard.lock().clear();
-        drop(host.change(&one.record.id, "One", "It is being uninstalled.").unwrap());
+        drop(host.change(&one.record.id, "One", &Msg::plain("It is being uninstalled.")).unwrap());
         assert_eq!(closed(&heard), [(again.token.clone(), "It is being uninstalled.".to_owned())]);
 
         // Its settings: the other plugin's page hears, and stays open.
@@ -2991,7 +2995,11 @@ mod tests {
         let event = serde_json::to_value(&heard.lock()[0]).unwrap();
         assert_eq!(
             event,
-            serde_json::json!({"session": other, "event": {"type": "closed", "reason": "It was turned off."}})
+            serde_json::json!({"session": other, "event": {"type": "closed", "reason": {
+                "key": "plugin.closedBecause.turnedOff",
+                "args": {},
+                "text": "It was turned off.",
+            }}})
         );
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -3056,7 +3064,7 @@ mod tests {
         let mut off = after(plugin("dev.a.off", Trust::Reviewed, false), &["post"]);
         off.record.enabled = false;
         let mut broken = after(plugin("dev.a.broken", Trust::Reviewed, false), &["post"]);
-        broken.broken = Some("Its files are missing. Install it again.".into());
+        broken.broken = Some(as_plugin::store::missing());
         let none = plugin("dev.a.none", Trust::Reviewed, false);
         let plugins = [reviewed, pinned, unreviewed, off, broken, none];
         let runs = |allow| {
@@ -3138,8 +3146,9 @@ mod tests {
         }
         // A broken one says first what is wrong with its files.
         let mut broken = withdraw(plugin("dev.a.leaky", Trust::Reviewed, false));
-        broken.broken = Some(as_plugin::store::MISSING.into());
-        assert_eq!(runnable(&broken, true).unwrap_err().to_string(), as_plugin::store::MISSING);
+        broken.broken = Some(as_plugin::store::missing());
+        assert_eq!(runnable(&broken, true).unwrap_err().to_string(), as_plugin::store::missing().text);
+        assert_eq!(runnable(&broken, true).unwrap_err().msg().key, "plugin.filesMissing");
         assert_eq!(info(&broken, &host.store, true).withdrawn.as_deref(), Some(reason));
         // Its page doesn't open, and a withdrawal of none is no withdrawal.
         let page = withdraw(paged(&tmp.join("paged"), "dev.a.leaky", Trust::Reviewed, false));
@@ -3200,6 +3209,11 @@ mod tests {
         let refused = |kind, action, project, export| action_title(m, kind, action, project, export).unwrap_err();
         let said = |e: PluginError| e.to_string();
         assert_eq!(said(refused(ActionKind::Command, "count", None, None)), "Open a project to run it in.");
+        let key = |e: PluginError| e.msg().key;
+        assert_eq!(key(refused(ActionKind::ExportAction, "post", project, None)), "plugin.chooseExport");
+        assert_eq!(key(refused(ActionKind::Command, "post", None, None)), "plugin.chooseExport");
+        assert_eq!(key(refused(ActionKind::Command, "gone", None, None)), "plugin.noSuchAction");
+        assert_eq!(key(refused(ActionKind::ExportAction, "hello", project, export)), "plugin.commandNotOnExport");
         assert_eq!(said(refused(ActionKind::ExportAction, "post", project, None)), "Choose an export to run it on.");
         assert_eq!(said(refused(ActionKind::ExportAction, "post", None, export)), "Choose an export to run it on.");
         assert_eq!(said(refused(ActionKind::Command, "hello", project, export)), "A command doesn't run on an export.");
@@ -3388,7 +3402,7 @@ mod tests {
         // A program isn't, whatever it says; nor is a broken plugin, which doesn't run.
         assert_eq!(info(&plugin("dev.a.program", Trust::Reviewed, false), &host.store, true).sandbox, None);
         let mut broken = wasm_plugin("dev.a.broken", Trust::Reviewed, None);
-        (broken.manifest, broken.broken) = (None, Some(as_plugin::store::MISSING.into()));
+        (broken.manifest, broken.broken) = (None, Some(as_plugin::store::missing()));
         assert_eq!(info(&broken, &host.store, true).sandbox, None);
         // The app's page reads it by these names.
         let json = serde_json::to_value(&boxed).unwrap();
@@ -3628,7 +3642,7 @@ mod tests {
                 (shown.plugin.source, shown.plugin.folder.as_str()),
                 (PluginSource::Folder, tmp.join(id).to_str().unwrap())
             );
-            assert_eq!(shown.plugin.blocked_reason.as_deref(), Some(PluginError::NotAllowed.to_string().as_str()));
+            assert_eq!(shown.plugin.blocked_reason, Some(PluginError::NotAllowed.msg()));
             host.store.commit(t, true, true).unwrap().record.id
         });
         // Their folders may be shown.
@@ -3778,7 +3792,7 @@ mod tests {
         let first = run(Class::Plugin, first_done.clone());
         assert_eq!(held.recv_timeout(Duration::from_secs(10)).unwrap(), first);
         // No update or uninstall while it runs.
-        let busy = host.change(&id, "One", "It is being updated.").err().unwrap();
+        let busy = host.change(&id, "One", &Msg::plain("It is being updated.")).err().unwrap();
         assert_eq!(busy.to_string(), "One is running. Wait for it to finish, or stop it in Activity.");
         // A second run on the other class waits for the first.
         let second_done = flag();
@@ -3793,7 +3807,7 @@ mod tests {
         }
 
         // A run that starts while the plugin changes waits for the change.
-        let changing = host.change(&id, "One", "It is being updated.").unwrap();
+        let changing = host.change(&id, "One", &Msg::plain("It is being updated.")).unwrap();
         let third = run(Class::Plugin, flag());
         assert!(held.recv_timeout(wait).is_err());
         assert_eq!(job(third).stage.as_deref(), Some("Waiting while it is updated"));
@@ -3804,7 +3818,7 @@ mod tests {
         while host.is_running(&id) {
             thread::sleep(Duration::from_millis(5));
         }
-        let changing = host.change(&id, "One", "It is being updated.").unwrap();
+        let changing = host.change(&id, "One", &Msg::plain("It is being updated.")).unwrap();
         let fourth = run(Class::Analysis, flag());
         while job(fourth).stage.is_none() {
             thread::sleep(Duration::from_millis(5));
@@ -4558,7 +4572,7 @@ mod tests {
         let mut off = waiting(plugin("dev.a.off", Trust::Reviewed, false), &["done"], &["done"]);
         off.record.enabled = false;
         let mut broken = waiting(plugin("dev.a.broken", Trust::Reviewed, false), &["done"], &["done"]);
-        broken.broken = Some(as_plugin::store::MISSING.into());
+        broken.broken = Some(as_plugin::store::missing());
         let mut withdrawn = waiting(plugin("dev.a.withdrawn", Trust::Reviewed, false), &["done"], &["done"]);
         withdrawn.withdrawn = Some("It sent export paths to a server.".into());
         let unreviewed = waiting(plugin("dev.a.unreviewed", Trust::Unreviewed, false), &["done"], &["done"]);

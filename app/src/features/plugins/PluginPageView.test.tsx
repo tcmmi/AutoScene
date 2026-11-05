@@ -13,7 +13,8 @@ import type { PageMount, PageReply, PageSpec, PluginInfo } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { NotFound } from "@/features/not-found"
 import { followPlaces } from "@/lib/places"
-import { pluginInfo } from "@/test/plugins"
+import { inLanguage } from "@/test/i18n"
+import { plain, pluginInfo } from "@/test/plugins"
 import { PluginPageView } from "./PluginPageView"
 
 const { list, pluginPageOpen, pluginPageClose, pluginPageCall } = vi.hoisted(() => ({
@@ -156,11 +157,23 @@ describe("a plugin's page", () => {
 
     // Why it can't run, when that is something else.
     const broken = "Its files are missing. Install it again."
-    list.plugins = [hello({ active: false, broken })]
+    list.plugins = [hello({ active: false, broken: plain(broken) })]
     show("/x/dev.a.page/main")
     expect(await screen.findByText(broken)).toBeTruthy()
     expect(screen.queryByLabelText("Main")).toBeNull()
     expect(pluginPageOpen).not.toHaveBeenCalled()
+  })
+
+  it("says why it isn't available in the UI's language", async () => {
+    await inLanguage("ro", { backend: { plugin: { filesMissing: "Fișierele lipsesc.", notReviewed: "Plugin neverificat." } } })
+    list.plugins = [hello({ active: false, broken: { key: "plugin.filesMissing", text: "Its files are missing. Install it again." } })]
+    show("/x/dev.a.page/main")
+    expect(await screen.findByText("Fișierele lipsesc.")).toBeTruthy()
+    cleanup()
+
+    list.plugins = [hello({ active: false, blockedReason: { key: "plugin.notReviewed", text: "Plugins that AutoScene has not reviewed are turned off." } })]
+    show("/x/dev.a.page/main")
+    expect(await screen.findByText("Plugin neverificat.")).toBeTruthy()
   })
 
   it("a page of a plugin AutoScene withdrew shows the withdrawal in place of the frame", async () => {

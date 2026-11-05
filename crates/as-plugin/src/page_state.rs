@@ -199,7 +199,7 @@ fn rename(from: &Path, to: &Path) -> io::Result<()> {
 }
 
 fn invalid(message: impl Into<String>) -> PluginError {
-    PluginError::Invalid(message.into())
+    PluginError::Manifest(message.into())
 }
 
 #[cfg(test)]
@@ -386,7 +386,7 @@ mod tests {
         assert!(fs::metadata(dir.join(FILE)).unwrap().len() <= MAX_FILE_BYTES as u64);
         // Keys are short and plain.
         for key in ["", "a b", "../x", "ключ", &"k".repeat(MAX_KEY_CHARS + 1)] {
-            assert!(matches!(get(dir, key), Err(PluginError::Invalid(_))), "{key}");
+            assert!(matches!(get(dir, key), Err(PluginError::Manifest(_))), "{key}");
             assert!(set(dir, key, json!(1), &on()).is_err(), "{key}");
         }
         set(dir, &"k".repeat(MAX_KEY_CHARS), json!(1), &on()).unwrap();

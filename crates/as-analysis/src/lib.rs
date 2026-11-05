@@ -32,19 +32,37 @@ pub use signals::FrameSignals;
 pub use sprites::ShotSprite;
 pub use tracks::{FaceDet, FaceTrack};
 
+use std::fmt;
+
+use as_core::{Msg, ToMsg, msg};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AnalysisError {
-    #[error(transparent)]
     Media(#[from] as_media::MediaError),
-    #[error(transparent)]
     Infer(#[from] as_infer::InferError),
-    #[error("Something went wrong while analysing. Details are in the log.")]
     Internal(String),
     /// A checkpoint couldn't be stored (the caller's error, as text).
-    #[error("{0}")]
     Store(String),
+}
+
+impl ToMsg for AnalysisError {
+    fn msg(&self) -> Msg {
+        match self {
+            Self::Media(e) => e.msg(),
+            Self::Infer(e) => e.msg(),
+            Self::Internal(_) => {
+                msg!("analysis.failed", "Something went wrong while analysing. Details are in the log.")
+            }
+            Self::Store(said) => Msg::plain(said),
+        }
+    }
+}
+
+impl fmt::Display for AnalysisError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.msg().text)
+    }
 }
 
 impl AnalysisError {
@@ -59,5 +77,31 @@ impl AnalysisError {
 
     pub fn is_cancelled(&self) -> bool {
         matches!(self, Self::Media(e) if e.is_cancelled())
+    }
+}
+
+#[cfg(test)]
+mod said {
+    use super::*;
+
+    #[test]
+    fn each_error_says_its_key_or_passes_on_the_one_it_holds() {
+        let said = [
+            (
+                AnalysisError::Internal("x".into()),
+                "analysis.failed",
+                "Something went wrong while analysing. Details are in the log.",
+            ),
+            (AnalysisError::Store("The disk is full.".into()), "", "The disk is full."),
+            (AnalysisError::Media(as_media::MediaError::Cancelled), "media.cancelled", "Cancelled."),
+            (
+                AnalysisError::Infer(as_infer::InferError::Model("x".into())),
+                "infer.model",
+                "An AI model couldn't be loaded. Details are in the log.",
+            ),
+        ];
+        for (e, key, english) in said {
+            assert_eq!((e.msg().key.as_str(), e.to_string().as_str()), (key, english));
+        }
     }
 }

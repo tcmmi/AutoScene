@@ -41,7 +41,6 @@ impl ProjectError {
     }
 }
 
-/// Its `Display`, with a key where the words have one so far.
 impl ToMsg for ProjectError {
     fn msg(&self) -> Msg {
         match self {
@@ -49,8 +48,8 @@ impl ToMsg for ProjectError {
             Self::Cancelled => msg!("job.cancelled", "cancelled"),
             Self::Db(e) => e.user_message(),
             Self::Media(e) => e.msg(),
+            Self::Export(e) => e.msg(),
             Self::Io(e) => e.msg(),
-            e => Msg::plain(e.to_string()),
         }
     }
 }

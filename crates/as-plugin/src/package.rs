@@ -135,7 +135,7 @@ pub struct Unpacked {
 /// the same file, nor one outside its folder.
 pub fn check_path(p: &str) -> PluginResult<()> {
     let refuse = |why: &str| {
-        Err(PluginError::Invalid(format!("The plugin names a file that can't be used: {} ({why}).", shown(p))))
+        Err(PluginError::Manifest(format!("The plugin names a file that can't be used: {} ({why}).", shown(p))))
     };
     if p.is_empty() {
         return refuse("it's empty");
@@ -1194,12 +1194,12 @@ mod tests {
         assert!(check_launch(&lock, &exe("bin/tool.exe"), "linux-x86_64").is_ok());
         // Only Windows runs a program the lock doesn't mark.
         assert!(check_launch(&lock, &exe("bin/tool"), "windows-x86_64").is_ok());
-        let Err(PluginError::Invalid(m)) = check_launch(&lock, &exe("bin/tool"), "macos-aarch64") else { panic!() };
+        let Err(PluginError::Manifest(m)) = check_launch(&lock, &exe("bin/tool"), "macos-aarch64") else { panic!() };
         assert_eq!(m, "The plugin's files.lock doesn't mark bin/tool to run.");
-        let Err(PluginError::Invalid(m)) = check_launch(&lock, &exe("bin/other"), "windows-x86_64") else { panic!() };
+        let Err(PluginError::Manifest(m)) = check_launch(&lock, &exe("bin/other"), "windows-x86_64") else { panic!() };
         assert_eq!(m, "The plugin package is missing bin/other, which its command needs.");
         let uv = Launch::UvScript { script: "main.py".into() };
-        let Err(PluginError::Invalid(m)) = check_launch(&lock, &uv, "linux-x86_64") else { panic!() };
+        let Err(PluginError::Manifest(m)) = check_launch(&lock, &uv, "linux-x86_64") else { panic!() };
         assert_eq!(m, "The plugin package is missing main.py.lock, which its command needs.");
     }
 
@@ -1411,7 +1411,7 @@ mod tests {
     #[test]
     fn a_listing_past_its_byte_cap_is_refused() {
         let zip = zip_of((0..100).map(|i| format!("file{i}")));
-        let Err(PluginError::Invalid(message)) = open(Cursor::new(zip), &Cell::new(2000)) else { panic!() };
+        let Err(PluginError::Manifest(message)) = open(Cursor::new(zip), &Cell::new(2000)) else { panic!() };
         assert_eq!(message, "The plugin package's list of files is too large.");
     }
 }

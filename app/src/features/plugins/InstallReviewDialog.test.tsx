@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { PluginInfo, PluginReview, PluginUpdate } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { usePluginReview } from "@/state/plugin-review"
-import { catalogReview, pluginInfo } from "@/test/plugins"
+import { inLanguage } from "@/test/i18n"
+import { catalogReview, plain, pluginInfo } from "@/test/plugins"
 import { InstallReviewDialog } from "./InstallReviewDialog"
 
 vi.mock("@/lib/ipc", async (importOriginal) => ({
@@ -136,7 +137,7 @@ describe("the install review", () => {
     cleanup()
 
     // The GPU, and what its plugin.json had skipped.
-    show(review({ plugin: { ...discord, gpu: true, warnings: ["Skipped its page: AutoScene 1.0 has no plugin pages."] } }))
+    show(review({ plugin: { ...discord, gpu: true, warnings: [plain("Skipped its page: AutoScene 1.0 has no plugin pages.")] } }))
     expect(screen.getByText("Uses the graphics card: its runs wait while an analysis runs")).toBeTruthy()
     expect(screen.getByText("Skipped its page: AutoScene 1.0 has no plugin pages.")).toBeTruthy()
   })
@@ -603,9 +604,19 @@ describe("the install review", () => {
     expect(screen.queryByText(/what it sends to those sites/)).toBeNull()
   })
 
+  it("says what it skipped and what it noticed in the UI's language", async () => {
+    await inLanguage("ro", { backend: { plugin: { warn: { bannerKind: "Bannerul a rămas pe dinafară.", httpWithoutNetwork: "Cererile lui sunt refuzate." } } } })
+    const skipped = { key: "plugin.warn.bannerKind", text: "Left out the banner: it must be a .png, .jpg or .webp file in the plugin." }
+    const noticed = { key: "plugin.warn.httpWithoutNetwork", text: "It imports wasi:http but doesn't ask for network: every request it makes is refused." }
+    show(review({ plugin: { ...clipList, warnings: [skipped] }, componentWarnings: [noticed] }))
+    expect(screen.getByText("Bannerul a rămas pe dinafară.")).toBeTruthy()
+    expect(screen.getByText("Cererile lui sunt refuzate.")).toBeTruthy()
+    expect(document.body.textContent).not.toContain("[object Object]")
+  })
+
   it("lists what the check of its component noticed apart from what its plugin.json skipped", () => {
     const noticed = "It imports wasi:http but doesn't ask for network: every request it makes is refused."
-    show(review({ plugin: clipList, componentWarnings: [noticed] }))
+    show(review({ plugin: clipList, componentWarnings: [plain(noticed)] }))
     const section = screen.getByRole("heading", { name: "Noticed in its component" }).closest("section")
     expect(within(section as HTMLElement).getByText(noticed)).toBeTruthy()
     expect(screen.queryByRole("heading", { name: "Skipped in its plugin.json" })).toBeNull()

@@ -60,7 +60,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use as_core::CancelToken;
+use as_core::{CancelToken, Msg, ToMsg, msg};
 use as_media::proc;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -80,7 +80,7 @@ use crate::protocol::RunMessage;
 pub use crate::runtime::CANCEL_GRACE;
 use crate::runtime::{DRAIN, MAX_LINE_BYTES, MAX_MESSAGE_CHARS, MAX_STAGE_CHARS, marked, sanitize};
 use crate::scratch::Scratch;
-use crate::store::CHANGED;
+use crate::store::changed;
 
 use self::bindings::{Called, Pre};
 
@@ -120,19 +120,33 @@ const COMPILE_SLACK: Duration = Duration::from_secs(5);
 const COMPILE_ENDED: i32 = 3;
 const EVENTS: &str = "events";
 const NO_EVENTS: &str = "no-events";
-const COMPILE_STOPPED: &str = "This plugin took too long to get ready, so AutoScene stopped. Nothing changed.";
-const COMPILE_OUT_OF_MEMORY: &str =
-    "This plugin took too much memory to get ready, so AutoScene stopped. Nothing changed.";
 /// What Rust's standard library says on its standard error as it ends a
 /// process that was refused memory.
 const REFUSED_MEMORY: &str = "memory allocation of ";
-pub(crate) const COMPILE_FAILED: &str = "AutoScene couldn't get this plugin ready. Nothing changed.";
 
-const NOT_A_COMPONENT: &str =
-    "The plugin's component isn't a WebAssembly component. Build it for wasm32-wasip2 or with componentize-py.";
+pub(crate) fn compile_failed() -> Msg {
+    msg!("plugin.compileFailed", "AutoScene couldn't get this plugin ready. Nothing changed.")
+}
+
+fn not_a_component() -> PluginError {
+    PluginError::Invalid(msg!(
+        "plugin.notAComponent",
+        "The plugin's component isn't a WebAssembly component. Build it for wasm32-wasip2 or with componentize-py."
+    ))
+}
+
 /// A plugin that waits for events has a component of 1.0.0, which can't be
 /// told of one.
-const NO_ON_EVENT: &str = "The plugin waits for events, but its component has no on-event: build it against the wit/plugin.wit that asp init writes.";
+fn no_on_event() -> PluginError {
+    PluginError::Invalid(msg!(
+        "plugin.noOnEvent",
+        "The plugin waits for events, but its component has no on-event: build it against the wit/plugin.wit that asp init writes."
+    ))
+}
+
+fn too_large() -> PluginError {
+    PluginError::Invalid(msg!("plugin.componentTooLarge", "The plugin's component is larger than 64 MB."))
+}
 
 /// One run of a WebAssembly plugin.
 pub struct WasmSpec {
@@ -192,13 +206,13 @@ impl Limits {
 }
 
 /// What a check of a component found, for the review and for `asp`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Checked {
     /// What it imports, as `ns:pkg/interface@version`.
     pub imports: Vec<String>,
     /// What may surprise its author: a wasi:http import without the
     /// network permission, or the permission without the import.
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Msg>,
 }
 
 /// Runs a WebAssembly plugin's action to its end: the message it returned,
@@ -301,14 +315,14 @@ pub fn check_folders(spec: &WasmSpec) -> PluginResult<()> {
 pub fn inspect(path: &Path, sha256: Option<&str>, m: &Manifest) -> PluginResult<Checked> {
     let bytes = read_component(path)?;
     if sha256.is_some_and(|s| s != sha256_hex(&bytes)) {
-        return Err(PluginError::Invalid(CHANGED.into()));
+        return Err(PluginError::Invalid(changed()));
     }
     if !is_component(&bytes) {
-        return Err(PluginError::Invalid(NOT_A_COMPONENT.into()));
+        return Err(not_a_component());
     }
     let imports = imports::declared(&bytes).map_err(|why| {
         tracing::debug!(error = %why, "a plugin's component can't be read");
-        PluginError::Invalid(format!("The plugin's component doesn't load: {}", first_line(&why)))
+        doesnt_load(&why)
     })?;
     let warnings = imports::check(imports.iter().map(String::as_str), Some(m))?;
     Ok(Checked { imports, warnings })
@@ -340,7 +354,7 @@ fn compile_into(
     let bytes = read_component(path)?;
     let hash = sha256_hex(&bytes);
     if sha256.is_some_and(|s| s != hash) {
-        return Err(PluginError::Invalid(CHANGED.into()));
+        return Err(PluginError::Invalid(changed()));
     }
     let component = loaded(engine, &bytes)?;
     let checked = checked_for(engine, &component, m, events)?;
@@ -368,8 +382,8 @@ pub struct Compiler {
 enum Compiled {
     /// The compiled file.
     Kept(PathBuf),
-    /// [`PluginError::Invalid`], and why.
-    Refused(String),
+    /// Refused, and why ([`PluginError::Invalid`]).
+    Refused(Msg),
     /// [`PluginError::TooNew`], and what needs it.
     TooNew(String),
 }
@@ -397,7 +411,7 @@ impl Compiler {
         let bytes = read_component(path)?;
         let hash = sha256_hex(&bytes);
         if sha256.is_some_and(|s| s != hash) {
-            return Err(PluginError::Invalid(CHANGED.into()));
+            return Err(PluginError::Invalid(changed()));
         }
         drop(bytes);
         let mut cmd = Command::new(&self.program);
@@ -422,7 +436,10 @@ impl Compiler {
             if Instant::now() >= deadline {
                 let _ = tree.kill_tree(Duration::ZERO);
                 tracing::warn!(plugin = %m.id, limit = ?self.limit, "a plugin's compile was stopped at its limit");
-                return Err(PluginError::Invalid(COMPILE_STOPPED.into()));
+                return Err(PluginError::Invalid(msg!(
+                    "plugin.compileStopped",
+                    "This plugin took too long to get ready, so AutoScene stopped. Nothing changed."
+                )));
             }
             thread::sleep(STOP_POLL);
         }
@@ -436,8 +453,13 @@ impl Compiler {
                 let errors = said(errors);
                 let stderr = cut(&errors, MAX_DETAIL_CHARS);
                 tracing::warn!(plugin = %m.id, %status, error = %e, %stderr, "a plugin's compile ended without an answer");
-                let why = if errors.contains(REFUSED_MEMORY) { COMPILE_OUT_OF_MEMORY } else { COMPILE_FAILED };
-                Err(PluginError::Invalid(why.into()))
+                Err(PluginError::Invalid(match errors.contains(REFUSED_MEMORY) {
+                    true => msg!(
+                        "plugin.compileOutOfMemory",
+                        "This plugin took too much memory to get ready, so AutoScene stopped. Nothing changed."
+                    ),
+                    false => compile_failed(),
+                }))
             }
         }
     }
@@ -473,8 +495,7 @@ pub fn compile_main(args: impl Iterator<Item = OsString>) -> i32 {
     let answer = match compiled {
         Ok((_, file)) => Compiled::Kept(file),
         Err(PluginError::TooNew(what)) => Compiled::TooNew(what),
-        Err(PluginError::Invalid(why)) => Compiled::Refused(why),
-        Err(e) => Compiled::Refused(e.to_string()),
+        Err(e) => Compiled::Refused(e.msg()),
     };
     match serde_json::to_string(&answer) {
         Ok(line) => {
@@ -529,10 +550,10 @@ fn compiled(engine: &Engine, bytes: &[u8], m: Option<&Manifest>) -> PluginResult
 /// `bytes` compiled, when they are a component this wasmtime can compile.
 fn loaded(engine: &Engine, bytes: &[u8]) -> PluginResult<Component> {
     if bytes.len() as u64 > MAX_COMPONENT_BYTES {
-        return Err(PluginError::Invalid("The plugin's component is larger than 64 MB.".into()));
+        return Err(too_large());
     }
     if !is_component(bytes) {
-        return Err(PluginError::Invalid(NOT_A_COMPONENT.into()));
+        return Err(not_a_component());
     }
     Component::new(engine, bytes).map_err(|e| {
         let text = format!("{e:#}");
@@ -542,7 +563,7 @@ fn loaded(engine: &Engine, bytes: &[u8]) -> PluginResult<Component> {
         if text.contains("component model async") || text.contains("requires the component model") {
             PluginError::TooNew("component".into())
         } else {
-            PluginError::Invalid(format!("The plugin's component doesn't load: {}", first_line(&text)))
+            doesnt_load(&text)
         }
     })
 }
@@ -564,7 +585,7 @@ fn checked_for(engine: &Engine, component: &Component, m: Option<&Manifest>, eve
     let warnings = imports::check(names.iter().map(String::as_str), m)?;
     let pre = pre(engine, component)?;
     if events && !pre.takes_events() {
-        return Err(PluginError::Invalid(NO_ON_EVENT.into()));
+        return Err(no_on_event());
     }
     Ok(Checked { imports: names, warnings })
 }
@@ -576,10 +597,19 @@ fn pre(engine: &Engine, component: &Component) -> PluginResult<Pre> {
     let doesnt_fit = |e: wasmtime::Error| {
         let text = format!("{e:#}");
         tracing::debug!(error = %text, "a plugin's component doesn't link");
-        PluginError::Invalid(format!("The plugin's component doesn't fit this AutoScene: {}", first_line(&text)))
+        PluginError::Invalid(msg!(
+            "plugin.componentDoesntFit",
+            "The plugin's component doesn't fit this AutoScene: {{why}}",
+            why = first_line(&text)
+        ))
     };
     let linker = engine::linker(engine)?;
     Pre::new(engine, component, linker.instantiate_pre(component).map_err(doesnt_fit)?).map_err(doesnt_fit)
+}
+
+fn doesnt_load(why: &str) -> PluginError {
+    let why = first_line(why);
+    PluginError::Invalid(msg!("plugin.componentDoesntLoad", "The plugin's component doesn't load: {{why}}", why = why))
 }
 
 /// The first line of `text`, as much of it as a person can read: an
@@ -593,7 +623,7 @@ fn read_component(path: &Path) -> PluginResult<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)?.take(MAX_COMPONENT_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_COMPONENT_BYTES {
-        return Err(PluginError::Invalid("The plugin's component is larger than 64 MB.".into()));
+        return Err(too_large());
     }
     Ok(bytes)
 }
@@ -628,7 +658,7 @@ fn component(
         None => read_component(&spec.component)?,
     };
     if sha256_hex(&bytes) != sha256 {
-        return Err(PluginError::Invalid(CHANGED.into()));
+        return Err(PluginError::Invalid(changed()));
     }
     report(&format!("Getting {} ready", sanitize(&spec.name, MAX_STAGE_CHARS)), None);
     let (component, _) = compiled(engine, &bytes, None)?;
@@ -679,7 +709,7 @@ fn run_in(
     let request = convert::request(&message, &mounts, &grants)?;
     // Never sent: the manifest's events were refused at install without it.
     if !pre.takes(&request) {
-        return Err(PluginError::Invalid(NO_ON_EVENT.into()));
+        return Err(no_on_event());
     }
     let folders = (data_dir.as_path(), resources_dir.as_deref(), tmp);
     let wasi = state::wasi(message.plugin.id.as_str(), grants.protocol, folders, &mounts, log)?;
@@ -902,5 +932,28 @@ mod tests {
         // A test's limit of seconds still names a whole minute.
         let short = Limits { memory: 1 << 20, time: Duration::from_secs(2) };
         assert_eq!((short.mb(), short.minutes()), (1, 1));
+    }
+}
+
+#[cfg(test)]
+mod said {
+    use super::*;
+
+    #[test]
+    fn a_compile_refused_in_its_process_keeps_its_key() {
+        let line = serde_json::to_string(&Compiled::Refused(compile_failed())).unwrap();
+        let Compiled::Refused(said) = serde_json::from_str(&line).unwrap() else { panic!("{line}") };
+        assert_eq!(said, compile_failed());
+    }
+
+    #[test]
+    fn a_component_that_is_refused_has_its_key() {
+        let key = |e: PluginError| e.msg().key;
+        assert_eq!(key(not_a_component()), "plugin.notAComponent");
+        assert_eq!(key(no_on_event()), "plugin.noOnEvent");
+        assert_eq!(key(too_large()), "plugin.componentTooLarge");
+        let said = doesnt_load("first\nsecond");
+        assert_eq!(said.msg().key, "plugin.componentDoesntLoad");
+        assert_eq!(said.to_string(), "The plugin's component doesn't load: first");
     }
 }

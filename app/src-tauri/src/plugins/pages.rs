@@ -109,7 +109,9 @@ pub fn open(
         let waits = msg!("plugin.beingUpdated", "{{name}} is being updated.", name = &m.name);
         return Err(AppError::new(ErrorCode::NotReady, waits));
     }
-    let page = m.page(page_id).ok_or_else(|| PluginError::Invalid(format!("{} has no such page.", m.name)))?;
+    let page = m
+        .page(page_id)
+        .ok_or_else(|| PluginError::Invalid(msg!("plugin.noSuchPage", "{{name}} has no such page.", name = &m.name)))?;
     let project = match (page.scope, project_id) {
         (PageScope::Project, Some(project_id)) => Some(project_id.to_string()),
         (PageScope::Project, None) => {
@@ -130,7 +132,7 @@ pub fn open(
     // its first heartbeat is asked about too.
     host.beats.beat(&mount.token, Instant::now());
     drop(busy);
-    host.tell_closed(closed, "Too many plugin pages were open.");
+    host.tell_closed(closed, &msg!("plugin.closedBecause.tooMany", "Too many plugin pages were open."));
     if mount.grants.service() {
         host.services.forgive(id);
         host.warm_service(mount.clone());
@@ -685,7 +687,7 @@ mod tests {
         assert_eq!(closed(&heard).len(), 1 + pages::MAX_SESSIONS);
 
         // Not while it changes; turned off, not at all.
-        let changing = host.change(&id, "Page", "It is being updated.").unwrap();
+        let changing = host.change(&id, "Page", &Msg::plain("It is being updated.")).unwrap();
         let busy = open(&host, &lib, &id, "main", None).unwrap_err();
         assert_eq!((busy.code, busy.message.as_str()), (ErrorCode::NotReady, "Page dev.a.page is being updated."));
         drop(changing);

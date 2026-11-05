@@ -93,7 +93,8 @@ impl From<PluginError> for AppError {
             PluginError::Io(io) if io.kind() == std::io::ErrorKind::NotFound => ErrorCode::NotFound,
             PluginError::Io(_) => ErrorCode::Io,
             PluginError::Db(_) | PluginError::Failed { .. } | PluginError::Crashed { .. } => ErrorCode::Internal,
-            PluginError::Invalid(_)
+            PluginError::Manifest(_)
+            | PluginError::Invalid(_)
             | PluginError::TooNew(_)
             | PluginError::Platform
             | PluginError::BadSignature(_)
@@ -136,61 +137,154 @@ pub type AppResult<T> = Result<T, AppError>;
 mod tests {
     use std::io::{Error, ErrorKind};
 
+    use as_core::{MsgArg, msg};
     use as_media::MediaError;
 
     use super::*;
 
     #[test]
     fn plugin_errors_get_their_codes_and_keep_their_words() {
-        let said = |e: PluginError| {
+        use ErrorCode::{Cancelled, Internal, Invalid, NotFound, NotReady};
+        let words = |e: PluginError| {
             let e = AppError::from(e);
             assert_eq!(e.msg.text, e.message);
-            (e.code, e.message)
+            (e.code, e.msg.key, e.message)
         };
-        let invalid = [
-            PluginError::Invalid("Its name is missing.".into()),
+        let check = |e: PluginError, code: ErrorCode, key: &str, english: &str| {
+            assert_eq!(words(e), (code, key.to_owned(), english.to_owned()));
+        };
+        // For the plugin's author: their English, framed by a key that adds nothing to it.
+        check(PluginError::Manifest("Its name is missing.".into()), Invalid, "plugin.invalid", "Its name is missing.");
+        let denied = "A run reads only the project it runs in.";
+        check(PluginError::Denied(denied.into()), Invalid, "plugin.invalid", denied);
+        // What the person reads: the sentence's own key.
+        let refused = msg!("plugin.turnedOff", "{{name}} is turned off.", name = "Poster");
+        check(PluginError::Invalid(refused), Invalid, "plugin.turnedOff", "Poster is turned off.");
+        let older = msg!("catalog.older", "This catalog is older than the one AutoScene has.");
+        check(
+            PluginError::Catalog(older),
+            Invalid,
+            "catalog.older",
+            "This catalog is older than the one AutoScene has.",
+        );
+        check(
             PluginError::TooNew("engines.autoscene".into()),
-            PluginError::Platform,
+            Invalid,
+            "plugin.tooNew",
+            "This plugin needs a newer AutoScene.",
+        );
+        check(PluginError::Platform, Invalid, "plugin.wrongPlatform", "This plugin isn't made for this computer.");
+        check(
             PluginError::BadSignature("hash".into()),
+            Invalid,
+            "plugin.badSignature",
+            "The package was changed after it was signed.",
+        );
+        check(
             PluginError::KeyChanged { pinned: "A".into(), got: "B".into() },
+            Invalid,
+            "plugin.keyChanged",
+            "This update is signed by a different author than the installed version.",
+        );
+        check(
             PluginError::NotAllowed,
+            Invalid,
+            "plugin.notAllowed",
+            "Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins.",
+        );
+        check(
             PluginError::UvMissing,
-            PluginError::Denied("A run reads only the project it runs in.".into()),
-            PluginError::Catalog("This catalog is older than the one AutoScene has.".into()),
+            Invalid,
+            "plugin.uvMissing",
+            "This plugin needs uv, and AutoScene couldn't get it.",
+        );
+        check(
             PluginError::Withdrawn { name: "Leaky".into(), reason: "It sent export paths to a server.".into() },
-            PluginError::Download { what: "Poster".into(), detail: "connection refused".into() },
-            PluginError::TimedOut { name: "Poster".into(), minutes: 30 },
-            PluginError::OutOfMemory { name: "Poster".into(), mb: 512 },
-        ];
-        for e in invalid {
-            let words = e.to_string();
-            assert_eq!(said(e), (ErrorCode::Invalid, words));
-        }
-        let withdrawn =
-            PluginError::Withdrawn { name: "Leaky".into(), reason: "It sent export paths to a server.".into() };
-        assert_eq!(said(withdrawn).1, "AutoScene withdrew Leaky. It sent export paths to a server.");
+            Invalid,
+            "plugin.withdrawn",
+            "AutoScene withdrew Leaky. It sent export paths to a server.",
+        );
         // What went wrong is the log's, never the message's.
-        let download = PluginError::Download { what: "Poster".into(), detail: "connection refused".into() };
-        assert_eq!(said(download).1, "AutoScene couldn't get Poster. Check the internet connection, then try again.");
-        assert_eq!(said(PluginError::NotFound("dev.a.b".into())).0, ErrorCode::NotFound);
-        assert_eq!(said(PluginError::Closed), (ErrorCode::NotFound, "This page was closed.".into()));
-        assert_eq!(
-            said(PluginError::Busy("Poster".into())),
-            (ErrorCode::NotReady, "Poster is running. Wait for it to finish, or stop it in Activity.".into())
+        check(
+            PluginError::Download { what: Msg::plain("Poster"), detail: "connection refused".into() },
+            Invalid,
+            "plugin.downloadFailed",
+            "AutoScene couldn't get Poster. Check the internet connection, then try again.",
         );
-        assert_eq!(said(PluginError::Cancelled).0, ErrorCode::Cancelled);
-        assert_eq!(
-            said(PluginError::Keychain { reason: "it is locked.".into(), detail: Some("Locked".into()) }),
-            (ErrorCode::NotReady, "Your system's keychain can't be used: it is locked.".into())
+        check(
+            PluginError::TimedOut { name: "Poster".into(), minutes: 30 },
+            Invalid,
+            "plugin.timedOut",
+            "Poster ran for longer than 30 minutes and was stopped.",
         );
-        // A file: missing, else any other trouble.
-        assert_eq!(said(PluginError::Io(Error::from(ErrorKind::NotFound))).0, ErrorCode::NotFound);
-        assert_eq!(said(PluginError::Io(Error::from(ErrorKind::PermissionDenied))).0, ErrorCode::Io);
-        // A run's own failures are the plugin's, not the request's.
-        let failed = PluginError::Failed { message: "The webhook said no.".into(), detail: None };
-        assert_eq!(said(failed), (ErrorCode::Internal, "The webhook said no.".into()));
-        let crashed = PluginError::Crashed { name: "Poster".into(), detail: "exit 1".into() };
-        assert_eq!(said(crashed), (ErrorCode::Internal, "Poster stopped unexpectedly.".into()));
+        check(
+            PluginError::TimedOut { name: "Poster".into(), minutes: 1 },
+            Invalid,
+            "plugin.timedOut",
+            "Poster ran for longer than 1 minute and was stopped.",
+        );
+        check(
+            PluginError::OutOfMemory { name: "Poster".into(), mb: 512 },
+            Invalid,
+            "plugin.outOfMemory",
+            "Poster needed more than 512 MB of memory and was stopped.",
+        );
+        check(PluginError::NotFound("dev.a.b".into()), NotFound, "plugin.notFound", "dev.a.b isn't installed.");
+        check(PluginError::Closed, NotFound, "plugin.closed", "This page was closed.");
+        check(
+            PluginError::Busy("Poster".into()),
+            NotReady,
+            "plugin.busy",
+            "Poster is running. Wait for it to finish, or stop it in Activity.",
+        );
+        check(PluginError::Cancelled, Cancelled, "plugin.cancelled", "Cancelled.");
+        let locked = msg!("keychain.locked", "it is locked, or refused AutoScene.");
+        let keychain = PluginError::Keychain { reason: locked, detail: Some("Locked".into()) };
+        let said = AppError::from(keychain);
+        assert_eq!((said.code, said.msg.key.as_str()), (NotReady, "keychain.unusable"));
+        assert_eq!(said.message, "Your system's keychain can't be used: it is locked, or refused AutoScene.");
+        assert!(matches!(&said.msg.args["reason"], MsgArg::Msg(m) if m.key == "keychain.locked"), "{:?}", said.msg);
+        // A file: missing, else any other trouble, each in the file's words.
+        let gone = PluginError::Io(Error::from(ErrorKind::NotFound));
+        check(gone, NotFound, "file.missing", "A file or folder AutoScene needs isn't there any more.");
+        let refused = PluginError::Io(Error::from(ErrorKind::PermissionDenied));
+        check(
+            refused,
+            ErrorCode::Io,
+            "file.permission",
+            "AutoScene doesn't have permission to use that file or folder.",
+        );
+        // The library: its careful words, not the technical ones.
+        check(
+            PluginError::Db(as_db::DbError::TooNew),
+            Internal,
+            "db.tooNew",
+            "This project was made by a newer version of AutoScene. Update AutoScene to open it.",
+        );
+        // A run's own failures are the plugin's, not the request's: its line stays as it wrote it.
+        check(
+            PluginError::Failed { message: "The webhook said no.".into(), detail: None },
+            Internal,
+            "",
+            "The webhook said no.",
+        );
+        check(
+            PluginError::Crashed { name: "Poster".into(), detail: "exit 1".into() },
+            Internal,
+            "plugin.crashed",
+            "Poster stopped unexpectedly.",
+        );
+    }
+
+    #[test]
+    fn a_manifest_that_is_refused_reaches_the_ui_in_its_english() {
+        let e = as_plugin::PluginId::parse("not valid").unwrap_err();
+        let english = e.to_string();
+        assert!(english.starts_with("The plugin's id isn't valid."), "{english}");
+        let said = AppError::from(e);
+        assert_eq!((said.code, said.msg.key.as_str()), (ErrorCode::Invalid, "plugin.invalid"));
+        assert_eq!(said.msg.args["why"], MsgArg::Text(english.clone()));
+        assert_eq!(said.message, english);
     }
 
     #[test]

@@ -75,6 +75,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use specta::Type;
 
+use as_core::{Msg, msg};
+
 use crate::error::{PluginError, PluginResult};
 use crate::net;
 use crate::package::{Picture, PictureFormat, check_path, reserved};
@@ -665,7 +667,7 @@ impl Launch {
 #[derive(Clone, Debug)]
 pub struct Parsed {
     pub manifest: Manifest,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Msg>,
 }
 
 /// This computer's platform key (see [`PLATFORMS`]); `other` on any else.
@@ -692,7 +694,11 @@ impl Manifest {
     /// The command for the platform `here` (a key of [`PLATFORMS`]).
     fn launch_on(&self, here: &str) -> PluginResult<Launch> {
         if !self.runs_program() {
-            return Err(invalid(format!("{} runs no program.", self.name)));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.runsNoProgram",
+                "{{name}} runs no program.",
+                name = &self.name
+            )));
         }
         if !PLATFORMS.contains(&here) || (!self.platforms.is_empty() && !self.platforms.iter().any(|p| p == here)) {
             return Err(PluginError::Platform);
@@ -779,7 +785,7 @@ impl Manifest {
 /// Reads a `plugin.json`. What makes the plugin unusable is an error: a
 /// plugin that needs a newer AutoScene than `app` (also by
 /// `engines.autoscene`) gets [`PluginError::TooNew`], one that is wrong gets
-/// [`PluginError::Invalid`]. What can be left out is, with a warning. Texts
+/// [`PluginError::Manifest`]. What can be left out is, with a warning. Texts
 /// lose control characters and the invisible ones that turn or hide text,
 /// and are cut to a length the review dialog can show. An object that names
 /// a key twice is refused: JSON readers differ in which one they keep.
@@ -878,7 +884,10 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     let mut named = root.list("platforms")?;
     // Nothing of a plugin that runs no program is made for one platform.
     if kind == RuntimeKind::None && !named.is_empty() {
-        w.push("Ignored platforms: a plugin that runs no program works on every platform.".into());
+        w.push(msg!(
+            "plugin.warn.platformsIgnored",
+            "Ignored platforms: a plugin that runs no program works on every platform."
+        ));
         named = &[];
     }
     if named.len() > MAX_PLATFORMS {
@@ -889,7 +898,11 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             return Err(invalid(format!("The plugin's platforms[{i}] isn't a platform such as windows-x86_64.")));
         };
         if !PLATFORMS.contains(&p) {
-            w.push(format!("platforms names \"{p}\", which this AutoScene doesn't know."));
+            w.push(msg!(
+                "plugin.warn.platformUnknown",
+                "platforms names \"{{name}}\", which this AutoScene doesn't know.",
+                name = p
+            ));
         }
         if !platforms.iter().any(|known| known == p) {
             platforms.push(p.to_owned());
@@ -906,7 +919,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     let mut command = BTreeMap::new();
     let (mut component, mut limits) = (None, None);
     if manifest_version >= 2 && kind != RuntimeKind::Wasm && runtime.get("limits").is_some() {
-        w.push("runtime.limits applies only to WebAssembly plugins.".into());
+        w.push(msg!("plugin.warn.limitsWasmOnly", "runtime.limits applies only to WebAssembly plugins."));
     }
     let gpu = if kind == RuntimeKind::None {
         // Nothing starts, and nothing waits for the GPU.
@@ -938,7 +951,11 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             let path = format!("runtime.command[\"{}\"]", shown(key));
             // It could never run here, and a later AutoScene may allow more in it.
             if key != "*" && !PLATFORMS.contains(&key.as_str()) {
-                w.push(format!("Skipped {path}, which this AutoScene doesn't know."));
+                w.push(msg!(
+                    "plugin.warn.skippedUnknown",
+                    "Skipped {{path}}, which this AutoScene doesn't know.",
+                    path = path
+                ));
                 continue;
             }
             let Value::Array(parts) = value else {
@@ -990,7 +1007,10 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             }
         }
         if !network_hosts.is_empty() && !permissions.contains(&Permission::Network) {
-            w.push("Ignored network.hosts: the plugin doesn't ask for the network permission.".into());
+            w.push(msg!(
+                "plugin.warn.hostsIgnored",
+                "Ignored network.hosts: the plugin doesn't ask for the network permission."
+            ));
             network_hosts.clear();
         }
         // The sandbox reaches public addresses only, so a name for this
@@ -1006,7 +1026,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         // so version 1 named such hosts without a word, and still does.
         if manifest_version >= 2 {
             for h in network_hosts.iter().filter(|h| !net::public_name(h)) {
-                w.push(format!("net.fetch can't reach {h}."));
+                w.push(msg!("plugin.warn.hostUnreachable", "net.fetch can't reach {{host}}.", host = h));
             }
         }
     }
@@ -1018,19 +1038,35 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             match key.as_str() {
                 "exportActions" | "commands" | "settings" => {}
                 "pages" if manifest_version < 2 => {
-                    w.push(r#"Skipped contributes.pages: pages need "manifestVersion": 2."#.into());
+                    w.push(msg!(
+                        "plugin.warn.pagesNeedV2",
+                        r#"Skipped contributes.pages: pages need "manifestVersion": 2."#
+                    ));
                 }
                 "events" if manifest_version < 2 => {
-                    w.push(r#"Skipped contributes.events: events need "manifestVersion": 2."#.into());
+                    w.push(msg!(
+                        "plugin.warn.eventsNeedV2",
+                        r#"Skipped contributes.events: events need "manifestVersion": 2."#
+                    ));
                 }
                 "shotFilters" if manifest_version < 2 => {
-                    w.push(r#"Skipped contributes.shotFilters: shot filters need "manifestVersion": 2."#.into());
+                    w.push(msg!(
+                        "plugin.warn.shotFiltersNeedV2",
+                        r#"Skipped contributes.shotFilters: shot filters need "manifestVersion": 2."#
+                    ));
                 }
                 "packActions" if manifest_version < 2 => {
-                    w.push(r#"Skipped contributes.packActions: pack actions need "manifestVersion": 2."#.into());
+                    w.push(msg!(
+                        "plugin.warn.packActionsNeedV2",
+                        r#"Skipped contributes.packActions: pack actions need "manifestVersion": 2."#
+                    ));
                 }
                 "pages" | "events" | "shotFilters" | "packActions" => {}
-                key => w.push(format!("Skipped contributes.{}, which this AutoScene doesn't know.", shown(key))),
+                key => w.push(msg!(
+                    "plugin.warn.skippedUnknown",
+                    "Skipped {{path}}, which this AutoScene doesn't know.",
+                    path = format!("contributes.{}", shown(key))
+                )),
             }
         }
         let (actions, palette, specs) = (c.list("exportActions")?, c.list("commands")?, c.list("settings")?);
@@ -1049,11 +1085,19 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             // How the export went is on the run line from protocol 2.
             let after_failed = match a.flag("afterFailed")? {
                 Some(true) if manifest_version < 2 => {
-                    w.push(format!(r#"Ignored {}: it needs "manifestVersion": 2."#, a.at("afterFailed")));
+                    w.push(msg!(
+                        "plugin.warn.ignoredNeedsV2",
+                        r#"Ignored {{path}}: it needs "manifestVersion": 2."#,
+                        path = a.at("afterFailed")
+                    ));
                     false
                 }
                 Some(true) if protocol < 2 => {
-                    w.push(format!(r#"Ignored {}: it needs "engines": {{"protocol": 2}}."#, a.at("afterFailed")));
+                    w.push(msg!(
+                        "plugin.warn.ignoredNeedsProtocol2",
+                        r#"Ignored {{path}}: it needs "engines": {"protocol": 2}."#,
+                        path = a.at("afterFailed")
+                    ));
                     false
                 }
                 on => on.unwrap_or(false),
@@ -1167,13 +1211,16 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         }
     }
     if kind == RuntimeKind::Service && pages.is_empty() {
-        w.push("Its service never starts: a service runs while one of its pages is open, and it has none.".into());
+        w.push(msg!(
+            "plugin.warn.serviceNeverStarts",
+            "Its service never starts: a service runs while one of its pages is open, and it has none."
+        ));
     }
 
     let icon = match root.text("icon")? {
         Some(p) if check_path(p).is_ok() && picture_in(p, Picture::Icon) => Some(p.to_owned()),
         Some(_) => {
-            w.push("Left out the icon: it must be a .png or .svg file in the plugin.".into());
+            w.push(msg!("plugin.warn.iconKind", "Left out the icon: it must be a .png or .svg file in the plugin."));
             None
         }
         None => None,
@@ -1181,13 +1228,16 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     // Version 1 skips it, whatever it holds, as AutoScene 1.0 does.
     let banner = match root.get("banner") {
         Some(_) if manifest_version < 2 => {
-            w.push(r#"Left out the banner: it needs "manifestVersion": 2."#.into());
+            w.push(msg!("plugin.warn.bannerNeedsV2", r#"Left out the banner: it needs "manifestVersion": 2."#));
             None
         }
         _ => match root.text("banner")? {
             Some(p) if check_path(p).is_ok() && picture_in(p, Picture::Banner) => Some(p.to_owned()),
             Some(_) => {
-                w.push("Left out the banner: it must be a .png, .jpg or .webp file in the plugin.".into());
+                w.push(msg!(
+                    "plugin.warn.bannerKind",
+                    "Left out the banner: it must be a .png, .jpg or .webp file in the plugin."
+                ));
                 None
             }
             None => None,
@@ -1199,7 +1249,12 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
     if w.len() > MAX_WARNINGS {
         let more = w.len() - (MAX_WARNINGS - 1);
         w.truncate(MAX_WARNINGS - 1);
-        w.push(format!("And {more} more warnings."));
+        w.push(msg!(
+            "plugin.warn.more",
+            one = "And {{count}} more warning.",
+            other = "And {{count}} more warnings.",
+            count = more
+        ));
     }
     let manifest = Manifest {
         manifest_version,
@@ -1249,7 +1304,7 @@ fn check_saving(kind: RuntimeKind, protocol: u32, permissions: &[Permission]) ->
 /// A pack action `a`: its id, its title and the one file it saves, whose
 /// name is a plain file name (as a package's are, [`check_path`]) but for
 /// `{character}`, ending in one of its 1 to 4 extensions.
-fn pack_action(a: &Obj, w: &mut Vec<String>) -> PluginResult<PackActionSpec> {
+fn pack_action(a: &Obj, w: &mut Vec<Msg>) -> PluginResult<PackActionSpec> {
     a.warn_unknown(&["id", "title", "file"], w);
     let id = a.contribution_id()?;
     let title = a.required_label("title", MAX_PACK_ACTION_TITLE, w)?;
@@ -1317,7 +1372,7 @@ fn check_filtering(kind: RuntimeKind, protocol: u32, permissions: &[Permission])
 /// A shot filter `f`, of a plugin with the settings `settings` (and the
 /// keys `named` its plugin.json gives, read or skipped). The settings it
 /// names must be the plugin's; left out, it depends on each of them.
-fn shot_filter(f: &Obj, settings: &[SettingSpec], named: &[&str], w: &mut Vec<String>) -> PluginResult<ShotFilterSpec> {
+fn shot_filter(f: &Obj, settings: &[SettingSpec], named: &[&str], w: &mut Vec<Msg>) -> PluginResult<ShotFilterSpec> {
     f.warn_unknown(&["id", "title", "description", "reason", "settings", "revision"], w);
     let id = f.contribution_id()?;
     let title = f.required_label("title", MAX_FILTER_LABEL, w)?;
@@ -1370,7 +1425,7 @@ fn wasm_component(runtime: &Obj) -> PluginResult<String> {
 
 /// The `limits` of a WebAssembly plugin's `runtime`: each a whole number in
 /// its range, and the default for each it leaves out.
-fn wasm_limits(runtime: &Obj, w: &mut Vec<String>) -> PluginResult<WasmLimits> {
+fn wasm_limits(runtime: &Obj, w: &mut Vec<Msg>) -> PluginResult<WasmLimits> {
     let mut limits = WasmLimits::default();
     let Some(asked) = runtime.object("limits")? else { return Ok(limits) };
     asked.warn_unknown(&["memoryMb", "minutes"], w);
@@ -1401,12 +1456,12 @@ fn wasm_limits(runtime: &Obj, w: &mut Vec<String>) -> PluginResult<WasmLimits> {
 /// [`RESOURCE_REFUSED_ENDINGS`]. An address on Hugging Face that follows a branch
 /// instead of a revision gets a warning: its file will change one day, and
 /// then fail its hash.
-fn resources(root: &Obj, version: u32, kind: RuntimeKind, w: &mut Vec<String>) -> PluginResult<Vec<Resource>> {
+fn resources(root: &Obj, version: u32, kind: RuntimeKind, w: &mut Vec<Msg>) -> PluginResult<Vec<Resource>> {
     if root.get("resources").is_none() {
         return Ok(Vec::new());
     }
     if version < 2 {
-        w.push(r#"Skipped resources: they need "manifestVersion": 2."#.into());
+        w.push(msg!("plugin.warn.resourcesNeedV2", r#"Skipped resources: they need "manifestVersion": 2."#));
         return Ok(Vec::new());
     }
     let listed = root.list("resources")?;
@@ -1447,9 +1502,10 @@ fn resources(root: &Obj, version: u32, kind: RuntimeKind, w: &mut Vec<String>) -
             addresses.push(url.to_owned());
         }
         if addresses.iter().any(|url| follows_a_branch(url)) {
-            w.push(format!(
-                "{} follows a branch of Hugging Face: pin a revision, or the file will stop matching its hash.",
-                shown(name)
+            w.push(msg!(
+                "plugin.warn.followsBranch",
+                "{{name}} follows a branch of Hugging Face: pin a revision, or the file will stop matching its hash.",
+                name = shown(name)
             ));
         }
         let sha256 = o.required_text("sha256")?;
@@ -1558,7 +1614,7 @@ pub(crate) fn check_requirement(req: &VersionReq, app: &Version) -> PluginResult
     if later {
         Err(PluginError::TooNew("engines.autoscene".into()))
     } else {
-        Err(invalid("This plugin only works with an older AutoScene."))
+        Err(PluginError::Invalid(msg!("plugin.needsOlder", "This plugin only works with an older AutoScene.")))
     }
 }
 
@@ -1632,7 +1688,7 @@ fn computer_program(name: &str) -> bool {
 /// One entry of `contributes.settings` of a manifest of `version`, or
 /// `None` for a type this AutoScene skips. A secret is skipped too unless
 /// the plugin `asks` for one: nothing of it could ever read it.
-fn setting(o: &Obj, version: u32, asks: bool, w: &mut Vec<String>) -> PluginResult<Option<SettingSpec>> {
+fn setting(o: &Obj, version: u32, asks: bool, w: &mut Vec<Msg>) -> PluginResult<Option<SettingSpec>> {
     let key = o.required_text("key")?;
     let mut chars = key.chars();
     let first = chars.next().is_some_and(|c| c.is_ascii_lowercase());
@@ -1722,11 +1778,19 @@ fn setting(o: &Obj, version: u32, asks: bool, w: &mut Vec<String>) -> PluginResu
             (SettingKind::Select { options, default }, &["options", "default"])
         }
         "secret" if version < 2 => {
-            w.push(format!(r#"Skipped the setting "{key}": secret settings need "manifestVersion": 2."#));
+            w.push(msg!(
+                "plugin.warn.secretNeedsV2",
+                r#"Skipped the setting "{{key}}": secret settings need "manifestVersion": 2."#,
+                key = key
+            ));
             return Ok(None);
         }
         "secret" if !asks => {
-            w.push(format!(r#"Skipped the setting "{key}": secret settings need "engines": {{"protocol": 2}}."#));
+            w.push(msg!(
+                "plugin.warn.secretNeedsProtocol2",
+                r#"Skipped the setting "{{key}}": secret settings need "engines": {"protocol": 2}."#,
+                key = key
+            ));
             return Ok(None);
         }
         "secret" => {
@@ -1738,9 +1802,11 @@ fn setting(o: &Obj, version: u32, asks: bool, w: &mut Vec<String>) -> PluginResu
             (SettingKind::Secret { placeholder: o.label("placeholder", 200, w)? }, &["placeholder", "default"])
         }
         kind => {
-            w.push(format!(
-                "Skipped the setting \"{key}\" of type \"{}\", which this AutoScene doesn't know.",
-                shown(kind)
+            w.push(msg!(
+                "plugin.warn.settingKind",
+                "Skipped the setting \"{{key}}\" of type \"{{kind}}\", which this AutoScene doesn't know.",
+                key = key,
+                kind = shown(kind)
             ));
             return Ok(None);
         }
@@ -1757,13 +1823,18 @@ fn setting(o: &Obj, version: u32, asks: bool, w: &mut Vec<String>) -> PluginResu
 /// One entry of `contributes.pages` (manifest version 2), or `None` for a
 /// scope this AutoScene doesn't know. Its file is checked against the
 /// package at install ([`crate::package::check_pages`]).
-fn page(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<PageSpec>> {
+fn page(o: &Obj, w: &mut Vec<Msg>) -> PluginResult<Option<PageSpec>> {
     let id = o.contribution_id()?;
     let scope = match o.text("scope")? {
         None | Some("global") => PageScope::Global,
         Some("project") => PageScope::Project,
         Some(scope) => {
-            w.push(format!(r#"Skipped the page "{id}": scope "{}" needs a newer AutoScene."#, shown(scope)));
+            w.push(msg!(
+                "plugin.warn.pageScope",
+                r#"Skipped the page "{{id}}": scope "{{scope}}" needs a newer AutoScene."#,
+                id = &id,
+                scope = shown(scope)
+            ));
             return Ok(None);
         }
     };
@@ -1778,7 +1849,11 @@ fn page(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<PageSpec>> {
     }
     let rail = o.flag("rail")?.unwrap_or(false);
     if rail && scope == PageScope::Project {
-        w.push(format!(r#"The page "{id}" is a project page: rail is for global pages."#));
+        w.push(msg!(
+            "plugin.warn.pageRail",
+            r#"The page "{{id}}" is a project page: rail is for global pages."#,
+            id = &id
+        ));
     }
     Ok(Some(PageSpec {
         title: o.required_label("title", 40, w)?,
@@ -1792,11 +1867,16 @@ fn page(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<PageSpec>> {
 
 /// One entry of `contributes.events` (manifest version 2), or `None` for
 /// what this AutoScene can't wait for.
-fn event(o: &Obj, w: &mut Vec<String>) -> PluginResult<Option<EventSpec>> {
+fn event(o: &Obj, w: &mut Vec<Msg>) -> PluginResult<Option<EventSpec>> {
     let id = o.contribution_id()?;
     let on = o.required_text("on")?;
     let Some(on) = EventKind::ALL.into_iter().find(|k| k.name() == on) else {
-        w.push(format!(r#"Skipped the event "{id}": "{}" needs a newer AutoScene."#, shown(on)));
+        w.push(msg!(
+            "plugin.warn.eventOn",
+            r#"Skipped the event "{{id}}": "{{on}}" needs a newer AutoScene."#,
+            id = &id,
+            on = shown(on)
+        ));
         return Ok(None);
     };
     o.warn_unknown(&["id", "title", "description", "on"], w);
@@ -2030,7 +2110,7 @@ pub(crate) fn shown(s: &str) -> String {
 }
 
 pub(crate) fn invalid(message: impl Into<String>) -> PluginError {
-    PluginError::Invalid(message.into())
+    PluginError::Manifest(message.into())
 }
 
 /// The first key an object of a JSON text names twice, at any depth.
@@ -2150,17 +2230,17 @@ impl<'a> Obj<'a> {
     }
 
     /// Text for people (see [`clean`]), cut to `max` characters with a warning.
-    fn label(&self, key: &str, max: usize, w: &mut Vec<String>) -> PluginResult<Option<String>> {
+    fn label(&self, key: &str, max: usize, w: &mut Vec<Msg>) -> PluginResult<Option<String>> {
         let Some(text) = self.text(key)? else { return Ok(None) };
         let text = clean(text);
         if text.chars().count() > max {
-            w.push(format!("Cut {} to {max} characters.", self.at(key)));
+            w.push(msg!("plugin.warn.cut", "Cut {{path}} to {{max}} characters.", path = self.at(key), max = max));
             return Ok(Some(cut(&text, max)));
         }
         Ok(Some(text))
     }
 
-    fn required_label(&self, key: &str, max: usize, w: &mut Vec<String>) -> PluginResult<String> {
+    fn required_label(&self, key: &str, max: usize, w: &mut Vec<Msg>) -> PluginResult<String> {
         match self.label(key, max, w)? {
             Some(text) if !text.is_empty() => Ok(text),
             Some(_) => Err(invalid(format!("The plugin's {} is empty.", self.at(key)))),
@@ -2172,12 +2252,16 @@ impl<'a> Obj<'a> {
     /// at most: no `user@` before it, which would make
     /// `https://autoscene.app@evil.example` read as the first and lead to
     /// the second. Anything else is left out with a warning.
-    fn link(&self, key: &str, w: &mut Vec<String>) -> PluginResult<Option<String>> {
+    fn link(&self, key: &str, w: &mut Vec<Msg>) -> PluginResult<Option<String>> {
         let Some(url) = self.text(key)? else { return Ok(None) };
         if plain_link(url) {
             return Ok(Some(url.to_owned()));
         }
-        w.push(format!("Left out {}: a link must be a plain https:// address.", self.at(key)));
+        w.push(msg!(
+            "plugin.warn.badLink",
+            "Left out {{path}}: a link must be a plain https:// address.",
+            path = self.at(key)
+        ));
         Ok(None)
     }
 
@@ -2231,9 +2315,13 @@ impl<'a> Obj<'a> {
     }
 
     /// One warning for each key outside `known`.
-    fn warn_unknown(&self, known: &[&str], w: &mut Vec<String>) {
+    fn warn_unknown(&self, known: &[&str], w: &mut Vec<Msg>) {
         for key in self.map.keys().filter(|k| !known.contains(&k.as_str())) {
-            w.push(format!("Ignored {}, which this AutoScene doesn't know.", shown(&self.at(key))));
+            w.push(msg!(
+                "plugin.warn.ignoredUnknown",
+                "Ignored {{path}}, which this AutoScene doesn't know.",
+                path = shown(&self.at(key))
+            ));
         }
     }
 }
@@ -2246,6 +2334,11 @@ mod tests {
 
     use super::*;
     use crate::package::{FilesLock, LOCK_VERSION, LockedFile, check_pages, sha256_hex};
+
+    /// A manifest's warnings, as the English they say.
+    fn warned(p: &Parsed) -> Vec<String> {
+        p.warnings.iter().map(|w| w.text.clone()).collect()
+    }
 
     fn app() -> Version {
         Version::parse("1.0.3-BETA").unwrap()
@@ -2282,8 +2375,9 @@ mod tests {
 
     fn message<T: fmt::Debug>(r: PluginResult<T>) -> String {
         match r {
-            Err(PluginError::Invalid(m)) => m,
-            r => panic!("expected Invalid, got {r:?}"),
+            Err(PluginError::Manifest(m)) => m,
+            Err(PluginError::Invalid(m)) => m.text,
+            r => panic!("expected a refusal, got {r:?}"),
         }
     }
 
@@ -2301,7 +2395,7 @@ mod tests {
     #[test]
     fn a_plugin_reads_with_its_contributions() {
         let p = read(&plugin()).unwrap();
-        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(warned(&p), Vec::<String>::new());
         let m = p.manifest;
         assert_eq!(m.id.as_str(), "dev.autoscene.hello-export");
         assert_eq!(m.author, Author { name: "AutoScene".into(), url: Some("https://autoscene.app".into()) });
@@ -2399,7 +2493,7 @@ mod tests {
         // Hosts are named with the permission, and only then kept.
         let p = with(|v| v["network"] = json!({"hosts": ["discord.com"]})).unwrap();
         assert_eq!(p.manifest.network_hosts, Vec::<String>::new());
-        assert!(p.warnings[0].contains("network permission"));
+        assert!(warned(&p)[0].contains("network permission"));
         let p = with(|v| {
             v["permissions"] = json!(["network"]);
             v["network"] = json!({"hosts": ["discord.com", "api.example.org"]});
@@ -2445,18 +2539,19 @@ mod tests {
         let keys: Vec<&str> = p.manifest.settings.iter().map(|s| s.key.as_str()).collect();
         assert_eq!(keys, ["level", "mode"]);
         assert_eq!(p.manifest.commands.len(), 1);
-        for said in [
+        for warning in [
             "Ignored homepage, which this AutoScene doesn't know.",
             "Skipped contributes.themes, which this AutoScene doesn't know.",
             "Ignored contributes.commands[0].run, which this AutoScene doesn't know.",
             r#"Skipped the setting "tint" of type "color", which this AutoScene doesn't know."#,
         ] {
-            assert!(p.warnings.iter().any(|w| w == said), "{said} in {:?}", p.warnings);
+            assert!(warned(&p).iter().any(|w| w == warning), "{warning} in {:?}", warned(&p));
         }
-        assert_eq!(p.warnings.len(), 4);
+        assert_eq!(warned(&p).len(), 4);
         let many = with(|v| (0..30).for_each(|i| v[format!("extra{i}")] = json!(i))).unwrap();
-        assert_eq!(many.warnings.len(), 20);
-        assert_eq!(many.warnings[19], "And 11 more warnings.");
+        assert_eq!(warned(&many).len(), 20);
+        assert_eq!(warned(&many)[19], "And 11 more warnings.");
+        assert_eq!(many.warnings[19].args["count"], as_core::MsgArg::Num(11.0));
 
         // What's known is still checked.
         let bad = [
@@ -2518,7 +2613,7 @@ mod tests {
         assert_eq!(p.manifest.export_actions.len(), 1);
         // The warnings name the version that has them.
         assert_eq!(
-            p.warnings,
+            warned(&p),
             [
                 r#"Skipped contributes.pages: pages need "manifestVersion": 2."#,
                 r#"Skipped the setting "webhook": secret settings need "manifestVersion": 2."#,
@@ -2527,7 +2622,7 @@ mod tests {
 
         // Version 2 reads its secrets and its pages.
         let p = with_secret_and_pages(2).unwrap();
-        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(warned(&p), Vec::<String>::new());
         assert_eq!(p.manifest.pages.iter().map(|p| p.entry.as_str()).collect::<Vec<_>>(), ["ui/index.html"]);
         let secret = SettingKind::Secret { placeholder: Some("https://…".into()) };
         assert_eq!((&p.manifest.settings[0].key, &p.manifest.settings[0].kind), (&"webhook".to_owned(), &secret));
@@ -2554,10 +2649,11 @@ mod tests {
         for banner in [json!("art/banner.jpg"), json!(42)] {
             let p = with(|v| v["banner"] = banner.clone()).unwrap();
             assert_eq!(p.manifest.banner, None);
-            assert_eq!(p.warnings, [r#"Left out the banner: it needs "manifestVersion": 2."#]);
+            assert_eq!(warned(&p), [r#"Left out the banner: it needs "manifestVersion": 2."#]);
+            assert_eq!(p.warnings[0].key, "plugin.warn.bannerNeedsV2");
         }
         let p = with_banner(json!("art/banner.jpg")).unwrap();
-        assert_eq!((p.manifest.banner.as_deref(), p.warnings.len()), (Some("art/banner.jpg"), 0));
+        assert_eq!((p.manifest.banner.as_deref(), warned(&p).len()), (Some("art/banner.jpg"), 0));
     }
 
     #[test]
@@ -2565,7 +2661,8 @@ mod tests {
         for other in ["art/banner.svg", "art/banner.gif", "banner", "../banner.png", r"art\banner.png"] {
             let p = with_banner(json!(other)).unwrap();
             assert_eq!(p.manifest.banner, None, "{other}");
-            assert_eq!(p.warnings, ["Left out the banner: it must be a .png, .jpg or .webp file in the plugin."]);
+            assert_eq!(warned(&p), ["Left out the banner: it must be a .png, .jpg or .webp file in the plugin."]);
+            assert_eq!(p.warnings[0].key, "plugin.warn.bannerKind");
         }
         for ok in ["banner.png", "art/Banner.JPG", "art/banner.jpeg", "art/banner.webp"] {
             assert_eq!(with_banner(json!(ok)).unwrap().manifest.banner.as_deref(), Some(ok));
@@ -2582,7 +2679,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(
-            p.warnings,
+            warned(&p),
             [
                 "Ignored author.avatar, which this AutoScene doesn't know.",
                 "Ignored color, which this AutoScene doesn't know.",
@@ -2610,7 +2707,7 @@ mod tests {
         for pages in [main.clone(), json!("everything")] {
             let p = with(|v| v["contributes"]["pages"] = pages.clone()).unwrap();
             assert_eq!(p.manifest.pages, []);
-            assert_eq!(p.warnings, [r#"Skipped contributes.pages: pages need "manifestVersion": 2."#]);
+            assert_eq!(warned(&p), [r#"Skipped contributes.pages: pages need "manifestVersion": 2."#]);
         }
         let v1 = with(|v| {
             v["runtime"] = json!({"type": "none"});
@@ -2624,7 +2721,7 @@ mod tests {
             v["contributes"]["pages"] = main.clone();
         })
         .unwrap();
-        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(warned(&p), Vec::<String>::new());
         let page = PageSpec {
             id: "main".into(),
             title: "Main".into(),
@@ -2661,7 +2758,7 @@ mod tests {
         .unwrap();
         assert_eq!(p.manifest.pages.len(), 1);
         assert_eq!(
-            p.warnings,
+            warned(&p),
             [
                 "Ignored contributes.pages[0].icon, which this AutoScene doesn't know.",
                 r#"Skipped the page "dock": scope "panel" needs a newer AutoScene."#,
@@ -2778,7 +2875,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(p.manifest.platforms, Vec::<String>::new());
-        assert_eq!(p.warnings, ["Ignored platforms: a plugin that runs no program works on every platform."]);
+        assert_eq!(warned(&p), ["Ignored platforms: a plugin that runs no program works on every platform."]);
     }
 
     /// A manifest of version 2 with the events `events`.
@@ -2795,7 +2892,7 @@ mod tests {
         let done = json!([{"id": "done", "title": "Post when an analysis finishes", "on": "analysisFinished"}]);
         // A program of protocol 1 may wait too: its run line names the event.
         let p = with_events(done.clone(), |_| {}).unwrap();
-        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(warned(&p), Vec::<String>::new());
         assert_eq!(
             p.manifest.events,
             [EventSpec {
@@ -2835,11 +2932,11 @@ mod tests {
         // Version 1 skips them, whatever they hold, as AutoScene 1.0 does.
         let p = with(|v| v["contributes"]["events"] = json!("anything")).unwrap();
         assert_eq!(p.manifest.events, []);
-        assert_eq!(p.warnings, [r#"Skipped contributes.events: events need "manifestVersion": 2."#]);
+        assert_eq!(warned(&p), [r#"Skipped contributes.events: events need "manifestVersion": 2."#]);
         // A component waits for them too: through its on-event (world
         // 1.1.0), which the check of its component looks for.
         let p = with_events(done, |v| v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"})).unwrap();
-        assert_eq!((p.manifest.events.len(), p.warnings), (1, Vec::<String>::new()));
+        assert_eq!((p.manifest.events.len(), warned(&p)), (1, Vec::<String>::new()));
     }
 
     #[test]
@@ -2852,7 +2949,7 @@ mod tests {
         let kept: Vec<_> = p.manifest.events.iter().map(|e| (e.id.as_str(), e.description.as_deref())).collect();
         assert_eq!(kept, [("done", Some("Says so."))]);
         assert_eq!(
-            p.warnings,
+            warned(&p),
             [
                 r#"Skipped the event "export": "exportFinished" needs a newer AutoScene."#,
                 "Ignored contributes.events[1].every, which this AutoScene doesn't know.",
@@ -2878,7 +2975,7 @@ mod tests {
         };
         let said = |p: PluginResult<Parsed>| {
             let p = p.unwrap();
-            (p.manifest.export_actions[0].after_failed, p.warnings)
+            (p.manifest.export_actions[0].after_failed, warned(&p))
         };
         assert_eq!(said(at(2, 2, json!(true))), (true, vec![]));
         // Left out or false, it runs after a whole export only.
@@ -2913,12 +3010,12 @@ mod tests {
         assert_eq!(serde_json::to_value(p.manifest.runtime.kind).unwrap(), json!("service"));
         assert!(p.manifest.runs_program());
         assert_eq!(p.manifest.launch().unwrap(), Launch::UvScript { script: "main.py".into() });
-        assert_eq!((p.manifest.export_actions.len(), p.warnings.len()), (1, 0));
+        assert_eq!((p.manifest.export_actions.len(), warned(&p).len()), (1, 0));
         assert_eq!(message(service(1, &main)), r#"A service speaks protocol 2: set "engines": {"protocol": 2}."#);
         // Without a page, nothing ever starts it.
         let pageless = service(2, &json!([])).unwrap();
         assert_eq!(
-            pageless.warnings,
+            warned(&pageless),
             ["Its service never starts: a service runs while one of its pages is open, and it has none."]
         );
     }
@@ -2940,14 +3037,14 @@ mod tests {
                 ("notes", PageScope::Project, false)
             ]
         );
-        assert_eq!(p.warnings, [r#"The page "clips" is a project page: rail is for global pages."#]);
+        assert_eq!(warned(&p), [r#"The page "clips" is a project page: rail is for global pages."#]);
         assert_eq!(p.manifest.pages[2].description.as_deref(), Some("What you noted."));
         assert_eq!(serde_json::to_value(PageScope::Project).unwrap(), json!("project"));
         let said = message(page_only(json!([{"id": "home", "title": "Home", "entry": "ui/home.html", "rail": "yes"}])));
         assert_eq!(said, "The plugin's contributes.pages[0].rail must be true or false.");
         let long = "x".repeat(41);
         let p = page_only(json!([{"id": "home", "title": long, "entry": "ui/home.html"}])).unwrap();
-        assert_eq!((p.manifest.pages[0].title.chars().count(), p.warnings.len()), (40, 1));
+        assert_eq!((p.manifest.pages[0].title.chars().count(), warned(&p).len()), (40, 1));
     }
 
     #[test]
@@ -2962,7 +3059,7 @@ mod tests {
         // What it doesn't know is skipped as for any setting; a maxLength is the keychain's.
         let p = secret(json!({"maxLength": 20, "default": null})).unwrap();
         assert_eq!(p.manifest.settings[0].kind, SettingKind::Secret { placeholder: None });
-        assert_eq!(p.warnings, ["Ignored contributes.settings[0].maxLength, which this AutoScene doesn't know."]);
+        assert_eq!(warned(&p), ["Ignored contributes.settings[0].maxLength, which this AutoScene doesn't know."]);
         // At most 8.
         let many = |n: usize| {
             let settings: Vec<Value> =
@@ -2987,7 +3084,7 @@ mod tests {
         // Kept, so the review shows all the plugin names.
         assert_eq!(p.manifest.network_hosts.len(), 5);
         assert_eq!(
-            p.warnings,
+            warned(&p),
             [
                 "net.fetch can't reach localhost.",
                 "net.fetch can't reach 127.0.0.1.",
@@ -2996,7 +3093,7 @@ mod tests {
             ]
         );
         // Version 1 reads as it did.
-        assert_eq!(named(1).warnings, Vec::<String>::new());
+        assert_eq!(warned(&named(1)), Vec::<String>::new());
     }
 
     /// A manifest of version 2 and protocol 2 with the settings `settings`.
@@ -3018,7 +3115,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(p.manifest.secret_keys().count(), 0);
-        assert_eq!(p.warnings, [r#"Skipped the setting "token": secret settings need "engines": {"protocol": 2}."#]);
+        assert_eq!(warned(&p), [r#"Skipped the setting "token": secret settings need "engines": {"protocol": 2}."#]);
         assert_eq!(with_secrets(token).unwrap().manifest.secret_keys().collect::<Vec<_>>(), ["token"]);
     }
 
@@ -3035,7 +3132,7 @@ mod tests {
         .unwrap();
         assert_eq!(page_only.manifest.engines.protocol, 1);
         assert_eq!(page_only.manifest.secret_keys().collect::<Vec<_>>(), ["token"]);
-        assert_eq!(page_only.warnings, Vec::<String>::new());
+        assert_eq!(warned(&page_only), Vec::<String>::new());
         // A program of protocol 1 keeps it for its page.
         let paged = with(|v| {
             v["manifestVersion"] = json!(2);
@@ -3071,7 +3168,7 @@ mod tests {
         assert_eq!(PluginError::TooNew("manifestVersion".into()).to_string(), "This plugin needs a newer AutoScene.");
         // Version 2 reads, and says it is version 2.
         let p = with(|v| v["manifestVersion"] = json!(2)).unwrap();
-        assert_eq!((p.manifest.manifest_version, p.warnings.len()), (2, 0));
+        assert_eq!((p.manifest.manifest_version, warned(&p).len()), (2, 0));
     }
 
     /// The `plugin.json` of each example plugin: in its folder, or in its
@@ -3107,7 +3204,7 @@ mod tests {
             let mut v2 = v1.clone();
             v2["manifestVersion"] = json!(2);
             let new = read(&v2).unwrap();
-            assert_eq!(new.warnings, old.warnings, "{}", v1["id"]);
+            assert_eq!(warned(&new), warned(&old), "{}", v1["id"]);
             let as_json = |m: &Manifest| {
                 let mut j = serde_json::to_value(m).unwrap();
                 j.as_object_mut().unwrap().remove("manifestVersion");
@@ -3145,11 +3242,11 @@ mod tests {
         for resources in [json!([resource("model.onnx")]), json!("not a list")] {
             let p = with(|v| v["resources"] = resources).unwrap();
             assert!(p.manifest.resources.is_empty());
-            assert_eq!(p.warnings, [r#"Skipped resources: they need "manifestVersion": 2."#]);
+            assert_eq!(warned(&p), [r#"Skipped resources: they need "manifestVersion": 2."#]);
         }
         // Version 2 reads them.
         let p = with_resources(json!([resource("model.onnx"), resource("vocab.json")])).unwrap();
-        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(warned(&p), Vec::<String>::new());
         let r = &p.manifest.resources[0];
         assert_eq!((r.name.as_str(), r.size, r.bytes()), ("model.onnx", 1000.0, 1000));
         assert_eq!(r.urls, [format!("https://huggingface.co/org/repo/resolve/{REV}/model.onnx")]);
@@ -3163,7 +3260,7 @@ mod tests {
         let mut later = resource("model.onnx");
         later["mirrors"] = json!([]);
         let p = with_resources(json!([later])).unwrap();
-        assert_eq!(p.warnings, ["Ignored resources[0].mirrors, which this AutoScene doesn't know."]);
+        assert_eq!(warned(&p), ["Ignored resources[0].mirrors, which this AutoScene doesn't know."]);
         assert_eq!(p.manifest.resources.len(), 1);
     }
 
@@ -3171,7 +3268,7 @@ mod tests {
     fn a_resource_is_a_plain_https_file_pinned_by_size_and_hash() {
         let refused = |r: Value, what: &str| {
             let e = with_resources(json!([r]));
-            assert!(matches!(e, Err(PluginError::Invalid(_))), "{what}: {e:?}");
+            assert!(matches!(e, Err(PluginError::Manifest(_))), "{what}: {e:?}");
             message(e)
         };
         let at = |url: &str| {
@@ -3284,7 +3381,7 @@ mod tests {
         let warned = |urls: Value| {
             let mut r = resource("model.onnx");
             r["urls"] = urls;
-            with_resources(json!([r])).unwrap().warnings
+            warned(&with_resources(json!([r])).unwrap())
         };
         let said =
             ["model.onnx follows a branch of Hugging Face: pin a revision, or the file will stop matching its hash."];
@@ -3454,7 +3551,7 @@ mod tests {
         full["contributes"]["packActions"] = json!([fcpxml()]);
         let reads = |v: &Value, what: &str| {
             let p = read(v).unwrap_or_else(|e| panic!("{what}: {e:?}"));
-            assert_eq!(p.warnings, Vec::<String>::new(), "{what}");
+            assert_eq!(warned(&p), Vec::<String>::new(), "{what}");
             p.manifest
         };
         reads(&full, "the plugin");
@@ -3856,7 +3953,7 @@ mod tests {
         let twice = json!([{"id": "a", "title": "A", "reason": "R"}, {"id": "a", "title": "B", "reason": "R"}]);
         assert!(message(filtering(twice)).contains("contributes.shotFilters"));
         let p = filtering(json!([{"id": "a", "title": "A title that is too long for a chip", "reason": "R"}])).unwrap();
-        assert_eq!((p.manifest.shot_filters[0].title.chars().count(), p.warnings.len()), (24, 2));
+        assert_eq!((p.manifest.shot_filters[0].title.chars().count(), warned(&p).len()), (24, 2));
         assert!(message(filtering(json!([{"id": "a", "title": "A"}]))).contains("reason is missing"));
         for revision in [json!(0), json!(65536), json!(-1), json!(1.5)] {
             assert!(
@@ -3871,9 +3968,9 @@ mod tests {
         let v1 = with(|v| v["contributes"]["shotFilters"] = json!([{"id": "BAD"}])).unwrap();
         assert!(v1.manifest.shot_filters.is_empty());
         assert!(
-            v1.warnings.iter().any(|w| w.contains(r#"shot filters need "manifestVersion": 2"#)),
+            warned(&v1).iter().any(|w| w.contains(r#"shot filters need "manifestVersion": 2"#)),
             "{:?}",
-            v1.warnings
+            warned(&v1)
         );
     }
 
@@ -4020,7 +4117,7 @@ mod tests {
         );
         let p = long.unwrap();
         assert!(p.manifest.pack_actions[0].title.chars().count() <= MAX_PACK_ACTION_TITLE);
-        assert_eq!(p.warnings, ["Cut contributes.packActions[0].title to 40 characters."]);
+        assert_eq!(warned(&p), ["Cut contributes.packActions[0].title to 40 characters."]);
         // What it doesn't know is ignored with a word.
         let later = saving(json!([{"id": "a", "title": "A", "later": 1,
             "file": {"name": "x.fcpxml", "extensions": ["fcpxml"], "later": 2}}]));
@@ -4030,9 +4127,9 @@ mod tests {
         let v1 = with(|v| v["contributes"]["packActions"] = json!([{"id": "BAD"}])).unwrap();
         assert!(v1.manifest.pack_actions.is_empty());
         assert!(
-            v1.warnings.iter().any(|w| w.contains(r#"pack actions need "manifestVersion": 2"#)),
+            warned(&v1).iter().any(|w| w.contains(r#"pack actions need "manifestVersion": 2"#)),
             "{:?}",
-            v1.warnings
+            warned(&v1)
         );
     }
 
@@ -4059,7 +4156,7 @@ mod tests {
     #[test]
     fn wasm_plugins_name_a_component() {
         let p = wasm(|_| {}).unwrap();
-        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(warned(&p), Vec::<String>::new());
         let m = p.manifest;
         let runtime = Runtime {
             kind: RuntimeKind::Wasm,
@@ -4130,7 +4227,7 @@ mod tests {
         assert!(message(wasm(|v| v["runtime"]["gpu"] = json!("no"))).contains("runtime.gpu must be true or false"));
         // Saying it doesn't is fine.
         let p = wasm(|v| v["runtime"]["gpu"] = json!(false)).unwrap();
-        assert_eq!((p.manifest.runtime.gpu, p.warnings.len()), (false, 0));
+        assert_eq!((p.manifest.runtime.gpu, warned(&p).len()), (false, 0));
     }
 
     #[test]
@@ -4156,7 +4253,7 @@ mod tests {
         assert!(message(limits(json!(512))).contains("runtime.limits must be an object"));
         // A limit a later AutoScene adds is named.
         let p = wasm(|v| v["runtime"]["limits"] = json!({"cpus": 2})).unwrap();
-        assert_eq!(p.warnings, ["Ignored runtime.limits.cpus, which this AutoScene doesn't know."]);
+        assert_eq!(warned(&p), ["Ignored runtime.limits.cpus, which this AutoScene doesn't know."]);
     }
 
     #[test]
@@ -4169,7 +4266,7 @@ mod tests {
         };
         let p = hosts(&["discord.com", "api.example.com"]).unwrap();
         assert_eq!(p.manifest.network_hosts, ["discord.com", "api.example.com"]);
-        assert_eq!(p.warnings, Vec::<String>::new());
+        assert_eq!(warned(&p), Vec::<String>::new());
         for h in
             ["localhost", "printer.local", "nas.lan", "x.home.arpa", "intranet", "10.0.0.1", "0x7f.1", "x.internal"]
         {
@@ -4203,7 +4300,7 @@ mod tests {
             })
         };
         let p = v2(|v| v["runtime"]["limits"] = json!({"memoryMb": 1, "minutes": 99999})).unwrap();
-        assert_eq!(p.warnings, ["runtime.limits applies only to WebAssembly plugins."]);
+        assert_eq!(warned(&p), ["runtime.limits applies only to WebAssembly plugins."]);
         assert_eq!(p.manifest.runtime.limits, None);
         assert_eq!(p.manifest.launch().unwrap(), Launch::UvScript { script: "main.py".into() });
         // A component is a mistake there: the plugin would run another file than it names.
@@ -4216,7 +4313,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(
-            old.warnings,
+            warned(&old),
             [
                 "Ignored runtime.component, which this AutoScene doesn't know.",
                 "Ignored runtime.limits, which this AutoScene doesn't know.",
@@ -4262,7 +4359,7 @@ mod tests {
         .unwrap();
         assert_eq!(p.manifest.launch().unwrap().files(), ["bin/here.exe"]);
         // A platform this AutoScene doesn't know is skipped, whatever it holds.
-        assert_eq!(p.warnings, [r#"Skipped runtime.command["plan9-mips"], which this AutoScene doesn't know."#]);
+        assert_eq!(warned(&p), [r#"Skipped runtime.command["plan9-mips"], which this AutoScene doesn't know."#]);
         assert_eq!(p.manifest.runtime.command.len(), 2);
 
         let p = with(|v| v["runtime"]["command"] = json!({"plan9-mips": ["bin/x"]})).unwrap();
@@ -4456,7 +4553,7 @@ mod tests {
         assert!(p.manifest.description.ends_with('…'));
         assert_eq!(p.manifest.repository, None);
         assert_eq!(p.manifest.icon, None);
-        assert_eq!(p.warnings.len(), 3);
+        assert_eq!(warned(&p).len(), 3);
         assert!(message(read(&json!([1]))).contains("must hold an object"));
         assert!(message(parse(b"{\"id\":", &app())).contains("isn't valid JSON"));
         assert!(message(parse(&vec![b' '; MAX_MANIFEST_BYTES as usize + 1], &app())).contains("larger than"));
@@ -4596,7 +4693,7 @@ mod tests {
         assert_eq!(read(&plugin()).unwrap().manifest.source_link(), None);
         // One its plugin.json names but `parse` left out is none either.
         let p = with(|v| v["repository"] = json!("http://github.com/a/b")).unwrap();
-        assert_eq!((p.manifest.source_link(), p.warnings.len()), (None, 1));
+        assert_eq!((p.manifest.source_link(), warned(&p).len()), (None, 1));
         // Nor one that isn't a plain link, however the manifest came to hold it.
         let mut m = read(&plugin()).unwrap().manifest;
         m.repository = Some("https://autoscene.app@github.com/a/b".into());

@@ -33,7 +33,7 @@ import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { runPlugin } from "@/features/plugins/plugin-actions"
 import { type ExportActionItem, exportActionItems } from "@/features/plugins/plugin-items"
-import { formatBytes, formatDateTime, formatDuration, formatPercent } from "@/lib/format"
+import { formatBytes, formatDateTime, formatDuration, formatPercent, presetName } from "@/lib/format"
 import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickSaveFile } from "@/lib/media"
@@ -137,11 +137,11 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
-              <h2 className="truncate text-lg font-semibold text-fg-1">{ex.label ?? ex.preset.name}</h2>
+              <h2 className="truncate text-lg font-semibold text-fg-1">{ex.label ?? presetName(ex.preset)}</h2>
               <ExportStatusBadge ex={ex} status={status} unverified={unverified} />
             </div>
             <p className="mt-0.5 text-sm text-fg-3">
-              {ex.label && `${ex.preset.name} · `}
+              {ex.label && `${presetName(ex.preset)} · `}
               {formatDateTime(ex.createdAt)} ·{" "}
               {file ? t("exports.clipsDoneInOneFile", { done, count: ex.items.length }) : t("exports.clipsDone", { done, count: ex.items.length })}
             </p>
@@ -151,7 +151,7 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label={t("exports.options", { name: ex.label ?? ex.preset.name })}
+              aria-label={t("exports.options", { name: ex.label ?? presetName(ex.preset) })}
               className="flex size-9 items-center justify-center rounded-full text-fg-2 transition-colors hover:bg-white/[0.08] hover:text-fg-1 data-[state=open]:bg-white/[0.08]"
             >
               <DotsThree className="size-5" weight="bold" />
@@ -254,7 +254,7 @@ const LISTS = {
 async function saveList(pid: string, ex: ExportSummary, format: ListFormat, t: TFunction<"project">) {
   const { filter } = LISTS[format]
   const title = format === "edl" ? t("exports.saveEdlTitle") : t("exports.saveCutListTitle")
-  const name = (ex.merged?.name ?? ex.label ?? ex.preset.name).replace(/[\\/:*?"<>|]+/g, " ").trim() || "AutoScene"
+  const name = (ex.merged?.name ?? ex.label ?? presetName(ex.preset)).replace(/[\\/:*?"<>|]+/g, " ").trim() || "AutoScene"
   const dir = ex.outDir.replace(/[\\/]+$/, "")
   const sep = dir.includes("\\") ? "\\" : "/"
   try {

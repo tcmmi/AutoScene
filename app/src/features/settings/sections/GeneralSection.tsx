@@ -7,6 +7,7 @@ import { Segmented } from "@/components/ui/segmented"
 import { Select } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { settingsLine } from "@/lib/fast-scan"
+import { presetDescription, presetName } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { PREFERRED_AUDIO_LANGUAGES, pickFolder } from "@/lib/media"
@@ -48,6 +49,7 @@ export function GeneralSection() {
   const { data: info } = useAppInfo()
   const { data: settings } = useSettings()
   const { data: presets } = usePresets()
+  const preset = presets?.find((p) => p.id === settings?.exportPresetId)
   const { data: scan } = useScanDefaults()
 
   const changeLibrary = async () => {
@@ -151,14 +153,14 @@ export function GeneralSection() {
       </SettingsGroup>
 
       <SettingsGroup title={t("general.export.title")} description={t("general.export.description")}>
-        <SettingRow label={t("general.export.format.label")} description={presets?.find((p) => p.id === settings?.exportPresetId)?.description}>
+        <SettingRow label={t("general.export.format.label")} description={preset && presetDescription(preset)}>
           <Select
             aria-label={t("general.export.format.aria")}
             className="w-[260px]"
             value={settings?.exportPresetId}
             disabled={!settings}
             onChange={(id) => settings && void save({ ...settings, exportPresetId: id })}
-            options={(presets ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            options={(presets ?? []).map((p) => ({ value: p.id, label: presetName(p) }))}
           />
         </SettingRow>
       </SettingsGroup>

@@ -4,7 +4,7 @@ import { takePackSave } from "@/features/plugins/pack-saves"
 import { pluginToast } from "@/features/plugins/plugin-toast"
 import { isFinished, useActivity } from "@/state/activity"
 import { usePluginReview } from "@/state/plugin-review"
-import { t } from "./i18n"
+import { say, t } from "./i18n"
 import { commands, events } from "./ipc"
 import { reveal } from "./os"
 import { exportsQuery, isMadePack, qk, queryClient } from "./queries"
@@ -119,7 +119,7 @@ export function startEventBridge(where: { goPlugins: () => void }): () => void {
       void queryClient.invalidateQueries({ queryKey: qk.settings })
       // In Settings the row says so itself.
       if (window.location.hash.startsWith("#/settings")) return
-      if (payload.error) toast.error(t("shell:events.nvidiaFailed"), { description: payload.error })
+      if (payload.error) toast.error(t("shell:events.nvidiaFailed"), { description: say(payload.error) })
       else toast.success(t("shell:events.nvidiaReady"))
     }),
     events.pluginCompiling.listen(({ payload }) => usePluginReview.getState().compileStarted(payload.ticketId)),

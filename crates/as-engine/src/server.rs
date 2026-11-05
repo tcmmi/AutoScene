@@ -18,7 +18,7 @@ use as_analysis::{
     PeopleParams, Search, anime, bodies, detect_looks, face_tracks, fast, fast_face_tracks, frame_sizes, shot_signals,
     signals, tracks,
 };
-use as_core::{CancelToken, FrameIndex, FrameRange};
+use as_core::{CancelToken, FrameIndex, FrameRange, ToMsg, msg};
 use as_infer::accel::AccelState;
 use as_infer::computer::{Choice, NVIDIA};
 use as_infer::hardware::{self, Hardware, Using};
@@ -156,7 +156,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
     let tools = match Tools::locate(cfg.ffmpeg_dir.as_deref()) {
         Ok(t) => t,
         Err(e) => {
-            out.send(&Reply::Fatal { message: e.to_string(), detail: e.detail() });
+            out.send(&Reply::fatal(e.msg(), e.detail()));
             return 1;
         }
     };
@@ -174,7 +174,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
     let rt = match Runtime::load_with(&cfg.ort_dir, &cfg.placement) {
         Ok(rt) => rt,
         Err(e) => {
-            out.send(&Reply::Fatal { message: e.to_string(), detail: e.detail() });
+            out.send(&Reply::fatal(e.msg(), e.detail()));
             return 1;
         }
     };
@@ -256,7 +256,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
                 if out.on_accel.load(Ordering::Relaxed) && matches!(e, AnalysisError::Infer(InferError::Run(_))) {
                     out.send(&Reply::AccelFailed { id, detail: e.detail() });
                 }
-                Reply::Failed { id, message: e.to_string(), detail: e.detail(), cancelled: e.is_cancelled() }
+                Reply::failed(id, e.msg(), e.detail(), e.is_cancelled())
             }
         };
         cancels.lock().remove(&id);
@@ -342,10 +342,10 @@ fn read_requests(
             Ok(Request::Shutdown) => break,
             Err(e) => {
                 tracing::error!(error = %e, "bad request");
-                out.send(&Reply::Fatal {
-                    message: "The analysis engine got a bad request.".into(),
-                    detail: e.to_string(),
-                });
+                out.send(&Reply::fatal(
+                    msg!("engine.badRequest", "The analysis engine got a bad request."),
+                    e.to_string(),
+                ));
             }
         }
     }

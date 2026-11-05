@@ -21,7 +21,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError};
 
-use as_core::CancelToken;
+use as_core::{CancelToken, Msg};
 use as_models::{ModelStore, Packed, Pinned};
 use serde::Deserialize;
 
@@ -147,7 +147,7 @@ fn installed_as(dir: &Path, pin: &UvPin) -> Option<PathBuf> {
 }
 
 fn install_as(dir: &Path, pin: &UvPin, cancel: &CancelToken, progress: impl FnMut(u64, u64)) -> PluginResult<PathBuf> {
-    store(dir).fetch_pinned(&pinned(pin), cancel, progress).map_err(|e| fetch_error("uv", e))
+    store(dir).fetch_pinned(&pinned(pin), cancel, progress).map_err(|e| fetch_error(&Msg::plain("uv"), e))
 }
 
 /// `pin` as the file the store fetches: uv by the name it has in its archive
@@ -360,7 +360,7 @@ mod tests {
         let (url, _) = serve(more);
         let tmp = tempfile::tempdir().unwrap();
         let e = install_as(tmp.path(), &UvPin { url, ..pin }, &CancelToken::new(), |_, _| {}).unwrap_err();
-        assert!(matches!(&e, PluginError::Download { what, .. } if what == "uv"), "{e:?}");
+        assert!(matches!(&e, PluginError::Download { what, .. } if what.text == "uv"), "{e:?}");
         assert!(e.detail().contains("more than"), "{}", e.detail());
         let names: Vec<_> = fs::read_dir(tmp.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(names, ["uv.lock"]);
@@ -398,7 +398,7 @@ mod tests {
         let changed = UvPin { url, ..pin.clone() };
         let elsewhere = tmp.path().join("uv-0.13.8");
         let e = install_as(&elsewhere, &changed, &CancelToken::new(), |_, _| {}).unwrap_err();
-        assert!(matches!(&e, PluginError::Download { what, .. } if what == "uv"), "{e:?}");
+        assert!(matches!(&e, PluginError::Download { what, .. } if what.text == "uv"), "{e:?}");
         assert_eq!(e.to_string(), "AutoScene couldn't get uv. Check the internet connection, then try again.");
         assert!(!elsewhere.join("uv").exists());
         // Cancelled before it starts, it fetches nothing.

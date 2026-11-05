@@ -3,16 +3,19 @@ import { RouterProvider, createMemoryHistory, createRootRoute, createRoute, crea
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { Character, JobInfo, PackClip, PluginInfo } from "@/bindings"
+import type { Character, ExportPreset, JobInfo, PackClip, PluginInfo } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
 import { DEFAULT_KEYMAP, setKeymap } from "@/lib/shortcuts"
 import { useActivity } from "@/state/activity"
+import { inLanguage } from "@/test/i18n"
 import { Builder } from "./PackPage"
 import { DEFAULT_SPEC, type PackCheck } from "./spec"
 import { type Pack, packExportStarted } from "./use-pack"
+
+const { list } = vi.hoisted(() => ({ list: { presets: [] as ExportPreset[] } }))
 
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
 vi.mock("@/lib/ipc", async (importOriginal) => {
@@ -37,7 +40,7 @@ vi.mock("@/lib/queries", async (importOriginal) => {
   return {
     ...q,
     useSettings: () => ({ data: { exportPresetId: "prores-hq" } }),
-    usePresets: () => ({ data: [] }),
+    usePresets: () => ({ data: list.presets }),
     usePlugins: () => ({ data: [fcpxml] }),
   }
 })
@@ -97,9 +100,19 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  list.presets = []
   Reflect.deleteProperty(Element.prototype, "scrollTo")
   queryClient.clear()
   vi.clearAllMocks()
+})
+
+describe("the pack's footer", () => {
+  it("says the format an export starts with in the UI's language", async () => {
+    await inLanguage("ro", { backend: { fixture: { preset: "ProRes românesc (montaj)" } } })
+    list.presets = [{ id: "prores-hq", name: "ProRes 422 HQ", nameMsg: { key: "fixture.preset", text: "ProRes 422 HQ" } } as ExportPreset]
+    await show(null, { ...pack(), plan: { data: { sizes: [{ presetId: "prores-hq", bytes: 3e8 }] } } } as unknown as Pack)
+    expect(screen.getByText(/\(ProRes românesc\)/)).toBeTruthy()
+  })
 })
 
 describe("saving the pack with a plugin", () => {

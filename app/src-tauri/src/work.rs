@@ -254,11 +254,11 @@ fn engine_error(e: EngineError) -> StageError {
         EngineError::Cancelled => StageError::Cancelled,
         e @ EngineError::Start { .. } => {
             log::warn!("analysis: {}", e.detail());
-            StageError::Later(Msg::plain(e.to_string()))
+            StageError::Later(e.msg())
         }
         e => {
             log::warn!("analysis: {}", e.detail());
-            StageError::Failed(Msg::plain(e.to_string()))
+            StageError::Failed(e.msg())
         }
     }
 }
@@ -861,7 +861,7 @@ fn devices_reported(
 /// Download AI models on first use (verified; resumes an interrupted download).
 fn install_models(state: &AppState, ids: &[&str], ctx: &JobCtx) -> Result<(), StageError> {
     for &id in ids {
-        let installed = state.models.installed(id).map_err(|e| StageError::Failed(Msg::plain(e.to_string())))?;
+        let installed = state.models.installed(id).map_err(|e| StageError::Failed(e.msg()))?;
         if installed.is_some() {
             continue;
         }
@@ -876,7 +876,7 @@ fn install_models(state: &AppState, ids: &[&str], ctx: &JobCtx) -> Result<(), St
                 ModelError::Cancelled => StageError::Cancelled,
                 e => {
                     log::warn!("{}", e.detail());
-                    StageError::Later(Msg::plain(e.to_string()))
+                    StageError::Later(e.msg())
                 }
             })?;
     }

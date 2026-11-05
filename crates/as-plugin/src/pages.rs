@@ -197,7 +197,7 @@ impl Pages {
     ) -> PluginResult<(Arc<Mount>, Vec<String>)> {
         let m = manifest_of(p)?;
         let lock = match &p.record.lock_sha256 {
-            Some(sha256) => Some(Arc::new(installed_lock(&p.dir, sha256).map_err(invalid)?)),
+            Some(sha256) => Some(Arc::new(installed_lock(&p.dir, sha256).map_err(PluginError::Invalid)?)),
             None => None,
         };
         package::check_pages(&p.dir, lock.as_deref(), std::slice::from_ref(page))?;

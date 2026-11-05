@@ -27,7 +27,7 @@ import { runPackAction } from "@/features/plugins/plugin-actions"
 import { type PackActionItem, packActionItems } from "@/features/plugins/plugin-items"
 import { ProjectLoadError } from "@/features/project/ProjectLoadError"
 import { EXPORT_REQUEST } from "@/lib/actions"
-import { shortFormatName } from "@/lib/format"
+import { presetName, shortFormatName } from "@/lib/format"
 import { say } from "@/lib/i18n"
 import { exportWithMenu } from "@/lib/keymap"
 import { firstFailure, useCast, useMediaList, usePlugins, usePresets, useSettings } from "@/lib/queries"
@@ -153,7 +153,8 @@ export function Builder({
   )
   const filters = pack.filters
   const bytes = pack.plan.data?.sizes.find((s) => s.presetId === settings?.exportPresetId)?.bytes ?? null
-  const format = presets?.find((p) => p.id === settings?.exportPresetId)?.name
+  const preset = presets?.find((p) => p.id === settings?.exportPresetId)
+  const format = preset && presetName(preset)
 
   // On macOS the menu's Export item exports the pack while it is open, with
   // the pack's key, and asks for this.

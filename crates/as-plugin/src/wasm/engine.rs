@@ -16,6 +16,8 @@ use wasmtime::{Config, Engine};
 
 use super::state::State;
 use super::{EPOCH_TICK, MAX_WASM_STACK, bindings};
+use as_core::msg;
+
 use crate::error::{PluginError, PluginResult};
 use crate::package::sha256_hex;
 
@@ -43,7 +45,15 @@ pub(crate) fn engine() -> PluginResult<&'static Engine> {
             Ok(engine)
         })
         .as_ref()
-        .map_err(|why| PluginError::Invalid(format!("WebAssembly plugins can't run on this computer: {why}")))
+        .map_err(|why| cant_run(why.clone()))
+}
+
+fn cant_run(why: String) -> PluginError {
+    PluginError::Invalid(msg!(
+        "plugin.wasmCantRun",
+        "WebAssembly plugins can't run on this computer: {{why}}",
+        why = why
+    ))
 }
 
 /// What a compiled component was compiled for: this AutoScene's version and
@@ -77,8 +87,7 @@ impl Hasher for Collect {
 /// AutoScene's `host`. Every call is async, so a run can drop a plugin that
 /// waits in one.
 pub(crate) fn linker(engine: &Engine) -> PluginResult<Linker<State>> {
-    let failed =
-        |e: wasmtime::Error| PluginError::Invalid(format!("WebAssembly plugins can't run on this computer: {e:#}"));
+    let failed = |e: wasmtime::Error| cant_run(format!("{e:#}"));
     let mut linker = Linker::new(engine);
     wasmtime_wasi::p2::add_to_linker_async(&mut linker).map_err(failed)?;
     wasmtime_wasi_http::p2::add_only_http_to_linker_async(&mut linker).map_err(failed)?;

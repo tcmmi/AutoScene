@@ -41,13 +41,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use as_core::{AppPaths, CancelToken};
+use as_core::{AppPaths, CancelToken, Msg, ToMsg, msg};
 use as_db::LibraryDb;
 use as_jobs::JobRunner;
 use as_models::{ModelStore, Packed, Pinned};
 use as_plugin::catalog::{
-    self, Catalog, CatalogKeys, CatalogState, Checked, Entry, MAX_INDEX_BYTES, MAX_SIG_BYTES, NEEDS_NEWER_APP, Offer,
-    STATE_VERSION,
+    self, Catalog, CatalogKeys, CatalogState, Checked, Entry, MAX_INDEX_BYTES, MAX_SIG_BYTES, Offer, STATE_VERSION,
+    needs_newer_app_said,
 };
 use as_plugin::fetch::fetch_error;
 use as_plugin::keys::CATALOG_URLS;
@@ -95,15 +95,26 @@ const SIG: &str = "index.json.minisig";
 
 /// What a check says when an address didn't answer as it should (the log
 /// has what went wrong).
-const UNREACHABLE: &str = "AutoScene couldn't reach its plugin catalog.";
+fn unreachable_catalog() -> Msg {
+    msg!("catalog.unreachable", "AutoScene couldn't reach its plugin catalog.")
+}
+
 /// What a get says when the index ran out, or there is none.
-const OUT_OF_DATE: &str = "The plugin catalog is out of date. Check it again, then try again.";
+fn out_of_date() -> Msg {
+    msg!("catalog.outOfDate", "The plugin catalog is out of date. Check it again, then try again.")
+}
+
 /// What a get says when this build has no catalog (no keys or addresses):
 /// checking again changes nothing.
-const NO_CATALOG: &str = "This AutoScene has no plugin catalog.";
+fn no_catalog() -> Msg {
+    msg!("catalog.none", "This AutoScene has no plugin catalog.")
+}
+
 /// What a get says when the package isn't the version it lists, under the
 /// lock it reviewed (the log has which).
-const NOT_LISTED: &str = "The catalog's package isn't the one it lists. Try again later.";
+fn not_listed() -> Msg {
+    msg!("catalog.notListed", "The catalog's package isn't the one it lists. Try again later.")
+}
 
 /// Gets a file of the catalog: its whole body, at most `max` bytes, or why
 /// not (for the log).
@@ -146,7 +157,9 @@ impl GetPackage for ModelDownload {
         cancel: &CancelToken,
         progress: &mut dyn FnMut(u64, u64),
     ) -> PluginResult<PathBuf> {
-        ModelStore::new(dir).fetch_pinned(&pinned(e), cancel, progress).map_err(|err| fetch_error(&e.name, err))
+        ModelStore::new(dir)
+            .fetch_pinned(&pinned(e), cancel, progress)
+            .map_err(|err| fetch_error(&Msg::plain(&e.name), err))
     }
 }
 
@@ -311,7 +324,7 @@ impl CatalogHost {
             return Ok(Catalog::new(Some(a.index), state));
         }
         if let Some((bytes, sig)) = same {
-            let state = CatalogState { fetched_at: now, checked_at: now, last_error: None, ..held };
+            let state = CatalogState { fetched_at: now, ..held.tried(now, None) };
             self.write_row(&state);
             let kept = self.with_cache(state.clone(), Some(current));
             if kept.index().is_some() {
@@ -332,7 +345,7 @@ impl CatalogHost {
                 }
             });
         }
-        let error = errors.first().map_or_else(|| UNREACHABLE.to_owned(), PluginError::to_string);
+        let error = errors.first().map_or_else(unreachable_catalog, PluginError::msg);
         let state = held.tried(now, Some(error));
         self.write_row(&state);
         Err(Box::new(self.with_cache(state, Some(current))))
@@ -372,7 +385,7 @@ impl CatalogHost {
         let id = &download.id;
         let catalog = store.catalog();
         if !catalog.living(catalog::now()) {
-            return Err(PluginError::Invalid(self.not_living(&catalog).into()));
+            return Err(PluginError::Invalid(self.not_living(&catalog)));
         }
         let e = match catalog.offer(id, store.app_version(), current_platform()) {
             Some(Offer::Here(e)) => e,
@@ -382,7 +395,11 @@ impl CatalogHost {
         };
         match store.get(id) {
             Ok(p) if !newer(e, &p.record.version) => {
-                return Err(PluginError::Invalid(format!("Version {} is installed already.", p.record.version)));
+                return Err(PluginError::Invalid(msg!(
+                    "plugin.versionInstalled",
+                    "Version {{version}} is installed already.",
+                    version = &p.record.version
+                )));
             }
             Ok(_) | Err(PluginError::NotFound(_)) => {}
             Err(failed) => return Err(failed),
@@ -410,14 +427,14 @@ impl CatalogHost {
             store.discard(t);
             if listed && !latest.living(catalog::now()) {
                 // It ran out while the package came.
-                return Err(PluginError::Invalid(self.not_living(&latest).into()));
+                return Err(PluginError::Invalid(self.not_living(&latest)));
             }
             log::warn!(
                 "the catalog's package of {} {} is {got} with lock {lock} (reviewed: {approved})",
                 e.id,
                 e.version
             );
-            return Err(PluginError::Invalid(NOT_LISTED.into()));
+            return Err(PluginError::Invalid(not_listed()));
         }
         Ok(t)
     }
@@ -425,13 +442,13 @@ impl CatalogHost {
     /// Why nothing is got from `catalog`, which isn't living: only a newer
     /// AutoScene can check it, this build has no catalog, or it ran out (as
     /// the view tells them apart).
-    fn not_living(&self, catalog: &Catalog) -> &'static str {
-        if self.newer_row() || catalog.state().last_error.as_deref() == Some(NEEDS_NEWER_APP) {
-            NEEDS_NEWER_APP
+    fn not_living(&self, catalog: &Catalog) -> Msg {
+        if self.newer_row() || catalog.state().needs_newer_app() {
+            needs_newer_app_said()
         } else if !self.ready() {
-            NO_CATALOG
+            no_catalog()
         } else {
-            OUT_OF_DATE
+            out_of_date()
         }
     }
 
@@ -457,7 +474,7 @@ impl CatalogHost {
         let catalog = store.catalog();
         let listed = catalog.index().and_then(|i| i.plugins.iter().find(|e| &e.id == id));
         let name = listed.map_or_else(|| id.to_string(), |e| e.name.clone());
-        Err(PluginError::Invalid(format!("AutoScene is getting {name} already.")))
+        Err(PluginError::Invalid(msg!("plugin.gettingAlready", "AutoScene is getting {{name}} already.", name = name)))
     }
 
     /// Removes what gets that never finished left (at the start): partly
@@ -489,12 +506,12 @@ impl CatalogHost {
             let url = format!("{base}{name}");
             self.fetch.get(&url, max).map_err(|e| {
                 log::warn!("plugin catalog: {e}");
-                PluginError::Catalog(UNREACHABLE.into())
+                PluginError::Catalog(unreachable_catalog())
             })
         };
         let bytes = get(INDEX, MAX_INDEX_BYTES)?;
         let sig = String::from_utf8(get(SIG, MAX_SIG_BYTES)?)
-            .map_err(|_| PluginError::Catalog("The catalog's signature can't be read.".into()))?;
+            .map_err(|_| PluginError::Catalog(catalog::unreadable_signature()))?;
         match catalog::check(&bytes, &sig, &self.keys, held, now) {
             Ok(checked) => Ok((checked, bytes, sig)),
             Err(e) => {
@@ -564,7 +581,7 @@ impl CatalogHost {
         }
         let kept = read_capped(&self.dir.join(INDEX), MAX_INDEX_BYTES).and_then(|bytes| {
             let sig = String::from_utf8(read_capped(&self.dir.join(SIG), MAX_SIG_BYTES)?)
-                .map_err(|_| PluginError::Catalog("The catalog's signature can't be read.".into()))?;
+                .map_err(|_| PluginError::Catalog(catalog::unreadable_signature()))?;
             catalog::reload(&bytes, &sig, &self.keys, &state)
         });
         match kept {
@@ -634,7 +651,11 @@ fn unlisted(catalog: &Catalog, id: &PluginId) -> PluginError {
     let withdrawn = listed.filter_map(|e| Some((e, catalog.withdrawal(id, &e.version)?))).next();
     match withdrawn {
         Some((e, w)) => PluginError::Withdrawn { name: e.name.clone(), reason: w.reason.clone() },
-        None => PluginError::Invalid(format!("AutoScene's plugin catalog doesn't list {id}.")),
+        None => PluginError::Invalid(msg!(
+            "plugin.notInCatalog",
+            "AutoScene's plugin catalog doesn't list {{id}}.",
+            id = id.to_string()
+        )),
     }
 }
 
@@ -667,7 +688,7 @@ fn read_capped(path: &Path, max: u64) -> PluginResult<Vec<u8>> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)?.take(max + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > max {
-        return Err(PluginError::Catalog("The catalog is too large.".into()));
+        return Err(PluginError::Catalog(catalog::too_large()));
     }
     Ok(bytes)
 }
@@ -842,7 +863,7 @@ pub struct CatalogStatus {
     /// There is no index, or it ran out.
     pub out_of_date: bool,
     /// Why the last check failed.
-    pub error: Option<String>,
+    pub error: Option<Msg>,
     /// A later AutoScene checked the catalog, or its index needs one.
     pub needs_newer_app: bool,
 }
@@ -925,8 +946,8 @@ pub fn view(host: &PluginHost, now: u64, daily: bool) -> CatalogView {
         fetched_at: ms(state.fetched_at),
         checked_at: ms(state.checked_at),
         out_of_date: !living,
-        error: state.last_error.clone(),
-        needs_newer_app: host.catalog.newer_row() || state.last_error.as_deref() == Some(NEEDS_NEWER_APP),
+        error: state.error(),
+        needs_newer_app: host.catalog.newer_row() || state.needs_newer_app(),
     };
     CatalogView { status, plugins }
 }
@@ -1106,6 +1127,13 @@ pub(super) mod tests {
     use super::*;
     use crate::error::ErrorCode;
 
+    // The English these sentences have had all along.
+    const UNREACHABLE: &str = "AutoScene couldn't reach its plugin catalog.";
+    const OUT_OF_DATE: &str = "The plugin catalog is out of date. Check it again, then try again.";
+    const NO_CATALOG: &str = "This AutoScene has no plugin catalog.";
+    const NOT_LISTED: &str = "The catalog's package isn't the one it lists. Try again later.";
+    const NEEDS_NEWER_APP: &str = "This catalog needs a newer AutoScene.";
+
     pub const NOW: u64 = 1_800_000_000;
     pub const DAY: u64 = 86_400;
     const A: &str = "https://a.example/";
@@ -1279,6 +1307,27 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn a_check_that_finds_the_same_index_clears_the_failure_before_it() {
+        let tmp = scratch("recovered");
+        let (key, served) = (Key::new(), Arc::new(Served::default()));
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![]));
+        let (db, host) = host(&tmp, key.keys(), &[A], &served);
+        let taken = host.refresh(NOW, &Catalog::none()).unwrap();
+        served.down(A);
+        host.refresh(NOW + 3600, &taken).unwrap_err();
+        assert_eq!(row(&db).unwrap().error(), Some(unreachable_catalog()));
+        // Back online, with the index it has: the failure is over, in both columns.
+        served.index(A, &key, &index(2, vec![entry(HELLO, "1.0.0")], vec![]));
+        let back = host.refresh(NOW + 7200, &taken).unwrap();
+        let after = row(&db).unwrap();
+        assert_eq!((after.last_error, after.last_error_msg.clone(), after.fetched_at), (None, None, NOW + 7200));
+        // What `view` tells the UI.
+        assert_eq!(back.state().error(), None);
+        drop((db, host));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
     fn nothing_but_the_failure_is_written_when_no_index_checks_out() {
         let tmp = scratch("failure");
         let (key, served) = (Key::new(), Arc::new(Served::default()));
@@ -1293,10 +1342,7 @@ pub(super) mod tests {
         served.index(B, &key, &index(1, vec![], vec![]));
         let failed = host.refresh(NOW + 3600, &Catalog::none()).unwrap_err();
         let after = row(&db).unwrap();
-        assert_eq!(
-            after,
-            CatalogState { checked_at: NOW + 3600, last_error: Some(UNREACHABLE.into()), ..held.clone() }
-        );
+        assert_eq!(after, held.tried(NOW + 3600, Some(unreachable_catalog())));
         // The index held is still the one in hand, and on disk.
         assert_eq!(seq(&failed), Some(2));
         assert!(failed.withdrawal(&PluginId::parse("dev.example.leaky").unwrap(), "1.0.0").is_some());
@@ -1524,7 +1570,7 @@ pub(super) mod tests {
         assert!(!host.due(NOW + DAY - 1, true, false));
         assert!(host.due(NOW + DAY, true, false));
         // A failed check waits an hour before the next, at start too.
-        set(good.tried(NOW + DAY, Some(UNREACHABLE.into())));
+        set(good.tried(NOW + DAY, Some(unreachable_catalog())));
         assert!(!host.due(NOW + DAY + 3599, true, false) && !host.due(NOW + DAY + 3599, true, true));
         assert!(host.due(NOW + DAY + 3600, true, false));
         drop((db, host));
@@ -1544,7 +1590,7 @@ pub(super) mod tests {
         assert!(host.due(NOW + 2 * DAY, true, true) && host.due(NOW + 2 * DAY, true, false));
         assert!(!host.due(NOW + 2 * DAY, false, true));
         // A failure tried then doesn't hold the next check back either.
-        set(CatalogState { fetched_at: NOW, ..ahead.tried(NOW + 20 * DAY, Some(UNREACHABLE.into())) });
+        set(CatalogState { fetched_at: NOW, ..ahead.tried(NOW + 20 * DAY, Some(unreachable_catalog())) });
         assert!(host.due(NOW + 2 * DAY, true, false));
         drop((db, host));
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -1745,7 +1791,7 @@ pub(super) mod tests {
         later["catalogVersion"] = json!(2);
         site.index(CATALOG_AT, &key, &later);
         let (view, _, _) = apply(&host, &jobs(), NOW, true);
-        assert_eq!(view.status.error.as_deref(), Some(NEEDS_NEWER_APP));
+        assert_eq!(view.status.error.map(|e| e.text).as_deref(), Some(NEEDS_NEWER_APP));
         assert!(view.status.needs_newer_app && view.status.ready && !host.catalog.newer_row());
         // Any other failure doesn't say it.
         site.down(CATALOG_AT);
@@ -1871,7 +1917,7 @@ pub(super) mod tests {
             }
             // None at its address fails, cancelled or not.
             let bytes = self.packages.lock().get(&asked).cloned();
-            let bytes = bytes.ok_or_else(|| PluginError::Download { what: e.name.clone(), detail: asked })?;
+            let bytes = bytes.ok_or_else(|| PluginError::Download { what: Msg::plain(&e.name), detail: asked })?;
             if cancel.is_cancelled() {
                 return Err(PluginError::Cancelled);
             }
@@ -2115,7 +2161,7 @@ pub(super) mod tests {
         let (off, on) = (super::super::review(&t, &host, false), super::super::review(&t, &host, true));
         assert!(off.needs_unreviewed && !off.allowed && on.allowed);
         let imports_http = "It imports wasi:http but doesn't ask for network: every request it makes is refused.";
-        assert_eq!(off.component_warnings, [imports_http]);
+        assert_eq!(off.component_warnings.iter().map(|w| w.text.as_str()).collect::<Vec<_>>(), [imports_http]);
         assert_eq!(on.component_warnings, off.component_warnings);
         assert!(!compiled());
         host.store.discard(t);
@@ -2587,7 +2633,7 @@ pub(super) mod tests {
         // in its own words (never the AI model's): no request leaves.
         e.package.urls = vec!["https://exa mple.com/hello.asp".into()];
         let failed = ModelDownload.get(&e, &tmp, &CancelToken::new(), &mut |_, _| {}).unwrap_err();
-        assert!(matches!(&failed, PluginError::Download { what, .. } if what == "Hello Export"), "{failed:?}");
+        assert!(matches!(&failed, PluginError::Download { what, .. } if what.text == "Hello Export"), "{failed:?}");
         assert_eq!(
             failed.to_string(),
             "AutoScene couldn't get Hello Export. Check the internet connection, then try again."
@@ -2631,7 +2677,7 @@ pub(super) mod tests {
             for done in [0, 10, 20] {
                 progress(done, 100);
             }
-            Err(PluginError::Download { what: e.name.clone(), detail: "connection reset".into() })
+            Err(PluginError::Download { what: Msg::plain(&e.name), detail: "connection reset".into() })
         }
     }
 
@@ -2690,7 +2736,7 @@ pub(super) mod tests {
         let mut e: Entry = serde_json::from_value(entry(HELLO, "1.1.0")).unwrap();
         e.package.urls = vec![serve(vec![0; e.package.size as usize + 1])];
         let failed = ModelDownload.get(&e, &tmp, &CancelToken::new(), &mut |_, _| {}).unwrap_err();
-        assert!(matches!(&failed, PluginError::Download { what, .. } if what == "Hello Export"), "{failed:?}");
+        assert!(matches!(&failed, PluginError::Download { what, .. } if what.text == "Hello Export"), "{failed:?}");
         assert!(failed.detail().contains("more than 4096 bytes"), "{}", failed.detail());
         let names: Vec<_> = std::fs::read_dir(&tmp).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(names, [format!("{}.asp.lock", "b".repeat(64)).as_str()]);
@@ -2752,8 +2798,9 @@ pub(super) mod tests {
         let fetch = Arc::new(Arc::new(Served::default()));
         let none = CatalogHost::new(&g.paths, g.db.clone(), CatalogKeys::new(&[]).unwrap(), Vec::new(), fetch, shelf());
         assert_eq!(said(&none), NO_CATALOG);
+        assert_eq!(none.not_living(&Catalog::none()).key, "catalog.none");
         // The last check found a catalog only a newer AutoScene reads.
-        let state = CatalogState { last_error: Some(NEEDS_NEWER_APP.into()), ..CatalogState::default() };
+        let state = CatalogState::default().tried(0, Some(needs_newer_app_said()));
         g.store.set_catalog(Arc::new(Catalog::new(None, state)));
         assert_eq!(said(&g.host), NEEDS_NEWER_APP);
         // A newer AutoScene checked it.

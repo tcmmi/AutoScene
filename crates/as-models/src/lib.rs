@@ -32,13 +32,14 @@ mod zip;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
-use as_core::CancelToken;
+use as_core::{CancelToken, Msg, ToMsg, msg};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -49,25 +50,54 @@ pub type ModelResult<T> = Result<T, ModelError>;
 
 #[derive(Debug, Error)]
 pub enum ModelError {
-    #[error("Unknown model {0}.")]
     Unknown(String),
-    #[error("The AI model couldn't be downloaded. Check the internet connection and try again.")]
     Download(String),
-    #[error("The downloaded AI model is damaged. It will be downloaded again.")]
-    Checksum { id: String, got: String },
+    Checksum {
+        id: String,
+        got: String,
+    },
     /// The file at the pinned source isn't the pinned one any more.
-    #[error("An AI model changed where AutoScene downloads it from. Update AutoScene to get it.")]
     Changed(String),
     /// The drive of the models folder hasn't room for a download.
-    #[error(
-        "There isn't enough free space for the AI model. Free up {} MB on the drive of AutoScene's data folder and try again.",
-        missing_mb(.need, .free)
-    )]
-    NoSpace { dir: PathBuf, need: u64, free: u64 },
-    #[error("Cancelled.")]
+    NoSpace {
+        dir: PathBuf,
+        need: u64,
+        free: u64,
+    },
     Cancelled,
-    #[error("{}", as_core::io_message(.0))]
     Io(#[from] std::io::Error),
+}
+
+impl ToMsg for ModelError {
+    fn msg(&self) -> Msg {
+        match self {
+            Self::Unknown(id) => msg!("model.unknown", "Unknown model {{id}}.", id = id),
+            Self::Download(_) => msg!(
+                "model.downloadFailed",
+                "The AI model couldn't be downloaded. Check the internet connection and try again."
+            ),
+            Self::Checksum { .. } => {
+                msg!("model.damaged", "The downloaded AI model is damaged. It will be downloaded again.")
+            }
+            Self::Changed(_) => msg!(
+                "model.changed",
+                "An AI model changed where AutoScene downloads it from. Update AutoScene to get it."
+            ),
+            Self::NoSpace { need, free, .. } => msg!(
+                "model.noSpace",
+                "There isn't enough free space for the AI model. Free up {{mb}} MB on the drive of AutoScene's data folder and try again.",
+                mb = missing_mb(need, free)
+            ),
+            Self::Cancelled => msg!("model.cancelled", "Cancelled."),
+            Self::Io(e) => e.msg(),
+        }
+    }
+}
+
+impl fmt::Display for ModelError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.msg().text)
+    }
 }
 
 impl ModelError {
@@ -1130,6 +1160,38 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
+
+    #[test]
+    fn each_error_has_its_key_and_keeps_its_words() {
+        let said = [
+            (ModelError::Unknown("a".into()), "model.unknown", "Unknown model a."),
+            (
+                ModelError::Download("x".into()),
+                "model.downloadFailed",
+                "The AI model couldn't be downloaded. Check the internet connection and try again.",
+            ),
+            (
+                ModelError::Checksum { id: "a".into(), got: "0".into() },
+                "model.damaged",
+                "The downloaded AI model is damaged. It will be downloaded again.",
+            ),
+            (
+                ModelError::Changed("x".into()),
+                "model.changed",
+                "An AI model changed where AutoScene downloads it from. Update AutoScene to get it.",
+            ),
+            (
+                ModelError::NoSpace { dir: PathBuf::from("m"), need: 1_500_000_001, free: 1 },
+                "model.noSpace",
+                "There isn't enough free space for the AI model. Free up 1500 MB on the drive of AutoScene's data folder and try again.",
+            ),
+            (ModelError::Cancelled, "model.cancelled", "Cancelled."),
+            (ModelError::Io(std::io::ErrorKind::StorageFull.into()), "file.diskFull", "The disk is full."),
+        ];
+        for (e, key, english) in said {
+            assert_eq!((e.msg().key.as_str(), e.to_string().as_str()), (key, english));
+        }
+    }
 
     #[test]
     fn manifest_is_complete() {

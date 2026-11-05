@@ -9,10 +9,12 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { openExternalUrl } from "@/lib/os"
 import { qk, queryClient } from "@/lib/queries"
+import { inLanguage } from "@/test/i18n"
 import { HardwareGroup } from "./HardwareGroup"
 
-const RTX = { key: "10de:24c9:NVIDIA GeForce RTX 3060 Ti", name: "NVIDIA GeForce RTX 3060 Ti" }
-const IRIS = { key: "8086:a7a0:Intel Iris Xe Graphics", name: "Intel Iris Xe Graphics" }
+const named = (key: string, name: string) => ({ key, name: { key: "", text: name } })
+const RTX = named("10de:24c9:NVIDIA GeForce RTX 3060 Ti", "NVIDIA GeForce RTX 3060 Ti")
+const IRIS = named("8086:a7a0:Intel Iris Xe Graphics", "Intel Iris Xe Graphics")
 const LICENCE = "https://docs.nvidia.com/deeplearning/tensorrt-rtx/latest/reference/sla.html"
 
 const { state } = vi.hoisted(() => ({
@@ -34,7 +36,7 @@ function oneCard(over: Partial<HardwareInfo> = {}): HardwareInfo {
     gpus: [RTX],
     choice: "autoOrProcessor",
     selected: "auto",
-    using: { kind: "gpu", name: RTX.name },
+    using: { kind: "gpu", name: RTX.name.text },
     missing: false,
     pending: false,
     fellBack: false,
@@ -100,22 +102,32 @@ describe("Settings → General → Graphics card", () => {
     expect(await options(user)).toEqual(["Automatic", "Processor only"])
   })
 
+  it("a card its driver gives no name is called so in the UI's language", async () => {
+    const user = userEvent.setup()
+    await inLanguage("ro", { backend: { hardware: { unnamedCard: "Placă video" } } })
+    const unnamed = { key: "10de:24c9:Graphics card", name: { key: "hardware.unnamedCard", text: "Graphics card" } }
+    state.hardware = oneCard({ gpus: [unnamed, IRIS], choice: "cards", using: { kind: "gpu", name: "" } })
+    show()
+    await screen.findByText("Analysis runs on this computer's graphics card.")
+    expect(await options(user)).toEqual(["Automatic", "Placă video", IRIS.name.text, "Processor only"])
+  })
+
   it("two cards: each by name, and a choice is saved and shown", async () => {
     const user = userEvent.setup()
     state.hardware = oneCard({ gpus: [RTX, IRIS], choice: "cards" })
     vi.mocked(commands.settingsUpdate).mockImplementationOnce((s: AppSettings) => {
       state.settings = s
-      state.hardware = oneCard({ gpus: [RTX, IRIS], choice: "cards", selected: IRIS.key, using: { kind: "gpu", name: IRIS.name } })
+      state.hardware = oneCard({ gpus: [RTX, IRIS], choice: "cards", selected: IRIS.key, using: { kind: "gpu", name: IRIS.name.text } })
       return Promise.resolve(s)
     })
     const invalidate = vi.spyOn(queryClient, "invalidateQueries")
     show()
     await screen.findByText("Analysis runs on the NVIDIA GeForce RTX 3060 Ti.")
-    expect(await options(user)).toEqual(["Automatic", RTX.name, IRIS.name, "Processor only"])
-    await user.click(screen.getByRole("option", { name: IRIS.name }))
+    expect(await options(user)).toEqual(["Automatic", RTX.name.text, IRIS.name.text, "Processor only"])
+    await user.click(screen.getByRole("option", { name: IRIS.name.text }))
     await waitFor(() => expect(commands.settingsUpdate).toHaveBeenCalledWith(expect.objectContaining({ gpu: IRIS.key })))
     expect(await screen.findByText("Analysis runs on the Intel Iris Xe Graphics.")).toBeTruthy()
-    expect(select().textContent).toBe(IRIS.name)
+    expect(select().textContent).toBe(IRIS.name.text)
     // Fast Scan's line follows the card.
     expect(invalidate).toHaveBeenCalledWith({ queryKey: qk.scanDefaults })
     // Back to Automatic stores nothing.
@@ -352,7 +364,7 @@ describe("Settings → General → NVIDIA acceleration", () => {
 
   it("download failed: the reason, and Try again downloads again", async () => {
     const user = userEvent.setup()
-    await row({ state: "failed", message: "NVIDIA's files couldn't be downloaded. Check the internet connection and try again." })
+    await row({ state: "failed", message: { key: "", text: "NVIDIA's files couldn't be downloaded. Check the internet connection and try again." } })
     expect(screen.getByText(/couldn't be downloaded/)).toBeTruthy()
     const group = screen.getByText("NVIDIA acceleration").closest("div")?.parentElement?.parentElement as HTMLElement
     await user.click(within(group).getByRole("button", { name: "Try again" }))
@@ -374,8 +386,14 @@ describe("Settings → General → NVIDIA acceleration", () => {
     expect(offer()).toBeNull()
   })
 
+  it("download failed: the reason is in the UI's language", async () => {
+    await inLanguage("ro", { backend: { accel: { noSpace: "Eliberează {{mb}} MB." } } })
+    await row({ state: "failed", message: { key: "accel.noSpace", args: { mb: 124 }, text: "Free up 124 MB." } })
+    expect(screen.getByText("Eliberează 124 MB.")).toBeTruthy()
+  })
+
   it("download failed with files here: they can go too", async () => {
-    await row({ state: "failed", message: "The download was cancelled." }, { removable: true })
+    await row({ state: "failed", message: { key: "", text: "The download was cancelled." } }, { removable: true })
     expect(remove()).toBeTruthy()
   })
 

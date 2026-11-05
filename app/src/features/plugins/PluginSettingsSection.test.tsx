@@ -8,7 +8,8 @@ import type { PluginInfo, SettingSpec, SettingValue } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
-import { pluginInfo } from "@/test/plugins"
+import { inLanguage } from "@/test/i18n"
+import { plain, pluginInfo } from "@/test/plugins"
 import { PluginSettingsSection } from "./PluginSettingsSection"
 
 const { state } = vi.hoisted(() => ({
@@ -117,9 +118,25 @@ describe("a plugin's settings", () => {
     expect(screen.getByText("Reads the exported clips")).toBeTruthy()
   })
 
+  it("says why it is broken in the UI's language", async () => {
+    await inLanguage("ro", { backend: { plugin: { filesMissing: "Fișierele lipsesc." } } })
+    show({ active: false, broken: { key: "plugin.filesMissing", text: "Its files are missing. Install it again." } })
+    const banner = await screen.findByRole("status")
+    expect(banner.textContent).toContain("Fișierele lipsesc.")
+    expect(document.body.textContent).not.toContain("[object Object]")
+  })
+
+  it("says what its plugin.json had skipped in the UI's language", async () => {
+    await inLanguage("ro", { backend: { plugin: { warn: { bannerKind: "Bannerul a rămas pe dinafară." } } } })
+    const text = "Left out the banner: it must be a .png, .jpg or .webp file in the plugin."
+    show({ warnings: [{ key: "plugin.warn.bannerKind", text }] })
+    expect(await screen.findByText("Bannerul a rămas pe dinafară.")).toBeTruthy()
+    expect(screen.queryByText(text)).toBeNull()
+  })
+
   it("says a broken WebAssembly plugin ran in the sandbox, in the sandbox's words", async () => {
     // As info() gives one whose plugin.json can't be read: the agreed runtime, no limits.
-    show({ runtime: "wasm", uvScript: false, sandbox: null, broken: "Its files are missing. Install it again.", permissions: ["exports:write", "network"] })
+    show({ runtime: "wasm", uvScript: false, sandbox: null, broken: plain("Its files are missing. Install it again."), permissions: ["exports:write", "network"] })
     expect(await screen.findByText("It runs in a sandbox. AutoScene enforces these.")).toBeTruthy()
     expect(screen.getByText("Reads, changes and deletes files in the export's folder")).toBeTruthy()
     expect(screen.getByText("May use the network, but names no site: every request is refused.")).toBeTruthy()

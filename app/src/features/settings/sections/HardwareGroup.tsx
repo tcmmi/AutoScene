@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Progress } from "@/components/ui/progress"
 import { Select, type SelectOption } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { t } from "@/lib/i18n"
+import { say, t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { openExternalUrl } from "@/lib/os"
 import { qk, queryClient, useAppInfo, useHardware, useSettings } from "@/lib/queries"
@@ -48,7 +48,7 @@ function hardwareLine(hw: HardwareInfo, t: T): string {
 
 /** Automatic, each card when there are two or more, and the processor only. */
 function options(hw: HardwareInfo, t: T): SelectOption[] {
-  const cards = hw.choice === "cards" ? hw.gpus.map((g) => ({ value: g.key, label: g.name })) : []
+  const cards = hw.choice === "cards" ? hw.gpus.map((g) => ({ value: g.key, label: say(g.name) })) : []
   return [auto(t), ...cards, processor(t)]
 }
 
@@ -192,7 +192,7 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
       )
       break
     case "failed":
-      text = row.message
+      text = say(row.message)
       control = tryAgain(install)
       break
     case "removing":

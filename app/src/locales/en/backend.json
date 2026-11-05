@@ -1,11 +1,17 @@
 {
   "accel": {
+    "changed": "NVIDIA changed its files where AutoScene downloads them from. Update AutoScene to get them.",
+    "damaged": "NVIDIA's files didn't arrive as they should. Try again, and update AutoScene if it happens again.",
+    "downloadFailed": "NVIDIA's files couldn't be downloaded. Check the internet connection and try again.",
+    "noSpace": "There isn't enough free space for NVIDIA's files. Free up {{mb}} MB on the drive of AutoScene's data folder and try again.",
     "noticesFailed": "NVIDIA's notices couldn't be opened.",
-    "removeFailed": "NVIDIA's files couldn't be removed."
+    "removeFailed": "NVIDIA's files couldn't be removed.",
+    "repairCancelled": "The download was cancelled, so analysis runs without NVIDIA acceleration. Try again for the files that are missing."
   },
   "analysis": {
     "animeFromTheStart": "Anime is analysed differently from the start. Add the videos as a new anime project instead.",
     "facesNotFound": "The faces of this media aren't found yet.",
+    "failed": "Something went wrong while analysing. Details are in the log.",
     "shotsNotFound": "Shots of this media aren't found yet.",
     "signalsCover": "shot signals cover {{covered}} of {{frames}} frames",
     "unreadablePeople": "unreadable people",
@@ -16,6 +22,37 @@
     "characterGone": "This character doesn't exist any more.",
     "keptChanging": "The cast kept changing while it was being grouped. Try again.",
     "notInCast": "This character isn't in the cast any more."
+  },
+  "catalog": {
+    "badDates": "The catalog's dates can't be right.",
+    "badEntry": "The catalog has an entry AutoScene can't read: {{which}}.",
+    "badWithdrawal": "The catalog has a withdrawal AutoScene can't read: {{which}}.",
+    "certificateChanged": "The catalog's epoch certificate was changed after it was signed.",
+    "certificateEpoch": "The catalog's epoch certificate is for another epoch.",
+    "certificateWithdraws": "The catalog's epoch certificate withdraws AutoScene's offline key.",
+    "changed": "The catalog was changed after it was signed.",
+    "keyUnknown": "The catalog is signed with a key AutoScene doesn't know.",
+    "keyWithdrawn": "The catalog is signed with a key AutoScene withdrew.",
+    "needsNewerApp": "This catalog needs a newer AutoScene.",
+    "none": "This AutoScene has no plugin catalog.",
+    "notAKey": "That isn't a minisign public key.",
+    "notASignature": "That isn't a catalog signature.",
+    "notChecked": "The saved catalog isn't the one AutoScene checked.",
+    "notListed": "The catalog's package isn't the one it lists. Try again later.",
+    "notOffline": "The catalog's new epoch isn't signed by AutoScene's offline key.",
+    "notYet": "The catalog is dated {{date}}, which hasn't come yet. Check this computer's clock.",
+    "older": "This catalog is older than the one AutoScene has.",
+    "otherCatalog": "The catalog's signature names another catalog.",
+    "outOfDate": "The plugin catalog is out of date. Check it again, then try again.",
+    "ranOut": "The catalog ran out on {{date}}.",
+    "sameNumber": "Two catalogs carry the same number.",
+    "tooLarge": "The catalog is too large.",
+    "tooManyPlugins": "The catalog lists more than {{max}} plugins.",
+    "tooManyWithdrawn": "The catalog withdraws more than {{max}} plugins.",
+    "unreachable": "AutoScene couldn't reach its plugin catalog.",
+    "unreadable": "The catalog can't be read.",
+    "unreadableCertificate": "The catalog's epoch certificate can't be read.",
+    "unreadableSignature": "The catalog's signature can't be read."
   },
   "db": {
     "busy": "Another program is using AutoScene's data. Close it and try again.",
@@ -28,6 +65,15 @@
     "readOnly": "AutoScene can't save its data there: the drive or folder is read-only.",
     "tooNew": "This project was made by a newer version of AutoScene. Update AutoScene to open it.",
     "upgradeFailed": "AutoScene couldn't update this project's data. Details are in the log."
+  },
+  "engine": {
+    "badRequest": "The analysis engine got a bad request.",
+    "cancelled": "Cancelled.",
+    "couldntStart": "The analysis engine couldn't start. Details are in the log.",
+    "crashed": "The analysis engine stopped unexpectedly. Details are in the log.",
+    "noEmbedding": "The engine gave no embedding.",
+    "reinstall": "The analysis engine couldn't start. Reinstall AutoScene.",
+    "savingFailed": "Saving the analysis failed."
   },
   "episode": {
     "fileNotFound": "That file can't be found.",
@@ -50,6 +96,8 @@
     "stillStopping": "The work on this episode is still stopping. Try again in a moment."
   },
   "export": {
+    "badPreset": "This export preset can't be used: {{why}}.",
+    "badRange": "Those frames are outside the video.",
     "cantWrite": "Can't write to {{path}}: {{why}}",
     "csv": {
       "mixedRates": "Clips of different frame rates can't share one cut list."
@@ -60,19 +108,26 @@
       "tooFast": "An EDL holds at most 100 frames a second. Save a cut list (CSV) instead.",
       "tooLong": "These clips run longer than the 23 hours an EDL can hold."
     },
+    "encoderMissing": "This export format isn't available on this computer.",
     "episodeNotIndexed": "An episode of this export isn't indexed.",
     "episodesRemoved": "This export's episodes were removed from the project.",
     "fileNeedsName": "The file needs a name.",
     "fullPath": "Choose a full folder path for the export.",
     "gone": "This export no longer exists.",
+    "inexact": "This clip can't be exported bit-perfect: {{why}}.",
+    "joinFailed": "The clips couldn't be joined into one file.",
     "listExtension": "Save it as a .{{ext}} file.",
     "lossless": {
       "allFfv1": "These pictures can't be stored exactly as HEVC, so they're kept as FFV1 in an MKV: DaVinci Resolve and VLC open it, After Effects doesn't.",
       "apart": "Bit-Perfect makes a file per shot here: {{why}}.",
       "colours": "their episodes' colours are tagged differently",
+      "decodeDiffers": "their episodes decode to different picture formats or colours",
+      "fields": "their episodes' fields come in a different order",
+      "hdr": "their episodes' HDR metadata differs",
       "pictures": "their episodes' pictures differ in size or format",
       "someFfv1": "Some of these pictures can't be stored exactly as HEVC, so they're kept as FFV1 in an MKV: DaVinci Resolve and VLC open it, After Effects doesn't.",
-      "sound": "their episodes' sound differs in its rate or channels"
+      "sound": "their episodes' sound differs in its rate or channels",
+      "soundFormat": "their episodes' sound is stored in different sample formats"
     },
     "noneExported": "None of the clips could be exported.",
     "noneFinished": "No clip of this export has finished yet.",
@@ -80,7 +135,48 @@
     "nothing": "Nothing to export.",
     "outside": "Frames {{start}}–{{end}} are outside {{name}}.",
     "outsideRange": "Frames {{start}}–{{end}} are outside {{name}} (0–{{frames}}).",
-    "unknownPreset": "Unknown export preset."
+    "preset": {
+      "bitPerfect": {
+        "description": "Every frame exactly as in the episode: the same pixels, colour and HDR, and its own sound. Stored without loss as HEVC, which After Effects and other editors open (FFV1 for the rare pictures HEVC can't hold). Very large files.",
+        "name": "Bit-Perfect (lossless)"
+      },
+      "dnxhrHq": {
+        "description": "Edit-grade intra codec, popular with Premiere and Resolve on Windows.",
+        "name": "DNxHR HQ"
+      },
+      "h264Edit": {
+        "description": "Visually lossless H.264 with a short GOP for smooth scrubbing. Works everywhere.",
+        "name": "H.264 · Editing"
+      },
+      "h264Intra": {
+        "description": "Every frame a keyframe — ideal for Twixtor and frame-by-frame work.",
+        "name": "H.264 · All-Intra (Twixtor)"
+      },
+      "h264Mobile": {
+        "description": "1080p H.264 with stereo sound that imports cleanly into phone editors.",
+        "name": "H.264 · Mobile (CapCut, Alight Motion)"
+      },
+      "hevc10": {
+        "description": "Smaller files that preserve 10-bit colour and HDR.",
+        "name": "HEVC 10-bit (keeps HDR)"
+      },
+      "proresHq": {
+        "description": "Edit-grade intra codec for After Effects, Premiere, Final Cut and Resolve. Large files.",
+        "name": "ProRes 422 HQ"
+      }
+    },
+    "unknownPreset": "Unknown export preset.",
+    "why": {
+      "cantShare": "its clips can't share one file: {{why}}",
+      "followsSource": "lossless encoding follows each source",
+      "needsMov": "uncompressed audio needs a MOV file",
+      "notItsParts": "the joined file isn't its parts exactly",
+      "notTheSource": "it didn't come out exactly as the source",
+      "pictures": "its pictures ({{format}}) can't be kept as they are",
+      "plannedFromSources": "a Bit-Perfect file is planned from its sources' exact formats",
+      "sound": "its sound ({{format}}) can't be kept as it is",
+      "soundTrack": "its sound track {{n}} can't be read"
+    }
   },
   "file": {
     "badLocation": "AutoScene can't use that location. Choose a file or folder on this computer or on a network share.",
@@ -96,9 +192,29 @@
     "readOnly": "That drive is read-only.",
     "tooBig": "The file is too big for that disk."
   },
+  "hardware": {
+    "unnamedCard": "Graphics card",
+    "unnamedCardNumbered": "Graphics card ({{n}})"
+  },
+  "infer": {
+    "missing": "AutoScene's AI runtime is missing. Reinstall AutoScene.",
+    "model": "An AI model couldn't be loaded. Details are in the log.",
+    "run": "The AI model failed on this frame. Details are in the log.",
+    "runtime": "AutoScene's AI runtime couldn't start. Details are in the log."
+  },
   "internal": "Something went wrong. Details are in the log.",
   "job": {
     "cancelled": "cancelled"
+  },
+  "keychain": {
+    "damaged": "a secret it holds is damaged.",
+    "error": "it reported an error.",
+    "locked": "it is locked, or refused AutoScene.",
+    "noStore": "this computer has none running. Once one runs, restart AutoScene.",
+    "notText": "a secret it holds isn't text.",
+    "refusedName": "it refused the secret's name.",
+    "twice": "it holds this secret more than once.",
+    "unusable": "Your system's keychain can't be used: {{reason}}"
   },
   "library": {
     "cantUse": "Can't use {{path}} as the library: {{why}}",
@@ -109,8 +225,22 @@
     "notUnicode": "Its name, or the name of a folder it's in, isn't valid Unicode. Rename it to import it."
   },
   "media": {
+    "cancelled": "Cancelled.",
+    "failed": "The video couldn't be processed. Details are in the log.",
+    "frameCheck": "The result didn't pass the frame check.",
+    "frameOrder": "The video's frames couldn't be put in order. Details are in the log.",
+    "noVideo": "{{file}} has no video.",
     "toolsMissing": "AutoScene's video tools are missing. Reinstall AutoScene.",
-    "toolsTooOld": "AutoScene's video tools are out of date. Reinstall AutoScene."
+    "toolsTooOld": "AutoScene's video tools are out of date. Reinstall AutoScene.",
+    "unreadable": "{{file}} couldn't be read. It may be damaged or in a format AutoScene can't open."
+  },
+  "model": {
+    "cancelled": "Cancelled.",
+    "changed": "An AI model changed where AutoScene downloads it from. Update AutoScene to get it.",
+    "damaged": "The downloaded AI model is damaged. It will be downloaded again.",
+    "downloadFailed": "The AI model couldn't be downloaded. Check the internet connection and try again.",
+    "noSpace": "There isn't enough free space for the AI model. Free up {{mb}} MB on the drive of AutoScene's data folder and try again.",
+    "unknown": "Unknown model {{id}}."
   },
   "name": {
     "didYouMean": "“{{token}}” isn't a name part. Did you mean {{part}}?",
@@ -154,25 +284,156 @@
     "waitsForFilter": "The pack waits for “{{title}}” to check its shots."
   },
   "plugin": {
+    "badSignature": "The package was changed after it was signed.",
+    "badVersion": "The plugin's version isn't valid.",
     "beingUpdated": "{{name}} is being updated.",
+    "busy": "{{name}} is running. Wait for it to finish, or stop it in Activity.",
+    "cancelled": "Cancelled.",
+    "cantStartFileMissing": "{{name}} can't start: one of its files is missing.",
+    "cantStartNotRunnable": "{{name}} can't start: its program isn't marked as runnable.",
+    "catalogChangedWhileWaiting": "The catalog changed while this plugin waited. Open it again.",
+    "changedWhileWaiting": "The plugin's files changed while it waited to be installed. Open it again.",
+    "chooseExport": "Choose an export to run it on.",
+    "closed": "This page was closed.",
+    "closedBecause": {
+      "tooMany": "Too many plugin pages were open.",
+      "turnedOff": "It was turned off.",
+      "uninstalling": "It is being uninstalled.",
+      "updating": "It is being updated.",
+      "windowReloaded": "AutoScene's window loaded again.",
+      "withdrawn": "AutoScene withdrew {{name}}.",
+      "withdrawnIt": "AutoScene withdrew it."
+    },
+    "commandNotOnExport": "A command doesn't run on an export.",
+    "compileFailed": "AutoScene couldn't get this plugin ready. Nothing changed.",
+    "compileOutOfMemory": "This plugin took too much memory to get ready, so AutoScene stopped. Nothing changed.",
+    "compileStopped": "This plugin took too long to get ready, so AutoScene stopped. Nothing changed.",
+    "componentDoesntFit": "The plugin's component doesn't fit this AutoScene: {{why}}",
+    "componentDoesntLoad": "The plugin's component doesn't load: {{why}}",
+    "componentTooLarge": "The plugin's component is larger than 64 MB.",
+    "confirmInstall": "Confirm that you want to install it.",
+    "crashed": "{{name}} stopped unexpectedly.",
+    "downloadFailed": "AutoScene couldn't get {{what}}. Check the internet connection, then try again.",
+    "eventNeedsProject": "An event runs in the project where it happened.",
     "eventRunsItself": "An event runs by itself, once it is turned on.",
+    "eventSaysWhat": "An event's run says what happened.",
+    "exportFolderGone": "The export's folder is gone.",
+    "filesChanged": "Its files were changed. Install it again.",
+    "filesMissing": "Its files are missing. Install it again.",
+    "filterNeedsPack": "A shot filter checks a character's scenepack.",
     "filterRunsInBuilder": "A shot filter checks shots from the scenepack builder.",
+    "gettingAlready": "AutoScene is getting {{name}} already.",
     "hostFailed": "Plugins couldn't start. Details are in the log.",
+    "importNotOffered": "The plugin uses {{name}}, which AutoScene doesn't offer.",
+    "installedByNewer": "A newer AutoScene installed this plugin, so this one can't change it. Update AutoScene, or uninstall the plugin.",
+    "invalid": "{{why}}",
+    "itsFiles": "{{name}}'s files",
+    "keyChanged": "This update is signed by a different author than the installed version.",
     "linkFailed": "AutoScene couldn't open the link.",
+    "namesAnother": "Its plugin.json names another plugin now.",
+    "needsNewer": "Needs a newer AutoScene.",
+    "needsOlder": "This plugin only works with an older AutoScene.",
+    "newerInstalled": "Version {{installed}} is installed, which is newer than {{new}}. Uninstall it first to go back.",
+    "noEvent": "The plugin has no event {{event}}.",
+    "noExportAction": "The plugin has no export action {{action}}.",
     "noLogYet": "It hasn't run yet, so it has no log.",
+    "noOnEvent": "The plugin waits for events, but its component has no on-event: build it against the wit/plugin.wit that asp init writes.",
+    "noSecretSetting": "The plugin has no secret setting {{key}}.",
     "noSource": "Its plugin.json names no source.",
+    "noSpace": "There isn't enough free space for {{what}}. Free up {{mb}} MB on the drive of AutoScene's data folder and try again.",
+    "noSuchAction": "{{name}} has no such action.",
     "noSuchFilter": "{{name}} has no such filter.",
     "noSuchPackAction": "{{name}} has no such pack action.",
+    "noSuchPage": "{{name}} has no such page.",
+    "notAComponent": "The plugin's component isn't a WebAssembly component. Build it for wasm32-wasip2 or with componentize-py.",
     "notAFilter": "That isn't a plugin's shot filter.",
     "notAPackAction": "That isn't a plugin's pack action.",
+    "notAllowed": "Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins.",
+    "notFound": "{{name}} isn't installed.",
+    "notInCatalog": "AutoScene's plugin catalog doesn't list {{id}}.",
     "notInstalled": "It wasn't installed.",
+    "notWasm": "{{name}} isn't a WebAssembly plugin.",
+    "openProject": "Open a project to run it in.",
+    "outOfMemory": "{{name}} needed more than {{mb}} MB of memory and was stopped.",
+    "packActionNeedsPack": "A pack action saves a character's scenepack.",
     "packActionRunsInBuilder": "A pack action saves a scenepack from its builder.",
     "pageNeedsProject": "Open a project to see this page.",
     "pageNotProjects": "This page isn't a project's.",
+    "pageToast": "Plugin “{{name}}”: {{text}}",
+    "projectFolderGone": "The project's folder is gone.",
     "reviewClosed": "This review was closed. Open the plugin again.",
     "reviewExpired": "This plugin waited too long to be installed. Open it again.",
+    "reviewedOnlyInstalled": "AutoScene reviewed the installed version of this plugin, and not this one.",
+    "runsInSandbox": "{{name}} runs in a sandbox, not as a program.",
+    "runsNoProgram": "{{name}} runs no program.",
+    "runsNoService": "{{name}} runs no service.",
+    "runtimeChanged": "Its runtime changed. Load it again to agree to that.",
+    "sameVersionOtherFiles": "Version {{installed}} is installed already, with other files. A changed plugin needs a new version.",
     "saveNameTooLong": "That file name is too long. Choose a shorter one.",
-    "saveRunnable": "A plugin can't save a program, a script or a shortcut."
+    "saveRunnable": "A plugin can't save a program, a script or a shortcut.",
+    "secretEmpty": "A secret can't be empty. Remove it instead.",
+    "secretNul": "A secret can't hold a NUL character.",
+    "secretOwnButton": "A secret is set with its own button, never as a value.",
+    "secretTooLong": "A secret can be at most {{max}} characters.",
+    "setting": {
+      "atLeast": "{{title}} must be at least {{min}}.",
+      "atMost": "{{title}} must be at most {{max}}.",
+      "choice": "{{title}} must be one of its choices.",
+      "noNul": "{{title}} can't hold a NUL character.",
+      "number": "{{title}} must be a number.",
+      "onOrOff": "{{title}} must be on or off.",
+      "secret": "{{title}} is kept in your system's keychain, never as a value.",
+      "text": "{{title}} must be text.",
+      "tooLong": "{{title}} can be at most {{max}} characters.",
+      "whole": "{{title}} must be a whole number."
+    },
+    "settingsOfNewer": "A newer AutoScene saved this plugin's settings, so this one can't change them. Update AutoScene, or uninstall the plugin.",
+    "timedOut_one": "{{name}} ran for longer than {{count}} minute and was stopped.",
+    "timedOut_other": "{{name}} ran for longer than {{count}} minutes and was stopped.",
+    "tooNew": "This plugin needs a newer AutoScene.",
+    "turnedOff": "{{name}} is turned off.",
+    "uninstalledWhileWaiting": "This plugin was uninstalled while its update waited. Open it again.",
+    "updateAsksMore": "This update asks for more than you agreed to. Open it again.",
+    "uvMissing": "This plugin needs uv, and AutoScene couldn't get it.",
+    "versionInstalled": "Version {{version}} is installed already.",
+    "warn": {
+      "badLink": "Left out {{path}}: a link must be a plain https:// address.",
+      "bannerKind": "Left out the banner: it must be a .png, .jpg or .webp file in the plugin.",
+      "bannerNeedsV2": "Left out the banner: it needs \"manifestVersion\": 2.",
+      "cut": "Cut {{path}} to {{max}} characters.",
+      "eventOn": "Skipped the event \"{{id}}\": \"{{on}}\" needs a newer AutoScene.",
+      "eventsNeedV2": "Skipped contributes.events: events need \"manifestVersion\": 2.",
+      "followsBranch": "{{name}} follows a branch of Hugging Face: pin a revision, or the file will stop matching its hash.",
+      "hostUnreachable": "net.fetch can't reach {{host}}.",
+      "hostsIgnored": "Ignored network.hosts: the plugin doesn't ask for the network permission.",
+      "httpWithoutNetwork": "It imports wasi:http but doesn't ask for network: every request it makes is refused.",
+      "iconKind": "Left out the icon: it must be a .png or .svg file in the plugin.",
+      "ignoredNeedsProtocol2": "Ignored {{path}}: it needs \"engines\": {\"protocol\": 2}.",
+      "ignoredNeedsV2": "Ignored {{path}}: it needs \"manifestVersion\": 2.",
+      "ignoredUnknown": "Ignored {{path}}, which this AutoScene doesn't know.",
+      "limitsWasmOnly": "runtime.limits applies only to WebAssembly plugins.",
+      "more_one": "And {{count}} more warning.",
+      "more_other": "And {{count}} more warnings.",
+      "networkWithoutHttp": "It asks for network but can't make requests.",
+      "packActionsNeedV2": "Skipped contributes.packActions: pack actions need \"manifestVersion\": 2.",
+      "pageRail": "The page \"{{id}}\" is a project page: rail is for global pages.",
+      "pageScope": "Skipped the page \"{{id}}\": scope \"{{scope}}\" needs a newer AutoScene.",
+      "pagesNeedV2": "Skipped contributes.pages: pages need \"manifestVersion\": 2.",
+      "platformUnknown": "platforms names \"{{name}}\", which this AutoScene doesn't know.",
+      "platformsIgnored": "Ignored platforms: a plugin that runs no program works on every platform.",
+      "resourcesNeedV2": "Skipped resources: they need \"manifestVersion\": 2.",
+      "secretNeedsProtocol2": "Skipped the setting \"{{key}}\": secret settings need \"engines\": {\"protocol\": 2}.",
+      "secretNeedsV2": "Skipped the setting \"{{key}}\": secret settings need \"manifestVersion\": 2.",
+      "serviceNeverStarts": "Its service never starts: a service runs while one of its pages is open, and it has none.",
+      "settingKind": "Skipped the setting \"{{key}}\" of type \"{{kind}}\", which this AutoScene doesn't know.",
+      "shotFiltersNeedV2": "Skipped contributes.shotFilters: shot filters need \"manifestVersion\": 2.",
+      "skippedUnknown": "Skipped {{path}}, which this AutoScene doesn't know."
+    },
+    "wasmCantRun": "WebAssembly plugins can't run on this computer: {{why}}",
+    "wasmNoFilter": "A WebAssembly plugin can't filter shots.",
+    "wasmNoPack": "A WebAssembly plugin can't save a scenepack.",
+    "withdrawn": "AutoScene withdrew {{name}}. {{reason}}",
+    "wrongPlatform": "This plugin isn't made for this computer."
   },
   "project": {
     "alreadyInProject": "That file is already in the project, as {{name}}.",

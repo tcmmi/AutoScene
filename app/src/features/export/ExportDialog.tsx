@@ -11,7 +11,7 @@ import { Field, Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
-import { formatBytes, shortFormatName } from "@/lib/format"
+import { formatBytes, presetDescription, presetName, shortFormatName } from "@/lib/format"
 import { pickFolder } from "@/lib/media"
 import { useExportDir, usePresets, useSettings } from "@/lib/queries"
 import { useUi } from "@/state/ui"
@@ -144,11 +144,11 @@ function ExportForm({
           hint={
             preset && (
               <>
-                {say(preset.description)}
+                {presetDescription(preset)}
                 {bytes != null && bytes > 0 && (
                   <span className="text-fg-2">
                     {" "}
-                    {t("about", { size: formatBytes(bytes), format: shortFormatName(say(preset.name)) })}
+                    {t("about", { size: formatBytes(bytes), format: shortFormatName(presetName(preset)) })}
                   </span>
                 )}
                 {size?.note && <span className="block pt-1 text-fg-2">{say(size.note)}</span>}
@@ -161,7 +161,7 @@ function ExportForm({
             value={presetId}
             onChange={setPresetId}
             placeholder={t("field.formatPlaceholder")}
-            options={(presets ?? []).map((p) => ({ value: p.id, label: say(p.name) }))}
+            options={(presets ?? []).map((p) => ({ value: p.id, label: presetName(p) }))}
           />
         </Field>
         <Field label={t("field.destination")}>

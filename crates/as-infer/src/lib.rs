@@ -22,9 +22,11 @@ pub mod computer;
 pub mod hardware;
 pub mod onnx;
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+use as_core::{Msg, ToMsg, msg};
 pub use ort::inputs;
 pub use ort::session::Session;
 pub use ort::value::{Tensor, TensorRef};
@@ -34,14 +36,27 @@ pub type InferResult<T> = Result<T, InferError>;
 
 #[derive(Debug, Error)]
 pub enum InferError {
-    #[error("AutoScene's AI runtime is missing. Reinstall AutoScene.")]
     Missing(PathBuf),
-    #[error("AutoScene's AI runtime couldn't start. Details are in the log.")]
     Runtime(String),
-    #[error("An AI model couldn't be loaded. Details are in the log.")]
     Model(String),
-    #[error("The AI model failed on this frame. Details are in the log.")]
     Run(String),
+}
+
+impl ToMsg for InferError {
+    fn msg(&self) -> Msg {
+        match self {
+            Self::Missing(_) => msg!("infer.missing", "AutoScene's AI runtime is missing. Reinstall AutoScene."),
+            Self::Runtime(_) => msg!("infer.runtime", "AutoScene's AI runtime couldn't start. Details are in the log."),
+            Self::Model(_) => msg!("infer.model", "An AI model couldn't be loaded. Details are in the log."),
+            Self::Run(_) => msg!("infer.run", "The AI model failed on this frame. Details are in the log."),
+        }
+    }
+}
+
+impl fmt::Display for InferError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.msg().text)
+    }
 }
 
 impl InferError {
@@ -644,6 +659,27 @@ fn preload_windows(dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_error_has_its_key_and_keeps_its_words() {
+        let said = [
+            (
+                InferError::Missing(PathBuf::from("o")),
+                "infer.missing",
+                "AutoScene's AI runtime is missing. Reinstall AutoScene.",
+            ),
+            (
+                InferError::Runtime("x".into()),
+                "infer.runtime",
+                "AutoScene's AI runtime couldn't start. Details are in the log.",
+            ),
+            (InferError::Model("x".into()), "infer.model", "An AI model couldn't be loaded. Details are in the log."),
+            (InferError::Run("x".into()), "infer.run", "The AI model failed on this frame. Details are in the log."),
+        ];
+        for (e, key, english) in said {
+            assert_eq!((e.msg().key.as_str(), e.to_string().as_str()), (key, english));
+        }
+    }
 
     fn pairs(options: Vec<(&'static str, String)>) -> Vec<String> {
         options.into_iter().map(|(name, value)| format!("{name}={value}")).collect()

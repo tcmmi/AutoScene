@@ -311,13 +311,14 @@ pub struct ScanDefaults {
 // ---------------------------------------------------------------------------
 
 /// A graphics card the analysis can run on.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuOption {
     /// What [`AppSettings::gpu`] stores when it is chosen.
     pub key: String,
-    /// As its driver names it, numbered among identical cards.
-    pub name: String,
+    /// As its driver names it, numbered among identical cards. The words are
+    /// AutoScene's only for a card its driver gives no name.
+    pub name: Msg,
 }
 
 /// What the analysis runs on.
@@ -347,7 +348,7 @@ pub enum HardwareChoice {
 
 /// Settings → General → Graphics card: what can be chosen, what is, and
 /// what the analysis runs on because of it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HardwareInfo {
     /// The graphics cards found, in the order DirectML takes them
@@ -373,7 +374,7 @@ pub struct HardwareInfo {
 }
 
 /// Settings → General → NVIDIA acceleration.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AccelInfo {
     pub row: AccelRow,
@@ -396,7 +397,7 @@ pub struct AccelInfo {
 
 /// What the row shows: the first of these that applies, in this order, but
 /// for [`AccelRow::Hidden`].
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum AccelRow {
     /// Nothing: this computer can't use it and has no files of it.
@@ -407,7 +408,7 @@ pub enum AccelRow {
     },
     /// The last download failed; `message` says why, for the person.
     Failed {
-        message: String,
+        message: Msg,
     },
     /// The files go once the current analysis is done with them.
     Removing,

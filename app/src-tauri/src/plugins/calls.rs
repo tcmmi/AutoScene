@@ -37,7 +37,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use as_api::{ExportStatus, ExportSummary, MediaStatus};
-use as_core::{CancelToken, ExportId, JobId, MediaId, ProjectId};
+use as_core::{CancelToken, ExportId, JobId, MediaId, Msg, ProjectId, msg};
 use as_plugin::calls::{
     self, ActionsRun, CallCode, CallError, Caller, CopyText, ExportRef, FileFilter, FileRef, Grants, HostCalls,
     HostMethod, Navigate, NetRequest, OpenExternal, OpenFile, OpenedFile, PageClip, PageEpisode, PageExport,
@@ -366,7 +366,7 @@ impl AppCalls {
                 }
                 // The plugin's words after a word it can't choose: its page
                 // may be called anything, AutoScene too.
-                let title = format!("Plugin “{}”: {text}", m.name);
+                let title = msg!("plugin.pageToast", "Plugin “{{name}}”: {{text}}", name = &m.name, text = text);
                 Ok(PageAnswer::effect(PageEffect::Toast { title, description, tone }, json!({ "shown": true })))
             }
             HostMethod::UiNavigate => {
@@ -718,9 +718,10 @@ pub enum PageReply {
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PageEffect {
-    /// A toast. `title` is its whole first line, `Plugin “<name>”: <text>`:
+    /// A toast. `title` is its whole first line, `Plugin “<name>”: <text>`
+    /// in English:
     /// the app's page shows it as it is.
-    Toast { title: String, description: Option<String>, tone: ToastTone },
+    Toast { title: Msg, description: Option<String>, tone: ToastTone },
     /// The path inside the page becomes `path` (the route's splat).
     Navigate { path: String, replace: bool },
 }
@@ -1616,7 +1617,7 @@ mod tests {
         // A plugin of protocol 1 makes no calls; a broken one doesn't run.
         assert!(calls_for(&library, &host, &p, &on_export, 1).unwrap().is_none());
         p.manifest = None;
-        p.broken = Some("Its files are missing. Install it again.".into());
+        p.broken = Some(as_plugin::store::missing());
         assert!(calls_for(&library, &host, &p, &on_export, 2).is_err());
         drop((run, command, host, library));
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -1912,7 +1913,11 @@ mod tests {
                 "kind": "effect",
                 "effect": {
                     "type": "toast",
-                    "title": "Plugin “AutoScene”: AutoScene: update now",
+                    "title": {
+                        "key": "plugin.pageToast",
+                        "args": {"name": "AutoScene", "text": "AutoScene: update now"},
+                        "text": "Plugin “AutoScene”: AutoScene: update now",
+                    },
                     "description": null,
                     "tone": "neutral"
                 },
@@ -1928,7 +1933,7 @@ mod tests {
         assert_eq!(
             effect,
             PageEffect::Toast {
-                title: "Plugin “Clips”: Couldn't save".into(),
+                title: msg!("plugin.pageToast", "Plugin “{{name}}”: {{text}}", name = "Clips", text = "Couldn't save"),
                 description: Some("Disk full".into()),
                 tone: ToastTone::Error
             }
@@ -2052,7 +2057,8 @@ mod tests {
             self.reads.fetch_add(1, Ordering::SeqCst);
             match self.locked.load(Ordering::SeqCst) {
                 true => {
-                    Err(PluginError::Keychain { reason: "it is locked, or refused AutoScene.".into(), detail: None })
+                    let locked = msg!("keychain.locked", "it is locked, or refused AutoScene.");
+                    Err(PluginError::Keychain { reason: locked, detail: None })
                 }
                 false => self.kept.get(library, plugin, key),
             }

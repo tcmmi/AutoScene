@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { formatBytes } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { type Getting, usePluginReview } from "@/state/plugin-review"
@@ -249,7 +250,7 @@ function ReviewForm({
             <h3 className="text-sm font-medium text-fg-2">{t("review.warnings")}</h3>
             <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-fg-2">
               {p.warnings.map((w, i) => (
-                <li key={i}>{w}</li>
+                <li key={i}>{say(w)}</li>
               ))}
             </ul>
           </section>
@@ -261,7 +262,7 @@ function ReviewForm({
             <h3 className="text-sm font-medium text-fg-2">{t("review.componentWarnings")}</h3>
             <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-fg-2">
               {review.componentWarnings.map((w, i) => (
-                <li key={i}>{w}</li>
+                <li key={i}>{say(w)}</li>
               ))}
             </ul>
           </section>

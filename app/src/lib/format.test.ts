@@ -10,8 +10,37 @@ import {
   formatPace,
   formatPercent,
   formatProgress,
+  presetDescription,
+  presetName,
   shortFormatName,
 } from "./format"
+
+describe("presetName", () => {
+  const preset = {
+    name: "H.264 · Mobile (CapCut, Alight Motion)",
+    nameMsg: { key: "export.preset.h264Mobile.name", text: "H.264 · Mobile (CapCut, Alight Motion)" },
+    description: "1080p H.264 with stereo sound that imports cleanly into phone editors.",
+    descriptionMsg: { key: "export.preset.h264Mobile.description", text: "1080p H.264 with stereo sound that imports cleanly into phone editors." },
+  }
+
+  it("says a format in the UI's language", async () => {
+    expect(presetName(preset)).toBe("H.264 · Mobile (CapCut, Alight Motion)")
+    expect(presetDescription(preset)).toBe(preset.description)
+    await inLanguage("ro", {
+      backend: { export: { preset: { h264Mobile: { name: "H.264 · Telefon (CapCut)", description: "H.264 la 1080p." } } } },
+    })
+    expect(presetName(preset)).toBe("H.264 · Telefon (CapCut)")
+    expect(presetDescription(preset)).toBe("H.264 la 1080p.")
+    expect(shortFormatName(presetName(preset))).toBe("H.264 · Telefon")
+  })
+
+  it("an export kept before formats had keys says its English in every language", async () => {
+    await inLanguage("ro", { backend: { export: { preset: { h264Mobile: { name: "H.264 · Telefon" } } } } })
+    expect(presetName({ name: "ProRes 422 HQ" })).toBe("ProRes 422 HQ")
+    expect(presetName({ name: "ProRes 422 HQ", nameMsg: null })).toBe("ProRes 422 HQ")
+    expect(presetDescription({ description: "Large files." })).toBe("Large files.")
+  })
+})
 
 describe("shortFormatName", () => {
   it("drops what the brackets add", () => {

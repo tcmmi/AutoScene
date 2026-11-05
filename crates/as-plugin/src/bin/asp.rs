@@ -92,6 +92,7 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use as_core::Msg;
 use as_plugin::catalog::{
     self, Accepted, Catalog, CatalogKeys, CatalogState, Checked, Entry, Index, MAX_LIFETIME, PackageRef, SourceRef,
 };
@@ -1895,7 +1896,9 @@ fn read_manifest(bytes: &[u8]) -> Result<Parsed, Failure> {
     let (m, app) = (&parsed.manifest, app());
     if m.requirement_met(&app).is_err() {
         let wants = &m.engines.autoscene;
-        parsed.warnings.push(format!("AutoScene {app} won't install it: its engines.autoscene is \"{wants}\"."));
+        parsed
+            .warnings
+            .push(Msg::plain(format!("AutoScene {app} won't install it: its engines.autoscene is \"{wants}\".")));
     }
     Ok(parsed)
 }
@@ -2023,8 +2026,8 @@ fn warn(warning: &str) {
     eprintln!("warning: {warning}");
 }
 
-fn warn_all(warnings: &[String]) {
-    warnings.iter().for_each(|w| warn(w));
+fn warn_all(warnings: &[Msg]) {
+    warnings.iter().for_each(|w| warn(&w.text));
 }
 
 /// A command's arguments: its paths in order, its switches, and its options

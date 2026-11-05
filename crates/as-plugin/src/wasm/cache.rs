@@ -26,7 +26,7 @@ use crate::error::{PluginError, PluginResult};
 pub(crate) fn file_name(component_sha256: &str) -> PluginResult<String> {
     let hex = |b: u8| matches!(b, b'0'..=b'9' | b'a'..=b'f');
     if component_sha256.len() != 64 || !component_sha256.bytes().all(hex) {
-        return Err(PluginError::Invalid("The component's SHA-256 isn't 64 lowercase hex digits.".into()));
+        return Err(PluginError::Manifest("The component's SHA-256 isn't 64 lowercase hex digits.".into()));
     }
     Ok(format!("{component_sha256}-{}.cwasm", engine_key()?))
 }
@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(file_name(SHA).unwrap(), name);
         // Anything else never names a file, in the folder or out of it.
         for bad in ["../x", "", &SHA.to_uppercase(), &SHA[1..], &format!("{SHA}0"), &format!("../{}", &SHA[3..])] {
-            assert!(matches!(file_name(bad), Err(PluginError::Invalid(_))), "{bad}");
+            assert!(matches!(file_name(bad), Err(PluginError::Manifest(_))), "{bad}");
         }
         let dir = tempfile::tempdir().unwrap();
         assert!(load(engine().unwrap(), dir.path(), "../x").is_err());

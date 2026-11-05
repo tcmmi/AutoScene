@@ -12,10 +12,11 @@ import { queryClient } from "@/lib/queries"
 import { inLanguage } from "@/test/i18n"
 import { ExportDialog, type ExportClip } from "./ExportDialog"
 
-// A preset as the backend may soon send it: its name is a `Msg`, said by key in the language in use.
+// A preset as the backend sends it: its English, and beside it a `Msg` said by key in the language in use.
 const prores = {
   id: "prores-hq",
-  name: { key: "export.preset.proresHq", text: "ProRes 422 HQ" } satisfies Msg,
+  name: "ProRes 422 HQ",
+  nameMsg: { key: "export.preset.proresHq.name", text: "ProRes 422 HQ" } satisfies Msg,
   description: "Edit-grade intra codec.",
   container: "mov",
   video: { codec: "prores", profile: "hq" },
@@ -64,7 +65,7 @@ const ro = {
     field: { fileName: "Numele fișierului" },
   },
   common: { action: { cancel: "Anulează" } },
-  backend: { export: { preset: { proresHq: "Editare ProRes 422 HQ" } } },
+  backend: { export: { preset: { proresHq: { name: "Editare ProRes 422 HQ" } } } },
 }
 
 const clip = (n: number): ExportClip => ({

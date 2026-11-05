@@ -38,6 +38,8 @@ use semver::{BuildMetadata, Comparator, Op, Prerelease, Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use as_core::{Msg, msg};
+
 use crate::error::{PluginError, PluginResult};
 use crate::keys::{CATALOG_KEYS, FIRST_EPOCH, KeyRole, MIN_EPOCH};
 use crate::log::utc;
@@ -97,7 +99,8 @@ impl CatalogKey {
     /// The minisign public key `base64` (the line a `.pub` file holds).
     fn read(role: KeyRole, base64: &str) -> PluginResult<Self> {
         let id = key_id(base64)?;
-        let key = PublicKey::from_base64(base64).map_err(|_| catalog("That isn't a minisign public key."))?;
+        let key = PublicKey::from_base64(base64)
+            .map_err(|_| catalog(msg!("catalog.notAKey", "That isn't a minisign public key.")))?;
         Ok(Self { role, key, id })
     }
 }
@@ -267,7 +270,11 @@ pub struct CatalogState {
     pub withdrawn: Vec<Withdrawal>,
     /// The id of the key that signed the index held.
     pub signed_by: Option<String>,
+    /// Why the last try failed, in English: an older AutoScene reads it as text.
     pub last_error: Option<String>,
+    /// The same words for the UI. None in a state kept before they had keys.
+    #[serde(default)]
+    pub last_error_msg: Option<Msg>,
 }
 
 /// What [`check`] made of an index.
@@ -332,33 +339,35 @@ fn check_from(
 ) -> PluginResult<Checked> {
     let Signed { header, signed_by, role, withdrawn_keys } = signed(bytes, sig, keys, held)?;
     if header.published > header.expires || header.expires - header.published > MAX_LIFETIME {
-        return Err(catalog("The catalog's dates can't be right."));
+        return Err(catalog(msg!("catalog.badDates", "The catalog's dates can't be right.")));
     }
     // A published time a little in the future is taken (the clock may be
     // behind), and the date shows. Further ahead, the index would live past
     // MAX_LIFETIME from now.
     if header.published > now.saturating_add(MAX_CLOCK_SKEW) {
         let dated = date(header.published);
-        return Err(catalog(format!(
-            "The catalog is dated {dated}, which hasn't come yet. Check this computer's clock."
+        return Err(catalog(msg!(
+            "catalog.notYet",
+            "The catalog is dated {{date}}, which hasn't come yet. Check this computer's clock.",
+            date = dated
         )));
     }
     if header.expires <= now {
-        return Err(catalog(format!("The catalog ran out on {}.", date(header.expires))));
+        return Err(catalog(msg!("catalog.ranOut", "The catalog ran out on {{date}}.", date = date(header.expires))));
     }
     let sha256 = sha256_hex(bytes);
     // An empty state holds no number: any index from min_epoch up is newer.
     let held_number = held.sha256.as_ref().map(|_| (held.epoch, held.seq));
     let number = (header.epoch, header.seq);
     if header.epoch < min_epoch || held_number.is_some_and(|held| number < held) {
-        return Err(catalog("This catalog is older than the one AutoScene has."));
+        return Err(catalog(msg!("catalog.older", "This catalog is older than the one AutoScene has.")));
     }
     if held_number == Some(number) {
         if held.sha256.as_deref() == Some(sha256.as_str()) {
             return Ok(Checked::Same);
         }
         tracing::warn!("catalog epoch {} seq {} came with other bytes ({sha256})", header.epoch, header.seq);
-        return Err(catalog("Two catalogs carry the same number."));
+        return Err(catalog(msg!("catalog.sameNumber", "Two catalogs carry the same number.")));
     }
     let index = read(header, bytes)?;
     Ok(Checked::Newer(Box::new(Accepted { index, sha256, signed_by, role, withdrawn_keys })))
@@ -369,7 +378,7 @@ fn check_from(
 /// was taken already, and may have run out since.
 pub fn reload(bytes: &[u8], sig: &str, keys: &CatalogKeys, held: &CatalogState) -> PluginResult<Index> {
     if held.sha256.as_deref() != Some(sha256_hex(bytes).as_str()) {
-        return Err(catalog("The saved catalog isn't the one AutoScene checked."));
+        return Err(catalog(msg!("catalog.notChecked", "The saved catalog isn't the one AutoScene checked.")));
     }
     read(signed(bytes, sig, keys, held)?.header, bytes)
 }
@@ -393,12 +402,24 @@ impl CatalogState {
             withdrawn: a.index.withdrawn.clone(),
             signed_by: Some(a.signed_by.clone()),
             last_error: None,
+            last_error_msg: None,
         }
     }
 
     /// The state after a try at `now`, which `error` says failed.
-    pub fn tried(&self, now: u64, error: Option<String>) -> Self {
-        Self { checked_at: now, last_error: error, ..self.clone() }
+    pub fn tried(&self, now: u64, error: Option<Msg>) -> Self {
+        let last_error = error.as_ref().map(|e| e.text.clone());
+        Self { checked_at: now, last_error, last_error_msg: error, ..self.clone() }
+    }
+
+    /// Why the last try failed.
+    pub fn error(&self) -> Option<Msg> {
+        self.last_error_msg.clone().or_else(|| self.last_error.as_deref().map(Msg::plain))
+    }
+
+    /// Whether the last try found an index only a later AutoScene reads.
+    pub fn needs_newer_app(&self) -> bool {
+        self.last_error.as_deref() == Some(needs_newer_app_said().text.as_str())
     }
 }
 
@@ -567,16 +588,16 @@ struct Certificate {
 /// key AutoScene knows and hasn't withdrawn signed it.
 fn signed(bytes: &[u8], sig: &str, keys: &CatalogKeys, held: &CatalogState) -> PluginResult<Signed> {
     if bytes.len() as u64 > MAX_INDEX_BYTES || sig.len() as u64 > MAX_SIG_BYTES {
-        return Err(catalog("The catalog is too large."));
+        return Err(catalog(too_large()));
     }
-    let unreadable = "The catalog's signature can't be read.";
-    let signature = Signature::decode(sig).map_err(|_| catalog(unreadable))?;
+    let unreadable = unreadable_signature();
+    let signature = Signature::decode(sig).map_err(|_| catalog(unreadable.clone()))?;
     let named = read_comment(signature.trusted_comment())?;
     // The header is read before the signature is checked, since the
     // certificate is in it. The entries wait until it checked out.
     let header = read_header(bytes)?;
     if (header.epoch, header.seq, header.expires) != named {
-        return Err(catalog("The catalog's signature names another catalog."));
+        return Err(catalog(msg!("catalog.otherCatalog", "The catalog's signature names another catalog.")));
     }
     let mut withdrawn = held.withdrawn_keys.clone();
     // A certificate names every online key of its epoch: a compiled one it
@@ -596,14 +617,14 @@ fn signed(bytes: &[u8], sig: &str, keys: &CatalogKeys, held: &CatalogState) -> P
     withdrawn.dedup();
     let offline = keys.keys.iter().filter(|k| k.role == KeyRole::Offline);
     let known = offline.chain(&online).filter(|k| !withdrawn.contains(&k.id));
-    let Some(key) = signer(known, bytes, &signature, "The catalog was changed after it was signed.", unreadable)?
-    else {
+    let changed = msg!("catalog.changed", "The catalog was changed after it was signed.");
+    let Some(key) = signer(known, bytes, &signature, &changed, &unreadable)? else {
         // A compiled key that didn't sign was withdrawn, or left out of the epoch.
         let id = signer_id(sig);
         return Err(catalog(if withdrawn.contains(&id) || keys.keys.iter().any(|k| k.id == id) {
-            "The catalog is signed with a key AutoScene withdrew."
+            msg!("catalog.keyWithdrawn", "The catalog is signed with a key AutoScene withdrew.")
         } else {
-            "The catalog is signed with a key AutoScene doesn't know."
+            msg!("catalog.keyUnknown", "The catalog is signed with a key AutoScene doesn't know.")
         }));
     };
     let (signed_by, role) = (key.id.clone(), key.role);
@@ -613,25 +634,29 @@ fn signed(bytes: &[u8], sig: &str, keys: &CatalogKeys, held: &CatalogState) -> P
 /// Checks the epoch certificate `text` of an index of `epoch`: an offline key
 /// that hasn't been withdrawn before signed it, and it withdraws none.
 fn certificate(text: &str, epoch: u64, keys: &CatalogKeys, withdrawn: &[String]) -> PluginResult<Certificate> {
-    let unreadable = "The catalog's epoch certificate can't be read.";
-    let signature = Signature::decode(text).map_err(|_| catalog(unreadable))?;
+    let unreadable = msg!("catalog.unreadableCertificate", "The catalog's epoch certificate can't be read.");
+    let signature = Signature::decode(text).map_err(|_| catalog(unreadable.clone()))?;
     let line = signature.trusted_comment();
-    let (named, withdraw, online) = read_certificate_line(line).ok_or_else(|| catalog(unreadable))?;
+    let (named, withdraw, online) = read_certificate_line(line).ok_or_else(|| catalog(unreadable.clone()))?;
     if named != epoch {
-        return Err(catalog("The catalog's epoch certificate is for another epoch."));
+        return Err(catalog(msg!("catalog.certificateEpoch", "The catalog's epoch certificate is for another epoch.")));
     }
     let online = online.iter().map(|key| CatalogKey::read(KeyRole::Online, key)).collect::<PluginResult<Vec<_>>>();
-    let online = online.map_err(|_| catalog(unreadable))?;
+    let online = online.map_err(|_| catalog(unreadable.clone()))?;
     let offline = keys.keys.iter().filter(|k| k.role == KeyRole::Offline && !withdrawn.contains(&k.id));
-    let changed = "The catalog's epoch certificate was changed after it was signed.";
-    if signer(offline, line.as_bytes(), &signature, changed, unreadable)?.is_none() {
+    let changed =
+        msg!("catalog.certificateChanged", "The catalog's epoch certificate was changed after it was signed.");
+    if signer(offline, line.as_bytes(), &signature, &changed, &unreadable)?.is_none() {
         return Err(not_offline());
     }
     // Only a release changes the offline keys. A certificate that withdrew
     // one would leave no key to start the next epoch, or hand them to a
     // leaked one.
     if keys.keys.iter().any(|k| k.role == KeyRole::Offline && withdraw.contains(&k.id)) {
-        return Err(catalog("The catalog's epoch certificate withdraws AutoScene's offline key."));
+        return Err(catalog(msg!(
+            "catalog.certificateWithdraws",
+            "The catalog's epoch certificate withdraws AutoScene's offline key."
+        )));
     }
     Ok(Certificate { withdraw, online })
 }
@@ -644,8 +669,8 @@ fn signer<'k>(
     keys: impl IntoIterator<Item = &'k CatalogKey>,
     data: &[u8],
     signature: &Signature,
-    changed: &str,
-    unreadable: &str,
+    changed: &Msg,
+    unreadable: &Msg,
 ) -> PluginResult<Option<&'k CatalogKey>> {
     for key in keys {
         match key.key.verify(data, signature, false) {
@@ -653,11 +678,11 @@ fn signer<'k>(
             Err(SignatureError::UnexpectedKeyId) => {}
             Err(SignatureError::InvalidSignature) => {
                 tracing::warn!("catalog signature by key {} doesn't verify", key.id);
-                return Err(catalog(changed));
+                return Err(catalog(changed.clone()));
             }
             Err(e) => {
                 tracing::warn!("catalog signature by key {}: {e}", key.id);
-                return Err(catalog(unreadable));
+                return Err(catalog(unreadable.clone()));
             }
         }
     }
@@ -677,7 +702,7 @@ fn read_comment(tc: &str) -> PluginResult<(u64, u64, u64)> {
         Some((epoch, seq, expires)) if index_comment(epoch, seq, expires) == tc => Ok((epoch, seq, expires)),
         _ if later_index(tc) => Err(needs_newer_app()),
         // A package's signature, or an epoch certificate's, among others.
-        _ => Err(catalog("That isn't a catalog signature.")),
+        _ => Err(catalog(msg!("catalog.notASignature", "That isn't a catalog signature."))),
     }
 }
 
@@ -722,7 +747,7 @@ fn read_header(bytes: &[u8]) -> PluginResult<Header> {
     struct Format {
         catalog_version: Option<u64>,
     }
-    let unreadable = || catalog("The catalog can't be read.");
+    let unreadable = || catalog(unreadable_index());
     if bytes.trim_ascii_start().first() != Some(&b'{') {
         return Err(unreadable());
     }
@@ -738,12 +763,20 @@ fn read_header(bytes: &[u8]) -> PluginResult<Header> {
 /// `header`: one that breaks a rule refuses it all. The texts for people are
 /// cleaned and cut.
 fn read(header: Header, bytes: &[u8]) -> PluginResult<Index> {
-    let body: Body = serde_json::from_slice(bytes).map_err(|_| catalog("The catalog can't be read."))?;
+    let body: Body = serde_json::from_slice(bytes).map_err(|_| catalog(unreadable_index()))?;
     if body.plugins.len() > MAX_ENTRIES {
-        return Err(catalog(format!("The catalog lists more than {MAX_ENTRIES} plugins.")));
+        return Err(catalog(msg!(
+            "catalog.tooManyPlugins",
+            "The catalog lists more than {{max}} plugins.",
+            max = MAX_ENTRIES
+        )));
     }
     if body.withdrawn.len() > MAX_WITHDRAWN {
-        return Err(catalog(format!("The catalog withdraws more than {MAX_WITHDRAWN} plugins.")));
+        return Err(catalog(msg!(
+            "catalog.tooManyWithdrawn",
+            "The catalog withdraws more than {{max}} plugins.",
+            max = MAX_WITHDRAWN
+        )));
     }
     let mut plugins = Vec::with_capacity(body.plugins.len());
     // Versions of one precedence are one version: build metadata doesn't count.
@@ -753,14 +786,22 @@ fn read(header: Header, bytes: &[u8]) -> PluginResult<Index> {
             listed.insert((e.id.clone(), Version { build: BuildMetadata::EMPTY, ..version.clone() }))
         });
         let Some((e, _)) = read else {
-            return Err(catalog(format!("The catalog has an entry AutoScene can't read: {}.", named(v, i))));
+            return Err(catalog(msg!(
+                "catalog.badEntry",
+                "The catalog has an entry AutoScene can't read: {{which}}.",
+                which = named(v, i)
+            )));
         };
         plugins.push(e);
     }
     let mut withdrawn = Vec::with_capacity(body.withdrawn.len());
     for (i, v) in body.withdrawn.iter().enumerate() {
         let Some(w) = withdrawal(v, header.published) else {
-            return Err(catalog(format!("The catalog has a withdrawal AutoScene can't read: {}.", named(v, i))));
+            return Err(catalog(msg!(
+                "catalog.badWithdrawal",
+                "The catalog has a withdrawal AutoScene can't read: {{which}}.",
+                which = named(v, i)
+            )));
         };
         withdrawn.push(w);
     }
@@ -896,20 +937,34 @@ fn date(secs: u64) -> String {
 
 /// What [`check`] says of an index only a later AutoScene reads, so the
 /// app can tell the person to update rather than that something failed.
-pub const NEEDS_NEWER_APP: &str = "This catalog needs a newer AutoScene.";
+pub fn needs_newer_app_said() -> Msg {
+    msg!("catalog.needsNewerApp", "This catalog needs a newer AutoScene.")
+}
+
+pub fn unreadable_signature() -> Msg {
+    msg!("catalog.unreadableSignature", "The catalog's signature can't be read.")
+}
+
+pub fn too_large() -> Msg {
+    msg!("catalog.tooLarge", "The catalog is too large.")
+}
+
+fn unreadable_index() -> Msg {
+    msg!("catalog.unreadable", "The catalog can't be read.")
+}
 
 /// An index only a later AutoScene reads. Not [`PluginError::TooNew`],
 /// whose sentence is about a plugin.
 fn needs_newer_app() -> PluginError {
-    catalog(NEEDS_NEWER_APP)
+    catalog(needs_newer_app_said())
 }
 
 fn not_offline() -> PluginError {
-    catalog("The catalog's new epoch isn't signed by AutoScene's offline key.")
+    catalog(msg!("catalog.notOffline", "The catalog's new epoch isn't signed by AutoScene's offline key."))
 }
 
-fn catalog(message: impl Into<String>) -> PluginError {
-    PluginError::Catalog(message.into())
+fn catalog(message: Msg) -> PluginError {
+    PluginError::Catalog(message)
 }
 
 #[cfg(test)]
@@ -1084,10 +1139,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_failed_try_is_kept_in_english_and_with_its_key() {
+        let older = CatalogState::default().tried(5, Some(needs_newer_app_said()));
+        assert_eq!(older.last_error.as_deref(), Some("This catalog needs a newer AutoScene."));
+        assert_eq!(older.error().unwrap().key, "catalog.needsNewerApp");
+        assert!(older.needs_newer_app());
+        assert_eq!(older.tried(6, None).error(), None);
+        // As an AutoScene before keys wrote it: its words, plain, and what they meant.
+        let mut kept = serde_json::to_value(&older).unwrap();
+        kept.as_object_mut().unwrap().remove("lastErrorMsg");
+        let kept: CatalogState = serde_json::from_value(kept).unwrap();
+        assert_eq!(kept.error(), Some(Msg::plain("This catalog needs a newer AutoScene.")));
+        assert!(kept.needs_newer_app());
+    }
+
     /// The sentence `checked` refuses the index with.
     fn refused(checked: PluginResult<Checked>) -> String {
         match checked {
-            Err(PluginError::Catalog(why)) => why,
+            Err(PluginError::Catalog(why)) => why.text,
             other => panic!("{other:?}"),
         }
     }
@@ -1127,6 +1197,7 @@ mod tests {
                 withdrawn: Vec::new(),
                 signed_by: Some(key.id()),
                 last_error: None,
+                last_error_msg: None,
             };
             assert_eq!(state, expected);
         }
@@ -1308,10 +1379,15 @@ mod tests {
         let (_, held) = taken(check(&bytes, &sig, &keys, &empty, NOW), &empty);
         assert!(matches!(check(&bytes, &sig, &keys, &held, NOW + DAY), Ok(Checked::Same)));
         // A try changes only when it was, and what went wrong.
-        let tried = held.tried(NOW + DAY, Some("No answer.".into()));
+        let tried = held.tried(NOW + DAY, Some(Msg::plain("No answer.")));
         assert_eq!(
             tried,
-            CatalogState { checked_at: NOW + DAY, last_error: Some("No answer.".into()), ..held.clone() }
+            CatalogState {
+                checked_at: NOW + DAY,
+                last_error: Some("No answer.".into()),
+                last_error_msg: Some(Msg::plain("No answer.")),
+                ..held.clone()
+            }
         );
         // The saved index reads again, also after it ran out; another file doesn't.
         let saved = reload(&bytes, &sig, &keys, &held).unwrap();

@@ -4,10 +4,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import userEvent from "@testing-library/user-event"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { AppSettings, GraphicsClass, HardwareInfo, Platform, ScanChoice, ScanDefaults } from "@/bindings"
+import type { AppSettings, ExportPreset, GraphicsClass, HardwareInfo, Platform, ScanChoice, ScanDefaults } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
+import { inLanguage } from "@/test/i18n"
 import { GeneralSection } from "./GeneralSection"
 
 const { state } = vi.hoisted(() => ({
@@ -32,7 +33,7 @@ const chosenCard = () => CARDS.find((c) => c.key === state.settings.gpu) ?? CARD
 function hardware(): HardwareInfo {
   const using = state.hybrid ? chosenCard().name : "Intel Iris Xe Graphics"
   return {
-    gpus: state.hybrid ? CARDS.map(({ key, name }) => ({ key, name })) : [],
+    gpus: state.hybrid ? CARDS.map(({ key, name }) => ({ key, name: { key: "", text: name } })) : [],
     choice: state.hybrid ? "cards" : "autoOrProcessor",
     selected: state.hybrid && state.settings.gpu ? chosenCard().key : "auto",
     using: { kind: "gpu", name: using },
@@ -97,6 +98,23 @@ beforeEach(() => {
   state.settings = { ...state.settings, findBodies: false, gpu: "" }
 })
 afterEach(cleanup)
+
+describe("Settings → General → Export", () => {
+  it("says the default format and what it is for in the UI's language", async () => {
+    await inLanguage("ro", { backend: { fixture: { name: "ProRes românesc", description: "Pentru montaj." } } })
+    const preset = {
+      id: "prores-hq",
+      name: "ProRes 422 HQ",
+      description: "For editing.",
+      nameMsg: { key: "fixture.name", text: "ProRes 422 HQ" },
+      descriptionMsg: { key: "fixture.description", text: "For editing." },
+    } as ExportPreset
+    vi.mocked(commands.exportPresets).mockResolvedValueOnce([preset])
+    show()
+    expect(await screen.findByText("Pentru montaj.")).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Default export format" }).textContent).toContain("ProRes românesc"))
+  })
+})
 
 describe("Settings → General → Fast Scan", () => {
   it("Automatic says what it means here", async () => {

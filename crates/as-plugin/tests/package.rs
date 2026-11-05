@@ -61,8 +61,8 @@ impl Place {
     /// gives the message.
     fn refused(&self, zip: &[u8]) -> String {
         let message = match self.unpack(zip) {
-            Err(PluginError::Invalid(message)) => message,
-            r => panic!("expected Invalid, got {r:?}"),
+            Err(PluginError::Manifest(message)) => message,
+            r => panic!("expected Manifest, got {r:?}"),
         };
         assert_eq!(self.left(), ["test", "test/plugin.asp"], "{message}");
         message
@@ -281,7 +281,7 @@ fn a_traversing_entry_is_refused() {
     let message = place.refused(&zip_of(&with_lock_bytes(&plugin(), &serde_json::to_vec(&lock).unwrap())));
     assert_eq!(message, "The plugin names a file that can't be used: ../evil (it can't step into another folder).");
     // Nor does a check of a folder go where such a lock says.
-    let Err(PluginError::Invalid(message)) = package::verify_dir(&place.dir, &lock) else { panic!() };
+    let Err(PluginError::Manifest(message)) = package::verify_dir(&place.dir, &lock) else { panic!() };
     assert_eq!(message, "The plugin names a file that can't be used: ../evil (it can't step into another folder).");
 }
 
@@ -513,8 +513,8 @@ fn a_package_larger_than_1_gb_is_refused_before_it_is_read() {
     // Sparse where the file system can: the test writes nothing much.
     fs::File::create(&package).unwrap().set_len(MAX_PACKAGE_BYTES + 1).unwrap();
     let message = match package::unpack(&package, &place.target()) {
-        Err(PluginError::Invalid(message)) => message,
-        r => panic!("expected Invalid, got {r:?}"),
+        Err(PluginError::Manifest(message)) => message,
+        r => panic!("expected Manifest, got {r:?}"),
     };
     assert_eq!(message, "The plugin package is larger than 1 GB.");
     assert_eq!(place.left(), ["test", "test/plugin.asp"]);
@@ -580,7 +580,7 @@ fn symlinks_are_refused() {
     let linked = std::os::windows::fs::symlink_file(place.dir.join("plugin.asp"), src.join("lib/link"));
     // Windows makes links only for administrators or in Developer Mode.
     if linked.is_ok() {
-        let Err(PluginError::Invalid(message)) = package::lock_folder(&src) else { panic!() };
+        let Err(PluginError::Manifest(message)) = package::lock_folder(&src) else { panic!() };
         assert_eq!(message, "The plugin's lib/link is a link or another special file, which a package can't hold.");
 
         // Nor does a check of an unpacked folder go through one.
@@ -592,7 +592,7 @@ fn symlinks_are_refused() {
         std::os::unix::fs::symlink(&elsewhere, src.join("lib")).unwrap();
         #[cfg(windows)]
         std::os::windows::fs::symlink_dir(&elsewhere, src.join("lib")).unwrap();
-        let Err(PluginError::Invalid(message)) = package::verify_dir(&src, &lock) else { panic!() };
+        let Err(PluginError::Manifest(message)) = package::verify_dir(&src, &lock) else { panic!() };
         assert_eq!(message, "The plugin's lib is missing or is a link.");
         #[cfg(unix)]
         fs::remove_file(src.join("lib")).unwrap();
@@ -607,7 +607,7 @@ fn symlinks_are_refused() {
         std::os::unix::fs::symlink(&elsewhere, src.join("plugin.json")).unwrap();
         #[cfg(windows)]
         std::os::windows::fs::symlink_file(&elsewhere, src.join("plugin.json")).unwrap();
-        let Err(PluginError::Invalid(message)) = package::verify_dir(&src, &lock) else { panic!() };
+        let Err(PluginError::Manifest(message)) = package::verify_dir(&src, &lock) else { panic!() };
         assert_eq!(message, "The plugin's plugin.json is missing or is a link.");
     }
     assert!(place.left().iter().all(|p| p.starts_with("test")));
@@ -625,10 +625,10 @@ fn a_changed_file_fails_its_hash() {
     // And once unpacked.
     let unpacked = place.unpack(&zip_of(&with_lock(&plugin()))).unwrap();
     fs::write(place.target().join("lib/data.txt"), b"jello").unwrap();
-    let Err(PluginError::Invalid(message)) = package::verify_dir(&place.target(), &unpacked.lock) else { panic!() };
+    let Err(PluginError::Manifest(message)) = package::verify_dir(&place.target(), &unpacked.lock) else { panic!() };
     assert_eq!(message, "The plugin's lib/data.txt doesn't match its files.lock.");
     fs::remove_file(place.target().join("plugin.json")).unwrap();
-    let Err(PluginError::Invalid(message)) = package::verify_dir(&place.target(), &unpacked.lock) else { panic!() };
+    let Err(PluginError::Manifest(message)) = package::verify_dir(&place.target(), &unpacked.lock) else { panic!() };
     assert_eq!(message, "The plugin's plugin.json is missing or is a link.");
 }
 
@@ -735,7 +735,7 @@ fn a_locked_folder_unpacks_as_it_was() {
 
     // What unpack would refuse, pack refuses too.
     fs::write(src.join("lib/a b.txt"), b"x").unwrap();
-    let Err(PluginError::Invalid(message)) = package::lock_folder(&src) else { panic!() };
+    let Err(PluginError::Manifest(message)) = package::lock_folder(&src) else { panic!() };
     assert!(message.contains("can't be used"), "{message}");
 }
 

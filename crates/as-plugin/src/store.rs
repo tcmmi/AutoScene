@@ -75,7 +75,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use as_core::{AppPaths, CancelToken};
+use as_core::{AppPaths, CancelToken, Msg, ToMsg, msg};
 use as_db::LibraryDb;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -121,15 +121,27 @@ pub const EXTRA_ROW: &str = "plugin_extra.";
 const KEYCHAIN_ROW: &str = "plugins_keychain";
 const STAGING: &str = ".staging";
 const TRASH: &str = ".trash";
-/// Why a plugin whose folder is gone can't run.
-pub const MISSING: &str = "Its files are missing. Install it again.";
-/// Why a plugin whose files don't match its lock can't run.
-pub(crate) const CHANGED: &str = "Its files were changed. Install it again.";
-const NEWER: &str = "Needs a newer AutoScene.";
-const RUNTIME_CHANGED: &str = "Its runtime changed. Load it again to agree to that.";
 /// How long a rename waits for Windows: a virus scanner may still hold a
 /// file it just unpacked.
 const RENAME_WAIT: Duration = Duration::from_secs(1);
+
+/// Why a plugin whose folder is gone can't run.
+pub fn missing() -> Msg {
+    msg!("plugin.filesMissing", "Its files are missing. Install it again.")
+}
+
+/// Why a plugin whose files don't match its lock can't run.
+pub(crate) fn changed() -> Msg {
+    msg!("plugin.filesChanged", "Its files were changed. Install it again.")
+}
+
+fn newer() -> Msg {
+    msg!("plugin.needsNewer", "Needs a newer AutoScene.")
+}
+
+fn runtime_changed() -> Msg {
+    msg!("plugin.runtimeChanged", "Its runtime changed. Load it again to agree to that.")
+}
 
 /// What the registry holds of an installed plugin (`plugin.<id>`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -217,13 +229,13 @@ pub struct Installed {
     pub record: Record,
     /// Its manifest, unless it is broken.
     pub manifest: Option<Manifest>,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Msg>,
     /// Its folder: the package's under `plugins/<id>/`, or the loaded one.
     pub dir: PathBuf,
     /// Why it can't run, as a sentence: its files are missing or were
     /// changed, a later AutoScene wrote its rows, it doesn't work with this
     /// AutoScene, or a loaded folder's runtime is not the one agreed to.
-    pub broken: Option<String>,
+    pub broken: Option<Msg>,
     /// What the person agreed to beside its record.
     pub extra: Extra,
     /// Why AutoScene withdrew its version, in the catalog's words: it
@@ -247,11 +259,11 @@ pub struct Ticket {
     pub id: Uuid,
     pub manifest: Manifest,
     /// What its plugin.json says that this AutoScene skipped.
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Msg>,
     /// What reading a WebAssembly plugin's component found that may surprise
     /// its author: an import it can't use, a permission it can't use.
     /// Nothing was skipped: the component runs as it is.
-    pub component_warnings: Vec<String>,
+    pub component_warnings: Vec<Msg>,
     /// The trust it gets, and the author key it is pinned to after.
     pub verdict: Verdict,
     /// What the catalog says of it, when it reviewed it: checked again at
@@ -843,7 +855,7 @@ impl Store {
                 Compiling::Here => wasm::prepare(&file, sha256, &cache, m)?.1,
                 Compiling::Nowhere => {
                     tracing::error!(plugin = %m.id, "this store wasn't told how to compile plugins");
-                    return Err(invalid(wasm::COMPILE_FAILED));
+                    return Err(PluginError::Invalid(wasm::compile_failed()));
                 }
             });
         }
@@ -866,7 +878,10 @@ impl Store {
         // What was agreed to went with its row, so nothing below could tell
         // what this update adds: a first install has its own review.
         if t.previous.is_some() && previous.is_none() {
-            return Err(invalid("This plugin was uninstalled while its update waited. Open it again."));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.uninstalledWhileWaiting",
+                "This plugin was uninstalled while its update waited. Open it again."
+            )));
         }
         let pin = previous.and_then(|p| p.author_key.as_ref());
         let lock = matches!(t.source, Source::Package { .. }).then_some(t.lock_bytes.as_slice());
@@ -878,7 +893,10 @@ impl Store {
         let (verdict, _) = match judged {
             Err(e @ PluginError::Withdrawn { .. }) => return Err(e),
             r if t.approval.is_some() && !matches!(r, Ok((_, Some(_)))) => {
-                return Err(invalid("The catalog changed while this plugin waited. Open it again."));
+                return Err(PluginError::Invalid(msg!(
+                    "plugin.catalogChangedWhileWaiting",
+                    "The catalog changed while this plugin waited. Open it again."
+                )));
             }
             r => r?,
         };
@@ -889,7 +907,10 @@ impl Store {
         // By the installed version now: the page's word is no yes here, and
         // one AutoScene hasn't reviewed had its own above.
         if verdict.trust == Trust::Reviewed && !t.confirmed && self.widens(m)?.any() {
-            return Err(invalid("This update asks for more than you agreed to. Open it again."));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.updateAsksMore",
+                "This update asks for more than you agreed to. Open it again."
+            )));
         }
         Ok(verdict)
     }
@@ -1074,7 +1095,11 @@ impl Store {
         let mut p = self.load(record);
         let m = manifest_of(&p)?;
         if !m.export_actions.iter().any(|a| a.id == action) {
-            return Err(invalid(format!("The plugin has no export action {}.", shown(action))));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.noExportAction",
+                "The plugin has no export action {{action}}.",
+                action = shown(action)
+            )));
         }
         let after = &p.record.after_export;
         p.record.after_export = m
@@ -1095,7 +1120,11 @@ impl Store {
         let p = self.load(record);
         let m = manifest_of(&p)?;
         if !m.events.iter().any(|e| e.id == event) {
-            return Err(invalid(format!("The plugin has no event {}.", shown(event))));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.noEvent",
+                "The plugin has no event {{event}}.",
+                event = shown(event)
+            )));
         }
         let mut extra = self.extra(&p.record)?;
         let mut turned_on = extra.events.clone();
@@ -1135,12 +1164,15 @@ impl Store {
         let specs = &manifest_of(&p)?.settings;
         let spec = |key: &str| specs.iter().find(|s| s.key == key);
         let mut stored = self.stored_row(id)?.ok_or_else(|| {
-            invalid("A newer AutoScene saved this plugin's settings, so this one can't change them. Update AutoScene, or uninstall the plugin.")
+            PluginError::Invalid(msg!("plugin.settingsOfNewer", "A newer AutoScene saved this plugin's settings, so this one can't change them. Update AutoScene, or uninstall the plugin."))
         })?;
         for (key, value) in values {
             if let Some(spec) = spec(&key) {
                 if matches!(spec.kind, SettingKind::Secret { .. }) {
-                    return Err(invalid("A secret is set with its own button, never as a value."));
+                    return Err(PluginError::Invalid(msg!(
+                        "plugin.secretOwnButton",
+                        "A secret is set with its own button, never as a value."
+                    )));
                 }
                 check_value(spec, &value)?;
                 stored.insert(key, serde_json::to_value(value).expect("a setting value serializes"));
@@ -1166,7 +1198,11 @@ impl Store {
         let p = self.load(record);
         let m = manifest_of(&p)?;
         if !m.secret_keys().any(|k| k == key) {
-            return Err(invalid(format!("The plugin has no secret setting {}.", shown(key))));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.noSecretSetting",
+                "The plugin has no secret setting {{key}}.",
+                key = shown(key)
+            )));
         }
         // A plain value kept under its key goes too: a loaded folder's
         // plugin.json may have made it a secret since.
@@ -1194,7 +1230,11 @@ impl Store {
         let mut extra = self.extra(&p.record)?;
         let listed = extra.secrets.iter().any(|k| k == key);
         if !listed && !p.manifest.as_ref().is_some_and(|m| m.secret_keys().any(|k| k == key)) {
-            return Err(invalid(format!("The plugin has no secret setting {}.", shown(key))));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.noSecretSetting",
+                "The plugin has no secret setting {{key}}.",
+                key = shown(key)
+            )));
         }
         if let Some(library) = self.library()? {
             self.secrets.delete(library, id, key)?;
@@ -1352,14 +1392,18 @@ impl Store {
     pub fn wasm_spec(&self, p: &Installed, action: ActionContext) -> PluginResult<WasmSpec> {
         let m = manifest_of(p)?;
         let Launch::Wasm { component } = m.launch()? else {
-            return Err(invalid(format!("{} isn't a WebAssembly plugin.", m.name)));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.notWasm",
+                "{{name}} isn't a WebAssembly plugin.",
+                name = &m.name
+            )));
         };
         let grants = crate::calls::Grants::of(p)?;
         let component_sha256 = match &p.record.lock_sha256 {
             Some(sha256) => {
-                let lock = installed_lock(&p.dir, sha256).map_err(invalid)?;
+                let lock = installed_lock(&p.dir, sha256).map_err(PluginError::Invalid)?;
                 let listed = lock.files.into_iter().find(|f| f.path == component);
-                Some(listed.ok_or_else(|| invalid(CHANGED))?.sha256)
+                Some(listed.ok_or_else(|| PluginError::Invalid(changed()))?.sha256)
             }
             None => None,
         };
@@ -1436,7 +1480,11 @@ impl Store {
     ) -> PluginResult<ServiceSpec> {
         let m = manifest_of(p)?;
         if m.runtime.kind != RuntimeKind::Service {
-            return Err(invalid(format!("{} runs no service.", m.name)));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.runsNoService",
+                "{{name}} runs no service.",
+                name = &m.name
+            )));
         }
         let id = &p.record.id;
         let data_dir = self.data_dir(id);
@@ -1662,7 +1710,7 @@ impl Store {
                     record,
                     manifest: None,
                     warnings: Vec::new(),
-                    broken: Some(NEWER.into()),
+                    broken: Some(newer()),
                     extra: Extra::default(),
                 }
             }
@@ -1687,25 +1735,25 @@ impl Store {
                 let read =
                     read_manifest(&record, &dir).and_then(|parsed| match parsed.manifest.requirement_met(&self.app) {
                         Ok(()) => Ok(parsed),
-                        Err(PluginError::TooNew(_)) => Err(NEWER.into()),
-                        Err(e) => Err(e.to_string()),
+                        Err(PluginError::TooNew(_)) => Err(newer()),
+                        Err(e) => Err(e.msg()),
                     });
                 // A package's plugin.json is its lock's; a loaded folder's may say another now.
                 let read = read.and_then(|parsed| match parsed.manifest.runtime.kind == extra.agreed_runtime() {
                     true => Ok(parsed),
-                    false => Err(RUNTIME_CHANGED.to_owned()),
+                    false => Err(runtime_changed()),
                 });
                 // Without the sandbox, one a newer AutoScene installed to run
                 // in it waits for it, as at install ([`Store::compile`]).
                 #[cfg(not(feature = "wasm"))]
                 let read = read.and_then(|parsed| match parsed.manifest.is_sandboxed() {
                     false => Ok(parsed),
-                    true => Err(NEWER.into()),
+                    true => Err(newer()),
                 });
                 (extra, read)
             }
-            Ok(None) => (Extra::default(), Err(NEWER.into())),
-            Err(e) => (Extra::default(), Err(e.to_string())),
+            Ok(None) => (Extra::default(), Err(newer())),
+            Err(e) => (Extra::default(), Err(e.msg())),
         };
         let (manifest, warnings, broken) = match read {
             Ok(Parsed { manifest, warnings }) => (Some(manifest), warnings, None),
@@ -1794,9 +1842,10 @@ fn not_found(id: &PluginId) -> PluginError {
 }
 
 fn installed_by_a_newer_autoscene() -> PluginError {
-    invalid(
-        "A newer AutoScene installed this plugin, so this one can't change it. Update AutoScene, or uninstall the plugin.",
-    )
+    PluginError::Invalid(msg!(
+        "plugin.installedByNewer",
+        "A newer AutoScene installed this plugin, so this one can't change it. Update AutoScene, or uninstall the plugin."
+    ))
 }
 
 /// Of the events `turned_on`, those `m` still has, in its order.
@@ -1854,7 +1903,10 @@ fn orphaned(id: &PluginId, row: Option<&str>, value: &str) -> bool {
 }
 
 fn changed_while_waiting() -> PluginError {
-    invalid("The plugin's files changed while it waited to be installed. Open it again.")
+    PluginError::Invalid(msg!(
+        "plugin.changedWhileWaiting",
+        "The plugin's files changed while it waited to be installed. Open it again."
+    ))
 }
 
 /// The record of the row `value` of `id`, when this AutoScene can read it:
@@ -1902,9 +1954,9 @@ fn unreadable(id: PluginId, value: &str) -> Record {
 /// go by: a package's must be the one its install checked (its lock is the
 /// recorded one and lists it as it is), a loaded folder's must name the
 /// same plugin.
-fn read_manifest(record: &Record, dir: &Path) -> Result<Parsed, String> {
+fn read_manifest(record: &Record, dir: &Path) -> Result<Parsed, Msg> {
     if !dir.is_dir() {
-        return Err(MISSING.into());
+        return Err(missing());
     }
     let bytes = manifest::read_file(&dir.join(MANIFEST));
     let bytes = match (&record.lock_sha256, bytes) {
@@ -1912,31 +1964,31 @@ fn read_manifest(record: &Record, dir: &Path) -> Result<Parsed, String> {
             let lock = installed_lock(dir, sha256)?;
             let listed = lock.files.iter().find(|f| f.path == MANIFEST);
             if listed.is_none_or(|f| f.sha256 != package::sha256_hex(&bytes)) {
-                return Err(CHANGED.into());
+                return Err(changed());
             }
             bytes
         }
-        (Some(_), Err(_)) => return Err(CHANGED.into()),
+        (Some(_), Err(_)) => return Err(changed()),
         (None, Ok(bytes)) => bytes,
-        (None, Err(e)) if e.kind() == ErrorKind::NotFound => return Err(MISSING.into()),
-        (None, Err(e)) => return Err(as_core::io_message(&e)),
+        (None, Err(e)) if e.kind() == ErrorKind::NotFound => return Err(missing()),
+        (None, Err(e)) => return Err(e.msg()),
     };
-    let parsed = manifest::parse_for_any_app(&bytes).map_err(|e| e.to_string())?;
+    let parsed = manifest::parse_for_any_app(&bytes).map_err(|e| e.msg())?;
     if parsed.manifest.id != record.id {
-        return Err("Its plugin.json names another plugin now.".into());
+        return Err(msg!("plugin.namesAnother", "Its plugin.json names another plugin now."));
     }
     Ok(parsed)
 }
 
 /// The lock in an installed package's folder `dir`, when it is the one its
 /// install recorded (of SHA-256 `sha256`); else why it can't be used.
-pub(crate) fn installed_lock(dir: &Path, sha256: &str) -> Result<FilesLock, String> {
+pub(crate) fn installed_lock(dir: &Path, sha256: &str) -> Result<FilesLock, Msg> {
     let mut bytes = Vec::new();
     let read = File::open(dir.join(LOCK)).and_then(|file| file.take(MAX_LOCK_BYTES + 1).read_to_end(&mut bytes));
     if read.is_err() || package::sha256_hex(&bytes) != sha256 {
-        return Err(CHANGED.into());
+        return Err(changed());
     }
-    package::read_lock(&bytes).map_err(|_| CHANGED.into())
+    package::read_lock(&bytes).map_err(|_| changed())
 }
 
 /// The trust of the plugin of manifest `m` by AutoScene's `catalog` at
@@ -1990,7 +2042,7 @@ fn read_component(
     dir: &Path,
     launch: Option<&Launch>,
     lock: Option<&FilesLock>,
-) -> PluginResult<Vec<String>> {
+) -> PluginResult<Vec<Msg>> {
     let Some(Launch::Wasm { component }) = launch else { return Ok(Vec::new()) };
     #[cfg(feature = "wasm")]
     {
@@ -2019,7 +2071,9 @@ fn allowed(trust: Trust, allow_unreviewed: bool, accept_unreviewed: bool) -> Plu
     match trust {
         Trust::Reviewed => Ok(()),
         _ if !allow_unreviewed => Err(PluginError::NotAllowed),
-        _ if !accept_unreviewed => Err(invalid("Confirm that you want to install it.")),
+        _ if !accept_unreviewed => {
+            Err(PluginError::Invalid(msg!("plugin.confirmInstall", "Confirm that you want to install it.")))
+        }
         _ => Ok(()),
     }
 }
@@ -2031,20 +2085,28 @@ fn allowed(trust: Trust, allow_unreviewed: bool, accept_unreviewed: bool) -> Plu
 /// with the same files (a repair). The pin is [`verdict`]'s.
 fn check_update(previous: &Record, m: &Manifest, trust: Trust, lock_sha256: Option<&str>) -> PluginResult<()> {
     if previous.trust == Trust::Reviewed && trust != Trust::Reviewed {
-        return Err(invalid("AutoScene reviewed the installed version of this plugin, and not this one."));
+        return Err(PluginError::Invalid(msg!(
+            "plugin.reviewedOnlyInstalled",
+            "AutoScene reviewed the installed version of this plugin, and not this one."
+        )));
     }
     let (Ok(installed), Ok(new)) = (Version::parse(&previous.version), Version::parse(&m.version)) else {
-        return Err(invalid("The plugin's version isn't valid."));
+        return Err(PluginError::Invalid(msg!("plugin.badVersion", "The plugin's version isn't valid.")));
     };
     match installed.cmp_precedence(&new) {
-        Ordering::Greater => Err(invalid(format!(
-            "Version {installed} is installed, which is newer than {new}. Uninstall it first to go back."
+        Ordering::Greater => Err(PluginError::Invalid(msg!(
+            "plugin.newerInstalled",
+            "Version {{installed}} is installed, which is newer than {{new}}. Uninstall it first to go back.",
+            installed = installed.to_string(),
+            new = new.to_string()
         ))),
         Ordering::Equal
             if matches!(previous.source, Source::Package { .. }) && previous.lock_sha256.as_deref() != lock_sha256 =>
         {
-            Err(invalid(format!(
-                "Version {installed} is installed already, with other files. A changed plugin needs a new version."
+            Err(PluginError::Invalid(msg!(
+                "plugin.sameVersionOtherFiles",
+                "Version {{installed}} is installed already, with other files. A changed plugin needs a new version.",
+                installed = installed.to_string()
             )))
         }
         _ => Ok(()),
@@ -2053,7 +2115,7 @@ fn check_update(previous: &Record, m: &Manifest, trust: Trust, lock_sha256: Opti
 
 /// The manifest of `p`, or why it has none.
 pub(crate) fn manifest_of(p: &Installed) -> PluginResult<&Manifest> {
-    p.manifest.as_ref().ok_or_else(|| invalid(p.broken.clone().unwrap_or_else(|| MISSING.into())))
+    p.manifest.as_ref().ok_or_else(|| PluginError::Invalid(p.broken.clone().unwrap_or_else(missing)))
 }
 
 /// The value of each setting of `specs`: the stored one while it fits, else
@@ -2081,38 +2143,68 @@ fn default_of(kind: &SettingKind) -> Option<SettingValue> {
 /// on or off, or one of a select's values. A secret has no value here: so
 /// one kept under its key before it was a secret is never handed on.
 fn check_value(spec: &SettingSpec, value: &SettingValue) -> PluginResult<()> {
-    let refuse = |why: String| Err(invalid(format!("{} {why}.", shown(&spec.title))));
+    let title = shown(&spec.title);
+    let refuse = |said: Msg| Err(PluginError::Invalid(said));
     match (&spec.kind, value) {
         (SettingKind::String { max_length, .. }, SettingValue::Text(text)) => {
             if text.contains('\0') {
-                return refuse("can't hold a NUL character".into());
+                return refuse(msg!("plugin.setting.noNul", "{{title}} can't hold a NUL character.", title = &title));
             }
             if text.chars().count() > *max_length as usize {
-                return refuse(format!("can be at most {max_length} characters"));
+                return refuse(msg!(
+                    "plugin.setting.tooLong",
+                    "{{title}} can be at most {{max}} characters.",
+                    title = &title,
+                    max = *max_length
+                ));
             }
         }
-        (SettingKind::String { .. }, _) => return refuse("must be text".into()),
+        (SettingKind::String { .. }, _) => {
+            return refuse(msg!("plugin.setting.text", "{{title}} must be text.", title = &title));
+        }
         (SettingKind::Number { min, max, integer, .. }, SettingValue::Number(n)) => {
             if !n.is_finite() {
-                return refuse("must be a number".into());
+                return refuse(msg!("plugin.setting.number", "{{title}} must be a number.", title = &title));
             }
             if *integer && n.fract() != 0.0 {
-                return refuse("must be a whole number".into());
+                return refuse(msg!("plugin.setting.whole", "{{title}} must be a whole number.", title = &title));
             }
             if let Some(min) = min.filter(|min| n < min) {
-                return refuse(format!("must be at least {min}"));
+                return refuse(msg!(
+                    "plugin.setting.atLeast",
+                    "{{title}} must be at least {{min}}.",
+                    title = &title,
+                    min = min
+                ));
             }
             if let Some(max) = max.filter(|max| n > max) {
-                return refuse(format!("must be at most {max}"));
+                return refuse(msg!(
+                    "plugin.setting.atMost",
+                    "{{title}} must be at most {{max}}.",
+                    title = &title,
+                    max = max
+                ));
             }
         }
-        (SettingKind::Number { .. }, _) => return refuse("must be a number".into()),
+        (SettingKind::Number { .. }, _) => {
+            return refuse(msg!("plugin.setting.number", "{{title}} must be a number.", title = &title));
+        }
         (SettingKind::Boolean { .. }, SettingValue::Bool(_)) => {}
-        (SettingKind::Boolean { .. }, _) => return refuse("must be on or off".into()),
+        (SettingKind::Boolean { .. }, _) => {
+            return refuse(msg!("plugin.setting.onOrOff", "{{title}} must be on or off.", title = &title));
+        }
         (SettingKind::Select { options, .. }, SettingValue::Text(text)) if options.iter().any(|o| o.value == *text) => {
         }
-        (SettingKind::Select { .. }, _) => return refuse("must be one of its choices".into()),
-        (SettingKind::Secret { .. }, _) => return refuse("is kept in your system's keychain, never as a value".into()),
+        (SettingKind::Select { .. }, _) => {
+            return refuse(msg!("plugin.setting.choice", "{{title}} must be one of its choices.", title = &title));
+        }
+        (SettingKind::Secret { .. }, _) => {
+            return refuse(msg!(
+                "plugin.setting.secret",
+                "{{title}} is kept in your system's keychain, never as a value.",
+                title = &title
+            ));
+        }
     }
     Ok(())
 }
@@ -2150,6 +2242,62 @@ mod tests {
     use crate::package::{AUTHOR_KEY, SIG};
     use crate::protocol::{ActionKind, Trigger};
     use crate::secrets::MemorySecrets;
+
+    // The English these sentences have had all along.
+    const MISSING: &str = "Its files are missing. Install it again.";
+    const CHANGED: &str = "Its files were changed. Install it again.";
+    const NEWER: &str = "Needs a newer AutoScene.";
+    const RUNTIME_CHANGED: &str = "Its runtime changed. Load it again to agree to that.";
+
+    impl Installed {
+        fn broken_text(&self) -> Option<&str> {
+            self.broken.as_ref().map(|m| m.text.as_str())
+        }
+    }
+
+    #[test]
+    fn what_a_person_is_refused_has_its_key() {
+        for (said, key, english) in [
+            (missing(), "plugin.filesMissing", MISSING),
+            (changed(), "plugin.filesChanged", CHANGED),
+            (newer(), "plugin.needsNewer", NEWER),
+            (runtime_changed(), "plugin.runtimeChanged", RUNTIME_CHANGED),
+        ] {
+            assert_eq!((said.key.as_str(), said.text.as_str()), (key, english));
+        }
+        let key = |e: PluginError| e.msg().key;
+        assert_eq!(key(allowed(Trust::Unreviewed, true, false).unwrap_err()), "plugin.confirmInstall");
+        assert_eq!(key(installed_by_a_newer_autoscene()), "plugin.installedByNewer");
+        assert_eq!(key(changed_while_waiting()), "plugin.changedWhileWaiting");
+    }
+
+    #[test]
+    fn a_setting_that_is_refused_is_a_whole_sentence_with_its_key() {
+        let spec = |kind| SettingSpec { key: "k".into(), title: "Volume".into(), description: None, kind };
+        let number = SettingKind::Number { default: None, min: Some(1.0), max: Some(9.5), step: None, integer: true };
+        let refused = |kind: SettingKind, value: SettingValue| {
+            let said = check_value(&spec(kind), &value).unwrap_err().msg();
+            (said.key, said.text)
+        };
+        let is = |key: &str, text: &str| (key.to_owned(), text.to_owned());
+        assert_eq!(
+            refused(number.clone(), SettingValue::Number(0.0)),
+            is("plugin.setting.atLeast", "Volume must be at least 1.")
+        );
+        assert_eq!(
+            refused(number.clone(), SettingValue::Number(12.0)),
+            is("plugin.setting.atMost", "Volume must be at most 9.5.")
+        );
+        assert_eq!(
+            refused(number.clone(), SettingValue::Number(2.5)),
+            is("plugin.setting.whole", "Volume must be a whole number.")
+        );
+        assert_eq!(refused(number, SettingValue::Bool(true)), is("plugin.setting.number", "Volume must be a number."));
+        assert_eq!(
+            refused(SettingKind::Boolean { default: false }, SettingValue::Number(1.0)),
+            is("plugin.setting.onOrOff", "Volume must be on or off.")
+        );
+    }
 
     const ID: &str = "dev.autoscene.hello-export";
     const DAY: u64 = 86_400;
@@ -2463,7 +2611,7 @@ mod tests {
 
         place.allow_writes();
         let p = install(&store, &package).unwrap();
-        assert_eq!((p.record.version.as_str(), p.broken.as_deref()), ("1.0.0", None));
+        assert_eq!((p.record.version.as_str(), p.broken_text()), ("1.0.0", None));
         assert_eq!((p.record.enabled, p.record.trust), (true, Trust::Unreviewed));
         assert_eq!(place.plugins(), holding(&p));
         assert!(p.dir.join("main.py").is_file());
@@ -2489,7 +2637,7 @@ mod tests {
             (p.record.version.as_str(), p.record.after_export.clone()),
             ("1.0.0", vec!["hello".into(), "wave".into()])
         );
-        assert_eq!((p.dir.as_path(), p.broken.as_deref()), (old.dir.as_path(), None));
+        assert_eq!((p.dir.as_path(), p.broken_text()), (old.dir.as_path(), None));
         assert_eq!(place.plugins(), holding(&old));
 
         place.allow_writes();
@@ -2621,7 +2769,7 @@ mod tests {
         let store = place.store();
         let listed = store.list().unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!((listed[0].broken.as_deref(), listed[0].manifest.is_none()), (Some(MISSING), true));
+        assert_eq!((listed[0].broken_text(), listed[0].manifest.is_none()), (Some(MISSING), true));
         assert!(store.values(&id()).is_err());
 
         // Installed again, it works again.
@@ -2629,12 +2777,12 @@ mod tests {
         assert!(p.broken.is_none());
         // A file of it changed is as good as gone.
         fs::write(p.dir.join("plugin.json"), b"{}").unwrap();
-        assert_eq!(store.get(&id()).unwrap().broken.as_deref(), Some(CHANGED));
+        assert_eq!(store.get(&id()).unwrap().broken_text(), Some(CHANGED));
         // So is another files.lock, also one that lists the same files.
         let p = install(&store, &package).unwrap();
         let lock: Value = serde_json::from_slice(&fs::read(p.dir.join(LOCK)).unwrap()).unwrap();
         fs::write(p.dir.join(LOCK), serde_json::to_vec_pretty(&lock).unwrap()).unwrap();
-        assert_eq!(store.get(&id()).unwrap().broken.as_deref(), Some(CHANGED));
+        assert_eq!(store.get(&id()).unwrap().broken_text(), Some(CHANGED));
     }
 
     #[test]
@@ -2659,7 +2807,7 @@ mod tests {
             let mut r = written.clone();
             change(&mut r);
             place.db.set_setting(&row, &r.to_string()).unwrap();
-            assert_eq!(store.get(&id()).unwrap().broken.as_deref(), Some(NEWER), "{r}");
+            assert_eq!(store.get(&id()).unwrap().broken_text(), Some(NEWER), "{r}");
         }
     }
 
@@ -2675,8 +2823,8 @@ mod tests {
             let store = store.compile_here();
             store.get(&id()).unwrap().broken
         };
-        assert_eq!(broken_on("0.9.0").as_deref(), Some(NEWER));
-        assert_eq!(broken_on("2.0.0").as_deref(), Some("This plugin only works with an older AutoScene."));
+        assert_eq!(broken_on("0.9.0").unwrap().text, NEWER);
+        assert_eq!(broken_on("2.0.0").unwrap().text, "This plugin only works with an older AutoScene.");
         assert_eq!(broken_on("1.5.0"), None);
         assert_eq!(place.plugins(), holding(&p), "its files stay");
     }
@@ -2717,7 +2865,7 @@ mod tests {
         let row = format!(r#"{{"v":1,"installedAt":{},"runtime":"wasm"}}"#, p.record.installed_at);
         place.db.set_setting(&format!("plugin_extra.{ID}"), &row).unwrap();
         let p = store.get(&id()).unwrap();
-        assert_eq!((p.broken.as_deref(), p.manifest.is_none()), (Some(NEWER), true));
+        assert_eq!((p.broken_text(), p.manifest.is_none()), (Some(NEWER), true));
         assert!(crate::calls::Grants::of(&p).is_err());
     }
 
@@ -2770,17 +2918,13 @@ mod tests {
         let t = store.stage(&place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
         // The test guest imports wasi:http and doesn't ask for network: the
         // check says so apart from what its plugin.json had skipped.
-        assert_eq!(
-            (t.warnings.as_slice(), t.component_warnings.as_slice()),
-            (
-                &[][..],
-                &["It imports wasi:http but doesn't ask for network: every request it makes is refused.".to_owned()][..]
-            )
-        );
+        assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+        let said: Vec<&str> = t.component_warnings.iter().map(|w| w.text.as_str()).collect();
+        assert_eq!(said, ["It imports wasi:http but doesn't ask for network: every request it makes is refused."]);
         // Nothing of it is compiled yet.
         assert_eq!((t.compiled.as_ref(), code(&store, ID)), (None, None));
         let p = store.commit(t, true, true).unwrap();
-        assert_eq!((p.broken.as_deref(), p.extra.agreed_runtime()), (None, RuntimeKind::Wasm));
+        assert_eq!((p.broken_text(), p.extra.agreed_runtime()), (None, RuntimeKind::Wasm));
         // Its code is kept where no plugin looks, by its component's hash.
         let [name] = code(&store, ID).unwrap().try_into().unwrap();
         assert!(name.starts_with(&format!("{}-", package::sha256_hex(&guest))) && name.ends_with(".cwasm"), "{name}");
@@ -2827,10 +2971,10 @@ mod tests {
         {
             let files = wasm_plugin(ID, "1.0.0", component);
             let staged = store.stage(&place.package(&files, None, false));
-            assert!(matches!(&staged, Err(PluginError::Invalid(why)) if why.starts_with(says)), "{staged:?}");
+            assert!(matches!(&staged, Err(PluginError::Invalid(why)) if why.text.starts_with(says)), "{staged:?}");
             assert_eq!(place.plugins(), [".staging", ".trash"], "the staged package is gone");
             let loaded = store.stage_folder(&place.folder(&format!("dev-{}", Uuid::now_v7().simple()), &files));
-            assert!(matches!(&loaded, Err(PluginError::Invalid(why)) if why.starts_with(says)), "{loaded:?}");
+            assert!(matches!(&loaded, Err(PluginError::Invalid(why)) if why.text.starts_with(says)), "{loaded:?}");
             assert_eq!(code(&store, ID), None, "no code is kept");
         }
         assert!(store.list().unwrap().is_empty());
@@ -2892,7 +3036,7 @@ mod tests {
         assert!(install(&store, &broken).is_err());
         assert_eq!(code(&store, ID).unwrap(), first);
         let kept = store.get(&id()).unwrap();
-        assert_eq!((kept.record.version.as_str(), kept.broken.as_deref()), ("1.0.0", None));
+        assert_eq!((kept.record.version.as_str(), kept.broken_text()), ("1.0.0", None));
         assert_eq!(place.plugins(), holding(&p));
     }
 
@@ -2915,7 +3059,7 @@ mod tests {
         let place = Place::new();
         let store = Store::open(&place.paths, Arc::clone(&place.db), app(), place.secrets.clone()).unwrap();
         let t = store.stage(&place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
-        assert_eq!(store.commit(t, true, true).unwrap_err().to_string(), wasm::COMPILE_FAILED);
+        assert_eq!(store.commit(t, true, true).unwrap_err().to_string(), wasm::compile_failed().text);
         assert_eq!(code(&store, ID), None);
         assert!(store.list().unwrap().is_empty());
     }
@@ -3165,7 +3309,7 @@ mod tests {
         let store = place.store();
         let dev = place.folder("hello-wasm", &wasm_plugin(ID, "1.0.0", &guest));
         let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
-        assert_eq!((p.broken.as_deref(), p.extra.agreed_runtime()), (None, RuntimeKind::Wasm));
+        assert_eq!((p.broken_text(), p.extra.agreed_runtime()), (None, RuntimeKind::Wasm));
         assert_eq!(code(&store, ID).unwrap().len(), 1);
 
         // Its plugin.json now starts a program, with the person's rights.
@@ -3173,7 +3317,7 @@ mod tests {
             fs::write(dev.join(path), bytes).unwrap();
         }
         let p = store.get(&id()).unwrap();
-        assert_eq!((p.broken.as_deref(), p.manifest.is_none()), (Some(RUNTIME_CHANGED), true));
+        assert_eq!((p.broken_text(), p.manifest.is_none()), (Some(RUNTIME_CHANGED), true));
         assert!(store.wasm_spec(&p, hello_action()).is_err());
         assert!(crate::calls::Grants::of(&p).is_err());
 
@@ -3186,13 +3330,13 @@ mod tests {
 
         // Loaded again, the person agreed to that; its code goes.
         let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
-        assert_eq!((p.broken.as_deref(), p.extra.agreed_runtime()), (None, RuntimeKind::Process));
+        assert_eq!((p.broken_text(), p.extra.agreed_runtime()), (None, RuntimeKind::Process));
         assert_eq!(code(&store, ID), None);
         // And back into the sandbox: the same.
         for (path, bytes) in wasm_plugin(ID, "1.0.0", &guest) {
             fs::write(dev.join(path), bytes).unwrap();
         }
-        assert_eq!(store.get(&id()).unwrap().broken.as_deref(), Some(RUNTIME_CHANGED));
+        assert_eq!(store.get(&id()).unwrap().broken_text(), Some(RUNTIME_CHANGED));
     }
 
     #[cfg(feature = "wasm")]
@@ -3229,7 +3373,7 @@ mod tests {
         let store = place.store();
         let listed = store.list().unwrap();
         let shown: Vec<_> =
-            listed.iter().map(|p| (p.record.id.as_str(), p.record.version.as_str(), p.broken.as_deref())).collect();
+            listed.iter().map(|p| (p.record.id.as_str(), p.record.version.as_str(), p.broken_text())).collect();
         assert_eq!(shown, [("dev.autoscene.damaged", "", Some(NEWER)), ("dev.autoscene.later", "2.0.0", Some(NEWER))]);
 
         let later_id = PluginId::parse("dev.autoscene.later").unwrap();
@@ -3251,7 +3395,7 @@ mod tests {
         let row = format!("plugin.{ID}");
         let v2 = place.db.setting(&row).unwrap().unwrap().replace(r#""v":1,"#, r#""v":2,"#);
         place.db.set_setting(&row, &v2).unwrap();
-        assert_eq!(store.get(&id()).unwrap().broken.as_deref(), Some(NEWER));
+        assert_eq!(store.get(&id()).unwrap().broken_text(), Some(NEWER));
         assert!(store.set_enabled(&id(), false).is_err());
         assert!(store.stage(&place.unsigned("1.1.0")).is_err());
         assert_eq!(place.db.setting(&row).unwrap(), Some(v2));
@@ -3266,7 +3410,7 @@ mod tests {
         assert_eq!((t.verdict.trust, t.lock.is_none()), (Trust::Unreviewed, true));
         let p = store.commit(t, true, true).unwrap();
         assert_eq!(p.record.source, Source::Folder { path: dev.to_str().unwrap().into() });
-        assert_eq!((p.dir.as_path(), p.broken.as_deref()), (dev.as_path(), None));
+        assert_eq!((p.dir.as_path(), p.broken_text()), (dev.as_path(), None));
         fs::create_dir_all(store.data_dir(&id())).unwrap();
         fs::write(store.data_dir(&id()).join("state.json"), b"{}").unwrap();
 
@@ -3320,7 +3464,7 @@ mod tests {
         store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
         let other = serde_json::to_vec(&manifest("dev.autoscene.other", "1.0.0")).unwrap();
         fs::write(dev.join("plugin.json"), other).unwrap();
-        assert_eq!(store.get(&id()).unwrap().broken.as_deref(), Some("Its plugin.json names another plugin now."));
+        assert_eq!(store.get(&id()).unwrap().broken_text(), Some("Its plugin.json names another plugin now."));
     }
 
     #[test]
@@ -3653,7 +3797,7 @@ mod tests {
         store.set_catalog(catalog_of(Vec::new(), vec![withdrawal("<=1.0.4")], catalog::now() + DAY));
         fs::remove_dir_all(&p.dir).unwrap();
         let p = store.get(&id()).unwrap();
-        assert_eq!((p.broken.as_deref(), p.withdrawn.as_deref()), (Some(MISSING), Some(LEAKY)));
+        assert_eq!((p.broken_text(), p.withdrawn.as_deref()), (Some(MISSING), Some(LEAKY)));
         // It goes as any other.
         store.uninstall(&id(), false).unwrap();
         assert!(store.list().unwrap().is_empty());
@@ -3661,7 +3805,7 @@ mod tests {
         let later = format!(r#"{{"v":99,"id":"{ID}","version":"1.0.0"}}"#);
         place.db.set_setting(&format!("{ROW}{ID}"), &later).unwrap();
         let p = store.get(&id()).unwrap();
-        assert_eq!((p.broken.as_deref(), p.withdrawn.as_deref()), (Some(NEWER), Some(LEAKY)));
+        assert_eq!((p.broken_text(), p.withdrawn.as_deref()), (Some(NEWER), Some(LEAKY)));
     }
 
     #[test]
@@ -4100,7 +4244,7 @@ mod tests {
         assert_eq!(place.plugins(), [".staging", ".trash"]);
         let t = store.stage(&place.package(&vec![manifest, page], None, false)).unwrap();
         let p = store.commit(t, true, true).unwrap();
-        assert_eq!((p.extra.runtime, p.broken.as_deref()), (Some(RuntimeKind::None), None));
+        assert_eq!((p.extra.runtime, p.broken_text()), (Some(RuntimeKind::None), None));
         assert_eq!(store.get(&id()).unwrap().manifest.unwrap().pages[0].entry, "ui/index.html");
         // It has nothing to run.
         let action = ActionContext { kind: ActionKind::Command, id: "main".into(), trigger: Trigger::Palette };
@@ -4444,7 +4588,7 @@ mod tests {
     }
 
     fn locked() -> PluginError {
-        PluginError::Keychain { reason: "it is locked.".into(), detail: None }
+        PluginError::Keychain { reason: Msg::plain("it is locked."), detail: None }
     }
 
     #[test]
@@ -4524,7 +4668,7 @@ mod tests {
         let store = place.store();
         let dev = place.folder("hello-export", &with_secrets("1.0.0", &["token"]));
         let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
-        assert_eq!((p.extra.runtime, p.broken.as_deref()), (Some(RuntimeKind::Process), None));
+        assert_eq!((p.extra.runtime, p.broken_text()), (Some(RuntimeKind::Process), None));
         store.secret_set(&id(), "token", "hunter2").unwrap();
         // Agreed to as a service, it runs as a process now (or the other way).
         let row = format!("plugin_extra.{ID}");
@@ -4532,13 +4676,13 @@ mod tests {
             format!(r#"{{"v":1,"installedAt":{},"runtime":"service","secrets":["token"]}}"#, p.record.installed_at);
         place.db.set_setting(&row, &service).unwrap();
         let p = store.get(&id()).unwrap();
-        assert_eq!(p.broken.as_deref(), Some("Its runtime changed. Load it again to agree to that."));
+        assert_eq!(p.broken_text(), Some("Its runtime changed. Load it again to agree to that."));
         assert!(p.manifest.is_none());
         assert!(crate::calls::Grants::of(&p).is_err());
         assert!(store.secret(&id(), "token").is_err());
         // Loaded again, it is what the person agreed to now, and keeps its secrets.
         let p = store.commit(store.stage_folder(&dev).unwrap(), true, true).unwrap();
-        assert_eq!((p.extra.runtime, p.broken.as_deref()), (Some(RuntimeKind::Process), None));
+        assert_eq!((p.extra.runtime, p.broken_text()), (Some(RuntimeKind::Process), None));
         assert_eq!(store.secret(&id(), "token").unwrap().as_deref(), Some("hunter2"));
     }
 
@@ -4551,7 +4695,7 @@ mod tests {
         // AutoScene 1.0 writes no extra row.
         place.db.write_settings(&[(&format!("plugin_extra.{ID}"), None)]).unwrap();
         let p = place.store().get(&id()).unwrap();
-        assert_eq!((p.broken.as_deref(), p.extra.runtime, p.extra.secrets.len()), (None, None, 0));
+        assert_eq!((p.broken_text(), p.extra.runtime, p.extra.secrets.len()), (None, None, 0));
         assert_eq!(p.extra.agreed_runtime(), RuntimeKind::Process);
         assert_eq!(crate::calls::Grants::of(&p).unwrap().runtime, RuntimeKind::Process);
         // Turning it on or off writes no extra row either; an update does.
@@ -4564,7 +4708,7 @@ mod tests {
         for later in [r#"{"v":2,"runtime":"process"}"#, r#"{"v":1,"runtime":"hologram"}"#, "not json"] {
             place.db.set_setting(&format!("plugin_extra.{ID}"), later).unwrap();
             let p = store.get(&id()).unwrap();
-            assert_eq!(p.broken.as_deref(), Some(NEWER), "{later}");
+            assert_eq!(p.broken_text(), Some(NEWER), "{later}");
             assert!(store.secret_set(&id(), "token", "x").is_err());
             assert!(store.stage(&place.unsigned("1.2.0")).is_ok_and(|t| store.commit(t, true, true).is_err()));
             assert_eq!(extra_row(&place).as_deref(), Some(later));
@@ -4623,7 +4767,7 @@ mod tests {
         // The extra row isn't that plugin's: it inherits neither its secrets nor its runtime.
         let store = place.store();
         let p = store.get(&id()).unwrap();
-        assert_eq!((p.broken.as_deref(), p.extra.runtime, p.secrets_stored()), (None, None, Vec::<String>::new()));
+        assert_eq!((p.broken_text(), p.extra.runtime, p.secrets_stored()), (None, None, Vec::<String>::new()));
         assert_eq!(store.secret(&id(), "token").unwrap(), None);
         assert_eq!(place.secrets.len(), 1);
         // It goes after the open, with its secrets.

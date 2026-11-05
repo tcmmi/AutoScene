@@ -1,4 +1,7 @@
-import type { CatalogPlugin, CatalogStatus, CatalogView, PluginInfo, PluginReview, PluginUpdate } from "@/bindings"
+import type { CatalogPlugin, CatalogStatus, CatalogView, Msg, PluginInfo, PluginReview, PluginUpdate } from "@/bindings"
+
+/** Words AutoScene didn't write, or a fixture's: they read as they are in every language. */
+export const plain = (text: string): Msg => ({ key: "", text })
 
 /** An installed plugin as `plugins_list` gives it: reviewed, on and with nothing it adds, unless `o` says otherwise. */
 export function pluginInfo(o: Partial<PluginInfo> & Pick<PluginInfo, "id" | "name">): PluginInfo {

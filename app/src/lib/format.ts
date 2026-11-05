@@ -1,7 +1,8 @@
 // Numbers, sizes and dates in the UI language (lib/i18n.ts `fmt`): dates
 // follow the interface's language, not the OS region, so English reads
 // "13 Oct, 22:13" instead of mixing languages.
-import { fmt } from "@/lib/i18n"
+import type { ExportPreset } from "@/bindings"
+import { fmt, say } from "@/lib/i18n"
 
 /** 1536 → "1.5 KB"; nothing → "0 B". */
 export function formatBytes(bytes: number, digits = 1): string {
@@ -38,6 +39,16 @@ export function formatPace(v: number): string {
 /** 0.4 → "40%". */
 export function formatPercent(v: number | null | undefined): string {
   return fmt.percent(v)
+}
+
+/** An export format's name in the UI's language. One an export kept from before it had a key says its English. */
+export function presetName(p: Pick<ExportPreset, "name" | "nameMsg">): string {
+  return say(p.nameMsg ?? p.name)
+}
+
+/** What an export format is for, as {@link presetName} says its name. */
+export function presetDescription(p: Pick<ExportPreset, "description" | "descriptionMsg">): string {
+  return say(p.descriptionMsg ?? p.description)
 }
 
 /** "H.264 · Mobile (CapCut, Alight Motion)" → "H.264 · Mobile": an export format's name without what its brackets add. */

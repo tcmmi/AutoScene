@@ -13,6 +13,8 @@ use std::collections::HashMap;
 
 use parking_lot::Mutex;
 
+use as_core::msg;
+
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::PluginId;
 
@@ -75,16 +77,20 @@ fn service(library: &str, plugin: &PluginId) -> String {
 fn keychain(e: keyring::Error) -> PluginError {
     let (reason, said) = match &e {
         // Looked for once per run of AutoScene (keyring's v1 store).
-        keyring::Error::NoDefaultStore => ("this computer has none running. Once one runs, restart AutoScene.", true),
-        keyring::Error::NoStorageAccess(_) => ("it is locked, or refused AutoScene.", true),
+        keyring::Error::NoDefaultStore => {
+            (msg!("keychain.noStore", "this computer has none running. Once one runs, restart AutoScene."), true)
+        }
+        keyring::Error::NoStorageAccess(_) => (msg!("keychain.locked", "it is locked, or refused AutoScene."), true),
         // Their words would hold what was read.
-        keyring::Error::BadEncoding(_) => ("a secret it holds isn't text.", false),
-        keyring::Error::BadDataFormat(..) => ("a secret it holds is damaged.", false),
-        keyring::Error::Ambiguous(_) => ("it holds this secret more than once.", true),
-        keyring::Error::TooLong(..) | keyring::Error::Invalid(..) => ("it refused the secret's name.", true),
-        _ => ("it reported an error.", true),
+        keyring::Error::BadEncoding(_) => (msg!("keychain.notText", "a secret it holds isn't text."), false),
+        keyring::Error::BadDataFormat(..) => (msg!("keychain.damaged", "a secret it holds is damaged."), false),
+        keyring::Error::Ambiguous(_) => (msg!("keychain.twice", "it holds this secret more than once."), true),
+        keyring::Error::TooLong(..) | keyring::Error::Invalid(..) => {
+            (msg!("keychain.refusedName", "it refused the secret's name."), true)
+        }
+        _ => (msg!("keychain.error", "it reported an error."), true),
     };
-    PluginError::Keychain { reason: reason.into(), detail: said.then(|| e.to_string()) }
+    PluginError::Keychain { reason, detail: said.then(|| e.to_string()) }
 }
 
 /// Secrets kept in memory, for tests and mocks.
@@ -122,20 +128,46 @@ impl SecretStore for MemorySecrets {
 /// characters, without NUL.
 pub fn check(value: &str) -> PluginResult<()> {
     if value.is_empty() {
-        return Err(PluginError::Invalid("A secret can't be empty. Remove it instead.".into()));
+        return Err(PluginError::Invalid(msg!("plugin.secretEmpty", "A secret can't be empty. Remove it instead.")));
     }
     if value.encode_utf16().count() > MAX_SECRET_CHARS {
-        return Err(PluginError::Invalid(format!("A secret can be at most {MAX_SECRET_CHARS} characters.")));
+        return Err(PluginError::Invalid(msg!(
+            "plugin.secretTooLong",
+            "A secret can be at most {{max}} characters.",
+            max = MAX_SECRET_CHARS
+        )));
     }
     if value.contains('\0') {
-        return Err(PluginError::Invalid("A secret can't hold a NUL character.".into()));
+        return Err(PluginError::Invalid(msg!("plugin.secretNul", "A secret can't hold a NUL character.")));
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use as_core::ToMsg;
+
     use super::*;
+
+    #[test]
+    fn a_keychain_that_refuses_says_why_in_a_sentence_of_its_own() {
+        let locked = keychain(keyring::Error::NoDefaultStore);
+        assert_eq!(locked.msg().key, "keychain.unusable");
+        assert_eq!(
+            locked.to_string(),
+            "Your system's keychain can't be used: this computer has none running. Once one runs, restart AutoScene."
+        );
+        let PluginError::Keychain { reason, .. } = locked else { panic!() };
+        assert_eq!(reason.key, "keychain.noStore");
+    }
+
+    #[test]
+    fn a_secret_that_is_refused_has_its_key() {
+        let key = |value: &str| check(value).unwrap_err().msg().key;
+        assert_eq!(key(""), "plugin.secretEmpty");
+        assert_eq!(key("a\0b"), "plugin.secretNul");
+        assert_eq!(key(&"a".repeat(MAX_SECRET_CHARS + 1)), "plugin.secretTooLong");
+    }
 
     #[test]
     fn a_secret_fits_a_windows_credential() {

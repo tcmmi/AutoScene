@@ -245,10 +245,13 @@ pub fn plan_merge(caps: &Caps, preset: &ExportPreset, sources: &[MergeSource]) -
     }
     check_ranges(sources)?;
     if preset.video == VideoCodec::Lossless {
-        return Err(ExportError::BadPreset("a Bit-Perfect file is planned from its sources' exact formats".into()));
+        return Err(ExportError::BadPreset(msg!(
+            "export.why.plannedFromSources",
+            "a Bit-Perfect file is planned from its sources' exact formats"
+        )));
     }
     if preset.container == Container::Mp4 && preset.audio == AudioCodec::Pcm24 {
-        return Err(ExportError::BadPreset("uncompressed audio needs a MOV file".into()));
+        return Err(ExportError::BadPreset(msg!("export.why.needsMov", "uncompressed audio needs a MOV file")));
     }
     let frames = |s: &MergeSource| u64::from(s.range.len());
 
@@ -327,9 +330,11 @@ pub fn plan_lossless_merge(caps: &Caps, sources: &[MergeSource], exact: &[ExactF
         return Err(ExportError::Join("nothing to join".into()));
     }
     check_ranges(sources)?;
-    let unlike = |why: &str| Err(ExportError::Inexact(format!("its clips can't share one file: {why}")));
+    let unlike = |why: Msg| {
+        Err(ExportError::Inexact(msg!("export.why.cantShare", "its clips can't share one file: {{why}}", why = why)))
+    };
     if let Some(why) = lossless_merge_blocker(sources) {
-        return unlike(&why.text);
+        return unlike(why);
     }
     let keepers = sources
         .iter()
@@ -342,17 +347,20 @@ pub fn plan_lossless_merge(caps: &Caps, sources: &[MergeSource], exact: &[ExactF
             == (keeper.codec, &keeper.encoding.args, &keeper.tag, &keeper.repack)
     };
     if !keepers.iter().all(alike) {
-        return unlike("their episodes decode to different picture formats or colours");
+        return unlike(msg!(
+            "export.lossless.decodeDiffers",
+            "their episodes decode to different picture formats or colours"
+        ));
     }
     // Every part encoded alike, so the shortest decides whether x265 may
     // reorder frames.
     let shortest = sources.iter().map(|s| s.range.len()).min().unwrap_or(0);
     x265_in_order_when_short(&keeper.encoding.encoder, shortest, &mut keeper.encoding.args);
     if exact.iter().any(|e| e.interlaced != exact[0].interlaced) {
-        return unlike("their episodes' fields come in a different order");
+        return unlike(msg!("export.lossless.fields", "their episodes' fields come in a different order"));
     }
     if exact.iter().any(|e| e.hdr_metadata != exact[0].hdr_metadata) {
-        return unlike("their episodes' HDR metadata differs");
+        return unlike(msg!("export.lossless.hdr", "their episodes' HDR metadata differs"));
     }
     // The sound of every clip that has one, as stored: alike, or all held
     // exactly by 32-bit float (16- and 24-bit samples are).
@@ -371,14 +379,17 @@ pub fn plan_lossless_merge(caps: &Caps, sources: &[MergeSource], exact: &[ExactF
         // samples: the file is tagged with the first one's.
         Some((codec, rate, channels)) => {
             if sounds.iter().any(|(_, r, c)| (r, c) != (rate, channels)) {
-                return unlike("their episodes' sound differs in its rate or channels");
+                return unlike(msg!("export.lossless.sound", "their episodes' sound differs in its rate or channels"));
             }
             let codec = if sounds.iter().all(|(c, ..)| c == codec) {
                 *codec
             } else if sounds.iter().all(|(c, ..)| matches!(*c, "pcm_f32le" | "pcm_s16le" | "pcm_s24le")) {
                 "pcm_f32le"
             } else {
-                return unlike("their episodes' sound is stored in different sample formats");
+                return unlike(msg!(
+                    "export.lossless.soundFormat",
+                    "their episodes' sound is stored in different sample formats"
+                ));
             };
             Some((codec, *rate))
         }
@@ -695,7 +706,11 @@ pub fn join_parts(
             if cancel.is_cancelled() {
                 return Err(MediaError::Cancelled.into());
             }
-            return Err(ExportError::Inexact(format!("the joined file isn't its parts exactly ({why})")));
+            tracing::error!(file = %as_core::paths::name(&joined), reason = %why, "the joined file isn't its parts");
+            return Err(ExportError::Inexact(msg!(
+                "export.why.notItsParts",
+                "the joined file isn't its parts exactly"
+            )));
         }
         Err(why) => {
             tracing::error!(file = %as_core::paths::name(&joined), reason = %why, "the joined file could not be verified");

@@ -6,6 +6,7 @@ import { AppWindow, Warning } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { ContextArea, type MenuContent } from "@/components/ui/context-area"
 import { EmptyState } from "@/components/ui/empty-state"
+import { say } from "@/lib/i18n"
 import { commands, errorMessage, events } from "@/lib/ipc"
 import { isMac, isTauri, isWindows } from "@/lib/platform"
 import { useAppInfo } from "@/lib/queries"
@@ -134,7 +135,7 @@ export function PluginFrame({
     tell.current = (p) => {
       if (p.session !== mount.session) return
       c.send(pageMessage(p.event))
-      if (p.event.type === "closed") setCover({ kind: "closed", reason: p.event.reason })
+      if (p.event.type === "closed") setCover({ kind: "closed", reason: say(p.event.reason) })
     }
     for (const p of early.current.splice(0)) tell.current(p)
     const beats =

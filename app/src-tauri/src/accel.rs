@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use as_api::{AccelInfo, AccelRow};
 use as_core::paths::ACCEL_PREFIX;
-use as_core::{AppPaths, CancelToken, msg};
+use as_core::{AppPaths, CancelToken, Msg, ToMsg, msg};
 use as_engine::accel::{self, AccelState, PinnedFile, Pins};
 use as_engine::hardware::Hardware;
 use as_engine::{Engine, PACK_FAILURES, cache, pack_failures};
@@ -301,25 +301,38 @@ fn remove_tree(dir: &Path) {
 
 /// What the row says after the person cancelled a repair, which can't leave
 /// the pack as it was: the stamp went when it began.
-const REPAIR_CANCELLED: &str = "The download was cancelled, so analysis runs without NVIDIA acceleration. Try again for the files that are missing.";
+fn repair_cancelled() -> Msg {
+    msg!(
+        "accel.repairCancelled",
+        "The download was cancelled, so analysis runs without NVIDIA acceleration. Try again for the files that are missing."
+    )
+}
 
 /// What the person is told when a download fails.
-fn message(e: &ModelError) -> String {
+fn message(e: &ModelError) -> Msg {
     match e {
         ModelError::Download(_) => {
-            "NVIDIA's files couldn't be downloaded. Check the internet connection and try again.".into()
+            msg!(
+                "accel.downloadFailed",
+                "NVIDIA's files couldn't be downloaded. Check the internet connection and try again."
+            )
         }
-        ModelError::Checksum { .. } => {
-            "NVIDIA's files didn't arrive as they should. Try again, and update AutoScene if it happens again.".into()
-        }
-        ModelError::Changed(_) => {
-            "NVIDIA changed its files where AutoScene downloads them from. Update AutoScene to get them.".into()
-        }
-        ModelError::NoSpace { need, free, .. } => format!(
-            "There isn't enough free space for NVIDIA's files. Free up {} MB on the drive of AutoScene's data folder and try again.",
-            need.saturating_sub(*free).div_ceil(1_000_000)
+        ModelError::Checksum { .. } => msg!(
+            "accel.damaged",
+            "NVIDIA's files didn't arrive as they should. Try again, and update AutoScene if it happens again."
         ),
-        other => other.to_string(),
+        ModelError::Changed(_) => {
+            msg!(
+                "accel.changed",
+                "NVIDIA changed its files where AutoScene downloads them from. Update AutoScene to get them."
+            )
+        }
+        ModelError::NoSpace { need, free, .. } => msg!(
+            "accel.noSpace",
+            "There isn't enough free space for NVIDIA's files. Free up {{mb}} MB on the drive of AutoScene's data folder and try again.",
+            mb = need.saturating_sub(*free).div_ceil(1_000_000)
+        ),
+        other => other.msg(),
     }
 }
 
@@ -333,7 +346,7 @@ enum Phase {
         total: u64,
         cancel: CancelToken,
     },
-    Failed(String),
+    Failed(Msg),
     Removing,
 }
 
@@ -388,7 +401,7 @@ trait Host {
     fn changed(&self);
     fn progress(&self, done: u64, total: u64);
     /// A download the person asked for ended; `error` says why it failed.
-    fn finished(&self, error: Option<String>);
+    fn finished(&self, error: Option<Msg>);
 }
 
 impl Host for AppHandle {
@@ -439,7 +452,7 @@ impl Host for AppHandle {
         let _ = AccelProgress { done, total }.emit(self);
     }
 
-    fn finished(&self, error: Option<String>) {
+    fn finished(&self, error: Option<Msg>) {
         let _ = AccelFinished { error }.emit(self);
     }
 }
@@ -575,7 +588,7 @@ impl Accel {
             Err(ModelError::Cancelled) => {
                 if asked && repairing {
                     self.packs.forget_parts();
-                    self.set(Phase::Failed(REPAIR_CANCELLED.into()));
+                    self.set(Phase::Failed(repair_cancelled()));
                 } else if !asked || update {
                     if let Err(e) = self.packs.stop_update() {
                         log::warn!("noting that the update was stopped: {e}");
@@ -921,8 +934,8 @@ mod tests {
             }
         }
 
-        fn finished(&self, error: Option<String>) {
-            self.note(format!("finished {}", error.as_deref().unwrap_or("well")));
+        fn finished(&self, error: Option<Msg>) {
+            self.note(format!("finished {}", error.as_ref().map_or("well", |e| e.text.as_str())));
         }
     }
 
@@ -987,7 +1000,8 @@ mod tests {
         wrong_hash.files[1].sha256 = "0".repeat(64);
         let e = fetch(&packs_a, &wrong_hash).unwrap_err();
         assert!(matches!(e, ModelError::Checksum { .. }), "{e:?}");
-        assert!(message(&e).contains("didn't arrive as they should"), "{}", message(&e));
+        assert!(message(&e).text.contains("didn't arrive as they should"), "{}", message(&e).text);
+        assert_eq!(message(&e).key, "accel.damaged");
         assert_eq!(packs_a.usable(), None);
 
         let (_dir, packs_b) = packs();
@@ -995,7 +1009,7 @@ mod tests {
         wrong_size.files[2].size += 1;
         let e = fetch(&packs_b, &wrong_size).unwrap_err();
         assert!(matches!(e, ModelError::Changed(_)), "{e:?}");
-        assert!(message(&e).contains("Update AutoScene"), "{}", message(&e));
+        assert!(message(&e).text.contains("Update AutoScene"), "{}", message(&e).text);
         assert_eq!(packs_b.usable(), None);
     }
 
@@ -1080,7 +1094,12 @@ mod tests {
         pins.files.last_mut().unwrap().size = u64::MAX / 4;
         let e = fetch(&packs, &pins).unwrap_err();
         assert!(matches!(e, ModelError::NoSpace { .. }), "{e:?}");
-        assert!(message(&e).starts_with("There isn't enough free space for NVIDIA's files."), "{}", message(&e));
+        assert!(
+            message(&e).text.starts_with("There isn't enough free space for NVIDIA's files."),
+            "{}",
+            message(&e).text
+        );
+        assert_eq!(message(&e).key, "accel.noSpace");
         assert_eq!(sent.load(Ordering::Relaxed), 0);
     }
 
@@ -1264,7 +1283,7 @@ mod tests {
         run(&accel, &host, true);
         let calls = host.calls();
         let AccelRow::Failed { message } = row_now(&accel) else { panic!("{:?}", row_now(&accel)) };
-        assert_eq!(calls, ["changed".to_string(), format!("finished {message}")]);
+        assert_eq!(calls, ["changed".to_string(), format!("finished {}", message.text)]);
         assert!(!host.switched_on());
     }
 
@@ -1403,7 +1422,7 @@ mod tests {
 
         let stopping = Fake { stop: Some(CancelToken::new()), ..Fake::default() };
         run(&accel, &stopping, true);
-        assert_eq!(row_now(&accel), AccelRow::Failed { message: REPAIR_CANCELLED.into() });
+        assert_eq!(row_now(&accel), AccelRow::Failed { message: repair_cancelled() });
         assert!(accel.packs.any_files(), "Remove stays");
         for (name, _) in &files[1..] {
             assert!(dir.join(name).is_file(), "{name} was fine");
@@ -1505,12 +1524,12 @@ mod tests {
     #[test]
     fn the_row_shows_the_first_state_that_applies() {
         let downloading = || Phase::Downloading { done: 1, total: 2, cancel: CancelToken::new() };
-        let failed = || Phase::Failed("Why".into());
+        let failed = || Phase::Failed(Msg::plain("Why"));
         assert_eq!(row(seen()), AccelRow::Ready);
         // Every state's condition at once: each outranks those after it.
         let all = || Seen { offered: false, installed: false, stopped: true, unsupported: true, ..seen() };
         assert_eq!(row(Seen { phase: downloading(), ..all() }), AccelRow::Downloading { done: 1, total: 2 });
-        assert_eq!(row(Seen { phase: failed(), ..all() }), AccelRow::Failed { message: "Why".into() });
+        assert_eq!(row(Seen { phase: failed(), ..all() }), AccelRow::Failed { message: Msg::plain("Why") });
         assert_eq!(row(Seen { phase: Phase::Removing, ..all() }), AccelRow::Removing);
         assert_eq!(row(Seen { offered: true, ..all() }), AccelRow::Available);
         assert_eq!(row(Seen { offered: true, installed: true, agreed: false, ..all() }), AccelRow::Available);

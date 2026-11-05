@@ -881,14 +881,14 @@ fn a_changed_component_is_refused() {
     g.sha256 = Some(sha256_hex(b"another component"));
     let (r, _) = g.run();
     let Err(PluginError::Invalid(why)) = r else { panic!("{r:?}") };
-    assert_eq!(why, "Its files were changed. Install it again.");
+    assert_eq!(why.text, "Its files were changed. Install it again.");
     assert!(g.log().contains("[host] couldn't start: Its files were changed."));
 
     // Nor one that isn't a hash at all: it never names a file of code.
     let Some(mut g) = guest("hello") else { return };
     g.sha256 = Some("../../data/x".into());
     let (r, _) = g.run();
-    assert!(matches!(r, Err(PluginError::Invalid(_))), "{r:?}");
+    assert!(matches!(r, Err(PluginError::Manifest(_))), "{r:?}");
 }
 
 #[test]
@@ -957,7 +957,7 @@ fn a_component_is_prepared_once_for_its_code() {
     assert!(checked.imports.iter().any(|i| i == "autoscene:plugin/host@1.1.0"), "{:?}", checked.imports);
     // The guest can fetch, and its manifest has no network: every request is refused.
     assert_eq!(
-        checked.warnings,
+        checked.warnings.iter().map(|w| w.text.as_str()).collect::<Vec<_>>(),
         ["It imports wasi:http but doesn't ask for network: every request it makes is refused."]
     );
     // Beside the code there, which may be the installed version's: the
@@ -1093,7 +1093,7 @@ fn a_1_0_guest_is_never_sent_an_event() {
     let g = g.event("done");
     let (r, reports) = g.run();
     let Err(PluginError::Invalid(why)) = r else { panic!("{r:?}") };
-    assert_eq!(why, NO_ON_EVENT);
+    assert_eq!(why.text, NO_ON_EVENT);
     assert!(reports.iter().all(|(stage, _)| stage.starts_with("Getting")), "{reports:?}");
     assert_eq!(fs::read_dir(g.path("data")).unwrap().count(), 0);
     assert!(g.log().contains("[host] couldn't start: The plugin waits for events"), "{}", g.log());

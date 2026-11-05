@@ -116,6 +116,27 @@ describe("an export's card", () => {
   })
 })
 
+describe("an export's format", () => {
+  const keyed = (label: string | null): ExportSummary => {
+    const ex = exported("done", [item(1, "done")])
+    return { ...ex, label, preset: { ...ex.preset, nameMsg: { key: "fixture.preset", text: "ProRes 422 HQ" } } }
+  }
+
+  it("is the card's title in the UI's language", async () => {
+    await inLanguage("ro", { backend: { fixture: { preset: "ProRes românesc" } } })
+    show(keyed(null))
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("ProRes românesc")
+    expect(screen.getByRole("button", { name: "ProRes românesc options" })).toBeTruthy()
+  })
+
+  it("stands beside a label in the UI's language", async () => {
+    await inLanguage("ro", { backend: { fixture: { preset: "ProRes românesc" } } })
+    show(keyed("Walter"))
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Walter")
+    expect(screen.getByText(/^ProRes românesc · /)).toBeTruthy()
+  })
+})
+
 describe("an export's clip list", () => {
   const six = (status: ExportStatus) => Array.from({ length: 6 }, (_, i) => item(i + 1, status))
   const toggle = () => screen.getByRole("button", { name: /clips/ })

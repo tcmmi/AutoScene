@@ -7,6 +7,8 @@ use semver::Version;
 use wasmparser::{Chunk, ComponentTypeRef, Parser, Payload, TypeBounds};
 
 use super::MAX_DETAIL_CHARS;
+use as_core::{Msg, msg};
+
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{Manifest, Permission, cut};
 
@@ -70,7 +72,7 @@ pub(crate) fn declared(bytes: &[u8]) -> Result<Vec<String>, String> {
 /// each). Gives what may surprise its author about the manifest `m`, when
 /// given: wasi:http without the network permission (every request is
 /// refused), or the permission without wasi:http.
-pub(crate) fn check<'a>(names: impl Iterator<Item = &'a str>, m: Option<&Manifest>) -> PluginResult<Vec<String>> {
+pub(crate) fn check<'a>(names: impl Iterator<Item = &'a str>, m: Option<&Manifest>) -> PluginResult<Vec<Msg>> {
     let mut http = false;
     for name in names {
         http |= offered(name)?;
@@ -78,10 +80,11 @@ pub(crate) fn check<'a>(names: impl Iterator<Item = &'a str>, m: Option<&Manifes
     let Some(m) = m else { return Ok(Vec::new()) };
     let network = m.permissions.contains(&Permission::Network);
     Ok(match (http, network) {
-        (true, false) => {
-            vec!["It imports wasi:http but doesn't ask for network: every request it makes is refused.".into()]
-        }
-        (false, true) => vec!["It asks for network but can't make requests.".into()],
+        (true, false) => vec![msg!(
+            "plugin.warn.httpWithoutNetwork",
+            "It imports wasi:http but doesn't ask for network: every request it makes is refused."
+        )],
+        (false, true) => vec![msg!("plugin.warn.networkWithoutHttp", "It asks for network but can't make requests.")],
         _ => Vec::new(),
     })
 }
@@ -91,7 +94,11 @@ pub(crate) fn check<'a>(names: impl Iterator<Item = &'a str>, m: Option<&Manifes
 fn offered(name: &str) -> PluginResult<bool> {
     let not_offered = || {
         let name = cut(name, MAX_DETAIL_CHARS);
-        PluginError::Invalid(format!("The plugin uses {name}, which AutoScene doesn't offer."))
+        PluginError::Invalid(msg!(
+            "plugin.importNotOffered",
+            "The plugin uses {{name}}, which AutoScene doesn't offer.",
+            name = name
+        ))
     };
     let (path, version) = name.split_once('@').ok_or_else(not_offered)?;
     let (package, interface) = path.split_once('/').ok_or_else(not_offered)?;
@@ -149,7 +156,7 @@ mod tests {
         "wasi:sockets/tcp@0.2.12",
     ];
 
-    fn checked(names: &[&str]) -> PluginResult<Vec<String>> {
+    fn checked(names: &[&str]) -> PluginResult<Vec<Msg>> {
         check(names.iter().copied(), None)
     }
 
@@ -172,10 +179,10 @@ mod tests {
     fn this_world_and_wasi_0_2_are_offered() {
         let mut names = STD.to_vec();
         names.extend(["autoscene:plugin/host@1.0.0", "autoscene:plugin/types@1.0.0", "wasi:http/types@0.2.10"]);
-        assert_eq!(checked(&names).unwrap(), Vec::<String>::new());
+        assert!(checked(&names).unwrap().is_empty());
         // A plugin of 1.1.0 (with on-event) as well as one of 1.0.0.
         let newest = ["autoscene:plugin/host@1.1.0", "autoscene:plugin/types@1.1.0"];
-        assert_eq!(checked(&newest).unwrap(), Vec::<String>::new());
+        assert!(checked(&newest).unwrap().is_empty());
     }
 
     #[test]
@@ -210,11 +217,19 @@ mod tests {
     fn http_and_the_network_permission_go_together() {
         let http = ["wasi:http/outgoing-handler@0.2.12"];
         let warned = |names: &[&str], network: bool| check(names.iter().copied(), Some(&manifest(network))).unwrap();
+        let said = |w: Vec<Msg>| w.into_iter().map(|m| (m.key, m.text)).collect::<Vec<_>>();
+        let warning = |key: &str, english: &str| vec![(key.to_owned(), english.to_owned())];
         assert_eq!(
-            warned(&http, false),
-            ["It imports wasi:http but doesn't ask for network: every request it makes is refused."]
+            said(warned(&http, false)),
+            warning(
+                "plugin.warn.httpWithoutNetwork",
+                "It imports wasi:http but doesn't ask for network: every request it makes is refused."
+            )
         );
-        assert_eq!(warned(&STD, true), ["It asks for network but can't make requests."]);
+        assert_eq!(
+            said(warned(&STD, true)),
+            warning("plugin.warn.networkWithoutHttp", "It asks for network but can't make requests.")
+        );
         assert!(warned(&http, true).is_empty());
         // Python always imports sockets; they are refused, and nothing is said.
         assert!(warned(&STD, false).is_empty());

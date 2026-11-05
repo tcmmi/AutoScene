@@ -2,7 +2,7 @@
 //! event → query-invalidation map (`app/src/lib/events.ts`) can be grepped.
 
 use as_api::{JobInfo, JobProgress};
-use as_core::{CharacterId, ExportId, MediaId, ProjectId};
+use as_core::{CharacterId, ExportId, MediaId, Msg, ProjectId};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use specta_typescript::Unknown;
@@ -30,7 +30,7 @@ pub struct AccelProgress {
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 #[tauri_specta(event_name = "accel:finished")]
 pub struct AccelFinished {
-    pub error: Option<String>,
+    pub error: Option<Msg>,
 }
 
 /// A native menu item was chosen (macOS). Payload is the item id, e.g. `view:cast`.
@@ -198,8 +198,9 @@ pub enum PageEvent {
     Settings,
     /// It was closed (its plugin was turned off, is being updated or
     /// uninstalled, may no longer run unreviewed, or too many pages were
-    /// open): `reason` says so, for the person.
-    Closed { reason: String },
+    /// open): `reason` says so, for the person. The plugin's page hears
+    /// its English.
+    Closed { reason: Msg },
 }
 
 /// What a plugin's service is doing.

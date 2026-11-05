@@ -2056,7 +2056,7 @@ fn init_makes_a_plugin_that_packs_and_parses() {
         // AutoScene reads it as it is, without a word: a page in the rail,
         // a service with its page, or a program with an export action.
         let parsed = manifest::parse(&fs::read(dir.join("plugin.json")).unwrap(), &app).unwrap();
-        assert_eq!(parsed.warnings, Vec::<String>::new(), "{folder}");
+        assert!(parsed.warnings.is_empty(), "{folder}: {:?}", parsed.warnings);
         let m = parsed.manifest;
         assert_eq!((m.id.as_str(), m.name.as_str(), m.version.as_str()), (id.as_str(), folder, "0.1.0"));
         assert_eq!((m.manifest_version, m.engines.protocol, m.runtime.kind), (2, 2, runtime));
@@ -2349,7 +2349,7 @@ fn wasm_init_parses(dir: &Path, own: &[&str], id: &str, name: &str) -> String {
     assert_eq!(fs::read(plugin.join(schema)).unwrap(), fs::read(crate_dir.join("schema/plugin.schema.json")).unwrap());
     let app = Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
     let parsed = manifest::parse(&bytes, &app).unwrap();
-    assert_eq!(parsed.warnings, Vec::<String>::new());
+    assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
     let m = parsed.manifest;
     assert_eq!((m.id.as_str(), m.name.as_str(), m.version.as_str()), (id, name, "0.1.0"));
     assert_eq!((m.manifest_version, m.engines.protocol, m.runtime.kind), (2, 2, RuntimeKind::Wasm));
@@ -2965,7 +2965,10 @@ fn the_compile_process_checks_the_component_itself() {
     let (child, _alive) = compile_process(&file, &package::sha256_hex(b"other"), &code, "60000");
     let (status, said) = ended(child, Duration::from_secs(30));
     assert_eq!(status, Some(0));
-    assert_eq!(said.trim_end(), r#"{"Refused":"Its files were changed. Install it again."}"#);
+    assert_eq!(
+        said.trim_end(),
+        r#"{"Refused":{"key":"plugin.filesChanged","args":{},"text":"Its files were changed. Install it again."}}"#
+    );
     assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
 }
 

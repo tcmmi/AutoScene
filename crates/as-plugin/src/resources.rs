@@ -38,7 +38,7 @@ use std::fs::{self, File, TryLockError};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use as_core::CancelToken;
+use as_core::{CancelToken, Msg, msg};
 use as_models::{ModelStore, Packed, Pinned};
 use ureq::Agent;
 use ureq::config::Config;
@@ -96,7 +96,7 @@ impl Resources {
             match store.installed_pinned_until(&pinned(id, r), cancel) {
                 Ok(Some(_)) => {}
                 Ok(None) => missing.push(r),
-                Err(e) => return Err(fetch_error(&r.name, e)),
+                Err(e) => return Err(fetch_error(&Msg::plain(&r.name), e)),
             }
         }
         Ok(missing)
@@ -160,7 +160,7 @@ impl Resources {
         cancel: &CancelToken,
         mut progress: impl FnMut(u64, u64),
     ) -> PluginResult<PathBuf> {
-        let what = format!("{name}'s files");
+        let what = msg!("plugin.itsFiles", "{{name}}'s files", name = name);
         let dir = self.dir(id);
         fs::create_dir_all(&dir)?;
         let missing = self.missing(id, rs, cancel)?;
@@ -502,7 +502,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = Resources::new(tmp.path());
         let e = fetch(&store, &rs).unwrap_err();
-        assert!(matches!(&e, PluginError::Download { what, .. } if what == "Big Model's files"), "{e:?}");
+        assert!(matches!(&e, PluginError::Download { what, .. } if what.text == "Big Model's files"), "{e:?}");
         assert_eq!(
             e.to_string(),
             "AutoScene couldn't get Big Model's files. Check the internet connection, then try again."
@@ -520,7 +520,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = Resources::new(tmp.path());
         let e = fetch(&store, &rs).unwrap_err();
-        assert!(matches!(&e, PluginError::Download { what, .. } if what == "Big Model's files"), "{e:?}");
+        assert!(matches!(&e, PluginError::Download { what, .. } if what.text == "Big Model's files"), "{e:?}");
         assert!(e.detail().contains("more than 100000 bytes"), "{}", e.detail());
         assert_eq!(names(&store.dir(&id())), ["model.onnx.lock"], "nothing of it stays");
     }

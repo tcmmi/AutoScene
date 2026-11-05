@@ -212,7 +212,7 @@ function PluginSettings({ p }: { p: PluginInfo }) {
         <SettingsGroup title={t("screen.warnings.title")} description={t("screen.warnings.description")}>
           {p.warnings.map((w, i) => (
             <p key={i} className="px-5 py-3.5 text-sm text-fg-2">
-              {w}
+              {say(w)}
             </p>
           ))}
         </SettingsGroup>

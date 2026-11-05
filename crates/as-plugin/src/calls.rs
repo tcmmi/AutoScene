@@ -475,7 +475,7 @@ fn denied(message: String) -> PluginError {
 }
 
 fn invalid(message: impl Into<String>) -> PluginError {
-    PluginError::Invalid(message.into())
+    PluginError::Manifest(message.into())
 }
 
 /// What kind of error a call got.
@@ -529,7 +529,7 @@ impl From<&PluginError> for CallError {
     fn from(e: &PluginError) -> Self {
         let code = match e {
             PluginError::Denied(_) => CallCode::Denied,
-            PluginError::Invalid(_) | PluginError::TooNew(_) => CallCode::Invalid,
+            PluginError::Manifest(_) | PluginError::Invalid(_) | PluginError::TooNew(_) => CallCode::Invalid,
             PluginError::NotFound(_) => CallCode::NotFound,
             PluginError::Busy(_) => CallCode::Busy,
             PluginError::Cancelled => CallCode::Cancelled,
@@ -1077,14 +1077,14 @@ mod tests {
         assert!(command.export("e2").is_ok());
         // A run outside a project has none to read.
         let outside = Caller::Run { project: None, export: None };
-        assert!(matches!(outside.project(None), Err(PluginError::Invalid(_))));
+        assert!(matches!(outside.project(None), Err(PluginError::Manifest(_))));
         assert!(matches!(outside.project(Some("p1")), Err(PluginError::Denied(_))));
         // A page reads the one it is open in.
         assert_eq!(PAGE.project(None).unwrap(), "p1");
         assert_eq!(PAGE.project(Some("p2")).unwrap_err().to_string(), "A page reads only the project it is open in.");
         // A service names the one it reads.
         assert_eq!(Caller::Service.project(Some("p2")).unwrap(), "p2");
-        assert!(matches!(Caller::Service.project(None), Err(PluginError::Invalid(_))));
+        assert!(matches!(Caller::Service.project(None), Err(PluginError::Manifest(_))));
     }
 
     /// An installed plugin whose record holds `agreed` and whose manifest
@@ -1158,7 +1158,7 @@ mod tests {
         assert!(Grants::of(&service).unwrap().service());
         // A broken plugin gets none.
         let mut broken = p;
-        broken.broken = Some("Its files were changed. Install it again.".into());
+        broken.broken = Some(as_core::Msg::plain("Its files were changed. Install it again."));
         broken.manifest = None;
         assert_eq!(Grants::of(&broken).unwrap_err().to_string(), "Its files were changed. Install it again.");
     }
@@ -1201,7 +1201,7 @@ mod tests {
         for m in HostMethod::ALL {
             assert!(check_size(m, m.max_params()).is_ok(), "{m:?}");
             let e = check_size(m, m.max_params() + 1).unwrap_err();
-            assert!(matches!(e, PluginError::Invalid(_)), "{m:?}: {e:?}");
+            assert!(matches!(e, PluginError::Manifest(_)), "{m:?}: {e:?}");
         }
         assert_eq!(
             check_size(HostMethod::ProjectGet, 1025).unwrap_err().to_string(),
@@ -1251,7 +1251,8 @@ mod tests {
             c.code
         };
         assert_eq!(code(PluginError::Denied("No.".into())), CallCode::Denied);
-        assert_eq!(code(PluginError::Invalid("Bad.".into())), CallCode::Invalid);
+        assert_eq!(code(PluginError::Manifest("Bad.".into())), CallCode::Invalid);
+        assert_eq!(code(PluginError::Invalid(as_core::Msg::plain("Bad."))), CallCode::Invalid);
         assert_eq!(code(PluginError::TooNew("protocol".into())), CallCode::Invalid);
         assert_eq!(code(PluginError::NotFound("dev.a.b".into())), CallCode::NotFound);
         assert_eq!(code(PluginError::Busy("Poster".into())), CallCode::Busy);

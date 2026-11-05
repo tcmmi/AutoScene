@@ -372,10 +372,13 @@ const presets: ExportPreset[] = [
 ]
 
 function preset(id: string, name: string, description: string, container: "mov" | "mp4"): ExportPreset {
+  const key = `export.preset.${id.replace(/-(.)/g, (_, c: string) => c.toUpperCase())}`
   return {
     id,
     name,
     description,
+    nameMsg: { key: `${key}.name`, text: name },
+    descriptionMsg: { key: `${key}.description`, text: description },
     container,
     video: { codec: "prores", profile: "hq" },
     audio: container === "mov" ? { codec: "pcm24" } : { codec: "aac", kbps: 320 },
@@ -791,7 +794,7 @@ function startFilterCheck(p: MockProject, cid: string, key: string, spec: PackSp
 /** Stop the runs of the plugins `of` matches, and close their pages, saying `why`. */
 function stopPlugins(of: (pluginId: string) => boolean, why = "It was turned off.") {
   cancelJobs((j) => j.kind === "plugin" && of(pluginJobs.get(j.id)?.pluginId ?? ""))
-  for (const session of pagesOf(of)) void emit("plugin-page:event", { session, event: { type: "closed", reason: why } })
+  for (const session of pagesOf(of)) void emit("plugin-page:event", { session, event: { type: "closed", reason: { key: "", text: why } } })
 }
 
 /** What a plugin page's calls read here: the projects, their episodes and exports, as a page sees them. */

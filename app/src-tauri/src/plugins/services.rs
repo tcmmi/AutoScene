@@ -648,7 +648,7 @@ impl StartService for ProgramStart {
         cancel: &CancelToken,
     ) -> PluginResult<Arc<dyn Service>> {
         let state = self.0.state::<AppState>();
-        let tools = state.tools().map_err(|e| PluginError::Invalid(e.message))?;
+        let tools = state.tools().map_err(|e| PluginError::Invalid(e.msg))?;
         let calls = AppCalls::service(state.library.clone(), host.clone(), p)?;
         let spec = serve_spec(host, p, &tools.ffmpeg, &tools.ffprobe, &tools.version, Arc::new(calls), got)?;
         Ok(ProcessService::start(spec, events, cancel)?)
@@ -923,7 +923,7 @@ mod tests {
         host.service(&m, None).unwrap();
         let fake = starter.made.lock()[0].clone();
         // Once the change may go on, its program has ended, and its page closed.
-        let changing = host.change(&id, "Service", "It is being updated.").unwrap();
+        let changing = host.change(&id, "Service", &as_core::Msg::plain("It is being updated.")).unwrap();
         assert!(fake.stopped.load(Ordering::SeqCst));
         assert!(host.services.running(&id).is_none());
         assert!(m.closed.is_cancelled());
@@ -944,7 +944,7 @@ mod tests {
             let starting = s.spawn(|| host2.service(&m2, None));
             wait_for(|| slow.asked.load(Ordering::SeqCst) == 1);
             let asked = Instant::now();
-            let changing = host2.change(&id2, "Service", "It is being updated.").unwrap();
+            let changing = host2.change(&id2, "Service", &as_core::Msg::plain("It is being updated.")).unwrap();
             assert_eq!(slow.ended.load(Ordering::SeqCst), 1, "the start ended first");
             assert!(asked.elapsed() < Duration::from_secs(3), "{:?}", asked.elapsed());
             assert_eq!(starting.join().unwrap().err().unwrap().code, CallCode::Cancelled);
@@ -1118,7 +1118,7 @@ mod tests {
         assert_eq!(refused(ask(json!({"method": "count"}))).0, CallCode::Closed);
         // One still open while its plugin changes is told it is busy, as
         // B4.2 says: it may ask again once the change is over.
-        let changing = host.change(&id, "Service", "It is being updated.").unwrap();
+        let changing = host.change(&id, "Service", &as_core::Msg::plain("It is being updated.")).unwrap();
         let opened = page_of(&host, &id);
         let count = json!({"method": "count"}).to_string();
         let busy = page_call(lib.clone(), &host, &Nobody, &opened.token, "service.request", &count);

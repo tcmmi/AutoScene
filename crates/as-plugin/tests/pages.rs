@@ -220,7 +220,7 @@ fn only_listed_files_under_ui_are_served() {
     assert_eq!(status(&pages, &m, "ui/app.js?v=2#top"), 200);
     // A page whose file the lock doesn't list doesn't open.
     let unlisted = PageSpec { entry: "ui/style.html".into(), ..p.manifest.as_ref().unwrap().pages[0].clone() };
-    let Err(PluginError::Invalid(said)) = pages.open(&p, Grants::of(&p).unwrap(), &unlisted, None) else { panic!() };
+    let Err(PluginError::Manifest(said)) = pages.open(&p, Grants::of(&p).unwrap(), &unlisted, None) else { panic!() };
     assert_eq!(said, "The plugin package is missing its page ui/style.html.");
     // Nor one whose lock isn't the one its install recorded.
     let mut other = p.clone();
@@ -229,7 +229,10 @@ fn only_listed_files_under_ui_are_served() {
     let Err(PluginError::Invalid(said)) = pages.open(&other, Grants::of(&other).unwrap(), &page, None) else {
         panic!()
     };
-    assert_eq!(said, "Its files were changed. Install it again.");
+    assert_eq!(
+        (said.key.as_str(), said.text.as_str()),
+        ("plugin.filesChanged", "Its files were changed. Install it again.")
+    );
 }
 
 #[test]
@@ -639,7 +642,7 @@ fn a_resolved_file_answers_ranges_in_1_mib_parts() {
     let large = fs::File::create(tmp.path().join("large.png")).unwrap();
     large.set_len(MAX_SERVED_FILE + 1).unwrap();
     let said = pages.resolve(&m, tmp.path().join("large.png")).unwrap_err();
-    assert!(matches!(&said, PluginError::Invalid(s) if s == "A page can show pictures of up to 32 MB."), "{said:?}");
+    assert!(matches!(&said, PluginError::Manifest(s) if s == "A page can show pictures of up to 32 MB."), "{said:?}");
     fs::File::options().write(true).open(&still).unwrap().set_len(MAX_SERVED_FILE + 1).unwrap();
     assert_eq!(pages.serve("GET", path(&picture), None).status, 404);
     assert_eq!(pages.serve("GET", path(&picture), Some("bytes=0-9")).status, 206);
@@ -653,7 +656,7 @@ fn a_resolved_file_answers_ranges_in_1_mib_parts() {
         assert!(matches!(&said, PluginError::Denied(s) if s == "A page can show only pictures, video and sound."));
     }
     let said = pages.resolve(&m, tmp.path().join("gone.mp4")).unwrap_err();
-    assert!(matches!(&said, PluginError::Invalid(s) if s == "That file isn't where it was."), "{said:?}");
+    assert!(matches!(&said, PluginError::Manifest(s) if s == "That file isn't where it was."), "{said:?}");
     // A link is refused as one, where links to files can be made: its file
     // is there, and a link is never served.
     let linked = tmp.path().join("linked.mp4");
@@ -715,7 +718,7 @@ fn a_folder_plugin_is_served_as_its_files_are_and_never_through_a_link() {
     assert_eq!(status(&pages, &m, "ui/linked/page.html"), 404);
     // Nor does a page open through one.
     let linked = PageSpec { entry: "ui/linked/page.html".into(), ..m.page.clone() };
-    let Err(PluginError::Invalid(said)) = pages.open(&p, Grants::of(&p).unwrap(), &linked, None) else { panic!() };
+    let Err(PluginError::Manifest(said)) = pages.open(&p, Grants::of(&p).unwrap(), &linked, None) else { panic!() };
     assert_eq!(said, "The plugin folder is missing its page ui/linked/page.html, or it is a link.");
     // ui itself a link.
     let moved = tmp.path().join("ui-elsewhere");

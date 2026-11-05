@@ -13,7 +13,8 @@ import { commands } from "@/lib/ipc"
 import { pickPluginFile } from "@/lib/media"
 import { qk, queryClient } from "@/lib/queries"
 import { usePluginReview } from "@/state/plugin-review"
-import { catalogPlugin, catalogReview, catalogView, pluginInfo } from "@/test/plugins"
+import { inLanguage } from "@/test/i18n"
+import { catalogPlugin, catalogReview, catalogView, plain, pluginInfo } from "@/test/plugins"
 import { useUpdatingAll } from "./catalog-actions"
 import { InstallReviewDialog } from "./InstallReviewDialog"
 import { useInstallFlow } from "./install-plugin"
@@ -166,7 +167,7 @@ describe("PluginsPage", () => {
         name: "Unreviewed One",
         trust: "unreviewed",
         active: false,
-        blockedReason: "Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins.",
+        blockedReason: plain("Plugins that AutoScene has not reviewed are turned off. You can allow them in Plugins."),
       }),
       // A folder says so first, whatever its trust.
       pluginInfo({ id: "dev.a.folder", name: "Folder One", trust: "unreviewed", source: "folder", enabled: false, active: false }),
@@ -202,12 +203,21 @@ describe("PluginsPage", () => {
     expect(commands.pluginSetEnabled).toHaveBeenCalledWith("dev.a.folder", true)
   })
 
+  it("a plugin whose files are missing says so in the UI's language", async () => {
+    await inLanguage("ro", { backend: { plugin: { filesMissing: "Fișierele lipsesc. Instalează-l din nou." } } })
+    const broken = { key: "plugin.filesMissing", text: "Its files are missing. Install it again." }
+    state.plugins = [pluginInfo({ id: "dev.a.gone", name: "Gone", active: false, broken })]
+    show()
+    expect(within(await card("Gone")).getByText("Fișierele lipsesc. Instalează-l din nou.")).toBeTruthy()
+    expect(document.body.textContent).not.toContain("[object Object]")
+  })
+
   it("the trust badge and the facts sit under the art, not on it", async () => {
     let answer: (url: string | null) => void = () => {}
     vi.mocked(commands.pluginBanner).mockReturnValue(new Promise((done) => (answer = done)))
     state.plugins = [
       pluginInfo({ id: "dev.a.art", name: "Art", trust: "unreviewed", author: "someone", bannerHash: "a1", icon: ICON }),
-      pluginInfo({ id: "dev.a.broken", name: "Broken", source: "folder", broken: "Its plugin.json can't be read." }),
+      pluginInfo({ id: "dev.a.broken", name: "Broken", source: "folder", broken: plain("Its plugin.json can't be read.") }),
     ]
     show()
     const link = await art("Art")
@@ -442,7 +452,7 @@ describe("PluginsPage", () => {
         trust: "unreviewed",
         source: "folder",
         folder: "D:\\Plugins\\mine",
-        broken: "Its program changed since it was loaded.",
+        broken: plain("Its program changed since it was loaded."),
       }),
     ]
     const review: PluginReview = {
@@ -479,7 +489,7 @@ describe("PluginsPage", () => {
     // A package that is broken has no folder to load.
     usePluginReview.getState().close()
     cleanup()
-    state.plugins = [pluginInfo({ id: "dev.a.pkg", name: "Pkg", broken: "Needs a newer AutoScene." })]
+    state.plugins = [pluginInfo({ id: "dev.a.pkg", name: "Pkg", broken: plain("Needs a newer AutoScene.") })]
     queryClient.clear()
     show()
     const pkg = await entries("Pkg")
@@ -490,7 +500,7 @@ describe("PluginsPage", () => {
   it("offers no Load its folder again… while unreviewed plugins are off", async () => {
     // The backend refuses a folder's review then: the entry could only fail.
     state.plugins = [
-      pluginInfo({ id: "dev.me.mine", name: "Mine", trust: "unreviewed", source: "folder", broken: "Its program changed since it was loaded." }),
+      pluginInfo({ id: "dev.me.mine", name: "Mine", trust: "unreviewed", source: "folder", broken: plain("Its program changed since it was loaded.") }),
     ]
     show()
     await waitFor(() => expect((allowSwitch() as HTMLButtonElement).disabled).toBe(false))
@@ -514,7 +524,7 @@ describe("PluginsPage", () => {
       trust: "unreviewed",
       source: "folder",
       folder: "D:\\Plugins\\mine",
-      broken: "Its program changed since it was loaded.",
+      broken: plain("Its program changed since it was loaded."),
     })
     state.plugins = [p]
     vi.mocked(commands.pluginInspectFolder).mockResolvedValueOnce({
@@ -1210,7 +1220,7 @@ describe("a withdrawn plugin", () => {
   })
 
   it("its card gives the withdrawal before a fault of its own", async () => {
-    state.plugins = [leaky({ broken: "Its files are missing. Install it again." })]
+    state.plugins = [leaky({ broken: plain("Its files are missing. Install it again.") })]
     show()
     const c = await card("Leaky Export")
     expect(within(c).getByText("It sent export paths to a server.")).toBeTruthy()

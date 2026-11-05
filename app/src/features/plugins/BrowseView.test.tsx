@@ -10,8 +10,9 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
 import { usePluginReview } from "@/state/plugin-review"
-import { catalogPlugin, catalogReview, catalogView, pluginInfo } from "@/test/plugins"
-import { useCatalogCheck } from "./catalog-actions"
+import { inLanguage } from "@/test/i18n"
+import { catalogPlugin, catalogReview, catalogView, plain, pluginInfo } from "@/test/plugins"
+import { checkCatalog, useCatalogCheck } from "./catalog-actions"
 import { InstallReviewDialog } from "./InstallReviewDialog"
 import { PluginsPage } from "./PluginsPage"
 
@@ -221,7 +222,7 @@ describe("Browse", () => {
   })
 
   it("says when the catalog is out of date", async () => {
-    state.catalog = catalogView([], { outOfDate: true, fetchedAt: Date.UTC(2026, 8, 24, 10), error: "The catalog ran out on 2026-10-24." })
+    state.catalog = catalogView([], { outOfDate: true, fetchedAt: Date.UTC(2026, 8, 24, 10), error: plain("The catalog ran out on 2026-10-24.") })
     show()
     const banner = await screen.findByRole("status")
     expect(within(banner).getByText("The plugin catalog is out of date")).toBeTruthy()
@@ -236,6 +237,22 @@ describe("Browse", () => {
     fireEvent.click(within(banner).getByRole("button", { name: "Try again" }))
     await waitFor(() => expect(commands.catalogRefresh).toHaveBeenCalledOnce())
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Couldn't check the plugin catalog", { description: "The catalog ran out on 2026-10-24." }))
+  })
+
+  it("says why a check failed in the UI's language, in its toast", async () => {
+    await inLanguage("ro", { backend: { catalog: { unreachable: "AutoScene nu a ajuns la catalog." } } })
+    const error = { key: "catalog.unreachable", text: "AutoScene couldn't reach its plugin catalog." }
+    state.catalog = catalogView([poster], { error })
+    await checkCatalog()
+    expect(toast.error).toHaveBeenCalledWith("Couldn't check the plugin catalog", { description: "AutoScene nu a ajuns la catalog." })
+  })
+
+  it("says why the last check failed in the UI's language", async () => {
+    await inLanguage("ro", { backend: { catalog: { unreachable: "AutoScene nu a ajuns la catalog." } } })
+    state.catalog = catalogView([poster], { error: { key: "catalog.unreachable", text: "AutoScene couldn't reach its plugin catalog." } })
+    show()
+    expect(await screen.findByText("AutoScene nu a ajuns la catalog.")).toBeTruthy()
+    expect(document.body.textContent).not.toContain("[object Object]")
   })
 
   it("offers nothing that needs a newer AutoScene", async () => {

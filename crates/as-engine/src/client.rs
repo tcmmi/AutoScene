@@ -22,6 +22,7 @@
 
 use std::cell::Cell;
 use std::ffi::OsString;
+use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -30,7 +31,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use as_core::CancelToken;
+use as_core::{CancelToken, Msg as Said, ToMsg, msg};
 use as_infer::accel::{self, AccelState};
 use as_infer::computer::Choice;
 use as_infer::hardware::Hardware;
@@ -39,19 +40,44 @@ use as_media::frames::Decoder;
 use parking_lot::Mutex;
 use thiserror::Error;
 
-use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, ShotsJob};
+use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, ShotsJob, said};
 
 #[derive(Debug, Error)]
 pub enum EngineError {
     /// The engine didn't start or reported it can't work (`detail` for the log).
-    #[error("{message}")]
-    Start { message: String, detail: String },
-    #[error("The analysis engine stopped unexpectedly. Details are in the log.")]
+    Start {
+        message: Said,
+        detail: String,
+    },
     Crashed(String),
-    #[error("{message}")]
-    Failed { message: String, detail: String },
-    #[error("Cancelled.")]
+    Failed {
+        message: Said,
+        detail: String,
+    },
     Cancelled,
+}
+
+impl ToMsg for EngineError {
+    fn msg(&self) -> Said {
+        match self {
+            Self::Start { message, .. } | Self::Failed { message, .. } => message.clone(),
+            Self::Crashed(_) => {
+                msg!("engine.crashed", "The analysis engine stopped unexpectedly. Details are in the log.")
+            }
+            Self::Cancelled => msg!("engine.cancelled", "Cancelled."),
+        }
+    }
+}
+
+impl fmt::Display for EngineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.msg().text)
+    }
+}
+
+/// An engine that didn't get as far as being ready.
+fn couldnt_start() -> Said {
+    msg!("engine.couldntStart", "The analysis engine couldn't start. Details are in the log.")
 }
 
 impl EngineError {
@@ -65,7 +91,7 @@ impl EngineError {
     }
 
     fn saving(detail: String) -> Self {
-        Self::Failed { message: "Saving the analysis failed.".into(), detail }
+        Self::Failed { message: msg!("engine.savingFailed", "Saving the analysis failed."), detail }
     }
 }
 
@@ -475,7 +501,7 @@ impl Engine {
                     *guard = Some(self.start(cancel)?);
                 }
                 return self.hardware().ok_or_else(|| EngineError::Start {
-                    message: "The analysis engine couldn't start. Details are in the log.".into(),
+                    message: couldnt_start(),
                     detail: "the engine named no hardware".into(),
                 });
             }
@@ -624,7 +650,7 @@ impl Engine {
             },
         )?;
         got.ok_or(EngineError::Failed {
-            message: "The engine gave no embedding.".into(),
+            message: msg!("engine.noEmbedding", "The engine gave no embedding."),
             detail: "an Embed job ended without a vector".into(),
         })
     }
@@ -779,13 +805,13 @@ impl Engine {
                     Reply::Done { id: rid } if rid == id => {
                         return handler_error.map_or(Ok(()), |e| Err(EngineError::saving(e)));
                     }
-                    Reply::Failed { id: rid, message, detail, cancelled } if rid == id => {
+                    Reply::Failed { id: rid, message, msg, detail, cancelled } if rid == id => {
                         return Err(match (handler_error, cancelled) {
                             (Some(e), _) => EngineError::saving(e),
                             (None, true) => EngineError::Cancelled,
                             (None, false) => {
                                 pack.fault = accel_failed;
-                                EngineError::Failed { message, detail }
+                                EngineError::Failed { message: said(message, msg), detail }
                             }
                         });
                     }
@@ -793,9 +819,9 @@ impl Engine {
                         tracing::warn!(id, %detail, "a model failed on NVIDIA's engine");
                         accel_failed = Some(format!("a model failed on it: {detail}"));
                     }
-                    Reply::Fatal { message, detail } => {
+                    Reply::Fatal { message, msg, detail } => {
                         self.discard(slot);
-                        return Err(EngineError::Start { message, detail });
+                        return Err(EngineError::Start { message: said(message, msg), detail });
                     }
                     Reply::Decoding { id: rid, decoder } if rid == id => {
                         *self.decoder.lock() = Some(decoder);
@@ -859,10 +885,7 @@ impl Engine {
             }
         }
         self.spawn(&launch, generation, None, cancel).map_err(|e| match e {
-            StartError::Died(detail) => EngineError::Start {
-                message: "The analysis engine couldn't start. Details are in the log.".into(),
-                detail,
-            },
+            StartError::Died(detail) => EngineError::Start { message: couldnt_start(), detail },
             StartError::Other(e) => e,
         })
     }
@@ -890,7 +913,7 @@ impl Engine {
         }
         let mut child = as_media::proc::spawn(&mut cmd).map_err(|e| {
             StartError::Other(EngineError::Start {
-                message: "The analysis engine couldn't start. Reinstall AutoScene.".into(),
+                message: msg!("engine.reinstall", "The analysis engine couldn't start. Reinstall AutoScene."),
                 detail: format!("{}: {e}", launch.program.display()),
             })
         })?;
@@ -936,9 +959,9 @@ impl Engine {
                     self.note(Note::Ready(&hardware));
                     return Ok(p);
                 }
-                Ok(Msg::Reply(Reply::Fatal { message, detail })) => {
+                Ok(Msg::Reply(Reply::Fatal { message, msg, detail })) => {
                     p.kill();
-                    return Err(StartError::Other(EngineError::Start { message, detail }));
+                    return Err(StartError::Other(EngineError::Start { message: said(message, msg), detail }));
                 }
                 Ok(Msg::Reply(_)) => {}
                 Err(mpsc::RecvTimeoutError::Timeout) if !left.is_zero() => {}
@@ -975,6 +998,27 @@ fn stop(p: &mut Proc) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_error_has_its_key_and_keeps_its_words() {
+        let said = [
+            (
+                EngineError::Start { message: couldnt_start(), detail: "x".into() },
+                "engine.couldntStart",
+                "The analysis engine couldn't start. Details are in the log.",
+            ),
+            (
+                EngineError::Crashed("x".into()),
+                "engine.crashed",
+                "The analysis engine stopped unexpectedly. Details are in the log.",
+            ),
+            (EngineError::saving("x".into()), "engine.savingFailed", "Saving the analysis failed."),
+            (EngineError::Cancelled, "engine.cancelled", "Cancelled."),
+        ];
+        for (e, key, english) in said {
+            assert_eq!((e.msg().key.as_str(), e.to_string().as_str()), (key, english));
+        }
+    }
 
     fn devices(preferred: &str, models: &[(&str, &str)]) -> Devices {
         Devices { preferred: preferred.into(), models: models.iter().map(|&(m, d)| (m.into(), d.into())).collect() }

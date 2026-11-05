@@ -322,7 +322,7 @@ export function pageMessage(e: PageEvent): HostToFrame {
     case "settings":
       return { t: "settings" }
     case "closed":
-      return { t: "closed", reason: e.reason }
+      return { t: "closed", reason: e.reason.text }
   }
 }
 
@@ -331,7 +331,7 @@ export function pageCaller(session: string, send: (session: string, method: stri
   return (method: HostMethod, params: string) => send(session, method, params)
 }
 
-/** A toast a page's call asked for, with Rust's title as it is: it starts with `Plugin “<name>”:`. No action button. */
+/** A toast a page's call asked for, with Rust's title: it starts with its fixed word, then the plugin's name. No action button. */
 export function showToast(e: Extract<PageEffect, { type: "toast" }>) {
   const options = { description: e.description ?? undefined }
   if (e.tone === "error") toast.error(say(e.title), options)

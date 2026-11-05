@@ -517,7 +517,7 @@ export const NAME_PARTS = [["series","Series"],["character","Character"],["episo
  *  update that runs by itself: its files come by the next start.
  */
 export type AccelFinished = {
-	error: string | null,
+	error: Msg | null,
 };
 
 /**  Settings → General → NVIDIA acceleration. */
@@ -556,7 +556,7 @@ export type AccelRow =
 /**  Nothing: this computer can't use it and has no files of it. */
 { state: "hidden" } | { state: "downloading"; done: number; total: number } | 
 /**  The last download failed; `message` says why, for the person. */
-{ state: "failed"; message: string } | 
+{ state: "failed"; message: Msg } | 
 /**  The files go once the current analysis is done with them. */
 { state: "removing" } | 
 /**  It can be downloaded (or its new licence has to be agreed to). */
@@ -964,7 +964,7 @@ export type CatalogStatus = {
 	/**  There is no index, or it ran out. */
 	outOfDate: boolean,
 	/**  Why the last check failed. */
-	error: string | null,
+	error: Msg | null,
 	/**  A later AutoScene checked the catalog, or its index needs one. */
 	needsNewerApp: boolean,
 };
@@ -1214,8 +1214,18 @@ export type ExportPlan = {
 
 export type ExportPreset = {
 	id: string,
+	/**
+	 *  Its name in English. An export keeps its preset as JSON, and an older
+	 *  AutoScene reads these two as text.
+	 */
 	name: string,
 	description: string,
+	/**
+	 *  The name and description for the UI: none in an export made before
+	 *  they had keys, which says `name` and `description` as they are.
+	 */
+	nameMsg?: Msg | null,
+	descriptionMsg?: Msg | null,
 	container: Container,
 	video: VideoCodec,
 	audio: AudioCodec,
@@ -1333,8 +1343,11 @@ export type Gop =
 export type GpuOption = {
 	/**  What [`AppSettings::gpu`] stores when it is chosen. */
 	key: string,
-	/**  As its driver names it, numbered among identical cards. */
-	name: string,
+	/**
+	 *  As its driver names it, numbered among identical cards. The words are
+	 *  AutoScene's only for a card its driver gives no name.
+	 */
+	name: Msg,
 };
 
 /**  What this computer's analysis runs on, as Fast Scan's default sees it. */
@@ -1963,10 +1976,11 @@ export type PackTotals = {
 /**  What a page's call asks the app's page to do. */
 export type PageEffect = 
 /**
- *  A toast. `title` is its whole first line, `Plugin “<name>”: <text>`:
+ *  A toast. `title` is its whole first line, `Plugin “<name>”: <text>`
+ *  in English:
  *  the app's page shows it as it is.
  */
-{ type: "toast"; title: string; description: string | null; tone: ToastTone } | 
+{ type: "toast"; title: Msg; description: string | null; tone: ToastTone } | 
 /**  The path inside the page becomes `path` (the route's splat). */
 { type: "navigate"; path: string; replace: boolean };
 
@@ -1984,9 +1998,10 @@ export type PageEvent =
 /**
  *  It was closed (its plugin was turned off, is being updated or
  *  uninstalled, may no longer run unreviewed, or too many pages were
- *  open): `reason` says so, for the person.
+ *  open): `reason` says so, for the person. The plugin's page hears
+ *  its English.
  */
-{ type: "closed"; reason: string };
+{ type: "closed"; reason: Msg };
 
 /**  An open page, for its frame: where it loads from, and what it may use. */
 export type PageMount = {
@@ -2118,12 +2133,12 @@ export type PluginInfo = {
 	 *  Why it can't run while it is turned on (the setting keeps plugins
 	 *  AutoScene hasn't reviewed from running).
 	 */
-	blockedReason: string | null,
+	blockedReason: Msg | null,
 	/**
 	 *  Why it can't run at all: its files are missing or changed, or it
 	 *  needs another AutoScene.
 	 */
-	broken: string | null,
+	broken: Msg | null,
 	/**
 	 *  Why AutoScene withdrew its version, in the catalog's words: it
 	 *  doesn't run, whatever else it is.
@@ -2186,7 +2201,7 @@ export type PluginInfo = {
 	/**  Where its service writes its log, when it runs one. */
 	serviceLogPath: string | null,
 	/**  What was skipped or changed in its `plugin.json`. */
-	warnings: string[],
+	warnings: Msg[],
 	/**
 	 *  What the large files its `plugin.json` names take on the disk now,
 	 *  in bytes (by their sizes; 0 for one that names none or got none yet).
@@ -2247,7 +2262,7 @@ export type PluginReview = {
 	 *  surprise its author (its plugin.json's skipped parts are the
 	 *  plugin's `warnings`).
 	 */
-	componentWarnings: string[],
+	componentWarnings: Msg[],
 };
 
 /**

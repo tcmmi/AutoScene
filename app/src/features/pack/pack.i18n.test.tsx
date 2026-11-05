@@ -17,11 +17,12 @@ import { PackFooter } from "./PackFooter"
 import { checkingText, DEFAULT_SPEC, LENGTHS, lengthLabel, lengthOf, REASONS, saveHeading } from "./spec"
 import type { Pack } from "./use-pack"
 
-// A preset as the backend may soon send it: its name is a `Msg`, said by key in the language in use.
-const proresName: Msg = { key: "export.preset.proresHq", text: "ProRes 422 HQ" }
+// A preset as the backend sends it: its English, and beside it a `Msg` said by key in the language in use.
+const proresName: Msg = { key: "export.preset.proresHq.name", text: "ProRes 422 HQ" }
 const prores = {
   id: "prores-hq",
-  name: proresName,
+  name: "ProRes 422 HQ",
+  nameMsg: proresName,
   description: "Edit-grade intra codec.",
   container: "mov",
   video: { codec: "prores", profile: "hq" },
@@ -97,7 +98,7 @@ const ro = {
     },
   },
   export: { about: "Aproximativ {{size}} în total ca {{format}}.", field: { format: "Format" } },
-  backend: { export: { preset: { proresHq: "Editare ProRes 422 HQ" } } },
+  backend: { export: { preset: { proresHq: { name: "Editare ProRes 422 HQ" } } } },
 }
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (

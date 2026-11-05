@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { catalogPlugin, catalogReview, catalogView, pluginInfo } from "@/test/plugins"
+import { catalogPlugin, catalogReview, catalogView, plain, pluginInfo } from "@/test/plugins"
 import { asksNothingNew, catalogAsks, catalogDownloads, catalogLine, catalogMatches, catalogNewHosts, oneClick, stuckSince, updatesOf } from "./catalog-items"
 
 const mine = pluginInfo({ id: "dev.a.mine", name: "Mine" })
@@ -104,7 +104,7 @@ describe("catalog items", () => {
     expect(catalogLine(s, at(2026, 10, 5, 1))).toBe("Catalog of 3 November 2026. Checked yesterday.")
     expect(catalogLine(s, at(2026, 10, 9))).toBe("Catalog of 3 November 2026. Checked on 4 November 2026.")
     expect(catalogLine({ ...s, published: null, checkedAt: null })).toBe("No catalog yet. Not checked yet.")
-    expect(catalogLine({ ...s, error: "The catalog ran out on 2026-10-25." }, at(2026, 10, 4, 20))).toBe(
+    expect(catalogLine({ ...s, error: plain("The catalog ran out on 2026-10-25.") }, at(2026, 10, 4, 20))).toBe(
       "Catalog of 3 November 2026. Last check failed today.",
     )
     // Browse says why on its own.

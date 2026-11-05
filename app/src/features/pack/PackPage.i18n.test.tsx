@@ -32,7 +32,8 @@ vi.mock("./PackExportDialog", () => ({ PackExportDialog: () => null }))
 
 const preset = {
   id: "prores-hq",
-  name: { key: "export.preset.proresHq", text: "ProRes 422 HQ" } satisfies Msg,
+  name: "ProRes 422 HQ",
+  nameMsg: { key: "export.preset.proresHq.name", text: "ProRes 422 HQ" } satisfies Msg,
   description: "Edit-grade intra codec.",
   container: "mov",
   video: { codec: "prores", profile: "hq" },

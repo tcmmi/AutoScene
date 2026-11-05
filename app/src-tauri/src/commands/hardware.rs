@@ -82,7 +82,7 @@ fn info(found: &Hardware, gpu: &str, pending: bool, fell_back: bool, accel: Acce
         .gpus
         .iter()
         .filter(|g| g.dxgi.is_some())
-        .map(|g| GpuOption { key: g.key.clone(), name: g.label.clone() })
+        .map(|g| GpuOption { key: g.key.clone(), name: g.said() })
         .collect();
     let kind = match (gpus.len(), found.auto) {
         (2.., _) => HardwareChoice::Cards,
@@ -151,7 +151,7 @@ mod tests {
         let hw = hybrid(true);
         let auto = info(&hw, "", false, false);
         assert_eq!(auto.choice, HardwareChoice::Cards);
-        let names: Vec<&str> = auto.gpus.iter().map(|g| g.name.as_str()).collect();
+        let names: Vec<&str> = auto.gpus.iter().map(|g| g.name.text.as_str()).collect();
         assert_eq!(names, ["NVIDIA GeForce RTX 4060 Laptop GPU", "Intel Iris Xe Graphics"]);
         assert_eq!((auto.selected.as_str(), &auto.using), ("auto", &gpu("NVIDIA GeForce RTX 4060 Laptop GPU")));
         // A card chosen under another spelling: shown as that card, by its key now.

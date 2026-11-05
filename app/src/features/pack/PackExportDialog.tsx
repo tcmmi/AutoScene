@@ -12,7 +12,7 @@ import { Select } from "@/components/ui/select"
 import { OptionRow } from "@/components/ui/option-row"
 import { Switch } from "@/components/ui/switch"
 import { rememberPreset } from "@/features/export/export"
-import { formatBytes, shortFormatName } from "@/lib/format"
+import { formatBytes, presetDescription, presetName, shortFormatName } from "@/lib/format"
 import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder } from "@/lib/media"
@@ -252,11 +252,11 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
           hint={
             preset && (
               <>
-                {say(preset.description)}
+                {presetDescription(preset)}
                 {bytes != null && bytes > 0 && (
                   <span className="text-fg-2">
                     {" "}
-                    {t("export:about", { size: formatBytes(bytes), format: shortFormatName(say(preset.name)) })}
+                    {t("export:about", { size: formatBytes(bytes), format: shortFormatName(presetName(preset)) })}
                   </span>
                 )}
                 {oneFile && bytes != null && bytes > 0 && ` ${t("export.freeSpace")}`}
@@ -271,7 +271,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
             value={presetId}
             onChange={setPresetId}
             placeholder={t("export:field.formatPlaceholder")}
-            options={(presets ?? []).map((p) => ({ value: p.id, label: say(p.name) }))}
+            options={(presets ?? []).map((p) => ({ value: p.id, label: presetName(p) }))}
           />
         </Field>
         <Field label={t("export:field.destination")}>

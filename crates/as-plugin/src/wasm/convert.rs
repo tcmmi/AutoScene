@@ -15,6 +15,8 @@ use std::path::{Component, Path, PathBuf};
 use super::bindings::Request;
 use super::bindings::v1_1::autoscene::plugin::types as wit;
 use crate::calls::Grants;
+use as_core::{Msg, msg};
+
 use crate::error::{PluginError, PluginResult};
 use crate::manifest::{Permission, SettingValue};
 use crate::protocol::{ActionKind, RunMessage, Trigger};
@@ -34,20 +36,24 @@ pub(crate) struct Mounts {
 /// export's with `exports:read` or `exports:write`, the project's with
 /// `project:read`. Each must still be a folder.
 pub(crate) fn mounts(message: &RunMessage, grants: &Grants) -> PluginResult<Mounts> {
-    let folder = |path: &str, gone: &str| {
+    let folder = |path: &str, gone: Msg| {
         let path = PathBuf::from(path);
         match path.is_dir() {
             true => Ok(path),
-            false => Err(PluginError::Invalid(gone.into())),
+            false => Err(PluginError::Invalid(gone)),
         }
     };
     let reads_export = grants.has(Permission::ExportsRead) || grants.has(Permission::ExportsWrite);
     let export = match &message.export {
-        Some(e) if reads_export => Some(folder(&e.out_dir, "The export's folder is gone.")?),
+        Some(e) if reads_export => {
+            Some(folder(&e.out_dir, msg!("plugin.exportFolderGone", "The export's folder is gone."))?)
+        }
         _ => None,
     };
     let project = match &message.project {
-        Some(p) if grants.has(Permission::ProjectRead) => Some(folder(&p.folder, "The project's folder is gone.")?),
+        Some(p) if grants.has(Permission::ProjectRead) => {
+            Some(folder(&p.folder, msg!("plugin.projectFolderGone", "The project's folder is gone."))?)
+        }
         _ => None,
     };
     let export_write = export.is_some() && grants.has(Permission::ExportsWrite);
@@ -103,7 +109,7 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
     });
     // An event has a function of its own: the cases of the 1.0 world's
     // action-kind and trigger never grow (a 1.0 plugin wouldn't know one).
-    let no_event = || PluginError::Invalid("An event's run says what happened.".into());
+    let no_event = || PluginError::Invalid(msg!("plugin.eventSaysWhat", "An event's run says what happened."));
     let is_event = matches!(message.action.kind, ActionKind::Event) || matches!(message.action.trigger, Trigger::Event);
     if is_event {
         let (ActionKind::Event, Trigger::Event, Some(event)) =
@@ -129,14 +135,17 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
     // Every kind and trigger has its case in the 1.0 world; one that a
     // later protocol adds needs a newer world (or a function of its own),
     // never a case that a 1.0 plugin doesn't know.
-    let no_filter = || PluginError::Invalid("A WebAssembly plugin can't filter shots.".into());
+    let no_filter = || PluginError::Invalid(msg!("plugin.wasmNoFilter", "A WebAssembly plugin can't filter shots."));
     let kind = match message.action.kind {
         ActionKind::ExportAction => wit::ActionKind::ExportAction,
         ActionKind::Command => wit::ActionKind::Command,
         ActionKind::Event => return Err(no_event()),
         ActionKind::ShotFilter => return Err(no_filter()),
         ActionKind::PackAction => {
-            return Err(PluginError::Invalid("A WebAssembly plugin can't save a scenepack.".into()));
+            return Err(PluginError::Invalid(msg!(
+                "plugin.wasmNoPack",
+                "A WebAssembly plugin can't save a scenepack."
+            )));
         }
     };
     let trigger = match message.action.trigger {

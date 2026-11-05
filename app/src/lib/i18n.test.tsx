@@ -106,6 +106,38 @@ describe("the catalog", () => {
     ])
   })
 
+  it("keeps a plugin's toast behind fixed words and its name, in every language", () => {
+    const toast = (pageToast: string) => catalogProblems({ backend: { plugin: { pageToast } } })
+    const key = "backend.plugin.pageToast"
+    expect(toast("Pluginul „{{name}}”: {{text}}")).toEqual([])
+    expect(toast("{{text}} (din {{name}})")).toEqual([
+      `${key}: starts with a plugin's words, not with fixed text`,
+      `${key}: {{name}} must come before any other variable`,
+    ])
+    expect(toast("{{name}}: {{text}}")).toEqual([`${key}: starts with a plugin's words, not with fixed text`])
+    expect(toast("„{{name}}”: {{text}}")).toEqual([`${key}: starts with a plugin's words, not with fixed text`])
+    expect(toast("Pluginul: {{text}} ({{name}})")).toEqual([`${key}: {{name}} must come before any other variable`])
+    const later = (toast: Record<string, unknown>) => catalogProblems({ plugins: { toast } })
+    expect(later({ cantStart: { named: "Plugin “{{name}}”: {{action}} can't start", anonymous: "A plugin: {{action}} can't start" } })).toEqual([])
+    expect(later({ cantStart: { named: "{{action}} can't start", anonymous: "{{action}} can't start" } })).toEqual([
+      "plugins.toast.cantStart.named: starts with a plugin's words, not with fixed text",
+      "plugins.toast.cantStart.named: {{name}} must come before any other variable",
+      "plugins.toast.cantStart.anonymous: starts with a plugin's words, not with fixed text",
+    ])
+    // Elsewhere a sentence may open with a value.
+    expect(catalogProblems({ backend: { plugin: { turnedOff: "{{name}} is turned off." } } })).toEqual([])
+  })
+
+  it("holds every other language's catalog to the same rules", () => {
+    const files = import.meta.glob<Record<string, unknown>>(["../locales/*/*.json", "!../locales/en/*", "!../locales/*/meta.json"], { eager: true, import: "default" })
+    const catalogs: Record<string, Record<string, unknown>> = {}
+    for (const [file, words] of Object.entries(files)) {
+      const [, lang, ns] = /([^/]+)\/([^/]+)\.json$/.exec(file) ?? []
+      ;(catalogs[lang] ??= {})[ns] = words
+    }
+    expect(Object.entries(catalogs).flatMap(([lang, catalog]) => catalogProblems(catalog).map((p) => `${lang}: ${p}`))).toEqual([])
+  })
+
   it("shows the pseudo-locale accented, longer and in brackets, keeping Trans tags", async () => {
     expect(pseudo("Hide 3 characters")).toBe("[Ĥîðé 3 çĥåŕåçţéŕš ······]")
     expect(pseudo("<b>3</b> frames")).toBe("[<b>3</b> ƒŕåɱéš ······]")

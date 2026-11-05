@@ -180,11 +180,12 @@ function Unread({ error, retrying, onRetry }: { error: unknown; retrying: boolea
 function Unavailable({ p }: { p: PluginInfo }) {
   const { t } = useTranslation("plugins")
   const { goPlugins } = useAppActions()
+  const why = p.broken ?? p.blockedReason
   return (
     <EmptyState
       icon={<AppWindow />}
       title={t("frame.unavailable")}
-      description={p.broken != null ? say(p.broken) : p.blockedReason != null ? say(p.blockedReason) : t("frame.turnedOff", { name: p.name })}
+      description={why ? say(why) : t("frame.turnedOff", { name: p.name })}
       actions={<Button onClick={goPlugins}>{t("goToPlugins")}</Button>}
       className="flex-1"
     />

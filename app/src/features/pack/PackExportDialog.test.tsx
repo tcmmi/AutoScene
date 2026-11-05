@@ -459,6 +459,21 @@ describe("PackExportDialog", () => {
     expect(document.body.textContent).not.toContain("[object Object]")
   })
 
+  it("says the format and what it is for in the UI's language", async () => {
+    await inLanguage("ro", { backend: { fixture: { name: "ProRes românesc (montaj)", description: "Pentru montaj." } } })
+    vi.mocked(commands.exportPresets).mockResolvedValueOnce([
+      {
+        ...prores,
+        nameMsg: { key: "fixture.name", text: prores.name },
+        descriptionMsg: { key: "fixture.description", text: prores.description },
+      },
+    ])
+    render(<PackExportDialog pid="p" character={walter} pack={pack(naming(false))} open onOpenChange={() => {}} />, { wrapper })
+    expect(await screen.findByText(/^Pentru montaj\./)).toBeTruthy()
+    expect(await screen.findByText(/in all as ProRes românesc\.$/)).toBeTruthy()
+    expect(screen.getByRole("combobox", { name: "Export format" }).textContent).toContain("ProRes românesc (montaj)")
+  })
+
   it("a broken template keeps the dialog as it was", async () => {
     vi.mocked(commands.settingsGet).mockResolvedValueOnce({
       libraryRoot: "C:\\Library",

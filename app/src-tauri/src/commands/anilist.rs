@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use as_api::{AniListMedia, AniListMerge, AniListNames, AniListSuggestion, AniListSuggestions, CastEdit};
-use as_core::{CancelToken, CharacterId, Msg, ProjectId, msg};
+use as_core::{CancelToken, CharacterId, Msg, ProjectId, ToMsg, msg};
 use as_engine::Engine;
 use as_models::ModelStore;
 use as_project::anilist::{CastMember, Looks, Media, MergeProposal, NameSuggestion, Source, Suggested};
@@ -99,14 +99,14 @@ fn portraits_failed(e: &as_engine::EngineError) -> ProjectError {
 /// animation project's face pass never needs it.
 fn embedder_ready(models: &ModelStore, cancel: &CancelToken) -> ProjectResult<()> {
     let ccip = as_models::ids::ANIME_CCIP;
-    if models.installed(ccip).map_err(|e| ProjectError::Invalid(Msg::plain(e.to_string())))?.is_some() {
+    if models.installed(ccip).map_err(|e| ProjectError::Invalid(e.msg()))?.is_some() {
         return Ok(());
     }
     models.install(ccip, cancel, |_, _| {}).map_err(|e| match e {
         as_models::ModelError::Cancelled => ProjectError::Cancelled,
         e => {
             log::warn!("names: {}", e.detail());
-            ProjectError::NotReady(Msg::plain(e.to_string()))
+            ProjectError::NotReady(e.msg())
         }
     })?;
     Ok(())

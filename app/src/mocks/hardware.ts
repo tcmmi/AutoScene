@@ -20,7 +20,7 @@
  * fills the bar; `downloading` waits at 45 MB.
  */
 import { emit } from "@tauri-apps/api/event"
-import type { AccelInfo, AccelRow, AppInfo, GraphicsClass, HardwareInfo, ThisComputer } from "@/bindings"
+import type { AccelInfo, AccelRow, AppInfo, GraphicsClass, HardwareInfo, Msg, ThisComputer } from "@/bindings"
 
 /** A card DirectML opens, and how Fast Scan's default classes it. */
 type Card = { key: string; name: string; class: GraphicsClass }
@@ -126,10 +126,14 @@ function serves(c: Card | null | undefined): boolean {
 /** The switch to start with. */
 export const initialAccelOn = accelState !== "off"
 
-type Phase = { state: "idle" } | { state: "downloading"; done: number } | { state: "failed"; message: string } | { state: "removing" }
+type Phase = { state: "idle" } | { state: "downloading"; done: number } | { state: "failed"; message: Msg } | { state: "removing" }
 
-const NO_NET = "NVIDIA's files couldn't be downloaded. Check the internet connection and try again."
-const NO_ROOM = "There isn't enough free space for NVIDIA's files. Free up 124 MB on the drive of AutoScene's data folder and try again."
+const NO_NET: Msg = { key: "accel.downloadFailed", text: "NVIDIA's files couldn't be downloaded. Check the internet connection and try again." }
+const NO_ROOM: Msg = {
+  key: "accel.noSpace",
+  args: { mb: 124 },
+  text: "There isn't enough free space for NVIDIA's files. Free up 124 MB on the drive of AutoScene's data folder and try again.",
+}
 
 /** What the mock's download and removal are doing, and whether the pack is here. */
 let phase: Phase =
@@ -251,7 +255,7 @@ export function hardwareInfo(gpu: string, pending: boolean, accelOn: boolean): H
         : { kind: "gpu", name: c ? label(c) : "" }
   const selected = index === "cpu" ? "cpu" : choice === "cards" && gpu !== "" && !missing && c ? c.key : "auto"
   return {
-    gpus: openable.map((o) => ({ key: o.key, name: label(o) })),
+    gpus: openable.map((o) => ({ key: o.key, name: { key: "", text: label(o) } })),
     choice,
     selected,
     using,

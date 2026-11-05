@@ -505,7 +505,11 @@ pub(crate) fn command(
     let entry = || -> PluginResult<PathBuf> {
         let entry = std::path::absolute(launch.entry_in(dir))?;
         if !entry.is_file() {
-            return Err(PluginError::Invalid(format!("{name} can't start: one of its files is missing.")));
+            return Err(PluginError::Invalid(as_core::msg!(
+                "plugin.cantStartFileMissing",
+                "{{name}} can't start: one of its files is missing.",
+                name = name
+            )));
         }
         Ok(entry)
     };
@@ -513,7 +517,11 @@ pub(crate) fn command(
         Launch::Exe { args, .. } => {
             let program = entry()?;
             if !runnable(&program) {
-                return Err(PluginError::Invalid(format!("{name} can't start: its program isn't marked as runnable.")));
+                return Err(PluginError::Invalid(as_core::msg!(
+                    "plugin.cantStartNotRunnable",
+                    "{{name}} can't start: its program isn't marked as runnable.",
+                    name = name
+                )));
             }
             let mut cmd = Command::new(program);
             cmd.args(args);
@@ -532,7 +540,11 @@ pub(crate) fn command(
             Ok(cmd)
         }
         // The store neither stages nor loads one for a run (it needs a newer AutoScene).
-        Launch::Wasm { .. } => Err(PluginError::Invalid(format!("{name} runs in a sandbox, not as a program."))),
+        Launch::Wasm { .. } => Err(PluginError::Invalid(as_core::msg!(
+            "plugin.runsInSandbox",
+            "{{name}} runs in a sandbox, not as a program.",
+            name = name
+        ))),
     }
 }
 

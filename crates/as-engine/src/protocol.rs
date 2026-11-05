@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+use as_core::Msg;
 use as_infer::accel::AccelState;
 use as_infer::hardware::Hardware;
 use as_media::MediaInfo;
@@ -200,20 +201,61 @@ pub enum Reply {
     },
     Failed {
         id: u64,
+        /// The English, for a reply that has no `msg`.
         message: String,
+        /// The same words for the UI.
+        #[serde(default)]
+        msg: Option<Msg>,
         detail: String,
         cancelled: bool,
     },
     /// The engine can't work at all (runtime or ffmpeg missing) and exits.
     Fatal {
         message: String,
+        #[serde(default)]
+        msg: Option<Msg>,
         detail: String,
     },
 }
 
+impl Reply {
+    /// A job's failure, in both forms.
+    pub(crate) fn failed(id: u64, said: Msg, detail: String, cancelled: bool) -> Self {
+        Self::Failed { id, message: said.text.clone(), msg: Some(said), detail, cancelled }
+    }
+
+    /// The engine's end, in both forms.
+    pub(crate) fn fatal(said: Msg, detail: String) -> Self {
+        Self::Fatal { message: said.text.clone(), msg: Some(said), detail }
+    }
+}
+
+/// What a failure's reply says: its `msg`, or its English as plain words
+/// when it has none.
+pub(crate) fn said(message: String, msg: Option<Msg>) -> Msg {
+    msg.unwrap_or_else(|| Msg::plain(message))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+    use as_core::msg;
+
     use super::*;
+
+    #[test]
+    fn a_failure_reply_reads_with_and_without_its_key() {
+        let reply = Reply::failed(5, msg!("infer.model", "An AI model couldn't be loaded."), "no file".into(), false);
+        let line = serde_json::to_string(&reply).unwrap();
+        let Reply::Failed { message, msg, .. } = serde_json::from_str(&line).unwrap() else { panic!("{line}") };
+        assert_eq!(said(message, msg).key, "infer.model");
+        // A reply of an engine from before keys.
+        let old = r#"{"event":"failed","id":5,"message":"It failed.","detail":"x","cancelled":false}"#;
+        let Reply::Failed { message, msg, .. } = serde_json::from_str(old).unwrap() else { panic!("{old}") };
+        assert_eq!(said(message, msg), Msg::plain("It failed."));
+        let old = r#"{"event":"fatal","message":"It can't work.","detail":"x"}"#;
+        let Reply::Fatal { message, msg, .. } = serde_json::from_str(old).unwrap() else { panic!("{old}") };
+        assert_eq!(said(message, msg), Msg::plain("It can't work."));
+    }
 
     #[test]
     fn blobs_travel_as_base64() {

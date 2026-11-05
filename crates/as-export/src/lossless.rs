@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::SystemTime;
 
-use as_core::CancelToken;
+use as_core::{CancelToken, msg};
 use as_media::{Caps, CodecFamily, ExactAudio, ExactFormat, Tools, Vendor, run_ffmpeg};
 
 use crate::clip::Encoding;
@@ -352,7 +352,11 @@ pub(crate) fn keeper(caps: &Caps, exact: &ExactFormat, source_codec: &str, (w, h
     if !caps.has_sw("libx265") && !caps.has_sw("ffv1") {
         return Err(ExportError::EncoderMissing("ffv1".into()));
     }
-    Err(ExportError::Inexact(format!("its pictures ({fmt}) can't be kept as they are")))
+    Err(ExportError::Inexact(msg!(
+        "export.why.pictures",
+        "its pictures ({{format}}) can't be kept as they are",
+        format = fmt
+    )))
 }
 
 /// The codec a picture of `pix_fmt` and `size` will be kept in, as
@@ -389,7 +393,13 @@ pub(crate) fn pcm_codec(a: &ExactAudio) -> ExportResult<&'static str> {
         "s32" if (1..=24).contains(&a.bits) => "pcm_s24le",
         "s32" => "pcm_s32le",
         "u8" => "pcm_u8",
-        _ => return Err(ExportError::Inexact(format!("its sound ({fmt}) can't be kept as it is"))),
+        _ => {
+            return Err(ExportError::Inexact(msg!(
+                "export.why.sound",
+                "its sound ({{format}}) can't be kept as it is",
+                format = fmt
+            )));
+        }
     })
 }
 

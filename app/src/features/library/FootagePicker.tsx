@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { useTranslation } from "react-i18next"
 import type { ContentKind } from "@/bindings"
 import { Segmented } from "@/components/ui/segmented"
 import { FOOTAGE, type Footage } from "@/lib/footage"
@@ -17,13 +18,14 @@ export function FootagePicker({
   onChange: (v: ContentKind) => void
   locked?: Partial<Record<ContentKind, string>>
 }) {
+  const { t } = useTranslation("library")
   // Fetched ahead, so a preview shows whole the moment it opens.
   useEffect(() => {
     for (const f of FOOTAGE) for (const src of f.stills) new Image().src = src
   }, [])
   return (
     <Segmented<ContentKind>
-      aria-label="Footage"
+      aria-label={t("footage.label")}
       value={value}
       onChange={onChange}
       options={FOOTAGE.map((f) => ({
@@ -37,6 +39,7 @@ export function FootagePicker({
 }
 
 function FootagePreview({ footage: f, locked }: { footage: Footage; locked?: string }) {
+  const { t } = useTranslation("library")
   const [wide, a, b] = f.stills
   return (
     <div>
@@ -49,7 +52,7 @@ function FootagePreview({ footage: f, locked }: { footage: Footage; locked?: str
         <div className="text-sm font-medium text-fg-1">{f.label}</div>
         <p className="mt-0.5 text-xs text-fg-2">{f.blurb}</p>
         {locked && <p className="mt-1.5 text-xs text-accent">{locked}</p>}
-        <p className="mt-2 text-2xs text-fg-3">Stills: {f.credit}</p>
+        <p className="mt-2 text-2xs text-fg-3">{t("footage.stills", { credit: f.credit })}</p>
       </div>
     </div>
   )

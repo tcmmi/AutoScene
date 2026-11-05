@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { FilmSlate, Plus, Scissors, UserFocus, Users } from "@/components/icons"
 import type { ProjectSummary } from "@/bindings"
 import { AutoSceneMark } from "@/components/brand/AutoSceneMark"
@@ -23,25 +24,8 @@ import { ProjectCard } from "./ProjectCard"
 import { DeleteProjectDialog, ProjectDetailsDialog } from "./ProjectDialogs"
 import { NewProjectItems, ProjectItems } from "./project-actions"
 
-const STEPS: { icon: React.ReactNode; title: string; body: string }[] = [
-  {
-    icon: <FilmSlate />,
-    title: "Add episodes",
-    body: "Drop a season folder or a movie. Episodes are recognised and put in order automatically.",
-  },
-  {
-    icon: <Users />,
-    title: "Meet the cast",
-    body: "Every character is found across all episodes. Name, merge or correct them in a keystroke.",
-  },
-  {
-    icon: <Scissors />,
-    title: "Export packs",
-    body: "Frame-exact clips in ProRes, DNxHR or H.264, named by character and episode, ready for any editor.",
-  },
-]
-
 export function LibraryPage() {
+  const { t } = useTranslation("library")
   const { data: projects, isPending, isError, error, refetch } = useProjects()
   const newProject = useNewProject((s) => s.show)
   const [renaming, setRenaming] = useState<ProjectSummary | null>(null)
@@ -54,17 +38,17 @@ export function LibraryPage() {
     <Page
       menu={<NewProjectItems kit={contextKit} page />}
       topbar={
-        <TopBar title="Library" overlay>
+        <TopBar title={t("page.title")} overlay>
           {!empty && (
             <Button size="sm" variant={latest?.poster ? "glass" : "secondary"} onClick={() => newProject()}>
-              <Plus weight="bold" /> New project
+              <Plus weight="bold" /> {t("page.newProject")}
             </Button>
           )}
         </TopBar>
       }
     >
       {isError && projects === undefined ? (
-        <ErrorState error={error} title="The library couldn't be loaded" className="h-full" onRetry={() => void refetch()} />
+        <ErrorState error={error} title={t("page.loadFailed")} className="h-full" onRetry={() => void refetch()} />
       ) : empty ? (
         <Welcome onCreate={() => newProject()} />
       ) : (
@@ -74,7 +58,7 @@ export function LibraryPage() {
           ) : (
             <div className="h-[clamp(380px,56vh,600px)]" />
           )}
-          <Section title="All projects" count={projects?.length} className="-mt-2 pb-14">
+          <Section title={t("page.allProjects")} count={projects?.length} className="-mt-2 pb-14">
             <div className={CARD_GRID}>
               {isPending
                 ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="aspect-video rounded-2xl" />)
@@ -89,8 +73,8 @@ export function LibraryPage() {
                   <span className="flex size-12 items-center justify-center rounded-full bg-white/[0.06] transition-colors group-hover:bg-white/[0.12] [&_svg]:size-5">
                     <Plus weight="bold" />
                   </span>
-                  <span className="text-md font-medium">New project</span>
-                  <span className="text-xs text-fg-3">or drop a season folder anywhere</span>
+                  <span className="text-md font-medium">{t("page.newProject")}</span>
+                  <span className="text-xs text-fg-3">{t("page.dropHint")}</span>
                 </button>
               </ContextArea>
             </div>
@@ -105,13 +89,14 @@ export function LibraryPage() {
 
 /** The project touched last, big: pick up where you left off. */
 function Featured({ project: p, onRename, onDelete }: { project: ProjectSummary; onRename: () => void; onDelete: () => void }) {
+  const { t } = useTranslation("library")
   // The colour of a picture is the same at any size: read it from the small one.
   const ambient = useAmbient(p.posterSmall ?? p.poster)
   return (
     <ContextArea menu={<ProjectItems kit={contextKit} project={p} onRename={onRename} onDelete={onDelete} />}>
       <Hero path={p.poster} ambient={ambient}>
         <div className="max-w-2xl">
-          <p className="eyebrow text-white/70">Continue</p>
+          <p className="eyebrow text-white/70">{t("page.continue")}</p>
           <h1 className="display mt-2 text-6xl text-white">{p.title}</h1>
           <p className="mt-3 text-lg text-white/75">
             {projectFacts(p)}
@@ -120,12 +105,12 @@ function Featured({ project: p, onRename, onDelete }: { project: ProjectSummary;
           <div className="mt-7 flex items-center gap-3">
             <Button size="lg" variant="primary" asChild>
               <Link to="/p/$pid" params={{ pid: p.id }}>
-                Open project
+                {t("project.open")}
               </Link>
             </Button>
             <Button size="lg" variant="glass" asChild>
               <Link to="/p/$pid/cast" params={{ pid: p.id }}>
-                <UserFocus /> Cast
+                <UserFocus /> {t("project.cast")}
               </Link>
             </Button>
           </div>
@@ -135,7 +120,13 @@ function Featured({ project: p, onRename, onDelete }: { project: ProjectSummary;
   )
 }
 
-function Welcome({ onCreate }: { onCreate: () => void }) {
+export function Welcome({ onCreate }: { onCreate: () => void }) {
+  const { t } = useTranslation("library")
+  const steps: { icon: React.ReactNode; title: string; body: string }[] = [
+    { icon: <FilmSlate />, title: t("welcome.steps.add.title"), body: t("welcome.steps.add.body") },
+    { icon: <Users />, title: t("welcome.steps.cast.title"), body: t("welcome.steps.cast.body") },
+    { icon: <Scissors />, title: t("welcome.steps.export.title"), body: t("welcome.steps.export.body") },
+  ]
   return (
     <div className="relative flex min-h-full flex-col items-center px-10 pt-[18vh] pb-16 text-center">
       <div
@@ -143,19 +134,18 @@ function Welcome({ onCreate }: { onCreate: () => void }) {
         className="pointer-events-none absolute inset-x-0 top-0 h-[70vh] bg-[radial-gradient(50%_60%_at_50%_20%,rgb(224_180_92/0.14),transparent_70%)]"
       />
       <AutoSceneMark className="relative size-20 drop-shadow-[0_12px_40px_rgb(224_180_92/0.35)]" />
-      <h1 className="display relative mt-8 text-6xl text-fg-1">Build your first scenepack</h1>
+      <h1 className="display relative mt-8 text-6xl text-fg-1">{t("welcome.title")}</h1>
       <p className="relative mt-4 max-w-xl text-lg text-fg-2">
-        AutoScene finds every shot, learns the cast across episodes, and cuts clean, frame-exact clips of the character you
-        choose.
+        {t("welcome.intro")}
       </p>
       <div className="relative mt-9 flex items-center gap-4">
         <Button variant="primary" size="lg" onClick={onCreate}>
-          <Plus weight="bold" /> New project
+          <Plus weight="bold" /> {t("page.newProject")}
         </Button>
-        <span className="text-sm text-fg-3">or drop a season folder anywhere</span>
+        <span className="text-sm text-fg-3">{t("page.dropHint")}</span>
       </div>
       <ol className="relative mt-16 grid w-full max-w-4xl grid-cols-1 gap-4 text-left md:grid-cols-3">
-        {STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <li key={s.title} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 backdrop-blur-xl">
             <div className="flex items-center gap-3">
               <span className="flex size-10 items-center justify-center rounded-xl bg-white/[0.07] text-fg-1 [&_svg]:size-5">

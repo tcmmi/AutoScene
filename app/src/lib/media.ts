@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core"
 import { open, save } from "@tauri-apps/plugin-dialog"
 import type { MediaInfo, MediaItem } from "@/bindings"
+import { fmt, t } from "./i18n"
 import { isTauri } from "./platform"
 
 /** URL the webview can load for a local file (asset protocol). The mock backend already returns URLs. */
@@ -86,54 +87,37 @@ export function formatFlags(m: MediaItem): string[] {
   if (v.hdr === "pq") flags.push("HDR10")
   if (v.hdr === "hlg") flags.push("HLG")
   if (v.hdr === "dolby_vision") flags.push("Dolby Vision")
-  if (v.bitDepth > 8) flags.push(`${v.bitDepth}-bit`)
+  if (v.bitDepth > 8) flags.push(t("media:flags.bitDepth", { n: v.bitDepth }))
   if (m.vfr) flags.push("VFR")
-  if (m.interlaced) flags.push("Interlaced")
+  if (m.interlaced) flags.push(t("media:flags.interlaced"))
   return flags
 }
 
 type AudioStream = MediaInfo["audio"][number]
 
-/** ISO 639-2 code (both /B and /T forms) or 639-1 code → English name. Mirrors `as_media::lang`. */
-const LANG: Record<string, string> = {
-  eng: "English", en: "English",
-  jpn: "Japanese", ja: "Japanese",
-  deu: "German", ger: "German", de: "German",
-  fra: "French", fre: "French", fr: "French",
-  spa: "Spanish", es: "Spanish",
-  ita: "Italian", it: "Italian",
-  por: "Portuguese", pt: "Portuguese",
-  rus: "Russian", ru: "Russian",
-  kor: "Korean", ko: "Korean",
-  zho: "Chinese", chi: "Chinese", zh: "Chinese",
-  hin: "Hindi", hi: "Hindi",
-  ara: "Arabic", ar: "Arabic",
-  tur: "Turkish", tr: "Turkish",
-  pol: "Polish", pl: "Polish",
-  nld: "Dutch", dut: "Dutch", nl: "Dutch",
-  swe: "Swedish", sv: "Swedish",
-  nor: "Norwegian", no: "Norwegian",
-  dan: "Danish", da: "Danish",
-  fin: "Finnish", fi: "Finnish",
-  ces: "Czech", cze: "Czech", cs: "Czech",
-  hun: "Hungarian", hu: "Hungarian",
-  ell: "Greek", gre: "Greek", el: "Greek",
-  heb: "Hebrew", he: "Hebrew",
-  tha: "Thai", th: "Thai",
-  vie: "Vietnamese", vi: "Vietnamese",
-  ind: "Indonesian", id: "Indonesian",
-  ukr: "Ukrainian", uk: "Ukrainian",
-  ron: "Romanian", rum: "Romanian", ro: "Romanian",
-  tam: "Tamil", ta: "Tamil",
-  tel: "Telugu", te: "Telugu",
-}
+/**
+ * The codes AutoScene names: ISO 639-2 (both /B and /T forms) and 639-1.
+ * Mirrors `as_media::lang`. The names come from the platform, in the UI's
+ * language (`fmt.languageName`); any other code reads as the code.
+ */
+const NAMED_LANGUAGES = new Set([
+  ...["eng", "en", "jpn", "ja", "deu", "ger", "de", "fra", "fre", "fr", "spa", "es", "ita", "it", "por", "pt"],
+  ...["rus", "ru", "kor", "ko", "zho", "chi", "zh", "hin", "hi", "ara", "ar", "tur", "tr", "pol", "pl"],
+  ...["nld", "dut", "nl", "swe", "sv", "nor", "no", "dan", "da", "fin", "fi", "ces", "cze", "cs", "hun", "hu"],
+  ...["ell", "gre", "el", "heb", "he", "tha", "th", "vie", "vi", "ind", "id", "ukr", "uk", "ron", "rum", "ro"],
+  ...["tam", "ta", "tel", "te"],
+])
+
+/** The /B forms older platform data may not know: asked for by their /T twin. */
+const TERMINOLOGIC: Record<string, string> = { ger: "deu", fre: "fra", chi: "zho", dut: "nld", gre: "ell", rum: "ron", cze: "ces" }
 
 export function languageName(code: string | null | undefined): string | null {
   if (!code) return null
   const c = code.toLowerCase().split(/[-_]/)[0]
-  return LANG[c] ?? code.toUpperCase()
+  return (NAMED_LANGUAGES.has(c) ? fmt.languageName(TERMINOLOGIC[c] ?? c) : undefined) ?? code.toUpperCase()
 }
 
+// i18n-ignore: codec names are product names, the same in every language
 const AUDIO_CODECS: Record<string, string> = {
   ac3: "Dolby Digital",
   eac3: "Dolby Digital Plus",
@@ -156,13 +140,27 @@ function audioCodecLabel(a: AudioStream): string {
 }
 
 function channelLabel(n: number): string {
-  return n === 1 ? "Mono" : n === 2 ? "Stereo" : n === 6 ? "5.1" : n === 8 ? "7.1" : n === 3 ? "2.1" : `${n} ch`
+  return n === 1
+    ? t("media:audio.mono")
+    : n === 2
+      ? t("media:audio.stereo")
+      : n === 6
+        ? "5.1"
+        : n === 8
+          ? "7.1"
+          : n === 3
+            ? "2.1"
+            : t("media:audio.channels", { n })
 }
 
 /** "English · DTS-HD MA · 5.1" — language first, so the right track is obvious at a glance. */
 export function audioLabel(a: AudioStream): string {
-  const parts = [languageName(a.language) ?? `Track ${a.ordinal + 1}`, audioCodecLabel(a), channelLabel(a.channels)]
-  if (a.commentary) parts.push("Commentary")
+  const parts = [
+    languageName(a.language) ?? t("media:audio.track", { n: a.ordinal + 1 }),
+    audioCodecLabel(a),
+    channelLabel(a.channels),
+  ]
+  if (a.commentary) parts.push(t("media:audio.commentary"))
   return parts.join(" · ")
 }
 
@@ -182,38 +180,40 @@ export function currentAudio(m: Pick<MediaItem, "audioOrdinal" | "info">): numbe
   return m.audioOrdinal ?? audio.find((a) => a.default)?.ordinal ?? audio[0]?.ordinal
 }
 
-/** Audio languages offered as the automatic choice, by ISO 639-2 code. */
-export const PREFERRED_AUDIO_LANGUAGES: { value: string; label: string }[] = [
-  { value: "eng", label: "English" },
-  { value: "jpn", label: "Japanese" },
-  { value: "deu", label: "German" },
-  { value: "fra", label: "French" },
-  { value: "spa", label: "Spanish" },
-  { value: "ita", label: "Italian" },
-  { value: "por", label: "Portuguese" },
-  { value: "kor", label: "Korean" },
-  { value: "zho", label: "Chinese" },
-  { value: "hin", label: "Hindi" },
-  { value: "rus", label: "Russian" },
-  { value: "", label: "Each file's default track" },
-]
+/** The codes of the audio languages offered as the automatic choice (ISO 639-2), and "" for each file's own track. */
+const PREFERRED_CODES = ["eng", "jpn", "deu", "fra", "spa", "ita", "por", "kor", "zho", "hin", "rus", ""] as const
+
+/**
+ * Audio languages offered as the automatic choice, by ISO 639-2 code. Each
+ * `label` is looked up when it is read, in the UI's language.
+ */
+export const PREFERRED_AUDIO_LANGUAGES: { value: string; label: string }[] = PREFERRED_CODES.map((value) => ({
+  value,
+  get label() {
+    return value ? (languageName(value) ?? value.toUpperCase()) : t("media:audio.defaultTrack")
+  },
+}))
 
 const VIDEO_EXTENSIONS = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "ts", "m2ts", "mts", "mpg", "mpeg", "vob", "flv", "ogv", "3gp"]
 
 export async function pickVideoFiles(): Promise<string[]> {
-  const picked = await open({ multiple: true, filters: [{ name: "Video", extensions: VIDEO_EXTENSIONS }] })
+  const picked = await open({ multiple: true, filters: [{ name: t("media:dialog.videoFilter"), extensions: VIDEO_EXTENSIONS }] })
   return picked ?? []
 }
 
 /** One video file. */
 export async function pickVideoFile(title?: string): Promise<string | null> {
-  const picked = await open({ multiple: false, title, filters: [{ name: "Video", extensions: VIDEO_EXTENSIONS }] })
+  const picked = await open({ multiple: false, title, filters: [{ name: t("media:dialog.videoFilter"), extensions: VIDEO_EXTENSIONS }] })
   return typeof picked === "string" ? picked : null
 }
 
 /** A plugin package (`.asp`). */
 export async function pickPluginFile(): Promise<string | null> {
-  const picked = await open({ multiple: false, title: "Install a plugin", filters: [{ name: "AutoScene plugin", extensions: ["asp"] }] })
+  const picked = await open({
+    multiple: false,
+    title: t("media:dialog.installPlugin"),
+    filters: [{ name: t("media:dialog.pluginFilter"), extensions: ["asp"] }],
+  })
   return typeof picked === "string" ? picked : null
 }
 

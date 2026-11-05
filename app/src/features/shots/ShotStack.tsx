@@ -1,4 +1,5 @@
 import { memo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { CaretDown, Copy, Play, X } from "@/components/icons"
 import type { CharacterShot, MediaItem } from "@/bindings"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +10,7 @@ import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-m
 import { Tooltip } from "@/components/ui/tooltip"
 import type { GridLayout } from "@/components/ui/virtual-grid"
 import { formatDuration } from "@/lib/format"
+import { t as translate } from "@/lib/i18n"
 import { assetUrl } from "@/lib/media"
 import { copyText } from "@/lib/os"
 import { matchShortcut, SHOTS_SHORTCUTS, useShortcutKeys } from "@/lib/shortcuts"
@@ -34,7 +36,7 @@ function facts(card: StackCard, media?: MediaItem) {
   return {
     clock,
     where: clock && `${media?.label ? `${media.label} · ` : ""}${clock}`,
-    count: `${card.shots.length} shots${length && ` · ${length}`}`,
+    count: `${translate("library:shots.count", { count: card.shots.length })}${length && ` · ${length}`}`,
     length,
   }
 }
@@ -140,6 +142,7 @@ export const ShotStack = memo(function ShotStack({
   onToggle: (card: StackCard, show: boolean) => void
   onWatch: (card: StackCard) => void
 }) {
+  const { t } = useTranslation(["library", "common"])
   const scrub = useStackScrub(card)
   const keys = useShortcutKeys()
   const { shots } = card
@@ -152,15 +155,15 @@ export const ShotStack = memo(function ShotStack({
   const menu = (
     <>
       <ContextMenuItem onSelect={() => onToggle(card, !open)} shortcut={keys(open ? "shots.close" : "shots.toggle")}>
-        {open ? <X /> : <CaretDown />} {open ? "Hide its shots" : "Show its shots"}
+        {open ? <X /> : <CaretDown />} {t(open ? "shots.hide" : "shots.show")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => onWatch(card)} shortcut={keys("shots.watch")}>
-        <Play /> Watch from the first shot
+        <Play /> {t("shots.watchFromFirst")}
       </ContextMenuItem>
       <ContextMenuSeparator />
       {at && (
         <ContextMenuItem onSelect={() => void copyText(at, "timecode")}>
-          <Copy /> Copy timecode
+          <Copy /> {t("shots.copyTimecode")}
         </ContextMenuItem>
       )}
     </>
@@ -173,7 +176,7 @@ export const ShotStack = memo(function ShotStack({
         <span className="pointer-events-none absolute inset-x-4 -top-3 h-full rounded-xl bg-white/[0.05] picture-edge" aria-hidden />
         <span className="pointer-events-none absolute inset-x-2 -top-1.5 h-full rounded-xl bg-white/[0.08] picture-edge" aria-hidden />
         {/* Open, there's nothing to tell. */}
-        <Tooltip label={where} hint={`${shots.length} shots close together · Click to see them`} side="top" delay={600} disabled={!where || open}>
+        <Tooltip label={where} hint={t("shots.together", { count: shots.length })} side="top" delay={600} disabled={!where || open}>
           <button
             type="button"
             aria-expanded={open}
@@ -198,7 +201,13 @@ export const ShotStack = memo(function ShotStack({
                 }
               }
             }}
-            aria-label={`${shots.length} shots${where ? ` at ${where}` : ""}${length ? `, ${length}` : ""}${faceless ? ", without their face" : ""}`}
+            aria-label={[
+              where ? t("shots.countAt", { count: shots.length, where }) : t("shots.count", { count: shots.length }),
+              length,
+              faceless ? t("shots.withoutFace") : "",
+            ]
+              .filter(Boolean)
+              .join(", ")}
             className={cn(
               "relative block size-full overflow-hidden rounded-xl bg-inset text-left outline-none picture-edge",
               "transition-[transform,box-shadow] duration-[var(--dur-med)] ease-out",
@@ -221,7 +230,7 @@ export const ShotStack = memo(function ShotStack({
             </span>
           </button>
         </Tooltip>
-        <CardPlayButton onClick={() => onWatch(card)} aria-label={`Watch from ${where}`} />
+        <CardPlayButton onClick={() => onWatch(card)} aria-label={t("shots.watchFromWhere", { where })} />
       </div>
     </ContextArea>
   )
@@ -255,12 +264,13 @@ export const ShotBand = memo(function ShotBand({
   onWatch: (card: StackCard) => void
   onClose: () => void
 }) {
+  const { t } = useTranslation(["library", "common"])
   const keys = useShortcutKeys()
   const { clock, where, count } = facts(card, media)
   return (
     <section
       id={BAND_ID}
-      aria-label={`${count}${where ? ` at ${where}` : ""}`}
+      aria-label={where ? t("shots.bandAt", { facts: count, where }) : count}
       className="relative animate-rise-in rounded-3xl bg-white/[0.04] p-5 ring-1 ring-white/[0.06] [animation-duration:var(--dur-med)]"
     >
       <span
@@ -275,10 +285,10 @@ export const ShotBand = memo(function ShotBand({
         </p>
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" variant="glass" onClick={() => onWatch(card)}>
-            <Play weight="fill" /> {clock ? `Watch from ${clock}` : "Watch from the first shot"}
+            <Play weight="fill" /> {clock ? t("shots.watchFromClock", { clock }) : t("shots.watchFromFirst")}
           </Button>
-          <Tooltip label="Close" shortcut={keys("shots.close")}>
-            <Button size="icon-sm" variant="glass" onClick={onClose} aria-label="Close">
+          <Tooltip label={t("common:action.close")} shortcut={keys("shots.close")}>
+            <Button size="icon-sm" variant="glass" onClick={onClose} aria-label={t("common:action.close")}>
               <X />
             </Button>
           </Tooltip>

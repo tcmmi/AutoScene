@@ -1,4 +1,5 @@
 import { FilePlus, FilmStrip, FolderOpen, FolderPlus, Package, PencilSimple, Play, Plus, Trash, Users } from "@/components/icons"
+import { useTranslation } from "react-i18next"
 import type { ProjectSummary } from "@/bindings"
 import type { MenuKit } from "@/components/ui/menu-actions"
 import { useAppActions } from "@/lib/actions"
@@ -22,32 +23,33 @@ export function ProjectItems({
   onRename: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation("library")
   const actions = useAppActions()
   const { Item, Separator } = kit
   return (
     <>
       <Item onSelect={() => actions.goProject(p.id)}>
-        <Play /> Open project
+        <Play /> {t("project.open")}
       </Item>
       <Item onSelect={() => actions.goProject(p.id, "episodes")}>
-        <FilmStrip /> {p.kind === "movie" ? "Files" : "Episodes"}
+        <FilmStrip /> {t(p.kind === "movie" ? "project.files" : "project.episodes")}
       </Item>
       <Item onSelect={() => actions.goProject(p.id, "cast")}>
-        <Users /> Cast
+        <Users /> {t("project.cast")}
       </Item>
       <Item onSelect={() => actions.goProject(p.id, "exports")}>
-        <Package /> Exports
+        <Package /> {t("project.exports")}
       </Item>
       <Separator />
       <Item onSelect={() => reveal(p.dir)}>
-        <FolderOpen /> Show project folder
+        <FolderOpen /> {t("project.showFolder")}
       </Item>
       <Item onSelect={onRename}>
-        <PencilSimple /> Edit details…
+        <PencilSimple /> {t("project.editDetails")}
       </Item>
       <Separator />
       <Item destructive onSelect={onDelete}>
-        <Trash /> Remove…
+        <Trash /> {t("project.remove")}
       </Item>
     </>
   )
@@ -59,6 +61,7 @@ export function ProjectItems({
  * the app's own entries below.
  */
 export function NewProjectItems({ kit, page = false }: { kit: MenuKit; page?: boolean }) {
+  const { t } = useTranslation("library")
   const keys = useShortcutKeys()
   const { Item } = kit
   const show = (paths: string[]) => useNewProject.getState().show(paths)
@@ -66,14 +69,14 @@ export function NewProjectItems({ kit, page = false }: { kit: MenuKit; page?: bo
     <>
       {!page && (
         <Item onSelect={() => show([])} shortcut={keys("global.newProject")}>
-          <Plus /> New project…
+          <Plus /> {t("menu.newProject")}
         </Item>
       )}
       <Item onSelect={() => void pickFolder().then((p) => p && show([p]))}>
-        <FolderPlus /> {page ? "New project from a folder…" : "From a folder…"}
+        <FolderPlus /> {t(page ? "menu.newFromFolderPage" : "menu.fromFolder")}
       </Item>
       <Item onSelect={() => void pickVideoFiles().then((files) => files.length > 0 && show(files))}>
-        <FilePlus /> {page ? "New project from files…" : "From files…"}
+        <FilePlus /> {t(page ? "menu.newFromFilesPage" : "menu.fromFiles")}
       </Item>
     </>
   )

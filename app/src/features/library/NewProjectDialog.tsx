@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { CircleNotch, FilePlus, FilmSlate, FilmStrip, FolderPlus, Television, Warning, X } from "@/components/icons"
 import { toast } from "sonner"
 import type { ContentKind, ImportCandidate, ProjectKind } from "@/bindings"
@@ -12,6 +13,7 @@ import { Switch } from "@/components/ui/switch"
 import { newProjectHint, startsFast } from "@/lib/fast-scan"
 import { footageBlurb } from "@/lib/footage"
 import { formatBytes } from "@/lib/format"
+import { t as translate } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { fileStem, pickFolder, pickVideoFiles } from "@/lib/media"
 import { useScanDefaults, useSettings } from "@/lib/queries"
@@ -32,6 +34,7 @@ export function NewProjectDialog() {
 }
 
 function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }) {
+  const { t } = useTranslation(["library", "common"])
   const navigate = useNavigate()
   const [title, setTitle] = useState("")
   const titleTouched = useRef(false)
@@ -85,7 +88,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
       .catch((e) => {
         if (stale) return
         setScan({ key: JSON.stringify([kind, sources]), found: [] })
-        toast.error("Couldn't read those files", { description: errorMessage(e) })
+        toast.error(translate("library:newProject.readFailed"), { description: errorMessage(e) })
       })
     return () => {
       stale = true
@@ -106,7 +109,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
       onDone()
       void navigate({ to: "/p/$pid/episodes", params: { pid: p.id } })
     } catch (e) {
-      toast.error("Couldn't create the project", { description: errorMessage(e) })
+      toast.error(t("newProject.createFailed"), { description: errorMessage(e) })
     } finally {
       setCreating(false)
     }
@@ -114,42 +117,42 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
 
   return (
     <DialogContent
-      title="New project"
-      description="A project is one series or movie. Episodes are recognised and ordered from their file names."
+      title={t("newProject.title")}
+      description={t("newProject.description")}
       className="w-[min(760px,calc(100vw-32px))]"
     >
-      <div className="grid grid-cols-[1fr_15rem] items-start gap-4">
-        <Field label="Title" htmlFor="np-title">
+      <div className="grid grid-cols-[1fr_minmax(15rem,auto)] items-start gap-4">
+        <Field label={t("newProject.titleLabel")} htmlFor="np-title">
           <Input
             id="np-title"
             autoFocus
             value={title}
-            placeholder="Series or movie title"
+            placeholder={t("newProject.titlePlaceholder")}
             onChange={(e) => {
               titleTouched.current = true
               setTitle(e.target.value)
             }}
           />
         </Field>
-        <Field label="Type" className="items-start">
+        <Field label={t("newProject.typeLabel")} className="items-start">
           <Segmented<ProjectKind>
-            aria-label="Project type"
+            aria-label={t("newProject.typeAria")}
             value={kind}
             onChange={(v) => {
               kindTouched.current = true
               setKind(v)
             }}
             options={[
-              { value: "series", label: <><Television /> Series</> },
-              { value: "movie", label: <><FilmStrip /> Movie</> },
+              { value: "series", label: <><Television /> {t("newProject.series")}</> },
+              { value: "movie", label: <><FilmStrip /> {t("newProject.movie")}</> },
             ]}
           />
         </Field>
-        <Field label="Footage" hint={footageBlurb(content)} className="items-start">
+        <Field label={t("footage.label")} hint={footageBlurb(content)} className="items-start">
           <FootagePicker value={content} onChange={setContent} />
         </Field>
         <Field
-          label="Fast Scan"
+          label={t("newProject.fastScan")}
           htmlFor="np-fast-scan"
           hint={scanKnown ? newProjectHint(content, findBodies, scanDefaults) : undefined}
           className="items-start"
@@ -172,8 +175,8 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
             <span className="flex size-12 items-center justify-center rounded-full bg-accent-subtle text-accent [&_svg]:size-6">
               <FilePlus />
             </span>
-            <p className="mt-3 text-lg font-medium text-fg-1">Drop to add to this project</p>
-            <p className="mt-1 text-sm text-fg-3">Season folders and video files</p>
+            <p className="mt-3 text-lg font-medium text-fg-1">{t("newProject.dropToAdd")}</p>
+            <p className="mt-1 text-sm text-fg-3">{t("newProject.dropToAddKinds")}</p>
           </div>
         )}
         {candidates.length === 0 ? (
@@ -186,16 +189,16 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
                 <div className="flex size-14 items-center justify-center rounded-2xl bg-white/[0.06] text-fg-1 [&_svg]:size-7">
                   <FilmSlate />
                 </div>
-                <p className="mt-4 text-lg font-medium text-fg-1">Drop a season folder or video files here</p>
-                <p className="mt-1 text-sm text-fg-3">MKV, MP4, MOV, TS and more. Sources are never copied or changed.</p>
+                <p className="mt-4 text-lg font-medium text-fg-1">{t("newProject.dropHere")}</p>
+                <p className="mt-1 text-sm text-fg-3">{t("newProject.dropFormats")}</p>
               </>
             )}
             <div className="mt-6 flex gap-2.5">
-              <Button onClick={() => void pickFolder("Choose a season or movie folder").then((p) => p && addSources([p]))}>
-                <FolderPlus /> Add folder…
+              <Button onClick={() => void pickFolder(t("newProject.chooseFolder")).then((p) => p && addSources([p]))}>
+                <FolderPlus /> {t("newProject.addFolder")}
               </Button>
               <Button variant="ghost" onClick={() => void pickVideoFiles().then(addSources)}>
-                <FilePlus /> Add files…
+                <FilePlus /> {t("newProject.addFiles")}
               </Button>
             </div>
           </div>
@@ -209,7 +212,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
                     return (
                       // Two names that aren't Unicode can read the same.
                       <tr key={c.refused ? `${i}:${c.path}` : c.path} className={cn("group", off && "opacity-40")}>
-                        <td className="w-24 rounded-l-xl py-2 pl-3 group-hover:bg-white/[0.04]">
+                        <td className="w-24 whitespace-nowrap rounded-l-xl py-2 pl-3 group-hover:bg-white/[0.04]">
                           <span className={cn("timecode text-sm", c.label ? "text-fg-1" : "text-fg-3")}>
                             {c.label || "—"}
                           </span>
@@ -225,14 +228,14 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
                             </div>
                           )}
                         </td>
-                        <td className="timecode w-24 py-2 pr-2 text-right text-sm text-fg-3 group-hover:bg-white/[0.04]">
+                        <td className="timecode w-24 whitespace-nowrap py-2 pr-2 text-right text-sm text-fg-3 group-hover:bg-white/[0.04]">
                           {formatBytes(c.sizeBytes ?? 0)}
                         </td>
                         <td className="w-10 rounded-r-xl py-1 pr-1.5 group-hover:bg-white/[0.04]">
                           {!c.refused && (
-                            <Tooltip label={off ? "Include it" : "Skip it"} side="left">
+                            <Tooltip label={t(off ? "newProject.include" : "newProject.skip")} side="left">
                               <button
-                                aria-label={off ? `Include ${c.fileName}` : `Skip ${c.fileName}`}
+                                aria-label={t(off ? "newProject.includeFile" : "newProject.skipFile", { name: c.fileName })}
                                 onClick={() =>
                                   setRemoved((r) => {
                                     const n = new Set(r)
@@ -256,15 +259,15 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
             </div>
             <div className="flex items-center justify-between border-t border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
               <span className="text-sm text-fg-2">
-                {chosen.length} {chosen.length === 1 ? "video" : "videos"} · {formatBytes(totalBytes)}
+                {t("newProject.videos", { count: chosen.length })} · {formatBytes(totalBytes)}
                 {scanning && <CircleNotch className="ml-2 inline size-3 animate-spin" />}
               </span>
               <div className="flex gap-1">
                 <Button size="sm" variant="ghost" onClick={() => void pickFolder().then((p) => p && addSources([p]))}>
-                  <FolderPlus /> Folder…
+                  <FolderPlus /> {t("newProject.folder")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => void pickVideoFiles().then(addSources)}>
-                  <FilePlus /> Files…
+                  <FilePlus /> {t("newProject.files")}
                 </Button>
               </div>
             </div>
@@ -274,10 +277,10 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
 
       <DialogFooter>
         <Button variant="ghost" onClick={onDone}>
-          Cancel
+          {t("common:action.cancel")}
         </Button>
         <Button variant="primary" busy={creating} disabled={!title.trim() || chosen.length === 0} onClick={() => void create()}>
-          Create project
+          {t("newProject.create")}
         </Button>
       </DialogFooter>
     </DialogContent>

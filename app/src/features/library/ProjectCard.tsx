@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { FilmStrip, Television } from "@/components/icons"
 import type { ProjectSummary } from "@/bindings"
 import { Artwork } from "@/components/ui/artwork"
@@ -23,6 +24,7 @@ export function ProjectCard({
   onRename: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation("library")
   const indexing = useProjectIndexing(p.id)
   return (
     <ContextArea menu={<ProjectItems kit={contextKit} project={p} onRename={onRename} onDelete={onDelete} />}>
@@ -65,7 +67,7 @@ export function ProjectCard({
           </Link>
 
           <DropdownMenu>
-            <CardMenuButton aria-label={`${p.title} options`} />
+            <CardMenuButton aria-label={t("project.options", { title: p.title })} />
             <DropdownMenuContent>
               <ProjectItems kit={dropdownKit} project={p} onRename={onRename} onDelete={onDelete} />
             </DropdownMenuContent>

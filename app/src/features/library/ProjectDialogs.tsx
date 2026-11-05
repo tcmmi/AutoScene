@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { ContentKind, ProjectSummary } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -31,10 +32,8 @@ export function ProjectDetailsDialog({
   )
 }
 
-/** Anime is analysed differently from the start (see `Project::set_content`). */
-const ANIME_APART = "Anime is analysed differently from the start. Add the videos as a new anime project instead."
-
 function DetailsForm({ project, onDone }: { project: ProjectSummary; onDone: () => void }) {
+  const { t } = useTranslation(["library", "common"])
   const [title, setTitle] = useState(project.title)
   const [content, setContent] = useState<ContentKind>(project.content)
   const wasFast = project.fastScan ?? false
@@ -48,10 +47,10 @@ function DetailsForm({ project, onDone }: { project: ProjectSummary; onDone: () 
   const rescanned = fast !== wasFast
   // The full pass searches 3D animation for faces harder; Fast Scan looks the same way (see `Project::faces_plan`).
   const researched = refilmed && !fast && !rescanned && (content === "animation" || project.content === "animation")
+  // Anime is analysed differently from the start (see `Project::set_content`).
+  const apart = t("details.animeApart")
   const locked: Partial<Record<ContentKind, string>> =
-    project.content === "anime"
-      ? { live: ANIME_APART, animation: ANIME_APART, mixed: ANIME_APART }
-      : { anime: ANIME_APART }
+    project.content === "anime" ? { live: apart, animation: apart, mixed: apart } : { anime: apart }
   const save = async () => {
     setBusy(true)
     // The footage first: it is the one that can be refused.
@@ -68,7 +67,7 @@ function DetailsForm({ project, onDone }: { project: ProjectSummary; onDone: () 
       if (retitled) await commands.projectRename(project.id, title)
       onDone()
     } catch (e) {
-      const what = changedNow ? "Some details changed, but not all of them" : "Couldn't change the project"
+      const what = t(changedNow ? "details.partlyChanged" : "details.changeFailed")
       toast.error(what, { description: errorMessage(e) })
       if (changedNow) onDone()
     } finally {
@@ -76,31 +75,25 @@ function DetailsForm({ project, onDone }: { project: ProjectSummary; onDone: () 
     }
   }
   return (
-    <DialogContent title="Project details" description="The project folder on disk keeps its name.">
+    <DialogContent title={t("details.title")} description={t("details.description")}>
       <form
         onSubmit={(e) => {
           e.preventDefault()
           void save()
         }}
       >
-        <Field label="Title" htmlFor="details-title">
+        <Field label={t("details.titleLabel")} htmlFor="details-title">
           <Input id="details-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
         <Field
-          label="Footage"
-          hint={
-            researched
-              ? "Faces are found again for it, then the characters regrouped. Your names and decisions stay."
-              : refilmed
-                ? "The characters are grouped again for it. Your names and decisions stay."
-                : footageBlurb(content)
-          }
+          label={t("footage.label")}
+          hint={researched ? t("details.refilmedResearched") : refilmed ? t("details.refilmed") : footageBlurb(content)}
           className="mt-4 items-start"
         >
           <FootagePicker value={content} onChange={setContent} locked={locked} />
         </Field>
         <Field
-          label="Fast Scan"
+          label={t("newProject.fastScan")}
           htmlFor="details-fast-scan"
           hint={fastScanHint(content, rescanned, fast, scanDefaults)}
           className="mt-4 items-start"
@@ -109,10 +102,10 @@ function DetailsForm({ project, onDone }: { project: ProjectSummary; onDone: () 
         </Field>
         <DialogFooter>
           <Button variant="ghost" onClick={onDone}>
-            Cancel
+            {t("common:action.cancel")}
           </Button>
           <Button type="submit" variant="primary" busy={busy} disabled={!title.trim() || !(retitled || refilmed || rescanned)}>
-            Save
+            {t("details.save")}
           </Button>
         </DialogFooter>
       </form>
@@ -131,6 +124,7 @@ export function DeleteProjectDialog({
 }
 
 function DeleteForm({ project, onDone }: { project: ProjectSummary; onDone: () => void }) {
+  const { t } = useTranslation("library")
   const [deleteFiles, setDeleteFiles] = useState(true)
   // Its exports and plugin runs stop too, which would otherwise go without a
   // word. Said once, as it opens, so the dialog never moves under the pointer.
@@ -140,21 +134,21 @@ function DeleteForm({ project, onDone }: { project: ProjectSummary; onDone: () =
   const remove = async () => {
     await commands.projectDelete(project.id, deleteFiles)
     if (inProject) void navigate({ to: "/" })
-    toast(`Removed “${project.title}”`)
+    toast(t("remove.removed", { title: project.title }))
   }
   return (
     <ConfirmDialog
       open
       onOpenChange={(open) => !open && onDone()}
-      title={`Remove “${project.title}”?`}
-      description={`Your source videos and exported clips are never touched.${stops ? ` ${stops}` : ""}`}
-      answer={deleteFiles ? "Delete project" : "Remove from library"}
-      failure="Couldn't remove the project"
+      title={t("remove.title", { title: project.title })}
+      description={stops ? t("remove.descriptionStops", { stops }) : t("remove.description")}
+      answer={t(deleteFiles ? "remove.answerDelete" : "remove.answerKeep")}
+      failure={t("remove.failed")}
       onConfirm={remove}
     >
       <OptionRow
-        label="Delete its analysis too"
-        description="Shots, faces, the cast with your names and decisions, posters and previews (the .autoscene folder). Added again later, the videos are analysed from scratch."
+        label={t("remove.deleteAnalysis")}
+        description={t("remove.deleteAnalysisHint")}
         checked={deleteFiles}
         onCheckedChange={setDeleteFiles}
       />

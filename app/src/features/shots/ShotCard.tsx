@@ -1,4 +1,5 @@
 import { memo } from "react"
+import { useTranslation } from "react-i18next"
 import { Copy, Play, Prohibit, UserCircleDashed } from "@/components/icons"
 import type { CharacterShot, MediaItem } from "@/bindings"
 import { Badge } from "@/components/ui/badge"
@@ -32,6 +33,7 @@ export const ShotCard = memo(function ShotCard({
   onOpen: (shot: CharacterShot) => void
   onBody?: (bodies: number[], verdict: BodyVerdict) => void
 }) {
+  const { t } = useTranslation(["library", "common"])
   const scrub = useScrub(shot)
   const fps = media?.fps
   const length = fps ? formatShotLength(((shot.end - shot.start) * fps.den) / fps.num) : ""
@@ -42,21 +44,21 @@ export const ShotCard = memo(function ShotCard({
   const menu = (
     <>
       <ContextMenuItem onSelect={() => onOpen(shot)}>
-        <Play /> Watch shot
+        <Play /> {t("shots.watchShot")}
       </ContextMenuItem>
       {at && (
         <ContextMenuItem onSelect={() => void copyText(at, "timecode")}>
-          <Copy /> Copy timecode
+          <Copy /> {t("shots.copyTimecode")}
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
       {bodies.length > 0 && onBody && (
         <>
           <ContextMenuItem onSelect={() => onBody(bodies, "not_them")}>
-            <UserCircleDashed /> Not {name ?? "them"}
+            <UserCircleDashed /> {name != null ? t("shots.notThem", { name }) : t("shots.notThemUnnamed")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => onBody(bodies, "not_a_person")}>
-            <Prohibit /> Not a person
+            <Prohibit /> {t("shots.notAPerson")}
           </ContextMenuItem>
         </>
       )}
@@ -67,7 +69,7 @@ export const ShotCard = memo(function ShotCard({
     <ContextArea menu={menu}>
       <Tooltip
         label={where}
-        hint={shot.faceless ? "Their face doesn't show: found by their body · Click to watch" : "Click to watch"}
+        hint={t(shot.faceless ? "shots.hintFaceless" : "shots.hintWatch")}
         side="top"
         delay={600}
         disabled={!where}
@@ -76,7 +78,13 @@ export const ShotCard = memo(function ShotCard({
           type="button"
           onClick={() => onOpen(shot)}
           {...scrub.handlers}
-          aria-label={`Shot${where ? ` at ${where}` : ""}${length ? `, ${length}` : ""}${shot.faceless ? ", without their face" : ""}`}
+          aria-label={[
+            where ? t("shots.labelAt", { where }) : t("shots.label"),
+            length,
+            shot.faceless ? t("shots.withoutFace") : "",
+          ]
+            .filter(Boolean)
+            .join(", ")}
           className={cn(
             "group relative block aspect-video w-full overflow-hidden rounded-xl bg-inset text-left outline-none picture-edge",
             "transition-[transform,box-shadow] duration-[var(--dur-med)] ease-out",

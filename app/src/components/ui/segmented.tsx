@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 const track = "inline-flex h-9 items-center gap-0.5 rounded-full border border-white/10 bg-white/[0.06] p-1 backdrop-blur-xl"
 const item = cn(
-  "inline-flex h-full items-center gap-2 rounded-full px-3.5 text-sm font-medium text-fg-2 transition-[color,background-color] duration-[var(--dur-fast)] [&_svg]:size-4",
+  "inline-flex h-full items-center gap-2 rounded-full px-3.5 whitespace-nowrap text-sm font-medium text-fg-2 transition-[color,background-color] duration-[var(--dur-fast)] [&_svg]:size-4",
   "hover:text-fg-1 data-[state=on]:bg-white/[0.14] data-[state=on]:text-fg-1 data-[state=on]:shadow-1",
   "disabled:pointer-events-none disabled:opacity-40",
 )

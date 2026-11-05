@@ -35,13 +35,41 @@ export function placesBefore(history: RouterHistory): string[] {
   return followed.get(history)?.trail.slice(0, -1) ?? []
 }
 
+/** How many entries the window's session history holds: read when a page opens, which is then its last. */
+export function entryCount(): number {
+  return window.history.length
+}
+
+/** How long a step back over the frame's entries may take before the replace goes on without its end. */
+const STEP_MS = 800
+
 /**
- * Goes to the last of `before`, else to `fallback`, in place of the current
- * entry; the places before that one are again the ones before it. So a
- * place left so is never one to go back to, and two pages never send the
- * person to each other.
+ * Goes to the last of `before`, else to `fallback`, in place of the entry the
+ * page was opened at (`openedWith`, from `entryCount`); the places before
+ * that one are again the ones before it. So a place left so is never one to
+ * go back to, and two pages never send the person to each other.
+ *
+ * The entries the page's frame added since share the page's address, and a
+ * replace would write the new place into all of them: they are stepped back
+ * over first, so Back from there goes on to where the person was. Nothing
+ * tells the window when that step ends, but the frame loads again where it
+ * lands. If the person went Back inside the frame meanwhile, the step goes
+ * that many entries too far.
  */
-export function goBackTo(history: RouterHistory, before: string[], fallback: string) {
+export async function goBackTo(history: RouterHistory, before: string[], fallback: string, openedWith: number | null = null) {
+  const added = openedWith == null ? 0 : window.history.length - openedWith
+  if (added > 0) {
+    await new Promise<void>((done) => {
+      const end = () => {
+        window.removeEventListener("load", end, true)
+        clearTimeout(timer)
+        done()
+      }
+      const timer = setTimeout(end, STEP_MS)
+      window.addEventListener("load", end, true)
+      window.history.go(-added)
+    })
+  }
   const places = followed.get(history)
   if (places) places.returning = before.slice(0, -1)
   // The history tells its subscribers of a replace before it returns, unless a blocker holds it back: AutoScene has none.

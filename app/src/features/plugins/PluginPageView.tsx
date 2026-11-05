@@ -14,7 +14,7 @@ import { ProjectNav } from "@/features/project/ProjectNav"
 import { useAppActions } from "@/lib/actions"
 import { errorMessage } from "@/lib/ipc"
 import { reveal } from "@/lib/os"
-import { goBackTo, placesBefore, whileOpen } from "@/lib/places"
+import { entryCount, goBackTo, placesBefore, whileOpen } from "@/lib/places"
 import { usePlugins, useProject } from "@/lib/queries"
 import { PluginFrame } from "./PluginFrame"
 import { PluginIcon } from "./PluginIcon"
@@ -194,7 +194,8 @@ function Unavailable({ p }: { p: PluginInfo }) {
 function useLeave(pid?: string): () => void {
   const router = useRouter()
   const [before] = useState(() => placesBefore(router.history))
-  const leave = useCallback(() => goBackTo(router.history, before, pid != null ? `/p/${pid}` : "/"), [router, before, pid])
+  const [openedWith] = useState(entryCount)
+  const leave = useCallback(() => void goBackTo(router.history, before, pid != null ? `/p/${pid}` : "/", openedWith), [router, before, pid, openedWith])
   useEffect(() => whileOpen(leave), [leave])
   return leave
 }

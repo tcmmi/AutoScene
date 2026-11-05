@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
-import { CircleNotch, FolderOpen, Warning } from "@/components/icons"
+import { FolderOpen, Warning } from "@/components/icons"
 import { Toolbar } from "radix-ui"
 import { toast } from "sonner"
 import type { Character, ExportPlan } from "@/bindings"
@@ -8,6 +8,7 @@ import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
+import { OptionRow } from "@/components/ui/option-row"
 import { Switch } from "@/components/ui/switch"
 import { plural } from "@/features/cast/cast"
 import { rememberPreset } from "@/features/export/export"
@@ -218,19 +219,15 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
           void start()
         }}
       >
-        <label className="flex items-center justify-between gap-4 rounded-lg border border-hairline bg-inset px-3.5 py-3">
-          <span>
-            <span className="block text-sm text-fg-1">All shots in one file</span>
-            <span className="block text-xs text-fg-3">One video with a chapter for each shot, in the pack's order.</span>
-          </span>
-          <Switch
-            checked={merge}
-            onCheckedChange={(merge) => {
-              setMending(false)
-              pack.setNaming({ ...naming, merge })
-            }}
-          />
-        </label>
+        <OptionRow
+          label="All shots in one file"
+          description="One video with a chapter for each shot, in the pack's order."
+          checked={merge}
+          onCheckedChange={(merge) => {
+            setMending(false)
+            pack.setNaming({ ...naming, merge })
+          }}
+        />
         {showFile && (
           <TemplateField
             id="pack-file"
@@ -322,9 +319,9 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
             type="submit"
             size="lg"
             variant="primary"
-            disabled={!presetId || busy || clips === 0 || problem != null || !pack.current}
+            busy={busy}
+            disabled={!presetId || clips === 0 || problem != null || !pack.current}
           >
-            {busy && <CircleNotch className="animate-spin" />}
             {oneFile ? `Export ${shots} into one file` : `Export ${shots}`}
           </Button>
         </DialogFooter>

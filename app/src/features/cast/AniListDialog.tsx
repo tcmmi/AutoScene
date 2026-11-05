@@ -4,7 +4,6 @@ import type { AniListMedia, AniListMerge, AniListSuggestion, Character, ProjectI
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { CircleNotch } from "@/components/icons"
 import { commands, errorMessage } from "@/lib/ipc"
 import { qk, queryClient, useProject } from "@/lib/queries"
 import { cn } from "@/lib/utils"
@@ -140,8 +139,8 @@ export function AniListDialog({
           <>
             <div className="flex gap-2">
               <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={film ? "Film to search for" : "Series to search for"} aria-label="Search text" />
-              <Button disabled={busy || !text.trim()} onClick={search}>
-                {busy ? <CircleNotch className="animate-spin" /> : null} Search
+              <Button busy={busy} disabled={!text.trim()} onClick={search}>
+                Search
               </Button>
             </div>
             <ul className="mt-4 max-h-72 space-y-1 overflow-y-auto">
@@ -188,8 +187,8 @@ export function AniListDialog({
               <Button variant="ghost" disabled={busy} onClick={() => setStage("search")}>
                 Back
               </Button>
-              <Button disabled={busy} onClick={suggest}>
-                {busy ? <CircleNotch className="animate-spin" /> : null} Match the cast
+              <Button busy={busy} onClick={suggest}>
+                Match the cast
               </Button>
             </DialogFooter>
           </>
@@ -251,8 +250,7 @@ export function AniListDialog({
                 {auto ? "Close" : "Not now"}
               </Button>
               {!auto && (names.length > 0 || merges.length > 0) && (
-                <Button disabled={busy || (keptNames.length === 0 && keptMerges.length === 0)} onClick={apply}>
-                  {busy ? <CircleNotch className="animate-spin" /> : null}{" "}
+                <Button busy={busy} disabled={keptNames.length === 0 && keptMerges.length === 0} onClick={apply}>
                   {keptNames.length + keptMerges.length === names.length + merges.length
                     ? "Apply"
                     : `Apply ${keptNames.length + keptMerges.length}`}

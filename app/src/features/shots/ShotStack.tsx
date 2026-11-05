@@ -1,7 +1,9 @@
 import { memo, useRef, useState } from "react"
 import { CaretDown, Copy, Play, X } from "@/components/icons"
 import type { CharacterShot, MediaItem } from "@/bindings"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { CardPlayButton } from "@/components/ui/card-play-button"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -206,30 +208,20 @@ export const ShotStack = memo(function ShotStack({
             <ShotFrames shot={scrub.shot} scrub={scrub.frames} />
             {open && <span className="absolute inset-0 rounded-xl inset-ring inset-ring-accent/70" />}
             {scrub.index !== null && <ScrubBar index={scrub.index} count={shots.length} />}
-            <span className="timecode absolute right-2 bottom-2 rounded-full bg-black/50 px-2 text-[11px] leading-5 text-white backdrop-blur-md">
+            <Badge tone="picture" size="sm" className="timecode absolute right-2 bottom-2">
               {scrub.index !== null && shots.length > SEGMENTED ? `${scrub.index + 1} / ${shots.length}` : count}
-            </span>
+            </Badge>
             <span className="absolute top-2 left-2 flex items-center gap-1.5">
               {faceless && <NoFaceBadge />}
               {media?.label && (
-                <span className="timecode rounded-full bg-black/50 px-2 text-[11px] leading-5 text-white/90 opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
+                <Badge tone="picture" size="sm" className="timecode opacity-0 transition-opacity group-hover:opacity-100">
                   {media.label}
-                </span>
+                </Badge>
               )}
             </span>
           </button>
         </Tooltip>
-        <button
-          type="button"
-          onClick={() => onWatch(card)}
-          aria-label={`Watch from ${where}`}
-          className={cn(
-            "absolute top-2 right-2 flex size-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-md",
-            "opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/75 focus-visible:opacity-100",
-          )}
-        >
-          <Play weight="fill" className="size-3.5" />
-        </button>
+        <CardPlayButton onClick={() => onWatch(card)} aria-label={`Watch from ${where}`} />
       </div>
     </ContextArea>
   )

@@ -1,4 +1,4 @@
-import { ArrowsDownUp, CaretDown, MagnifyingGlass, X } from "@/components/icons"
+import { ArrowsDownUp, CaretDown } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -7,7 +7,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
+import { SearchField } from "@/components/ui/search-field"
 import { Segmented } from "@/components/ui/segmented"
 import { cn } from "@/lib/utils"
 import type { CastFind, CastOrder, CastShow } from "./cast"
@@ -41,29 +41,7 @@ export function CastFilters({
   const order = ORDERS.find((o) => o.value === find.order) ?? ORDERS[0]
   return (
     <div role="group" aria-label="Find" className={cn("flex flex-wrap items-center gap-2.5", className)}>
-      <div className="relative">
-        <MagnifyingGlass className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-fg-3" />
-        <Input
-          value={find.query}
-          onChange={(e) => set({ query: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === "Escape" && find.query) set({ query: "" })
-          }}
-          placeholder="Find a character"
-          aria-label="Find a character"
-          className="h-9 w-64 rounded-full pr-9 pl-10 text-sm"
-        />
-        {find.query && (
-          <button
-            type="button"
-            onClick={() => set({ query: "" })}
-            aria-label="Clear the search"
-            className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-hover hover:text-fg-1"
-          >
-            <X className="size-3.5" />
-          </button>
-        )}
-      </div>
+      <SearchField value={find.query} onChange={(query) => set({ query })} label="Find a character" />
       <Segmented<CastShow> aria-label="Show" value={find.show} onChange={(show) => set({ show })} options={shows} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

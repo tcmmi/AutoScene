@@ -3,6 +3,7 @@ import { Check, CircleNotch } from "@/components/icons"
 import type { Character, FaceTrackItem } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip } from "@/components/ui/tooltip"
 import { assetUrl } from "@/lib/media"
 import { useCastTracks, useMediaList } from "@/lib/queries"
@@ -62,7 +63,7 @@ function Choices({ pid, character: c, onDone }: { pid: string; character: Charac
       {tracks.isPending ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-2.5">
           {Array.from({ length: 12 }, (_, i) => (
-            <div key={i} className="skeleton aspect-square rounded-xl" />
+            <Skeleton key={i} className="aspect-square rounded-xl" />
           ))}
         </div>
       ) : tracks.isError && tracks.data === undefined ? (

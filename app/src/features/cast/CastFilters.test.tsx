@@ -18,11 +18,21 @@ describe("CastFilters", () => {
   it("searches as one types, and Esc clears the search", () => {
     const onChange = vi.fn()
     const { rerender } = render(<CastFilters find={ALL_CAST} review={false} onChange={onChange} />)
-    const field = screen.getByLabelText("Find a character")
+    const field = screen.getByRole("textbox", { name: "Find a character" })
     fireEvent.change(field, { target: { value: "wal" } })
     expect(onChange).toHaveBeenLastCalledWith({ ...ALL_CAST, query: "wal" })
     rerender(<CastFilters find={{ ...ALL_CAST, query: "wal" }} review={false} onChange={onChange} />)
     fireEvent.keyDown(field, { key: "Escape" })
     expect(onChange).toHaveBeenLastCalledWith(ALL_CAST)
+  })
+
+  it("names its search for screen readers and clears it from the × too", () => {
+    const onChange = vi.fn()
+    render(<CastFilters find={{ ...ALL_CAST, query: "wal" }} review={false} onChange={onChange} />)
+    expect(screen.getByRole("search", { name: "Find a character" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Clear the search" }))
+    expect(onChange).toHaveBeenLastCalledWith(ALL_CAST)
+    // The × gives the keyboard back to the field.
+    expect(document.activeElement).toBe(screen.getByPlaceholderText("Find a character"))
   })
 })

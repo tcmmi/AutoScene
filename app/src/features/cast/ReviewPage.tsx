@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { CaretRight, Check, Checks, Play, Prohibit, User, X } from "@/components/icons"
 import type { Character } from "@/bindings"
 import { Artwork } from "@/components/ui/artwork"
+import { Avatar } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -367,9 +368,7 @@ export function ReviewPage() {
                         p.id === suggestion?.id && "border-accent-line",
                       )}
                     >
-                      <span className="size-8 shrink-0 overflow-hidden rounded-full bg-inset">
-                        {p.coverSmall && <img src={assetUrl(p.coverSmall)} alt="" className="size-full object-cover" />}
-                      </span>
+                      <Avatar path={p.coverSmall} />
                       <span className={cn("max-w-[140px] truncate text-sm font-medium", p.name ? "text-fg-1" : "text-fg-2")}>
                         {p.label}
                       </span>

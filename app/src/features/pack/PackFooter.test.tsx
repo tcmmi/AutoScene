@@ -117,11 +117,13 @@ describe("PackFooter", () => {
     )
     expect(screen.getByText("Checking 120 of 312 shots")).toBeTruthy()
     const exportButton = screen.getByRole("button", { name: "Export, waits for the check" })
-    expect((exportButton as HTMLButtonElement).disabled).toBe(true)
+    // Busy, not disabled: the button itself keeps the keyboard, so its tooltip needs no holder around it.
+    expect((exportButton as HTMLButtonElement).disabled).toBe(false)
+    expect(exportButton.getAttribute("aria-busy")).toBe("true")
     fireEvent.click(exportButton)
     expect(onExport).not.toHaveBeenCalled()
-    // What holds it says why, to the keyboard too (a disabled button takes no focus).
-    fireEvent.focus(exportButton.parentElement!)
+    expect(exportButton.className).not.toMatch(/aria-busy:pointer-events-none/)
+    fireEvent.focus(exportButton)
     expect(screen.getAllByText("Waits for the check").length).toBeGreaterThan(0)
   })
 

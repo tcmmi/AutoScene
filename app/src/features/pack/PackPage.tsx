@@ -17,6 +17,7 @@ import { ErrorState } from "@/components/ui/error-state"
 import { type MenuKit, contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { Page } from "@/components/ui/page"
 import { Segmented } from "@/components/ui/segmented"
+import { Skeleton } from "@/components/ui/skeleton"
 import { TopBar } from "@/components/ui/topbar"
 import { VirtualGrid } from "@/components/ui/virtual-grid"
 import { castEdit, plural } from "@/features/cast/cast"
@@ -339,7 +340,7 @@ export function Builder({
           {pack.preview.isPending ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
               {Array.from({ length: 12 }, (_, i) => (
-                <div key={i} className="skeleton aspect-video rounded-xl" />
+                <Skeleton key={i} className="aspect-video rounded-xl" />
               ))}
             </div>
           ) : pack.preview.isError && pack.preview.data === undefined ? (

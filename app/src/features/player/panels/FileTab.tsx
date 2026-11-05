@@ -85,7 +85,7 @@ export function FileTab({
       {flags.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
           {flags.map((f) => (
-            <Badge key={f} tone="outline" className="h-5 px-2 text-2xs">
+            <Badge key={f} tone="outline" size="sm">
               {f}
             </Badge>
           ))}

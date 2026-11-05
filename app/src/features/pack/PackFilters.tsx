@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ProgressRing } from "@/components/ui/progress"
 import { Segmented } from "@/components/ui/segmented"
+import { ToggleChip } from "@/components/ui/toggle-chip"
 import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { plural } from "@/features/cast/cast"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
@@ -74,7 +75,7 @@ export function PackFilters({
       <Divider />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Chip pressed={count > 0} aria-haspopup="menu" aria-pressed={undefined} aria-label={count > 0 ? `Filters, ${count} on` : "Filters"}>
+          <ToggleChip pressed={count > 0} aria-haspopup="menu" aria-pressed={undefined} aria-label={count > 0 ? `Filters, ${count} on` : "Filters"}>
             <FunnelSimple className="size-4" /> Filters
             {count > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-2xs font-semibold tabular-nums text-on-accent">
@@ -82,7 +83,7 @@ export function PackFilters({
               </span>
             )}
             <CaretDown className="size-3.5 opacity-70" />
-          </Chip>
+          </ToggleChip>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[300px]">
           {/* No header of its own: the names say it, and the menu fits the window's smallest height (1024x640) at rest. */}
@@ -257,7 +258,7 @@ function PluginFilterChip({
       : undefined
   return (
     <Tooltip label={label} hint={hint}>
-      <Chip pressed={on} onClick={() => onChange(!on)} className={cn((off || gone) && "opacity-60")}>
+      <ToggleChip pressed={on} onClick={() => onChange(!on)} className={cn((off || gone) && "opacity-60")}>
         <PluginIcon src={icon} className="size-4" />
         {f.title}
         {checking && (
@@ -269,7 +270,7 @@ function PluginFilterChip({
         )}
         {failed && <Warning role="img" aria-label={`Couldn't check ${f.title}`} className="size-3.5 text-danger" />}
         {off && <span className="text-xs font-normal text-fg-3">Plugin off</span>}
-      </Chip>
+      </ToggleChip>
     </Tooltip>
   )
 }
@@ -278,34 +279,13 @@ function Divider() {
   return <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />
 }
 
-function Chip({
-  pressed,
-  className,
-  ...props
-}: React.ComponentProps<"button"> & { pressed: boolean }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-[color,background-color,border-color] duration-[var(--dur-fast)]",
-        pressed
-          ? "border-accent-line bg-accent-subtle text-fg-1"
-          : "border-white/10 bg-white/[0.04] text-fg-2 hover:border-white/20 hover:text-fg-1",
-        className,
-      )}
-      {...props}
-    />
-  )
-}
-
 function Menu({ label, active, children }: { label: string; active: boolean; children: React.ReactNode }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Chip pressed={active} aria-haspopup="menu" aria-pressed={undefined}>
+        <ToggleChip pressed={active} aria-haspopup="menu" aria-pressed={undefined}>
           {label} <CaretDown className="size-3.5 opacity-70" />
-        </Chip>
+        </ToggleChip>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[220px]">
         {children}

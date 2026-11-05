@@ -163,13 +163,11 @@ export function PackFooter({
           </Button>
         </Tooltip>
       ) : waiting ? (
-        // A disabled button takes no pointer: the tooltip is on what holds it.
+        // Busy, not disabled: it keeps the keyboard and the pointer, so the tooltip can be on the button itself.
         <Tooltip label="Waits for the check">
-          <span tabIndex={0} className="inline-flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent-line">
-            <Button size="md" variant="primary" disabled aria-label="Export, waits for the check">
-              <Package weight="bold" /> Export
-            </Button>
-          </span>
+          <Button size="md" variant="primary" busy aria-label="Export, waits for the check">
+            <Package weight="bold" /> Export
+          </Button>
         </Tooltip>
       ) : (
         <Tooltip label="Export the pack" shortcut={keys("pack.export")}>

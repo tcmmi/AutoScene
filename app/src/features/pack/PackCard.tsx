@@ -1,6 +1,8 @@
 import { memo } from "react"
 import { ArrowCounterClockwise, Check, Copy, Play, Prohibit, UserCircleDashed } from "@/components/icons"
 import type { MediaItem, PackClip, PackFilter } from "@/bindings"
+import { Badge } from "@/components/ui/badge"
+import { CardPlayButton } from "@/components/ui/card-play-button"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -163,36 +165,30 @@ export const PackCard = memo(function PackCard({
                     <Check weight="bold" className="size-3" />
                   </span>
                 ) : (
-                  <span className="max-w-[10rem] truncate rounded-full bg-black/65 px-2 text-[11px] leading-5 text-white/90 backdrop-blur-md">
-                    {why}
-                  </span>
+                  <Badge tone="picture" size="sm" className="max-w-[10rem]">
+                    <span className="truncate">{why}</span>
+                  </Badge>
                 )}
                 {clip.manual === true && (
-                  <span className="rounded-full bg-black/55 px-2 text-[11px] leading-5 text-white/80 backdrop-blur-md">Added</span>
+                  <Badge tone="picture" size="sm">
+                    Added
+                  </Badge>
                 )}
                 {clip.shot.faceless && clip.reason !== "faceless" && <NoFaceBadge />}
               </span>
               <span className="absolute right-2 bottom-2 flex items-center gap-1.5">
-                <span className="rounded-full bg-black/50 px-2 text-[11px] leading-5 font-medium text-white/80 backdrop-blur-md">
+                <Badge tone="picture" size="sm">
                   {SIZE_SHORT.get(clip.size)}
-                </span>
+                </Badge>
                 {length && (
-                  <span className="timecode rounded-full bg-black/50 px-2 text-[11px] leading-5 text-white backdrop-blur-md">{length}</span>
+                  <Badge tone="picture" size="sm" className="timecode">
+                    {length}
+                  </Badge>
                 )}
               </span>
             </button>
           </Tooltip>
-          <button
-            type="button"
-            onClick={() => onOpen(index)}
-            aria-label={`Watch the shot${where ? ` at ${where}` : ""}`}
-            className={cn(
-              "absolute top-2 right-2 flex size-7 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-md",
-              "opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/75 focus-visible:opacity-100",
-            )}
-          >
-            <Play weight="fill" className="size-3.5" />
-          </button>
+          <CardPlayButton onClick={() => onOpen(index)} aria-label={`Watch the shot${where ? ` at ${where}` : ""}`} />
         </div>
     </ContextArea>
   )

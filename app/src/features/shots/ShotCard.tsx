@@ -1,6 +1,7 @@
 import { memo } from "react"
 import { Copy, Play, Prohibit, UserCircleDashed } from "@/components/icons"
 import type { CharacterShot, MediaItem } from "@/bindings"
+import { Badge } from "@/components/ui/badge"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -84,16 +85,16 @@ export const ShotCard = memo(function ShotCard({
         >
           <ShotFrames shot={shot} scrub={scrub} />
           {length && (
-            <span className="timecode absolute right-2 bottom-2 rounded-full bg-black/50 px-2 text-[11px] leading-5 text-white backdrop-blur-md">
+            <Badge tone="picture" size="sm" className="timecode absolute right-2 bottom-2">
               {length}
-            </span>
+            </Badge>
           )}
           <span className="absolute top-2 left-2 flex items-center gap-1.5">
             {shot.faceless && <NoFaceBadge />}
             {media?.label && (
-              <span className="timecode rounded-full bg-black/50 px-2 text-[11px] leading-5 text-white/90 opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
+              <Badge tone="picture" size="sm" className="timecode opacity-0 transition-opacity group-hover:opacity-100">
                 {media.label}
-              </span>
+              </Badge>
             )}
           </span>
           <Play

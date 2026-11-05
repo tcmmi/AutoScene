@@ -17,7 +17,7 @@ const buttonVariants = cva(
   [
     "inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-full font-medium",
     "transition-[background-color,border-color,color,box-shadow,transform] duration-[var(--dur-fast)] ease-out",
-    "disabled:pointer-events-none disabled:opacity-40 aria-busy:pointer-events-none active:scale-[0.97]",
+    "disabled:pointer-events-none disabled:opacity-40 active:scale-[0.97]",
     "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   ],
   {

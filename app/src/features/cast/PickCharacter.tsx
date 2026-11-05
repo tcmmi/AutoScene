@@ -1,10 +1,10 @@
 import { useState } from "react"
 import { UserPlus } from "@/components/icons"
 import type { Character } from "@/bindings"
+import { Avatar } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { assetUrl } from "@/lib/media"
 import { useCast } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { formatScreenTime, plural } from "./cast"
@@ -58,9 +58,7 @@ export function PickCharacter({
         {pending && asked ? (
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
-              <span className="size-14 shrink-0 overflow-hidden rounded-full bg-inset picture-edge">
-                {pending.coverSmall && <img src={assetUrl(pending.coverSmall)} alt="" className="size-full object-cover" />}
-              </span>
+              <Avatar path={pending.coverSmall} className="size-14 picture-edge" />
               <div>
                 <p className="text-md font-medium text-fg-1">{asked.question}</p>
                 <p className="mt-1 text-sm text-fg-3">{asked.detail}</p>
@@ -130,9 +128,7 @@ export function PickCharacter({
                     i === selected && "bg-active",
                   )}
                 >
-                  <span className="size-10 shrink-0 overflow-hidden rounded-full bg-inset picture-edge">
-                    {c.coverSmall && <img src={assetUrl(c.coverSmall)} alt="" className="size-full object-cover" />}
-                  </span>
+                  <Avatar path={c.coverSmall} className="size-10 picture-edge" />
                   <span className="min-w-0 flex-1">
                     <span className={cn("block truncate text-md font-medium", c.name ? "text-fg-1" : "text-fg-2")}>{c.label}</span>
                     <span className="block text-xs text-fg-3">

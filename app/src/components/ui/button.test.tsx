@@ -132,6 +132,8 @@ describe("Button busy", () => {
     expect(button.getAttribute("aria-busy")).toBe("true")
     await user.click(button)
     expect(onClick).not.toHaveBeenCalled()
+    // It still takes the pointer, so a tooltip on it opens; the click is stopped in onClick.
+    expect(button.className).not.toMatch(/aria-busy:pointer-events-none/)
 
     rerender(
       <Button onClick={onClick}>

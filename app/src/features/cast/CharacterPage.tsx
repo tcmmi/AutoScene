@@ -39,6 +39,7 @@ import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { Page } from "@/components/ui/page"
 import { keepLatest, SETTLE_MS, usePageEntry } from "@/components/ui/page-scroll"
 import { Segmented } from "@/components/ui/segmented"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip } from "@/components/ui/tooltip"
 import { TopBar } from "@/components/ui/topbar"
 import { VirtualGrid } from "@/components/ui/virtual-grid"
@@ -280,7 +281,7 @@ export function CharacterPage() {
         ) : tracks.isPending ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3">
             {Array.from({ length: 24 }, (_, i) => (
-              <div key={i} className="skeleton aspect-square rounded-xl" />
+              <Skeleton key={i} className="aspect-square rounded-xl" />
             ))}
           </div>
         ) : list.length === 0 ? (
@@ -435,7 +436,7 @@ function Shots({
     return (
       <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
         {Array.from({ length: 12 }, (_, i) => (
-          <div key={i} className="skeleton aspect-video rounded-xl" />
+          <Skeleton key={i} className="aspect-video rounded-xl" />
         ))}
       </div>
     )

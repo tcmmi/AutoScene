@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { CircleNotch, FolderOpen, Info } from "@/components/icons"
+import { FolderOpen, Info } from "@/components/icons"
 import { toast } from "sonner"
 import type { ClipRequest } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -178,8 +178,7 @@ function ExportForm({
           <Button variant="ghost" onClick={onDone}>
             Cancel
           </Button>
-          <Button type="submit" size="lg" variant="primary" disabled={!presetId || busy}>
-            {busy && <CircleNotch className="animate-spin" />}
+          <Button type="submit" size="lg" variant="primary" busy={busy} disabled={!presetId}>
             Export
           </Button>
         </DialogFooter>

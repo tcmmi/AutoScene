@@ -14,6 +14,7 @@ import {
 } from "@/components/icons"
 import { toast } from "sonner"
 import type { MediaItem, Segment } from "@/bindings"
+import { Avatar } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
@@ -21,7 +22,6 @@ import { Progress } from "@/components/ui/progress"
 import { Tooltip } from "@/components/ui/tooltip"
 import { formatPercent } from "@/lib/format"
 import { commands, errorMessage } from "@/lib/ipc"
-import { assetUrl } from "@/lib/media"
 import { copyText } from "@/lib/os"
 import { type Lane, charactersIn, nextAppearance } from "@/lib/presence"
 import { nextShotStart, prevShotStart, segmentIndexAt, shotAt, shotNumbers } from "@/lib/segments"
@@ -285,9 +285,7 @@ export function CastTab({
                           focus === c.id && "bg-accent-subtle",
                         )}
                       >
-                        <span className={cn("size-8 shrink-0 overflow-hidden rounded-full bg-inset", on ? "ring-2 ring-accent/70" : "opacity-50")}>
-                          {c.coverSmall && <img src={assetUrl(c.coverSmall)} alt="" className="size-full object-cover" />}
-                        </span>
+                        <Avatar path={c.coverSmall} ring={on} className={cn(!on && "opacity-50")} />
                         <span className={cn("min-w-0 flex-1 truncate text-sm font-medium", on ? "text-fg-1" : "text-fg-3")}>{c.label}</span>
                         {on && <span className="text-xs text-accent">in shot</span>}
                       </button>

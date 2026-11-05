@@ -56,7 +56,7 @@ describe("Badge", () => {
     )
     expect(classes(container.firstElementChild)).toEqual(
       list(
-        "inline-flex items-center whitespace-nowrap rounded-full font-normal h-5 gap-1 px-2 text-2xs [&_svg]:size-3 bg-black/55 text-white/90 backdrop-blur-md timecode absolute right-2 bottom-2",
+        "inline-flex items-center whitespace-nowrap rounded-full font-normal h-5 gap-1 px-2 text-2xs [&_svg]:size-3 bg-black/65 text-white/90 backdrop-blur-md timecode absolute right-2 bottom-2",
       ),
     )
   })

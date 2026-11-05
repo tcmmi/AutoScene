@@ -2,9 +2,9 @@ import { useState } from "react"
 import { toast } from "sonner"
 import type { Cast, ProjectId } from "@/bindings"
 import { ArrowsMerge, Check, CircleNotch, Users } from "@/components/icons"
+import { Avatar } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { commands, errorMessage } from "@/lib/ipc"
-import { assetUrl } from "@/lib/media"
 import { qk, queryClient, useAniListNames, useProject, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { AniListDialog } from "./AniListDialog"
@@ -103,10 +103,11 @@ export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: C
               </Button>
               <Button
                 variant="primary"
-                disabled={busy || (kept.length === 0 && keptMerges.length === 0)}
+                busy={busy}
+                disabled={kept.length === 0 && keptMerges.length === 0}
                 onClick={give}
               >
-                {busy ? <CircleNotch className="animate-spin" /> : <Check weight="bold" />}{" "}
+                <Check weight="bold" />
                 {names.length > 0 ? (kept.length === names.length ? "Give names" : `Give ${kept.length}`) : "Merge"}
               </Button>
             </div>
@@ -126,9 +127,7 @@ export function AniListNames({ pid, cast, className }: { pid: ProjectId; cast: C
                       leftOut && "opacity-45",
                     )}
                   >
-                    <span className="size-7 shrink-0 overflow-hidden rounded-full bg-raised">
-                      {c?.coverSmall && <img src={assetUrl(c.coverSmall)} alt="" className="size-full object-cover" />}
-                    </span>
+                    <Avatar path={c?.coverSmall} className="size-7 bg-raised" />
                     <span className={cn("text-sm text-fg-1", leftOut && "line-through")}>{n.name}</span>
                     <span className="text-sm text-fg-3">{c?.label ?? "a character"}</span>
                   </button>

@@ -1,6 +1,7 @@
 import { memo, useCallback, useLayoutEffect, useRef } from "react"
 import { Check, Play } from "@/components/icons"
 import type { FaceTrackItem, MediaItem } from "@/bindings"
+import { Badge } from "@/components/ui/badge"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem } from "@/components/ui/context-menu"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -150,9 +151,9 @@ const Face = memo(function Face({
             {selected && <Check className="size-3" weight="bold" />}
           </span>
           {m?.label && (
-            <span className="timecode absolute right-1.5 bottom-1.5 rounded-full bg-black/55 px-1.5 text-[10px] leading-4 text-white/90 opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100">
+            <Badge tone="picture" size="sm" className="timecode absolute right-1.5 bottom-1.5 opacity-0 transition-opacity group-hover:opacity-100">
               {m.label}
-            </span>
+            </Badge>
           )}
         </button>
       </ContextArea>

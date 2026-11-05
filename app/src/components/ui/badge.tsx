@@ -17,7 +17,7 @@ const badgeVariants = cva(
         danger: "bg-danger-subtle text-danger",
         outline: "border border-soft text-fg-2",
         media: "border border-white/15 bg-black/35 text-white/90 backdrop-blur-md",
-        picture: "bg-black/55 font-normal text-white/90 backdrop-blur-md",
+        picture: "bg-black/65 font-normal text-white/90 backdrop-blur-md",
       },
       size: {
         md: "h-6 gap-1.5 px-2.5 text-xs [&_svg]:size-3.5",

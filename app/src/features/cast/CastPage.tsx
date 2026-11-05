@@ -22,6 +22,7 @@ import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-m
 import { EmptyState } from "@/components/ui/empty-state"
 import { Page } from "@/components/ui/page"
 import { Segmented } from "@/components/ui/segmented"
+import { Skeleton } from "@/components/ui/skeleton"
 import { TopBar } from "@/components/ui/topbar"
 import { AnalysisStatus } from "@/features/project/AnalysisStatus"
 import { ProjectLoadError } from "@/features/project/ProjectLoadError"
@@ -274,7 +275,7 @@ export function CastPage() {
         {isPending ? (
           <CardGrid>
             {Array.from({ length: 8 }, (_, i) => (
-              <div key={i} className="skeleton aspect-[3/4] rounded-2xl" />
+              <Skeleton key={i} className="aspect-[3/4] rounded-2xl" />
             ))}
           </CardGrid>
         ) : everyoneShown.length === 0 ? (

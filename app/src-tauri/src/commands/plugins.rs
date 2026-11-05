@@ -149,7 +149,8 @@ fn confirm(app: &AppHandle, title: &str, message: String, yes: &str) -> bool {
 }
 
 /// Unpack and check the plugin package at `path`, for the review dialog,
-/// which answers with `plugin_install` or `plugin_discard`.
+/// which answers with `plugin_install` or `plugin_discard`. Nothing of it is
+/// compiled or run before that yes, whatever the setting says.
 #[tauri::command]
 #[specta::specta]
 pub async fn plugin_inspect(state: State<'_, AppState>, path: String) -> AppResult<PluginReview> {
@@ -216,6 +217,15 @@ pub async fn plugin_install(
     .await?;
     changed(&app, Some(installed.id.clone()));
     Ok(installed)
+}
+
+/// End the compile of the review `ticket_id` that `plugin_install` waits for
+/// (`plugin:compiling`), which then fails as cancelled and keeps the review.
+#[tauri::command]
+#[specta::specta]
+pub async fn plugin_compile_cancel(state: State<'_, AppState>, ticket_id: String) -> AppResult<()> {
+    host(&state)?.stop_compile(&ticket_id);
+    Ok(())
 }
 
 /// Drop the review `ticket_id` (the dialog was closed), and the files it

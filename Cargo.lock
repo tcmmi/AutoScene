@@ -346,6 +346,7 @@ dependencies = [
  "ureq",
  "url",
  "uuid",
+ "wasmparser 0.261.0",
  "wasmtime",
  "wasmtime-wasi",
  "wasmtime-wasi-http",

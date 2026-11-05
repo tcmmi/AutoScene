@@ -327,7 +327,8 @@ export const commands = {
 	pluginsAllowUnreviewed: (on: boolean) => __TAURI_INVOKE<AppSettings>("plugins_allow_unreviewed", { on }),
 	/**
 	 *  Unpack and check the plugin package at `path`, for the review dialog,
-	 *  which answers with `plugin_install` or `plugin_discard`.
+	 *  which answers with `plugin_install` or `plugin_discard`. Nothing of it is
+	 *  compiled or run before that yes, whatever the setting says.
 	 */
 	pluginInspect: (path: string) => __TAURI_INVOKE<PluginReview>("plugin_inspect", { path }),
 	/**
@@ -342,6 +343,11 @@ export const commands = {
 	 *  person agreed to, take their yes in a dialog of the system's own.
 	 */
 	pluginInstall: (ticketId: string, acceptUnreviewed: boolean) => __TAURI_INVOKE<PluginInfo>("plugin_install", { ticketId, acceptUnreviewed }),
+	/**
+	 *  End the compile of the review `ticket_id` that `plugin_install` waits for
+	 *  (`plugin:compiling`), which then fails as cancelled and keeps the review.
+	 */
+	pluginCompileCancel: (ticketId: string) => __TAURI_INVOKE<null>("plugin_compile_cancel", { ticketId }),
 	/**
 	 *  Drop the review `ticket_id` (the dialog was closed), and the files it
 	 *  unpacked. One that is gone already is no error.
@@ -475,6 +481,7 @@ export const events = {
 	menuAction: makeEvent<MenuAction>("menu:action"),
 	packChanged: makeEvent<PackChanged>("pack:changed"),
 	pluginPageEvent: makeEvent<PluginPageEvent>("plugin-page:event"),
+	pluginCompiling: makeEvent<PluginCompiling>("plugin:compiling"),
 	pluginsChanged: makeEvent<PluginsChanged>("plugins:changed"),
 	pluginsOpened: makeEvent<PluginsOpened>("plugins:opened"),
 	portraitsChanged: makeEvent<PortraitsChanged>("portraits:changed"),
@@ -1946,6 +1953,15 @@ export type Permission =
 "network";
 
 export type Platform = "windows" | "macos" | "linux";
+
+/**
+ *  The plugin of the review `ticket_id` started to compile, past the
+ *  person's yes (`plugin_install`): that can take a while, and
+ *  `plugin_compile_cancel` ends it.
+ */
+export type PluginCompiling = {
+	ticketId: string,
+};
 
 /**  A moment a plugin may run on by itself. */
 export type PluginEvent = {

@@ -34,8 +34,10 @@
 //! A component is compiled once and its code kept in the plugin's code
 //! folder, never one a plugin sees ([`cache`]). What it imports is checked
 //! first ([`imports`]): only this world and WASI 0.2 up to the version this
-//! wasmtime carries. No code of the plugin runs before its run does: a
-//! check compiles and links it, and never instantiates it.
+//! wasmtime carries. No code of the plugin runs before its run does: its
+//! review reads what it imports and compiles nothing ([`inspect`]), its
+//! install compiles and links it in a process that can be ended
+//! ([`Compiler`]), and neither instantiates it.
 
 mod bindings;
 mod cache;
@@ -49,14 +51,19 @@ mod stdio;
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use as_core::CancelToken;
+use as_media::proc;
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use wasmtime::component::Component;
 use wasmtime::{Engine, Store, UpdateDeadline};
 
@@ -95,6 +102,31 @@ pub const MAX_RANDOM: u64 = 1 << 20;
 /// The longest detail of a plugin's error, or of a trap, kept for the
 /// app's log (the plugin's log has all of a trap).
 pub const MAX_DETAIL_CHARS: usize = 4 << 10;
+
+/// What makes AutoScene's executable (and `asp`) a [`Compiler`]'s process.
+pub const COMPILE_ARG: &str = "--compile-plugin";
+/// How long a [`Compiler`] gives one component. Python's and JavaScript's
+/// take about a second on 16 threads, and a 4-core laptop was guessed at 3-6
+/// seconds: this leaves a slow, busy computer room to spare.
+pub const COMPILE_LIMIT: Duration = Duration::from_secs(120);
+/// How much memory a [`Compiler`] gives one component. A component's 64 MB
+/// can ask Cranelift for 1.5 GB a second, and what runs out then is the
+/// whole computer's: the app, its windows, and whatever else is open.
+pub const COMPILE_MEMORY: u64 = 4 << 30;
+/// How long past its [`Compiler`]'s limit its process ends by itself. The
+/// limit is the [`Compiler`]'s to say: this is for when it can't any more.
+const COMPILE_SLACK: Duration = Duration::from_secs(5);
+/// The exit code of a compile process that ended without an answer.
+const COMPILE_ENDED: i32 = 3;
+const EVENTS: &str = "events";
+const NO_EVENTS: &str = "no-events";
+const COMPILE_STOPPED: &str = "This plugin took too long to get ready, so AutoScene stopped. Nothing changed.";
+const COMPILE_OUT_OF_MEMORY: &str =
+    "This plugin took too much memory to get ready, so AutoScene stopped. Nothing changed.";
+/// What Rust's standard library says on its standard error as it ends a
+/// process that was refused memory.
+const REFUSED_MEMORY: &str = "memory allocation of ";
+pub(crate) const COMPILE_FAILED: &str = "AutoScene couldn't get this plugin ready. Nothing changed.";
 
 const NOT_A_COMPONENT: &str =
     "The plugin's component isn't a WebAssembly component. Build it for wasm32-wasip2 or with componentize-py.";
@@ -258,22 +290,210 @@ pub fn check_folders(spec: &WasmSpec) -> PluginResult<()> {
     convert::mounts(&spec.message, &spec.grants).map(drop)
 }
 
+/// What the component at `path` (its SHA-256 checked against `sha256` when
+/// given) says it imports, checked against `m`: all a review shows of it.
+/// This reads its bytes and compiles nothing, so it is safe on a package
+/// nobody agreed to yet. Whether it compiles, links and exports `run`,
+/// [`prepare`] finds out.
+pub fn inspect(path: &Path, sha256: Option<&str>, m: &Manifest) -> PluginResult<Checked> {
+    let bytes = read_component(path)?;
+    if sha256.is_some_and(|s| s != sha256_hex(&bytes)) {
+        return Err(PluginError::Invalid(CHANGED.into()));
+    }
+    if !is_component(&bytes) {
+        return Err(PluginError::Invalid(NOT_A_COMPONENT.into()));
+    }
+    let imports = imports::declared(&bytes).map_err(|why| {
+        tracing::debug!(error = %why, "a plugin's component can't be read");
+        PluginError::Invalid(format!("The plugin's component doesn't load: {}", first_line(&why)))
+    })?;
+    let warnings = imports::check(imports.iter().map(String::as_str), Some(m))?;
+    Ok(Checked { imports, warnings })
+}
+
 /// Compiles the component at `path` (its SHA-256 checked against `sha256`
 /// when given), checks what it imports and exports against `m`, and keeps
 /// its compiled code in the folder `cache`, beside the code there: the
 /// installed version's stays until the person agrees to this one, and the
 /// store then keeps only this ([`keep_only`]). Gives what the check found
 /// and the compiled file. A component that fails leaves no file.
+///
+/// This compiles here, where nothing can stop it: the app compiles with a
+/// [`Compiler`] instead.
 pub fn prepare(path: &Path, sha256: Option<&str>, cache: &Path, m: &Manifest) -> PluginResult<(Checked, PathBuf)> {
+    compile_into(path, sha256, cache, Some(m), !m.events.is_empty())
+}
+
+/// [`prepare`], for `m` or for none, with `events` saying whether its
+/// plugin waits for events.
+fn compile_into(
+    path: &Path,
+    sha256: Option<&str>,
+    cache: &Path,
+    m: Option<&Manifest>,
+    events: bool,
+) -> PluginResult<(Checked, PathBuf)> {
     let engine = engine::engine()?;
     let bytes = read_component(path)?;
     let hash = sha256_hex(&bytes);
     if sha256.is_some_and(|s| s != hash) {
         return Err(PluginError::Invalid(CHANGED.into()));
     }
-    let (component, checked) = compiled(engine, &bytes, Some(m))?;
+    let component = loaded(engine, &bytes)?;
+    let checked = checked_for(engine, &component, m, events)?;
     let file = cache::save(cache, &hash, &component)?;
     Ok((checked, file))
+}
+
+/// Compiles components in a process of its own, which the app can end:
+/// Cranelift can't be stopped from outside, and a package's bytes are its
+/// author's to choose. The process takes every core while it runs. It ends
+/// at `limit`, at `memory`, at a cancel or with the app, whichever comes
+/// first. It watches its time and the app itself ([`compile_main`]), so a
+/// crashed app leaves nothing running on any system.
+pub struct Compiler {
+    /// The executable that takes [`COMPILE_ARG`].
+    pub program: PathBuf,
+    /// How long one component may take.
+    pub limit: Duration,
+    /// How many bytes one component may take to compile.
+    pub memory: u64,
+}
+
+/// What [`compile_main`] answers on its standard output, as one line of JSON.
+#[derive(Debug, Deserialize, Serialize)]
+enum Compiled {
+    /// The compiled file.
+    Kept(PathBuf),
+    /// [`PluginError::Invalid`], and why.
+    Refused(String),
+    /// [`PluginError::TooNew`], and what needs it.
+    TooNew(String),
+}
+
+impl Compiler {
+    /// `program` as the compiler, with [`COMPILE_LIMIT`] and
+    /// [`COMPILE_MEMORY`].
+    pub fn new(program: PathBuf) -> Self {
+        Self { program, limit: COMPILE_LIMIT, memory: COMPILE_MEMORY }
+    }
+
+    /// [`prepare`] in a process of its own: the file it kept. What the
+    /// component imports was read for its review ([`inspect`]), so nothing
+    /// comes back of that. Refused as [`prepare`] refuses, and past `limit`
+    /// or `memory` the process is ended, as it is on `cancel`
+    /// ([`PluginError::Cancelled`]), which leaves no compiled file.
+    pub fn prepare(
+        &self,
+        path: &Path,
+        sha256: Option<&str>,
+        cache: &Path,
+        m: &Manifest,
+        cancel: &CancelToken,
+    ) -> PluginResult<PathBuf> {
+        let bytes = read_component(path)?;
+        let hash = sha256_hex(&bytes);
+        if sha256.is_some_and(|s| s != hash) {
+            return Err(PluginError::Invalid(CHANGED.into()));
+        }
+        drop(bytes);
+        let mut cmd = Command::new(&self.program);
+        cmd.arg(COMPILE_ARG).arg(path).arg(&hash).arg(cache);
+        cmd.arg(if m.events.is_empty() { NO_EVENTS } else { EVENTS });
+        cmd.arg((self.limit + COMPILE_SLACK).as_millis().to_string());
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut tree = proc::spawn_tree_limited(&mut cmd, self.memory)?;
+        // Held until this ends: the process ends when it closes, which is
+        // how it hears that the app did.
+        let _alive = tree.take_stdin();
+        // Read as it comes: a pipe holds so much, and a process that fills
+        // it waits for it to be read.
+        let answer = tree.take_stdout().map(read_all);
+        let errors = tree.take_stderr().map(read_all);
+        let deadline = Instant::now() + self.limit;
+        while !tree.has_exited()? {
+            if cancel.is_cancelled() {
+                let _ = tree.kill_tree(Duration::ZERO);
+                return Err(PluginError::Cancelled);
+            }
+            if Instant::now() >= deadline {
+                let _ = tree.kill_tree(Duration::ZERO);
+                tracing::warn!(plugin = %m.id, limit = ?self.limit, "a plugin's compile was stopped at its limit");
+                return Err(PluginError::Invalid(COMPILE_STOPPED.into()));
+            }
+            thread::sleep(STOP_POLL);
+        }
+        let status = tree.finish()?;
+        let said = |reader: Option<thread::JoinHandle<String>>| reader.and_then(|r| r.join().ok()).unwrap_or_default();
+        match serde_json::from_str(&said(answer)) {
+            Ok(Compiled::Kept(file)) => Ok(file),
+            Ok(Compiled::Refused(why)) => Err(PluginError::Invalid(why)),
+            Ok(Compiled::TooNew(what)) => Err(PluginError::TooNew(what)),
+            Err(e) => {
+                let errors = said(errors);
+                let stderr = cut(&errors, MAX_DETAIL_CHARS);
+                tracing::warn!(plugin = %m.id, %status, error = %e, %stderr, "a plugin's compile ended without an answer");
+                let why = if errors.contains(REFUSED_MEMORY) { COMPILE_OUT_OF_MEMORY } else { COMPILE_FAILED };
+                Err(PluginError::Invalid(why.into()))
+            }
+        }
+    }
+}
+
+/// All that `pipe` holds until it closes, read on a thread of its own.
+fn read_all(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = pipe.read_to_end(&mut bytes);
+        String::from_utf8_lossy(&bytes).into_owned()
+    })
+}
+
+/// The process of a [`Compiler`], with the arguments that follow
+/// [`COMPILE_ARG`]: the component, its SHA-256, the code folder, whether it
+/// waits for events, and how many milliseconds it may take. It answers on
+/// its standard output, and gives the process's exit code. It ends by itself
+/// past that time, and when its standard input closes, which is the app
+/// ending, in whatever way: on macOS and Linux nothing else would end it.
+pub fn compile_main(args: impl Iterator<Item = OsString>) -> i32 {
+    let args: Vec<OsString> = args.collect();
+    let limit = args.get(4).and_then(|ms| ms.to_str()?.parse().ok()).map(Duration::from_millis);
+    let ([path, sha256, cache, events, _], Some(limit)) = (args.as_slice(), limit) else {
+        eprintln!(
+            "{COMPILE_ARG} takes a component, its SHA-256, a folder, {EVENTS} or {NO_EVENTS}, and its time limit in ms"
+        );
+        return 2;
+    };
+    watch_compile(limit);
+    let (path, cache) = (Path::new(path), Path::new(cache));
+    let compiled = compile_into(path, sha256.to_str(), cache, None, events == EVENTS);
+    let answer = match compiled {
+        Ok((_, file)) => Compiled::Kept(file),
+        Err(PluginError::TooNew(what)) => Compiled::TooNew(what),
+        Err(PluginError::Invalid(why)) => Compiled::Refused(why),
+        Err(e) => Compiled::Refused(e.to_string()),
+    };
+    match serde_json::to_string(&answer) {
+        Ok(line) => {
+            println!("{line}");
+            0
+        }
+        Err(_) => 1,
+    }
+}
+
+/// Ends this process at `limit`, or when its standard input closes,
+/// whatever it is doing.
+fn watch_compile(limit: Duration) {
+    thread::spawn(move || {
+        thread::sleep(limit);
+        std::process::exit(COMPILE_ENDED);
+    });
+    thread::spawn(|| {
+        // Nobody writes to it: the read ends when the other end closes.
+        let _ = std::io::stdin().read(&mut [0]);
+        std::process::exit(COMPILE_ENDED);
+    });
 }
 
 /// The checks of [`prepare`] on `bytes`, without keeping the code: for
@@ -332,10 +552,15 @@ fn import_names(engine: &Engine, component: &Component) -> Vec<String> {
 /// The checks of [`compiled`] past compiling: imports, link, `run`, and
 /// `on-event` when `m` waits for events.
 fn checked(engine: &Engine, component: &Component, m: Option<&Manifest>) -> PluginResult<Checked> {
+    checked_for(engine, component, m, m.is_some_and(|m| !m.events.is_empty()))
+}
+
+/// [`checked`], with `events` saying whether its plugin waits for events.
+fn checked_for(engine: &Engine, component: &Component, m: Option<&Manifest>, events: bool) -> PluginResult<Checked> {
     let names = import_names(engine, component);
     let warnings = imports::check(names.iter().map(String::as_str), m)?;
     let pre = pre(engine, component)?;
-    if m.is_some_and(|m| !m.events.is_empty()) && !pre.takes_events() {
+    if events && !pre.takes_events() {
         return Err(PluginError::Invalid(NO_ON_EVENT.into()));
     }
     Ok(Checked { imports: names, warnings })
@@ -354,8 +579,10 @@ fn pre(engine: &Engine, component: &Component) -> PluginResult<Pre> {
     Pre::new(engine, component, linker.instantiate_pre(component).map_err(doesnt_fit)?).map_err(doesnt_fit)
 }
 
-fn first_line(text: &str) -> &str {
-    text.lines().next().unwrap_or_default()
+/// The first line of `text`, as much of it as a person can read: an
+/// error can repeat a name of any length a component gives.
+fn first_line(text: &str) -> String {
+    cut(text.lines().next().unwrap_or_default(), MAX_DETAIL_CHARS)
 }
 
 /// Reads the component at `path`, at most [`MAX_COMPONENT_BYTES`].

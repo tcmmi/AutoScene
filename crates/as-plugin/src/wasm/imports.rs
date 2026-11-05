@@ -4,9 +4,11 @@
 //! newer AutoScene; anything else is a plugin AutoScene doesn't offer.
 
 use semver::Version;
+use wasmparser::{Chunk, ComponentTypeRef, Parser, Payload, TypeBounds};
 
+use super::MAX_DETAIL_CHARS;
 use crate::error::{PluginError, PluginResult};
-use crate::manifest::{Manifest, Permission};
+use crate::manifest::{Manifest, Permission, cut};
 
 /// The minor of `autoscene:plugin@1` this AutoScene serves.
 pub const WORLD_MINOR: u64 = 1;
@@ -18,6 +20,51 @@ pub const WASI_PATCH: u64 = 12;
 const WASI: [&str; 7] = ["io", "clocks", "random", "cli", "filesystem", "sockets", "http"];
 /// The interfaces of AutoScene's world.
 const WORLD: [&str; 2] = ["types", "host"];
+/// The most imports a component's review reads. All of WASI and AutoScene's
+/// world are a few dozen; a package's 64 MB could name millions, which would
+/// all be held here, before anyone agreed to anything.
+const MAX_IMPORTS: usize = 4096;
+
+/// What the component `bytes` imports, as `ns:pkg/interface@version`, read
+/// from its top level: nothing is compiled, and the code in it (its core
+/// modules, the components nested in it) is stepped over unread. Why not,
+/// when its top level can't be read. A name given to a resource of an import
+/// isn't told from one given to its own type, so it isn't listed here; a
+/// compile refuses it.
+pub(crate) fn declared(bytes: &[u8]) -> Result<Vec<String>, String> {
+    let mut parser = Parser::new(0);
+    let (mut at, mut names) = (0, Vec::new());
+    loop {
+        let (payload, consumed) = match parser.parse(&bytes[at..], true).map_err(|e| e.to_string())? {
+            Chunk::Parsed { payload, consumed } => (payload, consumed),
+            Chunk::NeedMoreData(_) => return Err("it ends early".into()),
+        };
+        at += consumed;
+        match payload {
+            Payload::ComponentImportSection(imports) => {
+                for import in imports {
+                    let import = import.map_err(|e| e.to_string())?;
+                    // A name for a type the component defines itself, as its
+                    // world's `run-request`: nobody has to provide it.
+                    if !matches!(import.ty, ComponentTypeRef::Type(TypeBounds::Eq(_))) {
+                        if names.len() == MAX_IMPORTS {
+                            return Err("it has too many imports".into());
+                        }
+                        names.push(import.name.name.to_owned());
+                    }
+                }
+            }
+            // The parser is past them, and they aren't read: the next
+            // section starts where they end, if the file holds that much.
+            Payload::ModuleSection { unchecked_range: code, .. }
+            | Payload::ComponentSection { unchecked_range: code, .. } => {
+                at = usize::try_from(code.end).ok().filter(|end| *end <= bytes.len()).ok_or("it ends early")?;
+            }
+            Payload::End(_) => return Ok(names),
+            _ => {}
+        }
+    }
+}
 
 /// Checks the imports `names` of a component (`ns:pkg/interface@x.y.z`
 /// each). Gives what may surprise its author about the manifest `m`, when
@@ -42,7 +89,10 @@ pub(crate) fn check<'a>(names: impl Iterator<Item = &'a str>, m: Option<&Manifes
 /// Checks the import `name`: whether AutoScene offers it, and whether it is
 /// wasi:http.
 fn offered(name: &str) -> PluginResult<bool> {
-    let not_offered = || PluginError::Invalid(format!("The plugin uses {name}, which AutoScene doesn't offer."));
+    let not_offered = || {
+        let name = cut(name, MAX_DETAIL_CHARS);
+        PluginError::Invalid(format!("The plugin uses {name}, which AutoScene doesn't offer."))
+    };
     let (path, version) = name.split_once('@').ok_or_else(not_offered)?;
     let (package, interface) = path.split_once('/').ok_or_else(not_offered)?;
     let version = Version::parse(version).map_err(|_| not_offered())?;

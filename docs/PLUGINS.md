@@ -418,10 +418,16 @@ A plugin of runtime `wasm` (version 2) is a WebAssembly component (WASI
 `crates/as-plugin/wit/plugin.wit` defines (a component of 1.0.0 runs too,
 see [Staying compatible](#staying-compatible)). AutoScene runs it in a sandbox
 of its own: a component sees only its own folder and what its permissions
-give it, and nothing else of the computer. AutoScene checks and compiles
-the component when it checks the package (or the folder, when it is
-loaded), and keeps the compiled code. A component never runs as a program,
-and no code of it runs before its first run does.
+give it, and nothing else of the computer. Opening a package (or a folder)
+only reads what its component imports, for the review: nothing of it is
+compiled, whatever **Allow plugins that AutoScene has not reviewed** says.
+AutoScene compiles the component when you install it, past that setting, the
+catalog and your yes, in a process of its own, and keeps the compiled code. It
+shows that it does, and Cancel ends it. So does AutoScene after 2 minutes, or
+at 4 GB of memory. So a component that doesn't compile is refused then, and an
+update of it replaces nothing, and touches nothing of the installed version. A
+component never runs as a program, and no code of it runs before its first run
+does.
 
 A run is one call: AutoScene calls the component's `run` with what the run
 line of a program would hold (see [The run line](#the-run-line)), and the
@@ -590,7 +596,7 @@ what it sends to those sites, and how much it writes." (without `network`:
 "Not limited: how much it writes."). With `network` but no `network.hosts`
 it says "May use the network, but names no site: every request is
 refused." Under how it runs it says "A
-WebAssembly plugin. AutoScene checked and compiled it." Plugins marks it **Sandboxed**, on its card and on its screen, and its
+WebAssembly plugin. AutoScene compiles it once you say yes." Plugins marks it **Sandboxed**, on its card and on its screen, and its
 settings say "It runs in a sandbox. AutoScene enforces these." under what
 it may use. An update that leaves the sandbox for a program or a service
 says so in red: "The installed version ran in a sandbox. This version runs

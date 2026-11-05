@@ -12,6 +12,7 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
   commands: {
     pluginInstall: vi.fn(() => Promise.resolve(pluginInfo({ id: "dev.example.discord-notify", name: "Discord Notify" }))),
     pluginDiscard: vi.fn(() => Promise.resolve(null)),
+    pluginCompileCancel: vi.fn(() => Promise.resolve(null)),
     catalogGet: vi.fn(),
     catalogCancel: vi.fn(() => Promise.resolve(null)),
     pluginsAllowUnreviewed: vi.fn((on: boolean) =>
@@ -62,7 +63,7 @@ const install = () => screen.getByRole("button", { name: "Install" }) as HTMLBut
 
 beforeEach(() => {
   vi.clearAllMocks()
-  usePluginReview.setState({ review: null, loading: false, queue: [], getting: null })
+  usePluginReview.setState({ review: null, loading: false, queue: [], getting: null, compiling: null })
 })
 afterEach(() => {
   cleanup()
@@ -495,7 +496,7 @@ describe("the install review", () => {
     expect(screen.getByText("Reads, changes and deletes files in the export's folder")).toBeTruthy()
     expect(screen.getByText("It can't start programs or see your other files.")).toBeTruthy()
     expect(screen.getByText("Not limited: how much it writes.")).toBeTruthy()
-    expect(screen.getByText("A WebAssembly plugin. AutoScene checked and compiled it.")).toBeTruthy()
+    expect(screen.getByText("A WebAssembly plugin. AutoScene compiles it once you say yes.")).toBeTruthy()
     // None of what a program's review says, and never "safe".
     expect(screen.queryByText("It runs with your user rights: it can read, change and send anything you can.")).toBeNull()
     expect(screen.queryByRole("heading", { name: /not enforced|says it does/ })).toBeNull()
@@ -659,7 +660,7 @@ describe("the install review", () => {
     await waitFor(() => expect(install().disabled).toBe(true))
     expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
-    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull()
     expect(screen.getByRole("dialog")).toBeTruthy()
     expect(onClose).not.toHaveBeenCalled()
     // It installs all the same, and then it closes, its review taken.
@@ -667,6 +668,86 @@ describe("the install review", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
     expect(commands.pluginDiscard).not.toHaveBeenCalled()
     expect(toast).toHaveBeenCalledWith("Installed Discord Notify")
+  })
+
+  it("says what it does while a plugin compiles, and Cancel comes back to the review", async () => {
+    let fail: (e: unknown) => void = () => {}
+    vi.mocked(commands.pluginInstall).mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
+    vi.mocked(commands.pluginCompileCancel).mockImplementationOnce(() => {
+      fail({ code: "cancelled", message: "It wasn't installed." })
+      return Promise.resolve(null)
+    })
+    const onClose = show(review())
+    const typed = screen.getByRole("textbox")
+    fireEvent.change(typed, { target: { value: "Discord Notify" } })
+    fireEvent.click(install())
+    // The system's dialog may still ask: until the compile starts, the review stays.
+    await waitFor(() => expect(install().disabled).toBe(true))
+    act(() => usePluginReview.getState().compileStarted("another ticket"))
+    expect(screen.getByRole("dialog", { name: "Install Discord Notify?" })).toBeTruthy()
+
+    act(() => usePluginReview.getState().compileStarted("t1"))
+    const dialog = await screen.findByRole("dialog", { name: "Getting Discord Notify ready…" })
+    expect(within(dialog).getByRole("progressbar").getAttribute("aria-valuenow")).toBeNull()
+    expect(within(dialog).getByText(/This can take up to 2 minutes/)).toBeTruthy()
+    expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull()
+    fireEvent.keyDown(dialog, { key: "Escape" })
+    expect(onClose).not.toHaveBeenCalled()
+
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement
+    fireEvent.click(cancel)
+    expect(commands.pluginCompileCancel).toHaveBeenCalledExactlyOnceWith("t1")
+    await screen.findByRole("dialog", { name: "Install Discord Notify?" })
+    expect(usePluginReview.getState().compiling).toBeNull()
+    expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("Discord Notify")
+    expect(install().disabled).toBe(false)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(commands.pluginDiscard).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it("a compile that fails says so, and the review goes", async () => {
+    let fail: (e: unknown) => void = () => {}
+    vi.mocked(commands.pluginInstall).mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
+    const onClose = show(review({ needsUnreviewed: false, plugin: { ...discord, trust: "reviewed" } }))
+    fireEvent.click(install())
+    await waitFor(() => expect(install().disabled).toBe(true))
+    act(() => usePluginReview.getState().compileStarted("t1"))
+    await screen.findByRole("dialog", { name: "Getting Discord Notify ready…" })
+    const why = "This plugin took too long to get ready, so AutoScene stopped. Nothing changed."
+    act(() => fail({ code: "invalid", message: why }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(toast.error).toHaveBeenCalledWith("Couldn't install the plugin", { description: why })
+    expect(usePluginReview.getState().compiling).toBeNull()
+  })
+
+  it("an update without a review shows its compile too, and Cancel ends it", async () => {
+    render(<InstallReviewDialog />)
+    const poster = pluginInfo({ id: "dev.autoscene.poster-maker", name: "Poster Maker" })
+    vi.mocked(commands.catalogGet).mockResolvedValue(catalogReview(poster, {}))
+    let fail: (e: unknown) => void = () => {}
+    vi.mocked(commands.pluginInstall).mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
+    vi.mocked(commands.pluginCompileCancel).mockImplementationOnce(() => {
+      fail({ code: "cancelled", message: "It wasn't installed." })
+      return Promise.resolve(null)
+    })
+    const { updatePlugin } = await import("./catalog-actions")
+    const done = updatePlugin(poster)
+    const dialog = await screen.findByRole("dialog", { name: "Updating Poster Maker…" })
+    await waitFor(() => expect(commands.pluginInstall).toHaveBeenCalledOnce())
+    expect(within(dialog).getByText("It asks for nothing new, so there is nothing to review.")).toBeTruthy()
+    expect((within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true)
+
+    const ticket = vi.mocked(commands.pluginInstall).mock.calls[0][0]
+    act(() => usePluginReview.getState().compileStarted(ticket))
+    const compiling = await screen.findByRole("dialog", { name: "Getting Poster Maker ready…" })
+    fireEvent.click(within(compiling).getByRole("button", { name: "Cancel" }))
+    expect(await done).toBe(true)
+    expect(commands.pluginCompileCancel).toHaveBeenCalledExactlyOnceWith(ticket)
+    expect(commands.pluginDiscard).toHaveBeenCalledExactlyOnceWith(ticket)
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(usePluginReview.getState().review).toBeNull()
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
   it("says where AutoScene built a catalog plugin from", () => {

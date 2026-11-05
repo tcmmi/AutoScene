@@ -8,13 +8,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
+use as_core::CancelToken;
+use as_plugin::PluginError;
 use as_plugin::catalog::{self, index_comment};
 use as_plugin::keys::CATALOG_KEYS;
 use as_plugin::manifest;
 use as_plugin::package::{self, AUTHOR_KEY, LOCK, SIG};
 use as_plugin::trust::{self, Trust};
+use as_plugin::wasm::{self, Compiler};
 use as_plugin::{Launch, RuntimeKind, current_platform};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -2781,4 +2786,288 @@ fn pack_refuses_a_component_that_does_not_load() {
         let err = asp(&["check", text(&dir)]).failed(1);
         assert!(err.starts_with(said), "{err}");
     }
+}
+
+/// A manifest of a plugin that runs `plugin.wasm`, for [`Compiler`]; `events`
+/// makes it wait for one.
+fn compiled_manifest(events: bool) -> manifest::Manifest {
+    let mut m = json!({
+        "manifestVersion": 2, "id": "dev.autoscene.hello", "version": "1.0.0", "name": "Hello",
+        "description": "Says hello.", "author": {"name": "AutoScene"},
+        "engines": {"autoscene": ">=1.1.0", "protocol": 2},
+        "runtime": {"type": "wasm", "component": "plugin.wasm"},
+        "contributes": {"commands": [{"id": "hello", "title": "Hello"}]}
+    });
+    if events {
+        m["contributes"]["events"] = json!([{"id": "done", "title": "Tell", "on": "analysisFinished"}]);
+    }
+    manifest::parse_for_any_app(m.to_string().as_bytes()).unwrap().manifest
+}
+
+fn compiler() -> Compiler {
+    Compiler::new(PathBuf::from(env!("CARGO_BIN_EXE_asp")))
+}
+
+/// What `compiler` makes of the component at `file`, kept in `code`.
+fn compile(
+    compiler: &Compiler,
+    file: &Path,
+    sha256: Option<&str>,
+    code: &Path,
+    events: bool,
+) -> Result<PathBuf, PluginError> {
+    compiler.prepare(file, sha256, code, &compiled_manifest(events), &CancelToken::new())
+}
+
+fn kept_in(dir: &Path) -> Vec<PathBuf> {
+    fs::read_dir(dir).map_or(Vec::new(), |entries| entries.map(|e| e.unwrap().path()).collect())
+}
+
+/// A component that keeps Cranelift busy for a long time, and takes more
+/// memory the longer it does: its `functions` have `locals` locals, each
+/// updated in each of `loops` nested loops.
+fn slow_component(functions: usize, locals: usize, loops: usize) -> Vec<u8> {
+    fn leb(mut n: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let byte = (n & 0x7f) as u8;
+            n >>= 7;
+            if n == 0 {
+                out.push(byte);
+                return out;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+    let section = |id: u8, body: &[u8]| [&[id][..], &leb(body.len()), body].concat();
+    let updates: Vec<u8> = (0..locals)
+        // local.get i, i32.const 1, i32.add, local.set i
+        .flat_map(|i| [&[0x20][..], &leb(i), &[0x41, 0x01, 0x6a, 0x21], &leb(i)].concat())
+        .collect();
+    let mut code = [&leb(1)[..], &leb(locals), &[0x7f]].concat();
+    for _ in 0..loops {
+        code.extend([0x03, 0x40]);
+        code.extend(&updates);
+    }
+    for _ in 0..loops {
+        // local.get 0, br_if 0, end
+        code.extend([0x20, 0x00, 0x0d, 0x00, 0x0b]);
+    }
+    code.push(0x0b);
+    let body = [&leb(code.len())[..], &code].concat();
+    let module = [
+        &b"\0asm\x01\x00\x00\x00"[..],
+        &section(1, &[0x01, 0x60, 0x00, 0x00]),
+        &section(3, &[&leb(functions)[..], &vec![0x00; functions]].concat()),
+        &section(10, &[&leb(functions)[..], &body.repeat(functions)].concat()),
+    ]
+    .concat();
+    // The module, and an instance of it: a component that uses it.
+    [&b"\0asm\x0d\x00\x01\x00"[..], &section(1, &module), &section(2, &[0x01, 0x00, 0x00, 0x00])].concat()
+}
+
+/// A [`slow_component`] of 1 MB on disk, which takes seconds to compile: its
+/// file and its SHA-256.
+fn slow_file(dir: &Path) -> (PathBuf, String) {
+    let (file, bytes) = (dir.join("slow.wasm"), slow_component(1, 3000, 40));
+    fs::write(&file, &bytes).unwrap();
+    (file, package::sha256_hex(&bytes))
+}
+
+/// The compile process as a [`Compiler`] starts it, and the pipe it watches.
+fn compile_process(file: &Path, sha256: &str, code: &Path, limit_ms: &str) -> (Child, ChildStdin) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_asp"))
+        .arg(wasm::COMPILE_ARG)
+        .args([file, Path::new(sha256), code, Path::new("no-events"), Path::new(limit_ms)])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let stdin = child.stdin.take().unwrap();
+    (child, stdin)
+}
+
+/// When `child` ended, within `limit`: its exit code and what it answered.
+fn ended(mut child: Child, limit: Duration) -> (Option<i32>, String) {
+    let started = Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        assert!(started.elapsed() < limit, "it still runs after {limit:?}");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut said = String::new();
+    child.stdout.take().unwrap().read_to_string(&mut said).unwrap();
+    (child.wait().unwrap().code(), said)
+}
+
+#[test]
+fn a_component_compiles_in_a_process_of_its_own_as_it_does_here() {
+    let Some(guest) = as_testkit::fixture_file("wasm/guest.wasm") else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let (there, here) = (tmp.path().join("there"), tmp.path().join("here"));
+    let sha256 = package::sha256_hex(&fs::read(&guest).unwrap());
+    for events in [false, true] {
+        let file = compile(&compiler(), &guest, Some(&sha256), &there, events).unwrap();
+        assert_eq!(kept_in(&there), std::slice::from_ref(&file));
+        // The same file under the same name, so a run finds it.
+        let (_, same) = wasm::prepare(&guest, Some(&sha256), &here, &compiled_manifest(events)).unwrap();
+        assert_eq!(file.file_name(), same.file_name());
+        assert_eq!(fs::read(&file).unwrap(), fs::read(&same).unwrap());
+    }
+    // A folder has no lock: its component is taken as it is now.
+    assert!(compile(&compiler(), &guest, None, &there, false).is_ok());
+}
+
+#[test]
+fn a_compile_process_refuses_what_a_compile_here_refuses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (file, code) = (tmp.path().join("plugin.wasm"), tmp.path().join("code"));
+    let m = compiled_manifest(false);
+    // An error repeats this name, and more than a pipe holds of it comes
+    // back all the same, at once.
+    let long = "a".repeat(90_000);
+    for bytes in [
+        component("(component)"),
+        component(r#"(component (import "autoscene:plugin/host@1.2.0" (instance)))"#),
+        component(r#"(component (import "example:thing/api@1.0.0" (instance)))"#),
+        component(&format!(r#"(component (import "wasi:io/{long}@0.2.0" (instance (export "f" (func)))))"#)),
+        b"\0asm\x0d\x00\x01\x00\x01\x02\xff\xff".to_vec(),
+        b"\0asm\x01\x00\x00\x00".to_vec(),
+    ] {
+        fs::write(&file, &bytes).unwrap();
+        let there = compile(&compiler(), &file, None, &code, false).unwrap_err();
+        let here = wasm::prepare(&file, None, &code, &m).unwrap_err();
+        assert_eq!(format!("{there:?}"), format!("{here:?}"));
+        assert!(there.to_string().len() < 5000, "{} bytes", there.to_string().len());
+        assert_eq!(kept_in(&code), Vec::<PathBuf>::new(), "a refused component leaves no file");
+    }
+    let changed = compile(&compiler(), &file, Some(&package::sha256_hex(b"other")), &code, false).unwrap_err();
+    assert_eq!(changed.to_string(), "Its files were changed. Install it again.");
+}
+
+#[test]
+fn a_compile_process_refuses_a_plugin_that_waits_for_events_and_can_not_hear_them() {
+    let Some(frozen) = as_testkit::fixture_file("wasm/guest-frozen.wasm") else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let code = tmp.path().join("code");
+    let e = compile(&compiler(), &frozen, None, &code, true).unwrap_err();
+    assert!(e.to_string().starts_with("The plugin waits for events, but its component has no on-event"), "{e}");
+    assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
+    assert!(compile(&compiler(), &frozen, None, &code, false).is_ok());
+}
+
+#[test]
+fn the_compile_process_checks_the_component_itself() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (file, code) = (tmp.path().join("plugin.wasm"), tmp.path().join("code"));
+    fs::write(&file, component("(component)")).unwrap();
+    // The file changed after the app read it.
+    let (child, _alive) = compile_process(&file, &package::sha256_hex(b"other"), &code, "60000");
+    let (status, said) = ended(child, Duration::from_secs(30));
+    assert_eq!(status, Some(0));
+    assert_eq!(said.trim_end(), r#"{"Refused":"Its files were changed. Install it again."}"#);
+    assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn a_compile_past_its_limit_is_ended_and_leaves_no_code() {
+    let Some(guest) = as_testkit::fixture_file("wasm/guest.wasm") else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    let code = tmp.path().join("code");
+    let stopped = Compiler { limit: Duration::ZERO, ..compiler() };
+    let started = Instant::now();
+    let e = compile(&stopped, &guest, None, &code, false).unwrap_err();
+    assert_eq!(e.to_string(), "This plugin took too long to get ready, so AutoScene stopped. Nothing changed.");
+    assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
+    assert!(started.elapsed() < Duration::from_secs(30), "{:?}", started.elapsed());
+}
+
+#[test]
+fn a_compile_is_ended_partway_at_its_limit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ((file, sha256), code) = (slow_file(tmp.path()), tmp.path().join("code"));
+    let stopped = Compiler { limit: Duration::from_secs(1), ..compiler() };
+    let started = Instant::now();
+    let e = compile(&stopped, &file, Some(&sha256), &code, false).unwrap_err();
+    assert_eq!(e.to_string(), "This plugin took too long to get ready, so AutoScene stopped. Nothing changed.");
+    assert!(started.elapsed() < Duration::from_secs(8), "{:?}", started.elapsed());
+    assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn a_cancel_ends_a_compile_partway() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ((file, sha256), code) = (slow_file(tmp.path()), tmp.path().join("code"));
+    let cancel = CancelToken::new();
+    let later = cancel.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(500));
+        later.cancel();
+    });
+    let started = Instant::now();
+    let e = compiler().prepare(&file, Some(&sha256), &code, &compiled_manifest(false), &cancel).unwrap_err();
+    assert!(matches!(e, PluginError::Cancelled), "{e:?}");
+    assert!(started.elapsed() < Duration::from_secs(8), "{:?}", started.elapsed());
+    assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
+}
+
+// RLIMIT_AS may not hold on macOS: there this would run to its time limit.
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn a_compile_past_its_memory_is_ended_in_plain_words() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (file, code) = (tmp.path().join("heavy.wasm"), tmp.path().join("code"));
+    // 58 MB that asks for more than 4 GB, within seconds. On Unix the limit
+    // counts address space, so it leaves room for the compiler's threads.
+    let bytes = slow_component(9, 8000, 90);
+    fs::write(&file, &bytes).unwrap();
+    let small = Compiler { memory: 2 << 30, ..compiler() };
+    let e = compile(&small, &file, Some(&package::sha256_hex(&bytes)), &code, false).unwrap_err();
+    assert_eq!(e.to_string(), "This plugin took too much memory to get ready, so AutoScene stopped. Nothing changed.");
+    assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn the_compile_process_ends_by_itself_at_its_limit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ((file, sha256), code) = (slow_file(tmp.path()), tmp.path().join("code"));
+    // Nobody ends it: the app is gone, and its pipe stays open.
+    let (child, _alive) = compile_process(&file, &sha256, &code, "1000");
+    let (status, said) = ended(child, Duration::from_secs(8));
+    assert_eq!((status, said.as_str()), (Some(3), ""));
+    assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn the_compile_process_ends_with_whoever_started_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ((file, sha256), code) = (slow_file(tmp.path()), tmp.path().join("code"));
+    let (child, alive) = compile_process(&file, &sha256, &code, "120000");
+    thread::sleep(Duration::from_millis(500));
+    drop(alive);
+    let (status, said) = ended(child, Duration::from_secs(8));
+    assert_eq!((status, said.as_str()), (Some(3), ""));
+    assert_eq!(kept_in(&code), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn a_compile_process_that_says_nothing_fails_in_plain_words() {
+    let Some(guest) = as_testkit::fixture_file("wasm/guest.wasm") else { return };
+    let tmp = tempfile::tempdir().unwrap();
+    // A program that takes the arguments for something else, and ends.
+    let other = Compiler::new(PathBuf::from(env!("CARGO_BIN_EXE_asp_test_plugin")));
+    let e = compile(&other, &guest, None, tmp.path(), false).unwrap_err();
+    assert_eq!(e.to_string(), "AutoScene couldn't get this plugin ready. Nothing changed.");
+
+    let missing = Compiler::new(tmp.path().join("no-such-program"));
+    assert!(compile(&missing, &guest, None, tmp.path(), false).is_err());
+}
+
+#[test]
+fn the_compile_process_says_what_it_takes() {
+    let err = asp(&[wasm::COMPILE_ARG, "one"]).failed(2);
+    let says =
+        "--compile-plugin takes a component, its SHA-256, a folder, events or no-events, and its time limit in ms\n";
+    assert_eq!(err, says);
+    assert_eq!(asp(&[wasm::COMPILE_ARG, "a", "b", "c", "events", "soon"]).failed(2), says);
 }

@@ -43,6 +43,7 @@ import {
   afterExportRuns,
   clearPluginSecret,
   closePage,
+  compilePlugin,
   discardTicket,
   inspectFolder,
   inspectPackage,
@@ -67,6 +68,7 @@ import {
   setPluginValues,
   takeOpenedPackages,
   tellPageServer,
+  stopCompile,
   uninstallPlugin,
 } from "./plugins"
 import type { PagePlaces } from "./plugins"
@@ -1538,10 +1540,15 @@ ${url}`
   plugin_inspect_folder: ({ path }) => inspectFolder(String(path), allows()),
   // `?mockOpened=1`: AutoScene was started with a package, taken once.
   plugins_take_opened: () => takeOpenedPackages(),
-  plugin_install: ({ ticketId, acceptUnreviewed }) => {
+  plugin_install: async ({ ticketId, acceptUnreviewed }) => {
+    await compilePlugin(String(ticketId), () => void emit("plugin:compiling", { ticketId }))
     const p = installPlugin(String(ticketId), allows(), Boolean(acceptUnreviewed))
     void emit("plugins:changed", { pluginId: p.id })
     return p
+  },
+  plugin_compile_cancel: ({ ticketId }) => {
+    stopCompile(String(ticketId))
+    return null
   },
   plugin_discard: ({ ticketId }) => {
     discardTicket(String(ticketId))

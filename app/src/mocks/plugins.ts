@@ -672,6 +672,30 @@ export function inspectFolder(path: string, allow: boolean): PluginReview {
   return review(folderPlugin(path), allow)
 }
 
+/** How long a sandboxed plugin compiles here; `?mockCompile=<ms>` says otherwise. */
+const compileMs = () => Number(new URLSearchParams(window.location.search).get("mockCompile") ?? 1500)
+
+/** What ends each compile under way, by ticket. */
+const compiling = new Map<string, () => void>()
+
+/** The compile `plugin_install` waits for, past the yes: only a sandboxed plugin has one. */
+export async function compilePlugin(ticketId: string, started: () => void) {
+  if (!tickets.get(ticketId)?.sandbox) return
+  started()
+  await new Promise<void>((done, stop) => {
+    const timer = window.setTimeout(done, compileMs())
+    compiling.set(ticketId, () => {
+      window.clearTimeout(timer)
+      stop({ code: "cancelled", message: "It wasn't installed." })
+    })
+  }).finally(() => compiling.delete(ticketId))
+}
+
+/** `plugin_compile_cancel`. */
+export function stopCompile(ticketId: string) {
+  compiling.get(ticketId)?.()
+}
+
 export function installPlugin(ticketId: string, allow: boolean, accept: boolean): PluginInfo {
   const p = tickets.get(ticketId)
   if (!p) throw { code: "not_found", message: "This review was closed. Open the plugin again." }

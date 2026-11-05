@@ -11,16 +11,27 @@ export const READ_LIMIT_MS = 60_000
  * fails (its file or plugin). A package got from the catalog (`get`) shows
  * in the dialog while it comes, with how far it is and a Cancel. `install`
  * sees the review before it shows, and takes care of it when it says so (an
- * update that asks for nothing new installs in one click): then it doesn't show.
+ * update that asks for nothing new installs in one click): then it doesn't
+ * show. It says "cancelled" when the person stopped that.
  */
 export type ReviewAsk = {
   label: string
   get?: { pluginId: string; cancel: () => void }
-  install?: (review: PluginReview) => Promise<boolean>
+  install?: (review: PluginReview) => Promise<boolean | "cancelled">
 }
 
-/** A package on its way from the catalog, as the dialog shows it; `installing` once it is read and installs at once. */
-export type Getting = { pluginId: string; label: string; done: number | null; total: number | null; installing: boolean }
+/**
+ * A package on its way from the catalog, as the dialog shows it; `installing`
+ * once it is read and installs without its review, as the ticket `ticketId`.
+ */
+export type Getting = {
+  pluginId: string
+  label: string
+  done: number | null
+  total: number | null
+  installing: boolean
+  ticketId?: string
+}
 
 /**
  * How a read for a review came out: its review `shown`, `done` without it
@@ -47,6 +58,8 @@ type PluginReviewState = {
   getting: Getting | null
   /** What the one read or shown now was asked for with (its path), while it is read or shown. */
   current: string | null
+  /** The ticket whose plugin compiles now (`plugin:compiling`), past the person's yes. */
+  compiling: string | null
   /**
    * Reads a package or folder for a review (`label` names it when that
    * fails: its file or plugin) and shows it. Reviews come one at a time: one
@@ -64,6 +77,12 @@ type PluginReviewState = {
   progress: (pluginId: string, done: number | null, total: number | null) => void
   /** Ends the get under way (it fails as cancelled, which says nothing). */
   cancelGet: () => void
+  /** The plugin of `ticketId` started to compile (`plugin:compiling`). */
+  compileStarted: (ticketId: string) => void
+  /** The install that compiled ended, in whatever way. */
+  compileEnded: () => void
+  /** Ends the compile under way: its install fails as cancelled. */
+  stopCompile: () => void
   /**
    * Ends the review shown and shows the next. Its ticket goes with it, the
    * files it unpacked among them, unless the install took it.
@@ -111,14 +130,15 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
     void Promise.race([loaded, limit]).then(
       async (read) => {
         clearTimeout(timer)
-        let done = false
+        let installed: boolean | "cancelled" = false
         if (head.install) {
-          set((s) => ({ getting: s.getting && { ...s.getting, installing: true } }))
-          done = await head.install(read).catch(() => false)
+          set((s) => ({ getting: s.getting && { ...s.getting, installing: true, ticketId: read.ticketId } }))
+          installed = await head.install(read).catch(() => false)
         }
+        const done = installed !== false
         reading = null
         set({ review: done ? null : read, loading: false, getting: null })
-        head.settled(done ? "done" : "shown")
+        head.settled(installed === "cancelled" ? "cancelled" : done ? "done" : "shown")
         if (done) next()
       },
       (e: unknown) => {
@@ -143,6 +163,7 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
     queue: [],
     getting: null,
     current: null,
+    compiling: null,
     pending,
     openReview: (load, ask, key) =>
       new Promise<ReviewOutcome>((settled) => {
@@ -158,6 +179,12 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
     cancelGet: () => {
       if (get().getting?.installing) return
       reading?.get?.cancel()
+    },
+    compileStarted: (ticketId) => set({ compiling: ticketId }),
+    compileEnded: () => set({ compiling: null }),
+    stopCompile: () => {
+      const { compiling } = get()
+      if (compiling != null) void commands.pluginCompileCancel(compiling).catch(() => undefined)
     },
     close: (opts) => {
       const { review } = get()

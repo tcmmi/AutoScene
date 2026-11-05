@@ -265,6 +265,13 @@ describe("plugins changing", () => {
     usePluginReview.setState({ getting: null })
   })
 
+  it("plugin:compiling tells the review which ticket compiles", () => {
+    handlers.pluginCompiling({ payload: { ticketId: "t1" } })
+    expect(usePluginReview.getState().compiling).toBe("t1")
+    usePluginReview.getState().compileEnded()
+    expect(usePluginReview.getState().compiling).toBeNull()
+  })
+
   it("plugins:changed makes every pack again, its preview and its plan, and keeps the settings it was made with", () => {
     // A pack on screen and one not: both show filters of plugins that changed.
     const [preview, other, plan, state] = [

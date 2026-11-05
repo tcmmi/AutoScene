@@ -121,6 +121,7 @@ export function startEventBridge(where: { goPlugins: () => void }): () => void {
       if (payload.error) toast.error("NVIDIA acceleration couldn't be downloaded", { description: payload.error })
       else toast.success("NVIDIA acceleration is ready")
     }),
+    events.pluginCompiling.listen(({ payload }) => usePluginReview.getState().compileStarted(payload.ticketId)),
   )
   // Snapshot only once the listeners are live, so nothing falls between the two.
   void Promise.all(unlisten)

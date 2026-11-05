@@ -1981,7 +1981,7 @@ pub(super) mod tests {
             let db = Arc::new(LibraryDb::open(&paths.library_db()).unwrap());
             let app = Version::parse("1.0.3-BETA").unwrap();
             let secrets = Arc::new(as_plugin::MemorySecrets::default());
-            let store = Arc::new(Store::open(&paths, db.clone(), app, secrets).unwrap());
+            let store = Arc::new(Store::open(&paths, db.clone(), app, secrets).unwrap().compile_here());
             let shelf = Arc::new(Shelf::default());
             let host = Self::host(&paths, &db, Arc::new(shelf.clone()));
             Self { tmp, paths, db, store, host, shelf }
@@ -2093,6 +2093,110 @@ pub(super) mod tests {
         let id = t.id.to_string();
         host.keep(t);
         id
+    }
+
+    #[test]
+    fn a_wasm_plugin_is_compiled_only_past_the_setting_and_the_persons_yes() {
+        // The test guest (`cargo xtask wasm-guests`).
+        let Some(guest) = as_testkit::fixture_file("wasm/guest.wasm") else { return };
+        let tmp = host_scratch("compiled-past-the-yes");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = super::super::tests::host_in(&tmp);
+        let m = super::super::tests::wasm_manifest(HELLO, None);
+        let package =
+            zipped(&[("plugin.json", m.to_string().into_bytes()), ("plugin.wasm", std::fs::read(guest).unwrap())]);
+        let code = host.store.cache_dir(&PluginId::parse(HELLO).unwrap());
+        let compiled = || code.exists();
+
+        // Its review, with the setting off, says all it says with it on.
+        let path = tmp.join("opened.asp");
+        std::fs::write(&path, &package.0).unwrap();
+        let t = host.store.stage(&path).unwrap();
+        let (off, on) = (super::super::review(&t, &host, false), super::super::review(&t, &host, true));
+        assert!(off.needs_unreviewed && !off.allowed && on.allowed);
+        let imports_http = "It imports wasi:http but doesn't ask for network: every request it makes is refused.";
+        assert_eq!(off.component_warnings, [imports_http]);
+        assert_eq!(on.component_warnings, off.component_warnings);
+        assert!(!compiled());
+        host.store.discard(t);
+
+        // The setting off refuses it, and nothing is asked.
+        let opened = reviewing(&host, &tmp, "off.asp", &package);
+        let off = super::super::install(&host, &opened, false, true, |q| panic!("it asked {q:?}"));
+        assert!(off.is_err() && !compiled());
+        // A no keeps the review, and compiles nothing.
+        let opened = reviewing(&host, &tmp, "no.asp", &package);
+        let no = super::super::install(&host, &opened, true, true, |_| false);
+        assert_eq!(no.unwrap_err().code, ErrorCode::Cancelled);
+        assert!(!compiled());
+
+        super::super::install(&host, &opened, true, true, |_| true).unwrap();
+        assert!(compiled());
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// A package of the WebAssembly plugin `id`, whose top level reads and
+    /// whose core module can't compile.
+    fn never_compiles(id: &str) -> (Vec<u8>, String) {
+        let m = super::super::tests::wasm_manifest(id, None);
+        let component = b"\0asm\x0d\x00\x01\x00\x01\x02\xff\xff".to_vec();
+        zipped(&[("plugin.json", m.to_string().into_bytes()), ("plugin.wasm", component)])
+    }
+
+    #[test]
+    fn a_compile_that_fails_disturbs_nothing_of_the_plugin() {
+        use super::super::tests::{closed, host_hearing, open_page, paged};
+        let tmp = host_scratch("compile-disturbs-nothing");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host, heard) = host_hearing(&tmp);
+        let one = paged(&tmp.join("one"), "dev.a.one", as_plugin::Trust::Reviewed, false);
+        let page = open_page(&host, &one);
+
+        let opened = reviewing(&host, &tmp, "broken.asp", &never_compiles("dev.a.one"));
+        let e = super::super::install(&host, &opened, true, true, |_| true).unwrap_err();
+        assert!(e.message.starts_with("The plugin's component doesn't load: "), "{e:?}");
+        // Its page stays open, and nothing marked it as changing.
+        assert!(host.pages.get(&page).is_some());
+        assert_eq!(closed(&heard), []);
+        assert!(!host.busy.lock().changing.contains(&one.record.id));
+        // The review went with it.
+        assert!(host.take(&opened).is_err());
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn a_stopped_compile_keeps_the_review_as_a_no_does() {
+        let tmp = host_scratch("compile-stopped");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, mut host) = super::super::tests::host_in(&tmp);
+        // Stopped as soon as the page hears of it, past the yes.
+        let told = Arc::new(Mutex::new(Vec::new()));
+        let stopping = Arc::new(std::sync::OnceLock::<std::sync::Weak<PluginHost>>::new());
+        let (keep, stop) = (told.clone(), stopping.clone());
+        Arc::get_mut(&mut host).unwrap().compile_told = Box::new(move |ticket| {
+            keep.lock().push(ticket.to_owned());
+            stop.get().and_then(std::sync::Weak::upgrade).unwrap().stop_compile(ticket);
+        });
+        stopping.set(Arc::downgrade(&host)).unwrap();
+
+        let opened = reviewing(&host, &tmp, "stopped.asp", &never_compiles("dev.a.stopped"));
+        let e = super::super::install(&host, &opened, true, true, |_| true).unwrap_err();
+        assert_eq!(e.code, ErrorCode::Cancelled);
+        assert_eq!(*told.lock(), std::slice::from_ref(&opened));
+        assert!(host.compiles.lock().is_empty());
+        assert!(!host.store.cache_dir(&PluginId::parse("dev.a.stopped").unwrap()).exists());
+        host.store.discard(host.take(&opened).unwrap());
+
+        // A no never gets that far, and one that runs nothing has no compile.
+        let opened = reviewing(&host, &tmp, "no.asp", &never_compiles("dev.a.no"));
+        let no = super::super::install(&host, &opened, true, true, |_| false);
+        assert_eq!(no.unwrap_err().code, ErrorCode::Cancelled);
+        assert_eq!(told.lock().len(), 1);
+        host.store.discard(host.take(&opened).unwrap());
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

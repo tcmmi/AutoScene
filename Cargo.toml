@@ -84,6 +84,10 @@ windows-core = "=0.62.2"
 wasmtime = { version = "=50.0.1", default-features = false, features = ["runtime", "cranelift", "component-model", "std", "parallel-compilation", "async"] }
 wasmtime-wasi = { version = "=50.0.1", default-features = false, features = ["p2"] }
 wasmtime-wasi-http = { version = "=50.0.1", default-features = false, features = ["p2"] }
+# What a component imports, read for its review without compiling it. The
+# version wasmtime 50.0.1 reads components with, not the newest: the two must
+# agree on what a component says, and the app carries one copy.
+wasmparser = { version = "=0.261.0", default-features = false, features = ["std", "component-model"] }
 http = "=1.5.0"
 # The network guard of WebAssembly plugins (as-plugin's src/wasm/net.rs):
 # AutoScene's own TLS and HTTP/1.1 client, with Mozilla's roots.

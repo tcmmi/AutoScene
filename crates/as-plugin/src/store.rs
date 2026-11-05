@@ -30,13 +30,16 @@
 //! folder is loaded where it is ([`Store::stage_folder`]) and is never
 //! removed.
 //!
-//! A WebAssembly plugin's component is compiled when it is checked, and its
-//! code kept in its own folder under `cache/plugin-code/<id>`
-//! ([`Store::cache_dir`]), outside every folder a plugin sees: once the row
-//! names a version, only that version's code stays, an uninstall takes it,
-//! and the next open sweeps what nothing installed uses. A loaded folder
-//! that no longer runs in the sandbox, or that starts to, waits to be loaded
-//! again, as any whose runtime changed.
+//! A WebAssembly plugin's component is only read while it is checked: what
+//! it imports, for its review ([`Store::stage`]). It is compiled once the
+//! setting, the catalog and the person let it run ([`Store::compile`]), in a
+//! process AutoScene can end ([`Store::compile_with`]), and its code kept in
+//! its own folder under `cache/plugin-code/<id>` ([`Store::cache_dir`]),
+//! outside every folder a plugin sees: once the row names a version, only
+//! that version's code stays, an uninstall takes it, an install that fails
+//! leaves none, and the next open sweeps what nothing installed uses. A
+//! loaded folder that no longer runs in the sandbox, or that starts to,
+//! waits to be loaded again, as any whose runtime changed.
 //!
 //! What AutoScene reviewed is what its catalog lists ([`Store::set_catalog`],
 //! [`verdict`]): a package whose lock the living index lists, for its plugin
@@ -72,7 +75,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use as_core::AppPaths;
+use as_core::{AppPaths, CancelToken};
 use as_db::LibraryDb;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -245,9 +248,9 @@ pub struct Ticket {
     pub manifest: Manifest,
     /// What its plugin.json says that this AutoScene skipped.
     pub warnings: Vec<String>,
-    /// What the check of a WebAssembly plugin's component found that may
-    /// surprise its author: an import it can't use, a permission it can't
-    /// use. Nothing was skipped: the component runs as it is.
+    /// What reading a WebAssembly plugin's component found that may surprise
+    /// its author: an import it can't use, a permission it can't use.
+    /// Nothing was skipped: the component runs as it is.
     pub component_warnings: Vec<String>,
     /// The trust it gets, and the author key it is pinned to after.
     pub verdict: Verdict,
@@ -265,13 +268,20 @@ pub struct Ticket {
     pub staged: Option<PathBuf>,
     /// The record of the version it replaces.
     pub previous: Option<Record>,
-    /// A WebAssembly plugin's code, compiled when it was checked, in its
-    /// folder of [`Store::cache_dir`]: the one code [`Store::commit`] keeps.
+    /// A WebAssembly plugin's code in its folder of [`Store::cache_dir`], the
+    /// one code [`Store::commit`] keeps: none until [`Store::compile`] made it.
     pub compiled: Option<PathBuf>,
     /// The person said yes to it in a dialog of the system's own. Only the
     /// app sets it, once they did: no command takes it from the page.
     pub confirmed: bool,
     pub created: Instant,
+}
+
+impl Ticket {
+    /// Whether it has a component that [`Store::compile`] hasn't compiled.
+    pub fn compiles(&self) -> bool {
+        self.manifest.is_sandboxed() && self.compiled.is_none()
+    }
 }
 
 /// What an update may do that the person never agreed to, by the installed
@@ -317,6 +327,18 @@ pub struct Approval {
     pub commit: String,
     /// Its folder in the repository; empty or `.` for the top.
     pub path: String,
+}
+
+/// Where a store compiles WebAssembly plugins.
+#[cfg(feature = "wasm")]
+enum Compiling {
+    /// Nowhere, until it is told ([`Store::compile_with`]): an app that
+    /// forgot refuses to install them.
+    Nowhere,
+    /// In this process ([`Store::compile_here`]).
+    Here,
+    /// In a process of its own.
+    Apart(wasm::Compiler),
 }
 
 /// Which compiled code of an installed plugin is in use
@@ -373,6 +395,9 @@ pub struct Store {
     /// Held while a plugin's rows change, so each change starts from the
     /// rows the one before wrote.
     changing: Mutex<()>,
+    /// What compiles a WebAssembly plugin.
+    #[cfg(feature = "wasm")]
+    compiling: Compiling,
     /// What the open moved into `.trash`, for [`Store::remove_leftovers`].
     leftovers: Mutex<Vec<PathBuf>>,
     /// The plugins whose extra row the open found left from before
@@ -411,6 +436,8 @@ impl Store {
             secrets,
             library: OnceLock::new(),
             changing: Mutex::default(),
+            #[cfg(feature = "wasm")]
+            compiling: Compiling::Nowhere,
             leftovers: Mutex::default(),
             orphans: Mutex::default(),
         };
@@ -431,6 +458,23 @@ impl Store {
         leftovers.extend(store.sweep_code());
         *store.leftovers.lock() = leftovers;
         Ok(store)
+    }
+
+    /// Compiles WebAssembly plugins with `compiler`, in a process of its own
+    /// that ends at its limits. A store told nothing compiles none: it fails
+    /// the install, and never compiles where nothing can stop it.
+    #[cfg(feature = "wasm")]
+    pub fn compile_with(mut self, compiler: wasm::Compiler) -> Self {
+        self.compiling = Compiling::Apart(compiler);
+        self
+    }
+
+    /// Compiles WebAssembly plugins in this process, where nothing can stop
+    /// them: for tests, never for the app.
+    #[cfg(feature = "wasm")]
+    pub fn compile_here(mut self) -> Self {
+        self.compiling = Compiling::Here;
+        self
     }
 
     /// Judges plugins by `catalog` from now on: what it reviewed, and what it
@@ -599,9 +643,10 @@ impl Store {
     /// manifest, the files its command starts on this computer, its pages,
     /// its icon and banner, its trust (the catalog's, or its signature's),
     /// and that it may replace the installed version. A version the catalog
-    /// withdrew is refused. Last, a WebAssembly plugin's component is
-    /// compiled and checked, and its code kept ([`Ticket::compiled`]). A
-    /// package that fails leaves no folder, and no code.
+    /// withdrew is refused. Last, what a WebAssembly plugin's component
+    /// imports is read and checked: nothing of it is compiled, whoever opened
+    /// the package and whatever the setting says ([`Store::commit`] does
+    /// that). A package that fails leaves no folder.
     pub fn stage(&self, archive: &Path) -> PluginResult<Ticket> {
         let id = Uuid::now_v7();
         let staged = self.root.join(STAGING).join(id.simple().to_string());
@@ -631,8 +676,7 @@ impl Store {
         if let Some(p) = &previous {
             check_update(p, &m, verdict.trust, Some(&package::sha256_hex(&lock_bytes)))?;
         }
-        let mut component_warnings = Vec::new();
-        let compiled = self.compile(&m, staged, launch.as_ref(), Some(&lock), &mut component_warnings)?;
+        let component_warnings = read_component(&m, staged, launch.as_ref(), Some(&lock))?;
         // The id's random end: two installs of one version get two folders.
         let folder = format!("{}+{}", m.version, &id.simple().to_string()[24..]);
         Ok(Ticket {
@@ -649,7 +693,7 @@ impl Store {
             source: Source::Package { folder },
             staged: Some(staged.to_path_buf()),
             previous,
-            compiled,
+            compiled: None,
             confirmed: false,
             created: Instant::now(),
         })
@@ -658,8 +702,8 @@ impl Store {
     /// Checks the plugin in the developer's folder `dir` for this AutoScene,
     /// to load it where it is: it has no lock, so it is Unreviewed, and its
     /// files are read as they are each time. A version the catalog withdrew
-    /// is refused here too. A WebAssembly plugin's component is compiled as
-    /// a package's is.
+    /// is refused here too. A WebAssembly plugin's component is read as a
+    /// package's is, and compiled at its commit too.
     pub fn stage_folder(&self, dir: &Path) -> PluginResult<Ticket> {
         let dir = std::path::absolute(dir)?;
         if !dir.is_dir() {
@@ -699,8 +743,7 @@ impl Store {
         if let Some(p) = &previous {
             check_update(p, &m, verdict.trust, None)?;
         }
-        let mut component_warnings = Vec::new();
-        let compiled = self.compile(&m, &dir, launch.as_ref(), None, &mut component_warnings)?;
+        let component_warnings = read_component(&m, &dir, launch.as_ref(), None)?;
         Ok(Ticket {
             id: Uuid::now_v7(),
             manifest: m,
@@ -715,47 +758,10 @@ impl Store {
             source: Source::Folder { path: path.to_owned() },
             staged: None,
             previous,
-            compiled,
+            compiled: None,
             confirmed: false,
             created: Instant::now(),
         })
-    }
-
-    /// Compiles the component of the WebAssembly plugin of `m` in its folder
-    /// `dir`, checks what it imports and exports, and keeps its code in
-    /// [`Store::cache_dir`], beside the code there: the install keeps only
-    /// the code of the version it installs. A package's component must be
-    /// the one its `lock` lists. What the check found that may surprise its
-    /// author goes to `warnings`. Gives the code's file; none for a plugin
-    /// whose `launch` runs no component. An AutoScene without the sandbox
-    /// refuses it: it needs a newer one.
-    fn compile(
-        &self,
-        m: &Manifest,
-        dir: &Path,
-        launch: Option<&Launch>,
-        lock: Option<&FilesLock>,
-        warnings: &mut Vec<String>,
-    ) -> PluginResult<Option<PathBuf>> {
-        let Some(Launch::Wasm { component }) = launch else { return Ok(None) };
-        #[cfg(feature = "wasm")]
-        {
-            let sha256 = match lock {
-                Some(lock) => match lock.files.iter().find(|f| f.path == *component) {
-                    Some(listed) => Some(listed.sha256.as_str()),
-                    None => return Err(invalid(format!("The plugin package is missing {}.", shown(component)))),
-                },
-                None => None,
-            };
-            let (checked, file) = wasm::prepare(&file_in(dir, component), sha256, &self.cache_dir(&m.id), m)?;
-            warnings.extend(checked.warnings);
-            Ok(Some(file))
-        }
-        #[cfg(not(feature = "wasm"))]
-        {
-            let _ = (m, dir, component, lock, warnings);
-            Err(PluginError::TooNew("runtime".into()))
-        }
     }
 
     /// What the plugin of `m` may do that the version installed now, as the
@@ -774,36 +780,88 @@ impl Store {
     /// staged. One the catalog reviewed when it was staged and doesn't now,
     /// or withdrew meanwhile, is refused, and so is one staged as an update
     /// of a plugin uninstalled since. Whatever fails, the plugin stays as it
-    /// was, and the staged folder is removed.
-    pub fn commit(&self, t: Ticket, allow_unreviewed: bool, accept_unreviewed: bool) -> PluginResult<Installed> {
-        let installed = self.install(&t, allow_unreviewed, accept_unreviewed);
+    /// was, and the staged folder and any code compiled for it are removed.
+    ///
+    /// A WebAssembly plugin is compiled here, unless [`Store::compile`] did,
+    /// past the answers above and before anything changes, so one that
+    /// can't run replaces nothing.
+    pub fn commit(&self, mut t: Ticket, allow_unreviewed: bool, accept_unreviewed: bool) -> PluginResult<Installed> {
+        let installed = self
+            .compile(&mut t, allow_unreviewed, accept_unreviewed, &CancelToken::new())
+            .and_then(|()| self.install(&t, allow_unreviewed, accept_unreviewed));
         if installed.is_err() {
             self.discard(t);
         }
         installed
     }
 
-    fn install(&self, t: &Ticket, allow_unreviewed: bool, accept_unreviewed: bool) -> PluginResult<Installed> {
-        // Before the files are hashed again, when the answer is no already.
-        allowed(t.verdict.trust, allow_unreviewed, accept_unreviewed)?;
-        let m = &t.manifest;
-        let package = match (&t.source, self.staged(t)) {
-            (Source::Package { folder }, Some(staged)) => {
-                self.check_staged(staged, &t.lock_bytes)?;
-                Some((folder, staged))
+    /// Compiles the plugin of `t`, if it is a WebAssembly plugin not compiled
+    /// yet, once all [`Store::commit`] asks of its answers holds now, and its
+    /// files are as they were staged. So nothing the catalog pulled since,
+    /// or that was never allowed, is compiled. It touches nothing installed
+    /// and no lock is held, as it can take a while: a caller does this first
+    /// when what it does around the commit shouldn't wait for it, or fail
+    /// with it. `cancel` ends it ([`PluginError::Cancelled`]). `t` stays the
+    /// caller's whatever comes of it, to commit or [`Store::discard`].
+    pub fn compile(
+        &self,
+        t: &mut Ticket,
+        allow_unreviewed: bool,
+        accept_unreviewed: bool,
+        cancel: &CancelToken,
+    ) -> PluginResult<()> {
+        // Before the files are hashed, when the answer is no already.
+        self.judged(t, self.record(&t.manifest.id)?.as_ref(), allow_unreviewed, accept_unreviewed)?;
+        #[cfg(feature = "wasm")]
+        if t.compiles()
+            && let Launch::Wasm { component } = t.manifest.launch()?
+        {
+            if cancel.is_cancelled() {
+                return Err(PluginError::Cancelled);
             }
-            (Source::Folder { .. }, None) => None,
-            _ => return Err(changed_while_waiting()),
-        };
-        let _changing = self.changing.lock();
-        let previous = self.record(&m.id)?;
+            if let Some(staged) = self.staged(t) {
+                self.check_staged(staged, &t.lock_bytes)?;
+            }
+            let dir = match (&t.source, self.staged(t)) {
+                (Source::Folder { path }, _) => Path::new(path),
+                (_, Some(staged)) => staged,
+                _ => return Err(changed_while_waiting()),
+            };
+            let file = file_in(dir, &component);
+            let sha256 = listed_sha256(t.lock.as_ref(), &component)?;
+            let (m, cache) = (&t.manifest, self.cache_dir(&t.manifest.id));
+            t.compiled = Some(match &self.compiling {
+                Compiling::Apart(compiler) => compiler.prepare(&file, sha256, &cache, m, cancel)?,
+                Compiling::Here => wasm::prepare(&file, sha256, &cache, m)?.1,
+                Compiling::Nowhere => {
+                    tracing::error!(plugin = %m.id, "this store wasn't told how to compile plugins");
+                    return Err(invalid(wasm::COMPILE_FAILED));
+                }
+            });
+        }
+        #[cfg(not(feature = "wasm"))]
+        let _ = cancel;
+        Ok(())
+    }
+
+    /// What `t` is by the catalog of now and the installed version
+    /// `previous`, when all that is asked of its answers holds: the second
+    /// look at what was staged.
+    fn judged(
+        &self,
+        t: &Ticket,
+        previous: Option<&Record>,
+        allow_unreviewed: bool,
+        accept_unreviewed: bool,
+    ) -> PluginResult<Verdict> {
+        let m = &t.manifest;
         // What was agreed to went with its row, so nothing below could tell
         // what this update adds: a first install has its own review.
         if t.previous.is_some() && previous.is_none() {
             return Err(invalid("This plugin was uninstalled while its update waited. Open it again."));
         }
-        let pin = previous.as_ref().and_then(|p| p.author_key.as_ref());
-        let lock = package.is_some().then_some(t.lock_bytes.as_slice());
+        let pin = previous.and_then(|p| p.author_key.as_ref());
+        let lock = matches!(t.source, Source::Package { .. }).then_some(t.lock_bytes.as_slice());
         let (sig, author_pub) = (t.signature.as_deref(), t.author_pub.as_deref());
         let judged = verdict(m, lock, sig, author_pub, pin, &self.catalog(), catalog::now());
         // The person said yes to a plugin AutoScene reviewed: when the
@@ -817,15 +875,33 @@ impl Store {
             r => r?,
         };
         allowed(verdict.trust, allow_unreviewed, accept_unreviewed)?;
-        let lock_sha256 = package.is_some().then(|| package::sha256_hex(&t.lock_bytes));
-        if let Some(p) = &previous {
-            check_update(p, m, verdict.trust, lock_sha256.as_deref())?;
+        if let Some(p) = previous {
+            check_update(p, m, verdict.trust, lock.map(package::sha256_hex).as_deref())?;
         }
         // By the installed version now: the page's word is no yes here, and
         // one AutoScene hasn't reviewed had its own above.
         if verdict.trust == Trust::Reviewed && !t.confirmed && self.widens(m)?.any() {
             return Err(invalid("This update asks for more than you agreed to. Open it again."));
         }
+        Ok(verdict)
+    }
+
+    fn install(&self, t: &Ticket, allow_unreviewed: bool, accept_unreviewed: bool) -> PluginResult<Installed> {
+        let m = &t.manifest;
+        let package = match (&t.source, self.staged(t)) {
+            (Source::Package { folder }, Some(staged)) => Some((folder, staged)),
+            (Source::Folder { .. }, None) => None,
+            _ => return Err(changed_while_waiting()),
+        };
+        let _changing = self.changing.lock();
+        let previous = self.record(&m.id)?;
+        let verdict = self.judged(t, previous.as_ref(), allow_unreviewed, accept_unreviewed)?;
+        // Here too, past a compile that can take minutes: what goes in place
+        // now is what was staged.
+        if let Some((_, staged)) = package {
+            self.check_staged(staged, &t.lock_bytes)?;
+        }
+        let lock_sha256 = package.is_some().then(|| package::sha256_hex(&t.lock_bytes));
         // The secrets it has keep their values, and the events it still has
         // stay on; it runs as its manifest says from now, which the person
         // agreed to. A value kept under the key of a secret setting, from
@@ -895,11 +971,33 @@ impl Store {
         Ok(self.load(record))
     }
 
-    /// Drops `t`, and the folder it was staged in.
+    /// Drops `t`, the folder it was staged in, and the code compiled for it
+    /// unless the installed version runs that same code.
     pub fn discard(&self, t: Ticket) {
         if let Some(staged) = self.staged(&t) {
             self.throw_away(staged);
         }
+        if let Some(file) = &t.compiled {
+            self.discard_code(&t.manifest.id, file);
+        }
+    }
+
+    /// Removes `file`, the code of `id` nothing was installed with, and its
+    /// folder when that is all it held. One of a package has the name its
+    /// component's hash gives it, so a repair and an update that keeps its
+    /// component share the file of the version installed.
+    fn discard_code(&self, id: &PluginId, file: &Path) {
+        let _changing = self.changing.lock();
+        let name = file.file_name().unwrap_or_default().to_string_lossy();
+        if self.get(id).is_ok_and(|p| self.code_in_use(&p).may_be(&name)) {
+            return;
+        }
+        if let Err(e) = fs::remove_file(file)
+            && e.kind() != ErrorKind::NotFound
+        {
+            tracing::debug!(error = %e, plugin = %id, "a compiled plugin stays until the next start");
+        }
+        let _ = fs::remove_dir(self.cache_dir(id));
     }
 
     /// The folder `t` was staged in, when it lies in `.staging`.
@@ -1868,6 +1966,39 @@ pub fn verdict(
     Ok((Verdict { trust: Trust::Reviewed, author_key }, Some(approval)))
 }
 
+/// The warnings of what the component of the WebAssembly plugin of `m` in
+/// its folder `dir` imports ([`wasm::inspect`]), which compiles nothing: none
+/// for a plugin whose `launch` runs no component. A package's component must
+/// be the one its `lock` lists. An AutoScene without the sandbox refuses it:
+/// it needs a newer one.
+fn read_component(
+    m: &Manifest,
+    dir: &Path,
+    launch: Option<&Launch>,
+    lock: Option<&FilesLock>,
+) -> PluginResult<Vec<String>> {
+    let Some(Launch::Wasm { component }) = launch else { return Ok(Vec::new()) };
+    #[cfg(feature = "wasm")]
+    {
+        Ok(wasm::inspect(&file_in(dir, component), listed_sha256(lock, component)?, m)?.warnings)
+    }
+    #[cfg(not(feature = "wasm"))]
+    {
+        let _ = (m, dir, component, lock);
+        Err(PluginError::TooNew("runtime".into()))
+    }
+}
+
+/// The SHA-256 `lock` gives `component`; none without a lock (a folder).
+#[cfg(feature = "wasm")]
+fn listed_sha256<'a>(lock: Option<&'a FilesLock>, component: &str) -> PluginResult<Option<&'a str>> {
+    let Some(lock) = lock else { return Ok(None) };
+    match lock.files.iter().find(|f| f.path == component) {
+        Some(listed) => Ok(Some(listed.sha256.as_str())),
+        None => Err(invalid(format!("The plugin package is missing {}.", shown(component)))),
+    }
+}
+
 /// Whether a plugin of `trust` may be installed: one AutoScene hasn't
 /// reviewed needs the setting that allows them, and the person's yes.
 fn allowed(trust: Trust, allow_unreviewed: bool, accept_unreviewed: bool) -> PluginResult<()> {
@@ -2039,7 +2170,10 @@ mod tests {
         }
 
         fn store(&self) -> Store {
-            Store::open(&self.paths, Arc::clone(&self.db), app(), self.secrets.clone()).unwrap()
+            let store = Store::open(&self.paths, Arc::clone(&self.db), app(), self.secrets.clone()).unwrap();
+            #[cfg(feature = "wasm")]
+            let store = store.compile_here();
+            store
         }
 
         /// The id the keychain keeps its secrets under.
@@ -2523,6 +2657,8 @@ mod tests {
         let broken_on = |app: &str| {
             let app = Version::parse(app).unwrap();
             let store = Store::open(&place.paths, Arc::clone(&place.db), app, place.secrets.clone()).unwrap();
+            #[cfg(feature = "wasm")]
+            let store = store.compile_here();
             store.get(&id()).unwrap().broken
         };
         assert_eq!(broken_on("0.9.0").as_deref(), Some(NEWER));
@@ -2613,7 +2749,7 @@ mod tests {
 
     #[cfg(feature = "wasm")]
     #[test]
-    fn a_wasm_package_is_compiled_when_it_is_checked() {
+    fn a_wasm_package_is_read_at_its_check_and_compiled_at_its_commit() {
         let Some(guest) = guest() else { return };
         let place = Place::new();
         let store = place.store();
@@ -2627,15 +2763,14 @@ mod tests {
                 &["It imports wasi:http but doesn't ask for network: every request it makes is refused.".to_owned()][..]
             )
         );
-        // Its code is kept where no plugin looks, by its component's hash.
-        let compiled = t.compiled.clone().expect("its code");
-        let name = compiled.file_name().unwrap().to_string_lossy().into_owned();
-        assert!(name.starts_with(&format!("{}-", package::sha256_hex(&guest))) && name.ends_with(".cwasm"), "{name}");
-        assert_eq!(compiled.parent(), Some(place.paths.plugin_code().join(ID).as_path()));
-        assert!(compiled.is_file());
+        // Nothing of it is compiled yet.
+        assert_eq!((t.compiled.as_ref(), code(&store, ID)), (None, None));
         let p = store.commit(t, true, true).unwrap();
         assert_eq!((p.broken.as_deref(), p.extra.agreed_runtime()), (None, RuntimeKind::Wasm));
-        assert_eq!(code(&store, ID).unwrap(), [name]);
+        // Its code is kept where no plugin looks, by its component's hash.
+        let [name] = code(&store, ID).unwrap().try_into().unwrap();
+        assert!(name.starts_with(&format!("{}-", package::sha256_hex(&guest))) && name.ends_with(".cwasm"), "{name}");
+        assert!(place.paths.plugin_code().join(ID).join(&name).is_file());
 
         // A run of it: its component as its lock lists it, what it agreed
         // to, its limits, and no FFmpeg.
@@ -2650,7 +2785,7 @@ mod tests {
         );
         assert!(spec.secrets.is_empty());
         assert_eq!((spec.message.tools.ffmpeg.as_str(), spec.message.action.id.as_str()), ("", "hello"));
-        // It runs on the code kept at its check: nothing is compiled again.
+        // It runs on the code kept at its commit: nothing is compiled again.
         let reports = Mutex::new(Vec::new());
         let said = wasm::run(spec, &as_core::CancelToken::new(), &|stage, _| reports.lock().push(stage.to_owned()));
         assert!(said.is_ok(), "{said:?}");
@@ -2692,6 +2827,198 @@ mod tests {
         assert_eq!(e.to_string(), "The plugin folder is missing plugin.wasm, which its runtime needs.");
     }
 
+    /// A component whose top level reads, with a core module that can't
+    /// compile in it: a check that compiled would refuse it.
+    #[cfg(feature = "wasm")]
+    const NEVER_COMPILES: &[u8] = b"\0asm\x0d\x00\x01\x00\x01\x02\xff\xff";
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn nothing_is_compiled_before_the_setting_and_the_person_say_yes() {
+        let place = Place::new();
+        let store = place.store();
+        let files = wasm_plugin(ID, "1.0.0", NEVER_COMPILES);
+        let package = place.package(&files, None, false);
+        let folder = place.folder("dev-never", &files);
+        let tickets = || [store.stage(&package).unwrap(), store.stage_folder(&folder).unwrap()];
+
+        // A compile at any of these would fail here, and say so.
+        for t in tickets() {
+            assert_eq!((t.compiled.as_ref(), t.component_warnings.len()), (None, 0));
+            assert!(matches!(store.commit(t, false, true), Err(PluginError::NotAllowed)));
+        }
+        for t in tickets() {
+            let no = store.commit(t, true, false).unwrap_err();
+            assert_eq!(no.to_string(), "Confirm that you want to install it.");
+        }
+        assert_eq!(code(&store, ID), None);
+        assert_eq!(place.plugins(), [".staging", ".trash"]);
+
+        // Past both answers it is compiled, which refuses it: it leaves nothing.
+        for t in tickets() {
+            let e = store.commit(t, true, true).unwrap_err();
+            assert!(e.to_string().starts_with("The plugin's component doesn't load: "), "{e}");
+        }
+        assert_eq!(code(&store, ID), None);
+        assert_eq!(place.plugins(), [".staging", ".trash"]);
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn an_update_that_can_not_compile_replaces_nothing() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        let p = install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        let first = code(&store, ID).unwrap();
+        let broken = place.package(&wasm_plugin(ID, "1.1.0", NEVER_COMPILES), None, false);
+        assert!(install(&store, &broken).is_err());
+        assert_eq!(code(&store, ID).unwrap(), first);
+        let kept = store.get(&id()).unwrap();
+        assert_eq!((kept.record.version.as_str(), kept.broken.as_deref()), ("1.0.0", None));
+        assert_eq!(place.plugins(), holding(&p));
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn a_compile_process_that_can_not_start_fails_the_install() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store().compile_with(wasm::Compiler::new(place.paths.plugins().join("no-such-program")));
+        let t = store.stage(&place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        assert!(store.commit(t, true, true).is_err());
+        assert_eq!(code(&store, ID), None);
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn a_store_told_nothing_compiles_nothing() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = Store::open(&place.paths, Arc::clone(&place.db), app(), place.secrets.clone()).unwrap();
+        let t = store.stage(&place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        assert_eq!(store.commit(t, true, true).unwrap_err().to_string(), wasm::COMPILE_FAILED);
+        assert_eq!(code(&store, ID), None);
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn what_the_catalog_pulled_after_its_review_opened_is_not_compiled() {
+        let place = Place::new();
+        let store = place.store();
+        let package = place.package(&wasm_plugin(ID, "1.0.0", NEVER_COMPILES), None, false);
+        let stage = || {
+            reviewed(&store, &[&package]);
+            let t = store.stage(&package).unwrap();
+            assert_eq!(t.verdict.trust, Trust::Reviewed);
+            t
+        };
+        let cancel = CancelToken::new();
+        // Withdrawn while the review was open: a compile would refuse it for
+        // another reason, and leave its work behind in a run of 2 minutes.
+        let mut t = stage();
+        store.set_catalog(catalog_of(Vec::new(), vec![withdrawal("<=1.0.4")], catalog::now() + DAY));
+        let e = store.compile(&mut t, false, false, &cancel).unwrap_err();
+        assert!(matches!(e, PluginError::Withdrawn { .. }), "{e:?}");
+        assert_eq!(t.compiled, None);
+        store.discard(t);
+        // No longer reviewed, with the setting off.
+        let mut t = stage();
+        store.set_catalog(catalog_of(Vec::new(), Vec::new(), catalog::now() + DAY));
+        let e = store.compile(&mut t, false, false, &cancel).unwrap_err();
+        assert_eq!(e.to_string(), "The catalog changed while this plugin waited. Open it again.");
+        store.discard(t);
+        assert_eq!(code(&store, ID), None);
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn a_cancelled_compile_keeps_its_ticket_and_compiles_nothing() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        let mut t = store.stage(&place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        let cancel = CancelToken::new();
+        cancel.cancel();
+        assert!(matches!(store.compile(&mut t, true, true, &cancel), Err(PluginError::Cancelled)));
+        assert_eq!((t.compiled.as_ref(), code(&store, ID)), (None, None));
+        // The same ticket installs, and what was compiled isn't compiled again.
+        store.compile(&mut t, true, true, &CancelToken::new()).unwrap();
+        let file = t.compiled.clone().unwrap();
+        assert!(!t.compiles());
+        fs::remove_file(&file).unwrap();
+        store.compile(&mut t, true, true, &CancelToken::new()).unwrap();
+        assert!(!file.exists());
+        store.commit(t, true, true).unwrap();
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn files_changed_during_a_compile_are_not_installed() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        let mut t = store.stage(&place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        store.compile(&mut t, true, true, &CancelToken::new()).unwrap();
+        fs::write(t.staged.as_ref().unwrap().join("plugin.json"), b"{}").unwrap();
+        assert!(store.commit(t, true, true).is_err());
+        assert!(store.list().unwrap().is_empty());
+        assert_eq!(code(&store, ID), None);
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn discarding_a_ticket_takes_its_code_but_never_the_installed_versions() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        let compiled = |files: &Files| {
+            let mut t = store.stage(&place.package(files, None, false)).unwrap();
+            store.compile(&mut t, true, true, &CancelToken::new()).unwrap();
+            assert!(t.compiled.as_ref().unwrap().is_file());
+            t
+        };
+
+        // Of a plugin that isn't installed, its code and its folder go.
+        store.discard(compiled(&wasm_plugin(ID, "1.0.0", &guest)));
+        assert_eq!(code(&store, ID), None);
+
+        install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        let first = code(&store, ID).unwrap();
+        // An update of the same component shares the installed version's file.
+        store.discard(compiled(&wasm_plugin(ID, "1.1.0", &guest)));
+        assert_eq!(code(&store, ID).unwrap(), first);
+        // Another component's goes, beside it.
+        let t = compiled(&wasm_plugin(ID, "1.1.0", &other(&guest, "v2")));
+        assert_eq!(code(&store, ID).unwrap().len(), 2);
+        store.discard(t);
+        assert_eq!(code(&store, ID).unwrap(), first);
+    }
+
+    #[cfg(feature = "wasm")]
+    #[test]
+    fn an_install_that_fails_past_its_compile_leaves_no_code() {
+        let Some(guest) = guest() else { return };
+        let place = Place::new();
+        let store = place.store();
+        let t = store.stage(&place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        place.refuse_writes();
+        assert!(matches!(store.commit(t, true, true), Err(PluginError::Db(_))));
+        assert_eq!(code(&store, ID), None);
+        assert_eq!(place.plugins(), [".staging", ".trash"]);
+
+        place.allow_writes();
+        install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
+        let first = code(&store, ID).unwrap();
+        let t = store.stage(&place.package(&wasm_plugin(ID, "1.1.0", &other(&guest, "v2")), None, false)).unwrap();
+        place.refuse_writes();
+        assert!(matches!(store.commit(t, true, true), Err(PluginError::Db(_))));
+        assert_eq!(code(&store, ID).unwrap(), first, "the installed version keeps its code");
+    }
+
     #[cfg(feature = "wasm")]
     #[test]
     fn an_update_keeps_only_the_new_compiled_plugin() {
@@ -2701,11 +3028,10 @@ mod tests {
         install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
         let first = code(&store, ID).unwrap();
         let t = store.stage(&place.package(&wasm_plugin(ID, "1.1.0", &other(&guest, "v2")), None, false)).unwrap();
-        // Until the person agrees, the installed version's code stays.
-        assert_eq!(code(&store, ID).unwrap().len(), 2);
-        let compiled = t.compiled.clone().unwrap();
+        // Until the person agrees, nothing of it is compiled.
+        assert_eq!(code(&store, ID).unwrap(), first);
         let p = store.commit(t, true, true).unwrap();
-        assert_eq!(code(&store, ID).unwrap(), [compiled.file_name().unwrap().to_string_lossy()]);
+        assert_eq!(code(&store, ID).unwrap().len(), 1);
         assert_ne!(code(&store, ID).unwrap(), first);
         assert_eq!(
             store.wasm_spec(&p, hello_action()).unwrap().component_sha256,
@@ -2736,13 +3062,15 @@ mod tests {
         let Some(guest) = guest() else { return };
         let place = Place::new();
         let store = place.store();
-        // A package, a review of its update that was closed, and what a
-        // save or an older AutoScene left beside its code.
+        // A package, the code of an update AutoScene ended in the middle of,
+        // and what a save or an older AutoScene left beside its code.
         install(&store, &place.package(&wasm_plugin(ID, "1.0.0", &guest), None, false)).unwrap();
         let kept = code(&store, ID).unwrap();
-        store.discard(
-            store.stage(&place.package(&wasm_plugin(ID, "1.1.0", &other(&guest, "v2")), None, false)).unwrap(),
-        );
+        let mut update =
+            store.stage(&place.package(&wasm_plugin(ID, "1.1.0", &other(&guest, "v2")), None, false)).unwrap();
+        store.compile(&mut update, true, true, &CancelToken::new()).unwrap();
+        update.compiled = None;
+        store.discard(update);
         let mine = store.cache_dir(&id());
         let older_engine = mine.join(format!("{}-0123456789abcdef.cwasm", package::sha256_hex(&guest)));
         fs::write(&older_engine, b"old").unwrap();

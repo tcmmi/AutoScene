@@ -166,6 +166,13 @@ const NEEDS: [(&str, &str); 1] = [("wasi:http/", "network")];
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    // Unlisted: what AutoScene's executable does for its compile process, so
+    // tests can run that process without building the app.
+    if let Some((first, rest)) = args.split_first()
+        && first == as_plugin::wasm::COMPILE_ARG
+    {
+        return ExitCode::from(as_plugin::wasm::compile_main(rest.iter().cloned()) as u8);
+    }
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(Failure::Usage(why)) => {

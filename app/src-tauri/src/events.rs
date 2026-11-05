@@ -154,6 +154,16 @@ pub struct CatalogProgress {
     pub total: f64,
 }
 
+/// The plugin of the review `ticket_id` started to compile, past the
+/// person's yes (`plugin_install`): that can take a while, and
+/// `plugin_compile_cancel` ends it.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "plugin:compiling")]
+#[serde(rename_all = "camelCase")]
+pub struct PluginCompiling {
+    pub ticket_id: String,
+}
+
 /// Plugin packages were opened from outside AutoScene (a double-click, a
 /// start with one): the page takes them with `plugins_take_opened` and
 /// opens the install review of each.

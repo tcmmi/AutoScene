@@ -863,6 +863,61 @@ fn a_changed_component_is_refused() {
 }
 
 #[test]
+fn a_review_reads_what_compiling_would_find() {
+    let Some(g) = guest("hello") else { return };
+    let bytes = fs::read(&g.component).unwrap();
+    let sha256 = sha256_hex(&bytes);
+    let sorted = |mut names: Vec<String>| {
+        names.sort();
+        names
+    };
+    for m in [wasm_manifest(false), wasm_manifest(true)] {
+        let read = wasm::inspect(&g.component, Some(&sha256), &m).unwrap();
+        let compiled = wasm::check(&bytes, Some(&m)).unwrap();
+        assert_eq!(sorted(read.imports), sorted(compiled.imports));
+        assert_eq!(read.warnings, compiled.warnings);
+    }
+    let changed = wasm::inspect(&g.component, Some(&sha256_hex(b"other")), &wasm_manifest(false));
+    assert_eq!(changed.unwrap_err().to_string(), "Its files were changed. Install it again.");
+}
+
+#[test]
+fn a_review_refuses_what_a_component_imports_as_a_compile_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("plugin.wasm");
+    let read = |bytes: &[u8]| {
+        fs::write(&file, bytes).unwrap();
+        wasm::inspect(&file, None, &wasm_manifest(false))
+    };
+    for wat in [
+        r#"(component (import "example:thing/api@1.0.0" (instance)))"#,
+        r#"(component (import "autoscene:plugin/host@1.2.0" (instance)))"#,
+        r#"(component (import "wasi:cli/environment@0.2.19" (instance)))"#,
+    ] {
+        let (bytes, m) = (component(wat), wasm_manifest(false));
+        let (read, compiled) = (read(&bytes).unwrap_err(), wasm::check(&bytes, Some(&m)).unwrap_err());
+        assert_eq!(read.to_string(), compiled.to_string(), "{wat}");
+    }
+    // A component nested in it imports from its parent, not from AutoScene.
+    let nested = component(r#"(component (component (import "example:thing/api@1.0.0" (instance))))"#);
+    assert_eq!(read(&nested).unwrap().imports, Vec::<String>::new());
+    // Past the nested code, its own imports still count.
+    let after = component(r#"(component (core module) (component) (import "wasi:http/types@0.2.0" (instance)))"#);
+    assert_eq!(read(&after).unwrap().imports, ["wasi:http/types@0.2.0"]);
+
+    let header = b"\0asm\x0d\x00\x01\x00";
+    for (bytes, says) in [
+        (&b"\0asm\x01\x00\x00\x00"[..], "The plugin's component isn't a WebAssembly component."),
+        // A section that claims more than the file holds, code or not.
+        (&[&header[..], &[1, 0x7f]].concat(), "The plugin's component doesn't load: "),
+        (&[&header[..], &[10, 0x7f]].concat(), "The plugin's component doesn't load: "),
+    ] {
+        let e = read(bytes).unwrap_err().to_string();
+        assert!(e.starts_with(says), "{e}");
+    }
+}
+
+#[test]
 fn a_component_is_prepared_once_for_its_code() {
     let Some(g) = guest("hello") else { return };
     let bytes = fs::read(&g.component).unwrap();
@@ -1013,6 +1068,19 @@ fn a_1_0_guest_is_never_sent_an_event() {
     assert!(reports.iter().all(|(stage, _)| stage.starts_with("Getting")), "{reports:?}");
     assert_eq!(fs::read_dir(g.path("data")).unwrap().count(), 0);
     assert!(g.log().contains("[host] couldn't start: The plugin waits for events"), "{}", g.log());
+}
+
+#[test]
+fn a_review_stops_reading_at_more_imports_than_any_plugin_has() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("plugin.wasm");
+    let imports: String = (0..4097).map(|i| format!(r#"(import "wasi:io/a{i}@0.2.0" (instance))"#)).collect();
+    fs::write(&file, wat::parse_str(format!("(component {imports})")).unwrap()).unwrap();
+    let e = wasm::inspect(&file, None, &wasm_manifest(false)).unwrap_err();
+    assert_eq!(e.to_string(), "The plugin's component doesn't load: it has too many imports");
+    let imports: String = (0..4096).map(|i| format!(r#"(import "wasi:io/a{i}@0.2.0" (instance))"#)).collect();
+    fs::write(&file, wat::parse_str(format!("(component {imports})")).unwrap()).unwrap();
+    assert_eq!(wasm::inspect(&file, None, &wasm_manifest(false)).unwrap().imports.len(), 4096);
 }
 
 #[test]

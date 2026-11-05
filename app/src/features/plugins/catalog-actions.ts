@@ -1,16 +1,16 @@
 import { toast } from "sonner"
 import { create } from "zustand"
 import type { CatalogPlugin, PluginReview } from "@/bindings"
-import { commands, errorMessage } from "@/lib/ipc"
+import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
-import { usePluginReview } from "@/state/plugin-review"
+import { type ReviewAsk, usePluginReview } from "@/state/plugin-review"
 import { asksNothingNew, oneClick } from "./catalog-items"
 import { pluginToast } from "./plugin-toast"
 
 type Entry = Pick<CatalogPlugin, "id" | "name">
 
 /** How a catalog package is asked for: the dialog shows it coming, and its Cancel ends the get. */
-const ask = (p: Entry, install?: (r: PluginReview) => Promise<boolean>) => ({
+const ask = (p: Entry, install?: ReviewAsk["install"]) => ({
   label: p.name,
   get: { pluginId: p.id, cancel: () => void commands.catalogCancel(p.id).catch(() => undefined) },
   install,
@@ -25,10 +25,11 @@ export async function getFromCatalog(p: Entry): Promise<void> {
 }
 
 /**
- * Installs a reviewed update at once when it asks for nothing new (it says
- * so in a toast): `true`. Otherwise `false`, and its review shows.
+ * Installs a reviewed update without its review when it asks for nothing new
+ * (it says so in a toast): `true`, or "cancelled" when the person stopped its
+ * compile. Otherwise `false`, and its review shows.
  */
-async function installQuietly(r: PluginReview, name: string): Promise<boolean> {
+async function installQuietly(r: PluginReview, name: string): Promise<boolean | "cancelled"> {
   if (!oneClick(r)) return false
   try {
     const p = await commands.pluginInstall(r.ticketId, false)
@@ -37,7 +38,10 @@ async function installQuietly(r: PluginReview, name: string): Promise<boolean> {
     pluginToast(p.name, { text: `updated to ${p.version}` })
   } catch (e) {
     void commands.pluginDiscard(r.ticketId).catch(() => undefined)
+    if (isAppError(e) && e.code === "cancelled") return "cancelled"
     pluginToast(name, { text: "couldn't be updated", description: errorMessage(e), tone: "error" })
+  } finally {
+    usePluginReview.getState().compileEnded()
   }
   return true
 }
@@ -45,13 +49,17 @@ async function installQuietly(r: PluginReview, name: string): Promise<boolean> {
 /**
  * Update a plugin from the catalog: in one click when its review asks for
  * nothing new, else through that review. Whether it was decided without
- * the review (installed, or failed).
+ * the review (installed, stopped, or failed).
  */
 export async function updatePlugin(p: Entry): Promise<boolean> {
   let quiet = false
   await usePluginReview.getState().openReview(
     () => commands.catalogGet(p.id),
-    ask(p, async (r) => (quiet = await installQuietly(r, p.name))),
+    ask(p, async (r) => {
+      const installed = await installQuietly(r, p.name)
+      quiet = installed !== false
+      return installed
+    }),
   )
   return quiet
 }

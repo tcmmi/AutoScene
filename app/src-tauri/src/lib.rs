@@ -112,6 +112,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::plugins::plugin_inspect,
             commands::plugins::plugin_inspect_folder,
             commands::plugins::plugin_install,
+            commands::plugins::plugin_compile_cancel,
             commands::plugins::plugin_discard,
             commands::plugins::plugin_uninstall,
             commands::plugins::plugin_set_enabled,
@@ -157,6 +158,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             events::PluginPageEvent,
             events::CatalogChanged,
             events::CatalogProgress,
+            events::PluginCompiling,
             events::PluginsOpened,
             updater::UpdateProgress,
         ])

@@ -121,7 +121,7 @@ use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult, ErrorCode};
-use crate::events::{PageEvent, PluginPageEvent};
+use crate::events::{PageEvent, PluginCompiling, PluginPageEvent};
 use crate::state::AppState;
 use crate::work::job_error;
 use catalog::CatalogHost;
@@ -153,6 +153,9 @@ pub const CHECKING_FILES: &str = "Checking files";
 
 /// Tells the app's page what became of one of its open plugin pages.
 pub type PageEvents = Box<dyn Fn(PluginPageEvent) + Send + Sync>;
+
+/// Told the ticket id of a compile that starts ([`PluginHost::compile`]).
+pub type CompileTold = Box<dyn Fn(&str) + Send + Sync>;
 
 /// Where the uv of uv scripts comes from: AutoScene's own ([`ManagedUv`]),
 /// or a test's stand-in.
@@ -272,6 +275,10 @@ pub struct PluginHost {
     /// Packages and folders checked and waiting for the person's yes, by
     /// ticket id.
     tickets: Mutex<HashMap<String, Ticket>>,
+    /// What ends each compile under way, by ticket id.
+    compiles: Mutex<HashMap<String, CancelToken>>,
+    /// Told the ticket id of a compile that starts, which the page shows.
+    compile_told: CompileTold,
     /// The runs [`queue_run`] queued that may not have ended yet, by job:
     /// what each runs, so the same run isn't queued twice, a plugin turned
     /// off loses those still waiting too, and its pages queue only so many
@@ -594,6 +601,17 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
     });
     match Store::open(paths, library.shared_db(), version, Arc::new(OsKeyring)) {
         Ok(store) => {
+            // This very executable compiles plugins, as it is the engine:
+            // without it, installing a WebAssembly plugin fails and says so.
+            let program = std::env::current_exe().unwrap_or_else(|e| {
+                log::error!("can't locate the app's executable to compile plugins: {e}");
+                PathBuf::new()
+            });
+            let store = store.compile_with(as_plugin::wasm::Compiler::new(program));
+            let to = app.clone();
+            let compile_told: CompileTold = Box::new(move |ticket_id| {
+                let _ = PluginCompiling { ticket_id: ticket_id.to_owned() }.emit_to(&to, "main");
+            });
             // Read before the window opens: a package opened at launch is
             // judged by the catalog held. It is small, and never fetched here.
             let catalog = CatalogHost::builtin(paths, library.shared_db());
@@ -601,7 +619,8 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
             let start = Box::new(services::ProgramStart(app.clone()));
             let uv = Box::new(ManagedUv(paths.runtimes()));
             let resources = Box::new(Resources::new(paths.plugin_resources()));
-            let host = Arc::new(PluginHost::new(store, catalog, pages, page_events, start, uv, resources));
+            let host = PluginHost::new(store, catalog, pages, page_events, start, uv, resources);
+            let host = Arc::new(host.telling_compiles(compile_told));
             pages::watch(app.clone(), Arc::downgrade(&host));
             services::reap(Arc::downgrade(&host));
             Some(host)
@@ -654,6 +673,8 @@ impl PluginHost {
             pages,
             page_events,
             tickets: Mutex::default(),
+            compiles: Mutex::default(),
+            compile_told: Box::new(|_| {}),
             runs: Mutex::default(),
             busy: Mutex::default(),
             freed: Condvar::new(),
@@ -829,6 +850,39 @@ impl PluginHost {
     /// Whether a run of `id` is running.
     fn is_running(&self, id: &PluginId) -> bool {
         self.busy.lock().running.values().any(|p| p == id)
+    }
+
+    /// Tells `told` the ticket id of each compile that starts.
+    fn telling_compiles(mut self, told: CompileTold) -> Self {
+        self.compile_told = told;
+        self
+    }
+
+    /// [`Store::compile`] of `t`, the ticket `ticket_id`, which
+    /// [`PluginHost::stop_compile`] can end. The page hears when a component
+    /// starts to compile, past every question.
+    fn compile(
+        &self,
+        ticket_id: &str,
+        t: &mut Ticket,
+        allow_unreviewed: bool,
+        accept_unreviewed: bool,
+    ) -> PluginResult<()> {
+        let cancel = CancelToken::new();
+        self.compiles.lock().insert(ticket_id.to_owned(), cancel.clone());
+        if t.compiles() {
+            (self.compile_told)(ticket_id);
+        }
+        let compiled = self.store.compile(t, allow_unreviewed, accept_unreviewed, &cancel);
+        self.compiles.lock().remove(ticket_id);
+        compiled
+    }
+
+    /// Ends the compile of the ticket `ticket_id`, if one is under way.
+    pub fn stop_compile(&self, ticket_id: &str) {
+        if let Some(cancel) = self.compiles.lock().get(ticket_id) {
+            cancel.cancel();
+        }
     }
 
     /// Marks `id` (named `name`) as being installed, updated or uninstalled
@@ -1316,6 +1370,11 @@ pub type Question = (String, String, &'static str);
 /// page can't answer that dialog. A no keeps the review (`cancelled`).
 /// Refused while the version it replaces runs, before anything is asked: a
 /// yes to what can't happen now would have to be given again.
+///
+/// A WebAssembly plugin compiles past that yes and before the plugin is
+/// touched: what can't compile, or takes too long, leaves its runs, its
+/// pages and its service as they were, and a Stop ([`PluginHost::stop_compile`])
+/// keeps the review, as a no does.
 pub fn install(
     host: &PluginHost,
     ticket_id: &str,
@@ -1341,16 +1400,29 @@ pub fn install(
         host.keep(ticket);
         return Err(AppError::new(ErrorCode::Cancelled, "It wasn't installed."));
     }
+    ticket.confirmed = asks;
+    match host.compile(ticket_id, &mut ticket, allow_unreviewed, accept_unreviewed) {
+        Ok(()) => {}
+        Err(PluginError::Cancelled) => {
+            ticket.confirmed = false;
+            host.keep(ticket);
+            return Err(AppError::new(ErrorCode::Cancelled, "It wasn't installed."));
+        }
+        Err(e) => {
+            host.store.discard(ticket);
+            return Err(e.into());
+        }
+    }
     // Its runs wait from here until the row names the new version. One that
     // started during the question loses the yes: the review kept asks again.
     let changing = match host.change(&ticket.manifest.id, &ticket.manifest.name, "It is being updated.") {
         Ok(changing) => changing,
         Err(busy) => {
+            ticket.confirmed = false;
             host.keep(ticket);
             return Err(busy.into());
         }
     };
-    ticket.confirmed = asks;
     let p = host.store.commit(ticket, allow_unreviewed, accept_unreviewed)?;
     drop(changing);
     Ok(p)
@@ -2418,7 +2490,7 @@ mod tests {
         let root = tmp.join("library").display().to_string();
         lib.update_settings(&AppSettings { library_root: root, ..lib.settings().unwrap() }).unwrap();
         let app = semver::Version::parse("1.0.3-BETA").unwrap();
-        let store = Store::open(&paths, lib.shared_db(), app, secrets).unwrap();
+        let store = Store::open(&paths, lib.shared_db(), app, secrets).unwrap().compile_here();
         let (keys, fetch) = checked.unwrap_or_else(|| {
             let none: Arc<dyn catalog::Fetch> = Arc::new(Arc::new(catalog::tests::Served::default()));
             (as_plugin::CatalogKeys::new(&[]).unwrap(), none)
@@ -2802,7 +2874,7 @@ mod tests {
 
     /// A page-only plugin `id` of `trust`, its files in `dir`: installed
     /// from a package, or `loaded` from its folder.
-    fn paged(dir: &Path, id: &str, trust: Trust, loaded: bool) -> Installed {
+    pub(super) fn paged(dir: &Path, id: &str, trust: Trust, loaded: bool) -> Installed {
         let manifest = page_only(id, serde_json::json!([{"id": "main", "title": "Main", "entry": "ui/index.html"}]));
         let files = [("plugin.json", manifest.to_string().into_bytes()), ("ui/index.html", b"<p>hi</p>".to_vec())];
         for (path, bytes) in &files {
@@ -2825,7 +2897,7 @@ mod tests {
     }
 
     /// Opens the page of `p` (see [`paged`]); gives its session.
-    fn open_page(host: &PluginHost, p: &Installed) -> String {
+    pub(super) fn open_page(host: &PluginHost, p: &Installed) -> String {
         let page = &p.manifest.as_ref().unwrap().pages[0];
         host.pages.open(p, Grants::of(p).unwrap(), page, None).unwrap().0.token.clone()
     }
@@ -3352,7 +3424,7 @@ mod tests {
 
     #[test]
     fn a_wasm_run_gets_its_set_secrets_its_files_and_what_it_runs_on() {
-        // The test guest (`cargo xtask wasm-guests`): its component is checked and compiled at load.
+        // The test guest (`cargo xtask wasm-guests`): its component is compiled at load.
         let Some(guest) = as_testkit::fixture_file("wasm/guest.wasm") else { return };
         let tmp = std::env::temp_dir().join(format!("autoscene-plugin-wasm-spec-{}", std::process::id()));
         let files = FakeFiles::missing(false);

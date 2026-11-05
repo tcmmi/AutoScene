@@ -26,7 +26,8 @@ import { checkedWhen, firstTime, joinWords, limitsLine, permissionLabel, resourc
  * then shows outside the page. Closed without installing, the review goes,
  * and the files it unpacked. It shows what `usePluginReview` holds, from
  * wherever that was asked for, so the shell mounts it once. A package got
- * from the catalog shows here while it comes, with a Cancel.
+ * from the catalog shows here while it comes, with a Cancel. Past the yes, a
+ * WebAssembly plugin shows here while it compiles, with a Cancel too.
  */
 export function InstallReviewDialog() {
   const review = usePluginReview((s) => s.review)
@@ -60,20 +61,52 @@ export function InstallReviewDialog() {
 }
 
 /**
+ * A plugin that compiles, past the person's yes: nothing says how far that is,
+ * it can take minutes, and it can be stopped. Stopped, it leaves things as they
+ * were before the yes.
+ */
+function CompilingForm({ name }: { name: string }) {
+  const stopCompile = usePluginReview((s) => s.stopCompile)
+  const [stopping, setStopping] = useState(false)
+  return (
+    <DialogContent title={`Getting ${name} ready…`} hideClose>
+      <div className="flex flex-col gap-2.5">
+        <Progress value={null} />
+        <p className="text-sm text-fg-2">AutoScene compiles it so it can run. This can take up to 2 minutes, and your computer may be busy meanwhile.</p>
+      </div>
+      <DialogFooter>
+        <Button
+          variant="ghost"
+          disabled={stopping}
+          onClick={() => {
+            setStopping(true)
+            stopCompile()
+          }}
+        >
+          Cancel
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  )
+}
+
+/**
  * A package on its way from the catalog: how far it came, and Cancel. Once
- * it is in and asks for nothing new, it installs at once: then it can't be
- * cancelled.
+ * it is in and asks for nothing new, it installs without a review: then it
+ * can't be cancelled, until it compiles.
  */
 function GettingForm({ getting, onCancel }: { getting: Getting; onCancel: () => void }) {
-  const { label, done, total, installing } = getting
+  const { label, done, total, installing, ticketId } = getting
+  const compiling = usePluginReview((s) => s.compiling != null && s.compiling === ticketId)
   const part = done != null && total != null && total > 0 ? done / total : null
+  if (compiling) return <CompilingForm name={label} />
   return (
     <DialogContent title={installing ? `Updating ${label}…` : `Getting ${label}…`} hideClose>
       <div className="flex flex-col gap-2.5">
         <Progress value={installing ? null : part} />
         <p className="text-sm text-fg-2">
           {installing
-            ? "It asks for nothing new, so it installs at once."
+            ? "It asks for nothing new, so there is nothing to review."
             : done != null && total != null && total > 0
               ? `${formatBytes(done)} of ${formatBytes(total)} from AutoScene's plugin catalog`
               : "From AutoScene's plugin catalog"}
@@ -110,6 +143,8 @@ function ReviewForm({
   onInstalled: () => void
 }) {
   const p = review.plugin
+  const compiling = usePluginReview((s) => s.compiling === review.ticketId)
+  const compileEnded = usePluginReview((s) => s.compileEnded)
   const [typed, setTyped] = useState("")
   // The setting turned on from here: the review stays, and may install.
   const [allowedHere, setAllowedHere] = useState(false)
@@ -134,12 +169,15 @@ function ReviewForm({
       // Only a refusal while the plugin runs keeps the review, to try again.
       if (!(isAppError(e) && e.code === "not_ready")) onCancel()
     } finally {
+      compileEnded()
       setBusy(false)
     }
   }
   const trust = trustLabel(p)
+  // What was typed here stays: Cancel comes back to it.
+  if (compiling) return <CompilingForm name={p.name} />
   return (
-    <DialogContent title={`${verb} ${p.name}?`} className="max-h-[calc(100vh-48px)] overflow-y-auto">
+    <DialogContent title={`${verb} ${p.name}?`} hideClose={busy} className="max-h-[calc(100vh-48px)] overflow-y-auto">
       <div className="flex flex-col gap-5">
         <div className="flex items-start gap-4">
           <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-fg-1 [&_svg]:size-6">
@@ -419,7 +457,7 @@ function Runs({ review }: { review: PluginReview }) {
         {p.runtime === "none"
           ? "Runs no program. Its pages run in a sandbox."
           : p.sandbox
-            ? "A WebAssembly plugin. AutoScene checked and compiled it."
+            ? "A WebAssembly plugin. AutoScene compiles it once you say yes."
             : p.uvScript
             ? `A Python script that uv runs. On its ${first}${getsUv} Python (if this computer has none) and the packages the script names.`
             : "A program in its folder."}

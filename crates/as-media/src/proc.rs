@@ -108,9 +108,23 @@ pub struct Tree {
 /// flags (Windows) and the process group (Unix) are set here, and stay set on
 /// `cmd`: on Windows it keeps only `CREATE_NO_WINDOW`.
 pub fn spawn_tree(cmd: &mut Command) -> io::Result<Tree> {
+    start_tree(cmd, None)
+}
+
+/// [`spawn_tree`], with a process of the tree held to `memory` bytes: what
+/// asks for more than that is refused, and a Rust program ends on that. On
+/// Windows it is the memory the process has committed, which the tree's job
+/// keeps; on Unix the address space of the root and of what it starts
+/// (`RLIMIT_AS`), which also counts what is only reserved. A system that
+/// won't set that (macOS may not) runs the tree without it.
+pub fn spawn_tree_limited(cmd: &mut Command, memory: u64) -> io::Result<Tree> {
+    start_tree(cmd, Some(memory))
+}
+
+fn start_tree(cmd: &mut Command, memory: Option<u64>) -> io::Result<Tree> {
     #[cfg(windows)]
     {
-        let tree = spawn_suspended(cmd)?;
+        let tree = spawn_suspended(cmd, memory)?;
         // On an error the tree is dropped, which ends it.
         resume(tree.child.id())?;
         Ok(tree)
@@ -118,6 +132,17 @@ pub fn spawn_tree(cmd: &mut Command) -> io::Result<Tree> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
+        if let Some(memory) = memory {
+            let limit = libc::rlimit { rlim_cur: memory as libc::rlim_t, rlim_max: memory as libc::rlim_t };
+            // SAFETY: setrlimit is async-signal-safe, and this touches
+            // nothing else between the fork and the exec.
+            unsafe {
+                cmd.pre_exec(move || {
+                    libc::setrlimit(libc::RLIMIT_AS, &limit);
+                    Ok(())
+                });
+            }
+        }
         let child = cmd.process_group(0).spawn()?;
         Ok(Tree { pgid: child.id() as libc::pid_t, child, reaped: false })
     }
@@ -236,15 +261,16 @@ impl Drop for Tree {
     }
 }
 
-/// Start `cmd` suspended, in a kill-on-close job of its own.
+/// Start `cmd` suspended, in a kill-on-close job of its own, whose processes
+/// may each commit `memory` bytes when given.
 #[cfg(windows)]
-fn spawn_suspended(cmd: &mut Command) -> io::Result<Tree> {
+fn spawn_suspended(cmd: &mut Command, memory: Option<u64>) -> io::Result<Tree> {
     use std::os::windows::io::AsRawHandle;
     use std::os::windows::process::CommandExt;
     use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
     use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 
-    let job = job::kill_on_close()?;
+    let job = job::kill_on_close(memory)?;
     // One call: `creation_flags` replaces the flags set before.
     let spawned = cmd.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED).spawn();
     // Anything else `cmd` started would stay suspended for good.
@@ -316,8 +342,8 @@ mod job {
 
     use windows_sys::Win32::Foundation::HANDLE;
     use windows_sys::Win32::System::JobObjects::{
-        CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JobObjectExtendedLimitInformation, SetInformationJobObject,
+        CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
     };
 
     pub struct Job(pub HANDLE);
@@ -328,7 +354,7 @@ mod job {
     /// The process-wide kill-on-close job, created on first use.
     pub fn get() -> Option<&'static Job> {
         static JOB: OnceLock<Option<Job>> = OnceLock::new();
-        JOB.get_or_init(|| match kill_on_close() {
+        JOB.get_or_init(|| match kill_on_close(None) {
             // The handle is deliberately never closed: closing it is what
             // kills the children, which must only happen when this process ends.
             Ok(job) => Some(Job(job.into_raw_handle())),
@@ -340,8 +366,9 @@ mod job {
         .as_ref()
     }
 
-    /// A new job that kills its processes when its last handle closes.
-    pub fn kill_on_close() -> io::Result<OwnedHandle> {
+    /// A new job that kills its processes when its last handle closes, and
+    /// refuses a process of it more than `memory` bytes when given.
+    pub fn kill_on_close(memory: Option<u64>) -> io::Result<OwnedHandle> {
         // SAFETY: plain Win32 calls with valid, initialised arguments; the
         // handle is wrapped right after it is checked.
         unsafe {
@@ -352,6 +379,10 @@ mod job {
             let job = OwnedHandle::from_raw_handle(h);
             let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
             info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            if let Some(memory) = memory {
+                info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+                info.ProcessMemoryLimit = usize::try_from(memory).unwrap_or(usize::MAX);
+            }
             let ok = SetInformationJobObject(
                 h,
                 JobObjectExtendedLimitInformation,
@@ -693,7 +724,7 @@ mod tests {
         let ran = dir.path().join("ran");
         let mut command = Command::new("cmd");
         command.raw_arg(format!("/C type nul > \"{}\"", ran.display()));
-        let mut tree = spawn_suspended(&mut command).unwrap();
+        let mut tree = spawn_suspended(&mut command, None).unwrap();
         let in_job = |job| {
             let mut inside = 0;
             // SAFETY: valid process and job handles.

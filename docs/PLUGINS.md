@@ -269,9 +269,10 @@ A plugin picks its own device, with `CUDA_VISIBLE_DEVICES` and
 A run that waits or runs already isn't queued again: the same action of the
 same plugin, on the same export or in the same project, with the same input
 from a page. AutoScene then says so, and a page's `actions.run` gives
-`{ "jobId": null }`. A page's `actions.run` is refused while 16 runs of its
-plugin wait or run, with "<name> is running. Wait for it to finish, or
-stop it in Activity."
+`{ "jobId": null }`. An event's run is the exception, see
+[Runs by itself](#runs-by-itself). A page's `actions.run` is refused while
+16 runs of its plugin wait or run, with "<name> is running. Wait for it to
+finish, or stop it in Activity."
 
 A program has no time limit: it may run as long as it needs, and the
 person can stop it in Activity. A WebAssembly plugin's run has one (see
@@ -324,8 +325,9 @@ without being asked. Each is off until the person turns it on.
   posters aren't waited for.
 
 Each runs as a job of its own, so a plugin never fails an export or an
-analysis, or holds it up. The same run waits once: an event that waits or
-runs already isn't queued again, and keeps what it was told.
+analysis, or holds it up. The same run waits once: an event whose run still
+waits isn't queued again, and that run is told of the next batch too. A run
+that has started was told already, so another is queued after it.
 
 ### Shot filters
 

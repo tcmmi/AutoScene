@@ -159,10 +159,12 @@ Rules:
   (click to rename) and facts as chips; Build a scenepack as the white pill; shots scrub on hover. Shots close
   together stack on one card: hover scrubs them all, a click opens them in a band under the row, Enter or the Play
   button watches from the first.
-- **Scenepack:** the character's portrait and name, the filters in a glass bar that stays under the top bar (order,
-  shot sizes as chips, length, episodes, limit, handles, "only them", flash cuts, and a plugin's filters with the
-  plugin mark: a ring fills while one checks, a warning mark once its check failed, a filter of a plugin that is off is
-  dimmed), then every shot of the
+- **Scenepack:** the character's portrait and name, a glass bar that stays under the top bar (the order; Filters with
+  the number that are on, plugin filters counted; the handles; a plugin's filters as chips with the plugin mark: a ring
+  fills while one checks, a warning mark once its check failed, a filter of a plugin that is off is dimmed; Reset
+  filters once anything differs). Filters is one menu that stays open while filters are chosen: shot sizes, then length,
+  episodes and limit each a step further with the choice beside its name, then "only them" and flash cuts. Then every
+  shot of the
   character: the ones the pack takes bright with a gold tick, the rest dimmed with the reason (a filter's own words
   for the shots it leaves out). A click takes a shot in or out,
   Shift every shot since the last. A glass bar floats at the bottom with the count, length and size, the picks by

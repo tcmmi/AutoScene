@@ -6,6 +6,7 @@ import {
   between,
   checkOf,
   exportable,
+  filtersOn,
   filterReason,
   fits,
   isDefault,
@@ -278,5 +279,36 @@ describe("plugin filters", () => {
     expect(filterReason({ ...filter("ready", 0, 0), reason: "" })).toBe("Plugin filter")
     expect(filterReason(undefined)).toBe("Plugin filter")
     expect(REASONS.plugin).toBe("Plugin filter")
+  })
+})
+
+describe("filtersOn", () => {
+  const media = [{ id: "a" }, { id: "b" }]
+
+  it("is nothing for a pack as it comes", () => {
+    expect(filtersOn(DEFAULT_SPEC, media)).toBe(0)
+  })
+
+  it("counts each filter once, however much it holds", () => {
+    expect(filtersOn({ ...DEFAULT_SPEC, sizes: ["wide", "medium"] }, media)).toBe(1)
+    expect(filtersOn({ ...DEFAULT_SPEC, minSec: 1, maxSec: 6 }, media)).toBe(1)
+    expect(filtersOn({ ...DEFAULT_SPEC, maxSec: 6, limit: 25, solo: true }, media)).toBe(3)
+    expect(filtersOn({ ...DEFAULT_SPEC, skipTiny: false, skipFaceless: true }, media)).toBe(2)
+  })
+
+  it("counts each plugin filter, as Reset would turn it off", () => {
+    expect(filtersOn({ ...DEFAULT_SPEC, solo: true, pluginFilters: ["p/a", "q/b"] }, media)).toBe(3)
+  })
+
+  it("leaves out what shapes the pack without leaving a shot out", () => {
+    expect(filtersOn({ ...DEFAULT_SPEC, order: "best", handles: 12 }, media)).toBe(0)
+  })
+
+  it("counts the episodes while one is left out, even one the bar can't show", () => {
+    expect(filtersOn({ ...DEFAULT_SPEC, media: ["a"] }, media)).toBe(1)
+    expect(filtersOn({ ...DEFAULT_SPEC, media: ["a", "b"] }, media)).toBe(0)
+    // The project lost the episode the pack was narrowed to.
+    expect(filtersOn({ ...DEFAULT_SPEC, media: ["gone"] }, [{ id: "a" }])).toBe(1)
+    expect(filtersOn({ ...DEFAULT_SPEC, media: ["a"] }, [{ id: "a" }])).toBe(0)
   })
 })

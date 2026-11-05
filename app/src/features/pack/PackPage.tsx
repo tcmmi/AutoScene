@@ -318,7 +318,7 @@ export function Builder({
             onChange={pack.setSpec}
           />
         ) : (
-          <div className="h-[57px] border-b border-hairline" />
+          <div className="h-[calc(3.75rem+1px)] border-b border-hairline" />
         )}
         <section className="px-10 pt-5 pb-32">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-4">

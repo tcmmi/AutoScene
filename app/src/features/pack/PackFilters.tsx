@@ -1,40 +1,35 @@
 import type * as React from "react"
-import { ArrowCounterClockwise, CaretDown, Check, FunnelSimple, Warning } from "@/components/icons"
+import { ArrowCounterClockwise, CaretDown, FunnelSimple, Warning } from "@/components/icons"
 import type { MediaItem, PackFilter, PackOrder, PackSpec, PluginInfo, ShotSize } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ProgressRing } from "@/components/ui/progress"
 import { Segmented } from "@/components/ui/segmented"
-import { Tooltip } from "@/components/ui/tooltip"
+import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { plural } from "@/features/cast/cast"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { mediaTitle } from "@/lib/media"
 import { cn } from "@/lib/utils"
-import { DEFAULT_SPEC, HANDLES, LENGTHS, LIMITS, SIZES, isDefault, lengthOf, pluginFiltersOf, withPluginFilter } from "./spec"
+import { DEFAULT_SPEC, HANDLES, LENGTHS, LIMITS, SIZES, episodesOn, filtersOn, isDefault, lengthOf, pluginFiltersOf, withPluginFilter } from "./spec"
 
-/** Count active filters that diverge from the default spec. */
-function activeFiltersCount(spec: PackSpec, totalMediaCount: number): number {
-  let count = 0
-  if (spec.sizes.length > 0) count++
-  if (spec.minSec != null || spec.maxSec != null) count++
-  if (spec.media.length > 0 && spec.media.length < totalMediaCount) count++
-  if (spec.limit != null) count++
-  if (spec.solo) count++
-  if (!spec.skipTiny) count++
-  if (spec.skipFaceless) count++
-  return count
-}
-
-/** The pack's filters, in a streamlined bar that stays under the top bar while the shots scroll. */
+/**
+ * The pack's order, its filters in one menu and the handles, in a bar that
+ * stays under the top bar while the shots scroll. The menu stays open while
+ * filters are chosen, so several take one visit; a plugin's filters stay
+ * chips of their own, because each can have something to say (a ring, a
+ * warning mark).
+ */
 export function PackFilters({
   spec,
   media,
@@ -55,22 +50,18 @@ export function PackFilters({
 }) {
   const set = (patch: Partial<PackSpec>) => onChange({ ...spec, ...patch })
   const toggleSize = (s: ShotSize) =>
-    set({
-      sizes: spec.sizes.includes(s)
-        ? spec.sizes.filter((x) => x !== s)
-        : SIZES.map((x) => x.value).filter((x) => x === s || spec.sizes.includes(x)),
-    })
+    set({ sizes: spec.sizes.includes(s) ? spec.sizes.filter((x) => x !== s) : SIZES.map((x) => x.value).filter((x) => x === s || spec.sizes.includes(x)) })
   const length = lengthOf(spec)
-  const episodes = spec.media.length === 0 ? media.length : spec.media.filter((id) => media.some((m) => m.id === id)).length
-  const filterCount = activeFiltersCount(spec, media.length)
+  const narrowed = episodesOn(spec, media)
+  const episodes = narrowed ? spec.media.filter((id) => media.some((m) => m.id === id)).length : media.length
+  const count = filtersOn(spec, media)
 
   return (
     <div
       role="group"
       aria-label="Filters"
-      className="sticky top-[var(--topbar-h)] z-10 flex flex-wrap items-center gap-3 border-b border-hairline bg-canvas/80 px-10 py-3 backdrop-blur-2xl backdrop-saturate-150"
+      className="sticky top-[var(--topbar-h)] z-10 flex flex-wrap items-center gap-2 border-b border-hairline bg-canvas/80 px-10 py-3 backdrop-blur-2xl backdrop-saturate-150"
     >
-      {/* 1. Primary Order Switcher */}
       <Segmented<PackOrder>
         aria-label="Order"
         value={spec.order}
@@ -80,58 +71,30 @@ export function PackFilters({
           { value: "best", label: "Best first" },
         ]}
       />
-
       <Divider />
-
-      {/* 2. Consolidated Filters Menu */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Chip pressed={filterCount > 0} aria-haspopup="menu" aria-pressed={undefined} className="gap-2">
-            <FunnelSimple className="size-4" />
-            <span>Filters</span>
-            {filterCount > 0 && (
-              <span className="flex size-4 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-accent-contrast">
-                {filterCount}
+          <Chip pressed={count > 0} aria-haspopup="menu" aria-pressed={undefined} aria-label={count > 0 ? `Filters, ${count} on` : "Filters"}>
+            <FunnelSimple className="size-4" /> Filters
+            {count > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-2xs font-semibold tabular-nums text-on-accent">
+                {count}
               </span>
             )}
             <CaretDown className="size-3.5 opacity-70" />
           </Chip>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-72 p-2">
-          {/* Shot sizes section */}
-          <div className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wider text-fg-3">
-            Shot Sizes
+        <DropdownMenuContent align="start" className="w-[300px]">
+          {/* No header of its own: the names say it, and the menu fits the window's smallest height (1024x640) at rest. */}
+          <div role="group" aria-label="Shot sizes">
+            {SIZES.map((s) => (
+              <DropdownMenuCheckboxItem key={s.value} checked={spec.sizes.includes(s.value)} onCheckedChange={() => toggleSize(s.value)}>
+                {s.label}
+              </DropdownMenuCheckboxItem>
+            ))}
           </div>
-          <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
-            {SIZES.map((s) => {
-              const active = spec.sizes.includes(s.value)
-              return (
-                <button
-                  key={s.value}
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    toggleSize(s.value)
-                  }}
-                  className={cn(
-                    "flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors",
-                    active
-                      ? "bg-accent-subtle text-fg-1 ring-1 ring-accent-line"
-                      : "bg-white/[0.04] text-fg-3 hover:bg-white/[0.08] hover:text-fg-1",
-                  )}
-                >
-                  {active && <Check className="size-3 text-accent" />}
-                  <span>{s.short}</span>
-                </button>
-              )
-            })}
-          </div>
-
           <DropdownMenuSeparator />
-
-          {/* Duration submenu */}
-          <div>
-            <DropdownMenuLabel>Duration</DropdownMenuLabel>
+          <Choice label="Length" value={length.label} active={spec.minSec != null || spec.maxSec != null}>
             <DropdownMenuRadioGroup
               value={length.id ?? ""}
               onValueChange={(id) => {
@@ -140,104 +103,75 @@ export function PackFilters({
               }}
             >
               {LENGTHS.map((l) => (
-                <DropdownMenuRadioItem key={l.id} value={l.id}>
+                <DropdownMenuRadioItem key={l.id} value={l.id} onSelect={stayOpen}>
                   {l.label}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
-          </div>
-
-          <DropdownMenuSeparator />
-
-          {/* Rules section */}
-          <div>
-            <DropdownMenuLabel>Rules</DropdownMenuLabel>
-            <DropdownMenuCheckboxItem
-              checked={spec.solo}
-              onCheckedChange={(checked) => set({ solo: checked === true })}
-            >
-              Only them in the shot
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={spec.skipTiny}
-              onCheckedChange={(checked) => set({ skipTiny: checked === true })}
-            >
-              Skip flash cuts
-            </DropdownMenuCheckboxItem>
-            {(faceless || spec.skipFaceless) && (
-              <DropdownMenuCheckboxItem
-                checked={spec.skipFaceless ?? false}
-                onCheckedChange={(checked) => set({ skipFaceless: checked === true })}
-              >
-                Only with their face
+          </Choice>
+          {media.length > 1 && (
+            <Choice label="Episodes" value={narrowed ? `${episodes} of ${media.length}` : "All"} active={narrowed}>
+              <DropdownMenuCheckboxItem checked={!narrowed} disabled={!narrowed} onCheckedChange={() => set({ media: [] })}>
+                All episodes
               </DropdownMenuCheckboxItem>
-            )}
-          </div>
-
-          <DropdownMenuSeparator />
-
-          {/* Limits section */}
-          <div>
-            <DropdownMenuLabel>Limit</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {/* A long series scrolls here, so "All episodes" stays in reach above. */}
+              <div className="max-h-[min(420px,60vh)] overflow-y-auto">
+                {media.map((m) => {
+                  const picked = !narrowed || spec.media.includes(m.id)
+                  const only = picked && episodes === 1
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={m.id}
+                      checked={picked}
+                      // One episode at least: none would mean all again.
+                      disabled={only}
+                      onCheckedChange={(checked) => {
+                        const ids = narrowed ? spec.media : media.map((x) => x.id)
+                        const next = checked ? [...ids, m.id] : ids.filter((id) => id !== m.id)
+                        const all = media.every((x) => next.includes(x.id))
+                        set({ media: all ? [] : media.map((x) => x.id).filter((id) => next.includes(id)) })
+                      }}
+                    >
+                      {/* Cut at the list's width; the rest shows in a tooltip, only when it is cut. */}
+                      <TruncatedText>{mediaTitle(m)}</TruncatedText>
+                    </DropdownMenuCheckboxItem>
+                  )
+                })}
+              </div>
+            </Choice>
+          )}
+          <Choice label="Limit" value={spec.limit == null ? "No limit" : `Best ${spec.limit}`} active={spec.limit != null}>
             <DropdownMenuRadioGroup
               value={String(spec.limit)}
               onValueChange={(v) => set({ limit: v === "null" ? null : Number(v) })}
             >
               {LIMITS.map((n) => (
-                <DropdownMenuRadioItem key={String(n)} value={String(n)}>
+                <DropdownMenuRadioItem key={String(n)} value={String(n)} onSelect={stayOpen}>
                   {n == null ? "No limit" : `The best ${n}`}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
-          </div>
-
-          {/* Multi-episode selection when more than 1 exists */}
-          {media.length > 1 && (
-            <>
-              <DropdownMenuSeparator />
-              <div>
-                <div className="flex items-center justify-between px-2 py-1.5">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-fg-3">
-                    Episodes ({episodes}/{media.length})
-                  </span>
-                  {spec.media.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => set({ media: [] })}
-                      className="text-[11px] text-accent hover:underline"
-                    >
-                      All
-                    </button>
-                  )}
-                </div>
-                <div className="max-h-48 overflow-y-auto">
-                  {media.map((m) => {
-                    const on = spec.media.length === 0 || spec.media.includes(m.id)
-                    const only = on && episodes === 1
-                    return (
-                      <DropdownMenuCheckboxItem
-                        key={m.id}
-                        checked={on}
-                        disabled={only}
-                        onCheckedChange={(checked) => {
-                          const ids = spec.media.length === 0 ? media.map((x) => x.id) : spec.media
-                          const next = checked ? [...ids, m.id] : ids.filter((id) => id !== m.id)
-                          const all = media.every((x) => next.includes(x.id))
-                          set({ media: all ? [] : media.map((x) => x.id).filter((id) => next.includes(id)) })
-                        }}
-                      >
-                        <span className="truncate">{mediaTitle(m)}</span>
-                      </DropdownMenuCheckboxItem>
-                    )
-                  })}
-                </div>
-              </div>
-            </>
+          </Choice>
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem checked={spec.solo} onCheckedChange={(solo) => set({ solo })}>
+            Only them in the shot
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem checked={spec.skipTiny} onCheckedChange={(skipTiny) => set({ skipTiny })}>
+            Skip flash cuts
+          </DropdownMenuCheckboxItem>
+          {(faceless || spec.skipFaceless) && (
+            // Its hint is a line of its own, not a tooltip: a tooltip would take the first Esc from the menu.
+            <DropdownMenuCheckboxItem
+              hint="Leaves out the shots found by their body"
+              checked={spec.skipFaceless ?? false}
+              onCheckedChange={(skipFaceless) => set({ skipFaceless })}
+            >
+              Only with their face
+            </DropdownMenuCheckboxItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-
-      {/* 3. Export Handles Parameter */}
       <Menu label={spec.handles === 0 ? "No handles" : `Handles ${spec.handles} fr`} active={spec.handles > 0}>
         <DropdownMenuRadioGroup value={String(spec.handles)} onValueChange={(v) => set({ handles: Number(v) })}>
           {HANDLES.map((n) => (
@@ -247,6 +181,7 @@ export function PackFilters({
           ))}
         </DropdownMenuRadioGroup>
       </Menu>
+      {filters.length > 0 && <Divider />}
       {filters.map((f) => (
         <PluginFilterChip
           key={f.key}
@@ -256,14 +191,28 @@ export function PackFilters({
           onChange={(on) => onChange(withPluginFilter(spec, f.key, on))}
         />
       ))}
-
-      {/* 4. Reset Filters Action */}
       {!isDefault(spec) && (
         <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onChange(DEFAULT_SPEC)}>
           <ArrowCounterClockwise /> Reset filters
         </Button>
       )}
     </div>
+  )
+}
+
+/** A radio entry's choice shows at once and the menu stays: the next filter is one step away. */
+const stayOpen = (e: Event) => e.preventDefault()
+
+/** A filter with a list of its own: its name, what is chosen, and the list one step further. */
+function Choice({ label, value, active, children }: { label: string; value: string; active: boolean; children: React.ReactNode }) {
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger className="pl-9">
+        {label}
+        <span className={cn("ml-auto text-sm", active ? "text-accent" : "text-fg-3")}>{value}</span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="min-w-[220px] max-w-[360px]">{children}</DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }
 

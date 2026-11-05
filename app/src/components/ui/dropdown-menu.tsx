@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { DropdownMenu as M } from "radix-ui"
-import { Check } from "@/components/icons"
+import { CaretRight, Check } from "@/components/icons"
 import { cn } from "@/lib/utils"
 import { MenuShortcut } from "./context-menu"
 import { afterClose, menuItem, menuSurface } from "./menu-base"
@@ -8,6 +8,7 @@ import { afterClose, menuItem, menuSurface } from "./menu-base"
 export const DropdownMenu = M.Root
 export const DropdownMenuTrigger = M.Trigger
 export const DropdownMenuRadioGroup = M.RadioGroup
+export const DropdownMenuSub = M.Sub
 
 export function DropdownMenuContent({
   className,
@@ -69,16 +70,26 @@ export function DropdownMenuItem({
   )
 }
 
-/** A choice to tick among several. The menu stays open: one usually ticks more than one. */
+/**
+ * A choice to tick among several. The menu stays open: one usually ticks more
+ * than one. `hint` says what it does, on a line of its own under the name (not
+ * a tooltip, which would take the first Esc from the menu).
+ */
 export function DropdownMenuCheckboxItem({
   className,
   children,
+  hint,
   onSelect,
   ...props
-}: React.ComponentProps<typeof M.CheckboxItem>) {
+}: React.ComponentProps<typeof M.CheckboxItem> & { hint?: React.ReactNode }) {
   return (
     <M.CheckboxItem
-      className={cn(item, "relative pl-9 data-[state=checked]:text-fg-1 data-[state=checked]:[&_svg]:text-accent", className)}
+      className={cn(
+        item,
+        "relative pl-9 data-[state=checked]:text-fg-1 data-[state=checked]:[&_svg]:text-accent",
+        hint != null && "h-auto py-1.5",
+        className,
+      )}
       onSelect={(e) => {
         e.preventDefault()
         onSelect?.(e)
@@ -88,7 +99,14 @@ export function DropdownMenuCheckboxItem({
       <M.ItemIndicator className="absolute left-3 flex items-center">
         <Check weight="bold" />
       </M.ItemIndicator>
-      {children}
+      {hint == null ? (
+        children
+      ) : (
+        <span>
+          {children}
+          <span className="block text-xs text-fg-3">{hint}</span>
+        </span>
+      )}
     </M.CheckboxItem>
   )
 }
@@ -105,6 +123,41 @@ export function DropdownMenuRadioItem({ className, children, ...props }: React.C
       </M.ItemIndicator>
       {children}
     </M.RadioItem>
+  )
+}
+
+/** An entry that opens a list of its own (Right, or resting on it), inside a `DropdownMenuSub`. */
+export function DropdownMenuSubTrigger({ className, children, ...props }: React.ComponentProps<typeof M.SubTrigger>) {
+  return (
+    <M.SubTrigger className={cn(item, "data-[state=open]:bg-active data-[state=open]:text-fg-1", className)} {...props}>
+      {children}
+      <CaretRight className="-mr-1" />
+    </M.SubTrigger>
+  )
+}
+
+/** The list a `DropdownMenuSubTrigger` opens. As long as it likes: it scrolls inside the window. */
+export function DropdownMenuSubContent({
+  className,
+  sideOffset = 8,
+  alignOffset = -6,
+  collisionPadding = 8,
+  ...props
+}: React.ComponentProps<typeof M.SubContent>) {
+  return (
+    <M.Portal>
+      <M.SubContent
+        sideOffset={sideOffset}
+        alignOffset={alignOffset}
+        collisionPadding={collisionPadding}
+        className={cn(
+          menuSurface,
+          "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto data-[state=open]:animate-pop-in",
+          className,
+        )}
+        {...props}
+      />
+    </M.Portal>
   )
 }
 

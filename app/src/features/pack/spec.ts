@@ -1,4 +1,4 @@
-import type { PackChoices, PackClip, PackFilter, PackPreview, PackReason, PackSpec, ShotSize } from "@/bindings"
+import type { MediaId, PackChoices, PackClip, PackFilter, PackPreview, PackReason, PackSpec, ShotSize } from "@/bindings"
 
 /**
  * The scenepack builder's filters and picks, as plain data. The backend
@@ -87,6 +87,33 @@ export function isDefault(spec: PackSpec): boolean {
     pluginFiltersOf(spec).length === 0
   )
 }
+
+/**
+ * How many filters `spec` turns on, as the Filters button counts them: each
+ * control that keeps shots out, or lets flash cuts in, and each plugin filter
+ * (one of a plugin that is off too: it is on, and Reset turns it off). The
+ * order and the handles shape the pack, they leave no shot out.
+ */
+export function filtersOn(spec: PackSpec, media: readonly { id: MediaId }[]): number {
+  const own = [
+    spec.sizes.length > 0,
+    spec.minSec != null || spec.maxSec != null,
+    episodesOn(spec, media),
+    spec.limit != null,
+    spec.solo,
+    !spec.skipTiny,
+    spec.skipFaceless ?? false,
+  ]
+  return own.filter(Boolean).length + pluginFiltersOf(spec).length
+}
+
+/**
+ * The pack keeps shots of some episodes only: it names some and leaves one of
+ * the project's out. A pack named for episodes that are all still there (or
+ * for ones since removed) shows them all, so it is not a filter.
+ */
+export const episodesOn = (spec: PackSpec, media: readonly { id: MediaId }[]): boolean =>
+  spec.media.length > 0 && media.some((m) => !spec.media.includes(m.id))
 
 const NONE: readonly string[] = []
 

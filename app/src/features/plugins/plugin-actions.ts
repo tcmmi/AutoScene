@@ -1,5 +1,6 @@
 import { toast } from "sonner"
 import type { ActionKind, PackNaming, PackSpec, PluginInfo } from "@/bindings"
+import { t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { rememberPackSave } from "./pack-saves"
@@ -20,9 +21,9 @@ export async function runPlugin(
   try {
     const job = await commands.pluginRun(run.pluginId, run.actionId, kind, projectId, exportId)
     if (job == null)
-      pluginToast(run.pluginName, { text: `${run.title} is already waiting or running`, description: "It's in Activity." })
+      pluginToast(run.pluginName, "alreadyWaiting", { action: run.title }, { description: t("plugins:toast.inActivity") })
   } catch (e) {
-    pluginToast(run.pluginName, { text: `${run.title} couldn't start`, description: errorMessage(e), tone: "error" })
+    pluginToast(run.pluginName, "cantStart", { action: run.title }, { description: errorMessage(e) })
   }
 }
 
@@ -49,9 +50,9 @@ export async function runPackAction(
     const start = await commands.packActionRun(projectId, characterId, `${run.pluginId}/${run.actionId}`, spec, naming, stamp)
     if (start.kind === "queued") rememberPackSave(start.job, start.path)
     else if (start.kind === "waits")
-      pluginToast(run.pluginName, { text: `${title} is already waiting or running`, description: "It's in Activity." })
+      pluginToast(run.pluginName, "alreadyWaiting", { action: title }, { description: t("plugins:toast.inActivity") })
   } catch (e) {
-    pluginToast(run.pluginName, { text: `${title} couldn't start`, description: errorMessage(e), tone: "error" })
+    pluginToast(run.pluginName, "cantStart", { action: title }, { description: errorMessage(e) })
   }
 }
 
@@ -77,7 +78,7 @@ async function saveAllowUnreviewed(on: boolean): Promise<boolean> {
     void queryClient.invalidateQueries({ queryKey: qk.plugins })
     return settings.allowUnreviewedPlugins ?? false
   } catch (e) {
-    toast.error("Couldn't save the setting", { description: errorMessage(e) })
+    toast.error(t("plugins:saveFailed"), { description: errorMessage(e) })
     return false
   }
 }
@@ -91,7 +92,7 @@ export async function openSource(p: Pick<PluginInfo, "id">) {
   try {
     await commands.pluginOpenSource(p.id)
   } catch (e) {
-    toast.error("Couldn't open the link", { description: errorMessage(e) })
+    toast.error(t("plugins:menu.linkFailed"), { description: errorMessage(e) })
   }
 }
 
@@ -100,7 +101,7 @@ export async function setPluginEnabled(p: Pick<PluginInfo, "id">, on: boolean) {
   try {
     keepPlugin(await commands.pluginSetEnabled(p.id, on))
   } catch (e) {
-    toast.error(on ? "Couldn't turn the plugin on" : "Couldn't turn the plugin off", { description: errorMessage(e) })
+    toast.error(on ? t("plugins:menu.turnOnFailed") : t("plugins:menu.turnOffFailed"), { description: errorMessage(e) })
   }
 }
 

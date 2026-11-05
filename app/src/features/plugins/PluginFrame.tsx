@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import type { PageMount, PluginPageEvent } from "@/bindings"
 import { AppWindow, Warning } from "@/components/icons"
 import { Button } from "@/components/ui/button"
@@ -221,11 +222,12 @@ function pageInit(m: PageMount, path: string, version: string): PageInit {
  * button: the frame under it is out of reach.
  */
 function Covered({ cover, onReload, onClose }: { cover: Cover; onReload: () => void; onClose: () => void }) {
+  const { t } = useTranslation(["plugins", "common"])
   const said = {
-    quiet: { title: "This page isn't responding.", description: undefined },
-    closed: { title: "This page was closed.", description: cover.kind === "closed" ? cover.reason : undefined },
-    overflow: { title: "This page sent AutoScene messages it couldn't read.", description: undefined },
-    failed: { title: "Couldn't open this page.", description: cover.kind === "failed" ? cover.message : undefined },
+    quiet: { title: t("frame.quiet"), description: undefined },
+    closed: { title: t("frame.closed"), description: cover.kind === "closed" ? cover.reason : undefined },
+    overflow: { title: t("frame.overflow"), description: undefined },
+    failed: { title: t("frame.failed"), description: cover.kind === "failed" ? cover.message : undefined },
   }[cover.kind]
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -242,10 +244,10 @@ function Covered({ cover, onReload, onClose }: { cover: Cover; onReload: () => v
         description={said.description}
         actions={
           <>
-            <Button onClick={onReload}>{cover.kind === "failed" ? "Try again" : "Reload"}</Button>
+            <Button onClick={onReload}>{cover.kind === "failed" ? t("common:action.tryAgain") : t("frame.reload")}</Button>
             {(cover.kind === "quiet" || cover.kind === "failed") && (
               <Button variant="ghost" onClick={onClose}>
-                Close
+                {t("common:action.close")}
               </Button>
             )}
           </>

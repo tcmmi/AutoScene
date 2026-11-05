@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import type { PluginReview } from "@/bindings"
+import { t } from "@/lib/i18n"
 import { commands } from "@/lib/ipc"
 import { baseName, pickFolder, pickPluginFile } from "@/lib/media"
 import { useSettings } from "@/lib/queries"
@@ -48,6 +49,6 @@ export function usePluginInstall() {
     allowed,
     checking,
     install: () => void inspect("file", pickPluginFile, commands.pluginInspect),
-    loadFolder: () => void inspect("folder", () => pickFolder("Choose the plugin's folder"), commands.pluginInspectFolder),
+    loadFolder: () => void inspect("folder", () => pickFolder(t("plugins:chooseFolder")), commands.pluginInspectFolder),
   }
 }

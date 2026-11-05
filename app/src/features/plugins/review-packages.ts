@@ -1,4 +1,5 @@
 import { toast } from "sonner"
+import { t } from "@/lib/i18n"
 import { commands } from "@/lib/ipc"
 import { baseName } from "@/lib/media"
 import { usePluginReview } from "@/state/plugin-review"
@@ -20,7 +21,7 @@ export function reviewPackages(paths: string[]) {
   const store = usePluginReview.getState()
   const fresh = paths.filter((p, i) => paths.indexOf(p) === i && !store.pending(p))
   if (fresh.length === 0) {
-    toast(paths.length === 1 ? `${baseName(paths[0])} is already being reviewed` : "These plugins are already being reviewed")
+    toast(paths.length === 1 ? t("plugins:packages.alreadyOne", { file: baseName(paths[0]) }) : t("plugins:packages.alreadyMany"))
     return
   }
   const label = baseName(fresh[0])
@@ -28,9 +29,9 @@ export function reviewPackages(paths: string[]) {
   const rest = fresh.length - 1
   const reviews = fresh.map((p) => store.openReview(() => commands.pluginInspect(p), baseName(p), p))
   if (waits) {
-    toast(fresh.length === 1 ? `${label} waits for the review open now` : `${fresh.length} plugins wait for the review open now`)
+    toast(t("plugins:packages.waits", { count: fresh.length, file: label }))
     return
   }
-  const id = toast.loading(rest > 0 ? `Reading ${label}… ${rest} more wait their turn` : `Reading ${label}…`)
+  const id = toast.loading(rest > 0 ? t("plugins:packages.readingMore", { count: rest, rest, file: label }) : t("plugins:packages.reading", { file: label }))
   void reviews[0].finally(() => toast.dismiss(id))
 }

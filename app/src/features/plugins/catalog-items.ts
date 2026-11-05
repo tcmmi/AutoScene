@@ -1,5 +1,6 @@
 import type { CatalogPlugin, CatalogStatus, Permission, PluginReview } from "@/bindings"
-import { downloadSize, firstTime, joinWords, permissionLabel, pluginMatches } from "./plugin-items"
+import { fmt, t } from "@/lib/i18n"
+import { downloadSize, joinWords, permissionLabel, pluginMatches } from "./plugin-items"
 
 /**
  * Whether a catalog update may install without its review: AutoScene
@@ -68,41 +69,40 @@ export const asksNothingNew = (
  */
 export function catalogAsks(p: Pick<CatalogPlugin, "permissions" | "hosts" | "gpu">): string {
   const parts = p.permissions.map((perm) =>
-    perm === "network" && p.hosts.length > 0 ? `Talks to ${p.hosts.join(", ")}` : permissionLabel(perm as Permission),
+    perm === "network" && p.hosts.length > 0 ? t("plugins:catalog.talksTo", { hosts: p.hosts.join(", ") }) : permissionLabel(perm as Permission),
   )
-  if (p.gpu) parts.push("Uses the graphics card")
-  return parts.length > 0 ? parts.join(" · ") : "Names no permissions"
+  if (p.gpu) parts.push(t("plugins:catalog.gpu"))
+  return parts.length > 0 ? parts.join(" · ") : t("plugins:catalog.nothing")
 }
 
 /** What a catalog entry's large files take its first run, "Downloads 312 MB at its first run": none when it names none. */
 export function catalogDownloads(p: Pick<CatalogPlugin, "resourceBytes" | "runtime">): string | null {
   const bytes = p.resourceBytes ?? 0
-  return bytes > 0 ? `Downloads ${downloadSize(bytes)} at its ${firstTime(p.runtime)}` : null
+  if (bytes <= 0) return null
+  const size = downloadSize(bytes)
+  return p.runtime === "service" ? t("plugins:catalog.downloadsStart", { size }) : t("plugins:catalog.downloadsRun", { size })
 }
 
 /** What an update's card says when its files come from a host the installed version had none from: "Downloads from a new host: huggingface.co". */
 export function catalogNewHosts(p: Pick<CatalogPlugin, "addsResourceHosts">): string | null {
   const n = p.addsResourceHosts.length
-  return n > 0 ? `Downloads from ${n === 1 ? "a new host" : "new hosts"}: ${joinWords(p.addsResourceHosts)}` : null
+  return n > 0 ? t("plugins:catalog.newHosts", { count: n, hosts: joinWords(p.addsResourceHosts) }) : null
 }
 
 const DAY_MS = 86_400_000
 
 /** A day as people say it: "3 November 2026". */
 export function catalogDay(ms: number): string {
-  return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+  return fmt.longDate(ms)
 }
 
-/** "today", "yesterday" or "on 3 November 2026", by the calendar of `now`. */
-function when(ms: number, now: number): string {
+/** How many calendar days before `now` `ms` was: 0 is today, 1 yesterday. */
+function daysAgo(ms: number, now: number): number {
   const day = (t: number) => {
     const d = new Date(t)
     return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS
   }
-  const ago = day(now) - day(ms)
-  if (ago === 0) return "today"
-  if (ago === 1) return "yesterday"
-  return `on ${catalogDay(ms)}`
+  return day(now) - day(ms)
 }
 
 /**
@@ -113,19 +113,26 @@ function when(ms: number, now: number): string {
  */
 export function catalogLine(s: CatalogStatus, now = Date.now()): string | null {
   if (!s.ready) return null
-  const of = s.published != null ? `Catalog of ${catalogDay(s.published)}.` : "No catalog yet."
+  const of = s.published != null ? t("plugins:catalog.of", { date: catalogDay(s.published) }) : t("plugins:catalog.noneYet")
   // `checkedAt` is the last try: "Checked" only when it went through.
-  const checked =
-    s.checkedAt == null
-      ? " Not checked yet."
-      : s.error != null
-        ? ` Last check failed ${when(s.checkedAt, now)}.`
-        : ` Checked ${when(s.checkedAt, now)}.`
-  return of + checked
+  return `${of} ${checkedSentence(s, now)}`
 }
 
 /** Since when the catalog couldn't be checked: its last fetch, else its publication, else nothing known. */
 export function stuckSince(s: CatalogStatus): string | null {
   const since = s.fetchedAt ?? s.published
   return since != null ? catalogDay(since) : null
+}
+
+/** One sentence on the last try: when it was, and whether it went through. */
+function checkedSentence(s: CatalogStatus, now: number): string {
+  if (s.checkedAt == null) return t("plugins:catalog.notChecked")
+  const ago = daysAgo(s.checkedAt, now)
+  const date = catalogDay(s.checkedAt)
+  if (s.error != null) {
+    if (ago === 0) return t("plugins:catalog.failedToday")
+    return ago === 1 ? t("plugins:catalog.failedYesterday") : t("plugins:catalog.failedOn", { date })
+  }
+  if (ago === 0) return t("plugins:catalog.checkedToday")
+  return ago === 1 ? t("plugins:catalog.checkedYesterday") : t("plugins:catalog.checkedOn", { date })
 }

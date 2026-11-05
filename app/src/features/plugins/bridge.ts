@@ -20,6 +20,7 @@
  */
 import { toast } from "sonner"
 import type { PageEffect, PageEvent, PageReply } from "@/bindings"
+import { say } from "@/lib/i18n"
 import { commands, englishMessage } from "@/lib/ipc"
 import {
   BRIDGE_VERSION,
@@ -118,6 +119,7 @@ export function parseFrameMessage(data: unknown): FrameToHost | null {
  * meant to; a dialog of the system's opens over AutoScene, where they may
  * be working. A page can take the focus itself; it can't click for them.
  */
+// The words are part of the English `denied` messages the page's code gets (see `call`), not the person's.
 const FOCUSED: Partial<Record<HostMethod, string>> = {
   "ui.copyText": "copies",
   "ui.openExternal": "opens a dialog",
@@ -183,6 +185,8 @@ export function createHost(port: PortLike, deps: HostDeps, limits: Partial<Limit
   const next = () => {
     while (!closed && inflight < l.inflight && queue.length > 0) run(queue.shift()!)
   }
+  // What `fail` says goes to the page's code, in English, as the protocol's own text for plugin authors (PLUGINS.md):
+  // the person never reads it, so none of it is in the catalog.
   const call = (c: Extract<FrameToHost, { t: "call" }>) => {
     if (!isMethod(c.method)) return fail(c.id, "invalid", "AutoScene has no such method.")
     if (waiting >= l.waiting) return fail(c.id, "busy", `This page has ${l.waiting} calls waiting already.`)
@@ -330,8 +334,8 @@ export function pageCaller(session: string, send: (session: string, method: stri
 /** A toast a page's call asked for, with Rust's title as it is: it starts with `Plugin “<name>”:`. No action button. */
 export function showToast(e: Extract<PageEffect, { type: "toast" }>) {
   const options = { description: e.description ?? undefined }
-  if (e.tone === "error") toast.error(e.title, options)
-  else toast(e.title, options)
+  if (e.tone === "error") toast.error(say(e.title), options)
+  else toast(say(e.title), options)
 }
 
 /**

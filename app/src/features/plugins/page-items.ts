@@ -1,4 +1,5 @@
 import type { PageScope, PluginInfo } from "@/bindings"
+import { t } from "@/lib/i18n"
 
 /** The most plugin pages the rail shows; the others are in the palette. */
 export const MAX_RAIL_PAGES = 4
@@ -55,12 +56,12 @@ export function pageLink(item: Pick<PageItem, "pluginId" | "pageId">, pid?: stri
  * reads as a plugin's.
  */
 export function pageLabel(item: Pick<PageItem, "pluginName" | "title">): string {
-  return `Plugin “${item.pluginName}” · ${item.title}`
+  return t("plugins:page.label", { name: item.pluginName, title: item.title })
 }
 
 /** A rail tile's tooltip: `Plugin “<name>”: <title>`. */
 export function railTooltip(item: Pick<PageItem, "pluginName" | "title">): string {
-  return `Plugin “${item.pluginName}”: ${item.title}`
+  return t("plugins:page.railTooltip", { name: item.pluginName, title: item.title })
 }
 
 /** Whether `s` may be a plugin's id: 2 to 5 parts of lowercase letters, digits and dashes, joined by dots. */

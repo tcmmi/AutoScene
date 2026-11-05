@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import type { CatalogPlugin, PluginInfo } from "@/bindings"
 import { ArrowsClockwise } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent } from "@/components/ui/dropdown-menu
 import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { Switch } from "@/components/ui/switch"
 import { TruncatedText } from "@/components/ui/tooltip"
+import { say } from "@/lib/i18n"
 import { usePluginBanner } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { getsPlugin, usePluginReview } from "@/state/plugin-review"
@@ -17,9 +19,6 @@ import { setPluginEnabled } from "./plugin-actions"
 import { PluginArt } from "./PluginArt"
 import { authorLine, trustLabel } from "./plugin-items"
 import { PluginItems } from "./plugin-menu"
-
-/** Why a plugin AutoScene hasn't reviewed doesn't run, on its card. */
-const NOT_ALLOWED = "Doesn't run until the setting below allows it."
 
 /**
  * A plugin as its artwork, in the language of a project's card: the art opens
@@ -43,6 +42,7 @@ export function PluginCard({
   onLoadAgain: () => void
   onUninstall: () => void
 }) {
+  const { t } = useTranslation("plugins")
   // Its update is being got, or waits its turn: the button spins, and
   // waits (a second click would only ask again).
   const getting = usePluginReview((s) => getsPlugin(s, p.id))
@@ -51,10 +51,10 @@ export function PluginCard({
   const trust = trustLabel(p)
   // AutoScene took it back: it doesn't run, whatever its switch said.
   const withdrawn = p.withdrawn != null
-  const facts = [authorLine(p), `version ${p.version}`].filter(Boolean).join(" · ")
+  const facts = [authorLine(p), t("version", { version: p.version })].filter(Boolean).join(" · ")
   // The backend's reason sends people to Plugins, where the card already is:
   // the card's own words point at the setting under the cards instead.
-  const blocked = p.broken == null && p.enabled && p.blockedReason != null ? NOT_ALLOWED : null
+  const blocked = p.broken == null && p.enabled && p.blockedReason != null ? t("notAllowed") : null
   return (
     <ContextArea menu={<PluginItems kit={contextKit} p={p} onLoadAgain={onLoadAgain} onUninstall={onUninstall} onUpdate={onUpdate} />}>
       <div role="group" aria-label={p.name}>
@@ -73,7 +73,7 @@ export function PluginCard({
             />
           </Link>
           <DropdownMenu>
-            <CardMenuButton over="picture" aria-label={`${p.name} options`} />
+            <CardMenuButton over="picture" aria-label={t("options", { name: p.name })} />
             <DropdownMenuContent>
               <PluginItems kit={dropdownKit} p={p} onLoadAgain={onLoadAgain} onUninstall={onUninstall} onUpdate={onUpdate} />
             </DropdownMenuContent>
@@ -87,17 +87,17 @@ export function PluginCard({
             </Badge>
             {p.sandbox && (
               <Badge tone="outline" className="shrink-0">
-                Sandboxed
+                {t("sandboxed")}
               </Badge>
             )}
           </div>
           {update && (
             <Button size="sm" className="ml-auto" busy={getting} onClick={onUpdate}>
-              <ArrowsClockwise /> Update…
+              <ArrowsClockwise /> {t("menu.update")}
             </Button>
           )}
           <Switch
-            aria-label={`Enable ${p.name}`}
+            aria-label={t("enable", { name: p.name })}
             checked={p.enabled && !withdrawn}
             disabled={withdrawn}
             onCheckedChange={(on) => void setPluginEnabled(p, on)}
@@ -108,7 +108,7 @@ export function PluginCard({
         {p.withdrawn != null ? (
           <p className="mt-1.5 pl-0.5 text-sm text-danger">{p.withdrawn}</p>
         ) : p.broken != null ? (
-          <p className="mt-1.5 pl-0.5 text-sm text-danger">{p.broken}</p>
+          <p className="mt-1.5 pl-0.5 text-sm text-danger">{say(p.broken)}</p>
         ) : (
           blocked && <p className="mt-1.5 pl-0.5 text-sm text-fg-3">{blocked}</p>
         )}

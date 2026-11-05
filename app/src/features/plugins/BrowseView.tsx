@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next"
 import { ArrowCounterClockwise, ArrowsClockwise, DownloadSimple, MagnifyingGlass, PuzzlePiece, Warning } from "@/components/icons"
 import { Banner } from "@/components/ui/banner"
 import { Button } from "@/components/ui/button"
@@ -7,13 +8,12 @@ import { Switch } from "@/components/ui/switch"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
 import { useAppActions } from "@/lib/actions"
 import { CARD_GRID } from "@/lib/grid"
+import { say } from "@/lib/i18n"
 import { useCatalog, useSettings } from "@/lib/queries"
 import { CatalogCard } from "./CatalogCard"
 import { checkCatalog, setDailyChecks, useCatalogCheck } from "./catalog-actions"
 import { catalogMatches, stuckSince } from "./catalog-items"
 import { PluginSkeletons } from "./PluginSkeletons"
-
-const DAILY = "Check the plugin catalog every day"
 
 /**
  * Browse: what AutoScene's catalog offers, each plugin as a card, found by
@@ -21,6 +21,7 @@ const DAILY = "Check the plugin catalog every day"
  * it was checked, Check now, and whether it is checked every day.
  */
 export function BrowseView({ query, onClear }: { query: string; onClear: () => void }) {
+  const { t } = useTranslation("plugins")
   const { data: view, error, isFetching, refetch } = useCatalog()
   const { data: settings } = useSettings()
   const checking = useCatalogCheck((s) => s.checking)
@@ -31,7 +32,7 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
       <ErrorState
         error={error}
         icon={<PuzzlePiece />}
-        title="Couldn't read the plugin catalog"
+        title={t("browse.readFailed")}
         retrying={isFetching}
         onRetry={() => void refetch()}
       />
@@ -42,11 +43,11 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
     return (
       <EmptyState
         icon={<DownloadSimple />}
-        title="Update AutoScene to use the plugin catalog"
-        description="A later AutoScene checked the catalog, or its index needs one. Plugins still install from their .asp file."
+        title={t("browse.newer.title")}
+        description={t("browse.newer.description")}
         actions={
           <Button onClick={checkUpdates}>
-            <DownloadSimple /> Check for updates
+            <DownloadSimple /> {t("browse.newer.check")}
           </Button>
         }
       />
@@ -55,8 +56,8 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
     return (
       <EmptyState
         icon={<PuzzlePiece />}
-        title="The plugin catalog isn't open yet"
-        description="This AutoScene has no plugin catalog. Plugins still install from their .asp file."
+        title={t("browse.closed.title")}
+        description={t("browse.closed.description")}
       />
     )
 
@@ -69,11 +70,11 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
         <Banner
           tone="accent"
           icon={<Warning weight="fill" />}
-          title="The plugin catalog is out of date"
-          description={`${since ? `AutoScene couldn't check it since ${since}.` : "AutoScene couldn't check it yet."} Plugins can't be installed from it until it can.`}
+          title={t("browse.outOfDate.title")}
+          description={since ? t("browse.outOfDate.since", { date: since }) : t("browse.outOfDate.never")}
           actions={
             <Button busy={checking} onClick={() => void checkCatalog()}>
-              <ArrowCounterClockwise /> Try again
+              <ArrowCounterClockwise /> {t("browse.outOfDate.tryAgain")}
             </Button>
           }
           className="mb-10 max-w-4xl"
@@ -81,43 +82,39 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
       )}
 
       <div className="max-w-4xl">
-        <SettingsGroup title="Catalog">
+        <SettingsGroup title={t("browse.group")}>
           <SettingRow
-            label="AutoScene's plugin catalog"
+            label={t("browse.catalog.label")}
             description={
               // The banner says it while it is up: once is enough.
               status.error != null && !status.outOfDate ? (
-                <span className="text-danger">{status.error}</span>
+                <span className="text-danger">{say(status.error)}</span>
               ) : (
-                "Plugins AutoScene reviewed, each built from its public source."
+                t("browse.catalog.description")
               )
             }
           >
             <Button size="sm" busy={checking} onClick={() => void checkCatalog()}>
-              <ArrowsClockwise /> Check now
+              <ArrowsClockwise /> {t("browse.catalog.checkNow")}
             </Button>
           </SettingRow>
           <SettingRow
-            label={DAILY}
-            description={
-              daily
-                ? "AutoScene asks GitHub once a day for new versions and withdrawn plugins."
-                : "Off: AutoScene doesn't learn of withdrawn plugins."
-            }
+            label={t("browse.daily.label")}
+            description={daily ? t("browse.daily.on") : t("browse.daily.off")}
           >
-            <Switch aria-label={DAILY} checked={daily} disabled={!settings} onCheckedChange={(on) => void setDailyChecks(on)} />
+            <Switch aria-label={t("browse.daily.label")} checked={daily} disabled={!settings} onCheckedChange={(on) => void setDailyChecks(on)} />
           </SettingRow>
         </SettingsGroup>
       </div>
 
       {status.outOfDate ? null : view.plugins.length === 0 ? (
-        <EmptyState icon={<PuzzlePiece />} title="The catalog lists no plugins yet" description="Check again later." />
+        <EmptyState icon={<PuzzlePiece />} title={t("browse.none.title")} description={t("browse.none.description")} />
       ) : shown.length === 0 ? (
         <EmptyState
           icon={<MagnifyingGlass />}
-          title="Nothing matches"
-          description={`No plugin in the catalog has “${query.trim()}” in its name, author, summary or id.`}
-          actions={<Button onClick={onClear}>Clear the search</Button>}
+          title={t("browse.noMatch.title")}
+          description={t("browse.noMatch.description", { query: query.trim() })}
+          actions={<Button onClick={onClear}>{t("browse.noMatch.clear")}</Button>}
         />
       ) : (
         <div className={CARD_GRID}>

@@ -352,7 +352,10 @@ Rules for every word on screen:
 - React elements inside a sentence go through `<Trans>` with tags from `b strong em mono key x go`, never an HTML
   void name (`<link>`, `<br>`, `<img>`…), which renders empty.
 - Plugin words and the user's data stay values inside a translated sentence; brand and product names (AniList,
-  ProRes…) stay as they are. Nothing about a plugin is translated.
+  ProRes…) stay as they are. Nothing about a plugin is translated. A toast about a plugin is one whole message per
+  kind, `pluginToast(name, kind, vars)` (`features/plugins/plugin-toast.ts`), each with a `named` and an `anonymous`
+  text that start with a word the plugin can't choose ("Plugin “<name>”: …", "A plugin: …"), because a plugin may
+  call itself "AutoScene": a language keeps that word first, and the plugin's own words come after it as values.
 - No `t()` in per-frame paths: cache the words, keyed on the language.
 
 The guard (`locales/hardcoded.test.ts`) refuses new words in the code: JSX text, text in JSX attributes, toast

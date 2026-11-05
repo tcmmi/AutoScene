@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import type { PluginInfo } from "@/bindings"
 import { ArrowsClockwise, ShieldWarning, Trash } from "@/components/icons"
 import { Banner } from "@/components/ui/banner"
@@ -19,6 +20,7 @@ import { UninstallDialog } from "./UninstallDialog"
  * plugin that isn't withdrawn.
  */
 export function WithdrawnBanner({ p, onUninstall, className }: { p: PluginInfo; onUninstall: () => void; className?: string }) {
+  const { t } = useTranslation("plugins")
   const { data: catalog } = useCatalog()
   const update = updatesOf(catalog?.plugins).find((u) => u.id === p.id)
   // Its update is being got, or waits its turn: a second click would only ask again.
@@ -28,17 +30,17 @@ export function WithdrawnBanner({ p, onUninstall, className }: { p: PluginInfo; 
     <Banner
       tone="danger"
       icon={<ShieldWarning weight="fill" />}
-      title={`AutoScene withdrew Plugin “${p.name}”`}
+      title={t("withdrawn.title", { name: p.name })}
       description={withdrawnLine(p.withdrawn)}
       actions={
         <>
           {update && (
             <Button variant="secondary" busy={getting} onClick={() => void updatePlugin(update)}>
-              <ArrowsClockwise /> Update…
+              <ArrowsClockwise /> {t("menu.update")}
             </Button>
           )}
           <Button variant="danger" onClick={onUninstall}>
-            <Trash /> Uninstall…
+            <Trash /> {t("menu.uninstall")}
           </Button>
         </>
       }

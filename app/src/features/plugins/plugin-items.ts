@@ -1,5 +1,5 @@
 import type { Permission, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, Trust } from "@/bindings"
-import { formatBytes } from "@/lib/format"
+import { fmt, t } from "@/lib/i18n"
 
 /**
  * How far a plugin is trusted, as its badge says it. A plugin AutoScene
@@ -12,15 +12,20 @@ export function trustLabel(p: Pick<PluginInfo, "trust" | "source"> & Partial<Pic
   label: string
   tone: "neutral" | "danger" | "outline"
 } {
-  if (p.withdrawn != null) return { label: "Withdrawn", tone: "danger" }
-  if (p.source === "folder") return { label: "Loaded from a folder", tone: "outline" }
-  return TRUST[p.trust]
+  if (p.withdrawn != null) return { label: t("plugins:trust.withdrawn"), tone: "danger" }
+  if (p.source === "folder") return { label: t("plugins:trust.folder"), tone: "outline" }
+  return trustOf(p.trust)
 }
 
-const TRUST: Record<Trust, { label: string; tone: "neutral" | "danger" | "outline" }> = {
-  reviewed: { label: "Reviewed by AutoScene", tone: "neutral" },
-  pinned: { label: "Signed, not reviewed", tone: "outline" },
-  unreviewed: { label: "Not reviewed", tone: "danger" },
+function trustOf(trust: Trust): { label: string; tone: "neutral" | "danger" | "outline" } {
+  switch (trust) {
+    case "reviewed":
+      return { label: t("plugins:trust.reviewed"), tone: "neutral" }
+    case "pinned":
+      return { label: t("plugins:trust.pinned"), tone: "outline" }
+    case "unreviewed":
+      return { label: t("plugins:trust.unreviewed"), tone: "danger" }
+  }
 }
 
 /**
@@ -29,7 +34,7 @@ const TRUST: Record<Trust, { label: string; tone: "neutral" | "danger" | "outlin
  */
 export function withdrawnLine(reason: string): string {
   const said = reason.trim()
-  return `${said}${/[.!?]$/.test(said) ? "" : "."} It is turned off.`
+  return t("plugins:withdrawn.line", { reason: `${said}${/[.!?]$/.test(said) ? "" : "."}` })
 }
 
 /**
@@ -38,30 +43,23 @@ export function withdrawnLine(reason: string): string {
  * refused); a first signature only brings a key along.
  */
 export function trustLine(p: Pick<PluginInfo, "trust" | "source">, update?: Pick<PluginUpdate, "trustBefore" | "sourceBefore"> | null): string {
-  if (p.source === "folder") return "It runs from its folder, as the files there are now. AutoScene has not reviewed it."
+  if (p.source === "folder") return t("plugins:trustLine.folder")
   switch (p.trust) {
     case "reviewed":
-      return "AutoScene reviewed this version."
+      return t("plugins:trustLine.reviewed")
     case "pinned":
       return update?.trustBefore === "pinned" && update.sourceBefore === "package"
-        ? "Signed with the same key as the installed version. AutoScene has not reviewed it."
-        : "Signed with a key that came in the package: nothing shows who holds it. AutoScene has not reviewed it. Its updates must be signed with the same key."
+        ? t("plugins:trustLine.pinnedSame")
+        : t("plugins:trustLine.pinnedNew")
     case "unreviewed":
-      return "Nobody AutoScene knows signed it, and AutoScene has not reviewed it."
+      return t("plugins:trustLine.unreviewed")
   }
 }
 
-/** "a", "a and b", "a, b and c". */
+/** "a", "a and b", "a, b and c" (in the UI's language). */
 export function joinWords(items: string[]): string {
-  if (items.length < 2) return items.join("")
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
+  return fmt.list(items)
 }
-
-/** When a program first needs what it downloads: its first run, or a service's first start. */
-export const firstTime = (runtime: string) => (runtime === "service" ? "first start" : "first run")
-
-/** When a program next needs what it downloads: its next run, or a service's next start (an update's files). */
-export const nextTime = (runtime: string) => (runtime === "service" ? "next start" : "next run")
 
 /**
  * A size as a download review says it: whole units below a gigabyte ("312
@@ -69,8 +67,9 @@ export const nextTime = (runtime: string) => (runtime === "service" ? "next star
  * rounded down by half a unit.
  */
 export function downloadSize(bytes: number): string {
-  if (bytes < 1024 ** 3) return formatBytes(bytes, 0)
-  return formatBytes(bytes, 1).replace(".0 ", " ")
+  if (bytes < 1024 ** 3) return fmt.bytes(bytes, 0)
+  const unit = bytes < 1024 ** 4 ? ("gb" as const) : ("tb" as const)
+  return t(`common:format.bytes.${unit}`, { value: fmt.decimal(bytes / 1024 ** (unit === "gb" ? 3 : 4), 1, true) })
 }
 
 /**
@@ -86,9 +85,19 @@ export function resourceLine(
   update = false,
 ): string | null {
   const bytes = r.resourceBytes ?? 0
-  const from = r.resourceHosts.length > 0 ? ` from ${joinWords(r.resourceHosts)}` : ""
-  if (bytes > 0) return `It downloads ${downloadSize(bytes)}${from} at its ${update ? nextTime(runtime) : firstTime(runtime)}. AutoScene keeps the files in its cache and checks each one by its hash.`
-  if (r.resourceHosts.length > 0) return `The large files it names come${from}. AutoScene already has them, and checks each one by its hash.`
+  const hosts = joinWords(r.resourceHosts)
+  const from = r.resourceHosts.length > 0
+  const service = runtime === "service"
+  if (bytes > 0) {
+    const v = { size: downloadSize(bytes), hosts }
+    if (update) {
+      if (service) return from ? t("plugins:resource.nextStartFrom", v) : t("plugins:resource.nextStart", v)
+      return from ? t("plugins:resource.nextRunFrom", v) : t("plugins:resource.nextRun", v)
+    }
+    if (service) return from ? t("plugins:resource.firstStartFrom", v) : t("plugins:resource.firstStart", v)
+    return from ? t("plugins:resource.firstRunFrom", v) : t("plugins:resource.firstRun", v)
+  }
+  if (from) return t("plugins:resource.kept", { hosts })
   return null
 }
 
@@ -100,7 +109,7 @@ export function reviewedPackage(p: Pick<PluginInfo, "trust" | "source">): boolea
 /** Who a plugin is by, as its card and its screen say it: "By" for a reviewed package, else what it says of itself. None without an author. */
 export function authorLine(p: Pick<PluginInfo, "trust" | "source" | "author">): string | null {
   if (!p.author) return null
-  return reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`
+  return reviewedPackage(p) ? t("plugins:by", { author: p.author }) : t("plugins:saysBy", { author: p.author })
 }
 
 /**
@@ -111,7 +120,7 @@ export function authorLine(p: Pick<PluginInfo, "trust" | "source" | "author">): 
  */
 export function sourceLabel(p: Pick<PluginInfo, "trust" | "source" | "repository">): string | null {
   if (!p.repository) return null
-  return reviewedPackage(p) ? "Show its source" : "Show the source it names"
+  return reviewedPackage(p) ? t("plugins:menu.showSource") : t("plugins:menu.showNamedSource")
 }
 
 /**
@@ -143,37 +152,45 @@ export function pluginMatches(p: Pick<PluginInfo, "name" | "description" | "auth
   return words.every((w) => text.includes(w))
 }
 
-const PERMISSIONS = new Map<Permission, string>([
-  ["exports:read", "Reads the exported clips"],
-  ["exports:write", "Changes or adds files beside the exported clips"],
-  ["project:read", "Reads the project: its episodes and characters"],
-  ["network", "Talks to the internet"],
-])
+/** What a program says it does with a permission. */
+function says(p: Permission): string | undefined {
+  switch (p) {
+    case "exports:read":
+      return t("plugins:permission.says.exportsRead")
+    case "exports:write":
+      return t("plugins:permission.says.exportsWrite")
+    case "project:read":
+      return t("plugins:permission.says.projectRead")
+    case "network":
+      return t("plugins:permission.says.network")
+  }
+}
 
-/** What each permission lets a plugin in AutoScene's sandbox do: a wall, not a promise. */
-const SANDBOXED = new Map<Permission, string>([
-  ["exports:read", "Reads the files in the export's folder"],
-  ["exports:write", "Reads, changes and deletes files in the export's folder"],
-  ["project:read", "Reads the project's folder"],
-  ["network", "Talks to these sites, over https only:"],
-])
-
-/** The network of a plugin in the sandbox that names no site: it may reach none. */
-const NO_SITE = "May use the network, but names no site: every request is refused."
+/** What a permission lets a plugin in AutoScene's sandbox do: a wall, not a promise. */
+function walls(p: Permission): string | undefined {
+  switch (p) {
+    case "exports:read":
+      return t("plugins:permission.walled.exportsRead")
+    case "exports:write":
+      return t("plugins:permission.walled.exportsWrite")
+    case "project:read":
+      return t("plugins:permission.walled.projectRead")
+    case "network":
+      return t("plugins:permission.walled.network")
+  }
+}
 
 /**
  * A permission a plugin declares, in plain words: what it says it does, or,
  * for a plugin that runs in AutoScene's sandbox (`sandbox`, with the sites
- * it may reach), what the sandbox lets it do.
+ * it may reach), what the sandbox lets it do. The network of a plugin in the
+ * sandbox that names no site may reach none.
  */
 export function permissionLabel(p: Permission, sandbox?: { hosts: readonly string[] }): string {
-  if (!sandbox) return PERMISSIONS.get(p) ?? p
-  if (p === "network" && sandbox.hosts.length === 0) return NO_SITE
-  return SANDBOXED.get(p) ?? p
+  if (!sandbox) return says(p) ?? p
+  if (p === "network" && sandbox.hosts.length === 0) return t("plugins:permission.walled.networkNone")
+  return walls(p) ?? p
 }
-
-/** `n` of `unit`, as a person says it: "1 minute", "30 minutes". */
-const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`
 
 /**
  * The limits of a plugin in AutoScene's sandbox, in one line: "It may use up
@@ -181,8 +198,12 @@ const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`
  * as hours.
  */
 export function limitsLine(s: PluginSandbox): string {
-  const after = s.minutes % 60 === 0 ? count(s.minutes / 60, "hour") : count(s.minutes, "minute")
-  return `It may use up to ${s.memoryMb} MB of memory. A run stops after ${after}.`
+  const memory = s.memoryMb
+  if (s.minutes % 60 === 0) {
+    const n = s.minutes / 60
+    return t("plugins:limits.hours", { count: n, n, memory })
+  }
+  return t("plugins:limits.minutes", { count: s.minutes, n: s.minutes, memory })
 }
 
 /**
@@ -192,13 +213,13 @@ export function limitsLine(s: PluginSandbox): string {
  * neither: they are only what it says it does.
  */
 export function checkedWhen(p: Pick<PluginInfo, "runtime" | "pages" | "protocol">): string | null {
-  if (p.runtime === "wasm") return "It runs in a sandbox. AutoScene enforces these."
-  if (p.runtime === "none") return "AutoScene checks these each time its pages ask."
+  if (p.runtime === "wasm") return t("plugins:checked.sandbox")
+  if (p.runtime === "none") return t("plugins:checked.pages")
   const pages = p.pages.length > 0
   const calls = p.protocol >= 2
-  if (pages && calls) return "AutoScene checks these each time its pages or its program ask it for something."
-  if (pages) return "AutoScene checks these each time its pages ask."
-  if (calls) return "AutoScene checks these each time its program asks it for something."
+  if (pages && calls) return t("plugins:checked.pagesAndProgram")
+  if (pages) return t("plugins:checked.pages")
+  if (calls) return t("plugins:checked.program")
   return null
 }
 

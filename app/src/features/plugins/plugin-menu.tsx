@@ -1,8 +1,10 @@
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { PluginInfo } from "@/bindings"
 import { ArrowCounterClockwise, ArrowSquareOut, ArrowsClockwise, Copy, FileText, FolderOpen, Scan, SlidersHorizontal, Trash } from "@/components/icons"
 import type { MenuKit } from "@/components/ui/menu-actions"
 import { useAppActions } from "@/lib/actions"
+import { t as tNow } from "@/lib/i18n"
 import { errorMessage } from "@/lib/ipc"
 import { copyText, reveal } from "@/lib/os"
 import { qk, queryClient, useSettings } from "@/lib/queries"
@@ -34,6 +36,7 @@ export function PluginItems({
   onUninstall?: () => void
   onUpdate?: () => void
 }) {
+  const { t } = useTranslation("plugins")
   const { goPlugin } = useAppActions()
   const allowed = useSettings().data?.allowUnreviewedPlugins ?? false
   const { Item, Separator } = kit
@@ -43,12 +46,12 @@ export function PluginItems({
     <>
       {onUpdate && (
         <Item onSelect={onUpdate}>
-          <ArrowsClockwise /> Update…
+          <ArrowsClockwise /> {t("menu.update")}
         </Item>
       )}
       {settings && (
         <Item onSelect={() => goPlugin(p.id)}>
-          <SlidersHorizontal /> Its settings
+          <SlidersHorizontal /> {t("menu.settings")}
         </Item>
       )}
       {source && (
@@ -57,29 +60,29 @@ export function PluginItems({
         </Item>
       )}
       <Item onSelect={() => reveal(p.folder)}>
-        <FolderOpen /> Show its folder
+        <FolderOpen /> {t("menu.showFolder")}
       </Item>
       <Item onSelect={() => reveal(p.logPath)}>
-        <FileText /> Show its log
+        <FileText /> {t("menu.showLog")}
       </Item>
       <Item onSelect={() => void copyText(p.id, "plugin id")}>
-        <Copy /> Copy its id
+        <Copy /> {t("menu.copyId")}
       </Item>
       {folder && p.broken == null && (
         <Item onSelect={() => void checkFolder(p)}>
-          <Scan /> Check its folder for changes
+          <Scan /> {t("menu.checkFolder")}
         </Item>
       )}
       {folder && p.broken != null && allowed && onLoadAgain && (
         <Item onSelect={onLoadAgain}>
-          <ArrowCounterClockwise /> Load its folder again…
+          <ArrowCounterClockwise /> {t("menu.loadFolderAgain")}
         </Item>
       )}
       {onUninstall && (
         <>
           <Separator />
           <Item destructive onSelect={onUninstall}>
-            <Trash /> Uninstall…
+            <Trash /> {t("menu.uninstall")}
           </Item>
         </>
       )}
@@ -95,11 +98,11 @@ async function checkFolder(p: PluginInfo) {
   try {
     await queryClient.refetchQueries({ queryKey: qk.plugins, exact: true }, { throwOnError: true })
   } catch (e) {
-    toast.error("Couldn't check its folder", { description: errorMessage(e) })
+    toast.error(tNow("plugins:menu.checkFailed"), { description: errorMessage(e) })
     return
   }
   // Its settings may have new defaults.
   void queryClient.invalidateQueries({ queryKey: qk.pluginSettings(p.id) })
   const now = queryClient.getQueryData<PluginInfo[]>(qk.plugins)?.find((x) => x.id === p.id)
-  toast.success(now != null && JSON.stringify(now) === JSON.stringify(p) ? "Its folder is as it was" : "Read the changes in its folder")
+  toast.success(now != null && JSON.stringify(now) === JSON.stringify(p) ? tNow("plugins:menu.folderUnchanged") : tNow("plugins:menu.folderChanged"))
 }

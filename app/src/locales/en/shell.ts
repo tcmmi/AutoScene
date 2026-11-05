@@ -274,10 +274,6 @@ export default {
     nvidiaReady: "NVIDIA acceleration is ready",
     exportDone: "Export finished",
     exportErrors: "Export finished with errors",
-    /** A plugin's job failed or saved a pack: the words after the plugin's name (the toast starts "Plugin “name”: "). `title` is the plugin's own. */
-    pluginFailed: "{{title}} failed",
-    /** `file` is the saved file's name. */
-    pluginSaved: "saved {{file}}",
   },
 
   /** The update dialog and the update checks that announce themselves. */

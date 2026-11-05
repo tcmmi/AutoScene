@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { useId, useState } from "react"
+import { Trans, useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { EventKind, PageSpec, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, ReviewCatalog } from "@/bindings"
 import { ShieldCheck } from "@/components/icons"
@@ -16,7 +17,7 @@ import { catalogDay } from "./catalog-items"
 import { PluginIcon } from "./PluginIcon"
 import { allowUnreviewed } from "./plugin-actions"
 import { MAX_RAIL_PAGES } from "./page-items"
-import { checkedWhen, firstTime, joinWords, limitsLine, permissionLabel, resourceLine, reviewedPackage, trustLabel, trustLine } from "./plugin-items"
+import { checkedWhen, joinWords, limitsLine, permissionLabel, resourceLine, reviewedPackage, trustLabel, trustLine } from "./plugin-items"
 
 /**
  * A plugin package (or folder) checked for install, before the person says
@@ -66,13 +67,14 @@ export function InstallReviewDialog() {
  * were before the yes.
  */
 function CompilingForm({ name }: { name: string }) {
+  const { t } = useTranslation(["plugins", "common"])
   const stopCompile = usePluginReview((s) => s.stopCompile)
   const [stopping, setStopping] = useState(false)
   return (
-    <DialogContent title={`Getting ${name} ready…`} hideClose>
+    <DialogContent title={t("review.gettingReady", { name })} hideClose>
       <div className="flex flex-col gap-2.5">
         <Progress value={null} />
-        <p className="text-sm text-fg-2">AutoScene compiles it so it can run. This can take up to 2 minutes, and your computer may be busy meanwhile.</p>
+        <p className="text-sm text-fg-2">{t("review.compiling")}</p>
       </div>
       <DialogFooter>
         <Button
@@ -83,7 +85,7 @@ function CompilingForm({ name }: { name: string }) {
             stopCompile()
           }}
         >
-          Cancel
+          {t("common:action.cancel")}
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -96,25 +98,26 @@ function CompilingForm({ name }: { name: string }) {
  * can't be cancelled, until it compiles.
  */
 function GettingForm({ getting, onCancel }: { getting: Getting; onCancel: () => void }) {
+  const { t } = useTranslation(["plugins", "common"])
   const { label, done, total, installing, ticketId } = getting
   const compiling = usePluginReview((s) => s.compiling != null && s.compiling === ticketId)
   const part = done != null && total != null && total > 0 ? done / total : null
   if (compiling) return <CompilingForm name={label} />
   return (
-    <DialogContent title={installing ? `Updating ${label}…` : `Getting ${label}…`} hideClose>
+    <DialogContent title={installing ? t("review.updating", { name: label }) : t("review.getting", { name: label })} hideClose>
       <div className="flex flex-col gap-2.5">
         <Progress value={installing ? null : part} />
         <p className="text-sm text-fg-2">
           {installing
-            ? "It asks for nothing new, so there is nothing to review."
+            ? t("review.nothingNew")
             : done != null && total != null && total > 0
-              ? `${formatBytes(done)} of ${formatBytes(total)} from AutoScene's plugin catalog`
-              : "From AutoScene's plugin catalog"}
+              ? t("review.progress", { done: formatBytes(done), total: formatBytes(total) })
+              : t("review.fromCatalog")}
         </p>
       </div>
       <DialogFooter>
         <Button variant="ghost" disabled={installing} onClick={onCancel}>
-          Cancel
+          {t("common:action.cancel")}
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -142,6 +145,7 @@ function ReviewForm({
   onCancel: () => void
   onInstalled: () => void
 }) {
+  const { t } = useTranslation(["plugins", "common"])
   const p = review.plugin
   const compiling = usePluginReview((s) => s.compiling === review.ticketId)
   const compileEnded = usePluginReview((s) => s.compileEnded)
@@ -152,7 +156,7 @@ function ReviewForm({
   const nameId = useId()
   const confirmed = !review.needsUnreviewed || (typedName(typed) !== "" && typedName(typed) === typedName(p.name))
   // A developer's folder is loaded where it is, not installed.
-  const verb = review.update ? "Update" : p.source === "folder" ? "Load" : "Install"
+  const verb = review.update ? "update" : p.source === "folder" ? "load" : "install"
   const install = async () => {
     setBusy(true)
     try {
@@ -161,11 +165,12 @@ function ReviewForm({
       // What the catalog offers is worked out against what is installed.
       void queryClient.invalidateQueries({ queryKey: qk.catalog })
       onInstalled()
-      toast(`${verb === "Update" ? "Updated" : verb === "Load" ? "Loaded" : "Installed"} ${installed.name}`)
+      const done = verb === "update" ? "review.updated" : verb === "load" ? "review.loaded" : "review.installed"
+      toast(t(done, { name: installed.name }))
     } catch (e) {
       // The person said no in AutoScene's own dialog: the review stays as it is.
       if (isAppError(e) && e.code === "cancelled") return
-      toast.error("Couldn't install the plugin", { description: errorMessage(e) })
+      toast.error(t("review.failed"), { description: errorMessage(e) })
       // Only a refusal while the plugin runs keeps the review, to try again.
       if (!(isAppError(e) && e.code === "not_ready")) onCancel()
     } finally {
@@ -177,32 +182,36 @@ function ReviewForm({
   // What was typed here stays: Cancel comes back to it.
   if (compiling) return <CompilingForm name={p.name} />
   return (
-    <DialogContent title={`${verb} ${p.name}?`} hideClose={busy} className="max-h-[calc(100vh-48px)] overflow-y-auto">
+    <DialogContent
+      title={verb === "update" ? t("review.update", { name: p.name }) : verb === "load" ? t("review.load", { name: p.name }) : t("review.install", { name: p.name })}
+      hideClose={busy}
+      className="max-h-[calc(100vh-48px)] overflow-y-auto"
+    >
       <div className="flex flex-col gap-5">
         <div className="flex items-start gap-4">
           <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white/[0.06] text-fg-1 [&_svg]:size-6">
             <PluginIcon src={p.icon} className="size-7" />
           </span>
           <dl className="grid min-w-0 flex-1 grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <Fact label="Id">
+            <Fact label={t("review.fact.id")}>
               <span data-selectable className="font-mono">
                 {p.id}
               </span>
             </Fact>
-            <Fact label="Version">
+            <Fact label={t("review.fact.version")}>
               {p.version}
-              {review.update && <span className="text-fg-3"> · {review.update.fromVersion} is installed</span>}
+              {review.update && <span className="text-fg-3"> · {t("review.fact.isInstalled", { version: review.update.fromVersion })}</span>}
             </Fact>
-            <Fact label={reviewedPackage(p) ? "Author" : "Says it is by"}>{p.author || "Not named"}</Fact>
+            <Fact label={reviewedPackage(p) ? t("review.fact.author") : t("review.fact.saysBy")}>{p.author || t("review.fact.notNamed")}</Fact>
             {p.authorKeyId && (
-              <Fact label="Key">
+              <Fact label={t("review.fact.key")}>
                 <span data-selectable className="font-mono">
                   {p.authorKeyId}
                 </span>
               </Fact>
             )}
             {p.source === "folder" && (
-              <Fact label="Folder">
+              <Fact label={t("review.fact.folder")}>
                 <span data-selectable className="font-mono break-all">
                   {p.folder}
                 </span>
@@ -219,14 +228,14 @@ function ReviewForm({
           {review.catalog && <Built catalog={review.catalog} />}
           {review.update && <Before update={review.update} p={p} />}
           {review.update?.leavesSandbox && (
-            <p className="text-sm text-danger">The installed version ran in a sandbox. This version runs with your user rights.</p>
+            <p className="text-sm text-danger">{t("review.before.leftSandbox")}</p>
           )}
         </div>
 
         {/* The plugin's words, not AutoScene's. */}
         {p.description && (
           <section>
-            <h3 className="text-sm font-medium text-fg-2">In its own words</h3>
+            <h3 className="text-sm font-medium text-fg-2">{t("review.ownWords")}</h3>
             <p className="mt-1.5 text-md text-fg-1">{p.description}</p>
           </section>
         )}
@@ -237,7 +246,7 @@ function ReviewForm({
 
         {p.warnings.length > 0 && (
           <section>
-            <h3 className="text-sm font-medium text-fg-2">Skipped in its plugin.json</h3>
+            <h3 className="text-sm font-medium text-fg-2">{t("review.warnings")}</h3>
             <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-fg-2">
               {p.warnings.map((w, i) => (
                 <li key={i}>{w}</li>
@@ -249,7 +258,7 @@ function ReviewForm({
         {/* What the check of its component found: nothing was skipped, it runs as it is. */}
         {review.componentWarnings.length > 0 && (
           <section>
-            <h3 className="text-sm font-medium text-fg-2">Noticed in its component</h3>
+            <h3 className="text-sm font-medium text-fg-2">{t("review.componentWarnings")}</h3>
             <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-fg-2">
               {review.componentWarnings.map((w, i) => (
                 <li key={i}>{w}</li>
@@ -262,27 +271,29 @@ function ReviewForm({
           (allowed ? (
             <Field
               label={
-                <>
-                  Type <span data-selectable>{p.name}</span> to {verb.toLowerCase()} it
-                </>
+                <Trans
+                  t={t}
+                  i18nKey={verb === "update" ? "review.typeToUpdate" : verb === "load" ? "review.typeToLoad" : "review.typeToInstall"}
+                  components={{ x: <span data-selectable>{p.name}</span> }}
+                />
               }
-              hint="AutoScene can't check what it does."
+              hint={t("review.cantCheck")}
               htmlFor={nameId}
             >
               <Input id={nameId} value={typed} onChange={(e) => setTyped(e.target.value)} />
             </Field>
           ) : (
             <div className="flex items-center justify-between gap-4 rounded-lg border border-danger/30 bg-danger-subtle px-3.5 py-3">
-              <p className="text-sm text-fg-1">Plugins that AutoScene has not reviewed are turned off.</p>
+              <p className="text-sm text-fg-1">{t("review.turnedOff")}</p>
               <Button size="sm" variant="ghost" onClick={() => void allowUnreviewed(true).then(setAllowedHere)}>
-                Allow them…
+                {t("review.allowThem")}
               </Button>
             </div>
           ))}
       </div>
       <DialogFooter>
         <Button variant="ghost" disabled={busy} onClick={onCancel}>
-          Cancel
+          {t("common:action.cancel")}
         </Button>
         <Button
           variant={review.needsUnreviewed ? "danger" : "primary"}
@@ -290,7 +301,7 @@ function ReviewForm({
           disabled={!allowed || !confirmed}
           onClick={() => void install()}
         >
-          {verb}
+          {verb === "update" ? t("review.updateButton") : verb === "load" ? t("review.loadButton") : t("review.installButton")}
         </Button>
       </DialogFooter>
     </DialogContent>
@@ -299,21 +310,23 @@ function ReviewForm({
 
 /** Where AutoScene's catalog built a plugin it reviewed from: the repository, the commit and the folder. */
 function Built({ catalog }: { catalog: ReviewCatalog }) {
+  const { t } = useTranslation("plugins")
   const repo = catalog.repository.replace(/^https:\/\//, "")
-  const folder = catalog.path && catalog.path !== "." ? `, in ${catalog.path}` : ""
+  const path = catalog.path && catalog.path !== "." ? catalog.path : null
   return (
     <p className="flex items-start gap-2 text-sm text-fg-2">
       <ShieldCheck className="mt-0.5 size-4 shrink-0 text-fg-3" />
       <span>
-        Built from{" "}
-        <span data-selectable className="text-fg-1">
-          {repo}
-        </span>{" "}
-        at{" "}
-        <span data-selectable className="font-mono text-fg-1">
-          {catalog.commit.slice(0, 7)}
-        </span>
-        {folder}.{catalog.published != null && ` Catalog of ${catalogDay(catalog.published)}.`}
+        <Trans
+          t={t}
+          i18nKey={path != null ? "review.builtIn" : "review.built"}
+          components={{
+            repo: <span data-selectable className="text-fg-1">{repo}</span>,
+            commit: <span data-selectable className="font-mono text-fg-1">{catalog.commit.slice(0, 7)}</span>,
+            path: <span data-selectable>{path}</span>,
+          }}
+        />
+        {catalog.published != null && ` ${t("catalog.of", { date: catalogDay(catalog.published) })}`}
       </span>
     </p>
   )
@@ -321,20 +334,19 @@ function Built({ catalog }: { catalog: ReviewCatalog }) {
 
 /** What the installed version was, when the update changes who stands behind it or where its files are. */
 function Before({ update, p }: { update: PluginUpdate; p: PluginInfo }) {
+  const { t } = useTranslation("plugins")
   if (update.trustBefore === p.trust && update.sourceBefore === p.source) return null
   // A signed update of an unsigned package pins whatever key it brings.
   if (update.sourceBefore === "package" && update.trustBefore === "unreviewed" && p.source === "package" && p.trust === "pinned") {
     return (
-      <p className="text-sm text-fg-1">
-        The installed version wasn't signed. This one pins its key: from now on, only updates signed with it install.
-      </p>
+      <p className="text-sm text-fg-1">{t("review.before.unsigned")}</p>
     )
   }
   const before = trustLabel({ trust: update.trustBefore, source: update.sourceBefore })
   return (
     <p className="text-sm text-fg-2">
-      The installed version: {before.label}.
-      {update.sourceBefore === "folder" && p.source === "package" && " This package takes its place; that folder stays as it is."}
+      {t("review.before.was", { label: before.label })}
+      {update.sourceBefore === "folder" && p.source === "package" && ` ${t("review.before.folderReplaced")}`}
     </p>
   )
 }
@@ -356,6 +368,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
  * it may do instead ([`Sandboxed`]).
  */
 function Permissions({ review }: { review: PluginReview }) {
+  const { t } = useTranslation("plugins")
   const p = review.plugin
   if (p.sandbox) return <Sandboxed review={review} sandbox={p.sandbox} />
   const added = review.update?.addedPermissions ?? []
@@ -363,24 +376,24 @@ function Permissions({ review }: { review: PluginReview }) {
   const hosts = p.networkHosts.filter((h) => !newHosts.includes(h))
   const program = p.runtime !== "none"
   const checked = checkedWhen(p)
-  const heading = !program ? "What its pages may use" : checked ? "What it says it does" : "What it says it does (not enforced)"
+  const heading = !program ? t("review.permissions.pagesMayUse") : checked ? t("review.permissions.saysItDoes") : t("review.permissions.notEnforced")
   return (
     <section>
-      {program && <p className="mb-3 text-md text-fg-1">It runs with your user rights: it can read, change and send anything you can.</p>}
+      {program && <p className="mb-3 text-md text-fg-1">{t("review.permissions.userRights")}</p>}
       <h3 className="text-sm font-medium text-fg-2">{heading}</h3>
       <ul className="mt-1.5 flex flex-col gap-1.5 text-md text-fg-1">
         {p.permissions.map((perm) => (
           <li key={perm} className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {permissionLabel(perm)}
-            {added.includes(perm) && <Badge tone="accent">New</Badge>}
+            {added.includes(perm) && <Badge tone="accent">{t("new")}</Badge>}
             {perm === "network" && hosts.length > 0 && <span className="text-sm text-fg-2">{hosts.join(", ")}</span>}
             {perm === "network" && newHosts.length > 0 && (
-              <span className="text-sm text-accent">New: {newHosts.join(", ")}</span>
+              <span className="text-sm text-accent">{t("review.permissions.newHosts", { hosts: newHosts.join(", ") })}</span>
             )}
           </li>
         ))}
-        {p.permissions.length === 0 && <li className="text-fg-2">It names no permissions.</li>}
-        {p.gpu && <li>Uses the graphics card: its runs wait while an analysis runs</li>}
+        {p.permissions.length === 0 && <li className="text-fg-2">{t("review.permissions.none")}</li>}
+        {p.gpu && <li>{t("review.permissions.gpu")}</li>}
       </ul>
       {checked && <p className="mt-1.5 text-sm text-fg-2">{checked}</p>}
     </section>
@@ -394,6 +407,7 @@ function Permissions({ review }: { review: PluginReview }) {
  * the sandbox doesn't limit. It never says "safe".
  */
 function Sandboxed({ review, sandbox }: { review: PluginReview; sandbox: PluginSandbox }) {
+  const { t } = useTranslation("plugins")
   const p = review.plugin
   const added = review.update?.addedPermissions ?? []
   const newHosts = review.update?.addedHosts ?? []
@@ -402,28 +416,28 @@ function Sandboxed({ review, sandbox }: { review: PluginReview; sandbox: PluginS
   const network = p.permissions.includes("network") && p.networkHosts.length > 0
   return (
     <section>
-      <p className="mb-3 text-md text-fg-1">It runs in a sandbox. It sees only its own folder and what is listed here.</p>
-      <h3 className="text-sm font-medium text-fg-2">What it may do (enforced)</h3>
+      <p className="mb-3 text-md text-fg-1">{t("review.sandbox.intro")}</p>
+      <h3 className="text-sm font-medium text-fg-2">{t("review.sandbox.mayDo")}</h3>
       <ul className="mt-1.5 flex flex-col gap-1.5 text-md text-fg-1">
         {p.permissions.map((perm) => (
           <li key={perm} className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {permissionLabel(perm, { hosts: p.networkHosts })}
-            {added.includes(perm) && <Badge tone="accent">New</Badge>}
+            {added.includes(perm) && <Badge tone="accent">{t("new")}</Badge>}
             {perm === "network" && hosts.length > 0 && <span className="text-sm text-fg-2">{hosts.join(", ")}</span>}
             {perm === "network" && newHosts.length > 0 && (
-              <span className="text-sm text-accent">New: {newHosts.join(", ")}</span>
+              <span className="text-sm text-accent">{t("review.permissions.newHosts", { hosts: newHosts.join(", ") })}</span>
             )}
           </li>
         ))}
-        {p.permissions.length === 0 && <li className="text-fg-2">It asks for nothing more.</li>}
+        {p.permissions.length === 0 && <li className="text-fg-2">{t("review.sandbox.none")}</li>}
       </ul>
       <div className="mt-1.5 flex flex-col gap-1 text-sm text-fg-2">
-        <p>It can't start programs or see your other files.</p>
+        <p>{t("review.sandbox.cant")}</p>
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
           {limitsLine(sandbox)}
-          {review.update?.raisedLimits && <Badge tone="accent">New</Badge>}
+          {review.update?.raisedLimits && <Badge tone="accent">{t("new")}</Badge>}
         </p>
-        <p>{network ? "Not limited: what it sends to those sites, and how much it writes." : "Not limited: how much it writes."}</p>
+        <p>{network ? t("review.sandbox.unlimitedNetwork") : t("review.sandbox.unlimited")}</p>
       </div>
     </section>
   )
@@ -440,34 +454,40 @@ function Sandboxed({ review, sandbox }: { review: PluginReview; sandbox: PluginS
  * new on the line under.
  */
 function Runs({ review }: { review: PluginReview }) {
+  const { t } = useTranslation("plugins")
   const p = review.plugin
   const startsProgram = review.update?.startsProgram ?? false
   const becomesService = review.update?.becomesService ?? false
-  const first = firstTime(p.runtime)
+  const service = p.runtime === "service"
   const files = resourceLine(review, p.runtime, review.update != null)
   const newFileHosts = review.update?.addedResourceHosts ?? []
   // As AutoScene's other downloads say their size.
-  const getsUv = review.uvMissing
-    ? ` AutoScene gets uv (${formatBytes(review.uvBytes ?? 0, 0)}, from github.com/astral-sh/uv), and uv downloads`
-    : ", uv downloads"
+  const size = formatBytes(review.uvBytes ?? 0, 0)
+  const uv = review.uvMissing
+    ? service
+      ? t("review.runs.uvStartGets", { size })
+      : t("review.runs.uvRunGets", { size })
+    : service
+      ? t("review.runs.uvStart")
+      : t("review.runs.uvRun")
   return (
     <section>
-      <h3 className="text-sm font-medium text-fg-2">How it runs</h3>
+      <h3 className="text-sm font-medium text-fg-2">{t("review.runs.title")}</h3>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-md text-fg-1">
         {p.runtime === "none"
-          ? "Runs no program. Its pages run in a sandbox."
+          ? t("review.runs.none")
           : p.sandbox
-            ? "A WebAssembly plugin. AutoScene compiles it once you say yes."
+            ? t("review.runs.wasm")
             : p.uvScript
-            ? `A Python script that uv runs. On its ${first}${getsUv} Python (if this computer has none) and the packages the script names.`
-            : "A program in its folder."}
-        {startsProgram && <Badge tone="accent">New</Badge>}
+              ? uv
+              : t("review.runs.program")}
+        {startsProgram && <Badge tone="accent">{t("new")}</Badge>}
       </p>
-      {startsProgram && <p className="mt-1.5 text-sm text-fg-2">The installed version runs no program.</p>}
+      {startsProgram && <p className="mt-1.5 text-sm text-fg-2">{t("review.runs.noProgramBefore")}</p>}
       {p.runtime === "service" && (
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-md text-fg-1">
-          {becomesService ? "Now keeps its program running while its page is open." : "Keeps its program running while its page is open."}
-          {becomesService && <Badge tone="accent">New</Badge>}
+          {becomesService ? t("review.runs.becomesService") : t("review.runs.service")}
+          {becomesService && <Badge tone="accent">{t("new")}</Badge>}
         </p>
       )}
       {files && (
@@ -475,8 +495,8 @@ function Runs({ review }: { review: PluginReview }) {
           <p className="mt-1.5 text-md text-fg-1">{files}</p>
           {newFileHosts.length > 0 && (
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-2">
-              <Badge tone="accent">New</Badge>
-              The installed version names no files from {joinWords(newFileHosts)}.
+              <Badge tone="accent">{t("new")}</Badge>
+              {t("review.runs.newFileHosts", { hosts: joinWords(newFileHosts) })}
             </p>
           )}
         </>
@@ -485,20 +505,33 @@ function Runs({ review }: { review: PluginReview }) {
   )
 }
 
+/** The messages that list what a plugin adds, each a whole line with the plugin's own title in it. */
+type AddLine =
+  | "review.adds.pageRail"
+  | "review.adds.pageProject"
+  | "review.adds.pagePalette"
+  | "review.adds.exportAction"
+  | "review.adds.command"
+  | "review.adds.shotFilter"
+  | "review.adds.packAction"
+  | "review.adds.afterFailed"
+  | "event.analysisFinished.adds"
+
 /**
  * Where AutoScene offers a page: in the rail while it has room for it, in
  * each project's More menu, else in the palette.
  */
-function pagePlace(page: PageSpec): string {
-  if (page.scope === "project") return ", in each project's More menu"
-  return page.rail
-    ? `, in the rail (it holds ${MAX_RAIL_PAGES} plugin pages; others are in the command palette)`
-    : ", in the command palette"
+function pagePlace(page: PageSpec): AddLine {
+  if (page.scope === "project") return "review.adds.pageProject"
+  return page.rail ? "review.adds.pageRail" : "review.adds.pagePalette"
 }
 
 /** What the review says an event of each kind adds. */
-const EVENT_ADDS: Record<EventKind, string> = {
-  analysisFinished: "Can run when an analysis finishes",
+function eventAdds(on: EventKind): AddLine {
+  switch (on) {
+    case "analysisFinished":
+      return "event.analysisFinished.adds"
+  }
 }
 
 /**
@@ -508,71 +541,58 @@ const EVENT_ADDS: Record<EventKind, string> = {
  * secrets it keeps.
  */
 function Adds({ p, update }: { p: PluginInfo; update: PluginUpdate | null | undefined }) {
-  const adds = [
+  const { t } = useTranslation("plugins")
+  const adds: { key: string; line: AddLine; what: string; added: boolean }[] = [
     ...p.pages.map((page) => ({
       key: `page-${page.id}`,
-      where: "A page",
+      line: pagePlace(page),
       what: page.title,
-      after: pagePlace(page),
       added: update?.addedPages.includes(page.id) ?? false,
     })),
-    ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title, after: "", added: false })),
-    ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title, after: "", added: false })),
+    ...p.exportActions.map((a) => ({ key: `action-${a.id}`, line: "review.adds.exportAction" as const, what: a.title, added: false })),
+    ...p.commands.map((c) => ({ key: `command-${c.id}`, line: "review.adds.command" as const, what: c.title, added: false })),
     ...p.shotFilters.map((f) => ({
       key: `filter-${f.id}`,
-      where: "A scenepack filter",
+      line: "review.adds.shotFilter" as const,
       what: f.title,
-      after: "",
       added: update?.addedShotFilters.includes(f.id) ?? false,
     })),
     ...p.packActions.map((a) => ({
       key: `pack-${a.id}`,
-      where: "A scenepack's ⋯ menu",
+      line: "review.adds.packAction" as const,
       what: a.title,
-      after: "",
       added: update?.addedPackActions.includes(a.id) ?? false,
     })),
     ...p.exportActions
       .filter((a) => a.afterFailed)
-      .map((a) => ({
-        key: `failed-${a.id}`,
-        where: "Can run after every export, also one that failed",
-        what: a.title,
-        after: " (you turn it on)",
-        added: false,
-      })),
-    ...p.events.map((e) => ({
-      key: `event-${e.id}`,
-      where: EVENT_ADDS[e.on],
-      what: e.title,
-      after: " (you turn it on)",
-      added: false,
-    })),
+      .map((a) => ({ key: `failed-${a.id}`, line: "review.adds.afterFailed" as const, what: a.title, added: false })),
+    ...p.events.map((e) => ({ key: `event-${e.id}`, line: eventAdds(e.on), what: e.title, added: false })),
   ]
   const secrets = p.settings.filter((s) => s.kind.type === "secret")
   const settings = p.settings.length - secrets.length
+  // The label before the colon, and a note after the title, are muted.
+  const muted = { x: <span className="text-fg-2" /> }
   return (
     <section>
-      <h3 className="text-sm font-medium text-fg-2">What it adds</h3>
+      <h3 className="text-sm font-medium text-fg-2">{t("review.adds.title")}</h3>
       <ul className="mt-1.5 flex flex-col gap-1 text-md text-fg-1">
         {adds.map((a) => (
           <li key={a.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span>
-              <span className="text-fg-2">{a.where}:</span> {a.what}
-              {a.after && <span className="text-fg-2">{a.after}</span>}
+              <Trans t={t} i18nKey={a.line} values={{ max: MAX_RAIL_PAGES }} components={{ ...muted, what: <>{a.what}</> }} />
             </span>
-            {a.added && <Badge tone="accent">New</Badge>}
+            {a.added && <Badge tone="accent">{t("new")}</Badge>}
           </li>
         ))}
         {settings > 0 && (
           <li>
-            <span className="text-fg-2">Settings:</span> {settings === 1 ? "1 setting" : `${settings} settings`}
+            <Trans t={t} i18nKey="review.adds.settings" count={settings} components={muted} />
           </li>
         )}
         {secrets.map((s) => (
-          <li key={`secret-${s.key}`}>Keeps {s.title} in your system's keychain</li>
+          <li key={`secret-${s.key}`}>{t("review.adds.secret", { title: s.title })}</li>
         ))}
-        {adds.length === 0 && p.settings.length === 0 && <li className="text-fg-2">Nothing to list.</li>}
+        {adds.length === 0 && p.settings.length === 0 && <li className="text-fg-2">{t("review.adds.nothing")}</li>}
       </ul>
     </section>
   )

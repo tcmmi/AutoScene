@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { pluginInfo } from "@/test/plugins"
-import { authorLine, checkedWhen, downloadSize, firstTime, joinWords, limitsLine, nextTime, packActionItems, permissionLabel, pluginMatches, pluginPicture, pluginsLit, resourceLine, trustLabel, withdrawnLine } from "./plugin-items"
+import { authorLine, checkedWhen, downloadSize, joinWords, limitsLine, packActionItems, permissionLabel, pluginMatches, pluginPicture, pluginsLit, resourceLine, trustLabel, withdrawnLine } from "./plugin-items"
 
 describe("finding a plugin", () => {
   const p = pluginInfo({ id: "dev.example.discord-notify", name: "Discord Notify", author: "Example Dev", description: "Posts each export's clip list." })
@@ -89,8 +89,6 @@ describe("what a plugin downloads", () => {
   it("resourceLine: an update's plugin has run, so its files come at its next run or start", () => {
     expect(resourceLine(files(5 * 1024 ** 2, "a.example"), "process", true)).toMatch(/ at its next run\. /)
     expect(resourceLine(files(5 * 1024 ** 2, "a.example"), "service", true)).toMatch(/ at its next start\. /)
-    expect(nextTime("service")).toBe("next start")
-    expect(nextTime("process")).toBe("next run")
   })
 
   it("resourceLine: files AutoScene keeps already come from somewhere, and a plugin without says nothing", () => {
@@ -101,13 +99,11 @@ describe("what a plugin downloads", () => {
     expect(resourceLine(files(null), "process")).toBeNull()
   })
 
-  it("joinWords and firstTime", () => {
+  it("joinWords", () => {
     expect(joinWords([])).toBe("")
     expect(joinWords(["a"])).toBe("a")
     expect(joinWords(["a", "b"])).toBe("a and b")
     expect(joinWords(["a", "b", "c"])).toBe("a, b and c")
-    expect(firstTime("service")).toBe("first start")
-    for (const kind of ["process", "none", "wasm"]) expect(firstTime(kind)).toBe("first run")
   })
 })
 

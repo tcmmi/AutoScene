@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import type { CatalogPlugin } from "@/bindings"
 import { ArrowsClockwise, Copy, DownloadSimple, SlidersHorizontal } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +41,7 @@ function offerOf(p: CatalogPlugin): "install" | "update" | "installed" | "elsewh
  * review states the size, and the files may be here already.
  */
 export function CatalogCard({ p }: { p: CatalogPlugin }) {
+  const { t } = useTranslation("plugins")
   const offer = offerOf(p)
   const { data: plugins } = usePlugins()
   const withdrawn = p.installed != null && plugins?.find((x) => x.id === p.id)?.withdrawn != null
@@ -61,13 +63,13 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
       <div role="group" aria-label={p.name}>
         <div className="group/art relative transition-transform duration-[var(--dur-med)] ease-out hover:-translate-y-1 has-[:focus-visible]:-translate-y-1">
           {p.installed != null ? (
-            <Link to="/plugins/$id" params={{ id: p.id }} aria-label={`${p.name} settings`} className="block rounded-2xl">
+            <Link to="/plugins/$id" params={{ id: p.id }} aria-label={t("catalog.settingsNamed", { name: p.name })} className="block rounded-2xl">
               {art}
             </Link>
           ) : (
             <button
               type="button"
-              aria-label={offer === "install" ? `Install ${p.name}…` : p.name}
+              aria-label={offer === "install" ? t("catalog.installNamed", { name: p.name }) : p.name}
               disabled={act == null || getting}
               onClick={act}
               className="block w-full rounded-2xl text-left"
@@ -76,7 +78,7 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
             </button>
           )}
           <DropdownMenu>
-            <CardMenuButton over="picture" aria-label={`${p.name} options`} />
+            <CardMenuButton over="picture" aria-label={t("options", { name: p.name })} />
             <DropdownMenuContent>
               <CatalogItems kit={dropdownKit} p={p} act={act} />
             </DropdownMenuContent>
@@ -86,21 +88,21 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
           <div className="flex min-h-8 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
             {withdrawn ? (
               <Badge tone="danger" className="min-w-0 truncate">
-                Withdrawn
+                {t("trust.withdrawn")}
               </Badge>
             ) : (
-              <Badge className="min-w-0 truncate">Reviewed by AutoScene</Badge>
+              <Badge className="min-w-0 truncate">{t("trust.reviewed")}</Badge>
             )}
             {/* Only what the index says runs in the sandbox; an entry without a runtime is a program. */}
             {p.runtime === "wasm" && (
               <Badge tone="outline" className="shrink-0">
-                Sandboxed
+                {t("sandboxed")}
               </Badge>
             )}
           </div>
           <Offer offer={offer} withdrawn={withdrawn} getting={getting} act={act} />
         </div>
-        <TruncatedText className="mt-1.5 pl-0.5 text-sm text-fg-2">{`By ${p.author} · version ${p.version}`}</TruncatedText>
+        <TruncatedText className="mt-1.5 pl-0.5 text-sm text-fg-2">{`${t("by", { author: p.author })} · ${t("version", { version: p.version })}`}</TruncatedText>
         {/* The plugin's words, as its review says them: "In its own words". */}
         {p.summary && <p className="mt-1.5 line-clamp-2 pl-0.5 text-sm text-fg-1">{p.summary}</p>}
         <TruncatedText className="mt-1 pl-0.5 text-sm text-fg-3">{catalogAsks(p)}</TruncatedText>
@@ -122,6 +124,7 @@ function Offer({
   getting: boolean
   act?: () => void
 }) {
+  const { t } = useTranslation("plugins")
   // Withdrawn, only a version to update to is worth a word here.
   if (withdrawn && offer !== "update") return null
   switch (offer) {
@@ -130,39 +133,40 @@ function Offer({
       return (
         <Button size="sm" busy={getting} onClick={act}>
           {offer === "install" ? <DownloadSimple /> : <ArrowsClockwise />}
-          {offer === "install" ? "Install…" : "Update…"}
+          {offer === "install" ? t("catalog.install") : t("catalog.update")}
         </Button>
       )
     case "installed":
-      return <Badge tone="outline">Installed</Badge>
+      return <Badge tone="outline">{t("catalog.installed")}</Badge>
     case "elsewhere":
-      return <span className="shrink-0 text-sm text-fg-3">Not for this computer</span>
+      return <span className="shrink-0 text-sm text-fg-3">{t("catalog.elsewhere")}</span>
     case "newer":
-      return <span className="shrink-0 text-sm text-fg-3">Needs a newer AutoScene</span>
+      return <span className="shrink-0 text-sm text-fg-3">{t("catalog.needsNewer")}</span>
   }
 }
 
 /** What a catalog card's ⋯ and its right-click offer, one list for both. */
 function CatalogItems({ kit, p, act }: { kit: MenuKit; p: CatalogPlugin; act?: () => void }) {
+  const { t } = useTranslation("plugins")
   const { goPlugin } = useAppActions()
   const { Item } = kit
   return (
     <>
       {act && (
         <Item onSelect={act}>
-          {p.installed != null ? <ArrowsClockwise /> : <DownloadSimple />} {p.installed != null ? "Update…" : "Install…"}
+          {p.installed != null ? <ArrowsClockwise /> : <DownloadSimple />} {p.installed != null ? t("catalog.update") : t("catalog.install")}
         </Item>
       )}
       {p.installed != null && (
         <Item onSelect={() => goPlugin(p.id)}>
-          <SlidersHorizontal /> Its settings
+          <SlidersHorizontal /> {t("menu.settings")}
         </Item>
       )}
       {/* No "Show its source" yet: plugin_open_source opens only an installed
           plugin's own link, and a catalog card's must be the catalog's
           attested one (design-pr97 §4.5), which the backend doesn't build yet. */}
       <Item onSelect={() => void copyText(p.id, "plugin id")}>
-        <Copy /> Copy its id
+        <Copy /> {t("menu.copyId")}
       </Item>
     </>
   )

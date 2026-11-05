@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import type { PluginInfo } from "@/bindings"
 import { DotsThree } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
@@ -23,8 +24,9 @@ import { UninstallDialog } from "./UninstallDialog"
 
 /** The window title's name of a plugin's settings: `Plugins · <its name>`. */
 export function PluginCrumb({ id }: { id: string }) {
+  const { t } = useTranslation("plugins")
   const { data } = usePlugins()
-  return <>Plugins · {data?.find((p) => p.id === id)?.name ?? "Plugin"}</>
+  return <>{t("page.crumb", { name: data?.find((p) => p.id === id)?.name ?? t("plugin") })}</>
 }
 
 /** A plugin's settings, its own screen under Plugins (`/plugins/$id`). */
@@ -42,10 +44,11 @@ export function PluginSettingsPage() {
  * couldn't be read) says so in the middle of the view.
  */
 export function PluginScreen({ id }: { id: string }) {
+  const { t } = useTranslation("plugins")
   const { data: plugins } = usePlugins()
   const p = plugins?.find((x) => x.id === id)
   return (
-    <Page topbar={<TopBar overlay={p != null} back={{ label: "Plugins", to: "/plugins" }} title={p?.name} />}>
+    <Page topbar={<TopBar overlay={p != null} back={{ label: t("screen.back"), to: "/plugins" }} title={p?.name} />}>
       {p ? (
         <>
           <PluginHero p={p} />
@@ -67,6 +70,7 @@ export function PluginScreen({ id }: { id: string }) {
  * trust and the facts are AutoScene's, drawn beside the picture, never on it.
  */
 export function PluginHero({ p }: { p: PluginInfo }) {
+  const { t } = useTranslation("plugins")
   const { data: banner } = usePluginBanner(p)
   const icon = pluginPicture(p.icon)
   // The icon shows until the banner is in hand.
@@ -121,8 +125,8 @@ export function PluginHero({ p }: { p: PluginInfo }) {
                 </h1>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <Badge tone={trust.tone === "danger" ? "danger" : "media"}>{trust.label}</Badge>
-                  {p.sandbox && <Badge tone="media">Sandboxed</Badge>}
-                  <Badge tone="media">version {p.version}</Badge>
+                  {p.sandbox && <Badge tone="media">{t("sandboxed")}</Badge>}
+                  <Badge tone="media">{t("version", { version: p.version })}</Badge>
                   {p.license && <Badge tone="media">{p.license}</Badge>}
                   {by && <span className="pl-1 text-sm text-white/70">{by}</span>}
                 </div>
@@ -131,12 +135,12 @@ export function PluginHero({ p }: { p: PluginInfo }) {
             </div>
             <div className="flex shrink-0 items-center gap-3 pb-1">
               <label className="flex items-center gap-3 text-sm font-medium text-white/80">
-                Turned on
+                {t("turnedOn")}
                 <Switch checked={p.enabled && !withdrawn} disabled={withdrawn} onCheckedChange={(on) => void setPluginEnabled(p, on)} />
               </label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon-lg" variant="glass" aria-label={`${p.name} options`}>
+                  <Button size="icon-lg" variant="glass" aria-label={t("options", { name: p.name })}>
                     <DotsThree weight="bold" />
                   </Button>
                 </DropdownMenuTrigger>

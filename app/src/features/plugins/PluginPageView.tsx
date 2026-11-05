@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { useParams, useRouter } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import type { PageSpec, PluginInfo } from "@/bindings"
 import { AppWindow, ArrowCounterClockwise, DotsThree, FileText, SlidersHorizontal, X } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
@@ -13,6 +14,7 @@ import { NotFound } from "@/features/not-found"
 import { WithdrawnNotice } from "@/features/plugins/WithdrawnBanner"
 import { ProjectNav } from "@/features/project/ProjectNav"
 import { useAppActions } from "@/lib/actions"
+import { say } from "@/lib/i18n"
 import { reveal } from "@/lib/os"
 import { entryCount, goBackTo, placesBefore, whileOpen } from "@/lib/places"
 import { usePlugins, useProject } from "@/lib/queries"
@@ -53,8 +55,9 @@ export function PluginPageView() {
 
 /** A project's page, with the project's bar and the way back to it. */
 function ProjectPluginPage({ p, pg, pid, path }: { p: PluginInfo; pg: PageSpec; pid: string; path: string }) {
+  const { t } = useTranslation("plugins")
   const { data: project } = useProject(pid)
-  return <PluginPage p={p} pg={pg} pid={pid} path={path} back={{ label: project?.title ?? "the project", to: `/p/${pid}` }} />
+  return <PluginPage p={p} pg={pg} pid={pid} path={path} back={{ label: project?.title ?? t("frame.theProject"), to: `/p/${pid}` }} />
 }
 
 function PluginPage({
@@ -70,6 +73,7 @@ function PluginPage({
   path: string
   back?: { label: string; to: string }
 }) {
+  const { t } = useTranslation("plugins")
   const [reloads, setReloads] = useState(0)
   const close = useLeave(pid)
   const reload = () => setReloads((n) => n + 1)
@@ -80,7 +84,7 @@ function PluginPage({
       <TopBar back={back} title={<PageTitle p={p} pg={pg} />} nav={pid != null ? <ProjectNav pid={pid} /> : undefined}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="icon-sm" variant="ghost" aria-label={`${pg.title} options`} className="[&_svg]:size-5">
+            <Button size="icon-sm" variant="ghost" aria-label={t("options", { name: pg.title })} className="[&_svg]:size-5">
               <DotsThree weight="bold" />
             </Button>
           </DropdownMenuTrigger>
@@ -112,42 +116,44 @@ function PluginPage({
 
 /** The page's name in the bar: its plugin's icon, its title, and "Plugin", which no plugin can word. */
 function PageTitle({ p, pg }: { p: PluginInfo; pg: PageSpec }) {
+  const { t } = useTranslation("plugins")
   return (
     <span data-tauri-drag-region className="flex min-w-0 items-center gap-2.5">
       <PluginIcon src={p.icon} className="size-5" />
       <span data-tauri-drag-region className="truncate">
         {pg.title}
       </span>
-      <Badge tone="outline">Plugin</Badge>
+      <Badge tone="outline">{t("plugin")}</Badge>
     </span>
   )
 }
 
 /** What can be done with a plugin's page: its ⋯ menu and a right-click on it list the same. */
 function PageItems({ kit, p, onReload, onClose }: { kit: MenuKit; p: PluginInfo; onReload?: () => void; onClose: () => void }) {
+  const { t } = useTranslation(["plugins", "common"])
   const { goPlugin } = useAppActions()
   const { Item, Separator } = kit
   return (
     <>
       {onReload && (
         <Item onSelect={onReload}>
-          <ArrowCounterClockwise /> Reload the page
+          <ArrowCounterClockwise /> {t("frame.reloadPage")}
         </Item>
       )}
       <Item onSelect={() => goPlugin(p.id)}>
-        <SlidersHorizontal /> Its settings
+        <SlidersHorizontal /> {t("menu.settings")}
       </Item>
       <Item onSelect={() => reveal(p.logPath)}>
-        <FileText /> Show its log
+        <FileText /> {t("menu.showLog")}
       </Item>
       {p.serviceLogPath && (
         <Item onSelect={() => reveal(p.serviceLogPath!)}>
-          <FileText /> Show its service log
+          <FileText /> {t("frame.showServiceLog")}
         </Item>
       )}
       <Separator />
       <Item onSelect={onClose}>
-        <X /> Close
+        <X /> {t("common:action.close")}
       </Item>
     </>
   )
@@ -155,15 +161,16 @@ function PageItems({ kit, p, onReload, onClose }: { kit: MenuKit; p: PluginInfo;
 
 /** A page whose plugins couldn't be read: why, and where to look. */
 function Unread({ error, retrying, onRetry }: { error: unknown; retrying: boolean; onRetry: () => void }) {
+  const { t } = useTranslation("plugins")
   const { goPlugins } = useAppActions()
   return (
     <ErrorState
       error={error}
       icon={<AppWindow />}
-      title="Couldn't read the plugins"
+      title={t("unreadTitle")}
       retrying={retrying}
       onRetry={onRetry}
-      actions={<Button onClick={goPlugins}>Go to Plugins</Button>}
+      actions={<Button onClick={goPlugins}>{t("goToPlugins")}</Button>}
       className="h-full"
     />
   )
@@ -171,13 +178,14 @@ function Unread({ error, retrying, onRetry }: { error: unknown; retrying: boolea
 
 /** A page of a plugin that can't run now: why, and where to change that. */
 function Unavailable({ p }: { p: PluginInfo }) {
+  const { t } = useTranslation("plugins")
   const { goPlugins } = useAppActions()
   return (
     <EmptyState
       icon={<AppWindow />}
-      title="This page isn't available"
-      description={p.broken ?? p.blockedReason ?? `${p.name} is turned off.`}
-      actions={<Button onClick={goPlugins}>Go to Plugins</Button>}
+      title={t("frame.unavailable")}
+      description={p.broken != null ? say(p.broken) : p.blockedReason != null ? say(p.blockedReason) : t("frame.turnedOff", { name: p.name })}
+      actions={<Button onClick={goPlugins}>{t("goToPlugins")}</Button>}
       className="flex-1"
     />
   )
@@ -202,8 +210,9 @@ function useLeave(pid?: string): () => void {
 
 /** A plugin page's name in the window's title: `Plugin “<name>” · <title>`. */
 export function PluginPageCrumb({ plugin, page }: { plugin: string; page: string }) {
+  const { t } = useTranslation("plugins")
   const { data } = usePlugins()
   const p = data?.find((x) => x.id === plugin)
   const pg = p?.pages.find((x) => x.id === page)
-  return <>{p && pg ? pageLabel({ pluginName: p.name, title: pg.title }) : "Plugin"}</>
+  return <>{p && pg ? pageLabel({ pluginName: p.name, title: pg.title }) : t("plugin")}</>
 }

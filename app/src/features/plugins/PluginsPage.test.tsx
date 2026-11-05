@@ -948,7 +948,7 @@ describe("PluginsPage", () => {
 
     fireEvent.click(within(await card("Discord Notify")).getByRole("button", { name: "Update…" }))
     await waitFor(() => expect(commands.pluginInstall).toHaveBeenCalledWith("t-dev.autoscene.discord-notify", false))
-    expect(pluginToast).toHaveBeenCalledWith("Discord Notify", { text: "updated to 1.0.1" })
+    expect(pluginToast).toHaveBeenCalledWith("Discord Notify", "updatedTo", { version: "1.0.1" })
     // No review was asked: it asked for nothing new.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
     expect(usePluginReview.getState().review).toBeNull()

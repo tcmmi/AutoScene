@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useNavigate, useSearch } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import type { PluginInfo } from "@/bindings"
 import { ArrowsClockwise, FolderOpen, MagnifyingGlass, Plus, PuzzlePiece } from "@/components/icons"
 import { Button } from "@/components/ui/button"
@@ -11,7 +12,6 @@ import { Segmented } from "@/components/ui/segmented"
 import { Section } from "@/components/ui/shelf"
 import { Switch } from "@/components/ui/switch"
 import { TopBar } from "@/components/ui/topbar"
-import { plural } from "@/features/cast/cast"
 import { BrowseView } from "@/features/plugins/BrowseView"
 import { updateAll, useUpdatingAll } from "@/features/plugins/catalog-actions"
 import { asksNothingNew, catalogLine, updatesOf } from "@/features/plugins/catalog-items"
@@ -26,9 +26,8 @@ import { UninstallDialog } from "@/features/plugins/UninstallDialog"
 import { WithdrawnBanner } from "@/features/plugins/WithdrawnBanner"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
 import { CARD_GRID } from "@/lib/grid"
+import { fmt } from "@/lib/i18n"
 import { useCatalog, usePlugins, useSettings } from "@/lib/queries"
-
-const ALLOW = "Allow plugins that AutoScene has not reviewed"
 
 /** How many withdrawn plugins get a banner each: the rest are counted. */
 const BANNERS = 3
@@ -44,6 +43,7 @@ type View = "installed" | "browse"
  * AutoScene withdrew have a banner each at the top of both, offering to go.
  */
 export function PluginsPage() {
+  const { t } = useTranslation("plugins")
   const { data: settings } = useSettings()
   const { data: plugins, error, isFetching, refetch } = usePlugins()
   const { data: catalog, error: catalogError } = useCatalog()
@@ -87,12 +87,12 @@ export function PluginsPage() {
   // Browse installs from each card: the file is the other way, so it sits back.
   const installButton = (
     <Button size="lg" busy={checking === "file"} disabled={checking === "folder"} onClick={install}>
-      <Plus weight="bold" /> Install from a file…
+      <Plus weight="bold" /> {t("installFromFile")}
     </Button>
   )
   const folderButton = allowed && (
     <Button variant="ghost" size="lg" busy={checking === "folder"} disabled={checking === "file"} onClick={loadFolder}>
-      <FolderOpen /> Load a folder…
+      <FolderOpen /> {t("loadFolder")}
     </Button>
   )
   const card = (p: PluginInfo) => (
@@ -110,13 +110,13 @@ export function PluginsPage() {
     <Page topbar={<TopBar />} menu={<InstallItems flow={flow} />}>
       <header className="flex flex-wrap items-end justify-between gap-6 px-10 pt-10 pb-8">
         <div>
-          <h1 className="display text-5xl text-fg-1">Plugins</h1>
+          <h1 className="display text-5xl text-fg-1">{t("page.title")}</h1>
           {view === "browse"
             ? line && <p className="mt-2 text-md text-fg-2">{line}</p>
             : any && (
                 <p className="mt-2 text-md text-fg-2">
                   {/* What runs, not what is switched on: a broken or blocked one doesn't. */}
-                  {plural(plugins.length, "plugin")} · {plugins.filter((p) => p.active).length.toLocaleString("en-GB")} running
+                  {t("page.summary", { count: plugins.length, running: fmt.count(plugins.filter((p) => p.active).length) })}
                 </p>
               )}
         </div>
@@ -129,16 +129,16 @@ export function PluginsPage() {
         )}
         <div className="flex basis-full flex-wrap items-center gap-3">
           <Segmented<View>
-            aria-label="Plugins to show"
+            aria-label={t("page.show")}
             value={view}
             onChange={go}
             options={[
-              { value: "installed", label: "Installed" },
-              { value: "browse", label: "Browse" },
+              { value: "installed", label: t("page.installed") },
+              { value: "browse", label: t("page.browse") },
             ]}
           />
           {(view === "browse" || any) && finding && (
-            <SearchField value={query} onChange={setQuery} label="Find a plugin" />
+            <SearchField value={query} onChange={setQuery} label={t("page.find")} />
           )}
         </div>
       </header>
@@ -151,8 +151,7 @@ export function PluginsPage() {
             ))}
             {withdrawn.length > BANNERS && (
               <p className="px-1 text-sm text-fg-2">
-                and {(withdrawn.length - BANNERS).toLocaleString("en-GB")} more {withdrawn.length - BANNERS === 1 ? "plugin" : "plugins"} AutoScene
-                withdrew, marked on {withdrawn.length - BANNERS === 1 ? "its card" : "their cards"} under Installed.
+                {t("withdrawn.more", { count: withdrawn.length - BANNERS })}
               </p>
             )}
           </div>
@@ -163,7 +162,7 @@ export function PluginsPage() {
           <ErrorState
             error={error}
             icon={<PuzzlePiece />}
-            title="Couldn't read the plugins"
+            title={t("unreadTitle")}
             retrying={isFetching}
             onRetry={() => void refetch()}
           />
@@ -172,16 +171,12 @@ export function PluginsPage() {
         ) : !any ? (
           <EmptyState
             icon={<PuzzlePiece />}
-            title="No plugins yet"
-            description={
-              allowed
-                ? "Browse the plugins AutoScene reviewed, install one from its .asp file, or load one from its folder. Its actions then show in each export's menu, and its commands in the palette."
-                : "Browse the plugins AutoScene reviewed, or install one from its .asp file. One AutoScene hasn't reviewed needs the setting below first. Its actions then show in each export's menu, and its commands in the palette."
-            }
+            title={t("page.empty.title")}
+            description={allowed ? t("page.empty.allowed") : t("page.empty.notAllowed")}
             actions={
               <>
                 <Button variant="primary" size="lg" onClick={() => go("browse")}>
-                  <PuzzlePiece /> Browse plugins
+                  <PuzzlePiece /> {t("page.empty.browse")}
                 </Button>
                 {installButton}
                 {folderButton}
@@ -191,22 +186,22 @@ export function PluginsPage() {
         ) : shown?.length === 0 ? (
           <EmptyState
             icon={<MagnifyingGlass />}
-            title="Nothing matches"
-            description={`No plugin's name, author, description or id has “${query.trim()}”.`}
-            actions={<Button onClick={() => setQuery("")}>Clear the search</Button>}
+            title={t("page.noMatch.title")}
+            description={t("page.noMatch.description", { query: query.trim() })}
+            actions={<Button onClick={() => setQuery("")}>{t("page.noMatch.clear")}</Button>}
           />
         ) : updating.length === 0 ? (
           <div className={CARD_GRID}>{rest.map(card)}</div>
         ) : (
           <>
             <Section
-              title="Updates"
-              count={updating.length.toLocaleString("en-GB")}
+              title={t("page.updates")}
+              count={fmt.count(updating.length)}
               className="px-0"
               action={
                 quiet.length > 0 && (
                   <Button size="sm" busy={updatingAll} onClick={() => void updateAll(quiet)}>
-                    <ArrowsClockwise /> Update all ({quiet.length.toLocaleString("en-GB")})
+                    <ArrowsClockwise /> {t("page.updateAll", { n: fmt.count(quiet.length) })}
                   </Button>
                 )
               }
@@ -214,7 +209,7 @@ export function PluginsPage() {
               <div className={CARD_GRID}>{updating.map(card)}</div>
             </Section>
             {rest.length > 0 && (
-              <Section title="Installed" count={rest.length.toLocaleString("en-GB")} className="mt-12 px-0">
+              <Section title={t("page.others")} count={fmt.count(rest.length)} className="mt-12 px-0">
                 <div className={CARD_GRID}>{rest.map(card)}</div>
               </Section>
             )}
@@ -223,12 +218,9 @@ export function PluginsPage() {
 
         {view === "installed" && (
           <div className="mt-14 max-w-4xl">
-            <SettingsGroup title="Who may run code here">
-              <SettingRow
-                label={ALLOW}
-                description="Unsigned plugins, and ones only their author signed, and plugins loaded from a folder. AutoScene can't check what they do."
-              >
-                <Switch aria-label={ALLOW} checked={allowed} disabled={!settings} onCheckedChange={(on) => void allowUnreviewed(on)} />
+            <SettingsGroup title={t("page.run.title")}>
+              <SettingRow label={t("page.run.allow")} description={t("page.run.description")}>
+                <Switch aria-label={t("page.run.allow")} checked={allowed} disabled={!settings} onCheckedChange={(on) => void allowUnreviewed(on)} />
               </SettingRow>
             </SettingsGroup>
           </div>

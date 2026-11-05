@@ -1,6 +1,7 @@
 import { toast } from "sonner"
 import { create } from "zustand"
 import type { CatalogPlugin, PluginReview } from "@/bindings"
+import { say, t } from "@/lib/i18n"
 import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { type ReviewAsk, usePluginReview } from "@/state/plugin-review"
@@ -35,11 +36,11 @@ async function installQuietly(r: PluginReview, name: string): Promise<boolean | 
     const p = await commands.pluginInstall(r.ticketId, false)
     void queryClient.invalidateQueries({ queryKey: qk.plugins })
     void queryClient.invalidateQueries({ queryKey: qk.catalog })
-    pluginToast(p.name, { text: `updated to ${p.version}` })
+    pluginToast(p.name, "updatedTo", { version: p.version })
   } catch (e) {
     void commands.pluginDiscard(r.ticketId).catch(() => undefined)
     if (isAppError(e) && e.code === "cancelled") return "cancelled"
-    pluginToast(name, { text: "couldn't be updated", description: errorMessage(e), tone: "error" })
+    pluginToast(name, "updateFailed", {}, { description: errorMessage(e) })
   } finally {
     usePluginReview.getState().compileEnded()
   }
@@ -100,18 +101,18 @@ export async function checkCatalog() {
     queryClient.setQueryData(qk.catalog, view)
     void queryClient.invalidateQueries({ queryKey: qk.plugins })
     if (!view.status.ready) {
-      const why = view.status.needsNewerApp ? "This catalog needs a newer AutoScene." : "This AutoScene has no plugin catalog."
-      toast.error("Couldn't check the plugin catalog", { description: why })
+      const why = view.status.needsNewerApp ? t("plugins:catalog.needsNewerApp") : t("plugins:catalog.noCatalog")
+      toast.error(t("plugins:catalog.checkFailed"), { description: why })
       return
     }
     if (view.status.error != null) {
-      toast.error("Couldn't check the plugin catalog", { description: view.status.error })
+      toast.error(t("plugins:catalog.checkFailed"), { description: say(view.status.error) })
       return
     }
     const n = view.plugins.filter((p) => p.update && p.runsHere && !p.needsNewerApp).length
-    toast(n === 0 ? "Plugins are up to date" : n === 1 ? "1 plugin update" : `${n} plugin updates`)
+    toast(n === 0 ? t("plugins:catalog.upToDate") : t("plugins:catalog.updates", { count: n }))
   } catch (e) {
-    toast.error("Couldn't check the plugin catalog", { description: errorMessage(e) })
+    toast.error(t("plugins:catalog.checkFailed"), { description: errorMessage(e) })
   } finally {
     useCatalogCheck.setState({ checking: false })
   }
@@ -126,6 +127,6 @@ export async function setDailyChecks(on: boolean) {
     queryClient.setQueryData(qk.settings, saved)
     void queryClient.invalidateQueries({ queryKey: qk.catalog })
   } catch (e) {
-    toast.error("Couldn't save the setting", { description: errorMessage(e) })
+    toast.error(t("plugins:saveFailed"), { description: errorMessage(e) })
   }
 }

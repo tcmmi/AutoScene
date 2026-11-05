@@ -171,13 +171,16 @@ function notifyFinished(job: JobInfo) {
   if (job.kind === "plugin") {
     const saved = isFinished(job) ? takePackSave(job.id) : undefined
     if (job.state === "failed")
-      pluginToast(job.subtitle, { text: t("shell:events.pluginFailed", { title: job.title }), description: job.error ?? undefined, tone: "error" })
+      pluginToast(job.subtitle, "jobFailed", { action: job.title }, { description: job.error ?? undefined })
     else if (job.state === "done" && saved)
-      pluginToast(job.subtitle, {
-        text: t("shell:events.pluginSaved", { file: saved.split(/[\\/]/).pop() ?? "" }),
-        action: { label: t("shell:events.showInFolder"), onClick: () => reveal(saved) },
-      })
-    else if (job.state === "done" && job.message) pluginToast(job.subtitle, { text: job.title, description: job.message })
+      pluginToast(
+        job.subtitle,
+        "fileSaved",
+        { file: saved.split(/[\\/]/).pop() ?? "" },
+        { action: { label: t("plugins:toast.showInFolder"), onClick: () => reveal(saved) } },
+      )
+    else if (job.state === "done" && job.message)
+      pluginToast(job.subtitle, "jobFinished", { action: job.title }, { description: job.message })
     return
   }
   if (job.kind !== "export") {

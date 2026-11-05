@@ -220,6 +220,12 @@ export const fmt = {
     const o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }
     return cached(`d|${tag}`, () => new Intl.DateTimeFormat(tag, o)).format(new Date(ms))
   },
+  /** Unix ms → "3 November 2026" (ro: "3 noiembrie 2026"): a day on its own, as a catalog's date. */
+  longDate(ms: number): string {
+    const tag = tagOf(i18n.language)
+    const o: Intl.DateTimeFormatOptions = { day: "numeric", month: "long", year: "numeric" }
+    return cached(`D|${tag}`, () => new Intl.DateTimeFormat(tag, o)).format(new Date(ms))
+  },
   /** ["a", "b", "c"] → "a, b and c" (ro: "a, b și c"). */
   list(items: readonly string[]): string {
     const tag = tagOf(i18n.language)

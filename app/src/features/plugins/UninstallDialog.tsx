@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { PluginInfo } from "@/bindings"
 import { Trash } from "@/components/icons"
@@ -26,28 +27,29 @@ export function UninstallDialog({
 }
 
 function UninstallForm({ p, onClose, onUninstalled }: { p: PluginInfo; onClose: () => void; onUninstalled?: () => Promise<unknown> | void }) {
+  const { t } = useTranslation("plugins")
   const [dataToo, setDataToo] = useState(false)
   const uninstall = async () => {
     await commands.pluginUninstall(p.id, dataToo)
     // It has gone either way: a way out that failed leaves the list to say so.
     await Promise.resolve(onUninstalled?.()).catch(() => {})
     queryClient.setQueryData<PluginInfo[]>(qk.plugins, (list) => list?.filter((x) => x.id !== p.id))
-    toast(`Uninstalled ${p.name}`)
+    toast(t("uninstall.toast", { name: p.name }))
   }
   return (
     <ConfirmDialog
       open
       onOpenChange={(open) => !open && onClose()}
-      title={`Uninstall ${p.name}?`}
-      description="Its commands, settings and actions will go."
-      answer="Uninstall"
+      title={t("uninstall.title", { name: p.name })}
+      description={t("uninstall.description")}
+      answer={t("uninstall.answer")}
       icon={<Trash />}
-      failure="Couldn't uninstall the plugin"
+      failure={t("uninstall.failure")}
       onConfirm={uninstall}
     >
       <OptionRow
-        label="Delete what it kept too"
-        description="Remove its saved settings, credentials, caches and logs."
+        label={t("uninstall.dataLabel")}
+        description={t("uninstall.dataDescription")}
         checked={dataToo}
         onCheckedChange={setDataToo}
       />

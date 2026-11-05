@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
+import type { TFunction } from "i18next"
 import { toast } from "sonner"
+import { Trans, useTranslation } from "react-i18next"
 import { ArrowSquareOut, FileText } from "@/components/icons"
 import { AutoSceneMark } from "@/components/brand/AutoSceneMark"
 import { Badge } from "@/components/ui/badge"
@@ -13,9 +15,6 @@ import { useAppInfo, useHardware, useMediaTools } from "@/lib/queries"
 import { SettingRow, SettingsGroup } from "../primitives"
 
 const PLATFORM_LABEL = { windows: "Windows", macos: "macOS", linux: "Linux" } as const
-
-/** What ONNX Runtime computes through on each system. */
-const RUNTIME_WITH = { windows: " with DirectML", macos: " with Core ML", linux: "" } as const
 
 /** Third-party components shipped inside the app. */
 const LICENSES: { name: string; license: string; url: string }[] = [
@@ -46,6 +45,17 @@ const STILLS: { name: string; by: string; url: string; license: string; licenseU
   },
 ]
 
+/** The ONNX Runtime row: its version when known, and how it computes on this system (a whole label each). */
+function onnxLabel(t: TFunction<"settings">, version: string | undefined, platform: "windows" | "macos" | "linux" | undefined): string {
+  if (platform === "windows") {
+    return version ? t("about.ai.onnx.directMlVersion", { version }) : t("about.ai.onnx.directMl")
+  }
+  if (platform === "macos") {
+    return version ? t("about.ai.onnx.coreMlVersion", { version }) : t("about.ai.onnx.coreMl")
+  }
+  return version ? t("about.ai.onnx.plainVersion", { version }) : t("about.ai.onnx.plain")
+}
+
 /**
  * The AI models and their licences. Asked again each time About opens:
  * an analysis may have downloaded one since.
@@ -55,6 +65,7 @@ function useModels() {
 }
 
 export function AboutSection() {
+  const { t } = useTranslation("settings")
   const { data: info } = useAppInfo()
   const { data: tools } = useMediaTools()
   const { data: models } = useModels()
@@ -67,7 +78,7 @@ export function AboutSection() {
         <div className="min-w-0 flex-1">
           <div className="display text-4xl text-fg-1">AutoScene</div>
           <div className="mt-1 text-md text-fg-2">
-            Version <span className="timecode text-fg-1">{info?.version ?? "–"}</span>
+            <Trans t={t} i18nKey="about.version" values={{ version: info?.version ?? "–" }} components={{ mono: <span className="timecode text-fg-1" /> }} />
             {info && (
               <span className="text-fg-3">
                 {" "}
@@ -77,12 +88,13 @@ export function AboutSection() {
           </div>
         </div>
         <Button size="sm" onClick={() => void a.openLogs()}>
-          <FileText /> Open logs
+          <FileText /> {t("about.openLogs")}
         </Button>
       </div>
 
-      <SettingsGroup title="Media engine" description="Decoding, indexing and encoding run on FFmpeg.">
+      <SettingsGroup title={t("about.media.title")} description={t("about.media.description")}>
         <SettingRow
+          // i18n-ignore: a product name and its version
           label={tools?.ready ? `FFmpeg ${tools.version}` : "FFmpeg"}
           description={
             tools ? (
@@ -92,39 +104,44 @@ export function AboutSection() {
                 <span className="text-danger">{tools.error && say(tools.error)}</span>
               )
             ) : (
-              "Checking…"
+              t("about.checking")
             )
           }
         >
+          {/* i18n-ignore: licence names */}
           <span className="text-sm text-fg-3">LGPL / GPL</span>
         </SettingRow>
       </SettingsGroup>
 
-      <SettingsGroup title="AI engine" description="Analysis runs on ONNX Runtime.">
-        <SettingRow label={`ONNX Runtime${hardware?.runtime ? ` ${hardware.runtime}` : ""}${info ? RUNTIME_WITH[info.platform] : ""}`}>
+      <SettingsGroup title={t("about.ai.title")} description={t("about.ai.description")}>
+        <SettingRow label={onnxLabel(t, hardware?.runtime, info?.platform)}>
+          {/* i18n-ignore: a licence name */}
           <span className="text-sm text-fg-3">MIT</span>
         </SettingRow>
         {hardware?.accel.installed && (
-          <SettingRow label={`NVIDIA TensorRT for RTX ${hardware.accel.engine}`} description="NVIDIA's own files, downloaded from Settings → General.">
+          <SettingRow // i18n-ignore: a product name and its version
+            label={`NVIDIA TensorRT for RTX ${hardware.accel.engine}`}
+            description={t("about.ai.nvidiaDescription")}
+          >
             <Button size="sm" variant="ghost" onClick={() => void openExternalUrl(hardware.accel.licence)}>
-              <ArrowSquareOut /> NVIDIA's licence
+              <ArrowSquareOut /> {t("about.ai.nvidiaLicence")}
             </Button>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => {
-                commands.accelNotices().catch((e: unknown) => toast.error("Couldn't open the notices", { description: errorMessage(e) }))
+                commands.accelNotices().catch((e: unknown) => toast.error(t("about.ai.noticesFailed"), { description: errorMessage(e) }))
               }}
             >
-              <FileText /> Acknowledgements
+              <FileText /> {t("about.ai.notices")}
             </Button>
           </SettingRow>
         )}
       </SettingsGroup>
 
       <SettingsGroup
-        title="AI models"
-        description="Downloaded the first time an analysis needs them. Models marked non-commercial may only be used for non-commercial work; Fast Scan uses none of them."
+        title={t("about.models.title")}
+        description={t("about.models.description")}
       >
         {models?.map((m) => (
           <SettingRow
@@ -134,7 +151,7 @@ export function AboutSection() {
               <span data-selectable>
                 {m.source}
                 <span className="mt-1 flex flex-wrap items-center gap-x-2 text-fg-3">
-                  <span>{m.installed ? "Downloaded" : "Not downloaded yet"} · {formatBytes(m.sizeBytes ?? 0)}</span>
+                  <span>{m.installed ? t("about.models.downloaded") : t("about.models.notDownloaded")} · {formatBytes(m.sizeBytes ?? 0)}</span>
                   <span>·</span>
                   <span>{m.license}</span>
                 </span>
@@ -142,12 +159,12 @@ export function AboutSection() {
             }
             className="min-h-14 py-3"
           >
-            {m.nonCommercial && <Badge tone="accent">Non-commercial</Badge>}
+            {m.nonCommercial && <Badge tone="accent">{t("about.models.nonCommercial")}</Badge>}
           </SettingRow>
-        )) ?? <SettingRow label="Checking…" />}
+        )) ?? <SettingRow label={t("about.checking")} />}
       </SettingsGroup>
 
-      <SettingsGroup title="Open-source licenses" description="AutoScene is built on these projects.">
+      <SettingsGroup title={t("about.licenses.title")} description={t("about.licenses.description")}>
         {LICENSES.map((l) => (
           <SettingRow key={l.name} label={l.name} description={l.url} className="min-h-12 py-2.5">
             <span className="text-sm text-fg-3">{l.license}</span>
@@ -156,8 +173,8 @@ export function AboutSection() {
       </SettingsGroup>
 
       <SettingsGroup
-        title="Example stills"
-        description="The footage examples in a new project are stills from these open films and artwork, cropped and scaled."
+        title={t("about.stills.title")}
+        description={t("about.stills.description")}
       >
         {STILLS.map((f) => (
           <SettingRow

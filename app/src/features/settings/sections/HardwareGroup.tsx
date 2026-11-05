@@ -1,6 +1,8 @@
 import { useState } from "react"
 import type * as React from "react"
+import type { TFunction } from "i18next"
 import { toast } from "sonner"
+import { Trans, useTranslation } from "react-i18next"
 import type { AppSettings, HardwareInfo } from "@/bindings"
 import { ArrowCounterClockwise, ArrowSquareOut, CircleNotch, DownloadSimple } from "@/components/icons"
 import { Button } from "@/components/ui/button"
@@ -8,14 +10,16 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Progress } from "@/components/ui/progress"
 import { Select, type SelectOption } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { openExternalUrl } from "@/lib/os"
 import { qk, queryClient, useAppInfo, useHardware, useSettings } from "@/lib/queries"
 import { SettingRow, SettingsGroup } from "../primitives"
 
-const AUTOMATIC = "Automatic"
-const AUTO: SelectOption = { value: "auto", label: AUTOMATIC }
-const PROCESSOR: SelectOption = { value: "cpu", label: "Processor only" }
+type T = TFunction<["settings", "common"]>
+
+const auto = (t: T): SelectOption => ({ value: "auto", label: t("hardware.automatic") })
+const processor = (t: T): SelectOption => ({ value: "cpu", label: t("hardware.processorOnly") })
 
 /** Where "Get the driver" leads: NVIDIA's own driver page. */
 const DRIVERS = "https://www.nvidia.com/drivers/"
@@ -23,21 +27,29 @@ const DRIVERS = "https://www.nvidia.com/drivers/"
 /**
  * What the analysis runs on, in one sentence. The device is named here and
  * nowhere else in Settings: Fast Scan's line says what Automatic means
- * without naming it, and follows the card chosen here.
+ * without naming it, and follows the card chosen here. A sentence per
+ * device, whole: another language may bend the words around it.
  */
-function hardwareLine(hw: HardwareInfo): string {
-  if (hw.pending) return "Applies from the next analysis."
-  const device = hw.using.kind === "processor" ? "the processor" : hw.using.name ? `the ${hw.using.name}` : "this computer's graphics card"
-  if (hw.missing) return `The graphics card you chose isn't connected, so analysis uses ${device}.`
-  if (hw.fellBack) return "In the last analysis some steps ran on the processor, which is slower."
-  if (hw.using.kind === "processor" && hw.selected === "cpu") return "Analysis runs on the processor. That is much slower."
-  return `Analysis runs on ${device}${hw.accel.active ? ", with NVIDIA acceleration" : ""}.`
+function hardwareLine(hw: HardwareInfo, t: T): string {
+  if (hw.pending) return t("hardware.line.pending")
+  // The processor, a card by its name, or this computer's card when it has no name.
+  const name = hw.using.kind === "processor" ? "" : hw.using.name
+  const device = hw.using.kind === "processor" ? "processor" : name ? "card" : "generic"
+  if (hw.missing) {
+    if (device === "processor") return t("hardware.line.missing.processor")
+    return device === "card" ? t("hardware.line.missing.card", { name }) : t("hardware.line.missing.generic")
+  }
+  if (hw.fellBack) return t("hardware.line.fellBack")
+  if (hw.using.kind === "processor" && hw.selected === "cpu") return t("hardware.line.processorChosen")
+  if (device === "processor") return hw.accel.active ? t("hardware.line.runs.processorAccel") : t("hardware.line.runs.processor")
+  if (device === "card") return hw.accel.active ? t("hardware.line.runs.cardAccel", { name }) : t("hardware.line.runs.card", { name })
+  return hw.accel.active ? t("hardware.line.runs.genericAccel") : t("hardware.line.runs.generic")
 }
 
 /** Automatic, each card when there are two or more, and the processor only. */
-function options(hw: HardwareInfo): SelectOption[] {
+function options(hw: HardwareInfo, t: T): SelectOption[] {
   const cards = hw.choice === "cards" ? hw.gpus.map((g) => ({ value: g.key, label: g.name })) : []
-  return [AUTO, ...cards, PROCESSOR]
+  return [auto(t), ...cards, processor(t)]
 }
 
 /** Saves what the analysis runs on: it applies from the next analysis. */
@@ -48,7 +60,7 @@ async function save(settings: AppSettings) {
     void queryClient.invalidateQueries({ queryKey: qk.hardware })
     return true
   } catch (e) {
-    toast.error("Couldn't save the setting", { description: errorMessage(e) })
+    toast.error(t("settings:saveFailed"), { description: errorMessage(e) })
     return false
   }
 }
@@ -64,7 +76,7 @@ async function choose(settings: AppSettings, selected: string) {
 const mb = (bytes: number) => Math.round(bytes / 1_000_000)
 
 /** A link inside a row's text. */
-function TextLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function TextLink({ onClick, children }: { onClick: () => void; children?: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -89,18 +101,15 @@ function RemoveDialog({
   onOpenChange: (open: boolean) => void
   slower: boolean
 }) {
+  const { t } = useTranslation(["settings", "common"])
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Remove NVIDIA acceleration?"
-      description={
-        slower
-          ? "Analysis keeps running on this graphics card, more slowly. You can download it again any time."
-          : "You can download it again any time."
-      }
-      answer="Remove"
-      failure="Couldn't remove NVIDIA's files"
+      title={t("hardware.accel.remove.title")}
+      description={slower ? t("hardware.accel.remove.slower") : t("hardware.accel.remove.plain")}
+      answer={t("hardware.accel.remove.answer")}
+      failure={t("hardware.accel.remove.failed")}
       onConfirm={() => commands.accelRemove()}
     />
   )
@@ -119,6 +128,7 @@ const ROW_ACTION = "mt-1.5 block cursor-pointer rounded-xs text-fg-3 transition-
  * shown wherever its files are. The row is the download's only home.
  */
 function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSettings | undefined }) {
+  const { t } = useTranslation(["settings", "common"])
   const [removing, setRemoving] = useState(false)
   // Trying again checks every file and starts an engine: that takes a while.
   const [retrying, setRetrying] = useState(false)
@@ -132,7 +142,7 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
   const switchOn = settings?.nvidiaAcceleration ?? true
   const accelSwitch = (disabled: boolean) => (
     <Switch
-      aria-label="NVIDIA acceleration"
+      aria-label={t("hardware.accel.label")}
       checked={switchOn}
       disabled={disabled || !settings}
       onCheckedChange={(on) => settings && void save({ ...settings, nvidiaAcceleration: on })}
@@ -140,43 +150,44 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
   )
   const tryAgain = (onClick: () => void, busy = false) => (
     <Button size="sm" busy={busy} onClick={onClick}>
-      <ArrowCounterClockwise /> Try again
+      <ArrowCounterClockwise /> {t("common:action.tryAgain")}
     </Button>
   )
   const retry = () => {
     setRetrying(true)
-    void run("Couldn't try again", commands.accelTryAgain).finally(() => setRetrying(false))
+    void run(t("hardware.accel.retryFailed"), commands.accelTryAgain).finally(() => setRetrying(false))
   }
-  const install = () => run("Couldn't download NVIDIA's files", commands.accelInstall)
+  const install = () => run(t("hardware.accel.installFailed"), commands.accelInstall)
 
   switch (row.state) {
     case "available":
       text = (
-        <>
-          NVIDIA's engine for GeForce RTX cards, so anime analysis runs faster. AutoScene downloads NVIDIA's files (about{" "}
-          {mb(downloadBytes)} MB) from the Python Package Index, which sees your IP address. By downloading you agree to{" "}
-          <TextLink onClick={() => void openExternalUrl(licence)}>NVIDIA's licence</TextLink>.
-        </>
+        <Trans
+          t={t}
+          i18nKey="hardware.accel.available"
+          values={{ mb: mb(downloadBytes) }}
+          components={{ go: <TextLink onClick={() => void openExternalUrl(licence)} /> }}
+        />
       )
       control = (
         <Button variant="primary" size="sm" onClick={install}>
-          <DownloadSimple /> Agree and download
+          <DownloadSimple /> {t("hardware.accel.agree")}
         </Button>
       )
       break
     case "downloading":
-      text = "Downloading NVIDIA's files."
+      text = t("hardware.accel.downloading")
       detail = (
         <>
           <Progress value={row.total > 0 ? row.done / row.total : null} className="mt-2.5 w-80 max-w-full" />
           <span className="timecode mt-1.5 block text-fg-3">
-            {mb(row.done)} of {mb(row.total)} MB
+            {t("hardware.accel.progress", { done: mb(row.done), total: mb(row.total) })}
           </span>
         </>
       )
       control = (
-        <Button size="sm" onClick={() => run("Couldn't cancel the download", commands.accelCancel)}>
-          Cancel
+        <Button size="sm" onClick={() => run(t("hardware.accel.cancelFailed"), commands.accelCancel)}>
+          {t("common:action.cancel")}
         </Button>
       )
       break
@@ -185,27 +196,26 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
       control = tryAgain(install)
       break
     case "removing":
-      text = "Removing after the current analysis."
+      text = t("hardware.accel.removing")
       break
     case "notUsed":
-      text =
-        hw.using.kind === "processor" ? "Not used: analysis runs on the processor." : "Not used: another graphics card is chosen."
+      text = hw.using.kind === "processor" ? t("hardware.accel.notUsedProcessor") : t("hardware.accel.notUsedOtherCard")
       control = accelSwitch(true)
       break
     case "stopped":
-      text = "NVIDIA acceleration stopped working, so analysis runs without it."
+      text = t("hardware.accel.stopped")
       control = tryAgain(retry, retrying)
       break
     case "needsDriver":
-      text = "NVIDIA acceleration couldn't use this card. A newer NVIDIA driver may help."
+      text = t("hardware.accel.needsDriver")
       control = (
         <Button size="sm" onClick={() => void openExternalUrl(DRIVERS)}>
-          <ArrowSquareOut /> Get the driver
+          <ArrowSquareOut /> {t("hardware.accel.getDriver")}
         </Button>
       )
       break
     case "ready":
-      text = "NVIDIA's engine for GeForce RTX cards, so anime analysis runs faster."
+      text = t("hardware.accel.ready")
       control = accelSwitch(false)
       break
   }
@@ -213,7 +223,7 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
   return (
     <>
       <SettingRow
-        label="NVIDIA acceleration"
+        label={t("hardware.accel.label")}
         description={
           <>
             <span aria-live="polite" className="block text-pretty">
@@ -222,12 +232,12 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
             {detail}
             {updateStopped && (
               <button type="button" className={ROW_ACTION} onClick={() => void install()}>
-                Download the update (about {mb(downloadBytes)} MB)
+                {t("hardware.accel.update", { mb: mb(downloadBytes) })}
               </button>
             )}
             {removable && row.state !== "downloading" && row.state !== "removing" && (
               <button type="button" className={ROW_ACTION} onClick={() => setRemoving(true)}>
-                Remove NVIDIA's files
+                {t("hardware.accel.removeFiles")}
               </button>
             )}
           </>
@@ -242,37 +252,40 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
 
 /** Settings → General → Hardware acceleration: the graphics the analysis runs on. */
 export function HardwareGroup() {
+  const { t } = useTranslation(["settings", "common"])
   const { data: info } = useAppInfo()
   const { data: settings } = useSettings()
   const hw = useHardware()
   const mac = info?.platform === "macos"
-  const label = mac ? "Chip" : "Graphics card"
+  const label = mac ? t("hardware.chip") : t("hardware.graphicsCard")
 
   let description: React.ReactNode
   let control: React.ReactNode = null
   if (hw.isError && !hw.isFetching) {
-    description = mac ? "Couldn't check the chip." : "Couldn't check the graphics cards."
+    description = mac ? t("hardware.checkFailed.chip") : t("hardware.checkFailed.cards")
     control = (
       <Button size="sm" onClick={() => void hw.refetch()}>
-        <ArrowCounterClockwise /> Try again
+        <ArrowCounterClockwise /> {t("common:action.tryAgain")}
       </Button>
     )
   } else if (!hw.data) {
     description = (
       <span className="inline-flex items-center gap-1.5">
         <CircleNotch aria-hidden className="size-3.5 animate-spin" />
-        {mac ? "Checking the chip…" : "Looking for graphics cards…"}
+        {mac ? t("hardware.checking.chip") : t("hardware.checking.cards")}
       </span>
     )
     // Linux analyses on the processor: nothing to choose, not even while looking.
     if (info && info.platform !== "linux") {
-      control = <Select aria-label={label} className="w-[260px]" value="auto" disabled onChange={() => {}} options={[AUTO, PROCESSOR]} />
+      control = (
+        <Select aria-label={label} className="w-[260px]" value="auto" disabled onChange={() => {}} options={[auto(t), processor(t)]} />
+      )
     }
   } else {
     const data = hw.data
     description = (
       <span aria-live="polite" className="block text-pretty">
-        {hardwareLine(data)}
+        {hardwareLine(data, t)}
       </span>
     )
     if (data.choice !== "fixed") {
@@ -283,17 +296,17 @@ export function HardwareGroup() {
           // A stored card the list no longer shows (gone, or one of fewer than two left) shows Automatic as a hint, not as chosen:
           // picking Automatic is then a change, and clears the card.
           value={data.selected === "auto" && settings?.gpu && settings.gpu !== "cpu" ? "" : data.selected}
-          placeholder={AUTOMATIC}
+          placeholder={t("hardware.automatic")}
           disabled={!settings}
           onChange={(v) => settings && void choose(settings, v)}
-          options={options(data)}
+          options={options(data, t)}
         />
       )
     }
   }
 
   return (
-    <SettingsGroup title="Hardware acceleration" description="Where analysis runs on this computer.">
+    <SettingsGroup title={t("hardware.title")} description={t("hardware.description")}>
       <SettingRow label={label} description={description}>
         {control}
       </SettingRow>

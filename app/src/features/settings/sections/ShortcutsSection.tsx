@@ -1,13 +1,14 @@
 import type * as React from "react"
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 import { ArrowCounterClockwise } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Segmented } from "@/components/ui/segmented"
 import { Tooltip } from "@/components/ui/tooltip"
+import { t } from "@/lib/i18n"
 import {
-  type Use,
   assign,
   isChanged,
   pauseMenuKeys,
@@ -15,6 +16,7 @@ import {
   resetShortcut,
   sameBinding,
   saveKeymap,
+  quotedNames,
   slotLabel,
   withPreset,
 } from "@/lib/keymap"
@@ -32,6 +34,7 @@ import {
   capGroups,
   getKeymap,
   modifierCaps,
+  shortcutName,
   shortcutOf,
   slotCaps,
   slotRef,
@@ -49,7 +52,7 @@ const presetOf = (km: Keymap) => PRESETS.find((p) => p.id === km.preset) ?? PRES
  * Undo would also take back every change since.
  */
 function undoable(title: string, before: Keymap, description?: string) {
-  toast(title, { id: "keymap-undo", description, action: { label: "Undo", onClick: () => void saveKeymap(before) } })
+  toast(title, { id: "keymap-undo", description, action: { label: t("common:action.undo"), onClick: () => void saveKeymap(before) } })
 }
 
 /** Once the focused control has gone (a reset), put the focus where `find` says. */
@@ -79,9 +82,8 @@ function swallowUntilUp(e: KeyboardEvent) {
   window.addEventListener("blur", done)
 }
 
-const quoted = (took: Use[]) => [...new Set(took.map(slotLabel))].map((n) => `“${n}”`).join(" and ")
-
 export function ShortcutsSection() {
+  const { t } = useTranslation(["settings", "shortcuts"])
   const km = useKeymap()
   // The slot listening for its new key (`slotRef`), one at a time.
   const [recording, setRecording] = useState<string | null>(null)
@@ -94,23 +96,28 @@ export function ShortcutsSection() {
     void saveKeymap(withPreset(id))
     const n = Object.keys(before.own).length
     if (n === 0) return
-    const label = presetOf(withPreset(id)).label
-    undoable(`Keys like in ${label}`, before, `Your ${n === 1 ? "change was" : `${n} changes were`} let go.`)
+    const preset = presetOf(withPreset(id)).label
+    undoable(t("settings:keymap.switched", { preset }), before, t("settings:keymap.letGo", { count: n }))
   }
   const resetAll = () => {
     const before = getKeymap()
     void saveKeymap(withPreset(before.preset))
-    undoable(`Back to ${presetOf(before).label}'s keys`, before)
+    undoable(t("settings:keymap.backAll", { preset: presetOf(before).label }), before)
     // The button can't keep the focus: nothing is left to reset.
-    focusSoon(() => document.querySelector<HTMLElement>('[aria-label="Keys like in"] [data-state="on"]'))
+    const named = t("settings:keymap.likeIn")
+    focusSoon(() =>
+      [...document.querySelectorAll<HTMLElement>("[aria-label]")]
+        .find((e) => e.getAttribute("aria-label") === named)
+        ?.querySelector<HTMLElement>('[data-state="on"]'),
+    )
   }
 
   return (
     <>
-      <SettingsGroup title="Keymap" description="Click a key below to change it, then press the new one.">
-        <SettingRow label="Keys like in" description={preset.description}>
+      <SettingsGroup title={t("settings:keymap.title")} description={t("settings:keymap.description")}>
+        <SettingRow label={t("settings:keymap.likeIn")} description={preset.description}>
           <Segmented
-            aria-label="Keys like in"
+            aria-label={t("settings:keymap.likeIn")}
             value={km.preset}
             onChange={choose}
             options={PRESETS.map((p) => ({
@@ -122,15 +129,15 @@ export function ShortcutsSection() {
         </SettingRow>
         {/* Always there, so the list never moves while a key is changed. */}
         <SettingRow
-          label="Your changes"
+          label={t("settings:keymap.yourChanges")}
           description={
             changes === 0
-              ? `None: every key is ${preset.label}'s.`
-              : `${changes === 1 ? "1 key differs" : `${changes} keys differ`} from ${preset.label}'s.`
+              ? t("settings:keymap.none", { preset: preset.label })
+              : t("settings:keymap.differs", { count: changes, preset: preset.label })
           }
         >
           <Button size="sm" disabled={changes === 0} onClick={resetAll}>
-            <ArrowCounterClockwise /> Reset all
+            <ArrowCounterClockwise /> {t("settings:keymap.resetAll")}
           </Button>
         </SettingRow>
       </SettingsGroup>
@@ -148,6 +155,7 @@ export function ShortcutsSection() {
 
 /** Where a preset's keys differ from AutoScene's, as a card under its option. */
 function PresetPreview({ preset }: { preset: Preset }) {
+  const { t } = useTranslation("settings")
   const rows = Object.entries(preset.keys).map(([ref, bindings]) => {
     const at = ref.lastIndexOf(".")
     const s = shortcutOf(ref.slice(0, at) as ShortcutRef)
@@ -155,7 +163,7 @@ function PresetPreview({ preset }: { preset: Preset }) {
   })
   return (
     <div className="p-1">
-      <div className="eyebrow mb-2.5 text-fg-3">Unlike AutoScene's keys</div>
+      <div className="eyebrow mb-2.5 text-fg-3">{t("keymap.unlike")}</div>
       <ul className="space-y-2">
         {rows.map((r) => (
           <li key={r.ref} className="flex items-center justify-between gap-4 text-sm text-fg-1">
@@ -181,20 +189,27 @@ function ShortcutRow({
   recording: string | null
   onRecording: (ref: string | null) => void
 }) {
+  const { t } = useTranslation("settings")
   const reset = (e: React.MouseEvent<HTMLButtonElement>) => {
     const before = getKeymap()
     const { next, took } = resetShortcut(before, s)
     void saveKeymap(next)
-    if (took.length > 0) undoable(`Took them back from ${quoted(took)}`, before)
+    if (took.length > 0) undoable(t("keymap.tookBack", { names: quotedNames(took) }), before)
     // The reset goes with the change: the focus moves on to the row's key.
     const row = e.currentTarget.parentElement
     focusSoon(() => row?.querySelector<HTMLElement>("button[aria-pressed]"))
   }
   return (
-    <SettingRow label={s.label} className="min-h-12 py-2">
+    <SettingRow label={shortcutName(s)} className="min-h-12 py-2">
       {isChanged(s, km) && (
-        <Tooltip label={`Back to ${preset.label}'s ${s.slots.length > 1 ? "keys" : "key"}`}>
-          <Button variant="ghost" size="icon-sm" aria-label={`Reset “${s.label}”`} onClick={reset} className="animate-fade-in">
+        <Tooltip label={t("keymap.backTo", { count: s.slots.length, preset: preset.label })}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t("keymap.reset", { name: shortcutName(s) })}
+            onClick={reset}
+            className="animate-fade-in"
+          >
             <ArrowCounterClockwise />
           </Button>
         </Tooltip>
@@ -238,6 +253,7 @@ function KeySlot({
   active: boolean
   onActive: (on: boolean) => void
 }) {
+  const { t } = useTranslation("settings")
   const button = useRef<HTMLButtonElement>(null)
   const latest = useRef(onActive)
   useLayoutEffect(() => {
@@ -263,7 +279,7 @@ function KeySlot({
       // A key held since before, or still held: only a fresh press counts.
       if (e.repeat) return
       if (e.key === "Escape") return stop()
-      if (isMac ? e.ctrlKey : e.metaKey) return say(isMac ? "Use ⌘ instead of Control" : "The Windows key is Windows'")
+      if (isMac ? e.ctrlKey : e.metaKey) return say(isMac ? t("keymap.useCmd") : t("keymap.windowsKey"))
       const b = bindingOf(e)
       if (!b) return setHeld(modifiers(e))
       const before = getKeymap()
@@ -279,7 +295,7 @@ function KeySlot({
       swallowUntilUp(e)
       stop()
       void saveKeymap(next)
-      if (took.length > 0) undoable(`Took ${bindingCaps(b).join(" ")} from ${quoted(took)}`, before)
+      if (took.length > 0) undoable(t("keymap.tookKey", { caps: bindingCaps(b).join(" "), names: quotedNames(took) }), before)
     }
     const onKeyUp = (e: KeyboardEvent) => {
       e.stopPropagation()
@@ -301,19 +317,25 @@ function KeySlot({
       window.removeEventListener("pointerdown", onPointerDown, true)
       window.removeEventListener("blur", stop)
     }
-  }, [active, s, slot])
+  }, [active, s, slot, t])
 
   const caps = slotCaps(s, slot, km)
   const own = slotRef(s, slot) in km.own
-  const label = slotLabel({ s, slot })
+  const name = slotLabel({ s, slot })
   const several = s.slots.length > 1
   return (
     <>
-      <Tooltip label={several ? label : "Change the key"} hint={several ? "Click to change" : undefined} disabled={active}>
+      <Tooltip label={several ? name : t("keymap.change")} hint={several ? t("keymap.clickToChange") : undefined} disabled={active}>
         <button
           ref={button}
           type="button"
-          aria-label={active ? `Press the new key for “${label}”` : `${label}: ${caps.join(" ") || "no key"}. Change`}
+          aria-label={
+            active
+              ? t("keymap.pressNew", { name })
+              : caps.length > 0
+                ? t("keymap.slot", { name, keys: caps.join(" ") })
+                : t("keymap.slotNone", { name })
+          }
           aria-pressed={active}
           onClick={() => {
             // Nothing held, nothing refused, from the start.
@@ -332,12 +354,12 @@ function KeySlot({
           {active ? (
             <>
               <span aria-hidden className={cn("size-1.5 rounded-full", hint ? "bg-danger" : "bg-accent motion-safe:animate-pulse")} />
-              {hint ?? (held.length > 0 ? <Kbd keys={[...held, "…"]} tone="accent" /> : "Press a key")}
+              {hint ?? (held.length > 0 ? <Kbd keys={[...held, "…"]} tone="accent" /> : t("keymap.pressKey"))}
             </>
           ) : caps.length > 0 ? (
             <Kbd keys={caps} tone={own ? "accent" : undefined} />
           ) : (
-            <span className="rounded-[5px] border border-dashed border-white/15 px-1.5 py-0.5 text-2xs text-fg-3">No key</span>
+            <span className="rounded-[5px] border border-dashed border-white/15 px-1.5 py-0.5 text-2xs text-fg-3">{t("keymap.noKey")}</span>
           )}
         </button>
       </Tooltip>

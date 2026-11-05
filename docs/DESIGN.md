@@ -334,6 +334,10 @@ The UI's words are in a catalog, not in the code, so AutoScene can speak more th
   `Msg::plain`, the same in every language. The UI says a `Msg` with `say()` (`@/lib/i18n`) and an error with
   `errorMessage()`, never `.message`, which stays English: a plugin page's code hears that, through
   `englishMessage()`. Rust keeps a `Msg` as far as the screen; `e.message` is for logs and plugin pages.
+- A shortcut has no text field: its name is `shortcuts:<scope>.<id>.name`, and each key of a shortcut that does a few
+  things (previous / next) is `.slots.<n>`. Groups, presets, key names and the reasons a key is refused sit beside
+  them. `shortcutName(s)` and `slotName(s, n)` (`lib/shortcuts.ts`) read them when asked, never at module scope; the
+  old `label` of a shortcut is a getter that does the same, until no screen reads it. A test walks every shortcut.
 - The language is a setting (`AppSettings.language`). Automatic takes the first language on the system's list that
   AutoScene speaks, English when it speaks none (`app/src-tauri/src/locale.rs`). A language joins `SPOKEN` there and
   `OFFERED` in `lib/i18n.ts` together, when its catalog is complete; Settings shows no choice until there is one.

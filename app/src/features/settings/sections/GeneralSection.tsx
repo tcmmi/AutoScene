@@ -1,11 +1,13 @@
 import { FolderOpen } from "@/components/icons"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 import type { AppSettings, ScanChoice } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Select } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { settingsLine } from "@/lib/fast-scan"
+import { t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { PREFERRED_AUDIO_LANGUAGES, pickFolder } from "@/lib/media"
 import { reveal } from "@/lib/os"
@@ -20,7 +22,7 @@ async function save(next: AppSettings) {
     void queryClient.invalidateQueries({ queryKey: qk.appInfo })
     void queryClient.invalidateQueries({ queryKey: ["exportDir"] })
   } catch (e) {
-    toast.error("Couldn't save the setting", { description: errorMessage(e) })
+    toast.error(t("settings:saveFailed"), { description: errorMessage(e) })
   }
 }
 
@@ -30,17 +32,19 @@ async function chooseScan(choice: ScanChoice) {
     queryClient.setQueryData(qk.scanDefaults, await commands.scanDefaultSet(choice))
     void queryClient.invalidateQueries({ queryKey: qk.settings })
   } catch (e) {
-    toast.error("Couldn't save the setting", { description: errorMessage(e) })
+    toast.error(t("settings:saveFailed"), { description: errorMessage(e) })
   }
 }
 
-const SCAN_CHOICES: { value: ScanChoice; label: string }[] = [
-  { value: "auto", label: "Automatic" },
-  { value: "fast", label: "On" },
-  { value: "full", label: "Off" },
-]
+/** The three choices of Fast Scan, by the word the catalog has for each (settings:general.characters.fastScan.<word>). */
+const SCAN_CHOICES = [
+  { value: "auto", word: "auto" },
+  { value: "fast", word: "on" },
+  { value: "full", word: "off" },
+] as const satisfies { value: ScanChoice; word: string }[]
 
 export function GeneralSection() {
+  const { t } = useTranslation("settings")
   const { data: info } = useAppInfo()
   const { data: settings } = useSettings()
   const { data: presets } = usePresets()
@@ -48,45 +52,45 @@ export function GeneralSection() {
 
   const changeLibrary = async () => {
     if (!settings) return
-    const dir = await pickFolder("Choose the library folder")
+    const dir = await pickFolder(t("general.storage.library.pickTitle"))
     if (dir) await save({ ...settings, libraryRoot: dir })
   }
 
   return (
     <>
-      <SettingsGroup title="Storage" description="Where AutoScene keeps projects, models and logs.">
+      <SettingsGroup title={t("general.storage.title")} description={t("general.storage.description")}>
         <SettingRow
-          label="Library location"
+          label={t("general.storage.library.label")}
           description={
             settings && (
               <>
                 <PathText path={settings.libraryRoot} />
-                <span className="mt-1 block text-fg-3">New projects and default exports go here. Existing projects stay where they are.</span>
+                <span className="mt-1 block text-fg-3">{t("general.storage.library.note")}</span>
               </>
             )
           }
         >
           <Button size="sm" variant="ghost" disabled={!settings} onClick={() => settings && reveal(settings.libraryRoot)}>
-            <FolderOpen /> Reveal
+            <FolderOpen /> {t("reveal")}
           </Button>
           <Button size="sm" disabled={!settings} onClick={() => void changeLibrary()}>
-            Change…
+            {t("general.storage.library.change")}
           </Button>
         </SettingRow>
-        <SettingRow label="App data" description={info && <PathText path={info.dataDir} />}>
+        <SettingRow label={t("general.storage.appData")} description={info && <PathText path={info.dataDir} />}>
           <Button size="sm" variant="ghost" disabled={!info} onClick={() => info && reveal(info.dataDir)}>
-            <FolderOpen /> Reveal
+            <FolderOpen /> {t("reveal")}
           </Button>
         </SettingRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Characters" description="How the analysis finds who is in a shot.">
+      <SettingsGroup title={t("general.characters.title")} description={t("general.characters.description")}>
         <SettingRow
-          label="Find characters without a visible face"
-          description="Also follows people by their body and clothes, so shots where someone faces away or is too small for their face join their scenepack, marked “No face”. Analysis takes about a quarter longer; episodes analysed before are looked through again for their people. Its two models come from InsightFace and may only be used for non-commercial work."
+          label={t("general.characters.bodies.label")}
+          description={t("general.characters.bodies.description")}
         >
           <Switch
-            aria-label="Find characters without a visible face"
+            aria-label={t("general.characters.bodies.label")}
             checked={settings?.findBodies ?? false}
             disabled={!settings}
             onCheckedChange={(on) => {
@@ -98,12 +102,10 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
-          label="Fast Scan"
+          label={t("general.characters.fastScan.label")}
           description={
             <span className="block text-pretty">
-              Looks at only a few frames of each shot: much faster, but it finds fewer faces and no one without a visible face.
-              Applies to new projects; Edit details… changes one. Its face models may be used for any work, the full scan's only
-              for non-commercial work.
+              {t("general.characters.fastScan.description")}
               {scan && info && (
                 <span aria-live="polite" className="mt-2 block text-fg-1">
                   {settingsLine(scan, info.platform)}
@@ -113,19 +115,19 @@ export function GeneralSection() {
           }
         >
           <Segmented<ScanChoice | "">
-            aria-label="Fast Scan for new projects"
+            aria-label={t("general.characters.fastScan.aria")}
             value={scan?.choice ?? ""}
             disabled={!scan}
             onChange={(choice) => choice && void chooseScan(choice)}
-            options={SCAN_CHOICES}
+            options={SCAN_CHOICES.map((c) => ({ value: c.value, label: t(`general.characters.fastScan.${c.word}`) }))}
           />
         </SettingRow>
         <SettingRow
-          label="Character names from AniList, TVmaze and Fandom"
-          description="Once a project's characters are found, AutoScene looks their names up — an anime's on AniList, an animated series' on TVmaze, an animated film's on its franchise's Fandom wiki (found through Wikidata) — and you give them with one click. Sends the project's title (or the search text you type), and requests for the matching cast and pictures, to them (APIs and image servers); they see your IP address. Animation projects download the anime character model once to compare the pictures. Turning it off deletes every picture kept from them."
+          label={t("general.characters.names.label")}
+          description={t("general.characters.names.description")}
         >
           <Switch
-            aria-label="Character names from AniList, TVmaze and Fandom"
+            aria-label={t("general.characters.names.label")}
             checked={settings?.anilist ?? false}
             disabled={!settings}
             onCheckedChange={(on) => settings && void save({ ...settings, anilist: on })}
@@ -135,13 +137,10 @@ export function GeneralSection() {
 
       <HardwareGroup />
 
-      <SettingsGroup title="Audio" description="Many files carry several soundtracks, and dubs are often marked as the default.">
-        <SettingRow
-          label="Preferred language"
-          description="Chosen automatically when an episode is added. You can switch the track per episode at any time."
-        >
+      <SettingsGroup title={t("general.audio.title")} description={t("general.audio.description")}>
+        <SettingRow label={t("general.audio.language.label")} description={t("general.audio.language.description")}>
           <Select
-            aria-label="Preferred audio language"
+            aria-label={t("general.audio.language.aria")}
             className="w-[260px]"
             value={settings && (settings.audioLanguage || "default")}
             disabled={!settings}
@@ -151,10 +150,10 @@ export function GeneralSection() {
         </SettingRow>
       </SettingsGroup>
 
-      <SettingsGroup title="Export" description="Defaults for new exports. You can change them per export.">
-        <SettingRow label="Format" description={presets?.find((p) => p.id === settings?.exportPresetId)?.description}>
+      <SettingsGroup title={t("general.export.title")} description={t("general.export.description")}>
+        <SettingRow label={t("general.export.format.label")} description={presets?.find((p) => p.id === settings?.exportPresetId)?.description}>
           <Select
-            aria-label="Default export format"
+            aria-label={t("general.export.format.aria")}
             className="w-[260px]"
             value={settings?.exportPresetId}
             disabled={!settings}

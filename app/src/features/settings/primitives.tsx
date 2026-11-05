@@ -1,4 +1,5 @@
 import type * as React from "react"
+import { useTranslation } from "react-i18next"
 import { Copy, FolderOpen } from "@/components/icons"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem } from "@/components/ui/context-menu"
@@ -74,15 +75,16 @@ export function SettingRow({
  * when it is cut); a right-click shows or copies it.
  */
 export function PathText({ path }: { path: string }) {
+  const { t } = useTranslation("settings")
   return (
     <ContextArea
       menu={
         <>
           <ContextMenuItem onSelect={() => reveal(path)}>
-            <FolderOpen /> Show in folder
+            <FolderOpen /> {t("path.show")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void copyText(path, "path")}>
-            <Copy /> Copy path
+            <Copy /> {t("path.copy")}
           </ContextMenuItem>
         </>
       }

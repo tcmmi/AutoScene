@@ -1,7 +1,9 @@
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 import type { AppSettings, DiscordLines, DiscordRpcSettings } from "@/bindings"
 import { AutoSceneMark } from "@/components/brand/AutoSceneMark"
 import { Switch } from "@/components/ui/switch"
+import { t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { qk, queryClient, useDiscordPreview, useSettings } from "@/lib/queries"
 import { SettingRow, SettingsGroup } from "../primitives"
@@ -25,7 +27,7 @@ function change(patch: DiscordRpcSettings) {
       const saved = await commands.settingsUpdate(changed(settings))
       if (unsaved === 1) queryClient.setQueryData(qk.settings, saved)
     } catch (e) {
-      toast.error("Couldn't save the setting", { description: errorMessage(e) })
+      toast.error(t("settings:saveFailed"), { description: errorMessage(e) })
       if (unsaved === 1) await queryClient.invalidateQueries({ queryKey: qk.settings })
     } finally {
       unsaved--
@@ -33,13 +35,15 @@ function change(patch: DiscordRpcSettings) {
   })
 }
 
+// What a status may name: the setting and the catalog's word for it (settings:discord.names.<name>).
 const NAMES = [
-  { key: "showProject", label: "Project" },
-  { key: "showEpisode", label: "Episode or file" },
-  { key: "showCharacter", label: "Character" },
+  { key: "showProject", name: "project" },
+  { key: "showEpisode", name: "episode" },
+  { key: "showCharacter", name: "character" },
 ] as const
 
 export function DiscordSection() {
+  const { t } = useTranslation("settings")
   const { data: settings } = useSettings()
   const show: DiscordRpcSettings = settings?.discordRpc ?? {}
   const { data: preview } = useDiscordPreview(show)
@@ -49,21 +53,21 @@ export function DiscordSection() {
 
   return (
     <>
-      <SettingsGroup title="Your status" description="Let people on Discord see that you're working in AutoScene.">
+      <SettingsGroup title={t("discord.status.title")} description={t("discord.status.description")}>
         <SettingRow
-          label="Show on Discord"
-          description="Goes through the Discord app on this computer. Nothing is sent until you turn this on."
+          label={t("discord.show.label")}
+          description={t("discord.show.description")}
         >
           <Switch
-            aria-label="Show on Discord"
+            aria-label={t("discord.show.label")}
             checked={show.enabled ?? false}
             disabled={!settings}
             onCheckedChange={(enabled) => change({ enabled })}
           />
         </SettingRow>
         <SettingRow
-          label={show.enabled ? "What people see" : "What people would see"}
-          description="Plus how long AutoScene has been open and a link to it."
+          label={show.enabled ? t("discord.seeing.on") : t("discord.seeing.off")}
+          description={t("discord.seeing.description")}
           below={
             <div className="grid grid-cols-2 gap-3">
               {preview?.map((lines) => <Status key={`${lines.details} ${lines.state}`} lines={lines} />)}
@@ -72,10 +76,10 @@ export function DiscordSection() {
         />
       </SettingsGroup>
       {names && (
-        <SettingsGroup title="Names" description="Off, your status says what you're doing without naming it.">
-          {NAMES.map(({ key, label }) => (
-            <SettingRow key={key} label={label}>
-              <Switch aria-label={label} checked={show[key] ?? false} onCheckedChange={(on) => change({ [key]: on })} />
+        <SettingsGroup title={t("discord.names.title")} description={t("discord.names.description")}>
+          {NAMES.map(({ key, name }) => (
+            <SettingRow key={key} label={t(`discord.names.${name}`)}>
+              <Switch aria-label={t(`discord.names.${name}`)} checked={show[key] ?? false} onCheckedChange={(on) => change({ [key]: on })} />
             </SettingRow>
           ))}
         </SettingsGroup>

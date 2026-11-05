@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react"
 import { isEditable } from "@/plugin-kit/keys"
+import { t } from "./i18n"
 import { layerOpen } from "./layers"
 import { altKey, isMac, modKey, shiftKey } from "./platform"
 
@@ -9,6 +10,10 @@ import { altKey, isMac, modKey, shiftKey } from "./platform"
  * what is documented is what works. The lists hold AutoScene's own keys; the
  * keymap (`setKeymap`) says which keys do what now — an editor's preset and
  * the person's own changes, from Settings → Shortcuts.
+ *
+ * The words are not here. A shortcut's name is `shortcuts:<scope>.<id>.name`
+ * in the catalog, and a shortcut with several keys names each one
+ * `shortcuts:<scope>.<id>.slots.<n>` (`shortcutName`, `slotName`).
  */
 
 /**
@@ -19,7 +24,7 @@ import { altKey, isMac, modKey, shiftKey } from "./platform"
 export type Binding = { key: string; mod?: boolean; shift?: boolean; alt?: boolean }
 
 /** One thing a shortcut does, and the keys that do it: the first is the one shown, the others work too. */
-export type Slot = { label?: string; bindings: Binding[] }
+export type Slot = { bindings: Binding[] }
 
 /** Where a shortcut works: everywhere, or on one kind of page. */
 export type Scope = "global" | "player" | "review" | "cast" | "faces" | "shots" | "pack"
@@ -27,8 +32,11 @@ export type Scope = "global" | "player" | "review" | "cast" | "faces" | "shots" 
 export type Shortcut<Id extends string = string> = {
   scope: Scope
   id: Id
-  /** What it does, as listed in Settings → Shortcuts. */
-  label: string
+  /**
+   * What it does, as listed in Settings → Shortcuts, in the language in use when this is read.
+   * @deprecated Ask `shortcutName(s)`; this stays until no sweep group reads it.
+   */
+  readonly label: string
   /** One per key: "Previous / next frame" has two. */
   slots: Slot[]
   /** Its keys can't be changed: a range of keys, or what they mean to a focused shot or a selection. */
@@ -40,22 +48,39 @@ export type Shortcut<Id extends string = string> = {
 const key = (k: string, more: Omit<Binding, "key"> = {}): Binding => ({ key: k, ...more })
 /** One thing, done by these keys. */
 const one = (...bindings: Binding[]): Slot[] => [{ bindings }]
-/** A few things in one row (previous / next), each with its own key. */
-const each = (...slots: [label: string, ...bindings: Binding[]][]): Slot[] =>
-  slots.map(([label, ...bindings]) => ({ label, bindings }))
-const scoped = <Id extends string>(scope: Scope, list: Omit<Shortcut<Id>, "scope">[]): Shortcut<Id>[] =>
-  list.map((s) => ({ ...s, scope }))
+/** A few things in one row (previous / next), each with its own key; the catalog names each (`.slots.<n>`). */
+const each = (...keys: Binding[]): Slot[] => keys.map((b) => ({ bindings: [b] }))
+const scoped = <Id extends string>(scope: Scope, list: Omit<Shortcut<Id>, "scope" | "label">[]): Shortcut<Id>[] =>
+  list.map((s) => ({
+    ...s,
+    scope,
+    get label() {
+      return shortcutName({ scope, id: s.id })
+    },
+  }))
+
+// The words are read when asked, never kept. The keys built here are
+// dynamic, so the catalog test (shortcut-names.test.ts) walks every one.
+type Say = (key: string, options?: object) => string
+const say = t as unknown as Say
+
+/** What a shortcut does, as Settings → Shortcuts lists it. */
+export const shortcutName = (s: Pick<Shortcut, "scope" | "id">) => say(`shortcuts:${s.scope}.${s.id}.name`)
+
+/** What key `slot` of `s` does: its own name where the row does a few things ("Next frame"), else the shortcut's. */
+export const slotName = (s: Shortcut, slot: number) =>
+  s.slots.length > 1 ? say(`shortcuts:${s.scope}.${s.id}.slots.${slot}`) : shortcutName(s)
 
 export type GlobalId = "palette" | "activity" | "sidebar" | "settings" | "library" | "newProject"
 
 /** Anywhere in the window. On macOS desktop the native menu owns them (same keys). */
 export const GLOBAL_SHORTCUTS = scoped<GlobalId>("global", [
-  { id: "palette", label: "Command palette", slots: one(key("k", { mod: true })) },
-  { id: "activity", label: "Show activity", slots: one(key("j", { mod: true })) },
-  { id: "sidebar", label: "Show or hide the rail", slots: one(key("b", { mod: true })) },
-  { id: "settings", label: "Settings", slots: one(key(",", { mod: true })) },
-  { id: "library", label: "Library", slots: one(key("1", { mod: true })) },
-  { id: "newProject", label: "New project", slots: one(key("n", { mod: true })) },
+  { id: "palette", slots: one(key("k", { mod: true })) },
+  { id: "activity", slots: one(key("j", { mod: true })) },
+  { id: "sidebar", slots: one(key("b", { mod: true })) },
+  { id: "settings", slots: one(key(",", { mod: true })) },
+  { id: "library", slots: one(key("1", { mod: true })) },
+  { id: "newProject", slots: one(key("n", { mod: true })) },
 ])
 
 export type PlayerId =
@@ -78,63 +103,38 @@ export type PlayerId =
 
 /** While an episode is open. */
 export const PLAYER_SHORTCUTS = scoped<PlayerId>("player", [
-  { id: "playPause", label: "Play / pause", slots: one(key(" ")) },
-  {
-    id: "shuttle",
-    label: "Backwards / stop / forwards (again: faster; stop held: a frame)",
-    slots: each(["Backwards", key("j")], ["Stop", key("k")], ["Forwards", key("l")]),
-  },
-  {
-    id: "frame",
-    label: "Previous / next frame",
-    slots: each(["Previous frame", key("arrowleft")], ["Next frame", key("arrowright")]),
-  },
-  {
-    id: "second",
-    label: "Back / forward one second",
-    slots: each(
-      ["Back one second", key("arrowleft", { shift: true })],
-      ["Forward one second", key("arrowright", { shift: true })],
-    ),
-  },
-  {
-    id: "shot",
-    label: "Previous / next shot",
-    slots: each(["Previous shot", key("arrowup")], ["Next shot", key("arrowdown")]),
-  },
-  { id: "ends", label: "First / last frame", slots: each(["First frame", key("home")], ["Last frame", key("end")]) },
-  { id: "mark", label: "Mark in / out", slots: each(["Mark in", key("i")], ["Mark out", key("o")]) },
-  {
-    id: "goToMark",
-    label: "Go to in / out",
-    slots: each(["Go to in", key("i", { shift: true })], ["Go to out", key("o", { shift: true })]),
-  },
-  { id: "markShot", label: "Mark the shot as the clip", slots: one(key("x")) },
-  { id: "clearMarks", label: "Clear in and out", slots: one(key("x", { alt: true })) },
-  { id: "goTo", label: "Go to a timecode", slots: one(key("g", { mod: true })) },
-  { id: "mute", label: "Mute", slots: one(key("m")) },
+  { id: "playPause", slots: one(key(" ")) },
+  { id: "shuttle", slots: each(key("j"), key("k"), key("l")) },
+  { id: "frame", slots: each(key("arrowleft"), key("arrowright")) },
+  { id: "second", slots: each(key("arrowleft", { shift: true }), key("arrowright", { shift: true })) },
+  { id: "shot", slots: each(key("arrowup"), key("arrowdown")) },
+  { id: "ends", slots: each(key("home"), key("end")) },
+  { id: "mark", slots: each(key("i"), key("o")) },
+  { id: "goToMark", slots: each(key("i", { shift: true }), key("o", { shift: true })) },
+  { id: "markShot", slots: one(key("x")) },
+  { id: "clearMarks", slots: one(key("x", { alt: true })) },
+  { id: "goTo", slots: one(key("g", { mod: true })) },
+  { id: "mute", slots: one(key("m")) },
   {
     id: "zoomIn",
-    label: "Zoom the timeline in",
     // "+" has its own key on many layouts; on US ones it's Shift+"=".
     slots: one(key("+"), key("+", { shift: true }), key("="), key("=", { shift: true })),
   },
-  { id: "zoomOut", label: "Zoom the timeline out", slots: one(key("-")) },
-  { id: "zoomFit", label: "The whole episode on the timeline", slots: one(key("z", { shift: true }), key("\\")) },
-  { id: "export", label: "Export the marked clip", slots: one(key("e", { mod: true })) },
+  { id: "zoomOut", slots: one(key("-")) },
+  { id: "zoomFit", slots: one(key("z", { shift: true }), key("\\")) },
+  { id: "export", slots: one(key("e", { mod: true })) },
 ])
 
 export type ReviewId = "yes" | "no" | "notFace" | "skip" | "pick"
 
 /** While reviewing faces. */
 export const REVIEW_SHORTCUTS = scoped<ReviewId>("review", [
-  { id: "yes", label: "Yes, it's them", slots: one(key("y"), key("j"), key("enter")) },
-  { id: "no", label: "No, someone else", slots: one(key("n")) },
-  { id: "notFace", label: "Not a face", slots: one(key("x")) },
-  { id: "skip", label: "Skip for now", slots: one(key("arrowright"), key("s")) },
+  { id: "yes", slots: one(key("y"), key("j"), key("enter")) },
+  { id: "no", slots: one(key("n")) },
+  { id: "notFace", slots: one(key("x")) },
+  { id: "skip", slots: one(key("arrowright"), key("s")) },
   {
     id: "pick",
-    label: "It's character 1 to 9",
     slots: one(...["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => key(d))),
     fixed: true,
     caps: ["1 – 9"],
@@ -145,61 +145,62 @@ export type FacesId = "selectAll" | "clearSelection"
 
 /** On a character's faces. */
 export const FACES_SHORTCUTS = scoped<FacesId>("faces", [
-  { id: "selectAll", label: "Select every face", slots: one(key("a", { mod: true })), fixed: true },
-  { id: "clearSelection", label: "Clear the selection", slots: one(key("escape")), fixed: true },
+  { id: "selectAll", slots: one(key("a", { mod: true })), fixed: true },
+  { id: "clearSelection", slots: one(key("escape")), fixed: true },
 ])
 
 export type ShotsId = "toggle" | "watch" | "close"
 
 /** On a character's shots (the first two on the focused stack). */
 export const SHOTS_SHORTCUTS = scoped<ShotsId>("shots", [
-  { id: "toggle", label: "Show or hide the shots of a stack", slots: one(key(" ")), fixed: true },
-  { id: "watch", label: "Watch from the stack's first shot", slots: one(key("enter")), fixed: true },
-  { id: "close", label: "Close the open stack", slots: one(key("escape")), fixed: true },
+  { id: "toggle", slots: one(key(" ")), fixed: true },
+  { id: "watch", slots: one(key("enter")), fixed: true },
+  { id: "close", slots: one(key("escape")), fixed: true },
 ])
 
 export type CastId = "selectAll" | "clearSelection"
 
 /** On the Cast page's cards. */
 export const CAST_SHORTCUTS = scoped<CastId>("cast", [
-  { id: "selectAll", label: "Select every character", slots: one(key("a", { mod: true })), fixed: true },
-  { id: "clearSelection", label: "Clear the selection", slots: one(key("escape")), fixed: true },
+  { id: "selectAll", slots: one(key("a", { mod: true })), fixed: true },
+  { id: "clearSelection", slots: one(key("escape")), fixed: true },
 ])
 
 export type PackId = "toggle" | "watch" | "takeAll" | "leaveAll" | "invert" | "export"
 
 /** While building a scenepack (the first two on the focused shot). */
 export const PACK_SHORTCUTS = scoped<PackId>("pack", [
-  {
-    id: "toggle",
-    label: "Take the shot in or out (Shift: every shot since the last)",
-    slots: one(key(" "), key(" ", { shift: true })),
-    fixed: true,
-  },
-  { id: "watch", label: "Watch the shot", slots: one(key("enter")), fixed: true },
-  {
-    id: "takeAll",
-    label: "Take every shot (when all are in: leave them out)",
-    slots: one(key("a", { mod: true })),
-  },
-  { id: "leaveAll", label: "Leave every shot out", slots: one(key("a", { mod: true, shift: true })) },
-  { id: "invert", label: "Invert the pack: what's in goes out, what's out comes in", slots: one(key("i", { mod: true, shift: true })) },
-  { id: "export", label: "Export the pack", slots: one(key("e", { mod: true })) },
+  { id: "toggle", slots: one(key(" "), key(" ", { shift: true })), fixed: true },
+  { id: "watch", slots: one(key("enter")), fixed: true },
+  { id: "takeAll", slots: one(key("a", { mod: true })) },
+  { id: "leaveAll", slots: one(key("a", { mod: true, shift: true })) },
+  { id: "invert", slots: one(key("i", { mod: true, shift: true })) },
+  { id: "export", slots: one(key("e", { mod: true })) },
 ])
 
-/** Settings → Shortcuts, in this order. */
-export const SHORTCUT_GROUPS: { title: string; description: string; shortcuts: Shortcut[] }[] = [
-  { title: "Everywhere", description: "Work faster without leaving the keyboard.", shortcuts: GLOBAL_SHORTCUTS },
-  { title: "Player", description: "While an episode is open.", shortcuts: PLAYER_SHORTCUTS },
-  { title: "Review faces", description: "Answer with one key; every answer is kept.", shortcuts: REVIEW_SHORTCUTS },
-  {
-    title: "Cast",
-    description: `On the Cast page. ${modKey}-click selects a character too, Shift-click every one between.`,
-    shortcuts: CAST_SHORTCUTS,
+/** A group of Settings → Shortcuts; its words are read when asked (`shortcuts:group.<id>.title` and `.description`). */
+export type ShortcutGroup = { id: Scope; readonly title: string; readonly description: string; shortcuts: Shortcut[] }
+
+const group = (id: Scope, shortcuts: Shortcut[]): ShortcutGroup => ({
+  id,
+  get title() {
+    return say(`shortcuts:group.${id}.title`)
   },
-  { title: "A character's faces", description: "In a character's Faces view.", shortcuts: FACES_SHORTCUTS },
-  { title: "A character's shots", description: "In a character's Shots view.", shortcuts: SHOTS_SHORTCUTS },
-  { title: "Scenepack", description: "While picking a character's shots.", shortcuts: PACK_SHORTCUTS },
+  get description() {
+    return say(`shortcuts:group.${id}.description`, { mod: modKey })
+  },
+  shortcuts,
+})
+
+/** Settings → Shortcuts, in this order. */
+export const SHORTCUT_GROUPS: ShortcutGroup[] = [
+  group("global", GLOBAL_SHORTCUTS),
+  group("player", PLAYER_SHORTCUTS),
+  group("review", REVIEW_SHORTCUTS),
+  group("cast", CAST_SHORTCUTS),
+  group("faces", FACES_SHORTCUTS),
+  group("shots", SHOTS_SHORTCUTS),
+  group("pack", PACK_SHORTCUTS),
 ]
 
 export const ALL_SHORTCUTS: Shortcut[] = SHORTCUT_GROUPS.flatMap((g) => g.shortcuts)
@@ -238,16 +239,25 @@ export const slotRef = (s: Shortcut, slot: number) => `${s.scope}.${s.id}.${slot
  * Keys like in the editors people come from, where their defaults differ
  * from AutoScene's (which already follow them for playing and marking).
  */
-export const PRESETS: { id: PresetId; label: string; description: string; keys: Record<string, Binding[]> }[] = [
-  { id: "autoscene", label: "AutoScene", description: "The keys AutoScene comes with.", keys: {} },
+export const PRESETS: { id: PresetId; label: string; readonly description: string; keys: Record<string, Binding[]> }[] = [
+  {
+    id: "autoscene",
+    // i18n-ignore: an editor, a product name
+    label: "AutoScene",
+    get description() {
+      return say("shortcuts:preset.autoscene.description")
+    },
+    keys: {},
+  },
   {
     id: "premiere",
+    // i18n-ignore: an editor, a product name
     label: "Premiere Pro",
     // On macOS Premiere clears in and out with ⌥X like AutoScene, and ⌘M
     // minimizes the window (the menu bar's), so Export keeps ⌘E there.
-    description: isMac
-      ? "Zoom with = − \\, the rest like AutoScene."
-      : `Export with ${modKey} M, zoom with = − \\, clear in and out with ${modKey} Shift X.`,
+    get description() {
+      return say(isMac ? "shortcuts:preset.premiere.descriptionMac" : "shortcuts:preset.premiere.description", { mod: modKey })
+    },
     keys: {
       ...(!isMac && { "player.clearMarks.0": [key("x", { mod: true, shift: true })] }),
       "player.zoomIn.0": [key("="), key("+"), key("=", { shift: true }), key("+", { shift: true })],
@@ -257,8 +267,11 @@ export const PRESETS: { id: PresetId; label: string; description: string; keys: 
   },
   {
     id: "resolve",
+    // i18n-ignore: an editor, a product name
     label: "DaVinci Resolve",
-    description: `Zoom with ${modKey} = and ${modKey} −.`,
+    get description() {
+      return say("shortcuts:preset.resolve.description", { mod: modKey })
+    },
     keys: {
       "player.zoomIn.0": [
         key("=", { mod: true }),
@@ -304,25 +317,30 @@ export function bindingsOf(s: Shortcut, slot: number, km: Keymap = keymap): Bind
 
 // -- key caps ----------------------------------------------------------------
 
-const KEY_NAMES: Record<string, string> = {
-  " ": "Space",
+// Keys that are named in words: the catalog has them (`shortcuts:key.<name>`). The arrows and the minus are symbols.
+const KEY_WORDS: Record<string, string> = {
+  " ": "space",
+  escape: "esc",
+  enter: "enter",
+  backspace: "backspace",
+  delete: "del",
+  insert: "ins",
+  pageup: "pageUp",
+  pagedown: "pageDown",
+}
+const KEY_SYMBOLS: Record<string, string> = {
   arrowleft: "←",
   arrowright: "→",
   arrowup: "↑",
   arrowdown: "↓",
-  escape: "Esc",
-  enter: "Enter",
-  backspace: "Backspace",
-  delete: "Del",
-  insert: "Ins",
-  pageup: "Page Up",
-  pagedown: "Page Down",
   "-": "−",
 }
 
 /** A key as its cap shows it. */
 export function keyCap(k: string): string {
-  return KEY_NAMES[k] ?? (k.length === 1 ? k.toUpperCase() : k[0].toUpperCase() + k.slice(1))
+  const word = KEY_WORDS[k]
+  if (word) return say(`shortcuts:key.${word}`)
+  return KEY_SYMBOLS[k] ?? (k.length === 1 ? k.toUpperCase() : k[0].toUpperCase() + k.slice(1))
 }
 
 /** The modifiers of `b` as caps, in the platform's order. */

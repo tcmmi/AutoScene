@@ -1,14 +1,12 @@
-import type { SettingsSection } from "@/lib/actions"
+import { isAppSection, type SettingsSection } from "@/lib/actions"
+import { t } from "@/lib/i18n"
 
-export const SETTINGS_LABELS: Record<SettingsSection, string> = {
-  general: "General",
-  discord: "Discord",
-  shortcuts: "Shortcuts",
-  updates: "Updates",
-  about: "About",
-  contributors: "Contributors",
+/** A section's name in the language in use: the list, the page heading and the window title read it. */
+export function sectionLabel(section: SettingsSection): string {
+  return t(`settings:section.${section}`)
 }
 
+/** The name of a section by its route (any text), "Settings" for one AutoScene doesn't have. */
 export function settingsLabel(section: string): string {
-  return SETTINGS_LABELS[section as SettingsSection] ?? "Settings"
+  return isAppSection(section) ? sectionLabel(section) : t("settings:page.title")
 }

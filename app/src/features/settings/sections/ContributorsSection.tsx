@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next"
 import { ArrowSquareOut, GithubLogo } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { openExternalUrl } from "@/lib/os"
@@ -17,24 +18,20 @@ const CONTRIBUTORS: Contributor[] = CONTRIBUTORS_JSON
 const REPO_URL = "https://github.com/tcmmi/AutoScene"
 
 export function ContributorsSection() {
+  const { t } = useTranslation("settings")
   return (
     <>
       <div className="relative mb-10 flex items-center justify-between gap-6 overflow-hidden rounded-3xl border border-white/[0.08] bg-[radial-gradient(120%_140%_at_0%_0%,rgb(224_180_92/0.16),transparent_55%),rgb(255_255_255/0.03)] p-7">
         <div className="min-w-0">
-          <h2 className="display text-3xl text-fg-1">Community Contributors</h2>
-          <p className="mt-1 text-md text-fg-2">
-            AutoScene is made possible by open-source contributors and community feedback.
-          </p>
+          <h2 className="display text-3xl text-fg-1">{t("contributors.banner.title")}</h2>
+          <p className="mt-1 text-md text-fg-2">{t("contributors.banner.description")}</p>
         </div>
         <Button size="sm" onClick={() => void openExternalUrl(REPO_URL)}>
-          <GithubLogo /> Contribute on GitHub
+          <GithubLogo /> {t("contributors.banner.action")}
         </Button>
       </div>
 
-      <SettingsGroup
-        title="Contributors"
-        description="People who have shaped AutoScene with code, design, and ideas."
-      >
+      <SettingsGroup title={t("contributors.title")} description={t("contributors.description")}>
         {CONTRIBUTORS.map((c) => (
           <SettingRow
             key={c.handle}
@@ -61,7 +58,7 @@ export function ContributorsSection() {
               size="sm"
               variant="ghost"
               onClick={() => void openExternalUrl(c.profileUrl)}
-              aria-label={`Open ${c.name}'s GitHub profile`}
+              aria-label={t("contributors.open", { name: c.name })}
             >
               <ArrowSquareOut /> GitHub
             </Button>

@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { toast } from "sonner"
 import type { AppSettings, Shortcuts } from "@/bindings"
+import { fmt, t } from "./i18n"
 import { commands, errorMessage } from "./ipc"
 import { isMac, isTauri, modKey } from "./platform"
 import { qk, queryClient, useSettings } from "./queries"
@@ -18,7 +19,9 @@ import {
   getKeymap,
   presetBindings,
   setKeymap,
+  shortcutName,
   shortcutOf,
+  slotName,
   slotRef,
   subscribeKeymap,
 } from "./shortcuts"
@@ -32,7 +35,11 @@ import {
 export type Use = { s: Shortcut; slot: number }
 
 /** What a slot is called where one row does a few things ("Next frame"). */
-export const slotLabel = ({ s, slot }: Use) => s.slots[slot].label ?? s.label
+export const slotLabel = ({ s, slot }: Use) => slotName(s, slot)
+
+/** The shortcuts a key was taken from, as one list: “a” and “b” (“a”, “b” and “c” from three). */
+export const quotedNames = (took: Use[]) =>
+  fmt.list([...new Set(took.map(slotLabel))].map((name) => t("shortcuts:quote", { name })))
 
 const sig = (b: Binding) => `${b.mod ? "mod+" : ""}${b.shift ? "shift+" : ""}${b.alt ? "alt+" : ""}${b.key}`
 
@@ -71,16 +78,16 @@ const WINDOW_KEYS = new Set(
 /** Why `b` can't do slot `slot` of `s`, or null when it can (perhaps taken from others: `usesOf`). */
 export function refusal(b: Binding, s: Shortcut, slot: number, km: Keymap = getKeymap()): string | null {
   const caps = bindingCaps(b).join(" ")
-  if (editing(b)) return `${caps} stays with editing text`
-  if (WINDOW_KEYS.has(sig(b))) return isMac ? `${caps} belongs to the menu bar` : `${caps} closes the window`
+  if (editing(b)) return t("shortcuts:verdict.editing", { caps })
+  if (WINDOW_KEYS.has(sig(b))) return isMac ? t("shortcuts:verdict.menuBar", { caps }) : t("shortcuts:verdict.closesWindow", { caps })
   if (s.scope === "global") {
     // They work in fields too (the palette, the activity drawer), and on
     // macOS the menu answers them before the page.
-    if (!b.mod && !/^f[0-9]+$/.test(b.key)) return `Keys that work everywhere need ${modKey}`
-    if (b.mod && CARET_KEYS.includes(b.key)) return `${caps} moves the caret in text`
+    if (!b.mod && !/^f[0-9]+$/.test(b.key)) return t("shortcuts:verdict.needsMod", { mod: modKey })
+    if (b.mod && CARET_KEYS.includes(b.key)) return t("shortcuts:verdict.caret", { caps })
   }
   const fixed = usesOf(b, s, slot, km).find((u) => u.s.fixed)
-  return fixed ? `${caps} is “${fixed.s.label}”` : null
+  return fixed ? t("shortcuts:verdict.fixed", { caps, name: shortcutName(fixed.s) }) : null
 }
 
 /** The slot a `slotRef` names, if it is one that can be changed. */
@@ -173,7 +180,7 @@ export function saveKeymap(next: Keymap): Promise<void> {
       const saved = await commands.settingsUpdate({ ...settings, shortcuts: shortcutsOf(next) })
       queryClient.setQueryData(qk.settings, saved)
     } catch (e) {
-      toast.error("Couldn't keep the keys", { description: errorMessage(e) })
+      toast.error(t("shortcuts:verdict.keepFailed"), { description: errorMessage(e) })
       if (unsaved === 1) setKeymap(keymapOf(queryClient.getQueryData<AppSettings>(qk.settings)?.shortcuts))
     } finally {
       unsaved--

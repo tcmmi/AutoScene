@@ -169,18 +169,24 @@ pub fn pack_filters(
             });
         }
     }
-    // Turned on, and no plugin has it now (uninstalled, or an update took it away).
+    // Turned on, and no plugin has it now (uninstalled, or an update took it
+    // away): nothing of it is known but its key, which is no name to show.
+    // Without plugins at all, nothing can be said of it but that it is off.
     for key in &spec.plugin_filters {
         if out.iter().all(|f| f.key != *key) {
             let (plugin, filter) = key.split_once('/').unwrap_or(("", key));
+            let (title, plugin, state) = match host {
+                Some(_) => ("Removed filter", "", PackFilterState::Gone),
+                None => (filter, plugin, PackFilterState::Off),
+            };
             out.push(PluginFilter {
                 key: key.clone(),
-                title: filter.to_owned(),
+                title: title.to_owned(),
                 description: None,
                 reason: String::new(),
                 plugin: plugin.to_owned(),
                 basis: String::new(),
-                state: PackFilterState::Off,
+                state,
             });
         }
     }
@@ -638,7 +644,8 @@ mod tests {
 
     impl Fake {
         fn basis(at: &Place) -> Option<String> {
-            at.filters.find(at.key).filter(|(_, f)| f.state != PackFilterState::Off).map(|(_, f)| f.basis.clone())
+            let ignored = [PackFilterState::Off, PackFilterState::Gone];
+            at.filters.find(at.key).filter(|(_, f)| !ignored.contains(&f.state)).map(|(_, f)| f.basis.clone())
         }
 
         /// The shots of `media` the filter hasn't judged on its basis now.
@@ -1139,13 +1146,21 @@ mod tests {
         let off = list(false, &gone);
         assert_eq!(
             off.iter().map(|f| (f.key.as_str(), f.state)).collect::<Vec<_>>(),
-            [(SPEAKS, PackFilterState::Off), ("dev.a.gone/loud", PackFilterState::Off)]
+            [(SPEAKS, PackFilterState::Off), ("dev.a.gone/loud", PackFilterState::Gone)]
         );
-        assert_eq!((off[1].title.as_str(), off[1].plugin.as_str()), ("loud", "dev.a.gone"));
-        // Turned off: off too. Without plugins at all, each the spec turns on.
+        // There is nothing to turn on, and its id is no name.
+        assert_eq!((off[1].title.as_str(), off[1].plugin.as_str()), ("Removed filter", ""));
+        // Turned off: off too. Without plugins at all, each the spec turns on is off.
         host.store.set_enabled(&id, false).unwrap();
         assert_eq!(list(true, &gone)[0].state, PackFilterState::Off);
-        assert_eq!(pack_filters(None, &jobs, true, project, c, &gone).0.len(), 2);
+        let none = pack_filters(None, &jobs, true, project, c, &gone).0;
+        assert_eq!(none.iter().map(|f| f.state).collect::<Vec<_>>(), [PackFilterState::Off; 2]);
+        // An update that took the filter away from a plugin that is on: gone too.
+        host.store.set_enabled(&id, true).unwrap();
+        let mut without = manifest();
+        without["contributes"]["shotFilters"] = serde_json::json!([]);
+        std::fs::write(tmp.join("dev.a.speech").join("plugin.json"), without.to_string()).unwrap();
+        assert_eq!(list(true, &gone)[0].state, PackFilterState::Gone);
         drop((host, lib));
         let _ = std::fs::remove_dir_all(&tmp);
     }

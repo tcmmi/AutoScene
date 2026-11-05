@@ -102,4 +102,17 @@ describe("PackFilters, plugin filters", () => {
     fireEvent.click(chip())
     expect(onChange).toHaveBeenLastCalledWith(DEFAULT_SPEC)
   })
+
+  it("a filter no plugin has now asks only to be turned off", () => {
+    const onChange = vi.fn()
+    bar([speaks({ state: "gone", title: "Removed filter", plugin: "" })], { ...DEFAULT_SPEC, pluginFilters: [KEY] }, onChange)
+    const removed = screen.getByRole("button", { name: /Removed filter/ })
+    expect(within(removed).queryByText("Plugin off")).toBeNull()
+    expect(removed.className).toContain("opacity-60")
+    fireEvent.focus(removed)
+    expect(screen.getAllByText("This filter's plugin is gone, or no longer has it. Turn this filter off.").length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Turn it on in Plugins/)).toBeNull()
+    fireEvent.click(removed)
+    expect(onChange).toHaveBeenLastCalledWith(DEFAULT_SPEC)
+  })
 })

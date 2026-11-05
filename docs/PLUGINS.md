@@ -373,7 +373,9 @@ grid doesn't jump back while a new check runs. Finding an episode's shots
 again, or removing it, drops its verdicts.
 
 **A plugin that is off:** the chip is dimmed and says "Plugin off", and the
-pack ignores the filter.
+pack ignores the filter. **A filter no plugin has now,** after an uninstall
+or an update that dropped it: the chip reads "Removed filter", the pack
+ignores it, and turning it off is all there is to do.
 
 ### Pack actions
 

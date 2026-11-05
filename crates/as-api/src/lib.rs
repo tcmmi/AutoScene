@@ -1260,6 +1260,9 @@ pub enum PackFilterState {
     Failed,
     /// Its plugin isn't active: the pack ignores it.
     Off,
+    /// No plugin has it now (uninstalled, or an update took it away): the
+    /// pack ignores it, and all that is left to do is turn it off.
+    Gone,
 }
 
 /// Whether a shot is in its pack, and why: the part of a [`PackClip`] that

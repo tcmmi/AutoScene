@@ -477,7 +477,7 @@ impl Project {
         let mut all = Vec::with_capacity(filters.0.len());
         for f in &filters.0 {
             all.push(match f.state {
-                PackFilterState::Off => None,
+                PackFilterState::Off | PackFilterState::Gone => None,
                 _ => Some(self.judgement(&f.key, c, &f.basis)?),
             });
         }

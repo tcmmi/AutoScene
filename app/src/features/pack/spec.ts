@@ -116,11 +116,11 @@ export type PackCheck =
  * The check `filters` are doing for the pack, with `unchecked` the pack's
  * own count of shots a filter turned on hasn't judged with its settings as
  * they are (`PackPreview.unchecked`): a shot counts once, however many
- * filters are on. Every filter that isn't off weighs the same shots, so
+ * filters are on. Every filter the pack reads weighs the same shots, so
  * one's `total` is the pack's.
  */
 export function checkOf(filters: readonly PackFilter[], on: readonly string[], unchecked: number): PackCheck | null {
-  const turnedOn = filters.filter((f) => on.includes(f.key) && f.state !== "off")
+  const turnedOn = filters.filter((f) => on.includes(f.key) && f.state !== "off" && f.state !== "gone")
   const total = turnedOn.reduce((n, f) => Math.max(n, f.total), 0)
   const left = Math.min(Math.max(0, unchecked), total)
   if (turnedOn.some((f) => f.state === "checking")) return { kind: "checking", checked: total - left, total }

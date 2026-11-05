@@ -50,7 +50,8 @@ pub struct PluginFilter {
 }
 
 /// The plugins' shot filters a pack can show: every one of an active
-/// plugin, and those its spec turns on whose plugin isn't (`Off`).
+/// plugin, and those its spec turns on whose plugin isn't (`Off`) or no
+/// longer has them (`Gone`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PluginFilters(pub Vec<PluginFilter>);
 

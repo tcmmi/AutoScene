@@ -209,6 +209,7 @@ describe("plugin filters", () => {
   it("counts only the filters the spec turns on, and none of a plugin that is off", () => {
     expect(checkOf([filter("checking", 1, 9)], [], 0)).toBeNull()
     expect(checkOf([filter("off", 0, 0)], ["a/b"], 0)).toBeNull()
+    expect(checkOf([filter("gone", 0, 9), filter("checking", 2, 5, "c/d")], ["a/b", "c/d"], 3)).toEqual({ kind: "checking", checked: 2, total: 5 })
     // A failed check that judged every shot has nothing to try again.
     expect(checkOf([filter("failed", 9, 9)], ["a/b"], 0)).toBeNull()
   })

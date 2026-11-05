@@ -184,7 +184,8 @@ const pluginOf = (key: string) => key.slice(0, Math.max(0, key.indexOf("/")))
  * leaves out the shots its plugin says no to; while it checks them, a
  * ring fills; once its check failed, a warning mark says so (the footer
  * offers Try again). Its plugin is off: the chip is dimmed and says so, the
- * pack ignores it, and it can be turned off.
+ * pack ignores it, and it can be turned off. No plugin has it now: the same,
+ * and turning it off is all there is to do.
  */
 function PluginFilterChip({
   filter: f,
@@ -197,12 +198,15 @@ function PluginFilterChip({
   icon: string | null | undefined
   onChange: (on: boolean) => void
 }) {
+  const gone = f.state === "gone"
   const off = f.state === "off"
   const checking = on && f.state === "checking"
   const failed = on && f.state === "failed" && f.checked < f.total
-  const label = off
-    ? `Plugin “${f.plugin}” is off. Turn it on in Plugins, or turn this filter off.`
-    : `Plugin “${f.plugin}”: ${f.description ?? f.title}`
+  const label = gone
+    ? "This filter's plugin is gone, or no longer has it. Turn this filter off."
+    : off
+      ? `Plugin “${f.plugin}” is off. Turn it on in Plugins, or turn this filter off.`
+      : `Plugin “${f.plugin}”: ${f.description ?? f.title}`
   const hint = checking
     ? `Checking ${f.checked} of ${plural(f.total, "shot")}`
     : failed
@@ -210,7 +214,7 @@ function PluginFilterChip({
       : undefined
   return (
     <Tooltip label={label} hint={hint}>
-      <Chip pressed={on} onClick={() => onChange(!on)} className={cn(off && "opacity-60")}>
+      <Chip pressed={on} onClick={() => onChange(!on)} className={cn((off || gone) && "opacity-60")}>
         <PluginIcon src={icon} className="size-4" />
         {f.title}
         {checking && (

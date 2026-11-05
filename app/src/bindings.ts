@@ -1730,7 +1730,12 @@ export type PackFilterState =
  */
 "failed" | 
 /**  Its plugin isn't active: the pack ignores it. */
-"off";
+"off" | 
+/**
+ *  No plugin has it now (uninstalled, or an update took it away): the
+ *  pack ignores it, and all that is left to do is turn it off.
+ */
+"gone";
 
 /**  A shot of a pack, by its media and first frame. */
 export type PackKey = {

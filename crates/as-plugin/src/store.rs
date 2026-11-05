@@ -385,6 +385,8 @@ pub struct Store {
     resources: PathBuf,
     /// Where WebAssembly plugins' runs make their scratch folders.
     scratch: PathBuf,
+    /// Where pack actions note their unfinished files.
+    parts: PathBuf,
     db: Arc<LibraryDb>,
     /// What AutoScene's catalog reviewed and withdrew ([`Store::set_catalog`]).
     catalog: RwLock<Arc<Catalog>>,
@@ -433,6 +435,7 @@ impl Store {
             code: paths.plugin_code(),
             resources: paths.plugin_resources(),
             scratch: paths.plugin_scratch(),
+            parts: paths.plugin_parts(),
             db,
             catalog: RwLock::new(Arc::new(Catalog::none())),
             app,
@@ -1243,6 +1246,11 @@ impl Store {
     /// The version of this AutoScene.
     pub fn app_version(&self) -> &Version {
         &self.app
+    }
+
+    /// Where pack actions note their unfinished files.
+    pub fn parts_dir(&self) -> &Path {
+        &self.parts
     }
 
     /// Where `id` keeps what it needs between runs (its runs start there).

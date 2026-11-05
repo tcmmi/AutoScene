@@ -607,6 +607,8 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
     });
     match Store::open(paths, library.shared_db(), version, Arc::new(OsKeyring)) {
         Ok(store) => {
+            // Before the window opens: from then on a run's note is its own.
+            pack_actions::remove_left_parts(store.parts_dir());
             // This very executable compiles plugins, as it is the engine:
             // without it, installing a WebAssembly plugin fails and says so.
             let program = std::env::current_exe().unwrap_or_else(|e| {

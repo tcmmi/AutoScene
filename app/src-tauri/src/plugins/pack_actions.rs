@@ -17,8 +17,9 @@
 //! (`<name>.part-<8 hex>`, its `output`). Only when the run ends well does
 //! that file take the chosen name (replacing one the person agreed to
 //! replace); when it fails, is stopped or panics, that file goes, and what
-//! was at the chosen name stays. A pack action never saves a program, a
-//! script or a shortcut: its plugin.json can't name such a kind of file,
+//! was at the chosen name stays. One a crash left goes at the next start. A
+//! pack action never saves a program, a script or a shortcut: its
+//! plugin.json can't name such a kind of file,
 //! and the name the person types is checked too. What it saves is marked as
 //! a download, as a page's `files.save` marks it, and runs as nothing on
 //! Linux or macOS either. Its job then says "Saved Walter.fcpxml"; what the
@@ -295,7 +296,7 @@ fn save(sv: &Saving, ctx: &JobCtx, key: &RunKey, path: &Path, pack: PackContext,
     run.message.project = Some(sv.packs.project(project).map_err(job_error)?);
     run.message.pack = Some(pack);
     // Gone however the run ends, but well.
-    let part = Part::beside(path, ctx.id);
+    let part = Part::beside(path, ctx.id, sv.host.store.parts_dir());
     run.message.output = Some(part.path().to_string_lossy().into_owned());
     let calls = calls_for(&sv.lib, &sv.host, &p, key, run.protocol).map_err(plugin_job_error)?;
     run.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
@@ -312,21 +313,32 @@ fn save(sv: &Saving, ctx: &JobCtx, key: &RunKey, path: &Path, pack: PackContext,
 
 /// The file a pack action's run writes, beside the one the person chose: it
 /// takes that one's place once the run ends well ([`Part::keep`]), and goes
-/// otherwise, also when the run panics.
-struct Part(Option<PathBuf>);
+/// otherwise, also when the run panics. A crash ends it with neither: a note
+/// in the app's data folder says where it is, for [`remove_left_parts`].
+struct Part {
+    path: Option<PathBuf>,
+    note: PathBuf,
+}
 
 impl Part {
     /// Beside `path`, named after it and the run's job `job` (the random
-    /// end of its id), so two runs never write one file.
-    fn beside(path: &Path, job: JobId) -> Self {
+    /// end of its id), so two runs never write one file. Noted in `notes`:
+    /// a note that can't be written costs only that clean-up.
+    fn beside(path: &Path, job: JobId, notes: &Path) -> Self {
         let id = job.to_string();
         let tail = &id[id.len().saturating_sub(8)..];
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        Self(Some(path.with_file_name(format!("{name}.part-{tail}"))))
+        let part = path.with_file_name(format!("{name}.part-{tail}"));
+        let note = notes.join(&id);
+        let noted = std::fs::create_dir_all(notes).and_then(|()| std::fs::write(&note, part.to_string_lossy().as_bytes()));
+        if let Err(e) = noted {
+            log::warn!("noting a pack action's unfinished {}: {e}", paths::name(&part));
+        }
+        Self { path: Some(part), note }
     }
 
     fn path(&self) -> &Path {
-        self.0.as_deref().expect("a part is kept once, and then it is done")
+        self.path.as_deref().expect("a part is kept once, and then it is done")
     }
 
     /// Puts what the plugin `plugin` wrote in the place of `path` (`file`):
@@ -343,7 +355,7 @@ impl Part {
         }
         mark_downloaded(&part);
         std::fs::rename(&part, path).map_err(unsaved)?;
-        self.0 = None;
+        self.path = None;
         Ok(())
     }
 }
@@ -369,16 +381,49 @@ fn not_runnable(_: &Path, _: &std::fs::Metadata) -> io::Result<()> {
 
 impl Drop for Part {
     fn drop(&mut self) {
-        let Some(part) = self.0.take() else { return };
-        // Never more than it: a file, a link, or a folder only while empty.
-        let gone = match std::fs::symlink_metadata(&part) {
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return,
-            Err(e) => Err(e),
-            Ok(m) if m.is_dir() => std::fs::remove_dir(&part),
-            Ok(_) => std::fs::remove_file(&part).or_else(|_| std::fs::remove_dir(&part)),
-        };
-        if let Err(e) = gone {
+        // What can't go now has its note for the next start.
+        if let Some(part) = self.path.take()
+            && let Err(e) = remove_part(&part)
+        {
             log::warn!("a pack action's unfinished {}: {e}", paths::name(&part));
+            return;
+        }
+        let _ = std::fs::remove_file(&self.note);
+    }
+}
+
+/// Removes the unfinished file `part`, and never more than it: a file, a
+/// link, or a folder only while empty.
+fn remove_part(part: &Path) -> io::Result<()> {
+    match std::fs::symlink_metadata(part) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+        Ok(m) if m.is_dir() => std::fs::remove_dir(part),
+        Ok(_) => std::fs::remove_file(part).or_else(|_| std::fs::remove_dir(part)),
+    }
+}
+
+/// Whether `path` is named as [`Part::beside`] names one: a note is taken at
+/// its word for nothing else in the person's folders.
+fn is_part(path: &Path) -> bool {
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    name.rsplit_once(".part-").is_some_and(|(_, tail)| tail.len() == 8 && tail.bytes().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// At the start, before any run can note one: removes what the runs noted in
+/// `notes` left, as AutoScene crashed or was killed during a save. One try:
+/// what can't go then stays.
+pub fn remove_left_parts(notes: &Path) {
+    let Ok(entries) = std::fs::read_dir(notes) else { return };
+    for note in entries.flatten() {
+        if let Ok(part) = std::fs::read_to_string(note.path()).map(PathBuf::from)
+            && is_part(&part)
+            && let Err(e) = remove_part(&part)
+        {
+            log::warn!("a pack action's unfinished {}: {e}", paths::name(&part));
+        }
+        if let Err(e) = std::fs::remove_file(note.path()) {
+            log::warn!("a pack action's note {}: {e}", paths::name(&note.path()));
         }
     }
 }
@@ -586,6 +631,11 @@ mod tests {
         fn chosen(&self) -> PathBuf {
             self.cuts.join("Walter White.fcpxml")
         }
+
+        /// How many unfinished files are noted for the next start.
+        fn notes(&self) -> usize {
+            std::fs::read_dir(self.sv.host.store.parts_dir()).map_or(0, Iterator::count)
+        }
     }
 
     /// Writes "<timeline>" to the file it is given, and ends well.
@@ -617,6 +667,7 @@ mod tests {
         // The file, and nothing beside it, marked as a download as a page's files.save marks it.
         assert_eq!(std::fs::read_to_string(b.chosen()).unwrap(), "<timeline>");
         assert_eq!(b.files(), ["Walter White.fcpxml"]);
+        assert_eq!(b.notes(), 0, "the next start has nothing to do");
         if cfg!(windows) {
             let zone = std::fs::read_to_string(format!("{}:Zone.Identifier", b.chosen().display())).unwrap();
             assert!(zone.contains("ZoneId=3"), "{zone}");
@@ -724,6 +775,7 @@ mod tests {
         go.send(()).unwrap();
         b.settle();
         assert_eq!((b.files(), b.jobs()[0].state), (Vec::<String>::new(), JobState::Cancelled));
+        assert_eq!(b.notes(), 0, "the next start has nothing to do");
 
         // A run that panics after writing: its file goes as it unwinds.
         let broken = Bench::new(
@@ -736,6 +788,33 @@ mod tests {
         broken.click(broken.walter);
         broken.settle();
         assert_eq!((broken.files(), broken.jobs()[0].state), (Vec::<String>::new(), JobState::Failed));
+        assert_eq!(broken.notes(), 0);
+    }
+
+    /// A crash runs no `Drop`: only the note says the file is there.
+    #[test]
+    fn what_a_crash_left_beside_the_chosen_file_goes_at_the_next_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        let notes = tmp.path().join("plugin-parts");
+        let chosen = tmp.path().join("Walter.fcpxml");
+        std::fs::write(&chosen, "the person's").unwrap();
+        let part = Part::beside(&chosen, JobId::new(), &notes);
+        let left = part.path().to_path_buf();
+        std::fs::write(&left, "<half>").unwrap();
+        std::mem::forget(part);
+        assert_eq!(std::fs::read_dir(&notes).unwrap().count(), 1);
+
+        // Nothing else a note may name goes: this one names no part.
+        let other = tmp.path().join("Jesse.fcpxml");
+        std::fs::write(&other, "the person's").unwrap();
+        std::fs::write(notes.join("other"), other.to_string_lossy().as_bytes()).unwrap();
+
+        remove_left_parts(&notes);
+        assert!(!left.exists());
+        assert!(chosen.is_file() && other.is_file());
+        assert_eq!(std::fs::read_dir(&notes).unwrap().count(), 0);
+        // No folder of notes yet: nothing to do.
+        remove_left_parts(&tmp.path().join("none"));
     }
 
     #[test]

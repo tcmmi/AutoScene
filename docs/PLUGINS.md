@@ -406,9 +406,10 @@ rendered.
    folder**. What the program says when it ends goes to the log.
 
 A run that fails, is stopped, or writes no file removes `output`, and what
-was at the chosen name stays. A second click while the same action of the
-same character's pack waits or runs asks nothing and queues nothing; Jesse's
-pack queues beside Walter's.
+was at the chosen name stays. If AutoScene crashes or is killed during the
+save, `output` goes at its next start. A second click while the same action
+of the same character's pack waits or runs asks nothing and queues nothing;
+Jesse's pack queues beside Walter's.
 
 A clip's name comes from a file, an online lookup or the person, so it may
 start with `=`. A format a spreadsheet opens, such as CSV, puts a `'` before
@@ -2899,6 +2900,7 @@ AutoScene's data folder is `%LOCALAPPDATA%\AutoScene` on Windows,
 | `runtimes/uv-<version>/` | AutoScene's uv (see [AutoScene's uv](#autoscenes-uv)). |
 | `runtimes/uv-cache/`, `runtimes/uv-python/` | What uv fetched for scripts: their packages, and Pythons. |
 | `plugin-scratch/` | The scratch folder of each run of a WebAssembly plugin (see [The scratch folder](#the-scratch-folder)). Emptied as runs end, and at each start. |
+| `plugin-parts/` | A note for each pack action's unfinished `output`, saying where it is. Each goes with its run, and at each start, with what a crash left. |
 | `library.db` | In the `settings` table: its record (`plugin.<id>`), the settings the person changed (`plugin_settings.<id>`), the runtime the person agreed to and the names of the secrets set (`plugin_extra.<id>`), the id the keychain keeps this data folder's secrets under (`plugins_keychain`), and what AutoScene took of the catalog (`plugins_catalog`). |
 
 A program's scratch folder is in the system's temp folder, not here (see

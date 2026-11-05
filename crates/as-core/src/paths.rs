@@ -88,6 +88,11 @@ impl AppPaths {
     pub fn plugin_scratch(&self) -> PathBuf {
         self.data.join("plugin-scratch")
     }
+    /// A note for each unfinished file of a pack action's run, saying where
+    /// it is: what a crash left in the person's folder goes at the next start.
+    pub fn plugin_parts(&self) -> PathBuf {
+        self.data.join("plugin-parts")
+    }
     /// Plugins' logs, a file per plugin id.
     pub fn plugin_logs(&self) -> PathBuf {
         self.logs().join("plugins")

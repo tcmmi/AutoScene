@@ -356,8 +356,10 @@ later word on a shot replaces the earlier one. A verdict on a shot the run
 wasn't sent, or in any other run, goes to the log and counts for nothing. A
 plugin writes no text onto a card: the `reason` is the manifest's.
 
-**While it checks,** the footer says "Checking 120 of 312 shots" and Export
-waits. A shot without a verdict stays in the pack.
+**While it checks,** the footer says "Checking 312 shots", and "Checking 120
+of 312 shots" once a run has ended, as a run's verdicts count at its end.
+Activity shows how far a run is. Export waits. A shot without a verdict stays
+in the pack.
 
 **When a check fails.** A run that fails, is stopped, or leaves shots without
 a word keeps the verdicts it gave. The footer says "Couldn't check 120 shots"

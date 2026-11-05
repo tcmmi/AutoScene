@@ -73,6 +73,13 @@ describe("PackFilters, plugin filters", () => {
     expect(screen.getAllByText("Checking 120 of 312 shots").length).toBeGreaterThan(0)
   })
 
+  it("a filter that hasn't said a word yet gives no count", () => {
+    bar([speaks({ state: "checking", checked: 0 })], { ...DEFAULT_SPEC, pluginFilters: [KEY] })
+    fireEvent.focus(chip())
+    expect(screen.getAllByText("Checking 312 shots").length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Checking 0 of/)).toBeNull()
+  })
+
   it("a filter whose check failed shows a warning mark, and what it couldn't check", () => {
     bar([speaks({ state: "failed", checked: 192 })], { ...DEFAULT_SPEC, pluginFilters: [KEY] })
     expect(within(chip()).getByRole("img", { name: "Couldn't check Speaks" })).toBeTruthy()

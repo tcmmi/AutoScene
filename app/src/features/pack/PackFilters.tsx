@@ -22,7 +22,7 @@ import { plural } from "@/features/cast/cast"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { mediaTitle } from "@/lib/media"
 import { cn } from "@/lib/utils"
-import { DEFAULT_SPEC, HANDLES, LENGTHS, LIMITS, SIZES, episodesOn, filtersOn, isDefault, lengthOf, pluginFiltersOf, withPluginFilter } from "./spec"
+import { DEFAULT_SPEC, HANDLES, LENGTHS, LIMITS, SIZES, checkingText, episodesOn, filtersOn, isDefault, lengthOf, pluginFiltersOf, withPluginFilter } from "./spec"
 
 /**
  * The pack's order, its filters in one menu and the handles, in a bar that
@@ -252,7 +252,7 @@ function PluginFilterChip({
       ? `Plugin “${f.plugin}” is off. Turn it on in Plugins, or turn this filter off.`
       : `Plugin “${f.plugin}”: ${f.description ?? f.title}`
   const hint = checking
-    ? `Checking ${f.checked} of ${plural(f.total, "shot")}`
+    ? checkingText(f.checked, f.total)
     : failed
       ? `Couldn't check ${plural(f.total - f.checked, "shot")}`
       : undefined

@@ -156,6 +156,16 @@ export function checkOf(filters: readonly PackFilter[], on: readonly string[], u
 }
 
 /**
+ * What a check says of its shots. A filter's words count once its episode's
+ * run ends, so while the first runs (all of a film) there is no number to
+ * give yet: how far that run is shows in Activity.
+ */
+export function checkingText(checked: number, total: number): string {
+  const shots = total === 1 ? "1 shot" : `${total} shots`
+  return checked > 0 ? `Checking ${checked} of ${shots}` : `Checking ${shots}`
+}
+
+/**
  * Whether the pack can be exported now: it takes shots, is shown as the
  * backend has it, has its character, isn't exported already, and no
  * filter of it checks shots (the backend's export waits for that too).

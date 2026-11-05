@@ -18,7 +18,7 @@ import type { PackActionItem } from "@/features/plugins/plugin-items"
 import { formatBytes, formatDuration, formatPercent } from "@/lib/format"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { jobBar } from "@/state/activity"
-import type { PackCheck } from "./spec"
+import { checkingText, type PackCheck } from "./spec"
 
 /**
  * The pack at a glance, floating over the shots: how many, how long, about
@@ -98,7 +98,7 @@ export function PackFooter({
       {check?.kind === "checking" && (
         <span role="status" className="flex items-center gap-2 pr-2 text-sm text-fg-2">
           <ProgressRing aria-hidden className="size-3.5" value={check.checked > 0 ? check.checked / check.total : null} />
-          Checking {check.checked} of {plural(check.total, "shot")}
+          {checkingText(check.checked, check.total)}
         </span>
       )}
       {check?.kind === "failed" && (

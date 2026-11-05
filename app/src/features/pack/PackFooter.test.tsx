@@ -99,6 +99,24 @@ describe("PackFooter", () => {
     expect(ring("running", 0).arc.style.opacity).toBe("1")
   })
 
+  it("a check with no word back yet gives no count: a run's words come at its end", () => {
+    render(
+      <PackFooter
+        totals={totals}
+        bytes={null}
+        format={null}
+        picks={0}
+        canExport={false}
+        check={{ kind: "checking", checked: 0, total: 273 }}
+        onClearPicks={() => {}}
+        onExport={() => {}}
+        onShowExport={() => {}}
+      />,
+      { wrapper },
+    )
+    expect(screen.getByRole("status").textContent).toBe("Checking 273 shots")
+  })
+
   it("export waits while a plugin checks shots", () => {
     const onExport = vi.fn()
     render(

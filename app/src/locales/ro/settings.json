@@ -17,6 +17,14 @@
     "copy": "Copiază calea"
   },
   "general": {
+    "language": {
+      "title": "Limbă",
+      "description": "Cuvintele folosite de AutoScene și felul în care scrie datele și numerele.",
+      "app": {
+        "label": "Limba aplicației",
+        "automatic": "Automat ({{language}})"
+      }
+    },
     "storage": {
       "title": "Stocare",
       "description": "Unde păstrează AutoScene proiectele, modelele și jurnalele.",
@@ -138,7 +146,7 @@
     "seeing": {
       "on": "Ce văd ceilalți",
       "off": "Ce ar vedea ceilalți",
-      "description": "În plus, de cât timp este deschis AutoScene și un link către aplicație."
+      "description": "Mereu în engleză, indiferent de limba AutoScene. În plus, de cât timp este deschis AutoScene și un link către aplicație."
     },
     "names": {
       "title": "Nume",
@@ -240,7 +248,19 @@
       "description": "Se descarcă prima dată când o analiză are nevoie de ele. Modelele marcate ca necomerciale pot fi folosite doar pentru lucrări necomerciale; scanarea rapidă nu folosește niciunul dintre ele.",
       "downloaded": "Descărcat",
       "notDownloaded": "Încă nu este descărcat",
-      "nonCommercial": "Necomercial"
+      "nonCommercial": "Necomercial",
+      "purpose": {
+        "transnetv2": "Limitele planurilor (tăieturi bruște și tranziții treptate)",
+        "scrfd": "Detectarea fețelor, cu cinci puncte de reper (cu actori reali)",
+        "arcface": "Identitatea fețelor, ca vectori (cu actori reali)",
+        "yunet": "Detectarea fețelor, cu cinci puncte de reper (scanare rapidă)",
+        "sface": "Identitatea fețelor, ca vectori (scanare rapidă)",
+        "personDetector": "Persoane (corp întreg), pentru a urmări personajele cât timp fața nu se vede",
+        "personLook": "Cum arată o persoană (haine, constituție), pentru a o regăsi fără față",
+        "animeHead": "Detectarea capetelor (personaje anime)",
+        "animePerson": "Detectarea persoanei întregi (anime), pentru capetele pe care modelul de capete le ratează",
+        "animeIdentity": "Identitatea personajelor (anime), vectori CCIP cu 768 de dimensiuni"
+      }
     },
     "licenses": {
       "title": "Licențe open-source",
@@ -259,6 +279,12 @@
     },
     "title": "Contribuitori",
     "description": "Persoanele care au modelat AutoScene cu cod, design și idei.",
-    "open": "Deschide profilul GitHub: {{name}}"
+    "open": "Deschide profilul GitHub: {{name}}",
+    "role": {
+      "tcmmi": "Creator, motorul media, modelele și arhitectura de bază",
+      "0nsku": "Inginerie de bază, teste de referință pentru anime și analiză",
+      "moongetsu": "Design de interfață, meniuri contextuale proprii și finisaj vizual",
+      "ihyledd": "Varianta pentru macOS, noul design al setărilor și structura proiectului"
+    }
   }
 }

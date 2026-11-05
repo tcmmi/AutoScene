@@ -2,8 +2,7 @@
 // bundle, so the first paint never waits; another language loads on demand,
 // one lazy module per namespace file (`./ro/cast.json` …).
 //
-// Every namespace is registered here once, empty until its sweep group fills
-// `en/<ns>.ts`, so the groups never edit this file (docs/DESIGN.md, Copy).
+// Every namespace is registered here once (docs/DESIGN.md, Copy).
 // `backend` is what Rust says: generated from its `msg!`s (`cargo xtask i18n`).
 import backend from "./en/backend.json"
 import cast from "./en/cast"

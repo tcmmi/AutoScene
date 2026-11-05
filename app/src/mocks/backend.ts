@@ -221,7 +221,7 @@ let settings: AppSettings = {
 }
 /**
  * The language the mock speaks. `localStorage["autoscene.mock.language"]` stands
- * in for the system with any language i18n has, also one not offered yet; else
+ * in for the system with any language i18n has; else
  * the browser's list counts, walked as the backend walks the system's.
  */
 function uiLocale() {

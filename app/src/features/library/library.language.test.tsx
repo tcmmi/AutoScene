@@ -231,7 +231,7 @@ describe("a stack of shots in another language", () => {
       },
     })
     const view = stack(3)
-    expect(screen.getByRole("button", { expanded: false }).getAttribute("aria-label")).toBe("3 cadre la E01 · 05:13, 6.6 s")
+    expect(screen.getByRole("button", { expanded: false }).getAttribute("aria-label")).toBe("3 cadre la E01 · 05:13, 6,6 s")
     expect(screen.getByRole("button", { name: "Privește de la E01 · 05:13" })).toBeTruthy()
     await act(async () => view.unmount())
     stack(20)

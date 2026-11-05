@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { ArrowSquareOut, GithubLogo } from "@/components/icons"
 import { Button } from "@/components/ui/button"
+import { en } from "@/locales"
 import { openExternalUrl } from "@/lib/os"
 import { SettingRow, SettingsGroup } from "../primitives"
 import CONTRIBUTORS_JSON from "./contributors.json"
@@ -14,6 +15,9 @@ export interface Contributor {
 }
 
 const CONTRIBUTORS: Contributor[] = CONTRIBUTORS_JSON
+
+/** The people the catalog has a role for; a later one shows the role `contributors.json` gives. */
+const isRole = (handle: string): handle is keyof typeof en.settings.contributors.role => Object.hasOwn(en.settings.contributors.role, handle)
 
 const REPO_URL = "https://github.com/tcmmi/AutoScene"
 
@@ -51,7 +55,7 @@ export function ContributorsSection() {
                 </div>
               </div>
             }
-            description={<span className="block mt-1 text-fg-2">{c.role}</span>}
+            description={<span className="block mt-1 text-fg-2">{isRole(c.handle) ? t(`contributors.role.${c.handle}`) : c.role}</span>}
             className="min-h-16 py-3"
           >
             <Button

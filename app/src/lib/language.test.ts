@@ -20,11 +20,18 @@ describe("the language at the start", () => {
   })
 
   it("is English on a system AutoScene doesn't speak to", async () => {
-    vi.spyOn(navigator, "languages", "get").mockReturnValue(["de-DE", "ro-RO"])
+    vi.spyOn(navigator, "languages", "get").mockReturnValue(["de-DE", "fr-FR"])
     await startLanguage()
     expect(i18n.language).toBe("en")
     expect(document.documentElement.lang).toBe("en")
     expect(await commands.uiLocale()).toEqual({ setting: "system", resolved: "en", automatic: "en" })
+  })
+
+  it("takes the first language on the system's list that it speaks", async () => {
+    vi.spyOn(navigator, "languages", "get").mockReturnValue(["de-DE", "ro-RO"])
+    await startLanguage()
+    expect(i18n.language).toBe("ro")
+    expect(await commands.uiLocale()).toEqual({ setting: "system", resolved: "ro", automatic: "ro" })
   })
 
   it("still starts in English when the backend can't say", async () => {
@@ -90,7 +97,7 @@ describe("a language asked for in the address while developing", () => {
     expect(t("common:action.cancel")).toBe(pseudo("Cancel"))
   })
 
-  it("shows a language not offered yet", async () => {
+  it("shows a language, whatever Settings says", async () => {
     window.history.replaceState(null, "", "/?lang=ro")
     await startLanguage()
     expect(i18n.language).toBe("ro")

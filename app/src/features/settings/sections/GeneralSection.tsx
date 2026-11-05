@@ -1,18 +1,19 @@
+import { useEffect } from "react"
 import { FolderOpen } from "@/components/icons"
 import { toast } from "sonner"
 import { useTranslation } from "react-i18next"
-import type { AppSettings, ScanChoice } from "@/bindings"
+import type { AppSettings, ScanChoice, UiLanguage } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Select } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { settingsLine } from "@/lib/fast-scan"
 import { presetDescription, presetName } from "@/lib/format"
-import { t } from "@/lib/i18n"
+import { applySettings, LANGUAGE_NAMES, OFFERED, t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { PREFERRED_AUDIO_LANGUAGES, pickFolder } from "@/lib/media"
 import { reveal } from "@/lib/os"
-import { qk, queryClient, useAppInfo, usePresets, useScanDefaults, useSettings } from "@/lib/queries"
+import { qk, queryClient, useAppInfo, usePresets, useScanDefaults, useSettings, useUiLocale } from "@/lib/queries"
 import { PathText, SettingRow, SettingsGroup } from "../primitives"
 import { HardwareGroup } from "./HardwareGroup"
 
@@ -25,6 +26,20 @@ async function save(next: AppSettings) {
   } catch (e) {
     toast.error(t("settings:saveFailed"), { description: errorMessage(e) })
   }
+}
+
+/**
+ * The language applies at once and with no toast: the screen switching says it. The whole tree is made again
+ * in the new language (`LanguageRoot`), so the row the person was on is gone: the page's next mount puts focus
+ * back on it, once, and Tab goes on from there, not from the top of the window.
+ */
+let focusLanguageRow = false
+async function chooseLanguage(settings: AppSettings, language: UiLanguage) {
+  await save({ ...settings, language })
+  focusLanguageRow = true
+  await applySettings()
+  // The new tree is up by now. With none (the same language chosen again), nothing is left waiting for focus.
+  setTimeout(() => (focusLanguageRow = false))
 }
 
 /** Fast Scan's default for new projects: only `scanDefaultSet` changes it, never a copy of the settings. */
@@ -51,6 +66,16 @@ export function GeneralSection() {
   const { data: presets } = usePresets()
   const preset = presets?.find((p) => p.id === settings?.exportPresetId)
   const { data: scan } = useScanDefaults()
+  const { data: locale } = useUiLocale()
+
+  const languageLabel = t("general.language.app.label")
+  const languageReady = settings != null && locale != null
+  useEffect(() => {
+    if (!focusLanguageRow || !languageReady) return
+    focusLanguageRow = false
+    const row = [...document.querySelectorAll<HTMLElement>('button[role="combobox"]')].find((b) => b.getAttribute("aria-label") === languageLabel)
+    row?.focus()
+  }, [languageReady, languageLabel])
 
   const changeLibrary = async () => {
     if (!settings) return
@@ -60,6 +85,25 @@ export function GeneralSection() {
 
   return (
     <>
+      <SettingsGroup title={t("general.language.title")} description={t("general.language.description")}>
+        <SettingRow label={t("general.language.app.label")}>
+          <Select
+            aria-label={t("general.language.app.label")}
+            className="w-[260px]"
+            value={settings && (settings.language ?? "system")}
+            disabled={!settings || !locale}
+            onChange={(language) => settings && void chooseLanguage(settings, language as UiLanguage)}
+            options={[
+              {
+                value: "system",
+                label: t("general.language.app.automatic", { language: LANGUAGE_NAMES[locale?.automatic ?? "en"] }),
+              },
+              ...OFFERED.map((lang) => ({ value: lang, label: LANGUAGE_NAMES[lang] })),
+            ]}
+          />
+        </SettingRow>
+      </SettingsGroup>
+
       <SettingsGroup title={t("general.storage.title")} description={t("general.storage.description")}>
         <SettingRow
           label={t("general.storage.library.label")}

@@ -16,6 +16,7 @@ export const queryClient = new QueryClient({
 export const qk = {
   appInfo: ["appInfo"] as const,
   settings: ["settings"] as const,
+  uiLocale: ["uiLocale"] as const,
   scanDefaults: ["scanDefaults"] as const,
   discordPreview: (show: DiscordRpcSettings) => ["discordPreview", show] as const,
   hardware: ["hardware"] as const,
@@ -72,6 +73,11 @@ export function useAppInfo() {
 
 export function useSettings() {
   return useQuery({ queryKey: qk.settings, queryFn: () => commands.settingsGet() })
+}
+
+/** The language AutoScene speaks, the choice it comes from and what Automatic comes to here. */
+export function useUiLocale() {
+  return useQuery({ queryKey: qk.uiLocale, queryFn: () => commands.uiLocale() })
 }
 
 /**

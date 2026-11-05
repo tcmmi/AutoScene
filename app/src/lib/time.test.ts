@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { inLanguage } from "@/test/i18n"
 import { FrameClock } from "./frame-clock"
 import { formatFps, parseTimecode, timecode } from "./timecode"
 
@@ -17,6 +18,13 @@ describe("timecode", () => {
     expect(formatFps({ num: 24000, den: 1001 })).toBe("23.976")
     expect(formatFps({ num: 25, den: 1 })).toBe("25")
     expect(formatFps({ num: 30000, den: 1001 })).toBe("29.97")
+  })
+
+  it("writes a frame rate with the language's decimal mark, not the thousands mark", async () => {
+    await inLanguage("ro")
+    expect(formatFps({ num: 24000, den: 1001 })).toBe("23,976")
+    expect(formatFps({ num: 30000, den: 1001 })).toBe("29,97")
+    expect(formatFps({ num: 25, den: 1 })).toBe("25")
   })
 })
 

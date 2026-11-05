@@ -1,7 +1,7 @@
 import type * as React from "react"
 import { useState } from "react"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
-import { Command } from "cmdk"
+import { Command, defaultFilter } from "cmdk"
 import type { ParseKeys } from "i18next"
 import { useTranslation } from "react-i18next"
 import { Dialog as D } from "radix-ui"
@@ -27,6 +27,7 @@ import {
 } from "@/components/icons"
 import { Artwork } from "@/components/ui/artwork"
 import { Kbd } from "@/components/ui/kbd"
+import { folded } from "@/features/cast/cast"
 import { checkCatalog } from "@/features/plugins/catalog-actions"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { runPlugin } from "@/features/plugins/plugin-actions"
@@ -59,6 +60,9 @@ type PaletteWord = Extract<ParseKeys<"shell">, `palette.here.${string}` | `palet
 const FIRST = 5
 /** With one, the first that match (a big series has hundreds of extras). */
 const MATCHES = 30
+
+/** cmdk's own matching on words without their accents: "setari" finds "Setări", the way many type it. */
+const foldedFilter = (value: string, search: string, keywords?: string[]) => defaultFilter(folded(value), folded(search), keywords?.map(folded))
 
 /** Everything the app can do or go to, behind one search field. */
 export function CommandPalette() {
@@ -162,7 +166,7 @@ export function CommandPalette() {
           aria-describedby={undefined}
         >
           <D.Title className="sr-only">{t("palette.title")}</D.Title>
-          <Command loop className="flex max-h-[min(500px,66vh)] flex-col">
+          <Command loop filter={foldedFilter} className="flex max-h-[min(500px,66vh)] flex-col">
             <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/[0.08] px-5">
               <MagnifyingGlass className="size-5 shrink-0 text-fg-2" weight="bold" />
               <Command.Input
@@ -209,12 +213,12 @@ function ProjectFinds({
   const { data: media } = useMediaList(pid)
   // Every word typed is somewhere in the name or a keyword ("walt white",
   // "s1 e3"); the palette's own matching orders what is left.
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const words = folded(query.trim()).split(/\s+/).filter(Boolean)
   const take = (list: ProjectEntry[]) =>
     words.length > 0
       ? list
           .filter((e) => {
-            const hay = [e.label, ...e.keywords].map((w) => w.toLowerCase())
+            const hay = [e.label, ...e.keywords].map(folded)
             return words.every((w) => hay.some((h) => h.includes(w)))
           })
           .slice(0, MATCHES)

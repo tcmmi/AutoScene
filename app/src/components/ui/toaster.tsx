@@ -1,8 +1,13 @@
 import { Toaster as Sonner } from "sonner"
+import { t, useLanguage } from "@/lib/i18n"
 
 export function Toaster() {
+  // It sits outside the re-keyed tree (main.tsx), so it follows the language itself.
+  useLanguage()
   return (
     <Sonner
+      // Sonner adds the key that moves focus into the toasts after it.
+      containerAriaLabel={t("ui:toaster.label")}
       theme="dark"
       position="top-right"
       offset={{ top: 64, right: 16 }}

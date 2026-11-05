@@ -3,7 +3,7 @@ import { ArrowCounterClockwise, Check, Clock, FileX, Scissors, User, UserFocus, 
 import { toast } from "sonner"
 import type { JobInfo, MediaItem } from "@/bindings"
 import { Progress } from "@/components/ui/progress"
-import { Tooltip } from "@/components/ui/tooltip"
+import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { formatEta, formatPercent } from "@/lib/format"
 import { say, t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
@@ -77,12 +77,13 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
     const eta = formatEta(job.etaMs)
     return (
       <div className="flex items-center gap-1.5">
-        <div className="flex w-36 flex-col gap-1.5">
-          <div className="flex justify-between gap-2 text-xs text-fg-3">
-            <span className="truncate">{runningLabel(job)}</span>
-            <span className="timecode shrink-0">{formatPercent(job.progress)}</span>
+        {/* The stage has the whole width, the percent sits by the bar: Romanian's longest stage ("Se pregătește previzualizarea") reads in full. */}
+        <div className="flex w-52 flex-col gap-1.5">
+          <TruncatedText className="text-xs text-fg-3">{runningLabel(job)}</TruncatedText>
+          <div className="flex items-center gap-2">
+            <Progress value={job.progress} className="min-w-0 flex-1" />
+            <span className="timecode shrink-0 text-xs text-fg-3">{formatPercent(job.progress)}</span>
           </div>
-          <Progress value={job.progress} />
           {eta && <span className="tabular text-xs text-fg-3">{eta}</span>}
         </div>
         <Tooltip label={cancelLabel(job.kind)}>

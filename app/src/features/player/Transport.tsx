@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils"
 import { type FrameStore, useFrame } from "./frame-store"
 import { rateLabel } from "./shuttle"
 import { type TimecodeDisplayMode, useTimecodeMode } from "./timecode-mode"
-import { type Tier, counterChars, readoutChars, useTransportTier } from "./transport-tier"
+import { type Tier, counterChars, labelExtra, readoutChars, useTransportTier } from "./transport-tier"
 import { percentText, readoutWords } from "./words"
 
 /**
@@ -93,7 +93,7 @@ export function Transport({
   const { mode } = useTimecodeMode()
   const hasMarks = inFrame != null || outFrame != null
   const row = useRef<HTMLDivElement>(null)
-  const tier = useTransportTier(row, [hasMarks, goto, mode, i18n.language])
+  const tier = useTransportTier(row, [hasMarks, goto, mode, i18n.language], labelExtra())
   const playing = rate !== 0
   const frames = t("frames", { count: length })
   const shotKey = keys("player.markShot")

@@ -63,6 +63,21 @@ describe("the command palette while AutoScene speaks another language", () => {
     expect(screen.getByText("Nimic nu se potrivește.")).toBeTruthy()
   })
 
+  it("finds a command typed without its diacritics", async () => {
+    await inLanguage("ro", romanian)
+    render(<CommandPalette />)
+    // Many type Romanian with plain letters: "setari" is "Setări". The palette's matching is loose (it keeps
+    // faint matches too), so the test asks whether the command is among those shown.
+    const shown = () => screen.getAllByRole("option").map((o) => o.textContent)
+    search("setari")
+    expect(shown()).toContain("Setări")
+    search("actualizari")
+    expect(shown()).toContain("Caută actualizări")
+    // And with them, as before.
+    search("Caută actualizări")
+    expect(shown()).toContain("Caută actualizări")
+  })
+
   it("finds it by its own language's name, and speaks English again after a switch back", async () => {
     await inLanguage("ro", romanian)
     render(<CommandPalette />)

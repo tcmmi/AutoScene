@@ -1,3 +1,5 @@
+import { fmt } from "@/lib/i18n"
+
 /** Frame rate as an exact fraction (e.g. 24000/1001). */
 export type Fps = { num: number; den: number }
 
@@ -5,11 +7,9 @@ export function fpsValue(fps: Fps): number {
   return fps.num / fps.den
 }
 
-/** "23.976", "25", "29.97" — how editors say frame rates. */
+/** "23.976", "25", "29.97" — how editors say frame rates; Romanian: "23,976" (its dot is the thousands mark). */
 export function formatFps(fps: Fps): string {
-  const v = fpsValue(fps)
-  const rounded = Math.round(v * 1000) / 1000
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(3).replace(/0+$/, "")
+  return fmt.decimal(Math.round(fpsValue(fps) * 1000) / 1000, 3, true)
 }
 
 /** SMPTE drop-frame applies to 29.97 and 59.94 only. */

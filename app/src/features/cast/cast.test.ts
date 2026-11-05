@@ -5,12 +5,10 @@ import {
   ALL_CAST,
   cardClick,
   findCharacters,
-  formatScreenTime,
   isNarrowed,
   namesCredit,
   namesSource,
   pictureChoices,
-  plural,
   setHiddenAll,
   splitTiers,
   unplacedNote,
@@ -45,14 +43,6 @@ describe("cast wording", () => {
     const res = splitTiers(manyChars)
     expect(res.main.length).toBe(2)
     expect(res.supporting.length).toBe(13)
-  })
-
-  it("says screen time the way people do", () => {
-    expect([0, 42.4, 61, 59 * 60, 3725].map(formatScreenTime)).toEqual(["0 s", "42 s", "1 min", "59 min", "1 h 02 min"])
-  })
-
-  it("counts", () => {
-    expect([plural(1, "shot"), plural(1414, "face"), plural(2, "episode")]).toEqual(["1 shot", "1,414 faces", "2 episodes"])
   })
 
   it("says how many decisions wait for their faces, and that they're tried again", () => {

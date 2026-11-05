@@ -222,7 +222,7 @@ describe("what draws with every frame", () => {
   })
 
   it("passes the transport's tier the language, so a switch measures the row again", () => {
-    expect(transportSource).toContain("useTransportTier(row, [hasMarks, goto, mode, i18n.language])")
+    expect(transportSource).toContain("useTransportTier(row, [hasMarks, goto, mode, i18n.language], labelExtra())")
   })
 
   it("fills a message's hole without asking the catalog", () => {

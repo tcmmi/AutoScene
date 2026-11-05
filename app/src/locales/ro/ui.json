@@ -11,6 +11,9 @@
     "back": "Derulează înapoi",
     "on": "Derulează mai departe"
   },
+  "toaster": {
+    "label": "Notificări"
+  },
   "topbar": {
     "showRail": "Arată bara laterală",
     "back": "Înapoi la {{place}}"

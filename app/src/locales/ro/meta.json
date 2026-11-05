@@ -855,6 +855,10 @@
     "state": "draft",
     "en": "1f55b9cd"
   },
+  "ui:toaster.label": {
+    "state": "draft",
+    "en": "381d190f"
+  },
   "ui:topbar.showRail": {
     "state": "draft",
     "en": "ddb268b9"
@@ -1263,6 +1267,22 @@
     "state": "draft",
     "en": "f165cb2b"
   },
+  "settings:general.language.title": {
+    "state": "draft",
+    "en": "9a73db9b"
+  },
+  "settings:general.language.description": {
+    "state": "draft",
+    "en": "5e604fec"
+  },
+  "settings:general.language.app.label": {
+    "state": "draft",
+    "en": "be9be5ee"
+  },
+  "settings:general.language.app.automatic": {
+    "state": "draft",
+    "en": "78c258bd"
+  },
   "settings:general.storage.title": {
     "state": "draft",
     "en": "34eddf06"
@@ -1577,7 +1597,7 @@
   },
   "settings:discord.seeing.description": {
     "state": "draft",
-    "en": "bd447cf2"
+    "en": "057f785a"
   },
   "settings:discord.names.title": {
     "state": "draft",
@@ -1859,6 +1879,46 @@
     "state": "draft",
     "en": "a6344381"
   },
+  "settings:about.models.purpose.transnetv2": {
+    "state": "draft",
+    "en": "0c271d69"
+  },
+  "settings:about.models.purpose.scrfd": {
+    "state": "draft",
+    "en": "af64a3bd"
+  },
+  "settings:about.models.purpose.arcface": {
+    "state": "draft",
+    "en": "fb84f4a3"
+  },
+  "settings:about.models.purpose.yunet": {
+    "state": "draft",
+    "en": "d1b5125c"
+  },
+  "settings:about.models.purpose.sface": {
+    "state": "draft",
+    "en": "8e59433e"
+  },
+  "settings:about.models.purpose.personDetector": {
+    "state": "draft",
+    "en": "91a05bfd"
+  },
+  "settings:about.models.purpose.personLook": {
+    "state": "draft",
+    "en": "b11ae808"
+  },
+  "settings:about.models.purpose.animeHead": {
+    "state": "draft",
+    "en": "8d93260f"
+  },
+  "settings:about.models.purpose.animePerson": {
+    "state": "draft",
+    "en": "6dfb45e9"
+  },
+  "settings:about.models.purpose.animeIdentity": {
+    "state": "draft",
+    "en": "93d49b62"
+  },
   "settings:about.licenses.title": {
     "state": "draft",
     "en": "1b63005b"
@@ -1898,6 +1958,22 @@
   "settings:contributors.open": {
     "state": "draft",
     "en": "e6f19b48"
+  },
+  "settings:contributors.role.tcmmi": {
+    "state": "draft",
+    "en": "0ff0ba82"
+  },
+  "settings:contributors.role.0nsku": {
+    "state": "draft",
+    "en": "0d105d5c"
+  },
+  "settings:contributors.role.moongetsu": {
+    "state": "draft",
+    "en": "6f507779"
+  },
+  "settings:contributors.role.ihyledd": {
+    "state": "draft",
+    "en": "360c4a5d"
   },
   "cast:title": {
     "state": "draft",

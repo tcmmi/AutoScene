@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { act, cleanup, render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it } from "vitest"
+import { inLanguage } from "@/test/i18n"
+import { Toaster } from "./toaster"
 import conf from "../../../src-tauri/tauri.conf.json"
 import page from "../../../index.html?raw"
 
@@ -25,5 +28,17 @@ describe("toasts in a built app", () => {
   // toast lands below the window, unseen.
   it("the page may add its own styles", () => {
     expect(shippedStyleSources()).toContain("'unsafe-inline'")
+  })
+})
+
+describe("the toast region", () => {
+  afterEach(cleanup)
+
+  it("is named in the UI's language, and follows a switch", async () => {
+    render(<Toaster />)
+    expect(await screen.findByLabelText("Notifications alt+T")).toBeTruthy()
+    await act(() => inLanguage("ro"))
+    expect(await screen.findByLabelText("Notificări alt+T")).toBeTruthy()
+    expect(screen.queryByLabelText("Notifications alt+T")).toBeNull()
   })
 })

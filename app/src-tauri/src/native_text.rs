@@ -18,7 +18,10 @@ use tauri::{AppHandle, Manager};
 use crate::state::AppState;
 
 /// The catalog of each language AutoScene speaks, English first.
-const CATALOGS: &[(Lang, &str)] = &[(Lang::En, include_str!("../../src/locales/en/native.json"))];
+const CATALOGS: &[(Lang, &str)] = &[
+    (Lang::En, include_str!("../../src/locales/en/native.json")),
+    (Lang::Ro, include_str!("../../src/locales/ro/native.json")),
+];
 
 /// A language's words, by key (`dialog.hung.title`). A key its catalog lacks
 /// has the English.

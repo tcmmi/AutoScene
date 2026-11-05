@@ -79,11 +79,11 @@ export function PluginCard({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        {/* The facts have a line of their own: beside the badge, three cards to a row would cut them. */}
+        {/* The badges and the switch have a line of their own, the facts and the update button below: beside them, three cards to a row would cut them. */}
         <div className="mt-3 flex items-center justify-between gap-3 pl-0.5">
           <div className="flex min-w-0 items-center gap-1.5">
-            <Badge tone={trust.tone} className="min-w-0 truncate">
-              {trust.label}
+            <Badge tone={trust.tone} className="min-w-0">
+              <TruncatedText>{trust.label}</TruncatedText>
             </Badge>
             {p.sandbox && (
               <Badge tone="outline" className="shrink-0">
@@ -91,11 +91,6 @@ export function PluginCard({
               </Badge>
             )}
           </div>
-          {update && (
-            <Button size="sm" className="ml-auto" busy={getting} onClick={onUpdate}>
-              <ArrowsClockwise /> {t("menu.update")}
-            </Button>
-          )}
           <Switch
             aria-label={t("enable", { name: p.name })}
             checked={p.enabled && !withdrawn}
@@ -104,6 +99,12 @@ export function PluginCard({
           />
         </div>
         <TruncatedText className="mt-1.5 pl-0.5 text-sm text-fg-2">{facts}</TruncatedText>
+        {/* Under the facts, not beside the badge: who stands behind the code is read in full, in any language. */}
+        {update && (
+          <Button size="sm" className="mt-2.5" busy={getting} onClick={onUpdate}>
+            <ArrowsClockwise /> {t("menu.update")}
+          </Button>
+        )}
         {/* Withdrawn is AutoScene's word; broken is a fault; not allowed is the person's choice, which the setting below changes. */}
         {p.withdrawn != null ? (
           <p className="mt-1.5 pl-0.5 text-sm text-danger">{p.withdrawn}</p>

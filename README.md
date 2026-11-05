@@ -33,6 +33,8 @@ once:
 - **Linux:** make the AppImage executable (`chmod +x AutoScene_*.AppImage`).
   WebKitGTK 4.1 is required for the `.deb` and `.rpm` packages.
 
+AutoScene speaks English and Romanian: **Settings → General → App language**.
+
 FFmpeg and ONNX Runtime ship with the app. The AI models (about 310 MB)
 download the first time an analysis needs them.
 

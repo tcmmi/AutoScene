@@ -30,6 +30,17 @@ export default {
   },
 
   general: {
+    /** The group that chooses the language of AutoScene itself, not of a video's audio. */
+    language: {
+      title: "Language",
+      description: "The words AutoScene uses, and how it writes dates and numbers.",
+      app: {
+        /** Label of the choice and its accessible name; it must not read like the audio's preferred language. */
+        label: "App language",
+        /** The first choice of the list. `{{language}}` is the language Automatic comes to here, in that language's own name. */
+        automatic: "Automatic ({{language}})",
+      },
+    },
     storage: {
       title: "Storage",
       description: "Where AutoScene keeps projects, models and logs.",
@@ -181,7 +192,7 @@ export default {
     seeing: {
       on: "What people see",
       off: "What people would see",
-      description: "Plus how long AutoScene has been open and a link to it.",
+      description: "Always in English, whatever language AutoScene speaks. Plus how long AutoScene has been open and a link to it.",
     },
     names: {
       title: "Names",
@@ -311,6 +322,22 @@ export default {
       notDownloaded: "Not downloaded yet",
       /** A badge on a model that may not be used for paid work. */
       nonCommercial: "Non-commercial",
+      /**
+       * What each model is for, the row's title; one per model of `models/manifest.toml`, said in the same words
+       * (a test holds them to it). A model a later version adds shows the manifest's English until it has a key.
+       */
+      purpose: {
+        transnetv2: "Shot boundaries (hard cuts and gradual transitions)",
+        scrfd: "Face detection with five landmarks (live action)",
+        arcface: "Face identity embeddings (live action)",
+        yunet: "Face detection with five landmarks (Fast Scan)",
+        sface: "Face identity embeddings (Fast Scan)",
+        personDetector: "People (whole bodies), to follow characters while their face doesn't show",
+        personLook: "How a person looks (clothes, build), to find them again without a face",
+        animeHead: "Head detection (anime characters)",
+        animePerson: "Whole-person detection (anime), to catch heads the head model misses",
+        animeIdentity: "Character identity embeddings (anime), 768-d CCIP vectors",
+      },
     },
     licenses: {
       title: "Open-source licenses",
@@ -332,5 +359,12 @@ export default {
     description: "People who have shaped AutoScene with code, design, and ideas.",
     /** Accessible name of the button that opens a contributor's page; `name` is theirs. */
     open: "Open {{name}}'s GitHub profile",
+    /** What each person did, under their name; one per person of `contributors.json`, in the same words (a test holds them to it). */
+    role: {
+      tcmmi: "Creator, media engine, models, and core architecture",
+      "0nsku": "Core engineering, anime benchmarks, and analysis",
+      moongetsu: "UI design, custom context menus, and visual polish",
+      ihyledd: "macOS port, settings redesign, and project layout",
+    },
   },
 } as const

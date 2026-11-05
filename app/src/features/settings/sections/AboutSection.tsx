@@ -13,6 +13,7 @@ import { commands, errorMessage } from "@/lib/ipc"
 import { openExternalUrl } from "@/lib/os"
 import { useAppInfo, useHardware, useMediaTools } from "@/lib/queries"
 import { SettingRow, SettingsGroup } from "../primitives"
+import { PURPOSE } from "./model-purpose"
 
 const PLATFORM_LABEL = { windows: "Windows", macos: "macOS", linux: "Linux" } as const
 
@@ -146,7 +147,7 @@ export function AboutSection() {
         {models?.map((m) => (
           <SettingRow
             key={m.id}
-            label={m.purpose}
+            label={Object.hasOwn(PURPOSE, m.id) ? t(PURPOSE[m.id as keyof typeof PURPOSE]) : m.purpose}
             description={
               <span data-selectable>
                 {m.source}

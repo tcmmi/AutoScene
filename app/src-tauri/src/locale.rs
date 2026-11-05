@@ -5,7 +5,7 @@ use as_api::{Lang, UiLanguage, UiLocale};
 
 /// What AutoScene speaks, by language code. English comes first: it is what
 /// a system speaking none of these gets.
-pub(crate) const SPOKEN: &[(&str, Lang)] = &[("en", Lang::En)];
+pub(crate) const SPOKEN: &[(&str, Lang)] = &[("en", Lang::En), ("ro", Lang::Ro)];
 
 /// What `setting` comes to on this computer, and what Automatic would. On a
 /// Mac the list follows the language chosen for AutoScene in System Settings
@@ -40,40 +40,41 @@ fn language_of(tag: &str) -> String {
 mod tests {
     use super::*;
 
-    /// Romanian, before it is one of the languages AutoScene speaks.
-    const WITH_ROMANIAN: &[(&str, &str)] = &[("en", "en"), ("ro", "ro")];
+    fn system(tags: &[&str]) -> Vec<String> {
+        tags.iter().map(|tag| tag.to_string()).collect()
+    }
 
-    fn resolved(system: &[&str]) -> &'static str {
-        first_spoken(system.iter().map(|tag| tag.to_string()), WITH_ROMANIAN)
+    fn resolved(tags: &[&str]) -> Lang {
+        first_spoken(system(tags), SPOKEN)
     }
 
     #[test]
     fn the_first_language_it_speaks_wins() {
-        assert_eq!(resolved(&["ro-RO"]), "ro");
-        assert_eq!(resolved(&["ro-MD"]), "ro");
-        assert_eq!(resolved(&["mo"]), "ro");
-        assert_eq!(resolved(&["RO_ro"]), "ro");
-        assert_eq!(resolved(&["de-DE", "ro-RO"]), "ro");
-        assert_eq!(resolved(&["de-DE", "en-US"]), "en");
-        assert_eq!(resolved(&["en-US", "ro-RO"]), "en");
-        assert_eq!(resolved(&["en-US"]), "en");
+        assert_eq!(resolved(&["ro-RO"]), Lang::Ro);
+        assert_eq!(resolved(&["ro-MD"]), Lang::Ro);
+        assert_eq!(resolved(&["mo"]), Lang::Ro);
+        assert_eq!(resolved(&["RO_ro"]), Lang::Ro);
+        assert_eq!(resolved(&["de-DE", "ro-RO"]), Lang::Ro);
+        assert_eq!(resolved(&["de-DE", "en-US"]), Lang::En);
+        assert_eq!(resolved(&["en-US", "ro-RO"]), Lang::En);
+        assert_eq!(resolved(&["en-US"]), Lang::En);
     }
 
     #[test]
     fn a_system_it_cant_speak_to_gets_english() {
-        assert_eq!(resolved(&[]), "en");
-        assert_eq!(resolved(&["de-DE", "fr-FR"]), "en");
+        assert_eq!(resolved(&[]), Lang::En);
+        assert_eq!(resolved(&["de-DE", "fr-FR"]), Lang::En);
     }
 
     #[test]
     fn automatic_follows_the_system() {
-        let system = ["ro-RO".to_string()];
-        assert_eq!(resolve_from(UiLanguage::System, system, WITH_ROMANIAN), "ro");
+        assert_eq!(resolve_from(UiLanguage::System, system(&["ro-RO"]), SPOKEN), Lang::Ro);
+        assert_eq!(resolve_from(UiLanguage::System, system(&["de-DE", "ro-RO"]), SPOKEN), Lang::Ro);
     }
 
     #[test]
     fn a_choice_is_kept_whatever_the_system_speaks() {
-        let system = ["ro-RO".to_string()];
-        assert_eq!(resolve_from(UiLanguage::En, system, WITH_ROMANIAN), "en");
+        assert_eq!(resolve_from(UiLanguage::En, system(&["ro-RO"]), SPOKEN), Lang::En);
+        assert_eq!(resolve_from(UiLanguage::Ro, system(&["en-US"]), SPOKEN), Lang::Ro);
     }
 }

@@ -234,7 +234,7 @@ export function EpisodeRow({
             if (ready && e.key === "Enter" && e.target === e.currentTarget) onOpen()
           }}
           className={cn(
-            "group grid grid-cols-[176px_minmax(0,1fr)_auto] items-center gap-5 rounded-2xl p-2.5 pr-4 transition-colors focus-visible:bg-white/[0.04] focus-visible:outline-none @3xl:grid-cols-[192px_minmax(0,1fr)_200px_190px_auto]",
+            "group grid grid-cols-[176px_minmax(0,1fr)_auto] items-center gap-5 rounded-2xl p-2.5 pr-4 transition-colors focus-visible:bg-white/[0.04] focus-visible:outline-none @3xl:grid-cols-[192px_minmax(0,1fr)_200px_214px_auto]",
             ready && "cursor-pointer hover:bg-white/[0.04]",
           )}
         >

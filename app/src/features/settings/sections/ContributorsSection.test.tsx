@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { openExternalUrl } from "@/lib/os"
+import { inLanguage } from "@/test/i18n"
 import { ContributorsSection } from "./ContributorsSection"
 
 vi.mock("@/lib/os", () => ({
@@ -29,5 +30,14 @@ describe("ContributorsSection", () => {
     fireEvent.click(profileButton)
     expect(openExternalUrl).toHaveBeenCalledWith("https://github.com/moongetsu")
   })
-})
 
+  it("says what each person did in the UI's language", async () => {
+    render(<ContributorsSection />)
+    expect(screen.getByText("Creator, media engine, models, and core architecture")).toBeTruthy()
+    cleanup()
+    await inLanguage("ro")
+    render(<ContributorsSection />)
+    expect(screen.getByText("Creator, motorul media, modelele și arhitectura de bază")).toBeTruthy()
+    expect(screen.queryByText(/media engine/)).toBeNull()
+  })
+})

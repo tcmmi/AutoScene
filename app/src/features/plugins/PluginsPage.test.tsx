@@ -701,7 +701,7 @@ describe("PluginsPage", () => {
     show()
     const boxed = within(await card("Boxed")).getByText("Sandboxed")
     // In AutoScene's caption, beside its trust, never on the plugin's art.
-    expect(within(await card("Boxed")).getByText("Not reviewed").parentElement).toBe(boxed.parentElement)
+    expect(within(await card("Boxed")).getByText("Not reviewed").closest("div")).toBe(boxed.parentElement)
     expect((await art("Boxed")).contains(boxed)).toBe(false)
     expect(within(await card("Program")).queryByText("Sandboxed")).toBeNull()
     cleanup()

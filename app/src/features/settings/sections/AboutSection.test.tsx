@@ -35,8 +35,8 @@ vi.mock("@/lib/ipc", () => ({
     mediaTools: vi.fn(() => Promise.resolve({ ready: true, version: "8.0", path: "ffmpeg", error: null })),
     models: vi.fn(() =>
       Promise.resolve([
-        model("transnetv2", "Shot boundaries", "MIT", false, true),
-        model("arcface-glintr100", "Face identity embeddings", "InsightFace non-commercial research", true, false),
+        model("transnetv2", "Shot boundaries (hard cuts and gradual transitions)", "MIT", false, true),
+        model("arcface-glintr100", "Face identity embeddings (live action)", "InsightFace non-commercial research", true, false),
       ]),
     ),
   },
@@ -92,14 +92,26 @@ describe("AboutSection", () => {
         <AboutSection />
       </QueryClientProvider>,
     )
-    expect(await screen.findByText("Face identity embeddings")).toBeTruthy()
+    expect(await screen.findByText("Face identity embeddings (live action)")).toBeTruthy()
     expect(screen.getByText("InsightFace non-commercial research")).toBeTruthy()
-    expect(screen.getByText("Shot boundaries")).toBeTruthy()
+    expect(screen.getByText("Shot boundaries (hard cuts and gradual transitions)")).toBeTruthy()
     // Only the restricted model carries the mark.
     expect(screen.getAllByText("Non-commercial")).toHaveLength(1)
     expect(screen.getByText(/Fast Scan uses none of them/)).toBeTruthy()
     expect(screen.getByText(/^Downloaded · 29\.8 MB/)).toBeTruthy()
     expect(screen.getByText(/^Not downloaded yet/)).toBeTruthy()
+  })
+
+  it("says what a model is for in the UI's language, and a model it has no words for in English", async () => {
+    vi.mocked(commands.models).mockResolvedValueOnce([
+      model("transnetv2", "Shot boundaries (hard cuts and gradual transitions)", "MIT", false, true),
+      model("a-later-model", "Something a later version needs", "MIT", false, false),
+    ])
+    await inLanguage("ro")
+    show()
+    expect(await screen.findByText("Limitele planurilor (tăieturi bruște și tranziții treptate)")).toBeTruthy()
+    expect(screen.queryByText(/Shot boundaries/)).toBeNull()
+    expect(screen.getByText("Something a later version needs")).toBeTruthy()
   })
 
   it("says why FFmpeg isn't there in the UI's language", async () => {

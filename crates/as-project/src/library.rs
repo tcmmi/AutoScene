@@ -1431,12 +1431,22 @@ mod tests {
     }
 
     #[test]
+    fn romanian_is_kept_across_starts() {
+        let (dir, lib) = lib_on(hybrid);
+        lib.update_settings(&AppSettings { language: UiLanguage::Ro, ..lib.settings().unwrap() }).unwrap();
+        assert_eq!(stored(&lib, KEY_UI_LANGUAGE).as_deref(), Some("ro"));
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), hybrid).unwrap();
+        assert_eq!(lib.ui_language().unwrap(), UiLanguage::Ro);
+    }
+
+    #[test]
     fn a_language_this_version_cant_read_stays_until_one_is_chosen() {
         let (_dir, lib) = lib_on(hybrid);
-        lib.db.set_setting(KEY_UI_LANGUAGE, "ro").unwrap();
+        lib.db.set_setting(KEY_UI_LANGUAGE, "tlh").unwrap();
         assert_eq!(lib.settings().unwrap().language, UiLanguage::System, "reads as Automatic");
         lib.update_settings(&AppSettings { audio_language: "fra".into(), ..lib.settings().unwrap() }).unwrap();
-        assert_eq!(stored(&lib, KEY_UI_LANGUAGE).as_deref(), Some("ro"), "a save of other settings keeps it");
+        assert_eq!(stored(&lib, KEY_UI_LANGUAGE).as_deref(), Some("tlh"), "a save of other settings keeps it");
         lib.update_settings(&AppSettings { language: UiLanguage::En, ..lib.settings().unwrap() }).unwrap();
         assert_eq!(stored(&lib, KEY_UI_LANGUAGE).as_deref(), Some("en"), "a language chosen replaces it");
     }

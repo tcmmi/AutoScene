@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react"
+import { fmt } from "@/lib/i18n"
 
 /** What can be said about the bodies a shot without the character's face shows. */
 export type BodyVerdict = "not_them" | "not_a_person"
@@ -17,11 +18,11 @@ export function cellAt(x: number, width: number, cells: number): number {
   return Math.min(cells - 1, Math.max(0, Math.floor((x / width) * cells)))
 }
 
-/** "<0.1 s", "0.4 s", "2.5 s", "12 s", "1:05". */
+/** "<0.1 s", "0.4 s", "2.5 s", "12 s", "1:05", with the language's decimal mark. */
 export function formatShotLength(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return ""
-  if (sec < 0.05) return "<0.1 s"
-  if (sec < 10) return `${(Math.round(sec * 10) / 10).toFixed(1)} s`
+  if (sec < 0.05) return `<${fmt.decimal(0.1, 1)} s`
+  if (sec < 10) return `${fmt.decimal(Math.round(sec * 10) / 10, 1)} s`
   if (sec < 60) return `${Math.round(sec)} s`
   const s = Math.round(sec)
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`

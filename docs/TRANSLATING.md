@@ -4,9 +4,9 @@ AutoScene's words live in catalogs under `app/src/locales/`. English is the sour
 next to it, `app/src/locales/<language>/`, with the same files. This page says how a translation is made and kept
 current, then gives the Romanian glossary and style, which a translator follows as written.
 
-**Romanian is a draft and is not offered yet.** The catalog is in the app and loads when the language is asked
-for, but Settings shows no choice until it is on `OFFERED` in `app/src/lib/i18n.ts` and in `SPOKEN`
-(`app/src-tauri/src/locale.rs`), together. Nothing here decides that; the person who reviews the Romanian does.
+**Romanian is offered and is still a draft.** It is on `OFFERED` in `app/src/lib/i18n.ts` and in `SPOKEN`
+(`app/src-tauri/src/locale.rs`), so Settings → General → App language chooses it and Automatic takes it from the
+system. Every message stays `draft` in `ro/meta.json` until moongetsu has checked it.
 
 ## What is where
 
@@ -84,8 +84,8 @@ the reviewer: the owner relays.
 
 `?lang=pseudo` on the mock (`npm run dev:mock`, then add it to the address) shows every catalog string accented
 and 35 % longer, in brackets: anything shown plain is still written into the code, and anything cut off will be
-cut off in Romanian too. `?lang=ro` shows the Romanian catalog while developing, before it is offered; once it is
-on `OFFERED` it is chosen in Settings → General → App language.
+cut off in Romanian too. `?lang=ro` shows the Romanian catalog while developing, whatever Settings says; a language
+on `OFFERED` is chosen in Settings → General → App language.
 
 ### Where AutoScene's language ends
 
@@ -99,6 +99,13 @@ on `OFFERED` it is chosen in Settings → General → App language.
   read the language (`app.locale`) and match it themselves (`docs/PLUGINS.md`).
 - **Numbers, sizes, dates and lists** are written by `fmt` (`@/lib/i18n`), never in a catalog; a catalog holds the
   templates around them.
+- **What Discord shows** is English, always: the status lines are written in Rust (`discord.rs`) for the people who
+  read them on Discord, not for the person, and the preview in Settings → Discord shows those same lines. The row
+  that holds the preview says so. An owner decision, open: say them in the person's language through `native.json`.
+- **Where a model comes from** (the manifest's `source` and `license` on Settings → About) stays English: names of
+  papers, projects and licences. What each model is for, and what each contributor did, are in the catalog
+  (`about.models.purpose`, `contributors.role`) and a test holds them to `models/manifest.toml` and
+  `contributors.json`; a model or a person added there without a key shows the English until it has one.
 - **Exports for scripts** keep their English format and headers (cut lists, EDLs), and the default library folder
   keeps its English name.
 
@@ -110,8 +117,8 @@ on `OFFERED` it is chosen in Settings → General → App language.
 3. Write its glossary and style on this page, as the Romanian has, before the first message is translated.
 4. Add the language to `LANGUAGES` in `lib/i18n.ts` and to the loaders in `locales/index.ts`, and run
    `locales.test.ts`.
-5. When a speaker has reviewed it, offer it: `OFFERED` and `SPOKEN` together, `native.json` in `CATALOGS`
-   (`native_text.rs`), the language in `Info.plist`, and a row in Settings.
+5. Offer it: `OFFERED` and `LANGUAGE_NAMES` (`lib/i18n.ts`, its own name) and `SPOKEN` together, `UiLanguage` and
+   `Lang` (`as-api`), `native.json` in `CATALOGS` (`native_text.rs`) and the language in `Info.plist`.
 
 ## Romanian
 
@@ -213,7 +220,7 @@ stay two words on purpose: "Elimină din bibliotecă" keeps the files, "Șterge 
 | clip | clip (clipuri) | |
 | scenepack, pack | **scenepack** (scenepackuri) | **[check]** both English words. Never `pachet`. "in the pack" = "în scenepack" |
 | handles | **margini** | **[check]** "Fără margini", "6 cadre înainte și după" |
-| in / out (points) | **intrare / ieșire** | **[check]** "punct de intrare", "Marchează intrarea", "Mergi la ieșire" |
+| in / out (points) | **intrare / ieșire** | **[check]** "punct de intrare", "Marchează intrarea", "Mergi la ieșire". The player's two chips say them too, in full: the transport row's tiers (`transport-tier.ts`) were measured for English's short "In" / "Out", so a longer word moves each tier's edge by what it adds (`labelExtra`), and Romanian's row drops to the next tier a little sooner. `npm run check:player-layout -- ro` holds it |
 | timecode | timecode (timecode-uri) | stays |
 | timeline | timeline (timeline-uri) | stays, as timecode does **[check]** |
 | playhead | cap de redare | |
@@ -484,7 +491,9 @@ look at in Romanian screenshots.
 3. **folder, not dosar.** A change from the design's example ("Alege dosarul"): Windows and most people say `folder`;
    `dosar` is Apple's word.
 4. **in / out = intrare / ieșire**, or `in` / `out` as editors say them? "Marchează in" reads oddly, which is why it
-   isn't the draft.
+   isn't the draft. The player's two chips are the one place the choice shows in the layout: with the longer words the
+   transport row gives up its timecodes and labels a few dozen pixels sooner than English's. Short `In` / `Out` on
+   the chips alone would keep Romanian's tiers where English's are (`player:transport.in`, `.out`).
 5. **handles = margini**, or `handles`?
 6. **review:** `verificare` for faces, as the design proposed, and `revizuire` for plugins, a change from it, so that
    a human review doesn't read like the hash check.

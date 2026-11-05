@@ -1531,7 +1531,7 @@ export type KeyBinding = {
 };
 
 /**  A language AutoScene speaks. */
-export type Lang = "en";
+export type Lang = "en" | "ro";
 
 /**  The project list or a project's summary changed. */
 export type LibraryChanged = {
@@ -2699,7 +2699,7 @@ export type UiLanguage =
  *  Automatic: the first language on the system's list that AutoScene
  *  speaks, English when it speaks none of them.
  */
-"system" | "en";
+"system" | "en" | "ro";
 
 /**
  *  The language AutoScene speaks now, the choice it comes from, and what

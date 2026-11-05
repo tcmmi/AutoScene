@@ -360,6 +360,53 @@ mod tests {
         assert_eq!(label(romanian, "system:redo"), "Redo");
     }
 
+    #[test]
+    fn the_menu_speaks_romanian() {
+        let romanian = crate::native_text::words(as_api::Lang::Ro);
+        let said: HashMap<&str, String> = LABELS.iter().map(|(id, _)| (*id, label(romanian, id))).collect();
+        for (id, words) in [
+            ("menu:app", "AutoScene"),
+            ("system:about", "Despre AutoScene"),
+            ("app:check-updates", "Caută actualizări…"),
+            ("app:settings", "Setări…"),
+            ("system:services", "Servicii"),
+            ("system:hide", "Ascunde AutoScene"),
+            ("system:hide-others", "Ascunde celelalte"),
+            ("system:show-all", "Arată tot"),
+            ("system:quit", "Ieși din AutoScene"),
+            ("menu:file", "Fișier"),
+            ("file:new-project", "Proiect nou…"),
+            ("file:add-media", "Adaugă episoade…"),
+            ("file:export", "Exportă clipul…"),
+            ("file:reveal", "Arată în Finder"),
+            ("menu:edit", "Editare"),
+            ("system:undo", "Anulează"),
+            ("system:redo", "Refă"),
+            ("system:cut", "Taie"),
+            ("system:copy", "Copiază"),
+            ("system:paste", "Lipește"),
+            ("system:select-all", "Selectează tot"),
+            ("edit:copy-timecodes", "Copiază timecode-urile"),
+            ("menu:view", "Afișare"),
+            ("view:command-palette", "Paleta de comenzi…"),
+            ("view:library", "Bibliotecă"),
+            ("view:episodes", "Episoade"),
+            ("view:exports", "Exporturi"),
+            ("view:activity", "Activitate"),
+            ("view:plugins", "Pluginuri"),
+            ("view:toggle-sidebar", "Arată/ascunde bara laterală"),
+            ("system:full-screen", "Ecran complet"),
+            ("menu:window", "Fereastră"),
+            ("system:minimize", "Minimizează"),
+            ("system:zoom", "Zoom"),
+            ("system:close-window", "Închide fereastra"),
+            ("menu:help", "Ajutor"),
+            ("help:logs", "Arată jurnalele în Finder"),
+        ] {
+            assert_eq!(said[id], words, "{id}");
+        }
+    }
+
     fn keys(given: &[(&str, &str)]) -> HashMap<String, String> {
         given.iter().map(|(id, accel)| ((*id).to_owned(), (*accel).to_owned())).collect()
     }

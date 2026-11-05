@@ -348,8 +348,10 @@ The UI's words are in a catalog, not in the code, so AutoScene can speak more th
   it was made with. The default library folder stays English: a folder stays where it was made.
 - The language is a setting (`AppSettings.language`). Automatic takes the first language on the system's list that
   AutoScene speaks, English when it speaks none (`app/src-tauri/src/locale.rs`). A language joins `SPOKEN` there and
-  `OFFERED` in `lib/i18n.ts` together, when its catalog is complete; Settings shows no choice until there is one. Its
-  `native.json` joins `CATALOGS` in `native_text.rs` then too, and `app/src-tauri/Info.plist` names it for AppKit.
+  `OFFERED` in `lib/i18n.ts` together, when its catalog is complete. Its `native.json` joins `CATALOGS` in
+  `native_text.rs` then too, and `app/src-tauri/Info.plist` names it for AppKit. Settings → General → App language
+  offers Automatic, named for what it comes to here, and each language by its own name; the choice applies at once
+  and with no toast.
 
 Rules for every word on screen:
 
@@ -357,7 +359,7 @@ Rules for every word on screen:
 - A component that shows words calls `useTranslation()`, also when the words come from a helper.
 - No sentence built from fragments (`` `Couldn't ${verb.toLowerCase()}` ``), no `n === 1 ?`: a whole message per
   case, plural keys for counts.
-- No `"en-GB"`, `toLocaleString()` or `Intl.*Format` outside `lib/i18n.ts`: use `fmt`.
+- No `"en-GB"`, `toLocaleString()`, `toFixed()` or `Intl.*Format` outside `lib/i18n.ts`: use `fmt`.
 - React elements inside a sentence go through `<Trans>` with tags from `b strong em mono key x go`, never an HTML
   void name (`<link>`, `<br>`, `<img>`…), which renders empty.
 - Plugin words and the user's data stay values inside a translated sentence; brand and product names (AniList,
@@ -370,7 +372,7 @@ Rules for every word on screen:
 The guard (`locales/hardcoded.test.ts`) refuses new words in the code: JSX text, text in JSX attributes, toast
 arguments and options, the `label`/`title`/`description`/`hint`/`message`/`placeholder`/`heading`/`blurb`/`body`/
 `question`/`detail`/`action`/`crumb` of objects, OS dialog filter names, text handed to `t()` as a value, both sides
-of a `n === 1 ?`, calls of the deprecated `plural(`/`formatScreenTime(`, and locale-bound formatting. Where only
+of a `n === 1 ?`, and locale-bound formatting. Where only
 words go, one lower-case word counts too (`` `${n} shots` ``, `"faces"`). A word that is never translated gets
 `// i18n-ignore: <why>` (or `{/* i18n-ignore: … */}`) on the line before. While the sweep moves today's words,
 `locales/hardcoded/g1.json` … `g8.json` list what each group still has to move. A list only shrinks: the test fails

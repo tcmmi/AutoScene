@@ -167,6 +167,7 @@ pub enum UiLanguage {
     #[default]
     System,
     En,
+    Ro,
 }
 
 impl UiLanguage {
@@ -175,6 +176,7 @@ impl UiLanguage {
         match self {
             Self::System => None,
             Self::En => Some("en"),
+            Self::Ro => Some("ro"),
         }
     }
 
@@ -183,6 +185,7 @@ impl UiLanguage {
     pub fn from_code(code: &str) -> Option<Self> {
         match code {
             "en" => Some(Self::En),
+            "ro" => Some(Self::Ro),
             _ => None,
         }
     }
@@ -193,6 +196,7 @@ impl UiLanguage {
 #[serde(rename_all = "snake_case")]
 pub enum Lang {
     En,
+    Ro,
 }
 
 /// The language AutoScene speaks now, the choice it comes from, and what

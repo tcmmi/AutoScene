@@ -1,7 +1,8 @@
 import { act, cleanup, renderHook } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { timecode } from "@/lib/timecode"
-import { coarser, counterChars, readoutChars, tierFor, useTransportTier } from "./transport-tier"
+import { inLanguage } from "@/test/i18n"
+import { coarser, counterChars, labelExtra, readoutChars, tierFor, useTransportTier } from "./transport-tier"
 
 describe("tierFor", () => {
   it("gives each width its tier, the edges included", () => {
@@ -15,10 +16,35 @@ describe("tierFor", () => {
     expect(tierFor(1802)).toBe(1)
   })
 
+  it("moves every edge by what longer words on the row need", () => {
+    expect(tierFor(1292, 63)).toBe(2)
+    expect(tierFor(1292 + 63, 63)).toBe(1)
+    expect(tierFor(960 + 62, 63)).toBe(3)
+    expect(tierFor(808 + 63, 63)).toBe(3)
+    expect(tierFor(807 + 63, 63)).toBe(4)
+  })
+
   it("goes one tier coarser and stops at 4", () => {
     expect(coarser(1)).toBe(2)
     expect(coarser(3)).toBe(4)
     expect(coarser(4)).toBe(4)
+  })
+})
+
+describe("labelExtra", () => {
+  it("is nothing in English, whose words the tiers were measured for", () => {
+    expect(labelExtra()).toBe(0)
+  })
+
+  it("is what Intrare, Ieșire and Exportă add to In, Out and Export", async () => {
+    await inLanguage("ro")
+    // 7 + 6 + 7 letters against 2 + 3 + 6, at 9 px a letter.
+    expect(labelExtra()).toBe(9 * 9)
+  })
+
+  it("is nothing for a language with shorter words", async () => {
+    await inLanguage("ro", { player: { transport: { in: "I", out: "O", export: "E" } } })
+    expect(labelExtra()).toBe(0)
   })
 })
 

@@ -8,7 +8,8 @@
 // tier isn't the one its width calls for (`tierFor`: the overflow guard
 // stepped in), or when the timecode moves as the speed shows.
 //
-//   npm run check:player-layout
+//   npm run check:player-layout        (English)
+//   npm run check:player-layout -- ro  (any language i18n has)
 //
 // It starts the browser mock (Vite, `--mode mock`) on a free port with its
 // own cache, and headless Edge or Chrome (`AUTOSCENE_BROWSER` names
@@ -26,6 +27,7 @@ import { delimiter, join, resolve } from "node:path"
 import { createServer, loadConfigFromFile } from "vite"
 
 const app = resolve(import.meta.dirname, "..")
+const language = process.argv[2]
 const fixtures = resolve(process.env.AUTOSCENE_FIXTURES ?? join(app, "..", "fixtures", "out"))
 if (!existsSync(join(fixtures, "cfr24_h264.mp4"))) {
   console.error(`No test fixtures in ${fixtures}: run \`cargo xtask fixtures\` or set AUTOSCENE_FIXTURES.`)
@@ -140,7 +142,8 @@ const settle = (c) => c.evaluate("new Promise((r) => requestAnimationFrame(() =>
 
 /** What the row looks like now, measured in the page. */
 const MEASURE = `(async () => {
-  const { tierFor } = await import("/src/features/player/transport-tier.ts")
+  const { tierFor, labelExtra } = await import("/src/features/player/transport-tier.ts")
+  const { t } = await import("/src/lib/i18n.ts")
   const row = document.querySelector("[data-transport]")
   const box = row.getBoundingClientRect()
   const shown = (el) => {
@@ -161,20 +164,21 @@ const MEASURE = `(async () => {
   const outside = items
     .filter((_, i) => rects[i].left < box.left - 0.5 || rects[i].right > box.right + 0.5 || rects[i].top < box.top - 0.5 || rects[i].bottom > box.bottom + 0.5)
     .map(name)
-  const play = row.querySelector("button[aria-label=Play], button[aria-label=Pause]").getBoundingClientRect()
+  const called = (...names) => [...row.querySelectorAll("button")].find((b) => names.some((n) => b.getAttribute("aria-label")?.startsWith(n)))
+  const play = called(t("player:transport.play"), t("player:transport.pause")).getBoundingClientRect()
   const readout = row.querySelector("[data-readout]")?.getBoundingClientRect() ?? null
   const speed = row.querySelector("[data-speed]")
   return {
     width: row.clientWidth,
     tier: Number(row.dataset.tier),
-    expected: tierFor(row.clientWidth),
+    expected: tierFor(row.clientWidth, labelExtra()),
     overlaps,
     outside,
     playOff: (play.left + play.right) / 2 - (box.left + box.right) / 2,
     readout: readout && { left: readout.left, right: readout.right },
     speed: speed ? getComputedStyle(speed).visibility !== "hidden" : null,
     goto: !!row.querySelector("input"),
-    marks: !!row.querySelector("button[aria-label^='Go to the in point']"),
+    marks: !!called(t("player:transport.goToIn")),
   }
 })()`
 
@@ -190,7 +194,7 @@ const PLAYER = `(async () => {
   return false
 })()`
 
-// The row widths to check: every tier edge, and the common windows.
+// The row widths to check: every tier edge (English's; `shift` moves them for a language), and the common windows.
 const EDGES = [807, 808, 959, 960, 1291, 1292]
 const WINDOWS = [
   [1920, 1080],
@@ -228,7 +232,7 @@ const server = await createServer({
   define: { "import.meta.env.VITE_FIXTURES_URL": JSON.stringify(`/@fs/${fixtures.split("\\").join("/")}/`) },
 })
 await server.listen()
-const base = `http://localhost:${vitePort}/`
+const base = `http://localhost:${vitePort}/${language ? `?lang=${language}` : ""}`
 
 const browser = spawn(
   findBrowser(),
@@ -278,7 +282,12 @@ try {
         // How much wider the window is than the row, to aim at a row width.
         await settle(c)
         const extra = 1440 - (await c.evaluate("document.querySelector('[data-transport]').clientWidth"))
-        const sizes = [...(panel ? EDGES.map((w) => [w + extra, 900]) : []), ...WINDOWS]
+        // A language whose words on the row are longer moves every tier edge by what they add (`labelExtra`).
+        const shift = await c.evaluate(`(async () => {
+          const { labelExtra } = await import("/src/features/player/transport-tier.ts")
+          return labelExtra()
+        })()`)
+        const sizes = [...(panel ? EDGES.map((w) => [w + shift + extra, 900]) : []), ...WINDOWS]
 
         for (const [w, h] of sizes) {
           await viewport(w, h)

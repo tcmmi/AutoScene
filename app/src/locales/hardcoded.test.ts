@@ -75,7 +75,7 @@ describe("the guard", () => {
       `  const unit = n === 1 ? "episode" : "episodes"`,
       `  return (`,
       `    <p aria-label={\`\${x} options\`} className={n === 1 ? "px-1" : "px-2"}>`,
-      `      {\`\${n} faces\`} {n === 1 ? "face" : "faces"} {n} item{n !== 1 ? "s" : ""} {plural(n, "face")}`,
+      `      {\`\${n} faces\`} {n === 1 ? "face" : "faces"} {n} item{n !== 1 ? "s" : ""}`,
       `    </p>`,
       `  )`,
       `}`,
@@ -89,10 +89,7 @@ describe("the guard", () => {
       [5, "plural", "faces"],
       [5, "jsx-text", "item"],
       [5, "plural", "s"],
-      [5, "helper", "plural("],
     ])
-    // cast.ts is where the deprecated helpers live until #17 deletes them.
-    expect(compare(hitsOf("features/cast/cast.ts", `export const f = (n: number) => plural(n, "face")`), {}).added).toEqual([])
   })
 
   it("refuses words in the options of a toast and in the values of t()", () => {
@@ -118,12 +115,13 @@ describe("the guard", () => {
   })
 
   it("refuses locale-bound formatting outside lib/i18n.ts", () => {
-    const code = `export const a = (n: number) => [n.toLocaleString("en-GB"), new Intl.NumberFormat("en-GB").format(n)]`
+    const code = `export const a = (n: number) => [n.toLocaleString("en-GB"), new Intl.NumberFormat("en-GB").format(n), n.toFixed(3)]`
     expect(compare(hitsOf("lib/x.ts", code), {}).added.map((h) => h.text)).toEqual([
       "toLocaleString(",
       "en-GB",
       "Intl.NumberFormat(",
       "en-GB",
+      "toFixed(",
     ])
     expect(compare(hitsOf("lib/i18n.ts", code), {}).added).toEqual([])
   })

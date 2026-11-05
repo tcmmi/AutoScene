@@ -20,6 +20,10 @@ export default {
     back: "Scroll back",
     on: "Scroll on",
   },
+  /** The region the toasts appear in, as a screen reader names it. The key that moves focus into it ("alt+T") is added after it. */
+  toaster: {
+    label: "Notifications",
+  },
   /** The bar at the top of a view. */
   topbar: {
     /** Button and tooltip that bring the left-hand rail back while it is hidden. */

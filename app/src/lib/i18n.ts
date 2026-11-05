@@ -14,8 +14,10 @@ import { en, loadLanguage, NAMESPACES } from "@/locales"
 /** What i18n can load. Settings offers `OFFERED`; the pseudo-locale is for development only. */
 export const LANGUAGES = ["en", "ro"] as const
 export type Lang = (typeof LANGUAGES)[number]
-/** What Settings offers. Romanian joins once its catalog is complete (#17); i18n itself resolves every language it has. */
-export const OFFERED: readonly Lang[] = ["en"]
+/** What Settings offers, with `SPOKEN` (`app/src-tauri/src/locale.rs`); i18n itself resolves every language it has. */
+export const OFFERED: readonly Lang[] = ["en", "ro"]
+/** Each language by its own name, in every language: a person finds theirs without reading the one on screen. */
+export const LANGUAGE_NAMES: Record<Lang, string> = { en: "English", ro: "Română" }
 /** Accented, 35 % longer English in brackets: whatever shows plain is still hardcoded (dev and the mock, `?lang=pseudo`). */
 export const PSEUDO = "en-XA"
 

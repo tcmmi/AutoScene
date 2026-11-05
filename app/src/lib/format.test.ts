@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatScreenTime, plural } from "@/features/cast/cast"
+import { fmt } from "@/lib/i18n"
 import { inLanguage } from "@/test/i18n"
 import {
   formatBytes,
@@ -98,14 +98,14 @@ describe("English as it always read", () => {
     expect(formatDuration(3725.4)).toBe("1:02:05")
     expect(formatDuration(65)).toBe("1:05")
     expect(formatDuration(-1)).toBe("–")
-    expect(formatScreenTime(0)).toBe("0 s")
-    expect(formatScreenTime(42.4)).toBe("42 s")
-    expect(formatScreenTime(59.6)).toBe("60 s")
-    expect(formatScreenTime(720)).toBe("12 min")
-    expect(formatScreenTime(3900)).toBe("1 h 05 min")
-    expect(plural(1, "face")).toBe("1 face")
-    expect(plural(14_200, "face")).toBe("14,200 faces")
-    expect(plural(2, "person", "people")).toBe("2 people")
+    expect(fmt.screenTime(0)).toBe("0 s")
+    expect(fmt.screenTime(42.4)).toBe("42 s")
+    expect(fmt.screenTime(59.6)).toBe("60 s")
+    expect(fmt.screenTime(61)).toBe("1 min")
+    expect(fmt.screenTime(720)).toBe("12 min")
+    expect(fmt.screenTime(59 * 60)).toBe("59 min")
+    expect(fmt.screenTime(3725)).toBe("1 h 02 min")
+    expect(fmt.screenTime(3900)).toBe("1 h 05 min")
   })
 
   it("keeps the time left and percentages", () => {

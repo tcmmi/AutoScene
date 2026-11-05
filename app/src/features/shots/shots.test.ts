@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { inLanguage } from "@/test/i18n"
 import { cellAt, formatShotLength, restingCell, spriteStyle } from "./shots"
 
 describe("shot sprites", () => {
@@ -28,6 +29,12 @@ describe("formatShotLength", () => {
     expect(formatShotLength(12.4)).toBe("12 s")
     expect(formatShotLength(65)).toBe("1:05")
     expect(formatShotLength(Number.NaN)).toBe("")
+  })
+
+  it("writes the decimal mark of the language", async () => {
+    await inLanguage("ro")
+    expect(formatShotLength(1 / 24)).toBe("<0,1 s")
+    expect(formatShotLength(2.46)).toBe("2,5 s")
   })
 })
 

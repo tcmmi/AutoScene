@@ -253,7 +253,7 @@ describe("a shot's card", () => {
     await act(() => inLanguage("ro", ro))
     card(clip({}), episode, speaks)
     // The plugin's own reason ("No speech") and the episode's name stay as they came.
-    expect(shotName()).toBe("Cadru la S01E01 · 00:00:00:00, 2.0 s, scos: No speech")
+    expect(shotName()).toBe("Cadru la S01E01 · 00:00:00:00, 2,0 s, scos: No speech")
     cleanup()
     card(clip({ filter: null }))
     expect(shotName()).toBe("Cadru, scos: Filtru de plugin")

@@ -7,13 +7,17 @@ type Bundles = Record<string, Record<string, unknown>>
 export const plain = (text: string): Msg => ({ key: "", text })
 
 /**
- * Switches the UI to `lng` with fixture words (`{ common: { action: { cancel: "Anulează" } } }`),
- * so a test can check a translated screen before the real catalog exists.
+ * Switches the UI to `lng`: its real catalog, or with fixture words
+ * (`{ common: { action: { cancel: "Anulează" } } }`) those alone, so a test of how a word
+ * reaches the screen holds whatever the catalog says and what the fixture lacks is English.
  * `setup.ts` puts English back after every test.
  */
-export async function inLanguage(lng: Lang | typeof PSEUDO, bundles: Bundles = {}): Promise<void> {
-  for (const [ns, words] of Object.entries(bundles)) i18n.addResourceBundle(lng, ns, words, true, true)
+export async function inLanguage(lng: Lang | typeof PSEUDO, bundles?: Bundles): Promise<void> {
   await setLanguage(lng)
+  if (!bundles) return
+  for (const ns of Object.keys(i18n.store.data[lng] ?? {})) i18n.removeResourceBundle(lng, ns)
+  for (const [ns, words] of Object.entries(bundles)) i18n.addResourceBundle(lng, ns, words, true, true)
+  await i18n.changeLanguage(lng)
 }
 
 /** Back to English, without the fixture words a test added. */

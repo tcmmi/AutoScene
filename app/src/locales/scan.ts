@@ -6,8 +6,7 @@
 // - `guarded` hits are what the test refuses: JSX text, text in JSX
 //   attributes, toasts, the UI-ish props of objects (`label`, `title`, …), OS
 //   dialog filter names, values handed to t(), the two sides of a `n === 1 ?`
-//   plural, calls of the deprecated `plural(`/`formatScreenTime(`, and
-//   locale-bound formatting (`"en-GB"`, `toLocaleString(`, `Intl.*Format(`)
+//   plural, and locale-bound formatting (`"en-GB"`, `toLocaleString(`, `toFixed(`, `Intl.*Format(`)
 //   outside lib/i18n.ts;
 // - every hit is the inventory `npm run i18n -- count` prints; `npm run i18n --
 //   unguarded <group>` lists the ones the guard lets through, for a group to
@@ -261,9 +260,7 @@ function classify(stack: Node[], self: Node): Ctx | null {
   return found(unguarded("other"))
 }
 
-const LOCALE_CALL = /^(toLocale(Date|Time)?String|Intl\.\w+Format)$/
-// cast.ts's English-only helpers, deprecated until #17 deletes them (docs/DESIGN.md, Copy).
-const DEPRECATED_CALL = /^(plural|formatScreenTime)$/
+const LOCALE_CALL = /^(toLocale(Date|Time)?String|toFixed|Intl\.\w+Format)$/
 
 /** Every hit in one file's source; `guarded` marks those the test refuses unless ignored or in a baseline. */
 export function scan(file: File, code: string): Hit[] {
@@ -285,7 +282,6 @@ export function scan(file: File, code: string): Hit[] {
   const ignores = comments.filter((c) => /^\s*i18n-ignore:\s*\S/.test(c.value)).map((c) => ({ line: lineOf(c.end), end: c.end }))
   const ignored = (line: number, at: number) => ignores.some((c) => c.line === line - 1 || (c.line === line && c.end <= at))
   const localeFree = file === "lib/i18n.ts"
-  const helperHome = file === "features/cast/cast.ts"
 
   const hits: Hit[] = []
   const add = (text: string, at: number, ctx: string, guarded: boolean) => {
@@ -323,10 +319,6 @@ export function scan(file: File, code: string): Hit[] {
       const name = calleeName(node.callee)
       const last = name.startsWith("Intl.") ? name : (name.split(".").pop() ?? "")
       if (LOCALE_CALL.test(last)) add(`${last}(`, node.start, "locale", true)
-    }
-    if (node.type === "CallExpression" && !helperHome && isNode(node.callee) && node.callee.type === "Identifier") {
-      const name = node.callee.name as string
-      if (DEPRECATED_CALL.test(name)) add(`${name}(`, node.start, "helper", true)
     }
     stack.push(node)
     for (const [k, v] of Object.entries(node)) if (k !== "type" && k !== "start" && k !== "end") visit(v)

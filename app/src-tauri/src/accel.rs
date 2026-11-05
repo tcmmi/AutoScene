@@ -11,9 +11,11 @@
 //! - **Each release has its own folder.** When an update of the app pins a
 //!   new release, the old folder keeps working, by its own stamp, while the
 //!   new one downloads in the background; it goes once the new one is
-//!   verified. That download fails or stops quietly, as the old pack still
-//!   works, and is tried again at the next start, unless the person stopped
-//!   it. A new licence asks the person again instead.
+//!   verified. It comes only while this computer's analysis runs on a card
+//!   the pack serves: else nothing would load what it fetched. That download
+//!   fails or stops quietly, as the old pack still works, and is tried again
+//!   at the next start, unless the person stopped it. A new licence asks the
+//!   person again instead.
 //! - **Removing waits for the engine.** Windows can't delete a loaded
 //!   library. A pack marked [`REMOVE`] is never used again, also after a
 //!   restart, and its files go once no engine holds them.
@@ -31,6 +33,7 @@ use as_engine::accel::{self, AccelState, PinnedFile, Pins};
 use as_engine::hardware::Hardware;
 use as_engine::{Engine, PACK_FAILURES, cache, pack_failures};
 use as_models::{ModelError, ModelResult, ModelStore, Packed, Pinned};
+use as_project::computer::Choice;
 use parking_lot::Mutex;
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
@@ -370,6 +373,9 @@ trait Host {
     /// `AppSettings::nvidia_acceleration`.
     fn switched_on(&self) -> bool;
     fn switch_on(&self);
+    /// This computer's analysis runs on a card the pack serves, as an engine
+    /// finds it now.
+    fn offered(&self) -> bool;
     /// The row may read otherwise.
     fn changed(&self);
     fn progress(&self, done: u64, total: u64);
@@ -403,6 +409,17 @@ impl Host for AppHandle {
     fn switch_on(&self) {
         if let Err(e) = self.state::<AppState>().library.set_nvidia_acceleration(true) {
             log::warn!("switching NVIDIA acceleration on: {}", e.detail());
+        }
+    }
+
+    fn offered(&self) -> bool {
+        let state = self.state::<AppState>();
+        match state.engine.probe(&CancelToken::new()) {
+            Ok(found) => offered(&found.chosen(&Choice::from_setting(&state.library.gpu()))),
+            Err(e) => {
+                log::warn!("looking for graphics cards: {}", e.detail());
+                false
+            }
         }
     }
 
@@ -444,8 +461,7 @@ impl Accel {
     /// `on`, and what the last `engine` made of the pack.
     pub fn info(&self, chosen: &Hardware, on: bool, engine: &Engine) -> AccelInfo {
         let state = engine.accel();
-        let offered = accel::offered(std::env::consts::OS, std::env::consts::ARCH, chosen.gpu());
-        let row = self.row(offered, state.as_ref());
+        let row = self.row(offered(chosen), state.as_ref());
         AccelInfo {
             active: on && row == AccelRow::Ready && state == Some(AccelState::Active),
             row,
@@ -625,11 +641,18 @@ impl Accel {
     }
 
     /// At the start: clear what a removal or an update left. Whether the
-    /// release this build pins is to come, an older one being here and on.
+    /// release this build pins is to come, an older one being here and on,
+    /// for a card that uses it. Asked last: finding the card starts an
+    /// engine, which only a start with an update due should pay for.
     fn upkeep(&self, host: &impl Host) -> bool {
         self.packs.tidy();
-        host.switched_on() && self.packs.update_due(&self.pins)
+        host.switched_on() && self.packs.update_due(&self.pins) && host.offered()
     }
+}
+
+/// Whether analysis on `chosen` is offered the pack, on this computer.
+fn offered(chosen: &Hardware) -> bool {
+    accel::offered(std::env::consts::OS, std::env::consts::ARCH, chosen.gpu())
 }
 
 /// Download the pack, unless a download or a removal runs. `asked`: the
@@ -826,6 +849,8 @@ mod tests {
     struct Fake {
         calls: Mutex<Vec<String>>,
         on: AtomicBool,
+        /// Analysis runs on the processor, or on a card the pack doesn't serve.
+        elsewhere: AtomicBool,
         /// Cancelled at the first progress the row hears.
         stop: Option<CancelToken>,
     }
@@ -869,6 +894,10 @@ mod tests {
         fn switch_on(&self) {
             self.on.store(true, Ordering::Relaxed);
             self.note("switch on");
+        }
+
+        fn offered(&self) -> bool {
+            !self.elsewhere.load(Ordering::Relaxed)
         }
 
         fn changed(&self) {
@@ -1263,6 +1292,9 @@ mod tests {
         assert_eq!(accel.pack(true), Some(old));
         assert!(accel.upkeep(&host));
         assert!(!accel.upkeep(&Fake::default()), "not when it is switched off");
+        // Processor only, or the other card: nothing would load what it fetched.
+        let elsewhere = Fake { elsewhere: AtomicBool::new(true), ..Fake::on() };
+        assert!(!accel.upkeep(&elsewhere), "not for a card that doesn't use it");
     }
 
     #[test]

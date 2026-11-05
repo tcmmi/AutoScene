@@ -382,6 +382,8 @@ describe("FastScanNotice", { timeout: 30_000 }, () => {
       expect(dialog.textContent).toContain(device)
       expect(dialog.textContent).not.toContain("CC BY")
       expect(dialog.querySelector("img")?.getAttribute("src")).toBe("/fast-scan-notice.webp")
+      expect(dialog.querySelectorAll("[data-look]")).toHaveLength(3)
+      for (const name of ["Thomas", "Newt", "Gally"]) expect(dialog.textContent).toContain(name)
       expect(dialog.textContent).toContain("3D animation keeps the full scan. You can change the default any time in Settings.")
       cleanup()
       queryClient.clear()

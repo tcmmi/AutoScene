@@ -97,6 +97,8 @@
   --animate-indeterminate: indeterminate 1.4s var(--ease-in-out) infinite;
   --animate-pop-in: pop-in var(--dur-med) var(--ease-out);
   --animate-sheet-in: sheet-in var(--dur-slow) var(--ease-out);
+  --animate-scan-wipe: scan-wipe 900ms linear 200ms backwards;
+  --animate-scan-sweep: scan-sweep 900ms linear 200ms backwards;
 }
 
 @keyframes pop-in {
@@ -148,6 +150,30 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes scan-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes scan-sweep {
+  from {
+    left: 0;
+    opacity: 0;
+  }
+  8%,
+  92% {
+    opacity: 1;
+  }
+  to {
+    left: 100%;
+    opacity: 0;
   }
 }
 

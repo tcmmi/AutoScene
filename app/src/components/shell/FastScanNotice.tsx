@@ -226,35 +226,53 @@ export function FastScanNotice() {
 }
 
 /**
- * Where the faces are in `public/fast-scan-notice.webp`, in the dialog's own
- * 540×180: live action and anime Fast Scan is sure of, and a painted 3D face
- * it is not, which is the cost it pays and why 3D animation keeps the full scan.
+ * Who is in `public/fast-scan-notice.webp`, in the dialog's own 540×180: the
+ * boxes YuNet, Fast Scan's own detector, found in this picture, with a little
+ * room around them. `public/fast-scan-notice-mesh.svg` follows the same faces.
  */
 const FACES = [
-  { x: 41, y: 12, w: 82, h: 100, sure: true },
-  { x: 223, y: 9, w: 86, h: 98, sure: true },
-  { x: 404, y: 10, w: 92, h: 94, sure: false },
+  { name: "Thomas", x: 68, y: 27, w: 57, h: 71 },
+  { name: "Newt", x: 241, y: 36, w: 58, h: 70 },
+  { name: "Gally", x: 416, y: 19, w: 56, h: 79 },
 ]
 /** A shot's frames along the picture's foot, and the few Fast Scan looks at (one a second): each sits under a face. */
-const FRAMES = 64
-const LOOKS = new Set([7, 31, 55])
+const FRAMES = 65
+const LOOKS = new Set([9, 32, 55])
+/** The ruler's inset, in the picture's width. */
+const RULER_INSET = 0.052
+/** When the sweep passes a frame, as `--animate-scan-sweep` runs it: 200 ms in, 900 ms across. */
+const sweepReaches = (frame: number) =>
+  Math.round(200 + 900 * (RULER_INSET + ((1 - 2 * RULER_INSET) * frame) / (FRAMES - 1)))
 
 /**
- * The picture: a still with the faces Fast Scan finds (one only half sure),
- * fading into the glass, and along its foot a shot's frames as a ruler, the
- * ones it looks at in gold.
+ * The picture: a still fading into the glass and, along its foot, a shot's
+ * frames as a ruler, the ones Fast Scan looks at in gold. A line runs along the
+ * shot once; behind it the faces it found come up, each over its gold frame.
  */
 function Art() {
   return (
     <div aria-hidden className="relative aspect-[3/1] w-full shrink-0 overflow-hidden">
       <div className="absolute inset-0 [mask-image:linear-gradient(180deg,#000_45%,transparent_100%)]">
         <img src="/fast-scan-notice.webp" alt="" className="absolute inset-0 size-full object-cover" />
-        <svg viewBox="0 0 540 180" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 size-full">
+      </div>
+      <div className="absolute inset-0 motion-safe:animate-scan-wipe">
+        <img src="/fast-scan-notice-mesh.svg" alt="" className="absolute inset-0 size-full" />
+        <svg viewBox="0 0 540 180" className="absolute inset-0 size-full">
           {FACES.map((f) => (
-            <Corners key={f.x} {...f} />
+            <Corners key={f.name} {...f} />
           ))}
         </svg>
+        {FACES.map((f) => (
+          <span
+            key={f.name}
+            className="absolute -translate-x-1/2 rounded-[5px] bg-black/60 px-1.5 text-2xs font-medium text-white/90"
+            style={{ left: `${((f.x + f.w / 2) / 540) * 100}%`, top: `${((f.y + f.h + 4) / 180) * 100}%` }}
+          >
+            {f.name}
+          </span>
+        ))}
       </div>
+      <span className="absolute inset-y-0 w-px bg-gradient-to-b from-transparent via-accent to-accent opacity-0 shadow-[0_0_10px_rgb(224_180_92/0.7)] motion-safe:animate-scan-sweep" />
       {/* In percent, so a narrow window keeps each gold frame under its face. */}
       <div className="absolute inset-x-[5.2%] bottom-3 flex h-3 items-end justify-between">
         {Array.from({ length: FRAMES }, (_, i) =>
@@ -263,7 +281,7 @@ function Art() {
               key={i}
               data-look
               className="h-3 w-[2px] rounded-full bg-accent shadow-[0_0_8px_rgb(224_180_92/0.7)] motion-safe:animate-[fade-in_400ms_var(--ease-out)_backwards]"
-              style={{ animationDelay: `${200 + i * 9}ms` }}
+              style={{ animationDelay: `${sweepReaches(i)}ms` }}
             />
           ) : (
             <span key={i} className="h-1.5 w-px bg-white/25" />
@@ -274,27 +292,24 @@ function Art() {
   )
 }
 
-/** The app's way of marking a found face: gold corners, or thin dashed white ones where it is less sure. */
-function Corners({ x, y, w, h, sure }: { x: number; y: number; w: number; h: number; sure: boolean }) {
-  const l = 11
+/** The app's way of marking a found face: gold corners. */
+function Corners({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+  const l = 9
   const d = [
     `M${x} ${y + l}V${y}H${x + l}`,
     `M${x + w - l} ${y}H${x + w}V${y + l}`,
     `M${x + w} ${y + h - l}V${y + h}H${x + w - l}`,
     `M${x + l} ${y + h}H${x}V${y + h - l}`,
   ].join("")
-  return sure ? (
+  return (
     <path
       d={d}
       fill="none"
       stroke="var(--accent)"
-      strokeWidth={2}
+      strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
       style={{ filter: "drop-shadow(0 0 3px rgb(224 180 92 / 0.6))" }}
     />
-  ) : (
-    // Found, but less surely: the cost Fast Scan pays, shown and not only said.
-    <path d={d} fill="none" stroke="rgb(255 255 255 / 0.85)" strokeWidth={1.5} strokeDasharray="3 3.5" strokeLinecap="round" />
   )
 }

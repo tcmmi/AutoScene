@@ -2526,7 +2526,7 @@ mod tests {
                     let _running = host.hold(ctx, &key.plugin)?;
                     let p = startable(&host.store, &stand.library, &key, Trigger::Page, gpu)?;
                     let action = ActionContext { kind: key.kind, id: key.action.clone(), trigger: Trigger::Page };
-                    let failed = |e: String| JobError::Failed(e);
+                    let failed = |e: String| JobError::Failed(Msg::plain(e));
                     let spec = host.store.run_spec(&p, action, Path::new("ffmpeg"), Path::new("ffprobe"), "9.0");
                     let mut message = spec.map_err(|e| failed(e.to_string()))?.message;
                     add_context(&mut message, &*stand, &key, input).map_err(|e| failed(e.to_string()))?;
@@ -2596,7 +2596,10 @@ mod tests {
         // as one from the export's menu is.
         let ran = ask(json!({"action": "post", "exportId": mine.to_string(), "input": input}));
         let job = activity.job(&ran["jobId"]);
-        assert_eq!((job.kind, job.title.as_str(), job.subtitle.as_deref()), (JobKind::Plugin, "Post", Some("Poster")));
+        assert_eq!(
+            (job.kind, job.title.text.as_str(), job.subtitle.as_deref()),
+            (JobKind::Plugin, "Post", Some("Poster"))
+        );
         assert_eq!((job.project_id, job.export_id, job.media_id), (Some(place.project), Some(mine), None));
         // Its program is told the page started it, and gets what the page handed it.
         let line = lines.recv_timeout(STARTED).unwrap();
@@ -2617,7 +2620,10 @@ mod tests {
         assert_eq!((line.action.kind, line.action.trigger, line.input), (ActionKind::Command, Trigger::Page, None));
         assert_eq!((line.project.unwrap().id, line.export.is_none()), (place.project.to_string(), true));
         let job = activity.job(&ran["jobId"]);
-        assert_eq!((job.title.as_str(), job.project_id, job.export_id), ("Count clips", Some(place.project), None));
+        assert_eq!(
+            (job.title.text.as_str(), job.project_id, job.export_id),
+            ("Count clips", Some(place.project), None)
+        );
         activity.stop();
         drop((activity, place));
         std::fs::remove_dir_all(&tmp).unwrap();

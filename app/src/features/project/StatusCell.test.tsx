@@ -7,6 +7,7 @@ import { commands } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { useActivity } from "@/state/activity"
 import { StatusCell } from "./StatusCell"
+import { inLanguage, plain } from "@/test/i18n"
 
 vi.mock("@/lib/ipc", () => ({
   commands: {
@@ -36,14 +37,14 @@ afterEach(() => {
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j",
   kind: "analyze",
-  title: "Analysing E01.mkv",
+  title: plain("Analysing E01.mkv"),
   subtitle: null,
   projectId: "p",
   mediaId: "m",
   exportId: null,
   state: "running",
   progress: 0.4,
-  stage: "Finding shots",
+  stage: plain("Finding shots"),
   etaMs: null,
   error: null,
   createdAt: 1,
@@ -67,6 +68,20 @@ function episode(bodies: StageState): MediaItem {
 }
 
 describe("StatusCell", () => {
+  it("says the stage of the job at work in the language", async () => {
+    await inLanguage("ro", { backend: { job: { stage: { findingShots: "Se caută cadrele", readingFile: "Se citește fișierul" } } } })
+    const shots = { key: "job.stage.findingShots", text: "Finding shots" }
+    useActivity.setState({ jobs: { j: job({ id: "j", state: "running", stage: shots }) }, order: ["j"] })
+    const { container, unmount } = render(<StatusCell media={{ ...episode("pending"), shots: "running" }} projectId="p" />, { wrapper })
+    expect(await screen.findByText(/Se caută cadrele/)).toBeTruthy()
+    expect(container.textContent).not.toContain("[object Object]")
+    unmount()
+    const reading = { key: "job.stage.readingFile", text: "Reading file" }
+    useActivity.setState({ jobs: { j: job({ id: "j", kind: "ingest", state: "running", stage: reading }) }, order: ["j"] })
+    render(<StatusCell media={{ ...episode("pending"), status: "indexing" }} projectId="p" />, { wrapper })
+    expect(await screen.findByText(/Se citește fișierul/)).toBeTruthy()
+  })
+
   it("offers to find the people again when their pass failed", async () => {
     render(<StatusCell media={episode("failed")} projectId="p" />, { wrapper })
     expect(await screen.findByText(/People failed/)).toBeTruthy()

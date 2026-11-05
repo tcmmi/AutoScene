@@ -9,6 +9,7 @@ import { contextKit } from "@/components/ui/menu-actions"
 import { ProgressRing } from "@/components/ui/progress"
 import { Tooltip } from "@/components/ui/tooltip"
 import { formatDuration, formatEta, formatPercent } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { cancelJob, cancelLabel } from "@/lib/jobs"
 import { releaseTitle } from "@/lib/media"
 import { cn } from "@/lib/utils"
@@ -78,7 +79,7 @@ export function EpisodeCard({
               <div className="truncate text-md font-medium text-fg-1">{releaseTitle(m.fileName)}</div>
               <div className="mt-0.5 truncate text-sm text-fg-3">
                 {working
-                  ? (job.stage ?? t("common:state.working"))
+                  ? (job.stage ? say(job.stage) : t("common:state.working"))
                   : m.shotCount != null
                     ? t("episode.shots", { count: m.shotCount })
                     : t("episode.notAnalysed")}
@@ -94,7 +95,7 @@ export function EpisodeCard({
           <div className="pointer-events-none absolute inset-x-0 top-0 flex aspect-video items-center justify-center p-3 transition-transform duration-[var(--dur-med)] ease-out group-hover:-translate-y-1">
             <div className="relative">
               <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/60 px-3.5 py-1.5 shadow-2xl backdrop-blur-md">
-                <ProgressRing value={job.progress} aria-label={job.stage ?? t("episode.working")} />
+                <ProgressRing value={job.progress} aria-label={job.stage ? say(job.stage) : t("episode.working")} />
                 <span className="timecode text-xs font-semibold tracking-wider text-fg-1">
                   {job.progress != null ? formatPercent(job.progress) : t("common:state.working")}
                 </span>

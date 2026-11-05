@@ -786,7 +786,7 @@ fn a_merged_export_is_one_file_with_every_clip() {
     // never goes back.
     let told = std::cell::RefCell::new(Vec::new());
     let separate = project
-        .run_export(&tools, apart.id, &cancel, &|stage, p| told.borrow_mut().push((stage.to_string(), p)), &|| {})
+        .run_export(&tools, apart.id, &cancel, &|stage, p| told.borrow_mut().push((stage.clone(), p)), &|| {})
         .unwrap();
     assert_eq!(
         separate.items.iter().map(|i| i.status).collect::<Vec<_>>(),
@@ -794,7 +794,7 @@ fn a_merged_export_is_one_file_with_every_clip() {
     );
     let told = told.into_inner();
     let skipped = told.iter().position(|(_, p)| p.is_none()).expect("a pause in the pace");
-    assert_eq!(told[skipped].0, "Clip 2 of 3");
+    assert_eq!((told[skipped].0.key.as_str(), told[skipped].0.text.as_str()), ("job.stage.clip", "Clip 2 of 3"));
     let fractions: Vec<f64> = told.iter().filter_map(|(_, p)| *p).collect();
     assert!(fractions.windows(2).all(|w| w[0] <= w[1]), "{fractions:?}");
 
@@ -807,7 +807,7 @@ fn a_merged_export_is_one_file_with_every_clip() {
         joining.id,
         &stop,
         &|stage, _| {
-            if stage.starts_with("Joining") {
+            if stage.key == "job.stage.joining" {
                 stop.cancel()
             }
         },

@@ -534,7 +534,7 @@ mod tests {
             let spec = as_jobs::JobSpec {
                 kind,
                 class,
-                title: "Slow".into(),
+                title: as_core::Msg::plain("Slow"),
                 subtitle: None,
                 project_id: None,
                 media_id: None,

@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { JobId, JobInfo, JobProgress } from "@/bindings"
+import type { JobId, JobInfo, JobProgress, Msg } from "@/bindings"
 import { t } from "@/lib/i18n"
 
 /**
@@ -55,8 +55,19 @@ const holds = new Map<
 >()
 /** The last time left the backend told, by job, and when it told it. */
 const told = new Map<JobId, { eta: number; at: number }>()
-/** A stage with its numbers left out ("Clip 2 of 3" reads as "Clip 3 of 3"), as the backend's own phase test. */
-const words = (stage: string | null) => (stage ?? "").replace(/\d/g, "")
+/**
+ * A stage with its numbers left out ("Clip 2 of 3" reads as "Clip 3 of 3"), as the backend's own
+ * phase test: by its key and the values that aren't numbers, or a plugin's stage by its words.
+ */
+function words(stage: Msg | null): string {
+  if (!stage) return ""
+  if (!stage.key) return stage.text.replace(/\d/g, "")
+  const args = Object.entries(stage.args ?? {}).map(([name, v]) => {
+    if (typeof v === "number") return [name]
+    return [name, typeof v === "string" ? v : words(v)]
+  })
+  return JSON.stringify([stage.key, args])
+}
 
 function stopHold(id: JobId) {
   clearTimeout(holds.get(id)?.timer)

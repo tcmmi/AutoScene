@@ -88,7 +88,7 @@ pub use protocol::{
     RunMessage, ServeMessage, ServiceMessage, ShotContext, ShotsContext, ToolPaths, Trigger,
 };
 pub use resources::Resources;
-pub use runtime::{RunSpec, VerdictSink};
+pub use runtime::{Report, RunSpec, VerdictSink};
 pub use secrets::{MemorySecrets, OsKeyring, SecretStore};
 pub use service::{OnEvent, ProcessService, Service, ServiceEvent, ServiceSpec};
 pub use store::{Approval, Extra, Installed, Record, Source, Store, Ticket, Widens};

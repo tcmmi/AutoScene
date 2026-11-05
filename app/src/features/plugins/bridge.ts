@@ -318,7 +318,7 @@ export function pageMessage(e: PageEvent): HostToFrame {
     case "service":
       return { t: "event", name: e.name, data: e.data }
     case "serviceState":
-      return e.message == null ? { t: "service", state: e.state } : { t: "service", state: e.state, message: e.message }
+      return e.message == null ? { t: "service", state: e.state } : { t: "service", state: e.state, message: say(e.message) }
     case "settings":
       return { t: "settings" }
     case "closed":

@@ -9,7 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { queryClient } from "@/lib/queries"
 import { useActivity } from "@/state/activity"
 import { useRelink } from "@/state/relink"
-import { inLanguage } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 import { AnalysisStatus } from "./AnalysisStatus"
 import { CharacterCrumb, MediaCrumb, PackCrumb } from "./crumbs"
 import { ExportsPage } from "./ExportsPage"
@@ -197,7 +197,7 @@ describe("an episode's state and the project's analysis in another language", ()
       analysis: { waiting: "Așteaptă analiza", moreQueued_one: "{{count}} episod în așteptare", moreQueued_few: "{{count}} episoade în așteptare", moreQueued_other: "{{count}} de episoade în așteptare" },
     })
     const counts = async (n: number) => {
-      useActivity.getState().replaceAll(Array.from({ length: n + 1 }, (_, i) => job({ id: `a${i}`, mediaId: `m${i}`, state: i === 0 ? "running" : "queued", stage: "Găsește cadre" })))
+      useActivity.getState().replaceAll(Array.from({ length: n + 1 }, (_, i) => job({ id: `a${i}`, mediaId: `m${i}`, state: i === 0 ? "running" : "queued", stage: plain("Găsește cadre") })))
       const { unmount } = render(
         <QueryClientProvider client={queryClient}>
           <AnalysisStatus pid="p" />

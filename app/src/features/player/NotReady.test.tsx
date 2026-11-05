@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { FrameCount, JobInfo, MediaItem } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
-import { inLanguage } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 import { NotReady } from "./NotReady"
 
 vi.mock("@/lib/ipc", async (original) => ({
@@ -18,14 +18,14 @@ vi.mock("@/lib/ipc", async (original) => ({
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j",
   kind: "ingest",
-  title: "Indexing E01.mkv",
+  title: plain("Indexing E01.mkv"),
   subtitle: null,
   projectId: "p",
   mediaId: "m",
   exportId: null,
   state: "running",
   progress: 0.4,
-  stage: "Indexing frames",
+  stage: plain("Indexing frames"),
   etaMs: null,
   error: null,
   createdAt: 1,
@@ -76,7 +76,7 @@ describe("the player while an episode isn't ready", () => {
         id: "ingest",
         rev: 2,
         progress: 0.17,
-        stage: "Indexing frames",
+        stage: plain("Indexing frames"),
         etaMs: 150_000,
         frames: frames({ done: 15_000, perSec: 600 }),
       }),
@@ -89,7 +89,7 @@ describe("the player while an episode isn't ready", () => {
         id: "ingest",
         rev: 3,
         progress: 0.95,
-        stage: "Indexing frames",
+        stage: plain("Indexing frames"),
         etaMs: 1000,
         frames: frames({ done: 90_100, perSec: 600 }),
       }),
@@ -138,8 +138,8 @@ describe("the player while an episode isn't ready", () => {
 
   it("shows the preview's progress, not an analysis running beside it", () => {
     useActivity.getState().replaceAll([
-      job({ id: "preview", kind: "proxy", stage: "Preparing preview", progress: 0.2, createdAt: 1 }),
-      job({ id: "analysis", kind: "analyze", stage: "Finding shots", progress: 0.7, createdAt: 2, rev: 2 }),
+      job({ id: "preview", kind: "proxy", stage: plain("Preparing preview"), progress: 0.2, createdAt: 1 }),
+      job({ id: "analysis", kind: "analyze", stage: plain("Finding shots"), progress: 0.7, createdAt: 2, rev: 2 }),
     ])
     show(episode({ status: "ready", proxy: "pending" }), { code: "not_ready", message: "The preview isn't ready yet." })
     expect(screen.getByText("Preparing preview", { selector: "span" })).toBeTruthy()

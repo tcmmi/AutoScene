@@ -113,6 +113,7 @@ import type {
   CastEdit,
   UpdateStatus,
   DiscordRpcSettings,
+  Msg,
 } from "@/bindings"
 
 type Handler = (args: Record<string, unknown>) => unknown
@@ -582,9 +583,14 @@ const ONE_AT_A_TIME: JobKind[] = ["analyze"]
 /** How each waiting job starts once its turn comes, by job. */
 const waiting = new Map<string, () => void>()
 
+/** A title or stage as the backend says it: `msg!`, with the English filled in. */
+const said = (key: string, text: string, args: Msg["args"] = {}): Msg => ({ key, args, text })
+/** A plugin's words, shown as they are in every language. */
+const plain = (text: string): Msg => ({ key: "", text })
+
 function startJob(
   kind: JobKind,
-  title: string,
+  title: Msg,
   p: MockProject | null,
   ms: number,
   opts: {
@@ -592,14 +598,14 @@ function startJob(
     exportId?: string
     /** Under the title; the project's by default. */
     subtitle?: string
-    stage: string
+    stage: Msg
     /** What its work marks as it begins (a job that waits begins once its turn comes). */
     began?: () => void
     cancelled?: () => void
     /** Tells the job's stage, progress, time left and frames `elapsed` ms in, as its kind of work does. */
     tick?: (job: JobInfo, elapsed: number) => void
     /** What it says once it is done (a plugin's result). */
-    message?: string
+    message?: Msg
   },
   done: () => void,
 ): JobInfo {
@@ -693,17 +699,18 @@ function startPluginJob(
   const key = [pluginId, kind, actionId, projectId, exportId, JSON.stringify(input)].join(" ")
   if (jobs.some((j) => j.state === "running" && pluginJobs.get(j.id)?.run === key)) return null
   const p = projectId ? find(projectId) : null
+  const starting = said("plugin.stage.starting", `Starting ${run.name}`, { name: run.name })
   const job = startJob(
     "plugin",
-    run.title,
+    plain(run.title),
     p,
     2500,
     {
       exportId: exportId ?? undefined,
       subtitle: run.name,
-      stage: `Starting ${run.name}`,
-      tick: (j, elapsed) => void (j.stage = elapsed < 700 ? `Starting ${run.name}` : `${run.title}…`),
-      message: run.message,
+      stage: starting,
+      tick: (j, elapsed) => void (j.stage = elapsed < 700 ? starting : plain(`${run.title}…`)),
+      message: plain(run.message),
     },
     () => pluginJobs.delete(job.id),
   )
@@ -762,19 +769,19 @@ function startFilterCheck(p: MockProject, cid: string, key: string, spec: PackSp
     const shots = episodes[i]
     const job: JobInfo = startJob(
       "plugin",
-      `${f.title} · ${label}`,
+      plain(`${f.title} · ${label}`),
       p,
       1500,
       {
         subtitle: f.plugin,
-        stage: `Checking ${shots.length} shots`,
+        stage: said("plugin.stage.checkingShots", `Checking ${label}'s shots`, { name: label }),
         cancelled: () => over(true),
       },
       () => {
         pluginJobs.delete(job.id)
         if (f.fails) {
           giveVerdicts(p.id, cid, f, shots, Math.ceil(shots.length / 2))
-          Object.assign(job, { state: "failed", error: "There is no sound in this episode." })
+          Object.assign(job, { state: "failed", error: plain("There is no sound in this episode.") })
           over(true)
         } else {
           giveVerdicts(p.id, cid, f, shots)
@@ -859,6 +866,10 @@ function underWay(kind: JobKind, mediaId: string) {
   return jobs.some((j) => j.kind === kind && j.mediaId === mediaId && (j.state === "queued" || j.state === "running"))
 }
 
+/** A media as a job's title names it. */
+const mediaTitle = (m: MediaItem) => `${m.label ? `${m.label} · ` : ""}${m.fileName}`
+const READING_FILE = said("job.stage.readingFile", "Reading file")
+
 function ingest(p: MockProject, m: MediaItem) {
   m.status = "indexing"
   const cancelled = () => {
@@ -867,8 +878,9 @@ function ingest(p: MockProject, m: MediaItem) {
     void emit("media:changed", { projectId: p.id, mediaId: m.id })
     void emit("library:changed", { projectId: p.id })
   }
-  const title = `Indexing ${m.label ? `${m.label} · ` : ""}${m.fileName}`
-  startJob("ingest", title, p, INDEX_MS, { mediaId: m.id, stage: "Reading file", cancelled, tick: indexingTick }, () => {
+  const name = mediaTitle(m)
+  const title = said("job.indexing", `Indexing ${name}`, { name })
+  startJob("ingest", title, p, INDEX_MS, { mediaId: m.id, stage: READING_FILE, cancelled, tick: indexingTick }, () => {
     Object.assign(m, media(m.fileName, [m.season, m.episode], {}), { id: m.id, path: m.path, poster: null, posterSmall: null })
     m.shots = "pending"
     m.shotCount = null
@@ -896,14 +908,14 @@ function indexingTick(job: JobInfo, elapsed: number) {
   const [from, to] = [400, INDEX_MS * 0.95]
   job.frames = null
   if (elapsed < from || elapsed >= to) {
-    job.stage = elapsed < from ? "Reading file" : "Creating poster"
+    job.stage = elapsed < from ? READING_FILE : said("job.stage.creatingPoster", "Creating poster")
     job.etaMs = null
     return
   }
   const read = (elapsed - from) / (to - from)
   const pace = READ_FRAMES / ((to - from) / 1000)
   const perSec = elapsed - from >= 2000 ? pace * (1 + 0.02 * Math.sin(elapsed / 900)) : null
-  job.stage = "Indexing frames"
+  job.stage = said("job.stage.indexingFrames", "Indexing frames")
   job.progress = read * 0.95
   job.etaMs = perSec == null ? null : INDEX_MS - elapsed
   job.frames = { done: Math.round(READ_FRAMES * read), total: STATED_FRAMES, rate: 24000 / 1001, perSec }
@@ -916,12 +928,12 @@ function indexingTick(job: JobInfo, elapsed: number) {
  * its characters, then the grouping, which tells no value at all. A
  * characters-only run starts at its characters, the model already there.
  */
-export const ANALYSIS: { stage: string; ms: number; told: boolean }[] = [
-  { stage: "Finding shots", ms: 2000, told: true },
-  { stage: "Downloading AI model", ms: 300, told: false },
-  { stage: "Downloading AI model", ms: 700, told: true },
-  { stage: "Finding characters", ms: 2500, told: true },
-  { stage: "Grouping characters", ms: 2000, told: false },
+export const ANALYSIS: { stage: Msg; ms: number; told: boolean }[] = [
+  { stage: said("job.stage.findingShots", "Finding shots"), ms: 2000, told: true },
+  { stage: said("job.stage.downloadingModel", "Downloading AI model"), ms: 300, told: false },
+  { stage: said("job.stage.downloadingModel", "Downloading AI model"), ms: 700, told: true },
+  { stage: said("job.stage.findingCharacters", "Finding characters"), ms: 2500, told: true },
+  { stage: said("job.stage.groupingCharacters", "Grouping characters"), ms: 2000, told: false },
 ]
 
 /** The stages a run goes through: all of them, or from its characters on. */
@@ -958,7 +970,9 @@ function analyze(p: MockProject, m: MediaItem) {
     if (stage && (m[stage] === "running" || m[stage] === "pending")) m[stage] = "stopped"
     void emit("media:changed", { projectId: p.id, mediaId: m.id })
   }
-  startJob("analyze", `Analysing ${m.label ? `${m.label} · ` : ""}${m.fileName}`, p, ms, { mediaId: m.id, stage: steps[0].stage, began, cancelled, tick: analysisTick(steps) }, () => {
+  const name = mediaTitle(m)
+  const title = said("job.analysing", `Analysing ${name}`, { name })
+  startJob("analyze", title, p, ms, { mediaId: m.id, stage: steps[0].stage, began, cancelled, tick: analysisTick(steps) }, () => {
     m.shots = "ready"
     m.shotCount = SHOT_COUNT
     m.faces = "ready"
@@ -1016,8 +1030,11 @@ function startExport(p: MockProject, req: ExportRequest): ExportSummary {
   const ex: ExportSummary = { id: id(), projectId: p.id, createdAt: Date.now(), preset: pr, outDir, status: "running", items, label: req.label, merged }
   p.exports.unshift(ex)
   items.forEach((it) => (it.status = "running"))
-  const title = `${items.length === 1 ? "Exporting 1 clip" : `Exporting ${items.length} clips`}${merged ? " into one file" : ""}`
-  startJob("export", title, p, 3500, { exportId: ex.id, stage: "Rendering" }, () => {
+  const clips = `${items.length === 1 ? "Exporting 1 clip" : `Exporting ${items.length} clips`}`
+  const title = merged
+    ? said("job.exportingJoined", `${clips} into one file`, { count: items.length })
+    : said("job.exporting", clips, { count: items.length })
+  startJob("export", title, p, 3500, { exportId: ex.id, stage: said("job.stage.rendering", "Rendering") }, () => {
     for (const it of items) {
       it.status = "done"
       it.verified = true
@@ -1509,8 +1526,12 @@ const handlers: Record<string, Handler> = {
       throw { code: "invalid", message: "That file name is too long. Choose a shorter one." }
     }
     const path = `${settings.libraryRoot}\\Exports\\${p.title}\\${file}`
-    const title = `${a.title.replace(/[….\s]+$/u, "")} · ${label}`
-    const opts = { subtitle: a.name, stage: `Saving ${file}`, message: `Saved ${file}` }
+    const title = plain(`${a.title.replace(/[….\s]+$/u, "")} · ${label}`)
+    const opts = {
+      subtitle: a.name,
+      stage: said("plugin.stage.saving", `Saving ${file}`, { file }),
+      message: said("plugin.saved", `Saved ${file}`, { file }),
+    }
     const job = startJob("plugin", title, p, 2500, opts, () => pluginJobs.delete(job.id))
     pluginJobs.set(job.id, { pluginId, run: key })
     return { kind: "queued", job: job.id, path }

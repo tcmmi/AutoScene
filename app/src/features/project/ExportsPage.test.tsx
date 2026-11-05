@@ -6,7 +6,7 @@ import type { ExportItem, ExportStatus, ExportSummary, JobInfo, MediaItem, Plugi
 import { AppMenu } from "@/components/shell/AppMenu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useActivity } from "@/state/activity"
-import { inLanguage } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 import { pluginInfo } from "@/test/plugins"
 import { ExportsPage } from "./ExportsPage"
 
@@ -47,7 +47,7 @@ const exported = (status: ExportStatus, items: ExportItem[]): ExportSummary =>
   ({ id: "e1", projectId: "p", createdAt: 1, preset: { name: "ProRes 422 HQ", container: "mov" }, outDir: "C:\\Out", status, items, label: null, merged: null }) as ExportSummary
 
 const job = (state: JobInfo["state"], progress: number | null = null) =>
-  ({ id: "j1", kind: "export", title: "Exporting", projectId: "p", exportId: "e1", state, progress, rev: 1, createdAt: 1 }) as JobInfo
+  ({ id: "j1", kind: "export", title: plain("Exporting"), projectId: "p", exportId: "e1", state, progress, rev: 1, createdAt: 1 }) as JobInfo
 
 function show(ex: ExportSummary, j?: JobInfo, media: MediaItem[] = []) {
   list.exports = [ex]
@@ -104,7 +104,7 @@ describe("an export's card", () => {
 
   it("goes by its own job, never a plugin's run on that export", () => {
     const run = (state: JobInfo["state"], progress: number | null = null) =>
-      ({ ...job(state, progress), id: "j2", kind: "plugin", title: "Post to Discord" }) as JobInfo
+      ({ ...job(state, progress), id: "j2", kind: "plugin", title: plain("Post to Discord") }) as JobInfo
     show(exported("running", [item(1, "done"), item(2, "running")]), run("running", 0.7))
     expect(screen.getByText("Exporting")).toBeTruthy()
     expect(screen.queryByText("70%")).toBeNull()

@@ -16,8 +16,8 @@ const MONO = { mono: <span className="timecode" /> }
 
 function runningLabel(job: JobInfo): string {
   if (job.kind === "proxy") return t("project:status.preparingPreview")
-  if (job.kind === "analyze") return job.stage ?? t("project:status.analysing")
-  return job.stage ?? t("project:status.indexing")
+  if (job.stage) return say(job.stage)
+  return t(job.kind === "analyze" ? "project:status.analysing" : "project:status.indexing")
 }
 
 function queuedLabel(m: MediaItem, job?: JobInfo): string {

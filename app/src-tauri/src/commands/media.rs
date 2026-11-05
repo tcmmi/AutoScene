@@ -539,7 +539,7 @@ mod tests {
     use std::time::Duration;
 
     use as_api::{AnalysisStage, JobKind, StageState};
-    use as_core::MediaId;
+    use as_core::{MediaId, Msg};
     use as_jobs::{Class, JobError, JobRunner, JobSpec};
 
     use super::{analysis_does_already, under_way, under_way_does};
@@ -570,7 +570,7 @@ mod tests {
         JobSpec {
             kind,
             class,
-            title: "Work".into(),
+            title: Msg::plain("Work"),
             subtitle: None,
             project_id: None,
             media_id: Some(media),

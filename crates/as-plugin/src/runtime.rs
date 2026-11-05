@@ -165,6 +165,11 @@ struct Judging {
     sink: VerdictSink,
 }
 
+/// Told where a run is: its stage and how far it is, if known. What the
+/// plugin says goes as it is ([`as_core::Msg::plain`]); AutoScene's own
+/// words before it starts have their keys.
+pub type Report<'a> = &'a dyn Fn(&as_core::Msg, Option<f64>);
+
 /// Runs a plugin's action to its end: the message of its result line, if
 /// it gave one. `report` gets its progress: the stage (cleaned, at most
 /// [`MAX_STAGE_CHARS`]; the plugin's name if it named none) and how far it
@@ -181,7 +186,7 @@ struct Judging {
 /// A run of protocol 2 gets a scratch folder ([`crate::scratch`]), removed
 /// once its tree has ended. It returns once its calls did too, or [`CALL_GRACE`]
 /// after its plugin ended.
-pub fn run(spec: RunSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64>)) -> PluginResult<Option<String>> {
+pub fn run(spec: RunSpec, cancel: &CancelToken, report: Report) -> PluginResult<Option<String>> {
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
     }
@@ -612,7 +617,7 @@ struct Heard<'a> {
     /// The plugin's name, as a stage shows it: the stage of a progress line
     /// without one.
     name: &'a str,
-    report: &'a dyn Fn(&str, Option<f64>),
+    report: Report<'a>,
     /// The first result or error line; later ones go to the log only.
     outcome: Option<Outcome>,
     talk: Talk,
@@ -627,7 +632,7 @@ impl Heard<'_> {
             Msg::Plugin(PluginMessage::Progress { fraction, stage }) => {
                 let stage = stage.map(|s| sanitize(&s, MAX_STAGE_CHARS)).filter(|s| !s.is_empty());
                 let fraction = fraction.filter(|f| f.is_finite()).map(|f| f.clamp(0.0, 1.0));
-                (self.report)(stage.as_deref().unwrap_or(self.name), fraction);
+                (self.report)(&as_core::Msg::plain(stage.as_deref().unwrap_or(self.name)), fraction);
             }
             Msg::Plugin(PluginMessage::Log { level, message }) => self.talk.log.line(level.name(), &message),
             Msg::Plugin(PluginMessage::Result { message }) => {
@@ -1437,7 +1442,7 @@ mod tests {
         let (tx, _rx) = mpsc::sync_channel(QUEUE);
         let (to_plugin, written) = mpsc::channel();
         let (host, load) = (Arc::new(Counted::default()), Arc::new(Load::default()));
-        let report = |_: &str, _: Option<f64>| {};
+        let report = |_: &as_core::Msg, _: Option<f64>| {};
         let log = PluginLog::open(&log_path, "run-1", "post").unwrap();
         let calls = Some(Calls::new(host.clone(), tx));
         let talk = Talk::new(log, to_plugin, load.clone(), calls, MAX_CALL_LINE_BYTES, "This run was cancelled.");

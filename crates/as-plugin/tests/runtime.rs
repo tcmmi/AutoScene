@@ -256,7 +256,8 @@ fn a_result_line_gives_the_message() {
     let p = Plugin::new("result");
     let stages = Mutex::new(Vec::new());
     let result = runtime::run(p.spec(), &CancelToken::new(), &|stage, fraction| {
-        stages.lock().unwrap().push((stage.to_owned(), fraction));
+        assert_eq!(stage.key, "", "a plugin's stage stays as it wrote it, in every language");
+        stages.lock().unwrap().push((stage.text.clone(), fraction));
     });
     assert_eq!(result.unwrap().as_deref(), Some("Posted 12 clips."));
     assert_eq!(stages.into_inner().unwrap(), [("Posting".to_owned(), Some(0.5))]);
@@ -850,7 +851,8 @@ fn stage_text_is_cleaned_and_capped() {
     let p = Plugin::new("stages");
     let stages = Mutex::new(Vec::new());
     let result = runtime::run(p.spec(), &CancelToken::new(), &|stage, fraction| {
-        stages.lock().unwrap().push((stage.to_owned(), fraction));
+        assert_eq!(stage.key, "", "its name, when it names no stage, is its own too");
+        stages.lock().unwrap().push((stage.text.clone(), fraction));
     });
     let message = result.unwrap().unwrap();
     assert_eq!(message.chars().count(), 300);
@@ -985,8 +987,8 @@ fn a_slow_call_never_blocks_progress_lines() {
     let p = Plugin::calling("call", &answers);
     let stages = Mutex::new(Vec::new());
     let result = runtime::run(p.spec(), &CancelToken::new(), &|stage, _| {
-        stages.lock().unwrap().push(stage.to_owned());
-        if stage == "Waiting for AutoScene" {
+        stages.lock().unwrap().push(stage.text.clone());
+        if stage.text == "Waiting for AutoScene" {
             answers.let_through();
         }
     });

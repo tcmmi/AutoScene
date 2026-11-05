@@ -1,5 +1,5 @@
 import { toast } from "sonner"
-import type { HardwareInfo, JobInfo } from "@/bindings"
+import type { HardwareInfo, JobInfo, Msg } from "@/bindings"
 import { takePackSave } from "@/features/plugins/pack-saves"
 import { pluginToast } from "@/features/plugins/plugin-toast"
 import { isFinished, useActivity } from "@/state/activity"
@@ -171,7 +171,7 @@ function notifyFinished(job: JobInfo) {
   if (job.kind === "plugin") {
     const saved = isFinished(job) ? takePackSave(job.id) : undefined
     if (job.state === "failed")
-      pluginToast(job.subtitle, "jobFailed", { action: job.title }, { description: job.error ?? undefined })
+      pluginToast(job.subtitle, "jobFailed", { action: say(job.title) }, { description: errorOf(job) })
     else if (job.state === "done" && saved)
       pluginToast(
         job.subtitle,
@@ -180,14 +180,11 @@ function notifyFinished(job: JobInfo) {
         { action: { label: t("plugins:toast.showInFolder"), onClick: () => reveal(saved) } },
       )
     else if (job.state === "done" && job.message)
-      pluginToast(job.subtitle, "jobFinished", { action: job.title }, { description: job.message })
+      pluginToast(job.subtitle, "jobFinished", { action: say(job.title) }, { description: say(job.message) })
     return
   }
   if (job.kind !== "export") {
-    if (job.state === "failed") {
-      const title = job.title.replace(/^Indexing/, "Couldn't index").replace(/^Analysing/, "Couldn't analyse")
-      toast.error(title, { description: job.error ?? undefined })
-    }
+    if (job.state === "failed") toast.error(failedTitle(job.title), { description: errorOf(job) })
     return
   }
   if (job.state === "done") {
@@ -198,7 +195,20 @@ function notifyFinished(job: JobInfo) {
         action: place ? { label: t("shell:events.showInFolder"), onClick: () => reveal(place) } : undefined,
       }),
     )
-  } else if (job.state === "failed") toast.error(t("shell:events.exportErrors"), { description: job.error ?? undefined })
+  } else if (job.state === "failed") toast.error(t("shell:events.exportErrors"), { description: errorOf(job) })
+}
+
+/** What a job that failed says went wrong, if it says. */
+const errorOf = (job: JobInfo) => (job.error ? say(job.error) : undefined)
+
+/** A failed job's title: indexing and analysing say that they couldn't, by their key; the others name their work, and a title that lost its name its English. */
+function failedTitle(title: Msg): string {
+  const name = title.args?.name
+  if (name == null) return title.text
+  const named = { name: typeof name === "object" ? say(name) : name }
+  if (title.key === "job.indexing") return t("shell:jobFailed.indexing", named)
+  if (title.key === "job.analysing") return t("shell:jobFailed.analysing", named)
+  return say(title)
 }
 
 /**

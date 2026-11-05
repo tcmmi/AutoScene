@@ -78,7 +78,7 @@ use crate::manifest::{Manifest, WasmLimits, cut};
 use crate::package::{MAX_COMPONENT_BYTES, is_component, sha256_hex};
 use crate::protocol::RunMessage;
 pub use crate::runtime::CANCEL_GRACE;
-use crate::runtime::{DRAIN, MAX_LINE_BYTES, MAX_MESSAGE_CHARS, MAX_STAGE_CHARS, marked, sanitize};
+use crate::runtime::{DRAIN, MAX_LINE_BYTES, MAX_MESSAGE_CHARS, MAX_STAGE_CHARS, Report, marked, sanitize};
 use crate::scratch::Scratch;
 use crate::store::changed;
 
@@ -228,19 +228,14 @@ pub struct Checked {
 /// and ended for that; and with [`PluginError::Crashed`] when it trapped
 /// otherwise (the trap and its wasm backtrace go to its log). A run is never
 /// retried.
-pub fn run(spec: WasmSpec, cancel: &CancelToken, report: &dyn Fn(&str, Option<f64>)) -> PluginResult<Option<String>> {
+pub fn run(spec: WasmSpec, cancel: &CancelToken, report: Report) -> PluginResult<Option<String>> {
     run_with(spec, Net::system(), cancel, report)
 }
 
 /// [`run`], with its requests sent through `net`: for tests, which answer
 /// them from this computer.
 #[doc(hidden)]
-pub fn run_with(
-    spec: WasmSpec,
-    net: Net,
-    cancel: &CancelToken,
-    report: &dyn Fn(&str, Option<f64>),
-) -> PluginResult<Option<String>> {
+pub fn run_with(spec: WasmSpec, net: Net, cancel: &CancelToken, report: Report) -> PluginResult<Option<String>> {
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
     }
@@ -257,7 +252,7 @@ pub fn run_in_scratch(
     net: Net,
     scratch: &Scratch,
     cancel: &CancelToken,
-    report: &dyn Fn(&str, Option<f64>),
+    report: Report,
 ) -> PluginResult<Option<String>> {
     if cancel.is_cancelled() {
         return Err(PluginError::Cancelled);
@@ -272,7 +267,7 @@ fn run_in_tmp(
     net: Net,
     tmp: Result<&Path, &std::io::Error>,
     cancel: &CancelToken,
-    report: &dyn Fn(&str, Option<f64>),
+    report: Report,
 ) -> PluginResult<Option<String>> {
     let engine = engine::engine()?;
     fs::create_dir_all(&spec.data_dir)?;
@@ -630,12 +625,7 @@ fn read_component(path: &Path) -> PluginResult<Vec<u8>> {
 
 /// The component of `spec`, compiled: from its code folder when it was
 /// compiled before, else compiled now (reporting so) and kept there.
-fn component(
-    engine: &Engine,
-    spec: &WasmSpec,
-    log: &Mutex<PluginLog>,
-    report: &dyn Fn(&str, Option<f64>),
-) -> PluginResult<Component> {
+fn component(engine: &Engine, spec: &WasmSpec, log: &Mutex<PluginLog>, report: Report) -> PluginResult<Component> {
     // A package's component is known by the hash its lock gives it; a
     // loaded folder's by its bytes now.
     let (bytes, sha256) = match &spec.component_sha256 {
@@ -660,7 +650,8 @@ fn component(
     if sha256_hex(&bytes) != sha256 {
         return Err(PluginError::Invalid(changed()));
     }
-    report(&format!("Getting {} ready", sanitize(&spec.name, MAX_STAGE_CHARS)), None);
+    let name = sanitize(&spec.name, MAX_STAGE_CHARS);
+    report(&msg!("plugin.stage.gettingReady", "Getting {{name}} ready", name = name), None);
     let (component, _) = compiled(engine, &bytes, None)?;
     // A run can do without its code kept: the next one compiles again.
     if let Err(e) = cache::save(&spec.cache, &sha256, &component) {
@@ -691,7 +682,7 @@ fn run_in(
     tmp: Option<&Path>,
     log: &Arc<Mutex<PluginLog>>,
     cancel: &CancelToken,
-    report: &dyn Fn(&str, Option<f64>),
+    report: Report,
 ) -> PluginResult<Option<String>> {
     let component = component(engine, &spec, log, report)?;
     let pre = pre(engine, &component)?;
@@ -761,7 +752,7 @@ fn run_in(
         if let Some((fraction, stage)) = latest {
             let stage = stage.as_deref().map(|s| sanitize(s, MAX_STAGE_CHARS)).filter(|s| !s.is_empty());
             let fraction = fraction.filter(|f| f.is_finite()).map(|f| f.clamp(0.0, 1.0));
-            report(stage.as_deref().unwrap_or(&shown), fraction);
+            report(&Msg::plain(stage.as_deref().unwrap_or(&shown)), fraction);
         }
     };
     let ended = rt.block_on(async {

@@ -5,7 +5,7 @@ import type { PageMount, PluginPageEvent } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
 import { ContextMenuItem } from "@/components/ui/context-menu"
 import { events } from "@/lib/ipc"
-import { inLanguage } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 import { replayMenu } from "./bridge"
 import { PluginFrame } from "./PluginFrame"
 
@@ -147,7 +147,7 @@ describe("a plugin page's frame", () => {
     pluginPageOpen.mockImplementation(async () => {
       // Its service runs already: Rust says so before the open's answer is back.
       tell!({ payload: { session: SESSION, event: { type: "serviceState", state: "ready", message: null } } })
-      tell!({ payload: { session: "another", event: { type: "serviceState", state: "stopped", message: "No." } } })
+      tell!({ payload: { session: "another", event: { type: "serviceState", state: "stopped", message: plain("No.") } } })
       return mount({ service: true })
     })
     render(frame(""))

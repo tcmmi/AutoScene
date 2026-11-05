@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { JobInfo, MediaItem } from "@/bindings"
 import { useActivity } from "@/state/activity"
 import { AnalysisStatus } from "./AnalysisStatus"
+import { inLanguage, plain } from "@/test/i18n"
 
 vi.mock("@/lib/queries", () => ({
   useMediaList: () => ({ data: [{ id: "m1", label: "S01E01", fileName: "Pilot.mkv" } as MediaItem] }),
@@ -11,7 +12,7 @@ vi.mock("@/lib/queries", () => ({
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "a1",
   kind: "analyze",
-  title: "Analysing S01E01 · Pilot.mkv",
+  title: plain("Analysing S01E01 · Pilot.mkv"),
   subtitle: null,
   projectId: "p",
   mediaId: "m1",
@@ -43,8 +44,16 @@ describe("the project's analysis status", () => {
     expect(container.querySelector(".animate-indeterminate")).toBeNull()
   })
 
+  it("says its stage in the language", async () => {
+    await inLanguage("ro", { backend: { job: { stage: { findingShots: "Se caută cadrele" } } } })
+    useActivity.getState().replaceAll([job({ state: "running", stage: { key: "job.stage.findingShots", text: "Finding shots" } })])
+    const { container } = render(<AnalysisStatus pid="p" />)
+    expect(screen.getByText("Se caută cadrele")).toBeTruthy()
+    expect(container.textContent).not.toContain("[object Object]")
+  })
+
   it("pings while it works", () => {
-    useActivity.getState().replaceAll([job({ state: "running", progress: 0.3, stage: "Finding shots" })])
+    useActivity.getState().replaceAll([job({ state: "running", progress: 0.3, stage: plain("Finding shots") })])
     const { container } = render(<AnalysisStatus pid="p" />)
     expect(screen.getByText("Finding shots")).toBeTruthy()
     expect(container.querySelector(".animate-ping")).not.toBeNull()

@@ -4,10 +4,12 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::{Msg, MsgArg};
+
 /// One progress sample. `total == 0` means indeterminate.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Progress {
-    pub stage: String,
+    pub stage: Msg,
     pub done: u64,
     pub total: u64,
     pub eta_ms: Option<u64>,
@@ -48,15 +50,15 @@ const PACE_OVER: Duration = Duration::from_secs(4);
 /// often as they like; the callback fires at most once per `interval`, plus
 /// always on stage changes and completion, so UIs never drown in events.
 ///
-/// The time left is measured over a *phase*: the samples whose stage reads
-/// the same with its numbers left out ("Clip 3 of 129", "Clip 4 of 129"),
-/// from where the first of them stood and from when it first moved. So the
-/// pace of a stage that counts its items comes from all of them, not from
-/// the item just begun; a stage that resumes half done doesn't count that
-/// half as done in no time; and starting up before the first move isn't
-/// counted. A phase starts again when its progress goes back (the next
-/// model of a download, a pass resumed from its last checkpoint) or its
-/// length becomes known.
+/// The time left is measured over a *phase*: the samples whose stage says
+/// the same but for its numbers ("Clip 3 of 129", "Clip 4 of 129"), from
+/// where the first of them stood and from when it first moved. So the pace
+/// of a stage that counts its items comes from all of them, not from the
+/// item just begun; a stage that resumes half done doesn't count that half
+/// as done in no time; and starting up before the first move isn't counted.
+/// A phase starts again when its progress goes back (the next model of a
+/// download, a pass resumed from its last checkpoint) or its length becomes
+/// known.
 #[derive(Clone)]
 pub struct ProgressSink {
     inner: Arc<Inner>,
@@ -71,7 +73,7 @@ struct Inner {
 #[derive(Default)]
 struct State {
     last_emit: Option<Instant>,
-    stage: String,
+    stage: Option<Msg>,
     phase: Option<Phase>,
     pace: Pace,
 }
@@ -131,10 +133,24 @@ impl Pace {
     }
 }
 
-/// Do two stages read the same with their numbers left out?
-fn same_phase(a: &str, b: &str) -> bool {
-    let words = |s: &str| s.chars().filter(|c| !c.is_ascii_digit()).collect::<String>();
-    words(a) == words(b)
+/// Do two stages say the same but for their numbers? By their key and the
+/// values that aren't numbers, so it holds in every language. A plugin's
+/// stage has no key: its words are read with their digits left out.
+fn same_phase(a: &Msg, b: &Msg) -> bool {
+    if a.key.is_empty() && b.key.is_empty() {
+        let words = |s: &str| s.chars().filter(|c| !c.is_ascii_digit()).collect::<String>();
+        return words(&a.text) == words(&b.text);
+    }
+    a.key == b.key
+        && a.args.len() == b.args.len()
+        && a.args.iter().zip(&b.args).all(|((name_a, a), (name_b, b))| {
+            name_a == name_b
+                && match (a, b) {
+                    (MsgArg::Num(_), MsgArg::Num(_)) => true,
+                    (MsgArg::Msg(a), MsgArg::Msg(b)) => same_phase(a, b),
+                    (a, b) => a == b,
+                }
+        })
 }
 
 impl ProgressSink {
@@ -147,18 +163,18 @@ impl ProgressSink {
         Self::new(Duration::from_secs(3600), |_| {})
     }
 
-    pub fn update(&self, stage: &str, done: u64, total: u64) {
+    pub fn update(&self, stage: &Msg, done: u64, total: u64) {
         self.update_at(stage, done, total, None, Instant::now());
     }
 
     /// [`update`](Self::update) of a stage that reads a media's frames one
     /// by one: `frames` says how many so far, and the sink measures how
     /// fast they go (its `per_sec`).
-    pub fn update_frames(&self, stage: &str, done: u64, total: u64, frames: FrameCount) {
+    pub fn update_frames(&self, stage: &Msg, done: u64, total: u64, frames: FrameCount) {
         self.update_at(stage, done, total, Some(frames), Instant::now());
     }
 
-    fn update_at(&self, stage: &str, done: u64, total: u64, frames: Option<FrameCount>, now: Instant) {
+    fn update_at(&self, stage: &Msg, done: u64, total: u64, frames: Option<FrameCount>, now: Instant) {
         let mut st = self.inner.state.lock().unwrap_or_else(|e| e.into_inner());
         let frames = match frames {
             Some(f) => Some(FrameCount { per_sec: st.pace.add(now, f.done), ..f }),
@@ -167,11 +183,11 @@ impl ProgressSink {
                 None
             }
         };
-        let stage_changed = st.stage != stage;
+        let stage_changed = st.stage.as_ref() != Some(stage);
         let goes_on = st.phase.as_ref().is_some_and(|p| p.total == total && done >= p.last)
-            && (!stage_changed || same_phase(&st.stage, stage));
+            && st.stage.as_ref().is_some_and(|was| same_phase(was, stage));
         if stage_changed {
-            st.stage = stage.to_owned();
+            st.stage = Some(stage.clone());
         }
         let mut phase =
             st.phase.take().filter(|_| goes_on).unwrap_or(Phase { started: now, from: done, last: done, total });
@@ -190,7 +206,7 @@ impl ProgressSink {
         }
         st.last_emit = Some(now);
         drop(st);
-        (self.inner.cb)(&Progress { stage: stage.to_owned(), done, total, eta_ms, frames });
+        (self.inner.cb)(&Progress { stage: stage.clone(), done, total, eta_ms, frames });
     }
 }
 
@@ -203,6 +219,7 @@ impl std::fmt::Debug for ProgressSink {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::msg;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -212,12 +229,13 @@ mod tests {
         let sink = ProgressSink::new(Duration::from_secs(60), move |_| {
             h.fetch_add(1, Ordering::SeqCst);
         });
-        sink.update("a", 0, 10); // stage change → emit
+        let (a, b) = (msg!("t.a", "a"), msg!("t.b", "b"));
+        sink.update(&a, 0, 10); // stage change → emit
         for i in 1..9 {
-            sink.update("a", i, 10); // throttled
+            sink.update(&a, i, 10); // throttled
         }
-        sink.update("a", 10, 10); // finished → emit
-        sink.update("b", 0, 5); // stage change → emit
+        sink.update(&a, 10, 10); // finished → emit
+        sink.update(&b, 0, 5); // stage change → emit
         assert_eq!(hits.load(Ordering::SeqCst), 3);
     }
 
@@ -238,16 +256,22 @@ mod tests {
 
         /// The time left told for `done` of `total` at second `at`.
         fn eta_s(&self, at: f64, stage: &str, done: u64, total: u64) -> Option<f64> {
+            self.eta_of(at, &Msg::plain(stage), done, total)
+        }
+
+        /// [`eta_s`](Self::eta_s) of a stage with a key.
+        fn eta_of(&self, at: f64, stage: &Msg, done: u64, total: u64) -> Option<f64> {
             self.sink.update_at(stage, done, total, None, self.t0 + Duration::from_secs_f64(at));
             let p = self.seen.lock().unwrap().last().cloned().expect("every sample is emitted");
-            assert_eq!((p.stage.as_str(), p.done), (stage, done));
+            assert_eq!((&p.stage, p.done), (stage, done));
             p.eta_ms.map(|ms| ms as f64 / 1000.0)
         }
 
         /// The frames a second told for `done` frames read by second `at`.
         fn per_sec(&self, at: f64, done: u64) -> Option<f64> {
             let frames = FrameCount { done, total: Some(10_000), rate: Some(25.0), per_sec: None };
-            self.sink.update_at("Indexing frames", done, 10_000, Some(frames), self.t0 + Duration::from_secs_f64(at));
+            let stage = msg!("t.frames", "Indexing frames");
+            self.sink.update_at(&stage, done, 10_000, Some(frames), self.t0 + Duration::from_secs_f64(at));
             let p = self.seen.lock().unwrap().last().cloned().expect("every sample is emitted");
             let f = p.frames.expect("frames are told");
             assert_eq!((f.done, f.total, f.rate), (done, Some(10_000), Some(25.0)), "told as given");
@@ -377,17 +401,71 @@ mod tests {
         assert!(near(c.per_sec(8.5, 50), 20.0), "from where it started over");
         // A stage between them that reads no frames tells none, and the
         // frames after it are measured anew.
-        c.sink.update_at("Creating poster", 960, 1000, None, c.t0 + Duration::from_secs(9));
+        c.sink.update_at(&msg!("t.poster", "Creating poster"), 960, 1000, None, c.t0 + Duration::from_secs(9));
         assert_eq!(c.seen.lock().unwrap().last().and_then(|p| p.frames), None);
         assert_eq!(c.per_sec(10.0, 60), None);
     }
 
+    /// "Clip {{n}} of {{total}}".
+    fn clip(n: u32, total: u32) -> Msg {
+        msg!("t.clip", "Clip {{n}} of {{total}}", n = n, total = total)
+    }
+
+    /// "Poster {{n}} of {{total}}".
+    fn poster(n: u32, total: u32) -> Msg {
+        msg!("t.poster", "Poster {{n}} of {{total}}", n = n, total = total)
+    }
+
+    #[test]
+    fn a_stage_counting_on_keeps_its_phase_and_another_key_starts_a_new_one() {
+        assert!(same_phase(&poster(3, 10), &poster(4, 10)));
+        assert!(!same_phase(&poster(3, 10), &clip(3, 10)), "the same numbers, another stage");
+        let joining = msg!("t.joining", "Joining into one file");
+        assert!(!same_phase(&clip(9, 129), &joining));
+        // By key, whatever the words: it holds in every language.
+        let c = Clocked::new();
+        c.eta_of(0.0, &poster(3, 10), 0, 1000);
+        assert!(near(c.eta_of(10.0, &poster(4, 10), 250, 1000), 30.0), "the pace of all of them");
+        assert_eq!(c.eta_of(11.0, &clip(1, 2), 300, 1000), None, "a new phase: too soon to tell");
+    }
+
+    #[test]
+    fn only_numbers_may_change_within_a_phase() {
+        let saving = |file: &str| msg!("t.saving", "Saving {{file}}", file = file);
+        assert!(same_phase(&saving("a.mov"), &saving("a.mov")));
+        assert!(!same_phase(&saving("a.mov"), &saving("b.mov")));
+        // A value that stops being a number, or goes, isn't the same stage.
+        let one = msg!("t.of", "{{n}} of {{what}}", n = 1, what = "clips");
+        assert!(!same_phase(&one, &msg!("t.of", "{{n}} of {{what}}", n = 1, what = 2)));
+        assert!(!same_phase(&one, &msg!("t.of", "{{n}} of {{what}}", n = 1)));
+    }
+
+    #[test]
+    fn a_stage_nested_in_another_is_compared_the_same_way() {
+        let on_cpu = |n, total| msg!("t.onCpu", "{{stage}} · on the CPU (slower)", stage = clip(n, total));
+        assert!(same_phase(&on_cpu(1, 9), &on_cpu(2, 9)));
+        let finding = msg!("t.finding", "Finding shots");
+        assert!(!same_phase(
+            &on_cpu(1, 9),
+            &msg!("t.onCpu", "{{stage}} · on the CPU (slower)", stage = finding.clone())
+        ));
+        assert!(!same_phase(&on_cpu(1, 9), &finding), "the first words on the CPU start a phase of their own");
+    }
+
+    #[test]
+    fn a_plugins_stage_is_read_by_its_words_and_never_taken_for_one_with_a_key() {
+        assert!(same_phase(&Msg::plain("Posting 1 of 3"), &Msg::plain("Posting 2 of 3")));
+        assert!(!same_phase(&Msg::plain("Posting 1 of 3"), &Msg::plain("Reading 1 of 3")));
+        assert!(!same_phase(&Msg::plain("Clip 1 of 3"), &clip(1, 3)), "the same English, not the same stage");
+    }
+
     #[test]
     fn stages_are_one_phase_only_with_the_same_words() {
-        assert!(same_phase("Clip 9 of 129", "Clip 10 of 129"));
-        assert!(same_phase("Portrait 1 of 7", "Portrait 7 of 7"));
-        assert!(!same_phase("Clip 9 of 129", "Joining into one file"));
-        assert!(!same_phase("Poster 1 of 3", "Portrait 1 of 3"));
+        let same = |a: &str, b: &str| same_phase(&Msg::plain(a), &Msg::plain(b));
+        assert!(same("Clip 9 of 129", "Clip 10 of 129"));
+        assert!(same("Portrait 1 of 7", "Portrait 7 of 7"));
+        assert!(!same("Clip 9 of 129", "Joining into one file"));
+        assert!(!same("Poster 1 of 3", "Portrait 1 of 3"));
         let c = Clocked::new();
         c.eta_s(0.0, "Portrait 1 of 4", 0, 1000);
         assert!(near(c.eta_s(10.0, "Portrait 2 of 4", 250, 1000), 30.0));

@@ -1,6 +1,10 @@
+import type { Msg } from "@/bindings"
 import { i18n, setLanguage, type Lang, type PSEUDO } from "@/lib/i18n"
 
 type Bundles = Record<string, Record<string, unknown>>
+
+/** Words with no key: a plugin's, or a fixture's that no test reads in another language. */
+export const plain = (text: string): Msg => ({ key: "", text })
 
 /**
  * Switches the UI to `lng` with fixture words (`{ common: { action: { cancel: "Anulează" } } }`),

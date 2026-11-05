@@ -275,6 +275,11 @@ export default {
     exportDone: "Export finished",
     exportErrors: "Export finished with errors",
   },
+  /** A job that failed, named as its title names it. */
+  jobFailed: {
+    indexing: "Couldn't index {{name}}",
+    analysing: "Couldn't analyse {{name}}",
+  },
 
   /** The update dialog and the update checks that announce themselves. */
   update: {

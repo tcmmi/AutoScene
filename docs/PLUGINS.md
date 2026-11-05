@@ -1713,7 +1713,8 @@ program of its own, beside the service.
 - **Its start.** It has 2 minutes to say it is ready (uv may fetch Python
   and the script's packages first). Before its program starts, its pages
   show "Getting uv" while AutoScene gets its uv, and "Checking files" or
-  "Getting files" for its large files. Then they show it starting, with
+  "Getting files" for its large files, in the language AutoScene speaks:
+  show the message, don't compare it. Then they show it starting, with
   the stage its progress lines name; a request that comes meanwhile
   waits for it. One that isn't ready in time is ended: "<name> didn't
   start in time."

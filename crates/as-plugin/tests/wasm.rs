@@ -218,8 +218,9 @@ impl Guest {
 
     fn run_with(&self, cancel: &CancelToken) -> (PluginResult<Option<String>>, Reports) {
         let reports = Mutex::new(Vec::new());
-        let r =
-            wasm::run(self.spec(), cancel, &|stage, fraction| reports.lock().unwrap().push((stage.into(), fraction)));
+        let r = wasm::run(self.spec(), cancel, &|stage, fraction| {
+            reports.lock().unwrap().push((stage.text.clone(), fraction))
+        });
         (r, reports.into_inner().unwrap())
     }
 
@@ -828,7 +829,7 @@ fn a_run_stopped_while_its_component_is_compiled_starts_nothing() {
     let cancel = CancelToken::new();
     // Stop as the person sees "Getting … ready".
     let r = wasm::run(g.spec(), &cancel, &|stage, _| {
-        if stage.starts_with("Getting") {
+        if stage.key == "plugin.stage.gettingReady" {
             cancel.cancel();
         }
     });

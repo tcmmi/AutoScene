@@ -33,7 +33,7 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use as_core::CancelToken;
+use as_core::{CancelToken, Msg};
 use as_plugin::pages::Mount;
 use as_plugin::service::{ProcessService, STOP_GRACE};
 use as_plugin::{
@@ -44,7 +44,7 @@ use parking_lot::{Condvar, Mutex};
 use tauri::{AppHandle, Manager};
 
 use super::calls::AppCalls;
-use super::{CHECKING_FILES, Fetched, GETTING_FILES, PluginHost, runnable};
+use super::{Fetched, PluginHost, checking_files, getting_files, runnable};
 use crate::events::{PageEvent, PluginPageEvent, ServiceStatus};
 use crate::state::AppState;
 
@@ -507,10 +507,15 @@ impl PluginHost {
                 // Its pages hear that it gets uv, or its files, not how far:
                 // a stage is all they show.
                 let got = std::cell::Cell::new(false);
-                let getting = |stage: &str, fraction: Option<f64>| {
+                let getting = |stage: &Msg, fraction: Option<f64>| {
                     if fraction.is_none() {
                         got.set(true);
-                        events(ServiceEvent::Progress { stage: stage.into(), fraction });
+                        let message = Some(stage.clone());
+                        host.tell_service(
+                            &plugin,
+                            start,
+                            PageEvent::ServiceState { state: ServiceStatus::Starting, message },
+                        );
                     }
                 };
                 // One that can't start on this computer says so as it
@@ -518,7 +523,7 @@ impl PluginHost {
                 let (uv, resources) = match &launch {
                     Ok(launch) => (
                         host.uv_for(launch, &cancel, &getting)?,
-                        host.resources_for(&plugin, m, (CHECKING_FILES, GETTING_FILES), &cancel, &getting)?,
+                        host.resources_for(&plugin, m, (&checking_files(), &getting_files()), &cancel, &getting)?,
                     ),
                     Err(_) => (None, None),
                 };
@@ -570,7 +575,8 @@ impl PluginHost {
                 Err(e) => {
                     let _told = host.services.told.lock();
                     if host.services.current(&m.plugin).is_none() {
-                        tell(PageEvent::ServiceState { state: ServiceStatus::Stopped, message: Some(e.message) });
+                        let message = Some(Msg::plain(e.message));
+                        tell(PageEvent::ServiceState { state: ServiceStatus::Stopped, message });
                     }
                 }
             }
@@ -588,12 +594,13 @@ impl PluginHost {
             let Some(host) = host.upgrade() else { return };
             let event = match e {
                 ServiceEvent::Progress { stage, .. } => {
-                    PageEvent::ServiceState { state: ServiceStatus::Starting, message: Some(stage) }
+                    PageEvent::ServiceState { state: ServiceStatus::Starting, message: Some(Msg::plain(stage)) }
                 }
                 ServiceEvent::Ready => PageEvent::ServiceState { state: ServiceStatus::Ready, message: None },
                 ServiceEvent::Emit { event, data } => PageEvent::Service { name: event, data },
                 ServiceEvent::Stopped { message, crashed } => {
-                    let stopped = PageEvent::ServiceState { state: ServiceStatus::Stopped, message: Some(message) };
+                    let message = Some(Msg::plain(message));
+                    let stopped = PageEvent::ServiceState { state: ServiceStatus::Stopped, message };
                     host.tell_service(&id, start, stopped);
                     // Also when a newer start took its place.
                     if crashed {
@@ -687,12 +694,12 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::super::catalog::tests::{Key, NOW, Served, index, withdrawal};
+    use super::super::getting_uv;
     use super::super::pages;
     use super::super::tests::{
         CATALOG_AT, FakeFiles, FakeUv, HF, Heard, TEST_FILES, TEST_UV, closed, host_cataloged, host_getting,
         host_getting_uv, host_starting, resource,
     };
-    use super::super::{GETTING_FILES, GETTING_UV};
     use super::*;
 
     /// A service that answers each request with its method, counts the
@@ -1350,7 +1357,7 @@ mod tests {
             })
             .collect();
         // Once uv is here, "Getting uv" is no longer what it does.
-        assert_eq!(said, [None, Some(GETTING_UV.to_owned()), None]);
+        assert_eq!(said, [None, Some(getting_uv()), None]);
         // Its program starts through that uv.
         let p = host.store.get(&id).unwrap();
         let spec = serve_spec(
@@ -1408,7 +1415,7 @@ mod tests {
         assert_eq!(*starter.uv.lock(), [Some(PathBuf::from(TEST_UV))]);
         // Its page heard it get them as it started, then that it is ready.
         wait_for(|| states(&heard, &page.session).last() == Some(&ServiceStatus::Ready));
-        let starting = |heard: &Heard| -> Vec<Option<String>> {
+        let starting = |heard: &Heard| -> Vec<Option<Msg>> {
             let heard = heard.lock();
             let said = heard.iter().filter_map(|e| match &e.event {
                 PageEvent::ServiceState { state: ServiceStatus::Starting, message } => Some(message.clone()),
@@ -1416,7 +1423,7 @@ mod tests {
             });
             said.collect()
         };
-        assert_eq!(starting(&heard), [None, Some(GETTING_FILES.to_owned()), None]);
+        assert_eq!(starting(&heard), [None, Some(getting_files()), None]);
         let p = host.store.get(&id).unwrap();
         let got = Fetched { uv: None, resources: Some(kept_in.clone()) };
         let spec = serve_spec(&host, &p, Path::new("ffmpeg"), Path::new("ffprobe"), "9.0", Arc::new(Refused), got);
@@ -1436,7 +1443,7 @@ mod tests {
         files.forget_checks();
         host.service(&m, None).unwrap();
         wait_for(|| host.services.running(&id).is_some());
-        assert_eq!(starting(&heard), [None, Some(CHECKING_FILES.to_owned()), None]);
+        assert_eq!(starting(&heard), [None, Some(checking_files()), None]);
         assert_eq!(files.got.load(Ordering::SeqCst), 1);
         host.shutdown();
         alone(&host);

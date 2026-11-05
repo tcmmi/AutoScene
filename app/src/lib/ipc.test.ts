@@ -36,6 +36,15 @@ describe("say", () => {
     expect(clips(14200)).toBe("14.200 de clipuri")
   })
 
+  it("groups each number of a job's sentence, not only its count", () => {
+    const left = msg("job.clipsFailedSomeLeft", "1200 clips couldn't be exported; the file has the other 3400.", { count: 1200, rest: 3400 })
+    expect(say(left)).toBe("1,200 clips couldn't be exported; the file has the other 3,400.")
+    const stage = (key: string, word: string) => say(msg(key, `${word} 1200 of 3400`, { n: 1200, total: 3400 }))
+    expect(stage("job.stage.clip", "Clip")).toBe("Clip 1,200 of 3,400")
+    expect(stage("job.stage.poster", "Poster")).toBe("Poster 1,200 of 3,400")
+    expect(stage("job.stage.portrait", "Portrait")).toBe("Portrait 1,200 of 3,400")
+  })
+
   it("says a nested Msg first", async () => {
     await inLanguage("ro", romanian)
     const why = msg("file.diskFull", "The disk is full.")

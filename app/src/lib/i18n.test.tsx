@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import { en } from "@/locales"
 import { catalogProblems } from "@/locales/check"
 import { inLanguage } from "@/test/i18n"
-import { fmt, i18n, LanguageRoot, pseudo, PSEUDO, setLanguage, t } from "./i18n"
+import { fmt, i18n, LanguageRoot, pseudo, PSEUDO, say, setLanguage, t } from "./i18n"
 
 // Fixture keys outside the typed catalog.
 const tx = (key: string, options?: Record<string, unknown>) => (i18n.t as unknown as (k: string, o?: object) => string)(key, options)
@@ -26,6 +26,39 @@ const fixtureRo = {
   released: "Lansat în {{year}}",
   rich: "<b>{{count}}</b> cadre · <go>Setări</go>",
 }
+
+describe("a job's title with a count", () => {
+  const title = (key: string, count: number) => ({ key, args: { count }, text: `${count} in English` })
+  const RO = {
+    backend: {
+      job: {
+        exporting_one: "Se exportă {{count}} clip",
+        exporting_few: "Se exportă {{count}} clipuri",
+        exporting_other: "Se exportă {{count}} de clipuri",
+        exportingJoined_one: "Se exportă {{count}} clip într-un singur fișier",
+        exportingJoined_few: "Se exportă {{count}} clipuri într-un singur fișier",
+        exportingJoined_other: "Se exportă {{count}} de clipuri într-un singur fișier",
+      },
+    },
+  }
+
+  it("reads in English as the job said it", () => {
+    expect(say(title("job.exporting", 1))).toBe("Exporting 1 clip")
+    expect(say(title("job.exporting", 12))).toBe("Exporting 12 clips")
+    expect(say(title("job.exportingJoined", 1))).toBe("Exporting 1 clip into one file")
+    expect(say(title("job.exportingJoined", 12))).toBe("Exporting 12 clips into one file")
+  })
+
+  it("takes the plural form of the language", async () => {
+    await inLanguage("ro", RO)
+    expect([1, 3, 20].map((n) => say(title("job.exporting", n)))).toEqual([
+      "Se exportă 1 clip",
+      "Se exportă 3 clipuri",
+      "Se exportă 20 de clipuri",
+    ])
+    expect(say(title("job.exportingJoined", 3))).toBe("Se exportă 3 clipuri într-un singur fișier")
+  })
+})
 
 describe("the catalog", () => {
   it("speaks English synchronously, right after import", () => {

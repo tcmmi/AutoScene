@@ -1,11 +1,12 @@
 import type * as React from "react"
 import { cleanup, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { MediaItem } from "@/bindings"
+import type { JobInfo, MediaItem } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { queryClient } from "@/lib/queries"
 import { useActivity } from "@/state/activity"
+import { inLanguage } from "@/test/i18n"
 import { EpisodeCard } from "./EpisodeCard"
 import { EpisodesPage } from "./EpisodesPage"
 import { OverviewPage } from "./OverviewPage"
@@ -108,6 +109,18 @@ describe("an episode's card", () => {
     unmount()
     wrap(<EpisodeCard pid="p" media={media({ status: "failed" })} onOpen={() => {}} onRemove={() => {}} />)
     expect(screen.getByText("Failed")).toBeTruthy()
+  })
+
+  it("says the stage of its job in the language, under its title and on its ring", async () => {
+    await inLanguage("ro", { backend: { job: { stage: { findingShots: "Se caută cadrele" } } } })
+    const stage = { key: "job.stage.findingShots", text: "Finding shots" }
+    const job = { id: "j", kind: "analyze", mediaId: "m", state: "running", progress: 0.2, stage, rev: 1 } as JobInfo
+    useActivity.setState({ jobs: { j: job }, order: ["j"] })
+    const { container } = wrap(<EpisodeCard pid="p" media={media({ id: "m" })} onOpen={() => {}} onRemove={() => {}} />)
+    expect(screen.getByText("Se caută cadrele")).toBeTruthy()
+    expect(screen.getByRole("progressbar", { name: "Se caută cadrele" })).toBeTruthy()
+    expect(container.innerHTML).not.toContain("[object Object]")
+    useActivity.setState({ jobs: {}, order: [] })
   })
 
   it("counts shots and faces under the title", () => {

@@ -192,8 +192,10 @@ pub enum PageEvent {
         data: serde_json::Value,
     },
     /// What its plugin's service is doing: starting (`message` is how far),
-    /// ready, or stopped (`message` says why).
-    ServiceState { state: ServiceStatus, message: Option<String> },
+    /// ready, or stopped (`message` says why). The page hears `message` as
+    /// the UI says it: AutoScene's own stages in its language, the plugin's
+    /// as written.
+    ServiceState { state: ServiceStatus, message: Option<Msg> },
     /// Its plugin's settings or secrets changed: it may read them again.
     Settings,
     /// It was closed (its plugin was turned off, is being updated or

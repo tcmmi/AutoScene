@@ -12,6 +12,7 @@ import { useUi } from "@/state/ui"
 import { FrameStore } from "../frame-store"
 import { DetailsPanel } from "./DetailsPanel"
 import { PlayerKeysDialog } from "./PlayerKeysDialog"
+import { inLanguage, plain } from "@/test/i18n"
 
 // The router's link as a plain one that keeps where it goes; the backend and
 // the app's actions as stand-ins.
@@ -251,13 +252,13 @@ const analysis = (o: Partial<JobInfo>) =>
   ({
     id: "j1",
     kind: "analyze",
-    title: "Analysing S01E01",
+    title: plain("Analysing S01E01"),
     subtitle: null,
     projectId: "p",
     mediaId: "m",
     state: "running",
     progress: 0.42,
-    stage: "Finding characters",
+    stage: plain("Finding characters"),
     etaMs: null,
     error: null,
     createdAt: 1,
@@ -336,6 +337,15 @@ describe("the Cast tab's analysis block", () => {
   it("offers to continue finding characters that were stopped", async () => {
     await press({ faces: "stopped" }, "Continue")
     expect(within(cast()).getByText("Finding characters was stopped.")).toBeTruthy()
+  })
+
+  it("says the job's stage in the language", async () => {
+    await inLanguage("ro", { backend: { job: { stage: { findingCharacters: "Se caută personajele" } } } })
+    const stage = { key: "job.stage.findingCharacters", text: "Finding characters" }
+    useActivity.setState({ jobs: { j1: analysis({ stage }) }, order: ["j1"] })
+    show(props({ media: episode({ faces: "running" }) }))
+    expect(within(cast()).getByText("Se caută personajele")).toBeTruthy()
+    expect(cast().textContent).not.toContain("[object Object]")
   })
 
   it("shows the job's progress and no button while the analysis runs or waits", () => {

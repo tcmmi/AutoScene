@@ -9,7 +9,7 @@ import { commands } from "@/lib/ipc"
 import { t } from "@/lib/i18n"
 import { queryClient } from "@/lib/queries"
 import { useActivity } from "@/state/activity"
-import { inLanguage } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 import { pickFolder } from "@/lib/media"
 import { PackCard } from "./PackCard"
 import { PackExportDialog } from "./PackExportDialog"
@@ -395,7 +395,7 @@ describe("the pack's export dialog", () => {
 
   it("counts the episodes still being analysed with the language's plural, the character's name a value", async () => {
     const analysing = (id: string) =>
-      ({ id, kind: "analyze", title: "Analysing E01.mkv", subtitle: null, projectId: "p", mediaId: id, exportId: null, state: "running", progress: 0.4, stage: "Finding characters", etaMs: null, error: null, createdAt: 1, finishedAt: null, rev: 1 }) as const
+      ({ id, kind: "analyze", title: plain("Analysing E01.mkv"), subtitle: null, projectId: "p", mediaId: id, exportId: null, state: "running", progress: 0.4, stage: plain("Finding characters"), etaMs: null, error: null, createdAt: 1, finishedAt: null, rev: 1 }) as const
     useActivity.getState().replaceAll([analysing("a"), analysing("b"), analysing("c")])
     dialog(15)
     const said = (text: string) => async () => {
@@ -411,7 +411,7 @@ describe("the pack's export dialog", () => {
 
   it("says one episode, or one or two files of a film, in the singular and plural of each", async () => {
     const analysing = (id: string) =>
-      ({ id, kind: "analyze", title: "Analysing E01.mkv", subtitle: null, projectId: "p", mediaId: id, exportId: null, state: "running", progress: 0.4, stage: "Finding characters", etaMs: null, error: null, createdAt: 1, finishedAt: null, rev: 1 }) as const
+      ({ id, kind: "analyze", title: plain("Analysing E01.mkv"), subtitle: null, projectId: "p", mediaId: id, exportId: null, state: "running", progress: 0.4, stage: plain("Finding characters"), etaMs: null, error: null, createdAt: 1, finishedAt: null, rev: 1 }) as const
     const said = async (text: string) =>
       waitFor(() => {
         const id = screen.getByRole("dialog").getAttribute("aria-describedby") ?? ""

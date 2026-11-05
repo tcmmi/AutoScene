@@ -31,6 +31,7 @@ import { Progress } from "@/components/ui/progress"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { formatProgress } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { cancelJob, stopWord } from "@/lib/jobs"
 import { copyText } from "@/lib/os"
@@ -135,6 +136,7 @@ function JobRow({ job: j }: { job: JobInfo }) {
   const pid = j.projectId
   const mid = j.mediaId
   const stop = stopWord(j.kind)
+  const title = say(j.title)
   const menu = (
     <>
       {!done && (
@@ -163,12 +165,12 @@ function JobRow({ job: j }: { job: JobInfo }) {
         </ContextMenuItem>
       )}
       {j.state === "failed" && j.error && (
-        <ContextMenuItem onSelect={() => void copyText(j.error ?? "", "error")}>
+        <ContextMenuItem onSelect={() => void copyText(say(j.error!), "error")}>
           <Copy /> {t("activity.copyError")}
         </ContextMenuItem>
       )}
       {j.state === "done" && j.message && (
-        <ContextMenuItem onSelect={() => void copyText(j.message ?? "", "message")}>
+        <ContextMenuItem onSelect={() => void copyText(say(j.message!), "message")}>
           <Copy /> {t("activity.copyMessage")}
         </ContextMenuItem>
       )}
@@ -199,13 +201,13 @@ function JobRow({ job: j }: { job: JobInfo }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
-              <TruncatedText className="text-md font-medium text-fg-1">{j.title}</TruncatedText>
+              <TruncatedText className="text-md font-medium text-fg-1">{title}</TruncatedText>
               {j.subtitle && <div className="truncate text-sm text-fg-3">{j.subtitle}</div>}
             </div>
             {!done ? (
               <Tooltip label={stop}>
                 <button
-                  aria-label={j.kind === "plugin" ? t("activity.stopJob", { title: j.title }) : t("activity.cancelJob", { title: j.title })}
+                  aria-label={j.kind === "plugin" ? t("activity.stopJob", { title }) : t("activity.cancelJob", { title })}
                   onClick={(e) => {
                     e.stopPropagation()
                     cancelJob(j)
@@ -223,13 +225,13 @@ function JobRow({ job: j }: { job: JobInfo }) {
             <div className="mt-3">
               <Progress value={jobBar(j)} />
               <div className="mt-1.5 flex justify-between gap-2 text-xs text-fg-3">
-                <span className="truncate">{j.state === "queued" ? t("activity.waiting") : (j.stage ?? t("activity.working"))}</span>
+                <span className="truncate">{j.state === "queued" ? t("activity.waiting") : (j.stage ? say(j.stage) : t("activity.working"))}</span>
                 <span className="timecode shrink-0">{formatProgress(j.progress, j.etaMs)}</span>
               </div>
             </div>
           )}
-          {j.state === "failed" && j.error && <p className="mt-1.5 line-clamp-3 text-sm break-words text-danger">{j.error}</p>}
-          {j.state === "done" && j.message && <p className="mt-1.5 line-clamp-3 text-sm break-words text-fg-2">{j.message}</p>}
+          {j.state === "failed" && j.error && <p className="mt-1.5 line-clamp-3 text-sm break-words text-danger">{say(j.error)}</p>}
+          {j.state === "done" && j.message && <p className="mt-1.5 line-clamp-3 text-sm break-words text-fg-2">{say(j.message)}</p>}
         </div>
       </li>
     </ContextArea>

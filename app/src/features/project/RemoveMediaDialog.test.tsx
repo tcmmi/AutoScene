@@ -5,6 +5,7 @@ import type { JobInfo, MediaItem } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
 import { RemoveMediaDialog } from "./RemoveMediaDialog"
+import { plain } from "@/test/i18n"
 
 const { toasts } = vi.hoisted(() => ({ toasts: { error: vi.fn() } }))
 vi.mock("sonner", () => ({ toast: toasts }))
@@ -22,14 +23,14 @@ afterEach(() => {
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j",
   kind: "analyze",
-  title: "Analysing E01.mkv",
+  title: plain("Analysing E01.mkv"),
   subtitle: null,
   projectId: "p",
   mediaId: "m",
   exportId: null,
   state: "running",
   progress: 0.4,
-  stage: "Finding shots",
+  stage: plain("Finding shots"),
   etaMs: null,
   error: null,
   createdAt: 1,
@@ -84,7 +85,7 @@ describe("RemoveMediaDialog", () => {
 
   it("lists nothing that goes for a file still being indexed, and what goes once it has shots", () => {
     // The wrong file, added a moment ago: no shots or faces to lose yet.
-    useActivity.getState().replaceAll([job({ id: "index", kind: "ingest", stage: "Reading file" })])
+    useActivity.getState().replaceAll([job({ id: "index", kind: "ingest", stage: plain("Reading file") })])
     const fresh = {
       ...episode,
       status: "indexing",

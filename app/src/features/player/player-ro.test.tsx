@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { FrameCount, JobInfo, MediaItem } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useActivity } from "@/state/activity"
-import { inLanguage } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 import { FrameStore } from "./frame-store"
 import { NotReady } from "./NotReady"
 import { CastTab } from "./panels/CastTab"
@@ -27,14 +27,14 @@ afterEach(() => {
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "ingest",
   kind: "ingest",
-  title: "Indexing E01.mkv",
+  title: plain("Indexing E01.mkv"),
   subtitle: null,
   projectId: "p",
   mediaId: "m",
   exportId: null,
   state: "running",
   progress: 0.4,
-  stage: "Indexing frames",
+  stage: plain("Indexing frames"),
   etaMs: null,
   error: null,
   createdAt: 1,
@@ -81,6 +81,14 @@ describe("the player in another language", () => {
     const read = notReady(episode({ status: "indexing" })).container
     expect(read.textContent).toContain("90.100 de cadre citite")
     expect(read.textContent).toContain("600 cadre/s · 25× viteza reală")
+  })
+
+  it("says the stage of the job at work in the language", async () => {
+    await inLanguage("ro", { ...RO, backend: { job: { stage: { indexingFrames: "Se indexează cadrele" } } } })
+    useActivity.getState().replaceAll([job({ stage: { key: "job.stage.indexingFrames", text: "Indexing frames" } })])
+    const { container } = notReady(episode({ status: "indexing" }))
+    expect(screen.getByText("Se indexează cadrele")).toBeTruthy()
+    expect(container.textContent).not.toContain("[object Object]")
   })
 
   it("says a missing file's path inside the sentence, as the person has it", async () => {

@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use as_api::{PackNaming, PackSpec};
-use as_core::{CharacterId, JobId, ProjectId, msg};
+use as_core::{CharacterId, JobId, Msg, ProjectId, ToMsg, msg};
 use as_jobs::{JobCtx, JobError, JobResult, JobRunner};
 use as_plugin::calls::{FileFilter, runnable_name};
 use as_plugin::protocol::{CharacterContext, EpisodeContext, PackClipContext, PackContext, ProjectContext};
@@ -156,7 +156,7 @@ impl Saving {
             lib: state.library.clone(),
             packs: Arc::new(state.library.clone()),
             tools: Arc::new(move || {
-                let t = tools.state::<AppState>().tools().map_err(|e| e.message)?;
+                let t = tools.state::<AppState>().tools().map_err(|e| e.msg)?;
                 Ok((t.ffmpeg.clone(), t.ffprobe.clone(), t.version.clone()))
             }),
             run: Arc::new(|spec, cancel, report| runtime::run(spec, cancel, report)),
@@ -305,11 +305,11 @@ fn save(sv: &Saving, ctx: &JobCtx, key: &RunKey, path: &Path, pack: PackContext,
     let action = ActionContext { kind: ActionKind::PackAction, id: key.action.clone(), trigger: Trigger::Menu };
     // Through AutoScene's uv and with the plugin's large files, got first
     // when they aren't kept, as any run of it is.
-    let report = |stage: &str, f: Option<f64>| ctx.report(stage, f);
+    let report = |stage: &Msg, f: Option<f64>| ctx.report(stage, f);
     let tools = (ffmpeg.as_path(), ffprobe.as_path(), version.as_str());
     let mut run = sv.host.run_spec(&p, action, tools, &ctx.cancel, &report).map_err(plugin_job_error)?;
-    let project =
-        key.project_id.ok_or_else(|| JobError::Failed("A pack action saves a character's scenepack.".into()))?;
+    let not_of_a_pack = || msg!("plugin.packActionNeedsPack", "A pack action saves a character's scenepack.");
+    let project = key.project_id.ok_or_else(|| JobError::Failed(not_of_a_pack()))?;
     run.message.project = Some(sv.packs.project(project).map_err(job_error)?);
     run.message.pack = Some(pack);
     // Gone however the run ends, but well.
@@ -318,13 +318,13 @@ fn save(sv: &Saving, ctx: &JobCtx, key: &RunKey, path: &Path, pack: PackContext,
     let calls = calls_for(&sv.lib, &sv.host, &p, key, run.protocol).map_err(plugin_job_error)?;
     run.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
     let (file, name) = (paths::name(path).into_owned(), run.name.clone());
-    ctx.stage(&format!("Saving {file}"));
+    ctx.stage(&msg!("plugin.stage.saving", "Saving {{file}}", file = &file));
     let said = (sv.run)(run, &ctx.cancel, &report).map_err(plugin_job_error)?;
     if let Some(message) = said {
         log::info!("{} {} saved {file}: {message}", key.plugin, key.action);
     }
     part.keep(path, &name, &file).map_err(JobError::Failed)?;
-    ctx.message(&format!("Saved {file}"));
+    ctx.message(msg!("plugin.saved", "Saved {{file}}", file = &file));
     Ok(())
 }
 
@@ -362,14 +362,35 @@ impl Part {
     /// Puts what the plugin `plugin` wrote in the place of `path` (`file`):
     /// a file, never a folder or a link to one, marked as a download, and
     /// one that doesn't run on Linux or macOS either.
-    fn keep(mut self, path: &Path, plugin: &str, file: &str) -> Result<(), String> {
+    fn keep(mut self, path: &Path, plugin: &str, file: &str) -> Result<(), Msg> {
         let part = self.path().to_path_buf();
-        let unsaved = |e: io::Error| format!("AutoScene couldn't save {file}: {e}");
+        let unsaved = |e: io::Error| {
+            log::warn!("saving {file}: {e}");
+            msg!("plugin.saveFailed", "AutoScene couldn't save {{file}}: {{why}}", file = file, why = e.msg())
+        };
         match std::fs::symlink_metadata(&part) {
             Ok(m) if m.is_file() => not_runnable(&part, &m).map_err(unsaved)?,
-            Ok(_) => return Err(format!("{plugin} didn't save {file} as a file.")),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(format!("{plugin} didn't save {file}.")),
-            Err(e) => return Err(format!("AutoScene couldn't read what {plugin} saved as {file}: {e}")),
+            Ok(_) => {
+                return Err(msg!(
+                    "plugin.savedNoFile",
+                    "{{name}} didn't save {{file}} as a file.",
+                    name = plugin,
+                    file = file
+                ));
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Err(msg!("plugin.savedNothing", "{{name}} didn't save {{file}}.", name = plugin, file = file));
+            }
+            Err(e) => {
+                log::warn!("reading what {plugin} saved as {file}: {e}");
+                return Err(msg!(
+                    "plugin.savedUnreadable",
+                    "AutoScene couldn't read what {{name}} saved as {{file}}: {{why}}",
+                    name = plugin,
+                    file = file,
+                    why = e.msg()
+                ));
+            }
         }
         mark_downloaded(&part);
         std::fs::rename(&part, path).map_err(unsaved)?;
@@ -454,7 +475,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use as_api::{ClipRequest, JobInfo, JobKind, JobState};
-    use as_core::{MediaId, Rational};
+    use as_core::{MediaId, MsgArg, Rational};
     use as_jobs::{Class, JobSpec};
     use as_plugin::{PluginError, PluginResult, RunMessage};
     use as_project::{CutEpisode, ProjectError};
@@ -713,7 +734,7 @@ mod tests {
         }
         let run = b.jobs().into_iter().find(|j| j.id == job).unwrap();
         assert_eq!(
-            (run.state, run.title.as_str(), run.message.as_deref()),
+            (run.state, run.title.text.as_str(), run.message.as_ref().map(|m| m.text.as_str())),
             (JobState::Done, "Save as FCPXML · Walter White", Some("Saved Walter White.fcpxml"))
         );
         // The person was asked where, with the name and kind of file the plugin names, in the
@@ -778,14 +799,21 @@ mod tests {
             (vec!["Walter White.fcpxml".into()], "old".into())
         );
         let run = fails.jobs().remove(0);
-        assert_eq!((run.state, run.error.as_deref()), (JobState::Failed, Some("The clips don't fit a timeline.")));
+        assert_eq!(
+            (run.state, run.error.as_ref().map(|e| e.text.as_str())),
+            (JobState::Failed, Some("The clips don't fit a timeline."))
+        );
 
         // One that says it's done but wrote nothing, or a folder: no file, and it says so.
         let mute = Bench::new("mute", Box::new(|_| Ok(None)));
         mute.click(mute.walter);
         mute.settle();
         assert_eq!(mute.files(), Vec::<String>::new());
-        assert_eq!(mute.jobs()[0].error.as_deref(), Some("Timeline didn't save Walter White.fcpxml."));
+        let said = mute.jobs()[0].error.clone().expect("it failed");
+        assert_eq!(
+            (said.key.as_str(), said.text.as_str()),
+            ("plugin.savedNothing", "Timeline didn't save Walter White.fcpxml.")
+        );
         let folder = Bench::new(
             "folder",
             Box::new(|m| {
@@ -796,7 +824,9 @@ mod tests {
         folder.click(folder.walter);
         folder.settle();
         assert_eq!(folder.files(), Vec::<String>::new(), "its empty folder goes too");
-        assert_eq!(folder.jobs()[0].error.as_deref(), Some("Timeline didn't save Walter White.fcpxml as a file."));
+        let said = folder.jobs()[0].error.clone().expect("it failed");
+        assert_eq!(said.text, "Timeline didn't save Walter White.fcpxml as a file.");
+        assert_eq!(said.key, "plugin.savedNoFile");
     }
 
     #[test]
@@ -919,7 +949,7 @@ mod tests {
         let busy = JobSpec {
             kind: JobKind::Plugin,
             class: Class::Plugin,
-            title: "Speaks · Walter".into(),
+            title: Msg::plain("Speaks · Walter"),
             subtitle: None,
             project_id: Some(b.project),
             media_id: None,
@@ -992,7 +1022,10 @@ mod tests {
         go.send(()).unwrap();
         b.settle();
         let jesse = b.jobs().into_iter().find(|j| j.id == job).unwrap();
-        assert_eq!((jesse.state, jesse.error.as_deref()), (JobState::Failed, Some("Timeline is turned off.")));
+        assert_eq!(
+            (jesse.state, jesse.error.as_ref().map(|e| e.text.as_str())),
+            (JobState::Failed, Some("Timeline is turned off."))
+        );
         assert_eq!((b.ran.lock().len(), b.files()), (1, vec![String::from("Walter White.fcpxml")]));
     }
 
@@ -1013,5 +1046,26 @@ mod tests {
         let spaced = format!("{} {}", "Ä".repeat(55), "b".repeat(30));
         let template = format!("{{character}}.{}", "x".repeat(88));
         assert_eq!(offered_name(&template, &spaced), format!("{}.{}", "Ä".repeat(55), "x".repeat(88)));
+    }
+
+    #[test]
+    fn a_file_that_cant_be_kept_says_why_in_autoscenes_words() {
+        let tmp = tempfile::tempdir().unwrap();
+        let reads_like_the_app = |said: Msg, key: &str| {
+            assert_eq!(said.key, key);
+            let MsgArg::Msg(why) = &said.args["why"] else { panic!("{said:?}") };
+            assert!(why.key.starts_with("file."), "{why:?}");
+            assert!(!said.text.contains("os error"), "{}", said.text);
+        };
+        // A folder stands where the file goes: the part can't take its place.
+        let taken = tmp.path().join("Walter.fcpxml");
+        std::fs::create_dir(&taken).unwrap();
+        let path = tmp.path().join("Walter.fcpxml.part");
+        std::fs::write(&path, b"saved").unwrap();
+        let part = Part { path: Some(path), note: tmp.path().join("note") };
+        reads_like_the_app(part.keep(&taken, "Timeline", "Walter.fcpxml").unwrap_err(), "plugin.saveFailed");
+        // A part no system can read.
+        let part = Part { path: Some(PathBuf::from("no path")), note: tmp.path().join("note") };
+        reads_like_the_app(part.keep(&taken, "Timeline", "Walter.fcpxml").unwrap_err(), "plugin.savedUnreadable");
     }
 }

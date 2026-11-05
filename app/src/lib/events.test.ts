@@ -8,6 +8,7 @@ import { startEventBridge } from "./events"
 import { commands } from "./ipc"
 import { isMadePack, qk, queryClient } from "./queries"
 import { pluginInfo } from "@/test/plugins"
+import { inLanguage, plain } from "@/test/i18n"
 
 // Each backend event's listener, as the bridge registers it.
 const { handlers } = vi.hoisted(() => ({ handlers: {} as Record<string, (e: { payload: unknown }) => void> }))
@@ -37,7 +38,7 @@ vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), err
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j1",
   kind: "export",
-  title: "Exporting 2 clips",
+  title: plain("Exporting 2 clips"),
   subtitle: "Breaking Bad",
   projectId: "p",
   mediaId: null,
@@ -118,13 +119,63 @@ describe("an export's job ending", () => {
   })
 })
 
+describe("a job that fails", () => {
+  const indexing = { key: "job.indexing", args: { name: "S01E01 · Pilot.mkv" }, text: "Indexing S01E01 · Pilot.mkv" }
+  const analysing = { key: "job.analysing", args: { name: "Pilot.mkv" }, text: "Analysing Pilot.mkv" }
+  const failed = (id: string, kind: JobInfo["kind"], title: JobInfo["title"]) =>
+    handlers.jobChanged({ payload: job({ id, kind, title, exportId: null, state: "failed", error: plain("No video."), rev: 3 }) })
+
+  it("says it couldn't, by the key of its title", () => {
+    failed("i", "ingest", indexing)
+    failed("a", "analyze", analysing)
+    expect(vi.mocked(toast.error).mock.calls).toEqual([
+      ["Couldn't index S01E01 · Pilot.mkv", { description: "No video." }],
+      ["Couldn't analyse Pilot.mkv", { description: "No video." }],
+    ])
+  })
+
+  it("doesn't read the words of a title: only its key says what it was", () => {
+    failed("p", "proxy", plain("Indexing is not what this says"))
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Indexing is not what this says", { description: "No video." })
+  })
+
+  it("names other work by its title", () => {
+    failed("p", "proxy", { key: "job.preparingPreview", args: { name: "Pilot.mkv" }, text: "Preparing preview of Pilot.mkv" })
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Preparing preview of Pilot.mkv", { description: "No video." })
+  })
+
+  it("says a name that is a message of its own, and its English when it has none", async () => {
+    await inLanguage("ro", { shell: { jobFailed: { indexing: "{{name}} nu a putut fi indexat" } }, backend: { fixture: { episode: "Episodul {{n}}" } } })
+    const nested = { key: "fixture.episode", args: { n: 3 }, text: "Episode 3" }
+    failed("i", "ingest", { key: "job.indexing", args: { name: nested }, text: "Indexing Episode 3" })
+    failed("j", "ingest", { key: "job.indexing", text: "Indexing it" })
+    const [[named], [nameless]] = vi.mocked(toast.error).mock.calls
+    expect(named).toBe("Episodul 3 nu a putut fi indexat")
+    expect(nameless).toBe("Indexing it")
+  })
+
+  it("says all of it in the language", async () => {
+    await inLanguage("ro", {
+      shell: { jobFailed: { indexing: "{{name}} nu a putut fi indexat" } },
+      backend: { job: { preparingPreview: "Se pregătește previzualizarea pentru {{name}}" }, episode: { fileNotFound: "Fișierul nu e de găsit." } },
+    })
+    const error = { key: "episode.fileNotFound", text: "That file can't be found." }
+    handlers.jobChanged({ payload: job({ id: "i", kind: "ingest", title: indexing, exportId: null, state: "failed", error, rev: 3 }) })
+    failed("p", "proxy", { key: "job.preparingPreview", args: { name: "Pilot.mkv" }, text: "Preparing preview of Pilot.mkv" })
+    expect(vi.mocked(toast.error).mock.calls).toEqual([
+      ["S01E01 · Pilot.mkv nu a putut fi indexat", { description: "Fișierul nu e de găsit." }],
+      ["Se pregătește previzualizarea pentru Pilot.mkv", { description: "No video." }],
+    ])
+  })
+})
+
 describe("a plugin job that finishes", () => {
   const plugin = (o: Partial<JobInfo>) =>
-    job({ id: "j2", kind: "plugin", title: "Post to Discord", subtitle: "Discord notify", exportId: null, rev: 2, ...o })
+    job({ id: "j2", kind: "plugin", title: plain("Post to Discord"), subtitle: "Discord notify", exportId: null, rev: 2, ...o })
 
   it("says its message", () => {
     handlers.jobChanged({ payload: plugin({ state: "running" }) })
-    handlers.jobChanged({ payload: plugin({ state: "done", message: "Posted 12 clips.", rev: 3 }) })
+    handlers.jobChanged({ payload: plugin({ state: "done", message: plain("Posted 12 clips."), rev: 3 }) })
     // Named by its plugin, after a word the plugin can't choose: its words
     // never read as AutoScene's, whatever it calls itself.
     expect(toast).toHaveBeenCalledExactlyOnceWith("Plugin “Discord notify”: Post to Discord", { description: "Posted 12 clips." })
@@ -132,14 +183,14 @@ describe("a plugin job that finishes", () => {
   })
 
   it("says it failed, and which plugin it was", () => {
-    handlers.jobChanged({ payload: plugin({ state: "failed", error: "Discord refused the post.", rev: 3 }) })
+    handlers.jobChanged({ payload: plugin({ state: "failed", error: plain("Discord refused the post."), rev: 3 }) })
     expect(toast.error).toHaveBeenCalledExactlyOnceWith("Plugin “Discord notify”: Post to Discord failed", {
       description: "Discord refused the post.",
     })
   })
 
   it("reads as a plugin's even when the plugin calls itself AutoScene", () => {
-    handlers.jobChanged({ payload: plugin({ state: "done", title: "Update ready", subtitle: "AutoScene", message: "Restart now.", rev: 3 }) })
+    handlers.jobChanged({ payload: plugin({ state: "done", title: plain("Update ready"), subtitle: "AutoScene", message: plain("Restart now."), rev: 3 }) })
     expect(toast).toHaveBeenCalledExactlyOnceWith("Plugin “AutoScene”: Update ready", { description: "Restart now." })
   })
 
@@ -149,7 +200,7 @@ describe("a plugin job that finishes", () => {
     // Not yet: the run is not over.
     expect(toast).not.toHaveBeenCalled()
     handlers.jobChanged({
-      payload: plugin({ state: "done", title: "Save as FCPXML · Walter", subtitle: "FCPXML", message: "Saved Walter.fcpxml", rev: 3 }),
+      payload: plugin({ state: "done", title: plain("Save as FCPXML · Walter"), subtitle: "FCPXML", message: plain("Saved Walter.fcpxml"), rev: 3 }),
     })
     expect(toast).toHaveBeenCalledOnce()
     const [text, opts] = vi.mocked(toast).mock.calls[0] as unknown as [string, { action?: { label: string; onClick: () => void } }]
@@ -161,14 +212,31 @@ describe("a plugin job that finishes", () => {
 
   it("a pack save that failed says so, and forgets where the file would have gone", () => {
     rememberPackSave("j2", "C:\\Cuts\\Walter.fcpxml")
-    handlers.jobChanged({ payload: plugin({ state: "failed", title: "Save as FCPXML · Walter", subtitle: "FCPXML", error: "No timeline.", rev: 3 }) })
+    handlers.jobChanged({ payload: plugin({ state: "failed", title: plain("Save as FCPXML · Walter"), subtitle: "FCPXML", error: plain("No timeline."), rev: 3 }) })
     expect(toast.error).toHaveBeenCalledExactlyOnceWith("Plugin “FCPXML”: Save as FCPXML · Walter failed", { description: "No timeline." })
     expect(takePackSave("j2")).toBeUndefined()
   })
 
   it("a save started before a restart says the job's own words", () => {
-    handlers.jobChanged({ payload: plugin({ state: "done", title: "Save as FCPXML · Walter", subtitle: "FCPXML", message: "Saved Walter.fcpxml", rev: 3 }) })
+    handlers.jobChanged({ payload: plugin({ state: "done", title: plain("Save as FCPXML · Walter"), subtitle: "FCPXML", message: plain("Saved Walter.fcpxml"), rev: 3 }) })
     expect(toast).toHaveBeenCalledExactlyOnceWith("Plugin “FCPXML”: Save as FCPXML · Walter", { description: "Saved Walter.fcpxml" })
+  })
+
+  it("a save started before a restart says AutoScene's words in the language", async () => {
+    await inLanguage("ro", { plugins: { toast: { finished: { named: "Plugin „{{name}}”: {{action}}" } } }, backend: { plugin: { saved: "S-a salvat {{file}}" } } })
+    const message = { key: "plugin.saved", args: { file: "Walter.fcpxml" }, text: "Saved Walter.fcpxml" }
+    handlers.jobChanged({ payload: plugin({ state: "done", title: plain("Save as FCPXML · Walter"), subtitle: "FCPXML", message, rev: 3 }) })
+    expect(toast).toHaveBeenCalledExactlyOnceWith("Plugin „FCPXML”: Save as FCPXML · Walter", { description: "S-a salvat Walter.fcpxml" })
+  })
+
+  it("keeps a plugin's own words inside a sentence in another language", async () => {
+    await inLanguage("ro", { plugins: { toast: { finished: { named: "Plugin „{{name}}”: {{action}}" }, failed: { named: "Plugin „{{name}}”: {{action}} a eșuat" } } } })
+    handlers.jobChanged({ payload: plugin({ state: "done", message: plain("Posted 12 clips."), rev: 3 }) })
+    handlers.jobChanged({ payload: plugin({ id: "j3", state: "failed", error: plain("Discord refused the post."), rev: 4 }) })
+    expect(toast).toHaveBeenCalledExactlyOnceWith("Plugin „Discord notify”: Post to Discord", { description: "Posted 12 clips." })
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Plugin „Discord notify”: Post to Discord a eșuat", {
+      description: "Discord refused the post.",
+    })
   })
 
   it("says nothing when it has nothing to say", () => {

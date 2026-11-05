@@ -53,11 +53,19 @@ fn left_over(e: &std::fs::DirEntry) -> bool {
 /// Progress callback: `(stage, fraction 0..1)`; `None`: how far it is isn't
 /// known for now (a clip failed and its share is skipped: the pace is
 /// measured anew from the next fraction).
-pub type Progress<'a> = &'a dyn Fn(&str, Option<f64>);
+pub type Progress<'a> = &'a dyn Fn(&Msg, Option<f64>);
 
 /// Progress of an ingest: `(stage, fraction 0..1, frames)`, the frames read
 /// so far while it reads every one of them (`None` in the stages around).
-pub type IngestProgress<'a> = &'a dyn Fn(&str, f64, Option<FrameCount>);
+pub type IngestProgress<'a> = &'a dyn Fn(&Msg, f64, Option<FrameCount>);
+
+/// What an export says while it renders the clip at `i` of `clips`.
+fn clip_stage(i: usize, clips: usize) -> Msg {
+    match clips {
+        0 | 1 => msg!("job.stage.rendering", "Rendering"),
+        _ => msg!("job.stage.clip", "Clip {{n, number}} of {{total, number}}", n = i + 1, total = clips),
+    }
+}
 
 /// Share of a merged export's progress that rendering its clips takes; the
 /// join (a copy, and the sound encoded once) takes the rest.
@@ -690,7 +698,7 @@ impl Project {
             )));
         }
         self.db.set_media_status(id, MediaStatus::Indexing, None)?;
-        progress("Reading file", 0.0, None);
+        progress(&msg!("job.stage.readingFile", "Reading file"), 0.0, None);
         let mut info = probe(tools, &path)?;
         cancel.check().map_err(|_| ProjectError::Cancelled)?;
         if info.video.field_order.is_none()
@@ -704,16 +712,17 @@ impl Project {
         self.indexing.lock().insert(id, indexing);
         let reading = ReadingFrames(self, id);
         let (total, rate) = (info.frames_estimate(), info.stated_fps());
+        let stage = msg!("job.stage.indexingFrames", "Indexing frames");
         let index = build_frame_index(tools, &path, &info, &self.tmp_dir(), cancel, |p| {
             if let Some(now) = self.indexing.lock().get_mut(&id) {
                 now.at_sec = p.at_sec;
             }
             let frames = FrameCount { done: p.frames, total, rate, per_sec: None };
-            progress("Indexing frames", p.fraction * 0.95, Some(frames));
+            progress(&stage, p.fraction * 0.95, Some(frames));
         })?;
         drop(reading);
 
-        progress("Creating poster", 0.96, None);
+        progress(&msg!("job.stage.creatingPoster", "Creating poster"), 0.96, None);
         let src = Source { path: &path, info: &info, index: &index };
         let (poster, poster_small) = match self.write_posters(tools, id, src, cancel) {
             Ok(()) => {
@@ -814,7 +823,8 @@ impl Project {
         self.db.set_proxy(id, ProxyState::Building, None, None)?;
         let path = PathBuf::from(&m.path);
         let src = Source { path: &path, info: &info, index: &index };
-        let result = proxy::build_proxy(tools, src, audio, &out, cancel, |p| progress("Preparing preview", Some(p)));
+        let stage = msg!("job.stage.preparingPreview", "Preparing preview");
+        let result = proxy::build_proxy(tools, src, audio, &out, cancel, |p| progress(&stage, Some(p)));
         // The audio track may have changed, or a newer build started, while we
         // worked; the newer state wins then.
         let superseded = !latest() || self.media(id)?.audio_ordinal != m.audio_ordinal;
@@ -1369,8 +1379,7 @@ impl Project {
             if cancel.is_cancelled() {
                 break;
             }
-            let stage =
-                if ex.items.len() > 1 { format!("Clip {} of {}", i + 1, ex.items.len()) } else { "Rendering".into() };
+            let stage = clip_stage(i, ex.items.len());
             self.db.update_export_item(item.id, ExportStatus::Running, None, None)?;
             changed();
             let result = (|| -> ProjectResult<as_api::ClipOutcome> {
@@ -1523,7 +1532,7 @@ impl Project {
                 break;
             }
             let (path, info, index) = &**episode;
-            let stage = if n > 1 { format!("Clip {} of {n}", i + 1) } else { "Rendering".into() };
+            let stage = clip_stage(i, n);
             self.db.update_export_part(item.id, ExportStatus::Running, None, None)?;
             changed();
             let job = ClipJob {
@@ -1564,7 +1573,7 @@ impl Project {
             return finish(none_left(), &[]);
         }
 
-        let stage = "Joining into one file";
+        let stage = &msg!("job.stage.joining", "Joining into one file");
         progress(stage, Some(RENDER_SHARE));
         let job = JoinJob {
             parts: &parts,

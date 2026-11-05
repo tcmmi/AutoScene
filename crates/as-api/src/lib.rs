@@ -1478,7 +1478,7 @@ impl JobState {
 pub struct JobInfo {
     pub id: JobId,
     pub kind: JobKind,
-    pub title: String,
+    pub title: Msg,
     pub subtitle: Option<String>,
     pub project_id: Option<ProjectId>,
     pub media_id: Option<MediaId>,
@@ -1486,16 +1486,17 @@ pub struct JobInfo {
     pub state: JobState,
     /// 0..1, `None` while indeterminate.
     pub progress: Option<f64>,
-    pub stage: Option<String>,
+    pub stage: Option<Msg>,
     pub eta_ms: Option<i64>,
     /// While the job reads a media's frames one by one (indexing): how
     /// many so far, of about how many, and how fast.
     #[serde(default)]
     pub frames: Option<FrameCount>,
-    pub error: Option<String>,
-    /// What a finished job had to say (a plugin's result).
+    pub error: Option<Msg>,
+    /// What a finished job had to say: a plugin's result, in its own words,
+    /// or the file its pack action saved.
     #[serde(default)]
-    pub message: Option<String>,
+    pub message: Option<Msg>,
     pub created_at: i64,
     pub finished_at: Option<i64>,
     /// Increases with every change to any job. Events can arrive out of
@@ -1511,7 +1512,7 @@ pub struct JobProgress {
     /// Revision of the job this progress belongs to (see [`JobInfo::rev`]).
     pub rev: u64,
     pub progress: Option<f64>,
-    pub stage: Option<String>,
+    pub stage: Option<Msg>,
     pub eta_ms: Option<i64>,
     /// See [`JobInfo::frames`].
     #[serde(default)]
@@ -1528,17 +1529,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_job_from_before_messages_still_reads() {
+    fn a_job_without_a_message_has_none_and_a_plugins_reads_back() {
         let old = format!(
-            r#"{{"id":"{}","kind":"export","title":"Exporting","subtitle":null,"projectId":null,"mediaId":null,"exportId":null,"state":"done","progress":1.0,"stage":null,"etaMs":null,"error":null,"createdAt":1,"finishedAt":2,"rev":3}}"#,
+            r#"{{"id":"{}","kind":"export","title":{{"key":"job.exporting","args":{{"count":2}},"text":"Exporting 2 clips"}},"subtitle":null,"projectId":null,"mediaId":null,"exportId":null,"state":"done","progress":1.0,"stage":null,"etaMs":null,"error":null,"createdAt":1,"finishedAt":2,"rev":3}}"#,
             JobId::new()
         );
         let job: JobInfo = serde_json::from_str(&old).unwrap();
         assert_eq!((job.kind, job.message), (JobKind::Export, None));
         let plugin = old
             .replace(r#""kind":"export""#, r#""kind":"plugin""#)
-            .replace(r#""error":null"#, r#""error":null,"message":"Posted 12 clips.""#);
+            .replace(r#""error":null"#, r#""error":null,"message":{"key":"","text":"Posted 12 clips."}"#);
         let job: JobInfo = serde_json::from_str(&plugin).unwrap();
-        assert_eq!((job.kind, job.message.as_deref()), (JobKind::Plugin, Some("Posted 12 clips.")));
+        assert_eq!((job.kind, job.message), (JobKind::Plugin, Some(Msg::plain("Posted 12 clips."))));
     }
 }

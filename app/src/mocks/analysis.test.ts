@@ -2,13 +2,15 @@ import { invoke } from "@tauri-apps/api/core"
 import { clearMocks } from "@tauri-apps/api/mocks"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type { JobInfo, MediaItem, ProjectSummary } from "@/bindings"
+import { i18n, say } from "@/lib/i18n"
 import { HOLD_MS, isFinished } from "@/state/activity"
 import { ANALYSIS, analysisSteps, analysisTick, installMockBackend } from "./backend"
+import { plain } from "@/test/i18n"
 
 const job = (): JobInfo => ({
   id: "a",
   kind: "analyze",
-  title: "Analysing E01.mkv",
+  title: plain("Analysing E01.mkv"),
   subtitle: null,
   projectId: "p",
   mediaId: "m",
@@ -27,10 +29,17 @@ const job = (): JobInfo => ({
 function at(facesOnly: boolean, elapsed: number) {
   const j = job()
   analysisTick(analysisSteps(facesOnly))(j, elapsed)
-  return { stage: j.stage, progress: j.progress, etaMs: j.etaMs }
+  return { stage: j.stage?.text, progress: j.progress, etaMs: j.etaMs }
 }
 
 describe("the mock's analysis", () => {
+  it("says its stages by keys the catalog has, in the backend's English", () => {
+    for (const { stage } of ANALYSIS) {
+      expect(i18n.exists(`backend:${stage.key}`), stage.key).toBe(true)
+      expect(say(stage)).toBe(stage.text)
+    }
+  })
+
   it("runs as a first analysis does: shots, a model's download, characters, then grouping", () => {
     expect(at(false, 0)).toEqual({ stage: "Finding shots", progress: 0, etaMs: null })
     expect(at(false, 1400)).toEqual({ stage: "Finding shots", progress: 0.8, etaMs: 600 })

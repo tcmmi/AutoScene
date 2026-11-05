@@ -3,6 +3,7 @@ import { UserFocus } from "@/components/icons"
 import { Progress } from "@/components/ui/progress"
 import { useProjectAnalysis } from "@/features/cast/cast"
 import { formatPercent } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { useMediaList } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { jobBar } from "@/state/activity"
@@ -38,7 +39,7 @@ export function AnalysisStatus({ pid, className }: { pid: string; className?: st
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="truncate font-medium text-fg-1">
-            {job.state === "queued" ? t("analysis.waiting") : (job.stage ?? t("analysis.running"))}
+            {job.state === "queued" ? t("analysis.waiting") : (job.stage ? say(job.stage) : t("analysis.running"))}
             {m && <span className="font-normal text-fg-2"> · {m.label || m.fileName}</span>}
           </span>
           <span className="timecode shrink-0 text-xs text-fg-2">{formatPercent(job.progress)}</span>

@@ -13,11 +13,12 @@ import {
   useProjectIndexWaiting,
   useRunningCount,
 } from "./activity"
+import { plain } from "@/test/i18n"
 
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j1",
   kind: "export",
-  title: "Exporting 1 clip",
+  title: plain("Exporting 1 clip"),
   subtitle: null,
   projectId: "p",
   mediaId: null,
@@ -48,7 +49,7 @@ describe("activity store", () => {
     s.upsert(job({ state: "running", progress: 0.5, rev: 5 }))
     s.progress({ id: "j1", rev: 4, progress: 0.1, stage: null, etaMs: null })
     expect(useActivity.getState().jobs.j1.progress).toBe(0.5)
-    s.progress({ id: "j1", rev: 6, progress: 0.7, stage: "Rendering", etaMs: 10 })
+    s.progress({ id: "j1", rev: 6, progress: 0.7, stage: plain("Rendering"), etaMs: 10 })
     expect(useActivity.getState().jobs.j1.progress).toBe(0.7)
   })
 
@@ -56,9 +57,9 @@ describe("activity store", () => {
     const s = useActivity.getState()
     s.upsert(job({ kind: "ingest", state: "running", rev: 1 }))
     const frames = { done: 1200, total: 34_000, rate: 23.976, perSec: null }
-    s.progress({ id: "j1", rev: 2, progress: 0.03, stage: "Indexing frames", etaMs: null, frames })
+    s.progress({ id: "j1", rev: 2, progress: 0.03, stage: plain("Indexing frames"), etaMs: null, frames })
     expect(useActivity.getState().jobs.j1.frames).toEqual(frames)
-    s.progress({ id: "j1", rev: 3, progress: 0.96, stage: "Creating poster", etaMs: null, frames: null })
+    s.progress({ id: "j1", rev: 3, progress: 0.96, stage: plain("Creating poster"), etaMs: null, frames: null })
     expect(useActivity.getState().jobs.j1.frames).toBeNull()
   })
 
@@ -153,6 +154,44 @@ describe("work that waits its turn", () => {
   })
 })
 
+describe("a stage's phase", () => {
+  const clip = (n: number) => ({ key: "job.stage.clip", args: { n, total: 3 }, text: `Clip ${n} of 3` })
+  const poster = (n: number) => ({ key: "job.stage.poster", args: { n, total: 3 }, text: `Poster ${n} of 3` })
+  const saving = (file: string) => ({ key: "plugin.stage.saving", args: { file }, text: `Saving ${file}` })
+  const running = (stage: JobInfo["stage"]) => job({ state: "running", rev: 1, progress: 0.5, stage })
+  /** What shows when a sample of `next` comes with no value after `stage`. */
+  const after = (stage: JobInfo["stage"], next: JobInfo["stage"]) => {
+    useActivity.setState({ jobs: { j1: running(stage) }, order: ["j1"] })
+    useActivity.getState().progress({ id: "j1", rev: 2, progress: null, stage: next, etaMs: null })
+    return useActivity.getState().jobs.j1.stage
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it("goes on when only a number changed: its key says so, in any language", () => {
+    expect(after(clip(1), clip(2))).toEqual(clip(2))
+  })
+
+  it("is a new one under another key, or with other words in a value: the old name stays with the old value", () => {
+    expect(after(clip(1), poster(1))).toEqual(clip(1))
+    expect(after(saving("a.mov"), saving("b.mov"))).toEqual(saving("a.mov"))
+  })
+
+  it("compares a stage nested in another the same way", () => {
+    const onCpu = (stage: JobInfo["stage"]) => ({ key: "job.stage.onCpu", args: { stage }, text: "on the CPU" })
+    expect(after(onCpu(clip(1)), onCpu(clip(2)))).toEqual(onCpu(clip(2)))
+    expect(after(onCpu(clip(1)), onCpu(poster(1)))).toEqual(onCpu(clip(1)))
+  })
+
+  it("reads a plugin's stage by its words, its numbers left out", () => {
+    expect(after(plain("Posting 1 of 3"), plain("Posting 2 of 3"))).toEqual(plain("Posting 2 of 3"))
+    expect(after(plain("Posting 1 of 3"), plain("Reading 1 of 3"))).toEqual(plain("Posting 1 of 3"))
+  })
+})
+
 describe("a momentary gap in progress", () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -162,7 +201,7 @@ describe("a momentary gap in progress", () => {
 
   let rev = 1
   const tell = (progress: number | null, etaMs: number | null = null, stage: string | null = "Downloading AI model") => {
-    const p: JobProgress = { id: "j1", rev: ++rev, progress, stage, etaMs }
+    const p: JobProgress = { id: "j1", rev: ++rev, progress, stage: stage === null ? null : plain(stage), etaMs }
     useActivity.getState().progress(p)
   }
   const shown = () => {
@@ -299,7 +338,7 @@ describe("a momentary gap in progress", () => {
   })
 
   it("a null that names a new stage holds the old stage's name with its value", () => {
-    const stage = () => useActivity.getState().jobs.j1.stage
+    const stage = () => useActivity.getState().jobs.j1.stage?.text
     running()
     tell(1, 400, "Finding characters")
     tell(null, null, "Grouping characters")

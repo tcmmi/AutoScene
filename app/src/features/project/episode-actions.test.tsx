@@ -7,6 +7,7 @@ import type { MenuKit } from "@/components/ui/menu-actions"
 import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
 import { EpisodeItems } from "./episode-actions"
+import { plain } from "@/test/i18n"
 
 vi.mock("@/lib/ipc", () => ({
   commands: {
@@ -34,14 +35,14 @@ const kit: MenuKit = {
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j",
   kind: "analyze",
-  title: "Analysing E01.mkv",
+  title: plain("Analysing E01.mkv"),
   subtitle: null,
   projectId: "p",
   mediaId: "m",
   exportId: null,
   state: "running",
   progress: 0.4,
-  stage: "Finding shots",
+  stage: plain("Finding shots"),
   etaMs: null,
   error: null,
   createdAt: 1,
@@ -82,7 +83,7 @@ describe("an episode's actions", () => {
     // The preview's job is the newer one: what is cancelled is picked by kind.
     useActivity.getState().replaceAll([
       job({ id: "analysis", kind: "analyze", createdAt: 1 }),
-      job({ id: "preview", kind: "proxy", stage: "Preparing preview", createdAt: 2, rev: 2 }),
+      job({ id: "preview", kind: "proxy", stage: plain("Preparing preview"), createdAt: 2, rev: 2 }),
     ])
     render(<EpisodeItems kit={kit} projectId="p" media={analysed} onOpen={() => {}} onRemove={() => {}} />)
     fireEvent.click(screen.getByRole("button", { name: /Cancel analysis/ }))
@@ -125,7 +126,7 @@ describe("an episode's actions", () => {
   it("finds the shots again while characters are being found", () => {
     // The shots are done, so they can start over: the analysis begins again
     // from them. The characters it is finding wait.
-    useActivity.getState().replaceAll([job({ id: "analysis", stage: "Finding characters" })])
+    useActivity.getState().replaceAll([job({ id: "analysis", stage: plain("Finding characters") })])
     items(episode({ faces: "running" }))
     fireEvent.click(item(/Find shots again/)!)
     expect(commands.mediaAnalyze).toHaveBeenCalledWith("p", "m", "shots")
@@ -135,7 +136,7 @@ describe("an episode's actions", () => {
   it("a preview built beside it never holds a redo back", () => {
     // Only the analysis finds stages: a preview of the episode leaves both
     // redo items as they are.
-    useActivity.getState().replaceAll([job({ id: "preview", kind: "proxy", stage: "Preparing preview" })])
+    useActivity.getState().replaceAll([job({ id: "preview", kind: "proxy", stage: plain("Preparing preview") })])
     items(episode({ faces: "stopped" }))
     fireEvent.click(item(/Find shots again/)!)
     expect(commands.mediaAnalyze).toHaveBeenCalledWith("p", "m", "shots")
@@ -146,8 +147,8 @@ describe("an episode's actions", () => {
   it("removing stays while it works", () => {
     // The backend stops the episode's work before it removes it.
     useActivity.getState().replaceAll([
-      job({ id: "analysis", stage: "Finding shots" }),
-      job({ id: "preview", kind: "proxy", stage: "Preparing preview", createdAt: 2, rev: 2 }),
+      job({ id: "analysis", stage: plain("Finding shots") }),
+      job({ id: "preview", kind: "proxy", stage: plain("Preparing preview"), createdAt: 2, rev: 2 }),
     ])
     const onRemove = vi.fn()
     items(episode({ shots: "running", faces: "pending" }), onRemove)

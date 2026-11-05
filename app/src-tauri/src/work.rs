@@ -28,7 +28,7 @@ pub(crate) fn job_error(e: ProjectError) -> JobError {
         ProjectError::Cancelled => JobError::Cancelled,
         e => {
             log::warn!("{}", e.detail());
-            JobError::Failed(e.to_string())
+            JobError::Failed(e.msg())
         }
     }
 }
@@ -126,7 +126,7 @@ pub fn queue_ingest(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) 
     let spec = JobSpec {
         kind: JobKind::Ingest,
         class: Class::Media,
-        title: format!("Indexing {}", media_title(&m)),
+        title: msg!("job.indexing", "Indexing {{name}}", name = media_title(&m)),
         subtitle: project.title().ok(),
         project_id: Some(project.id),
         media_id: Some(media_id),
@@ -141,7 +141,7 @@ pub fn queue_ingest(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) 
     state.jobs.submit_unless(indexing, spec, move |ctx| {
         unstarted.started();
         let state = app2.state::<AppState>();
-        let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
+        let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
         let language = state.library.audio_language().unwrap_or_else(|e| {
             log::warn!("preferred audio language: {}", e.detail());
             String::new()
@@ -214,7 +214,7 @@ impl From<StageError> for JobError {
     fn from(e: StageError) -> Self {
         match e {
             StageError::Cancelled => JobError::Cancelled,
-            StageError::Failed(m) | StageError::Later(m) | StageError::Bug(m) => JobError::Failed(m.text),
+            StageError::Failed(m) | StageError::Later(m) | StageError::Bug(m) => JobError::Failed(m),
         }
     }
 }
@@ -423,7 +423,7 @@ fn submit_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, o
     let spec = JobSpec {
         kind: JobKind::Analyze,
         class: Class::Analysis,
-        title: format!("Analysing {}", media_title(&m)),
+        title: msg!("job.analysing", "Analysing {{name}}", name = media_title(&m)),
         subtitle: project.title().ok(),
         project_id: Some(project.id),
         media_id: Some(media_id),
@@ -571,15 +571,15 @@ fn run_shots(
     project.set_shots_state(media_id, StageState::Running, None).map_err(stage_error)?;
     media_changed(app, project, Some(media_id));
     let plan = project.shots_plan(media_id).map_err(stage_error)?;
-    const STAGE: &str = "Finding shots";
+    let finding = msg!("job.stage.findingShots", "Finding shots");
     if plan.resume < plan.frames {
-        ctx.progress(STAGE, plan.resume as f64 / plan.frames as f64);
-        let mut stage = STAGE.to_owned();
+        ctx.progress(&finding, plan.resume as f64 / plan.frames as f64);
+        let mut stage = finding.clone();
         state
             .engine
             .shots(plan.path, plan.info, plan.index, plan.resume, plan.chunk, &ctx.cancel, |e| match e {
                 ShotsEvent::Devices { devices, resume } => {
-                    stage = devices_reported(project, media_id, Pass::Shots, STAGE, &devices, resume);
+                    stage = devices_reported(project, media_id, Pass::Shots, &finding, &devices, resume);
                     Ok(())
                 }
                 ShotsEvent::Progress(f) => {
@@ -592,7 +592,7 @@ fn run_shots(
             })
             .map_err(engine_error)?;
     }
-    ctx.stage(STAGE);
+    ctx.stage(&finding);
     let shots = project.finish_shots(media_id).map_err(stage_error)?;
     log::info!("{shots} shots found (engine prefers {})", state.engine.device().unwrap_or_default());
     Ok(())
@@ -647,13 +647,13 @@ fn run_faces(
         };
     project.set_faces_state(media_id, StageState::Running, None).map_err(stage_error)?;
     media_changed(app, project, Some(media_id));
-    const STAGE: &str = "Finding characters";
+    let finding = msg!("job.stage.findingCharacters", "Finding characters");
     loop {
         let plan = project.faces_plan(media_id, model).map_err(stage_error)?;
         if plan.resume >= plan.frames {
             break;
         }
-        ctx.progress(STAGE, plan.resume as f64 / plan.frames as f64);
+        ctx.progress(&finding, plan.resume as f64 / plan.frames as f64);
         let job = FacesInput {
             path: plan.path,
             info: plan.info,
@@ -667,10 +667,10 @@ fn run_faces(
             fast: plan.fast,
             anime: plan.anime,
         };
-        let mut stage = STAGE.to_owned();
+        let mut stage = finding.clone();
         let found = state.engine.faces(job, &ctx.cancel, |e| match e {
             FacesEvent::Devices { devices, resume } => {
-                stage = devices_reported(project, media_id, Pass::Faces, STAGE, &devices, resume);
+                stage = devices_reported(project, media_id, Pass::Faces, &finding, &devices, resume);
                 Ok(())
             }
             FacesEvent::Progress(f) => {
@@ -700,13 +700,18 @@ fn run_faces(
         log::info!("faces are now found another way; finding them again");
         return run_faces(app, state, project, media_id, ctx);
     }
-    ctx.stage("Grouping characters");
+    ctx.stage(&grouping());
     project.finish_faces(media_id).map_err(stage_error)?;
     let characters = project.recluster().map_err(stage_error)?;
     log::info!("faces found; the cast has {characters} characters");
     cast_changed(app, project);
     crate::commands::anilist::look_up(app, project.id, true);
     Ok(())
+}
+
+/// What an analysis says while it groups what it found.
+fn grouping() -> Msg {
+    msg!("job.stage.groupingCharacters", "Grouping characters")
 }
 
 /// Find a media's people for its faces (when the setting asks for it):
@@ -728,9 +733,9 @@ fn run_bodies(
     project.set_bodies_state(media_id, StageState::Running, None).map_err(stage_error)?;
     media_changed(app, project, Some(media_id));
     let plan = project.bodies_plan(media_id).map_err(stage_error)?;
-    const STAGE: &str = "Finding people";
+    let finding = msg!("job.stage.findingPeople", "Finding people");
     if plan.resume < plan.frames {
-        ctx.progress(STAGE, plan.resume as f64 / plan.frames as f64);
+        ctx.progress(&finding, plan.resume as f64 / plan.frames as f64);
         let job = FacesInput {
             path: plan.path,
             info: plan.info,
@@ -744,12 +749,12 @@ fn run_bodies(
             fast: false,
             anime: false,
         };
-        let mut stage = STAGE.to_owned();
+        let mut stage = finding.clone();
         state
             .engine
             .faces(job, &ctx.cancel, |e| match e {
                 FacesEvent::Devices { devices, resume } => {
-                    stage = devices_reported(project, media_id, Pass::People, STAGE, &devices, resume);
+                    stage = devices_reported(project, media_id, Pass::People, &finding, &devices, resume);
                     Ok(())
                 }
                 FacesEvent::Progress(f) => {
@@ -762,7 +767,7 @@ fn run_bodies(
             })
             .map_err(engine_error)?;
     }
-    ctx.stage("Grouping characters");
+    ctx.stage(&grouping());
     project.finish_bodies(media_id).map_err(stage_error)?;
     project.reassign().map_err(stage_error)?;
     log::info!("people found");
@@ -837,25 +842,31 @@ fn devices_reported(
     project: &Project,
     media_id: MediaId,
     pass: Pass,
-    stage: &str,
+    stage: &Msg,
     devices: &Devices,
     resume: u32,
-) -> String {
+) -> Msg {
+    let named = &stage.text;
     match project.record_devices(media_id, pass, &devices.summary(), resume) {
         Ok(Some(before)) => log::warn!(
-            "{stage}: resumed at frame {resume} with {} after checkpoints made with {before}; \
+            "{named}: resumed at frame {resume} with {} after checkpoints made with {before}; \
              its numbers may differ from an uninterrupted run's in the last digits",
             devices.summary()
         ),
         Ok(None) => {}
-        Err(e) => log::warn!("recording the devices of '{stage}': {}", e.detail()),
+        Err(e) => log::warn!("recording the devices of '{named}': {}", e.detail()),
     }
     let on_cpu = devices.on_cpu();
     if on_cpu.is_empty() {
-        return stage.to_owned();
+        return stage.clone();
     }
-    log::warn!("{stage}: the GPU couldn't take {}; on the CPU (slower)", on_cpu.join(", "));
-    format!("{stage} · on the CPU (slower)")
+    log::warn!("{named}: the GPU couldn't take {}; on the CPU (slower)", on_cpu.join(", "));
+    on_the_cpu(stage.clone())
+}
+
+/// `stage`, saying that it runs on the CPU.
+fn on_the_cpu(stage: Msg) -> Msg {
+    msg!("job.stage.onCpu", "{{stage}} · on the CPU (slower)", stage = stage)
 }
 
 /// Download AI models on first use (verified; resumes an interrupted download).
@@ -865,13 +876,13 @@ fn install_models(state: &AppState, ids: &[&str], ctx: &JobCtx) -> Result<(), St
         if installed.is_some() {
             continue;
         }
-        const STAGE: &str = "Downloading AI model";
+        let stage = msg!("job.stage.downloadingModel", "Downloading AI model");
         // Unknown until the first count: a resumed download starts at the
         // bytes it has, which mustn't count as fetched in no time.
-        ctx.stage(STAGE);
+        ctx.stage(&stage);
         state
             .models
-            .install(id, &ctx.cancel, |done, total| ctx.progress(STAGE, done as f64 / total.max(1) as f64))
+            .install(id, &ctx.cancel, |done, total| ctx.progress(&stage, done as f64 / total.max(1) as f64))
             .map_err(|e| match e {
                 ModelError::Cancelled => StageError::Cancelled,
                 e => {
@@ -892,7 +903,7 @@ pub fn queue_proxy(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) {
     let spec = JobSpec {
         kind: JobKind::Proxy,
         class: Class::Media,
-        title: format!("Preparing preview of {}", media_title(&m)),
+        title: msg!("job.preparingPreview", "Preparing preview of {{name}}", name = media_title(&m)),
         subtitle: project.title().ok(),
         project_id: Some(project.id),
         media_id: Some(media_id),
@@ -901,8 +912,8 @@ pub fn queue_proxy(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) {
     let (app2, project) = (app.clone(), project.clone());
     state.jobs.submit(spec, move |ctx| {
         let state = app2.state::<AppState>();
-        let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
-        ctx.stage("Preparing preview");
+        let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
+        ctx.stage(&msg!("job.stage.preparingPreview", "Preparing preview"));
         let result = project.build_proxy(&tools, media_id, &ctx.cancel, &|stage, p| ctx.report(stage, p));
         media_changed(&app2, &project, Some(media_id));
         result.map_err(job_error)
@@ -921,7 +932,7 @@ pub fn queue_posters(app: &AppHandle, project: &Arc<Project>, ids: Vec<MediaId>)
     let spec = JobSpec {
         kind: JobKind::Posters,
         class: Class::Upkeep,
-        title: "Sharpening posters".into(),
+        title: msg!("job.sharpeningPosters", "Sharpening posters"),
         subtitle: project.title().ok(),
         project_id: Some(project.id),
         media_id: None,
@@ -932,9 +943,11 @@ pub fn queue_posters(app: &AppHandle, project: &Arc<Project>, ids: Vec<MediaId>)
     let sharpening = move |j: &JobInfo| j.kind == JobKind::Posters && j.project_id == Some(pid);
     state.jobs.submit_unless(sharpening, spec, move |ctx| {
         let state = app2.state::<AppState>();
-        let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
+        let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
         for (i, &id) in ids.iter().enumerate() {
-            ctx.progress(&format!("Poster {} of {}", i + 1, ids.len()), i as f64 / ids.len() as f64);
+            let stage =
+                msg!("job.stage.poster", "Poster {{n, number}} of {{total, number}}", n = i + 1, total = ids.len());
+            ctx.progress(&stage, i as f64 / ids.len() as f64);
             match project.refresh_posters(&tools, id, &ctx.cancel) {
                 Ok(true) => {}
                 Ok(false) => continue,
@@ -964,7 +977,7 @@ pub fn queue_regroup(app: &AppHandle, project: &Arc<Project>) {
     let spec = JobSpec {
         kind: JobKind::Regroup,
         class: Class::Upkeep,
-        title: "Grouping characters".into(),
+        title: msg!("job.groupingCharacters", "Grouping characters"),
         subtitle: project.title().ok(),
         project_id: Some(project.id),
         media_id: None,
@@ -977,7 +990,7 @@ pub fn queue_regroup(app: &AppHandle, project: &Arc<Project>) {
     let waiting =
         move |j: &JobInfo| j.kind == JobKind::Regroup && j.project_id == Some(pid) && j.state == JobState::Queued;
     state.jobs.submit_unless(waiting, spec, move |ctx| {
-        ctx.stage("Grouping characters");
+        ctx.stage(&grouping());
         let regrouped = project.cast_upkeep(&ctx.cancel).map_err(job_error)?;
         if let Some(characters) = regrouped {
             log::info!("characters grouped again; the cast has {characters} characters");
@@ -1026,7 +1039,7 @@ pub fn queue_portraits(app: &AppHandle, project: &Arc<Project>) {
     let spec = JobSpec {
         kind: JobKind::Portraits,
         class: Class::Upkeep,
-        title: "Sharpening portraits".into(),
+        title: msg!("job.sharpeningPortraits", "Sharpening portraits"),
         subtitle: project.title().ok(),
         project_id: Some(project.id),
         media_id: None,
@@ -1035,7 +1048,7 @@ pub fn queue_portraits(app: &AppHandle, project: &Arc<Project>) {
     let (app2, project) = (app.clone(), project.clone());
     state.jobs.submit(spec, move |ctx| {
         let state = app2.state::<AppState>();
-        let tools = state.tools().map_err(|e| JobError::Failed(e.message))?;
+        let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
         // The cast is fetched again when portraits are new, at most every
         // couple of seconds: cards turn sharp in batches, not one by one.
         let changed = || {
@@ -1046,7 +1059,13 @@ pub fn queue_portraits(app: &AppHandle, project: &Arc<Project>) {
         loop {
             let tracks = project.missing_portraits().map_err(job_error)?;
             for (i, &track) in tracks.iter().enumerate() {
-                ctx.progress(&format!("Portrait {} of {}", i + 1, tracks.len()), i as f64 / tracks.len() as f64);
+                let stage = msg!(
+                    "job.stage.portrait",
+                    "Portrait {{n, number}} of {{total, number}}",
+                    n = i + 1,
+                    total = tracks.len()
+                );
+                ctx.progress(&stage, i as f64 / tracks.len() as f64);
                 match project.portrait(&tools, track, &ctx.cancel) {
                     Ok(Portrait::Made(_)) => unseen = true,
                     Ok(Portrait::Ready(_) | Portrait::Unavailable) => {}
@@ -1123,17 +1142,10 @@ fn sync_library_posters(app: &AppHandle, project: &Project) {
 pub fn queue_export(app: &AppHandle, project: &Arc<Project>, export: &ExportSummary) {
     let state = app.state::<AppState>();
     let export_id = export.id;
-    let clips = export.items.len();
-    let title = match (clips, export.merged.is_some()) {
-        (1, false) => "Exporting 1 clip".into(),
-        (1, true) => "Exporting 1 clip into one file".into(),
-        (n, false) => format!("Exporting {n} clips"),
-        (n, true) => format!("Exporting {n} clips into one file"),
-    };
     let spec = JobSpec {
         kind: JobKind::Export,
         class: Class::Export,
-        title,
+        title: export_title(export.items.len(), export.merged.is_some()),
         subtitle: project.title().ok(),
         project_id: Some(project.id),
         media_id: None,
@@ -1157,7 +1169,7 @@ pub fn queue_export(app: &AppHandle, project: &Arc<Project>, export: &ExportSumm
                     log::warn!("marking export {export_id} failed: {}", fail.detail());
                 }
                 notify();
-                return Err(JobError::Failed(e.message));
+                return Err(JobError::Failed(e.msg));
             }
         };
         notify();
@@ -1178,7 +1190,7 @@ pub fn queue_export(app: &AppHandle, project: &Arc<Project>, export: &ExportSumm
         notify();
         let summary = result.map_err(job_error)?;
         if let Some(error) = summary.merged.as_ref().and_then(|f| f.error.clone()) {
-            return Err(JobError::Failed(error.text));
+            return Err(JobError::Failed(error));
         }
         let failed = summary.items.iter().filter(|i| i.error.is_some()).count();
         if failed > 0 {
@@ -1206,13 +1218,42 @@ fn export_dropped(app: &AppHandle, project: &Project, export_id: ExportId) {
     }
 }
 
+/// The title of the job of an export of `clips`, in `one_file` or a file each.
+fn export_title(clips: usize, one_file: bool) -> Msg {
+    if one_file {
+        msg!(
+            "job.exportingJoined",
+            one = "Exporting {{count}} clip into one file",
+            other = "Exporting {{count}} clips into one file",
+            count = clips
+        )
+    } else {
+        msg!("job.exporting", one = "Exporting {{count}} clip", other = "Exporting {{count}} clips", count = clips)
+    }
+}
+
 /// What an export with `failed` of its `clips` failing says.
-fn failed_message(failed: usize, clips: usize, one_file: bool) -> String {
-    let what = if failed == 1 { "1 clip".to_string() } else { format!("{failed} clips") };
+fn failed_message(failed: usize, clips: usize, one_file: bool) -> Msg {
     match (one_file, clips.saturating_sub(failed)) {
-        (false, _) => format!("{what} failed to export."),
-        (true, 1) => format!("{what} couldn't be exported; the file has the other one."),
-        (true, rest) => format!("{what} couldn't be exported; the file has the other {rest}."),
+        (false, _) => msg!(
+            "job.clipsFailed",
+            one = "{{count}} clip failed to export.",
+            other = "{{count}} clips failed to export.",
+            count = failed
+        ),
+        (true, 1) => msg!(
+            "job.clipsFailedOneLeft",
+            one = "{{count}} clip couldn't be exported; the file has the other one.",
+            other = "{{count}} clips couldn't be exported; the file has the other one.",
+            count = failed
+        ),
+        (true, rest) => msg!(
+            "job.clipsFailedSomeLeft",
+            one = "{{count}} clip couldn't be exported; the file has the other {{rest, number}}.",
+            other = "{{count}} clips couldn't be exported; the file has the other {{rest, number}}.",
+            count = failed,
+            rest = rest
+        ),
     }
 }
 
@@ -1321,12 +1362,12 @@ mod tests {
     use std::time::Duration;
 
     use as_api::{AnalysisStage, JobInfo, JobKind, JobState, StageState};
-    use as_core::{CancelToken, JobId, MediaId};
+    use as_core::{CancelToken, JobId, MediaId, Msg, MsgArg, msg};
     use as_jobs::{Class, JobError, JobEvent, JobRunner, JobSpec};
 
     use super::{
-        StageError, Unstarted, analysed_otherwise, ended_for_restart, failed_message, guarded, hand_over_restart,
-        stage_error, start_over_now,
+        StageError, Unstarted, analysed_otherwise, ended_for_restart, export_title, failed_message, guarded,
+        hand_over_restart, on_the_cpu, stage_error, start_over_now,
     };
     use crate::state::AnalysisRuns;
 
@@ -1363,7 +1404,7 @@ mod tests {
         let spec = || JobSpec {
             kind: JobKind::Analyze,
             class: Class::Analysis,
-            title: "Analysing Pilot".into(),
+            title: Msg::plain("Analysing Pilot"),
             subtitle: None,
             project_id: None,
             media_id: None,
@@ -1402,7 +1443,7 @@ mod tests {
         let analysis = |m: MediaId| JobSpec {
             kind: JobKind::Analyze,
             class: Class::Analysis,
-            title: "Analysing".into(),
+            title: Msg::plain("Analysing"),
             subtitle: None,
             project_id: None,
             media_id: Some(m),
@@ -1461,7 +1502,7 @@ mod tests {
             let spec = JobSpec {
                 kind: JobKind::Analyze,
                 class: Class::Analysis,
-                title: "Analysing".into(),
+                title: Msg::plain("Analysing"),
                 subtitle: None,
                 project_id: None,
                 media_id: Some(media),
@@ -1515,9 +1556,35 @@ mod tests {
 
     #[test]
     fn failures_say_what_the_file_still_has() {
-        assert_eq!(failed_message(1, 3, false), "1 clip failed to export.");
-        assert_eq!(failed_message(2, 3, false), "2 clips failed to export.");
-        assert_eq!(failed_message(1, 2, true), "1 clip couldn't be exported; the file has the other one.");
-        assert_eq!(failed_message(2, 42, true), "2 clips couldn't be exported; the file has the other 40.");
+        assert_eq!(failed_message(1, 3, false).text, "1 clip failed to export.");
+        assert_eq!(failed_message(2, 3, false).text, "2 clips failed to export.");
+        assert_eq!(failed_message(1, 2, true).text, "1 clip couldn't be exported; the file has the other one.");
+        assert_eq!(failed_message(2, 2 + 1, true).text, "2 clips couldn't be exported; the file has the other one.");
+        assert_eq!(failed_message(1, 3, true).text, "1 clip couldn't be exported; the file has the other 2.");
+        assert_eq!(failed_message(2, 42, true).text, "2 clips couldn't be exported; the file has the other 40.");
+        let said = failed_message(2, 42, true);
+        assert_eq!(said.key, "job.clipsFailedSomeLeft");
+        assert_eq!((&said.args["count"], &said.args["rest"]), (&MsgArg::Num(2.0), &MsgArg::Num(40.0)));
+    }
+
+    #[test]
+    fn an_exports_title_counts_its_clips_in_any_language() {
+        assert_eq!(export_title(1, false).text, "Exporting 1 clip");
+        assert_eq!(export_title(12, false).text, "Exporting 12 clips");
+        assert_eq!(export_title(1, true).text, "Exporting 1 clip into one file");
+        assert_eq!(export_title(12, true).text, "Exporting 12 clips into one file");
+        // The UI picks the plural form of its language from the count.
+        let title = export_title(3, true);
+        assert_eq!((title.key.as_str(), &title.args["count"]), ("job.exportingJoined", &MsgArg::Num(3.0)));
+        assert_eq!(export_title(3, false).key, "job.exporting");
+    }
+
+    #[test]
+    fn on_the_cpu_wraps_the_stage_it_slows() {
+        let finding = msg!("job.stage.findingShots", "Finding shots");
+        let said = on_the_cpu(finding.clone());
+        assert_eq!(said.text, "Finding shots · on the CPU (slower)");
+        assert_eq!(said.key, "job.stage.onCpu");
+        assert_eq!(said.args["stage"], MsgArg::Msg(Box::new(finding)));
     }
 }

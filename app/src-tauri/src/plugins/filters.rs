@@ -41,7 +41,8 @@ use as_jobs::{JobCtx, JobError, JobResult, JobRunner};
 use as_plugin::protocol::{CharacterContext, EpisodeContext, FaceBox, ProjectContext, ShotContext, ShotsContext};
 use as_plugin::runtime::{self, RunSpec};
 use as_plugin::{
-    ActionContext, ActionKind, HostCalls, Manifest, PluginId, PluginResult, SettingValue, ShotFilterSpec, Trigger,
+    ActionContext, ActionKind, HostCalls, Manifest, PluginId, PluginResult, Report, SettingValue, ShotFilterSpec,
+    Trigger,
 };
 use as_project::naming::FileWords;
 use as_project::{FilterCheck, Library, PluginFilter, PluginFilters, ProjectResult};
@@ -281,12 +282,11 @@ impl Packs for Arc<Library> {
 }
 
 /// How a check's run runs: `as_plugin::runtime::run`, or a test's stand-in.
-pub type RunFn =
-    dyn Fn(RunSpec, &CancelToken, &dyn Fn(&str, Option<f64>)) -> PluginResult<Option<String>> + Send + Sync;
+pub type RunFn = dyn Fn(RunSpec, &CancelToken, Report) -> PluginResult<Option<String>> + Send + Sync;
 
 /// FFmpeg as a run gets it (ffmpeg, ffprobe, its version), or why it isn't
 /// there.
-pub type ToolsFn = dyn Fn() -> Result<(PathBuf, PathBuf, String), String> + Send + Sync;
+pub type ToolsFn = dyn Fn() -> Result<(PathBuf, PathBuf, String), Msg> + Send + Sync;
 
 /// What checks use of the app.
 #[derive(Clone)]
@@ -315,7 +315,7 @@ impl Checking {
             lib: state.library.clone(),
             packs: Arc::new(state.library.clone()),
             tools: Arc::new(move || {
-                let t = tools.state::<AppState>().tools().map_err(|e| e.message)?;
+                let t = tools.state::<AppState>().tools().map_err(|e| e.msg)?;
                 Ok((t.ffmpeg.clone(), t.ffprobe.clone(), t.version.clone()))
             }),
             run: Arc::new(|spec, cancel, report| runtime::run(spec, cancel, report)),
@@ -460,7 +460,7 @@ fn check_episode(
     let action = ActionContext { kind: ActionKind::ShotFilter, id: chain.filter.clone(), trigger: Trigger::Pack };
     // Through AutoScene's uv and with the plugin's large files, got first
     // when they aren't kept, as any run of it is.
-    let report = |stage: &str, f: Option<f64>| ctx.report(stage, f);
+    let report = |stage: &Msg, f: Option<f64>| ctx.report(stage, f);
     let tools = (ffmpeg.as_path(), ffprobe.as_path(), version.as_str());
     let mut run = ck
         .host
@@ -471,7 +471,7 @@ fn check_episode(
     let basis = basis_of(f, &run.message.settings);
     let filters = ck.filters(chain.project, chain.character, spec).map_err(|e| {
         fail(&basis);
-        JobError::Failed(e.message)
+        JobError::Failed(e.msg)
     })?;
     let filter = chain.key();
     let at = Place {
@@ -506,8 +506,15 @@ fn check_episode(
     run.calls = calls.map(|c| Arc::new(c) as Arc<dyn HostCalls>);
     let episode = std::path::Path::new(&check.path).file_name().map(|n| n.to_string_lossy().into_owned());
     ctx.stage(&match episode {
-        Some(episode) => format!("Checking {}'s shots in {episode}", check.name),
-        None => format!("Checking {}'s shots", check.name),
+        Some(episode) => {
+            msg!(
+                "plugin.stage.checkingShotsIn",
+                "Checking {{name}}'s shots in {{episode}}",
+                name = &check.name,
+                episode = episode
+            )
+        }
+        None => msg!("plugin.stage.checkingShots", "Checking {{name}}'s shots", name = &check.name),
     });
     let result = (ck.run)(run, &ctx.cancel, &report);
 
@@ -883,7 +890,7 @@ mod tests {
         let other = JobSpec {
             kind: JobKind::Plugin,
             class: Class::Plugin,
-            title: "Post".into(),
+            title: Msg::plain("Post"),
             subtitle: None,
             project_id: None,
             media_id: None,
@@ -906,9 +913,9 @@ mod tests {
         // Each episode is a run of its own in Activity, named by the filter and the character.
         // What the plugin said goes to the log: a season is no stack of toasts.
         let runs: Vec<_> =
-            b.ck.jobs.jobs().into_iter().filter(|j| j.kind == JobKind::Plugin && j.title != "Post").collect();
+            b.ck.jobs.jobs().into_iter().filter(|j| j.kind == JobKind::Plugin && j.title.text != "Post").collect();
         assert_eq!(runs.len(), 3);
-        assert!(runs.iter().all(|j| j.title == "Speaks · Walter" && j.state == JobState::Done), "{runs:?}");
+        assert!(runs.iter().all(|j| j.title.text == "Speaks · Walter" && j.state == JobState::Done), "{runs:?}");
         assert!(runs.iter().all(|j| j.message.is_none()), "{runs:?}");
         // Nothing left: nothing to check.
         assert!(!b.check(walter, false));
@@ -1029,7 +1036,7 @@ mod tests {
         assert!(!b.check(b.walter, false));
         assert_eq!(b.jobs(), 1);
         let failed = b.ck.jobs.jobs().into_iter().find(|j| j.kind == JobKind::Plugin).unwrap();
-        assert_eq!((failed.state, failed.error.as_deref()), (JobState::Failed, Some("No audio.")));
+        assert_eq!((failed.state, failed.error), (JobState::Failed, Some(Msg::plain("No audio."))));
         // Try again: it goes on with the shots it lacks.
         assert!(b.check(b.walter, true));
         b.settle();
@@ -1064,7 +1071,7 @@ mod tests {
         let blocker = JobSpec {
             kind: JobKind::Plugin,
             class: Class::Plugin,
-            title: "Busy".into(),
+            title: Msg::plain("Busy"),
             subtitle: None,
             project_id: None,
             media_id: None,
@@ -1095,7 +1102,7 @@ mod tests {
         assert_eq!((b.ran(), b.state(b.walter)), (vec!["ep1".to_owned()], PackFilterState::Failed));
         assert_eq!(b.heard(b.walter), [PackFilterState::Failed]);
         let run = b.ck.jobs.jobs().into_iter().find(|j| j.kind == JobKind::Plugin).unwrap();
-        assert_eq!((run.state, run.error.as_deref()), (JobState::Failed, Some("The disk is full.")));
+        assert_eq!((run.state, run.error.map(|e| e.text).as_deref()), (JobState::Failed, Some("The disk is full.")));
         assert!(!b.check(b.walter, false));
         assert_eq!(b.jobs(), 1);
         // With room again, Try again asks for each shot.

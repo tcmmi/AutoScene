@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use as_api::{JobInfo, JobKind, JobProgress, JobState, now_ms};
-use as_core::{CancelToken, ExportId, FrameCount, JobId, MediaId, ProgressSink, ProjectId};
+use as_core::{CancelToken, ExportId, FrameCount, JobId, MediaId, Msg, ProgressSink, ProjectId, ToMsg, msg};
 use parking_lot::{Condvar, Mutex};
 
 /// Resource classes. Each runs its jobs on its own fixed set of workers.
@@ -45,7 +45,7 @@ pub enum Class {
 pub struct JobSpec {
     pub kind: JobKind,
     pub class: Class,
-    pub title: String,
+    pub title: Msg,
     pub subtitle: Option<String>,
     pub project_id: Option<ProjectId>,
     pub media_id: Option<MediaId>,
@@ -56,16 +56,16 @@ pub struct JobSpec {
 #[derive(Debug)]
 pub enum JobError {
     Cancelled,
-    Failed(String),
+    Failed(Msg),
     /// Failed with an answer the work had before any cancel (a plugin's
     /// error line): it stays Failed when a cancel comes after it, which
     /// only ended the wait for the work to stop.
-    FailedFirst(String),
+    FailedFirst(Msg),
 }
 
-impl<E: std::error::Error> From<E> for JobError {
+impl<E: std::error::Error + ToMsg> From<E> for JobError {
     fn from(e: E) -> Self {
-        Self::Failed(e.to_string())
+        Self::Failed(e.msg())
     }
 }
 
@@ -77,34 +77,34 @@ pub struct JobCtx {
     pub id: JobId,
     pub cancel: CancelToken,
     sink: ProgressSink,
-    message: Mutex<Option<String>>,
+    message: Mutex<Option<Msg>>,
 }
 
 impl JobCtx {
     /// Report `fraction` (0..1) of `stage`. Cheap; throttled to 4 Hz. In
     /// millionths: the time left is measured from the first move, which
     /// coarser steps would put late (a step of an hour's job is 3.6 s).
-    pub fn progress(&self, stage: &str, fraction: f64) {
+    pub fn progress(&self, stage: &Msg, fraction: f64) {
         let done = (fraction.clamp(0.0, 1.0) * PARTS as f64).round() as u64;
         self.sink.update(stage, done, PARTS);
     }
 
     /// Report a stage whose length is unknown.
-    pub fn stage(&self, stage: &str) {
+    pub fn stage(&self, stage: &Msg) {
         self.sink.update(stage, 0, 0);
     }
 
     /// [`progress`](Self::progress) of a stage that reads a media's frames
     /// one by one: `frames` read so far, of about how many; how fast they
     /// go is measured here.
-    pub fn frames(&self, stage: &str, fraction: f64, frames: FrameCount) {
+    pub fn frames(&self, stage: &Msg, fraction: f64, frames: FrameCount) {
         let done = (fraction.clamp(0.0, 1.0) * PARTS as f64).round() as u64;
         self.sink.update_frames(stage, done, PARTS, frames);
     }
 
     /// Report `fraction` of `stage`, or that how far it is isn't known for
     /// now (`None`: its pace is measured anew from the next fraction).
-    pub fn report(&self, stage: &str, fraction: Option<f64>) {
+    pub fn report(&self, stage: &Msg, fraction: Option<f64>) {
         match fraction {
             Some(f) => self.progress(stage, f),
             None => self.stage(stage),
@@ -115,11 +115,13 @@ impl JobCtx {
     /// one counts. A job that fails or is cancelled says none of it. It is
     /// shown as it is, in a toast and the Activity drawer, and kept with the
     /// finished job: text the app didn't write comes here cleaned and capped.
-    pub fn message(&self, text: &str) {
-        *self.message.lock() = Some(text.to_owned());
+    pub fn message(&self, said: Msg) {
+        *self.message.lock() = Some(said);
     }
 }
 
+// Handed straight to the listener, a few a second: never kept, so its size costs nothing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum JobEvent {
     Changed(JobInfo),
@@ -507,7 +509,7 @@ impl Drop for Alive<'_> {
         let rev = st.next_rev();
         if let Some(e) = st.jobs.iter_mut().find(|e| Some(e.info.id) == self.holding && !e.info.state.is_finished()) {
             e.info.state = JobState::Failed;
-            e.info.error = Some("unexpected error".into());
+            e.info.error = Some(msg!("job.unexpectedError", "unexpected error"));
             e.info.eta_ms = None;
             e.info.frames = None;
             e.info.finished_at = Some(now_ms());
@@ -551,7 +553,7 @@ fn run_worker(inner: &Arc<Inner>, class: Class) {
             let inner = inner.clone();
             ProgressSink::new(PROGRESS_INTERVAL, move |p| {
                 let progress = (p.total > 0).then(|| p.done as f64 / p.total as f64);
-                let stage = (!p.stage.is_empty()).then(|| p.stage.clone());
+                let stage = (!p.stage.text.is_empty()).then(|| p.stage.clone());
                 let eta_ms = p.eta_ms.map(|e| e as i64);
                 let frames = p.frames;
                 let rev = {
@@ -576,7 +578,7 @@ fn run_worker(inner: &Arc<Inner>, class: Class) {
         let result = catch_unwind(AssertUnwindSafe(|| work(&ctx))).unwrap_or_else(|panic| {
             let msg = panic_message(&*panic);
             tracing::error!(%id, %msg, "job panicked");
-            Err(JobError::Failed(msg))
+            Err(JobError::Failed(Msg::plain(msg)))
         });
         let message = ctx.message.lock().take();
 
@@ -599,7 +601,7 @@ fn run_worker(inner: &Arc<Inner>, class: Class) {
                 }
                 Err(JobError::Cancelled) => e.info.state = JobState::Cancelled,
                 Err(JobError::Failed(msg) | JobError::FailedFirst(msg)) => {
-                    tracing::warn!(%id, title = %e.info.title, error = %msg, "job failed");
+                    tracing::warn!(%id, title = %e.info.title.text, error = %msg.text, "job failed");
                     e.info.state = JobState::Failed;
                     e.info.error = Some(msg);
                 }
@@ -634,11 +636,16 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc;
 
+    /// `words` as a plugin would say them.
+    fn said(words: &str) -> Msg {
+        Msg::plain(words)
+    }
+
     fn spec(title: &str, class: Class) -> JobSpec {
         JobSpec {
             kind: JobKind::Ingest,
             class,
-            title: title.into(),
+            title: said(title),
             subtitle: None,
             project_id: None,
             media_id: None,
@@ -666,15 +673,15 @@ mod tests {
     fn runs_reports_and_finishes() {
         let (r, rx) = runner(&[(Class::Media, 1)]);
         let id = r.submit(spec("index", Class::Media), |ctx| {
-            ctx.progress("Indexing", 0.5);
+            ctx.progress(&said("Indexing"), 0.5);
             Ok(())
         });
         let info = finished(&rx, id);
         assert_eq!(info.state, JobState::Done);
         assert_eq!(info.progress, Some(1.0));
-        let failed = r.submit(spec("broken", Class::Media), |_| Err(JobError::Failed("no video".into())));
+        let failed = r.submit(spec("broken", Class::Media), |_| Err(JobError::Failed(said("no video"))));
         let info = finished(&rx, failed);
-        assert_eq!((info.state, info.error.as_deref()), (JobState::Failed, Some("no video")));
+        assert_eq!((info.state, info.error), (JobState::Failed, Some(said("no video"))));
         let panicked = r.submit(spec("panic", Class::Media), |_| panic!("boom"));
         assert_eq!(finished(&rx, panicked).state, JobState::Failed);
         assert_eq!(r.jobs().len(), 3);
@@ -686,17 +693,14 @@ mod tests {
     fn a_finished_job_keeps_its_message() {
         let (r, rx) = runner(&[(Class::Plugin, 1)]);
         let id = r.submit(spec("Post to Discord", Class::Plugin), |ctx| {
-            ctx.message("Posting");
-            ctx.message("Posted 12 clips.");
+            ctx.message(said("Posting"));
+            ctx.message(said("Posted 12 clips."));
             Ok(())
         });
         let info = finished(&rx, id);
-        assert_eq!(
-            (info.state, info.message.as_deref()),
-            (JobState::Done, Some("Posted 12 clips.")),
-            "the last one counts"
-        );
-        assert_eq!(r.jobs()[0].message.as_deref(), Some("Posted 12 clips."), "the list has it too");
+        let posted = Some(said("Posted 12 clips."));
+        assert_eq!((info.state, info.message.clone()), (JobState::Done, posted.clone()), "the last one counts");
+        assert_eq!(r.jobs()[0].message, posted, "the list has it too");
         let quiet = r.submit(spec("quiet", Class::Plugin), |_| Ok(()));
         assert_eq!(finished(&rx, quiet).message, None);
     }
@@ -705,19 +709,19 @@ mod tests {
     fn a_failed_job_has_no_message() {
         let (r, rx) = runner(&[(Class::Plugin, 1)]);
         let failed = r.submit(spec("broken", Class::Plugin), |ctx| {
-            ctx.message("Posted 12 clips.");
-            Err(JobError::Failed("no webhook".into()))
+            ctx.message(said("Posted 12 clips."));
+            Err(JobError::Failed(said("no webhook")))
         });
         let info = finished(&rx, failed);
         assert_eq!((info.state, info.message), (JobState::Failed, None));
         let panicked = r.submit(spec("panic", Class::Plugin), |ctx| {
-            ctx.message("Posted 12 clips.");
+            ctx.message(said("Posted 12 clips."));
             panic!("boom")
         });
         assert_eq!(finished(&rx, panicked).message, None);
         let (started_tx, started_rx) = mpsc::channel();
         let cancelled = r.submit(spec("cancelled", Class::Plugin), move |ctx| {
-            ctx.message("Posted 12 clips.");
+            ctx.message(said("Posted 12 clips."));
             started_tx.send(()).unwrap();
             while !ctx.cancel.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(5));
@@ -740,9 +744,9 @@ mod tests {
             sink: ProgressSink::new(Duration::ZERO, move |p| s.lock().push((p.done, p.total))),
             message: Mutex::new(None),
         };
-        ctx.progress("Clip 1 of 2", 0.000_4);
-        ctx.report("Clip 1 of 2", None);
-        ctx.report("Clip 2 of 2", Some(0.5));
+        ctx.progress(&said("Clip 1 of 2"), 0.000_4);
+        ctx.report(&said("Clip 1 of 2"), None);
+        ctx.report(&said("Clip 2 of 2"), Some(0.5));
         assert_eq!(*seen.lock(), [(400, PARTS), (0, 0), (PARTS / 2, PARTS)]);
     }
 
@@ -751,22 +755,22 @@ mod tests {
         let (r, rx) = runner(&[(Class::Media, 1)]);
         let id = r.submit(spec("index", Class::Media), |ctx| {
             let frames = FrameCount { done: 1200, total: Some(34_000), rate: Some(23.976), per_sec: None };
-            ctx.frames("Indexing frames", 0.03, frames);
-            ctx.progress("Creating poster", 0.96);
+            ctx.frames(&said("Indexing frames"), 0.03, frames);
+            ctx.progress(&said("Creating poster"), 0.96);
             Ok(())
         });
         let mut told = Vec::new();
         let info = loop {
             match rx.recv_timeout(Duration::from_secs(10)).expect("job event") {
-                JobEvent::Progress(p) => told.push((p.stage.unwrap_or_default(), p.frames)),
+                JobEvent::Progress(p) => told.push((p.stage.expect("a stage"), p.frames)),
                 JobEvent::Changed(i) if i.state.is_finished() => break i,
                 JobEvent::Changed(_) => {}
             }
         };
         let read = told[0].1.expect("the frames read");
-        assert_eq!((told[0].0.as_str(), read.done, read.total), ("Indexing frames", 1200, Some(34_000)));
+        assert_eq!((told[0].0.text.as_str(), read.done, read.total), ("Indexing frames", 1200, Some(34_000)));
         assert_eq!(read.per_sec, None, "too soon to tell how fast");
-        assert_eq!(told[1], ("Creating poster".to_owned(), None), "a stage reading no frames tells none");
+        assert_eq!(told[1], (said("Creating poster"), None), "a stage reading no frames tells none");
         assert_eq!((info.id, info.frames), (id, None));
     }
 
@@ -779,7 +783,7 @@ mod tests {
             while !ctx.cancel.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(5));
             }
-            Err(JobError::Failed("ffmpeg killed".into()))
+            Err(JobError::Failed(said("ffmpeg killed")))
         });
         let queued = r.submit(spec("next", Class::Export), |_| Ok(()));
         started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -858,12 +862,12 @@ mod tests {
             while !ctx.cancel.is_cancelled() {
                 std::thread::sleep(Duration::from_millis(5));
             }
-            Err(JobError::FailedFirst("No webhook is set.".into()))
+            Err(JobError::FailedFirst(said("No webhook is set.")))
         });
         started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         r.cancel(job);
         let info = finished(&rx, job);
-        assert_eq!((info.state, info.error.as_deref()), (JobState::Failed, Some("No webhook is set.")));
+        assert_eq!((info.state, info.error), (JobState::Failed, Some(said("No webhook is set."))));
     }
 
     #[test]
@@ -1043,17 +1047,17 @@ mod tests {
                 let (r, start) = (r.clone(), start.clone());
                 std::thread::spawn(move || {
                     start.wait();
-                    r.submit_unless(|j| j.title == "index e1", spec("index e1", Class::Media), |_| Ok(()))
+                    r.submit_unless(|j| j.title.text == "index e1", spec("index e1", Class::Media), |_| Ok(()))
                 })
             })
             .collect();
         let queued: Vec<JobId> = threads.into_iter().filter_map(|t| t.join().unwrap()).collect();
         assert_eq!(queued.len(), 1, "exactly one of the racing submits queues it");
-        assert_eq!(r.jobs().iter().filter(|j| j.title == "index e1").count(), 1);
+        assert_eq!(r.jobs().iter().filter(|j| j.title.text == "index e1").count(), 1);
         release.send(()).unwrap();
         assert_eq!(finished(&rx, queued[0]).state, JobState::Done);
         // Once it has finished, it can be queued again.
-        assert!(r.submit_unless(|j| j.title == "index e1", spec("index e1", Class::Media), |_| Ok(())).is_some());
+        assert!(r.submit_unless(|j| j.title.text == "index e1", spec("index e1", Class::Media), |_| Ok(())).is_some());
     }
 
     #[test]
@@ -1093,7 +1097,7 @@ mod tests {
             let info = JobInfo {
                 id,
                 kind: JobKind::Regroup,
-                title: "held".into(),
+                title: said("held"),
                 subtitle: None,
                 project_id: None,
                 media_id: None,
@@ -1121,7 +1125,9 @@ mod tests {
         let st = r.inner.state.lock();
         assert_eq!(st.live[&Class::Upkeep], 1, "back to its limit, not beyond");
         let e = st.jobs.iter().find(|e| e.info.id == held).unwrap();
-        assert_eq!((e.info.state, e.info.error.as_deref()), (JobState::Failed, Some("unexpected error")));
+        let unexpected = e.info.error.as_ref().expect("it says so");
+        assert_eq!((e.info.state, unexpected.text.as_str()), (JobState::Failed, "unexpected error"));
+        assert_eq!(unexpected.key, "job.unexpectedError");
         drop(st);
         let after = r.submit(spec("after", Class::Upkeep), |_| Ok(()));
         assert_eq!(finished(&rx, after).state, JobState::Done);
@@ -1154,7 +1160,7 @@ mod tests {
     fn revisions_order_every_change() {
         let (r, rx) = runner(&[(Class::Media, 1)]);
         let id = r.submit(spec("index", Class::Media), |ctx| {
-            ctx.progress("Indexing", 0.5);
+            ctx.progress(&said("Indexing"), 0.5);
             Ok(())
         });
         let mut revs = Vec::new();

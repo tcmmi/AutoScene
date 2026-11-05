@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
 import { DeleteProjectDialog, ProjectDetailsDialog } from "./ProjectDialogs"
+import { plain } from "@/test/i18n"
 
 const { machine, nav, route, toasts } = vi.hoisted(() => ({
   machine: { cls: "forAi" as GraphicsClass },
@@ -133,14 +134,14 @@ describe("ProjectDetailsDialog", () => {
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j",
   kind: "export",
-  title: "Exporting 12 clips",
+  title: plain("Exporting 12 clips"),
   subtitle: "Film",
   projectId: "p",
   mediaId: null,
   exportId: "e",
   state: "running",
   progress: 0.3,
-  stage: "Rendering",
+  stage: plain("Rendering"),
   etaMs: null,
   error: null,
   createdAt: 1,

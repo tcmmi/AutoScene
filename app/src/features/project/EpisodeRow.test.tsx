@@ -9,6 +9,7 @@ import { reveal } from "@/lib/os"
 import { queryClient } from "@/lib/queries"
 import { useActivity } from "@/state/activity"
 import { EpisodeRow } from "./EpisodesPage"
+import { plain } from "@/test/i18n"
 
 vi.mock("@/lib/ipc", async (importOriginal) => {
   const ipc = await importOriginal<typeof import("@/lib/ipc")>()
@@ -108,7 +109,7 @@ describe("an episode's row", () => {
     // Finding the shots keeps "Find shots again" off: a disabled entry, which a click still reaches.
     const m = episode({ shots: "running" }, [track(0, "eng"), track(1, "jpn")])
     useActivity.setState({
-      jobs: { j: { id: "j", kind: "analyze", projectId: "p", mediaId: "m", state: "running", progress: 0.2, stage: "Finding shots", rev: 1 } as JobInfo },
+      jobs: { j: { id: "j", kind: "analyze", projectId: "p", mediaId: "m", state: "running", progress: 0.2, stage: plain("Finding shots"), rev: 1 } as JobInfo },
       order: ["j"],
     })
     const user = userEvent.setup()

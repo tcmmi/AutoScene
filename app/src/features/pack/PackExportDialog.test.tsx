@@ -12,7 +12,7 @@ import { useActivity } from "@/state/activity"
 import { PackExportDialog } from "./PackExportDialog"
 import { DEFAULT_SPEC } from "./spec"
 import type { Pack } from "./use-pack"
-import { inLanguage } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 
 const prores: ExportPreset = {
   id: "prores-hq",
@@ -119,14 +119,14 @@ afterEach(() => {
 const job = (o: Partial<JobInfo>): JobInfo => ({
   id: "j",
   kind: "analyze",
-  title: "Analysing E01.mkv",
+  title: plain("Analysing E01.mkv"),
   subtitle: null,
   projectId: "p",
   mediaId: "m",
   exportId: null,
   state: "running",
   progress: 0.4,
-  stage: "Finding characters",
+  stage: plain("Finding characters"),
   etaMs: null,
   error: null,
   createdAt: 1,

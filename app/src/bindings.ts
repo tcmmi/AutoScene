@@ -1456,7 +1456,7 @@ export type JobId = string;
 export type JobInfo = {
 	id: JobId,
 	kind: JobKind,
-	title: string,
+	title: Msg,
 	subtitle: string | null,
 	projectId: ProjectId | null,
 	mediaId: MediaId | null,
@@ -1464,16 +1464,19 @@ export type JobInfo = {
 	state: JobState,
 	/**  0..1, `None` while indeterminate. */
 	progress: number | null,
-	stage: string | null,
+	stage: Msg | null,
 	etaMs: number | null,
 	/**
 	 *  While the job reads a media's frames one by one (indexing): how
 	 *  many so far, of about how many, and how fast.
 	 */
 	frames?: FrameCount | null,
-	error: string | null,
-	/**  What a finished job had to say (a plugin's result). */
-	message?: string | null,
+	error: Msg | null,
+	/**
+	 *  What a finished job had to say: a plugin's result, in its own words,
+	 *  or the file its pack action saved.
+	 */
+	message?: Msg | null,
 	createdAt: number,
 	finishedAt: number | null,
 	/**
@@ -1504,7 +1507,7 @@ export type JobProgress = {
 	/**  Revision of the job this progress belongs to (see [`JobInfo::rev`]). */
 	rev: number,
 	progress: number | null,
-	stage: string | null,
+	stage: Msg | null,
 	etaMs: number | null,
 	/**  See [`JobInfo::frames`]. */
 	frames?: FrameCount | null,
@@ -1990,9 +1993,11 @@ export type PageEvent =
 { type: "service"; name: string; data: unknown } | 
 /**
  *  What its plugin's service is doing: starting (`message` is how far),
- *  ready, or stopped (`message` says why).
+ *  ready, or stopped (`message` says why). The page hears `message` as
+ *  the UI says it: AutoScene's own stages in its language, the plugin's
+ *  as written.
  */
-{ type: "serviceState"; state: ServiceStatus; message: string | null } | 
+{ type: "serviceState"; state: ServiceStatus; message: Msg | null } | 
 /**  Its plugin's settings or secrets changed: it may read them again. */
 { type: "settings" } | 
 /**

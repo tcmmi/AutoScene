@@ -1,10 +1,10 @@
 import { cleanup, renderHook } from "@testing-library/react"
 import { toast } from "sonner"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { PageReply } from "@/bindings"
+import type { Msg, PageReply } from "@/bindings"
 import { GLOBAL_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
 import { LIMITS, type PageInit } from "@/plugin-kit/bridge-types"
-import { inLanguage } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 import {
   type HostDeps,
   type Limits,
@@ -152,7 +152,7 @@ describe("the bridge to a plugin page", () => {
       data: { words: 3 },
     })
     expect(pageMessage({ type: "serviceState", state: "ready", message: null })).toEqual({ t: "service", state: "ready" })
-    expect(pageMessage({ type: "serviceState", state: "stopped", message: "Count stopped unexpectedly." })).toEqual({
+    expect(pageMessage({ type: "serviceState", state: "stopped", message: plain("Count stopped unexpectedly.") })).toEqual({
       t: "service",
       state: "stopped",
       message: "Count stopped unexpectedly.",
@@ -305,6 +305,13 @@ describe("the bridge to a plugin page", () => {
     }
     showToast({ type: "toast", title, description: null, tone: "neutral" })
     expect(toast).toHaveBeenCalledWith("Pluginul „AutoScene”: update now", { description: undefined })
+  })
+
+  it("a page hears a service's start as the UI says it, and the plugin's own stage as written", async () => {
+    await inLanguage("ro", { backend: { plugin: { stage: { gettingUv: "Se descarcă uv" } } } })
+    const starting = (message: Msg) => pageMessage({ type: "serviceState", state: "starting", message })
+    expect(starting({ key: "plugin.stage.gettingUv", text: "Getting uv" })).toEqual({ t: "service", state: "starting", message: "Se descarcă uv" })
+    expect(starting(plain("Getting Python"))).toEqual({ t: "service", state: "starting", message: "Getting Python" })
   })
 
   it("a page hears why it closed in English, whatever the UI speaks", async () => {

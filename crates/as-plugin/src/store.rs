@@ -2947,7 +2947,7 @@ mod tests {
         assert_eq!((spec.message.tools.ffmpeg.as_str(), spec.message.action.id.as_str()), ("", "hello"));
         // It runs on the code kept at its commit: nothing is compiled again.
         let reports = Mutex::new(Vec::new());
-        let said = wasm::run(spec, &as_core::CancelToken::new(), &|stage, _| reports.lock().push(stage.to_owned()));
+        let said = wasm::run(spec, &as_core::CancelToken::new(), &|stage, _| reports.lock().push(stage.text.clone()));
         assert!(said.is_ok(), "{said:?}");
         assert!(!reports.lock().iter().any(|r| r.starts_with("Getting")), "{:?}", reports.lock());
         assert!(store.data_dir(&id()).join("hello.txt").is_file());

@@ -1,4 +1,5 @@
 import { memo } from "react"
+import { useTranslation } from "react-i18next"
 import { ArrowCounterClockwise, Check, Copy, Play, Prohibit, UserCircleDashed } from "@/components/icons"
 import type { MediaItem, PackClip, PackFilter } from "@/bindings"
 import { Badge } from "@/components/ui/badge"
@@ -16,12 +17,8 @@ import { timecode } from "@/lib/timecode"
 import { cn } from "@/lib/utils"
 import { REASONS, SIZES, filterReason, pickable } from "./spec"
 
-const SIZE_SHORT = new Map(SIZES.map((s) => [s.value, s.short]))
-const SIZE_LABEL = new Map(SIZES.map((s) => [s.value, s.label]))
-
-/** A filter's word on a shot it hasn't checked again since its settings changed. */
-const before = (f: PackFilter) =>
-  f.checked === 0 ? `“${f.title}” said so with its settings before` : `“${f.title}” may have said so with its settings before`
+/** Where a shot size's words are in the catalog (`pack:size.<key>`). */
+const SIZE_KEY = new Map<string, (typeof SIZES)[number]["key"]>(SIZES.map((s) => [s.value, s.key]))
 
 /**
  * A shot of the pack: bright with a gold tick when the pack takes it,
@@ -62,6 +59,7 @@ export const PackCard = memo(function PackCard({
   onPick?: (clip: PackClip, include: boolean | null) => void
   onBody?: (bodies: number[], verdict: BodyVerdict) => void
 }) {
+  const { t } = useTranslation("pack")
   const scrub = useScrub(clip.shot)
   const fps = media?.fps
   // The shot itself, as the filters judge it (handles only widen the clip).
@@ -70,16 +68,19 @@ export const PackCard = memo(function PackCard({
   // Drop-frame where the rate counts it, like the files' names.
   const at = fps ? timecode(start, fps, true) : ""
   const where = at && `${media?.label ? `${media.label} · ` : ""}${at}`
-  const why = clip.included ? null : clip.reason === "plugin" ? filterReason(filter) : clip.reason ? REASONS[clip.reason] : "Left out"
+  const why = clip.included ? null : clip.reason === "plugin" ? filterReason(filter) : clip.reason ? REASONS[clip.reason] : t("reason.other")
   const canPick = pickable(clip)
+  const sizeKey = SIZE_KEY.get(clip.size)
+  // A filter's word on a shot it hasn't checked again since its settings changed.
+  const before = (f: PackFilter) => t(f.checked === 0 ? "card.before.sure" : "card.before.maybe", { title: f.title })
   const bodies = clip.shot.faceless ? (clip.shot.bodies ?? []) : []
   // Everything the chips say in short, said in full.
   const hint = [
-    SIZE_LABEL.get(clip.size),
-    clip.shot.faceless && "their face doesn't show",
-    clip.included && filter && `“${filter.title}” would leave it out`,
+    sizeKey && t(`size.${sizeKey}.label`),
+    clip.shot.faceless && t("card.hint.faceless"),
+    clip.included && filter && t("card.hint.wouldLeaveOut", { title: filter.title }),
     !clip.included && clip.reason === "plugin" && filter && filter.checked < filter.total && before(filter),
-    canPick && `Click to ${clip.included ? "leave it out" : "take it in"}`,
+    canPick && t(clip.included ? "card.hint.takeOut" : "card.hint.takeIn"),
   ]
     .filter(Boolean)
     .join(" · ")
@@ -88,34 +89,34 @@ export const PackCard = memo(function PackCard({
     <>
       {onWatch && (
         <ContextMenuItem onSelect={() => onWatch(clip)} shortcut={["Enter"]}>
-          <Play /> Watch shot
+          <Play /> {t("card.watch")}
         </ContextMenuItem>
       )}
       {canPick && onPick && (
         <ContextMenuItem onSelect={() => onPick(clip, !clip.included)} shortcut={["Space"]}>
-          <Check /> {clip.included ? "Remove from pack" : "Add to pack"}
+          <Check /> {clip.included ? t("card.remove") : t("card.add")}
         </ContextMenuItem>
       )}
       {canPick && onPick && clip.manual != null && (
         <ContextMenuItem onSelect={() => onPick(clip, null)}>
-          <ArrowCounterClockwise /> Hand back to the filters
+          <ArrowCounterClockwise /> {t("card.handBack")}
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
       {bodies.length > 0 && onBody && (
         <>
           <ContextMenuItem onSelect={() => onBody(bodies, "not_them")}>
-            <UserCircleDashed /> Not {name ?? "them"}
+            <UserCircleDashed /> {name != null ? t("card.notThem", { name }) : t("card.notThemAnon")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => onBody(bodies, "not_a_person")}>
-            <Prohibit /> Not a person
+            <Prohibit /> {t("card.notPerson")}
           </ContextMenuItem>
         </>
       )}
       <ContextMenuSeparator />
       {at && (
         <ContextMenuItem onSelect={() => void copyText(at, "timecode")}>
-          <Copy /> Copy timecode
+          <Copy /> {t("card.copyTimecode")}
         </ContextMenuItem>
       )}
     </>
@@ -143,7 +144,14 @@ export const PackCard = memo(function PackCard({
                 }
               }}
               {...scrub.handlers}
-              aria-label={`Shot${where ? ` at ${where}` : ""}${length ? `, ${length}` : ""}${clip.shot.faceless ? ", without their face" : ""}${clip.included ? ", in the pack" : `, left out: ${why}`}`}
+              aria-label={[
+                where ? t("card.aria.shotAt", { at: where }) : t("card.aria.shot"),
+                length,
+                clip.shot.faceless && t("card.aria.withoutFace"),
+                clip.included ? t("card.aria.inPack") : t("card.aria.leftOut", { why: why ?? "" }),
+              ]
+                .filter(Boolean)
+                .join(", ")}
               className={cn(
                 "relative block size-full overflow-hidden rounded-xl bg-inset text-left outline-none picture-edge",
                 "transition-[transform,box-shadow] duration-[var(--dur-med)] ease-out focus-visible:ring-2 focus-visible:ring-accent-line",
@@ -171,14 +179,14 @@ export const PackCard = memo(function PackCard({
                 )}
                 {clip.manual === true && (
                   <Badge tone="picture" size="sm">
-                    Added
+                    {t("card.added")}
                   </Badge>
                 )}
                 {clip.shot.faceless && clip.reason !== "faceless" && <NoFaceBadge />}
               </span>
               <span className="absolute right-2 bottom-2 flex items-center gap-1.5">
                 <Badge tone="picture" size="sm">
-                  {SIZE_SHORT.get(clip.size)}
+                  {sizeKey && t(`size.${sizeKey}.short`)}
                 </Badge>
                 {length && (
                   <Badge tone="picture" size="sm" className="timecode">
@@ -188,7 +196,7 @@ export const PackCard = memo(function PackCard({
               </span>
             </button>
           </Tooltip>
-          <CardPlayButton onClick={() => onOpen(index)} aria-label={`Watch the shot${where ? ` at ${where}` : ""}`} />
+          <CardPlayButton onClick={() => onOpen(index)} aria-label={where ? t("card.watchAriaAt", { at: where }) : t("card.watchAria")} />
         </div>
     </ContextArea>
   )

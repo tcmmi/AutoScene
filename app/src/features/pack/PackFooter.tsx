@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Trans, useTranslation } from "react-i18next"
 import { ArrowCounterClockwise, DotsThree, Package } from "@/components/icons"
 import type { JobInfo, PackTotals } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -12,7 +13,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ProgressRing } from "@/components/ui/progress"
 import { Tooltip } from "@/components/ui/tooltip"
-import { plural } from "@/features/cast/cast"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import type { PackActionItem } from "@/features/plugins/plugin-items"
 import { formatBytes, formatDuration, formatPercent } from "@/lib/format"
@@ -35,10 +35,6 @@ import { checkingText, type PackCheck } from "./spec"
  * anything is rendered): saving goes with Export's wait for a check, and the
  * menu says so; taking shots in and out goes on.
  */
-/** What the shots a failed check didn't judge are, as the grid shows them. */
-const FAILED_HINT =
-  "Until they are checked, they keep what the filter said with its settings before, or stay in when it said nothing. Export takes them as the grid shows them."
-
 export function PackFooter({
   totals,
   bytes,
@@ -50,7 +46,7 @@ export function PackFooter({
   items,
   actions,
   canSave = false,
-  saveHeading = "Save with a plugin",
+  saveHeading,
   onSave,
   onClearPicks,
   onTryAgain,
@@ -85,15 +81,20 @@ export function PackFooter({
   /** Show the export's progress (in Activity). */
   onShowExport: () => void
 }) {
+  const { t } = useTranslation(["pack", "common"])
   const keys = useShortcutKeys()
   const waiting = check?.kind === "checking"
   const saves = actions ?? []
   return (
     <div className="glass-strong absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 animate-pop-in items-center gap-1 rounded-full py-1.5 pr-1.5 pl-5 whitespace-nowrap">
-      <span className="text-md font-semibold text-fg-1">{plural(totals.clips, "shot")}</span>
+      <span className="text-md font-semibold text-fg-1">{t("shots", { count: totals.clips })}</span>
       <span className="pr-2 pl-1.5 text-sm text-fg-3">
-        {formatDuration(totals.seconds ?? 0)}
-        {bytes != null && bytes > 0 && ` · about ${formatBytes(bytes)}${format ? ` (${format})` : ""}`}
+        {[
+          formatDuration(totals.seconds ?? 0),
+          bytes != null && bytes > 0 && (format ? t("footer.aboutIn", { size: formatBytes(bytes), format }) : t("footer.about", { size: formatBytes(bytes) })),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       </span>
       {check?.kind === "checking" && (
         <span role="status" className="flex items-center gap-2 pr-2 text-sm text-fg-2">
@@ -103,30 +104,30 @@ export function PackFooter({
       )}
       {check?.kind === "failed" && (
         <span role="status" className="flex items-center gap-1 pr-1 text-sm text-fg-2">
-          <Tooltip label={FAILED_HINT}>
+          <Tooltip label={t("footer.failedHint")}>
             <span tabIndex={0} className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent-line">
-              Couldn't check {plural(check.unchecked, "shot")}
+              {t("check.failed", { count: check.unchecked })}
             </span>
           </Tooltip>
           {onTryAgain && (
             <Button size="sm" variant="ghost" onClick={onTryAgain}>
-              Try again
+              {t("common:action.tryAgain")}
             </Button>
           )}
         </span>
       )}
       {picks > 0 && (
-        <Tooltip label="Hand every shot back to the filters">
+        <Tooltip label={t("footer.handBackAll")}>
           <Button size="sm" variant="ghost" onClick={onClearPicks}>
-            <ArrowCounterClockwise /> {plural(picks, "pick")} by hand
+            <ArrowCounterClockwise /> {t("footer.picksByHand", { count: picks })}
           </Button>
         </Tooltip>
       )}
       {(items || saves.length > 0) && (
         <DropdownMenu>
-          <Tooltip label="Pack options">
+          <Tooltip label={t("footer.options")}>
             <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="ghost" aria-label="Pack options">
+              <Button size="icon" variant="ghost" aria-label={t("footer.options")}>
                 <DotsThree weight="bold" />
               </Button>
             </DropdownMenuTrigger>
@@ -136,7 +137,7 @@ export function PackFooter({
             {saves.length > 0 && (
               <>
                 {items && <DropdownMenuSeparator />}
-                <DropdownMenuLabel>{saveHeading}</DropdownMenuLabel>
+                <DropdownMenuLabel>{saveHeading ?? t("save.heading")}</DropdownMenuLabel>
                 {saves.map((a) => (
                   <DropdownMenuItem key={a.key} disabled={!canSave} onSelect={() => onSave?.(a)}>
                     <PluginIcon src={a.icon} /> {a.title}
@@ -149,30 +150,35 @@ export function PackFooter({
         </DropdownMenu>
       )}
       {exporting ? (
-        <Tooltip label="Show it in Activity">
+        <Tooltip label={t("footer.showExport")}>
           {/* Gold while it runs; waiting its turn it is a quiet button with an empty ring. */}
           <Button size="md" variant={exporting.state === "queued" ? "secondary" : "accent"} onClick={onShowExport}>
             <ProgressRing aria-hidden value={jobBar(exporting)} waiting={exporting.state === "queued"} />
             {exporting.state === "queued" ? (
-              "Export queued"
+              t("footer.exportQueued")
             ) : (
               <span>
-                Exporting… <span className="timecode">{formatPercent(exporting.progress)}</span>
+                <Trans
+                  t={t}
+                  i18nKey="footer.exporting"
+                  values={{ percent: formatPercent(exporting.progress) }}
+                  components={{ x: <span className="timecode" /> }}
+                />
               </span>
             )}
           </Button>
         </Tooltip>
       ) : waiting ? (
         // Busy, not disabled: it keeps the keyboard and the pointer, so the tooltip can be on the button itself.
-        <Tooltip label="Waits for the check">
-          <Button size="md" variant="primary" busy aria-label="Export, waits for the check">
-            <Package weight="bold" /> Export
+        <Tooltip label={t("footer.waitsForCheck")}>
+          <Button size="md" variant="primary" busy aria-label={t("footer.exportWaitsAria")}>
+            <Package weight="bold" /> {t("footer.export")}
           </Button>
         </Tooltip>
       ) : (
-        <Tooltip label="Export the pack" shortcut={keys("pack.export")}>
+        <Tooltip label={t("footer.exportTooltip")} shortcut={keys("pack.export")}>
           <Button size="md" variant="primary" disabled={!canExport} onClick={onExport}>
-            <Package weight="bold" /> Export
+            <Package weight="bold" /> {t("footer.export")}
           </Button>
         </Tooltip>
       )}

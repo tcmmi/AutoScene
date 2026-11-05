@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { ArrowCounterClockwise, ArrowLeft, ArrowsDownUp, Check, Package, User, Users, X } from "@/components/icons"
 import type { CastEdit, Character, MediaItem, PackClip } from "@/bindings"
@@ -20,13 +21,14 @@ import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { TopBar } from "@/components/ui/topbar"
 import { VirtualGrid } from "@/components/ui/virtual-grid"
-import { castEdit, plural } from "@/features/cast/cast"
+import { castEdit } from "@/features/cast/cast"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { runPackAction } from "@/features/plugins/plugin-actions"
 import { type PackActionItem, packActionItems } from "@/features/plugins/plugin-items"
 import { ProjectLoadError } from "@/features/project/ProjectLoadError"
 import { EXPORT_REQUEST } from "@/lib/actions"
 import { shortFormatName } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { exportWithMenu } from "@/lib/keymap"
 import { firstFailure, useCast, useMediaList, usePlugins, usePresets, useSettings } from "@/lib/queries"
 import { PACK_SHORTCUTS, useShortcutKeys, useShortcuts } from "@/lib/shortcuts"
@@ -52,6 +54,7 @@ export function PackPage() {
 }
 
 function PackView({ pid, cid }: { pid: string; cid: string }) {
+  const { t } = useTranslation(["pack", "common"])
   const castQuery = useCast(pid)
   const mediaQuery = useMediaList(pid)
   const character = castQuery.data?.characters.find((c) => c.id === cid)
@@ -59,8 +62,8 @@ function PackView({ pid, cid }: { pid: string; cid: string }) {
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media])
   const pack = usePack(pid, cid, mediaById)
 
-  const back = { label: character?.label ?? "Character", to: `/p/${pid}/cast/${cid}` }
-  const toolbar = <TopBar back={back} title={character ? `${character.label} · Scenepack` : "Scenepack"} />
+  const back = { label: character?.label ?? t("page.characterFallback"), to: `/p/${pid}/cast/${cid}` }
+  const toolbar = <TopBar back={back} title={character ? t("page.title", { name: character.label }) : t("page.titleBare")} />
 
   const failure = firstFailure(castQuery, mediaQuery, pack.saved)
   if (failure) {
@@ -75,12 +78,12 @@ function PackView({ pid, cid }: { pid: string; cid: string }) {
       <Page topbar={toolbar}>
         <EmptyState
           icon={<Users />}
-          title="This character isn't in the cast any more"
-          description="It may have been merged into someone else."
+          title={t("page.gone.title")}
+          description={t("page.gone.description")}
           actions={
             <Button asChild>
               <Link to="/p/$pid/cast" params={{ pid }}>
-                <ArrowLeft /> Back to the cast
+                <ArrowLeft /> {t("page.gone.back")}
               </Link>
             </Button>
           }
@@ -110,6 +113,7 @@ export function Builder({
   pack: ReturnType<typeof usePack>
   toolbar: ReactNode
 }) {
+  const { t } = useTranslation(["pack", "common"])
   const keys = useShortcutKeys()
   const navigate = useNavigate()
   const { data: settings } = useSettings()
@@ -207,10 +211,12 @@ export function Builder({
       const edit: CastEdit =
         verdict === "not_them" ? { op: "body_not_them", bodies, characterId } : { op: "not_a_person", bodies }
       void castEdit(pid, edit).then((r) => {
-        if (r !== undefined) toast(verdict === "not_them" ? `Not ${label ?? "them"}: out of the pack` : "Not a person: out of the pack")
+        if (r !== undefined) {
+          toast(verdict === "not_them" ? (label != null ? t("toast.notThem", { name: label }) : t("toast.notThemAnon")) : t("toast.notPerson"))
+        }
       })
     },
-    [pid, characterId, label],
+    [pid, characterId, label, t],
   )
   const faceless = useMemo(() => clips.some((c) => c.shot.faceless), [clips])
   // The menu's entries act on the clip itself (the grid may have moved).
@@ -238,16 +244,15 @@ export function Builder({
       if (!changed) return
       toast(said, {
         id: BULK_TOAST,
-        description: pinned && limited ? "Picked by hand: the limit leaves them alone." : undefined,
-        action: { label: "Undo", onClick: () => void latest.current.restore(before) },
+        description: pinned && limited ? t("toast.limitLeavesAlone") : undefined,
+        action: { label: t("common:action.undo"), onClick: () => void latest.current.restore(before) },
       })
     })
   }
-  const takeAll = () => bulk("Took every shot in", () => pack.setEach(clips, () => true), true)
-  const leaveAll = () => bulk("Left every shot out", () => pack.setEach(clips, () => false), true)
-  const invert = () => bulk("Inverted the pack", () => pack.invertIncluded(clips), true)
-  const handBack = () =>
-    bulk(`Handed ${plural(picks.length, "shot")} back to the filters`, () => pack.clearPicks(picks))
+  const takeAll = () => bulk(t("toast.tookAll"), () => pack.setEach(clips, () => true), true)
+  const leaveAll = () => bulk(t("toast.leftAll"), () => pack.setEach(clips, () => false), true)
+  const invert = () => bulk(t("toast.inverted"), () => pack.invertIncluded(clips), true)
+  const handBack = () => bulk(t("toast.handedBack", { count: picks.length }), () => pack.clearPicks(picks))
   useShortcuts(PACK_SHORTCUTS, {
     export: () => (canExport ? setExportOpen(true) : false),
     takeAll: () => (canBulk ? (allIn ? leaveAll() : takeAll()) : false),
@@ -258,17 +263,17 @@ export function Builder({
     <>
       {/* With every shot in the key leaves them out: it isn't promised on an entry that takes. */}
       <Item disabled={!canBulk || allIn} onSelect={takeAll} shortcut={allIn ? undefined : keys("pack.takeAll")}>
-        <Check /> Take every shot
+        <Check /> {t("page.menu.takeAll")}
       </Item>
       <Item disabled={!canBulk || noneIn} onSelect={leaveAll} shortcut={keys("pack.leaveAll")}>
-        <X /> Leave every shot out
+        <X /> {t("page.menu.leaveAll")}
       </Item>
       <Item disabled={!canBulk} onSelect={invert} shortcut={keys("pack.invert")}>
-        <ArrowsDownUp /> Invert the pack
+        <ArrowsDownUp /> {t("page.menu.invert")}
       </Item>
       {picks.length > 0 && (
         <Item onSelect={handBack}>
-          <ArrowCounterClockwise /> Hand every shot back to the filters
+          <ArrowCounterClockwise /> {t("page.menu.handBackAll")}
         </Item>
       )}
     </>
@@ -278,7 +283,7 @@ export function Builder({
   const pageMenu = (
     <>
       <ContextMenuItem disabled={!canExport} onSelect={() => setExportOpen(true)} shortcut={keys("pack.export")}>
-        <Package /> Export the pack…
+        <Package /> {t("page.menu.export")}
       </ContextMenuItem>
       <ContextMenuSeparator />
       {bulkItems(contextKit)}
@@ -296,11 +301,11 @@ export function Builder({
         </>
       )}
       <ContextMenuSeparator />
-      <ContextMenuLabel>Show</ContextMenuLabel>
+      <ContextMenuLabel>{t("page.menu.show")}</ContextMenuLabel>
       <ContextMenuRadioGroup value={show} onValueChange={(v) => setShow(v as Show)}>
-        <ContextMenuRadioItem value="all">All shots</ContextMenuRadioItem>
-        <ContextMenuRadioItem value="in">In the pack</ContextMenuRadioItem>
-        <ContextMenuRadioItem value="out">Left out</ContextMenuRadioItem>
+        <ContextMenuRadioItem value="all">{t("page.menu.showAll")}</ContextMenuRadioItem>
+        <ContextMenuRadioItem value="in">{t("page.menu.showIn")}</ContextMenuRadioItem>
+        <ContextMenuRadioItem value="out">{t("page.menu.showOut")}</ContextMenuRadioItem>
       </ContextMenuRadioGroup>
     </>
   )
@@ -324,17 +329,17 @@ export function Builder({
         <section className="px-10 pt-5 pb-32">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
             <Segmented<Show>
-              aria-label="Show"
+              aria-label={t("page.show.aria")}
               value={show}
               onChange={setShow}
               options={[
-                { value: "all", label: `All ${clips.length}` },
-                { value: "in", label: `In the pack ${taken}` },
-                { value: "out", label: `Left out ${clips.length - taken}` },
+                { value: "all", label: t("page.show.all", { n: clips.length }) },
+                { value: "in", label: t("page.show.in", { n: taken }) },
+                { value: "out", label: t("page.show.out", { n: clips.length - taken }) },
               ]}
             />
             {clips.length > 0 && (
-              <span className="text-sm text-fg-3">Click to take a shot in or out · Shift for every shot since · Enter to watch</span>
+              <span className="text-sm text-fg-3">{t("page.hint")}</span>
             )}
           </div>
           {pack.preview.isPending ? (
@@ -346,17 +351,17 @@ export function Builder({
           ) : pack.preview.isError && pack.preview.data === undefined ? (
             <ErrorState
               error={pack.preview.error}
-              title="The pack couldn't be made"
+              title={t("page.loadFailed")}
               onRetry={() => void pack.preview.refetch()}
             />
           ) : clips.length === 0 ? (
             <p className="text-md text-fg-3">
               {character && character.waiting > 0
-                ? "Their episode is being analysed again; the shots come back when it's done."
-                : "No shots of them yet."}
+                ? t("page.reanalysing")
+                : t("page.noShots")}
             </p>
           ) : visible.length === 0 ? (
-            <p className="text-md text-fg-3">{show === "in" ? "The pack takes none of the shots. Loosen a filter or click shots to take them." : "The pack takes every shot."}</p>
+            <p className="text-md text-fg-3">{show === "in" ? t("page.takesNone") : t("page.takesAll")}</p>
           ) : (
             <VirtualGrid
               items={visible}
@@ -388,7 +393,7 @@ export function Builder({
         <PackFooter
           totals={totals}
           bytes={bytes}
-          format={format ? shortFormatName(format) : null}
+          format={format ? shortFormatName(say(format)) : null}
           picks={picks.length}
           canExport={canExport}
           exporting={exporting}
@@ -409,6 +414,7 @@ export function Builder({
 }
 
 function Header({ character: c, shots }: { character?: Character; shots: number }) {
+  const { t } = useTranslation(["pack", "common"])
   return (
     <header className="flex items-center gap-5 px-10 pt-8 pb-6">
       <Artwork
@@ -423,11 +429,11 @@ function Header({ character: c, shots }: { character?: Character; shots: number 
         }
       />
       <div className="min-w-0">
-        <p className="eyebrow">Scenepack</p>
+        <p className="eyebrow">{t("page.eyebrow")}</p>
         <h1 className="display truncate text-5xl leading-[1.05] text-fg-1">{c?.label ?? " "}</h1>
         {c && (
           <p className="mt-1 text-sm text-fg-3">
-            {plural(shots, "shot")} in {plural(c.media, "episode")} · the pack takes the bright ones
+            {t("page.header", { shots: t("shots", { count: shots }), episodes: t("episodes", { count: c.media }) })}
           </p>
         )}
       </div>

@@ -16,6 +16,7 @@ import type {
   PackState,
   ProjectId,
 } from "@/bindings"
+import { t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { isFinished, useActivity } from "@/state/activity"
@@ -189,7 +190,7 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
         // The pack now says it is checking.
         await queryClient.invalidateQueries({ queryKey: previews(pid, cid) })
       } catch (e) {
-        toast.error("Couldn't check the shots", { description: errorMessage(e) })
+        toast.error(t("pack:toast.checkFailed"), { description: errorMessage(e) })
       } finally {
         setAsking((n) => n - 1)
       }
@@ -248,7 +249,7 @@ export function usePack(pid: ProjectId, cid: CharacterId, media: Map<string, Med
         await takeChoices(pid, cid, spec, await run)
       } catch (e) {
         ok = false
-        toast.error("Couldn't change the pack", { description: errorMessage(e) })
+        toast.error(t("pack:toast.changeFailed"), { description: errorMessage(e) })
         // Whatever reached it: the pack as the backend has it now.
         await queryClient.invalidateQueries({ queryKey: previews(pid, cid) })
       }

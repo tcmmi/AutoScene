@@ -14,23 +14,10 @@ export const ALL_PARTS: readonly NamePart[] = NAME_PARTS.map(([part]) => part)
 /** What the name of one file holding the whole pack may use: the others name a shot. */
 export const FILE_PARTS: readonly NamePart[] = BACKEND_FILE_PARTS
 
-/** The label of the button that puts a part in: "Number" for `{index}`. */
-export const PART_LABELS = Object.fromEntries(NAME_PARTS) as Record<NamePart, string>
-
-/**
- * What each part gives, with an example of its form: the line under the part's
- * spelling in its button's tooltip. The real names are in the dialog's preview,
- * so these stay fixed. A part the backend adds fails the type check until it
- * has one.
- */
-export const PART_HINTS: Record<NamePart, string> = {
-  series: "The project's title",
-  character: "The character's name",
-  episode: "The episode, as S01E03, or its file's name",
-  index: "The shot's place in the pack: 001, 002, …",
-  tc: "Where the shot starts, as 00-12-03-05",
-  frame: "The frame the shot starts on, as 17357",
-}
+// The words of a part's button ("Number" for `{index}`) and of its tooltip (what it gives, with an example of its
+// form) are in the catalog, `pack:namePart.<part>.label` and `.hint`: the dialog reads them by the part, so a part
+// the backend adds fails the type check until the catalog has its words. (The labels in `NAME_PARTS` are the
+// backend's English; a test keeps the catalog's the same.)
 
 /**
  * What a piece of a template is: plain `text`; a `part` the field may use; a

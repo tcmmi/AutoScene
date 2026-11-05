@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { FolderOpen, Warning } from "@/components/icons"
+import { useTranslation } from "react-i18next"
 import { Toolbar } from "radix-ui"
 import { toast } from "sonner"
 import type { Character, ExportPlan } from "@/bindings"
@@ -10,9 +11,9 @@ import { Field, Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { OptionRow } from "@/components/ui/option-row"
 import { Switch } from "@/components/ui/switch"
-import { plural } from "@/features/cast/cast"
 import { rememberPreset } from "@/features/export/export"
 import { formatBytes, shortFormatName } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { pickFolder } from "@/lib/media"
 import {
@@ -20,8 +21,6 @@ import {
   FILE_PARTS,
   insertion,
   type NamePart,
-  PART_HINTS,
-  PART_LABELS,
   parseTemplate,
   reportedPart,
   type Segment,
@@ -59,15 +58,6 @@ function useLastAnswer(plan: Pack["plan"]): { plan: ExportPlan | undefined; prob
   return next
 }
 
-/**
- * What an export started now misses: `n` episodes (or files) still being
- * analysed, whose shots of `label` aren't found yet.
- */
-function stillAnalysed(n: number, unit: "episode" | "file", label: string): string {
-  const one = n === 1
-  return `${plural(n, unit)} ${one ? "is" : "are"} still being analysed. Shots of ${label} found in ${one ? "it" : "them"} later won't be in this export.`
-}
-
 /** Name the pack's files, choose format and place, and export exactly the shots the grid shows. */
 export function PackExportDialog({
   pid,
@@ -90,6 +80,7 @@ export function PackExportDialog({
 }
 
 function ExportForm({ pid, character, pack, onDone }: { pid: string; character: Character; pack: Pack; onDone: () => void }) {
+  const { t } = useTranslation(["pack", "export", "common"])
   const { data: presets } = usePresets()
   const { data: settings } = useSettings()
   const { data: defaultDir } = useExportDir(pid)
@@ -130,7 +121,6 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
   // The character's folder as the backend names it (a file per shot only).
   const folder = naming.folder && !oneFile ? plan?.folder : null
   const outDir = folder && base ? `${base.replace(/[\\/]+$/, "")}${sep}${folder}` : base
-  const shots = plural(clips, "shot")
   // The export takes exactly the shots the grid shows: episodes still being
   // analysed add theirs later, and so do those still being indexed (their
   // analysis starts once that is done). Only episodes the pack takes: one
@@ -149,7 +139,9 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
     return new Set(pending.map((j) => j.mediaId)).size
   })
   const missing =
-    analysing > 0 && project ? stillAnalysed(analysing, project.kind === "movie" ? "file" : "episode", character.label) : null
+    analysing > 0 && project
+      ? t(project.kind === "movie" ? "export.analysing.file" : "export.analysing.episode", { count: analysing, name: character.label })
+      : null
 
   const start = async () => {
     const stamp = pack.preview.data?.stamp
@@ -161,11 +153,11 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
       packExportStarted(pid, character.id, ex.id)
       rememberPreset(settings, presetId)
       onDone()
-      toast(oneFile ? `Exporting ${shots} of ${character.label} into one file` : `Exporting ${shots} of ${character.label}`, {
-        action: { label: "Show", onClick: () => useUi.getState().setActivityOpen(true) },
+      toast(t(oneFile ? "export.startedOneFile" : "export.started", { count: clips, name: character.label }), {
+        action: { label: t("export:show"), onClick: () => useUi.getState().setActivityOpen(true) },
       })
     } catch (e) {
-      toast.error("Couldn't start the export", { description: errorMessage(e) })
+      toast.error(t("export:startFailed"), { description: errorMessage(e) })
       // Refused because the pack changed (a file gone, an analysis done):
       // show it as it is now.
       void queryClient.invalidateQueries({ queryKey: qk.pack(pid, character.id) })
@@ -181,18 +173,16 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
           {n}
         </span>
       ))}
-      {clips > names.length && <span className="text-fg-3">and {(clips - names.length).toLocaleString("en-GB")} more</span>}
+      {clips > names.length && <span className="text-fg-3">{t("export.more", { count: clips - names.length })}</span>}
     </span>
   )
 
   return (
     <DialogContent
-      title={`Export ${character.label}'s scenepack`}
+      title={t("export.title", { name: character.label })}
       description={
         <>
-          {oneFile
-            ? `${shots} in one video, each cut frame-exact and checked against the source.`
-            : `${shots}, each cut frame-exact and checked against the source.`}
+          {t(oneFile ? "export.descriptionOneFile" : "export.description", { count: clips })}
           {/* A line of its own, read after a space. */}
           {missing && (
             <>
@@ -220,8 +210,8 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
         }}
       >
         <OptionRow
-          label="All shots in one file"
-          description="One video with a chapter for each shot, in the pack's order."
+          label={t("export.oneFile.label")}
+          description={t("export.oneFile.description")}
           checked={merge}
           onCheckedChange={(merge) => {
             setMending(false)
@@ -231,7 +221,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
         {showFile && (
           <TemplateField
             id="pack-file"
-            label="File name"
+            label={t("export.fileName")}
             hint={
               file &&
               preset && (
@@ -251,40 +241,40 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
         )}
         <TemplateField
           id="pack-template"
-          label={oneFile ? "Chapter names" : "File names"}
+          label={oneFile ? t("export.chapterNames") : t("export.fileNames")}
           hint={nameList}
           problem={namesProblem}
           value={naming.template}
           onChange={(template) => pack.setNaming({ ...naming, template })}
         />
         <Field
-          label="Format"
+          label={t("export:field.format")}
           hint={
             preset && (
               <>
-                {preset.description}
+                {say(preset.description)}
                 {bytes != null && bytes > 0 && (
                   <span className="text-fg-2">
                     {" "}
-                    About {formatBytes(bytes)} in all as {shortFormatName(preset.name)}.
+                    {t("export:about", { size: formatBytes(bytes), format: shortFormatName(say(preset.name)) })}
                   </span>
                 )}
-                {oneFile && bytes != null && bytes > 0 && " The shots are rendered first, so it needs extra free space for a while."}
-                {apart && <span className="block pt-1 text-fg-2">{apart}</span>}
-                {size?.note && <span className="block pt-1 text-fg-2">{size.note}</span>}
+                {oneFile && bytes != null && bytes > 0 && ` ${t("export.freeSpace")}`}
+                {apart && <span className="block pt-1 text-fg-2">{say(apart)}</span>}
+                {size?.note && <span className="block pt-1 text-fg-2">{say(size.note)}</span>}
               </>
             )
           }
         >
           <Select
-            aria-label="Export format"
+            aria-label={t("export:field.formatAria")}
             value={presetId}
             onChange={setPresetId}
-            placeholder="Choose a format"
-            options={(presets ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            placeholder={t("export:field.formatPlaceholder")}
+            options={(presets ?? []).map((p) => ({ value: p.id, label: say(p.name) }))}
           />
         </Field>
-        <Field label="Destination">
+        <Field label={t("export:field.destination")}>
           <div className="flex gap-2">
             <div
               data-selectable
@@ -292,14 +282,14 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
             >
               <TruncatedText>{outDir || "…"}</TruncatedText>
             </div>
-            <Button size="md" className="h-10" onClick={() => void pickFolder("Export to").then((p) => p && setDir(p))}>
-              <FolderOpen /> Change…
+            <Button size="md" className="h-10" onClick={() => void pickFolder(t("export:pickDestination")).then((p) => p && setDir(p))}>
+              <FolderOpen /> {t("export:change")}
             </Button>
           </div>
           {!oneFile && (
             <label className="mt-3 flex items-center gap-3 text-md text-fg-2">
               <Switch checked={naming.folder} onCheckedChange={(folder) => pack.setNaming({ ...naming, folder })} />
-              In a folder named after {character.label}
+              {t("export.folder", { name: character.label })}
             </label>
           )}
         </Field>
@@ -313,7 +303,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
         </p>
         <DialogFooter className="mt-1">
           <Button variant="ghost" onClick={onDone}>
-            Cancel
+            {t("common:action.cancel")}
           </Button>
           <Button
             type="submit"
@@ -322,7 +312,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
             busy={busy}
             disabled={!presetId || clips === 0 || problem != null || !pack.current}
           >
-            {oneFile ? `Export ${shots} into one file` : `Export ${shots}`}
+            {t(oneFile ? "export.submitOneFile" : "export.submit", { count: clips })}
           </Button>
         </DialogFooter>
       </form>
@@ -368,6 +358,7 @@ function TemplateField({
   /** The one file's name: only the parts that name the whole pack, one button each. */
   forFile?: boolean
 }) {
+  const { t } = useTranslation("pack")
   const parts = forFile ? FILE_PARTS : ALL_PARTS
   const input = useRef<HTMLInputElement>(null)
   // A part still being typed isn't wrong yet: while the caret is in the part
@@ -465,7 +456,7 @@ function TemplateField({
       </div>
       {/* One Tab stop: the arrows, Home and End go from button to button. */}
       <Toolbar.Root
-        aria-label="Name parts"
+        aria-label={t("export.nameParts")}
         aria-controls={id}
         loop
         // The pointer never takes the focus from a field, on a button or
@@ -476,12 +467,12 @@ function TemplateField({
         {parts.map((part) => (
           // The spelling to type by hand, and what it gives. Below the button:
           // above, it would cover the caret, where the part goes.
-          <Tooltip key={part} label={<span className="font-mono">{`{${part}}`}</span>} hint={PART_HINTS[part]}>
+          <Tooltip key={part} label={<span className="font-mono">{`{${part}}`}</span>} hint={t(`namePart.${part}.hint`)}>
             <Toolbar.Button
               onClick={() => insert(part)}
               className="select-none rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-xs leading-6 text-fg-2 transition-[border-color,color,scale] duration-[var(--dur-fast)] ease-out hover:border-white/20 hover:text-fg-1 active:scale-[0.97]"
             >
-              {PART_LABELS[part]}
+              {t(`namePart.${part}.label`)}
             </Toolbar.Button>
           </Tooltip>
         ))}

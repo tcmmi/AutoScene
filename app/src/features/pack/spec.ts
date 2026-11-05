@@ -1,4 +1,5 @@
 import type { MediaId, PackChoices, PackClip, PackFilter, PackPreview, PackReason, PackSpec, ShotSize } from "@/bindings"
+import { fmt, t } from "@/lib/i18n"
 
 /**
  * The scenepack builder's filters and picks, as plain data. The backend
@@ -20,40 +21,79 @@ export const DEFAULT_SPEC: PackSpec = {
   pluginFilters: [],
 }
 
-/** Shot sizes, closest first. */
-export const SIZES: { value: ShotSize; label: string; short: string }[] = [
-  { value: "extreme_close_up", label: "Extreme close-up", short: "ECU" },
-  { value: "close_up", label: "Close-up", short: "CU" },
-  { value: "medium_close_up", label: "Medium close-up", short: "MCU" },
-  { value: "medium", label: "Medium shot", short: "MS" },
-  { value: "wide", label: "Wide shot", short: "WS" },
-]
+/**
+ * Shot sizes, closest first. `key` is where the size's words are in the catalog
+ * (`pack:size.<key>.label` and `.short`).
+ */
+export const SIZES = [
+  { value: "extreme_close_up", key: "extremeCloseUp" },
+  { value: "close_up", key: "closeUp" },
+  { value: "medium_close_up", key: "mediumCloseUp" },
+  { value: "medium", key: "medium" },
+  { value: "wide", key: "wide" },
+] as const satisfies readonly { value: ShotSize; key: string }[]
 
-/** Why a shot is left out, as its card says it. */
+/**
+ * Why a shot is left out, as its card says it. The words are read when the
+ * card draws, from the catalog in the language in use; a table of text would
+ * keep the language it was made in.
+ */
 export const REASONS: Record<PackReason, string> = {
-  missing: "File missing",
-  episode: "Other episode",
-  tiny: "Flash cut",
-  short: "Too short",
-  long: "Too long",
-  size: "Other size",
-  not_solo: "Not alone",
-  faceless: "No face",
-  limit: "Past the limit",
-  removed: "Taken out",
+  get missing() {
+    return t("pack:reason.missing")
+  },
+  get episode() {
+    return t("pack:reason.episode")
+  },
+  get tiny() {
+    return t("pack:reason.tiny")
+  },
+  get short() {
+    return t("pack:reason.short")
+  },
+  get long() {
+    return t("pack:reason.long")
+  },
+  get size() {
+    return t("pack:reason.size")
+  },
+  get not_solo() {
+    return t("pack:reason.notSolo")
+  },
+  get faceless() {
+    return t("pack:reason.faceless")
+  },
+  get limit() {
+    return t("pack:reason.limit")
+  },
+  get removed() {
+    return t("pack:reason.removed")
+  },
   // A filter's own words, when the card knows which filter (`filter`).
-  plugin: "Plugin filter",
+  get plugin() {
+    return t("pack:reason.plugin")
+  },
 }
 
-/** Lengths to keep, in seconds. */
-export const LENGTHS: { id: string; label: string; min: number | null; max: number | null }[] = [
-  { id: "any", label: "Any length", min: null, max: null },
-  { id: "1+", label: "1 s or longer", min: 1, max: null },
-  { id: "2+", label: "2 s or longer", min: 2, max: null },
-  { id: "1-6", label: "1 to 6 s", min: 1, max: 6 },
-  { id: "2-10", label: "2 to 10 s", min: 2, max: 10 },
-  { id: "-6", label: "Up to 6 s", min: null, max: 6 },
+/** Lengths to keep, in seconds. `id` is what the menu's radio items carry. */
+export const LENGTHS: { id: string; min: number | null; max: number | null }[] = [
+  { id: "any", min: null, max: null },
+  { id: "1+", min: 1, max: null },
+  { id: "2+", min: 2, max: null },
+  { id: "1-6", min: 1, max: 6 },
+  { id: "2-10", min: 2, max: 10 },
+  { id: "-6", min: null, max: 6 },
 ]
+
+/** A length range in words: "Any length", "1 to 6 s", "2 s or longer", "Up to 6 s". */
+export function lengthLabel(min: number | null, max: number | null): string {
+  // A tenth of a second at most, in the language's digits ("1.5", ro "1,5"); a whole second without a decimal.
+  const s = (v: number) => fmt.decimal(v, 1, true)
+  if (min != null && max != null) return t("pack:length.between", { min: s(min), max: s(max) })
+  if (min != null) return t("pack:length.orLonger", { min: s(min) })
+  if (max != null) return t("pack:length.upTo", { max: s(max) })
+  return t("pack:length.any")
+}
 
 export const LIMITS: (number | null)[] = [null, 25, 50, 100, 200]
 export const HANDLES: number[] = [0, 6, 12, 24]
@@ -61,15 +101,7 @@ export const HANDLES: number[] = [0, 6, 12, 24]
 /** The length choice `spec` makes (a range set elsewhere gets a label of its own). */
 export function lengthOf(spec: PackSpec): { id: string | null; label: string } {
   const preset = LENGTHS.find((l) => l.min === spec.minSec && l.max === spec.maxSec)
-  if (preset) return preset
-  const s = (v: number) => `${Math.round(v * 10) / 10}`
-  const label =
-    spec.minSec != null && spec.maxSec != null
-      ? `${s(spec.minSec)} to ${s(spec.maxSec)} s`
-      : spec.minSec != null
-        ? `${s(spec.minSec)} s or longer`
-        : `Up to ${s(spec.maxSec ?? 0)} s`
-  return { id: null, label }
+  return { id: preset?.id ?? null, label: lengthLabel(spec.minSec, spec.maxSec) }
 }
 
 export function isDefault(spec: PackSpec): boolean {
@@ -161,8 +193,8 @@ export function checkOf(filters: readonly PackFilter[], on: readonly string[], u
  * give yet: how far that run is shows in Activity.
  */
 export function checkingText(checked: number, total: number): string {
-  const shots = total === 1 ? "1 shot" : `${total} shots`
-  return checked > 0 ? `Checking ${checked} of ${shots}` : `Checking ${shots}`
+  // `total` and `checked` are written as they are, as this always read; `count` only picks the plural.
+  return checked > 0 ? t("pack:check.some", { count: total, checked, total }) : t("pack:check.all", { count: total, total })
 }
 
 /**
@@ -194,10 +226,10 @@ export function savable(p: { taken: number; current: boolean; character: boolean
  * be used now, says what it waits for (the ⋯ and the right-click menu alike).
  */
 export function saveHeading(p: { taken: number; current: boolean; check: PackCheck | null }): string {
-  if (p.check?.kind === "checking") return "Save with a plugin waits for the check"
-  if (p.taken === 0) return "Save with a plugin needs a shot in the pack"
-  if (!p.current) return "Save with a plugin waits for the pack"
-  return "Save with a plugin"
+  if (p.check?.kind === "checking") return t("pack:save.waitsForCheck")
+  if (p.taken === 0) return t("pack:save.needsShot")
+  if (!p.current) return t("pack:save.waitsForPack")
+  return t("pack:save.heading")
 }
 
 /** The words a shot that a plugin's filter left out wears: the filter's own, else a general one. */

@@ -1,4 +1,5 @@
 import type * as React from "react"
+import { useTranslation } from "react-i18next"
 import { ArrowCounterClockwise, CaretDown, FunnelSimple, Warning } from "@/components/icons"
 import type { MediaItem, PackFilter, PackOrder, PackSpec, PluginInfo, ShotSize } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -18,11 +19,10 @@ import { ProgressRing } from "@/components/ui/progress"
 import { Segmented } from "@/components/ui/segmented"
 import { ToggleChip } from "@/components/ui/toggle-chip"
 import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
-import { plural } from "@/features/cast/cast"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { mediaTitle } from "@/lib/media"
 import { cn } from "@/lib/utils"
-import { DEFAULT_SPEC, HANDLES, LENGTHS, LIMITS, SIZES, checkingText, episodesOn, filtersOn, isDefault, lengthOf, pluginFiltersOf, withPluginFilter } from "./spec"
+import { DEFAULT_SPEC, HANDLES, LENGTHS, LIMITS, SIZES, checkingText, episodesOn, filtersOn, isDefault, lengthLabel, lengthOf, pluginFiltersOf, withPluginFilter } from "./spec"
 
 /**
  * The pack's order, its filters in one menu and the handles, in a bar that
@@ -49,6 +49,7 @@ export function PackFilters({
   plugins?: PluginInfo[]
   onChange: (spec: PackSpec) => void
 }) {
+  const { t } = useTranslation("pack")
   const set = (patch: Partial<PackSpec>) => onChange({ ...spec, ...patch })
   const toggleSize = (s: ShotSize) =>
     set({ sizes: spec.sizes.includes(s) ? spec.sizes.filter((x) => x !== s) : SIZES.map((x) => x.value).filter((x) => x === s || spec.sizes.includes(x)) })
@@ -60,23 +61,23 @@ export function PackFilters({
   return (
     <div
       role="group"
-      aria-label="Filters"
+      aria-label={t("filters.title")}
       className="sticky top-[var(--topbar-h)] z-10 flex flex-wrap items-center gap-2 border-b border-hairline bg-canvas/80 px-10 py-3 backdrop-blur-2xl backdrop-saturate-150"
     >
       <Segmented<PackOrder>
-        aria-label="Order"
+        aria-label={t("filters.order.aria")}
         value={spec.order}
         onChange={(order) => set({ order })}
         options={[
-          { value: "episodes", label: "Episode order" },
-          { value: "best", label: "Best first" },
+          { value: "episodes", label: t("filters.order.episodes") },
+          { value: "best", label: t("filters.order.best") },
         ]}
       />
       <Divider />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <ToggleChip pressed={count > 0} aria-haspopup="menu" aria-pressed={undefined} aria-label={count > 0 ? `Filters, ${count} on` : "Filters"}>
-            <FunnelSimple className="size-4" /> Filters
+          <ToggleChip pressed={count > 0} aria-haspopup="menu" aria-pressed={undefined} aria-label={count > 0 ? t("filters.titleOn", { count }) : t("filters.title")}>
+            <FunnelSimple className="size-4" /> {t("filters.title")}
             {count > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-2xs font-semibold tabular-nums text-on-accent">
                 {count}
@@ -87,15 +88,15 @@ export function PackFilters({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[300px]">
           {/* No header of its own: the names say it, and the menu fits the window's smallest height (1024x640) at rest. */}
-          <div role="group" aria-label="Shot sizes">
+          <div role="group" aria-label={t("filters.sizes")}>
             {SIZES.map((s) => (
               <DropdownMenuCheckboxItem key={s.value} checked={spec.sizes.includes(s.value)} onCheckedChange={() => toggleSize(s.value)}>
-                {s.label}
+                {t(`size.${s.key}.label`)}
               </DropdownMenuCheckboxItem>
             ))}
           </div>
           <DropdownMenuSeparator />
-          <Choice label="Length" value={length.label} active={spec.minSec != null || spec.maxSec != null}>
+          <Choice label={t("filters.length")} value={length.label} active={spec.minSec != null || spec.maxSec != null}>
             <DropdownMenuRadioGroup
               value={length.id ?? ""}
               onValueChange={(id) => {
@@ -105,15 +106,15 @@ export function PackFilters({
             >
               {LENGTHS.map((l) => (
                 <DropdownMenuRadioItem key={l.id} value={l.id} onSelect={stayOpen}>
-                  {l.label}
+                  {lengthLabel(l.min, l.max)}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
           </Choice>
           {media.length > 1 && (
-            <Choice label="Episodes" value={narrowed ? `${episodes} of ${media.length}` : "All"} active={narrowed}>
+            <Choice label={t("filters.episodes")} value={narrowed ? t("filters.episodesOf", { n: episodes, total: media.length }) : t("filters.all")} active={narrowed}>
               <DropdownMenuCheckboxItem checked={!narrowed} disabled={!narrowed} onCheckedChange={() => set({ media: [] })}>
-                All episodes
+                {t("filters.allEpisodes")}
               </DropdownMenuCheckboxItem>
               <DropdownMenuSeparator />
               {/* A long series scrolls here, so "All episodes" stays in reach above. */}
@@ -142,42 +143,42 @@ export function PackFilters({
               </div>
             </Choice>
           )}
-          <Choice label="Limit" value={spec.limit == null ? "No limit" : `Best ${spec.limit}`} active={spec.limit != null}>
+          <Choice label={t("filters.limit")} value={spec.limit == null ? t("filters.noLimit") : t("filters.best", { n: spec.limit })} active={spec.limit != null}>
             <DropdownMenuRadioGroup
               value={String(spec.limit)}
               onValueChange={(v) => set({ limit: v === "null" ? null : Number(v) })}
             >
               {LIMITS.map((n) => (
                 <DropdownMenuRadioItem key={String(n)} value={String(n)} onSelect={stayOpen}>
-                  {n == null ? "No limit" : `The best ${n}`}
+                  {n == null ? t("filters.noLimit") : t("filters.theBest", { n })}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
           </Choice>
           <DropdownMenuSeparator />
           <DropdownMenuCheckboxItem checked={spec.solo} onCheckedChange={(solo) => set({ solo })}>
-            Only them in the shot
+            {t("filters.solo")}
           </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem checked={spec.skipTiny} onCheckedChange={(skipTiny) => set({ skipTiny })}>
-            Skip flash cuts
+            {t("filters.skipTiny")}
           </DropdownMenuCheckboxItem>
           {(faceless || spec.skipFaceless) && (
             // Its hint is a line of its own, not a tooltip: a tooltip would take the first Esc from the menu.
             <DropdownMenuCheckboxItem
-              hint="Leaves out the shots found by their body"
+              hint={t("filters.withFaceHint")}
               checked={spec.skipFaceless ?? false}
               onCheckedChange={(skipFaceless) => set({ skipFaceless })}
             >
-              Only with their face
+              {t("filters.withFace")}
             </DropdownMenuCheckboxItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Menu label={spec.handles === 0 ? "No handles" : `Handles ${spec.handles} fr`} active={spec.handles > 0}>
+      <Menu label={spec.handles === 0 ? t("filters.noHandles") : t("filters.handles", { n: spec.handles })} active={spec.handles > 0}>
         <DropdownMenuRadioGroup value={String(spec.handles)} onValueChange={(v) => set({ handles: Number(v) })}>
           {HANDLES.map((n) => (
             <DropdownMenuRadioItem key={n} value={String(n)}>
-              {n === 0 ? "No handles" : `${n} frames before and after`}
+              {n === 0 ? t("filters.noHandles") : t("filters.framesAround", { count: n })}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
@@ -194,7 +195,7 @@ export function PackFilters({
       ))}
       {!isDefault(spec) && (
         <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onChange(DEFAULT_SPEC)}>
-          <ArrowCounterClockwise /> Reset filters
+          <ArrowCounterClockwise /> {t("filters.reset")}
         </Button>
       )}
     </div>
@@ -242,19 +243,20 @@ function PluginFilterChip({
   icon: string | null | undefined
   onChange: (on: boolean) => void
 }) {
+  const { t } = useTranslation("pack")
   const gone = f.state === "gone"
   const off = f.state === "off"
   const checking = on && f.state === "checking"
   const failed = on && f.state === "failed" && f.checked < f.total
   const label = gone
-    ? "This filter's plugin is gone, or no longer has it. Turn this filter off."
+    ? t("filters.plugin.gone")
     : off
-      ? `Plugin “${f.plugin}” is off. Turn it on in Plugins, or turn this filter off.`
-      : `Plugin “${f.plugin}”: ${f.description ?? f.title}`
+      ? t("filters.plugin.off", { plugin: f.plugin })
+      : t("filters.plugin.says", { plugin: f.plugin, what: f.description ?? f.title })
   const hint = checking
     ? checkingText(f.checked, f.total)
     : failed
-      ? `Couldn't check ${plural(f.total - f.checked, "shot")}`
+      ? t("check.failed", { count: f.total - f.checked })
       : undefined
   return (
     <Tooltip label={label} hint={hint}>
@@ -263,13 +265,13 @@ function PluginFilterChip({
         {f.title}
         {checking && (
           <ProgressRing
-            aria-label={`Checking ${f.title}`}
+            aria-label={t("filters.plugin.checkingAria", { title: f.title })}
             className="size-3.5"
             value={f.checked > 0 && f.total > 0 ? f.checked / f.total : null}
           />
         )}
-        {failed && <Warning role="img" aria-label={`Couldn't check ${f.title}`} className="size-3.5 text-danger" />}
-        {off && <span className="text-xs font-normal text-fg-3">Plugin off</span>}
+        {failed && <Warning role="img" aria-label={t("filters.plugin.failedAria", { title: f.title })} className="size-3.5 text-danger" />}
+        {off && <span className="text-xs font-normal text-fg-3">{t("filters.plugin.pluginOff")}</span>}
       </ToggleChip>
     </Tooltip>
   )

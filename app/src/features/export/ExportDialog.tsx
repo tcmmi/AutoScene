@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { FolderOpen, Info } from "@/components/icons"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { ClipRequest } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -8,6 +9,7 @@ import { TruncatedText } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
+import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { formatBytes, shortFormatName } from "@/lib/format"
 import { pickFolder } from "@/lib/media"
@@ -60,6 +62,7 @@ function ExportForm({
   label: string | null
   onDone: () => void
 }) {
+  const { t } = useTranslation(["export", "common"])
   const { data: presets } = usePresets()
   const { data: settings } = useSettings()
   const { data: defaultDir } = useExportDir(projectId)
@@ -97,11 +100,11 @@ function ExportForm({
       await commands.exportStart(projectId, req)
       rememberPreset(settings, presetId)
       onDone()
-      toast(single ? `Exporting “${name.trim() || suggested || "the clip"}”` : `Exporting ${clips.length} clips`, {
-        action: { label: "Show", onClick: () => useUi.getState().setActivityOpen(true) },
+      toast(single ? t("started", { name: name.trim() || suggested || t("theClip") }) : t("startedMany", { count: clips.length, total: clips.length }), {
+        action: { label: t("show"), onClick: () => useUi.getState().setActivityOpen(true) },
       })
     } catch (e) {
-      toast.error("Couldn't start the export", { description: errorMessage(e) })
+      toast.error(t("startFailed"), { description: errorMessage(e) })
     } finally {
       setBusy(false)
     }
@@ -109,8 +112,8 @@ function ExportForm({
 
   return (
     <DialogContent
-      title={single ? "Export clip" : `Export ${clips.length} clips`}
-      description={single ? clips[0].summary : "Each clip is cut frame-exact and checked against the source."}
+      title={single ? t("title") : t("titleMany", { count: clips.length, total: clips.length })}
+      description={single ? clips[0].summary : t("description")}
       className="w-[min(560px,calc(100vw-32px))]"
     >
       <form
@@ -126,7 +129,7 @@ function ExportForm({
           </p>
         )}
         {single && (
-          <Field label="File name" htmlFor="export-name">
+          <Field label={t("field.fileName")} htmlFor="export-name">
             <Input
               id="export-name"
               autoFocus
@@ -137,31 +140,31 @@ function ExportForm({
           </Field>
         )}
         <Field
-          label="Format"
+          label={t("field.format")}
           hint={
             preset && (
               <>
-                {preset.description}
+                {say(preset.description)}
                 {bytes != null && bytes > 0 && (
                   <span className="text-fg-2">
                     {" "}
-                    About {formatBytes(bytes)} in all as {shortFormatName(preset.name)}.
+                    {t("about", { size: formatBytes(bytes), format: shortFormatName(say(preset.name)) })}
                   </span>
                 )}
-                {size?.note && <span className="block pt-1 text-fg-2">{size.note}</span>}
+                {size?.note && <span className="block pt-1 text-fg-2">{say(size.note)}</span>}
               </>
             )
           }
         >
           <Select
-            aria-label="Export format"
+            aria-label={t("field.formatAria")}
             value={presetId}
             onChange={setPresetId}
-            placeholder="Choose a format"
-            options={(presets ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            placeholder={t("field.formatPlaceholder")}
+            options={(presets ?? []).map((p) => ({ value: p.id, label: say(p.name) }))}
           />
         </Field>
-        <Field label="Destination">
+        <Field label={t("field.destination")}>
           <div className="flex gap-2">
             <div
               data-selectable
@@ -169,17 +172,17 @@ function ExportForm({
             >
               <TruncatedText>{outDir || "…"}</TruncatedText>
             </div>
-            <Button size="md" className="h-10" onClick={() => void pickFolder("Export to").then((p) => p && setDir(p))}>
-              <FolderOpen /> Change…
+            <Button size="md" className="h-10" onClick={() => void pickFolder(t("pickDestination")).then((p) => p && setDir(p))}>
+              <FolderOpen /> {t("change")}
             </Button>
           </div>
         </Field>
         <DialogFooter className="mt-1">
           <Button variant="ghost" onClick={onDone}>
-            Cancel
+            {t("common:action.cancel")}
           </Button>
           <Button type="submit" size="lg" variant="primary" busy={busy} disabled={!presetId}>
-            Export
+            {t("submit")}
           </Button>
         </DialogFooter>
       </form>

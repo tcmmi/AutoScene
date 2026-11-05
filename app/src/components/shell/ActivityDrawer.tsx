@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 import {
   Check,
   Copy,
@@ -31,7 +32,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { formatProgress } from "@/lib/format"
 import { commands, errorMessage } from "@/lib/ipc"
-import { stopWord } from "@/lib/jobs"
+import { cancelJob, stopWord } from "@/lib/jobs"
 import { copyText } from "@/lib/os"
 import { cn } from "@/lib/utils"
 import { isFinished, jobBar, useActivity, useJobs } from "@/state/activity"
@@ -50,6 +51,7 @@ const KIND_ICON: Record<JobInfo["kind"], React.ReactNode> = {
 
 /** Global view of background work (indexing, previews, analysis, exports, plugins). */
 export function ActivityDrawer() {
+  const { t } = useTranslation("shell")
   const open = useUi((s) => s.activityOpen)
   const setOpen = useUi((s) => s.setActivityOpen)
   const jobs = useJobs()
@@ -59,18 +61,18 @@ export function ActivityDrawer() {
   const clear = () => {
     void commands
       .jobsClearFinished()
-      .catch((e) => toast.error("Couldn't clear the list", { description: errorMessage(e) }))
+      .catch((e) => toast.error(t("activity.clearFailed"), { description: errorMessage(e) }))
     useActivity.getState().clearFinished()
   }
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent
-        title="Activity"
+        title={t("activity.title")}
         actions={
           finished.length > 0 && (
             <Button size="sm" variant="ghost" onClick={clear}>
-              Clear finished
+              {t("activity.clearFinished")}
             </Button>
           )
         }
@@ -78,8 +80,8 @@ export function ActivityDrawer() {
         {jobs.length === 0 ? (
           <EmptyState
             icon={<Queue />}
-            title="Nothing running"
-            description="Indexing, previews and exports show up here with live progress while they run."
+            title={t("activity.empty.title")}
+            description={t("activity.empty.description")}
             className="h-full"
           />
         ) : (
@@ -87,14 +89,14 @@ export function ActivityDrawer() {
             menu={
               finished.length > 0 && (
                 <ContextMenuItem onSelect={clear}>
-                  <Trash /> Clear finished
+                  <Trash /> {t("activity.clearFinished")}
                 </ContextMenuItem>
               )
             }
           >
             <div className="flex flex-col">
-              {active.length > 0 && <Group title="In progress" jobs={active} />}
-              {finished.length > 0 && <Group title="Finished" jobs={finished} />}
+              {active.length > 0 && <Group title={t("activity.group.inProgress")} jobs={active} />}
+              {finished.length > 0 && <Group title={t("activity.group.finished")} jobs={finished} />}
             </div>
           </ContextArea>
         )}
@@ -117,6 +119,7 @@ function Group({ title, jobs }: { title: string; jobs: JobInfo[] }) {
 }
 
 function JobRow({ job: j }: { job: JobInfo }) {
+  const { t } = useTranslation("shell")
   const navigate = useNavigate()
   const done = isFinished(j)
   const canOpen = j.kind === "export" && j.projectId
@@ -135,44 +138,38 @@ function JobRow({ job: j }: { job: JobInfo }) {
   const menu = (
     <>
       {!done && (
-        <ContextMenuItem
-          onSelect={() =>
-            void commands
-              .jobCancel(j.id)
-              .catch((e) => toast.error(`Couldn't ${stop.toLowerCase()} the job`, { description: errorMessage(e) }))
-          }
-        >
+        <ContextMenuItem onSelect={() => cancelJob(j)}>
           <X /> {stop}
         </ContextMenuItem>
       )}
       {canOpen && (
         <ContextMenuItem onSelect={open}>
-          <Package /> Show the exports
+          <Package /> {t("activity.showExports")}
         </ContextMenuItem>
       )}
       {pid && mid && j.kind !== "export" && (
         <ContextMenuItem onSelect={() => go(() => navigate({ to: "/p/$pid/timeline/$mid", params: { pid, mid } }))}>
-          <Play /> Open in the player
+          <Play /> {t("activity.openPlayer")}
         </ContextMenuItem>
       )}
       {pid && (j.kind === "portraits" || j.kind === "regroup") && (
         <ContextMenuItem onSelect={() => go(() => navigate({ to: "/p/$pid/cast", params: { pid } }))}>
-          <Users /> Open the cast
+          <Users /> {t("activity.openCast")}
         </ContextMenuItem>
       )}
       {pid && !mid && j.kind === "posters" && (
         <ContextMenuItem onSelect={() => go(() => navigate({ to: "/p/$pid", params: { pid } }))}>
-          <SquaresFour /> Open the project
+          <SquaresFour /> {t("activity.openProject")}
         </ContextMenuItem>
       )}
       {j.state === "failed" && j.error && (
         <ContextMenuItem onSelect={() => void copyText(j.error ?? "", "error")}>
-          <Copy /> Copy the error
+          <Copy /> {t("activity.copyError")}
         </ContextMenuItem>
       )}
       {j.state === "done" && j.message && (
         <ContextMenuItem onSelect={() => void copyText(j.message ?? "", "message")}>
-          <Copy /> Copy the message
+          <Copy /> {t("activity.copyMessage")}
         </ContextMenuItem>
       )}
     </>
@@ -208,12 +205,10 @@ function JobRow({ job: j }: { job: JobInfo }) {
             {!done ? (
               <Tooltip label={stop}>
                 <button
-                  aria-label={`${stop} ${j.title}`}
+                  aria-label={j.kind === "plugin" ? t("activity.stopJob", { title: j.title }) : t("activity.cancelJob", { title: j.title })}
                   onClick={(e) => {
                     e.stopPropagation()
-                    void commands
-                      .jobCancel(j.id)
-                      .catch((err) => toast.error(`Couldn't ${stop.toLowerCase()} the job`, { description: errorMessage(err) }))
+                    cancelJob(j)
                   }}
                   className="flex size-7 items-center justify-center rounded-full text-fg-3 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-white/[0.1] hover:text-fg-1 focus-visible:opacity-100"
                 >
@@ -228,7 +223,7 @@ function JobRow({ job: j }: { job: JobInfo }) {
             <div className="mt-3">
               <Progress value={jobBar(j)} />
               <div className="mt-1.5 flex justify-between gap-2 text-xs text-fg-3">
-                <span className="truncate">{j.state === "queued" ? "Waiting" : (j.stage ?? "Working")}</span>
+                <span className="truncate">{j.state === "queued" ? t("activity.waiting") : (j.stage ?? t("activity.working"))}</span>
                 <span className="timecode shrink-0">{formatProgress(j.progress, j.etaMs)}</span>
               </div>
             </div>
@@ -243,23 +238,24 @@ function JobRow({ job: j }: { job: JobInfo }) {
 
 /** How a finished job ended: a small round badge, centred on its title and subtitle. */
 function StateIcon({ job }: { job: JobInfo }) {
+  const { t } = useTranslation("shell")
   const badge = "flex size-6 shrink-0 items-center justify-center self-center rounded-full [&_svg]:size-3.5"
   if (job.state === "done") {
     return (
-      <span role="img" aria-label="Done" className={cn(badge, "bg-ok/15 text-ok")}>
+      <span role="img" aria-label={t("activity.done")} className={cn(badge, "bg-ok/15 text-ok")}>
         <Check weight="bold" />
       </span>
     )
   }
   if (job.state === "failed") {
     return (
-      <span role="img" aria-label="Failed" className={cn(badge, "bg-danger-subtle text-danger")}>
+      <span role="img" aria-label={t("activity.failed")} className={cn(badge, "bg-danger-subtle text-danger")}>
         <Warning weight="bold" />
       </span>
     )
   }
   return (
-    <span role="img" aria-label="Cancelled" className={cn(badge, "bg-white/[0.06] text-fg-3")}>
+    <span role="img" aria-label={t("activity.cancelled")} className={cn(badge, "bg-white/[0.06] text-fg-3")}>
       <Prohibit weight="bold" />
     </span>
   )

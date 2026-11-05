@@ -4,6 +4,7 @@ import { takePackSave } from "@/features/plugins/pack-saves"
 import { pluginToast } from "@/features/plugins/plugin-toast"
 import { isFinished, useActivity } from "@/state/activity"
 import { usePluginReview } from "@/state/plugin-review"
+import { t } from "./i18n"
 import { commands, events } from "./ipc"
 import { reveal } from "./os"
 import { exportsQuery, isMadePack, qk, queryClient } from "./queries"
@@ -118,8 +119,8 @@ export function startEventBridge(where: { goPlugins: () => void }): () => void {
       void queryClient.invalidateQueries({ queryKey: qk.settings })
       // In Settings the row says so itself.
       if (window.location.hash.startsWith("#/settings")) return
-      if (payload.error) toast.error("NVIDIA acceleration couldn't be downloaded", { description: payload.error })
-      else toast.success("NVIDIA acceleration is ready")
+      if (payload.error) toast.error(t("shell:events.nvidiaFailed"), { description: payload.error })
+      else toast.success(t("shell:events.nvidiaReady"))
     }),
     events.pluginCompiling.listen(({ payload }) => usePluginReview.getState().compileStarted(payload.ticketId)),
   )
@@ -152,7 +153,10 @@ async function tellWithdrawn(ids: string[], goPlugins: () => void) {
     const p = plugins.find((x) => x.id === id)
     if (p?.withdrawn == null || toldWithdrawn.has(id)) continue
     toldWithdrawn.add(id)
-    toast.error(`AutoScene withdrew Plugin “${p.name}”`, { description: p.withdrawn, action: { label: "Show", onClick: goPlugins } })
+    toast.error(t("shell:events.withdrew", { name: p.name }), {
+      description: p.withdrawn,
+      action: { label: t("shell:events.show"), onClick: goPlugins },
+    })
   }
 }
 
@@ -167,11 +171,11 @@ function notifyFinished(job: JobInfo) {
   if (job.kind === "plugin") {
     const saved = isFinished(job) ? takePackSave(job.id) : undefined
     if (job.state === "failed")
-      pluginToast(job.subtitle, { text: `${job.title} failed`, description: job.error ?? undefined, tone: "error" })
+      pluginToast(job.subtitle, { text: t("shell:events.pluginFailed", { title: job.title }), description: job.error ?? undefined, tone: "error" })
     else if (job.state === "done" && saved)
       pluginToast(job.subtitle, {
-        text: `saved ${saved.split(/[\\/]/).pop()}`,
-        action: { label: "Show in folder", onClick: () => reveal(saved) },
+        text: t("shell:events.pluginSaved", { file: saved.split(/[\\/]/).pop() ?? "" }),
+        action: { label: t("shell:events.showInFolder"), onClick: () => reveal(saved) },
       })
     else if (job.state === "done" && job.message) pluginToast(job.subtitle, { text: job.title, description: job.message })
     return
@@ -186,12 +190,12 @@ function notifyFinished(job: JobInfo) {
   if (job.state === "done") {
     // Said once it's known where the export went (a moment): Show in folder goes there.
     void exportPlace(job).then((place) =>
-      toast.success("Export finished", {
+      toast.success(t("shell:events.exportDone"), {
         description: job.subtitle ?? undefined,
-        action: place ? { label: "Show in folder", onClick: () => reveal(place) } : undefined,
+        action: place ? { label: t("shell:events.showInFolder"), onClick: () => reveal(place) } : undefined,
       }),
     )
-  } else if (job.state === "failed") toast.error("Export finished with errors", { description: job.error ?? undefined })
+  } else if (job.state === "failed") toast.error(t("shell:events.exportErrors"), { description: job.error ?? undefined })
 }
 
 /**

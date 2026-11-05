@@ -4,10 +4,12 @@ import { toast } from "sonner"
 import { useNewProject } from "@/state/new-project"
 import { useUi } from "@/state/ui"
 import { useUpdates } from "@/state/updates"
+import { t } from "./i18n"
 import { commands, errorMessage, events } from "./ipc"
 import { menuAnswers } from "./keymap"
 import { layerOpen } from "./layers"
 import { pickVideoFiles } from "./media"
+import { addedFiles } from "./projects"
 import { isTauri } from "./platform"
 import { GLOBAL_SHORTCUTS, type GlobalId, useShortcuts } from "./shortcuts"
 
@@ -30,7 +32,7 @@ export function useAppActions() {
       goPlugin: (id: string) => void navigate({ to: "/plugins/$id", params: { id } }),
       goSettings: (section: SettingsSection = "general") => void navigate({ to: "/settings/$section", params: { section } }),
       checkUpdates: () => void useUpdates.getState().check(true, true),
-      openLogs: () => commands.openLogsDir().catch((e) => toast.error("Couldn't open logs", { description: errorMessage(e) })),
+      openLogs: () => commands.openLogsDir().catch((e) => toast.error(t("shell:events.logsFailed"), { description: errorMessage(e) })),
     }),
     [navigate],
   )
@@ -142,8 +144,8 @@ export function useGlobalBindings() {
           if (!files.length) return
           commands
             .mediaAdd(pid, files)
-            .then((n) => toast(n === 0 ? "Nothing new to add" : `Added ${n} ${n === 1 ? "file" : "files"}`))
-            .catch((e) => toast.error("Couldn't add files", { description: errorMessage(e) }))
+            .then((n) => toast(addedFiles(n)))
+            .catch((e) => toast.error(t("shell:files.addFailed"), { description: errorMessage(e) }))
         })
       }),
       "view:episodes": calm(() => {

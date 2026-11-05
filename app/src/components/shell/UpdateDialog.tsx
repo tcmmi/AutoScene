@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -7,6 +8,7 @@ import { noticeOpen, useFastScanNotice } from "@/state/fast-scan-notice"
 import { useUpdates } from "@/state/updates"
 
 export function UpdateDialog() {
+  const { t } = useTranslation("shell")
   const u = useUpdates()
   // Two modals never stack: the update waits while the first-start notice is open.
   const notice = useFastScanNotice(noticeOpen)
@@ -22,11 +24,15 @@ export function UpdateDialog() {
         hideClose={busy}
         title={
           <span className="flex items-center gap-2">
-            AutoScene {status.version} is available
-            {status.simulated && <Badge tone="outline">Simulated</Badge>}
+            {t("update.available", { version: status.version ?? "" })}
+            {status.simulated && <Badge tone="outline">{t("update.simulated")}</Badge>}
           </span>
         }
-        description={`You have ${status.currentVersion}${status.date ? ` · released ${status.date}` : ""}`}
+        description={
+          status.date
+            ? t("update.youHaveDated", { current: status.currentVersion, date: status.date })
+            : t("update.youHave", { current: status.currentVersion })
+        }
       >
         {status.notes && (
           <div
@@ -42,9 +48,11 @@ export function UpdateDialog() {
             <Progress value={u.phase === "installing" || u.phase === "ready" ? 1 : fraction} />
             <p className="text-xs text-fg-3 tabular">
               {u.phase === "downloading" &&
-                (u.total ? `${formatBytes(u.downloaded)} of ${formatBytes(u.total)}` : formatBytes(u.downloaded))}
-              {u.phase === "installing" && "Installing…"}
-              {u.phase === "ready" && "Installed. Restart to finish."}
+                (u.total
+                  ? t("update.downloading", { done: formatBytes(u.downloaded), total: formatBytes(u.total) })
+                  : formatBytes(u.downloaded))}
+              {u.phase === "installing" && t("update.installing")}
+              {u.phase === "ready" && t("update.ready")}
             </p>
           </div>
         )}
@@ -54,18 +62,18 @@ export function UpdateDialog() {
         <DialogFooter>
           {u.phase === "ready" ? (
             <Button variant="primary" onClick={() => void u.relaunch()}>
-              Restart now
+              {t("update.restart")}
             </Button>
           ) : (
             <>
               <Button variant="ghost" disabled={busy} onClick={u.skipVersion}>
-                Skip this version
+                {t("update.skip")}
               </Button>
               <Button disabled={busy} onClick={u.remindLater}>
-                Remind me later
+                {t("update.later")}
               </Button>
               <Button variant="primary" disabled={busy} onClick={() => void u.install()}>
-                {busy ? "Updating…" : "Update now"}
+                {busy ? t("update.updating") : t("update.install")}
               </Button>
             </>
           )}

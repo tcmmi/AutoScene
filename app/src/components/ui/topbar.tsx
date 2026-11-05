@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { CaretLeft, SidebarSimple } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { ContextArea } from "@/components/ui/context-area"
@@ -40,6 +41,7 @@ export function TopBar({
   className?: string
   children?: React.ReactNode
 }) {
+  const { t } = useTranslation("ui")
   const keys = useShortcutKeys()
   const scrolled = usePageScrolled()
   const glass = !overlay || scrolled
@@ -70,23 +72,23 @@ export function TopBar({
       >
         <div data-tauri-drag-region className="flex h-full min-w-0 items-center gap-3">
           {railHidden && (
-            <Tooltip label="Show the rail" shortcut={keys("global.sidebar")}>
-              <Button variant="glass" size="icon-sm" aria-label="Show the rail" onClick={showRail}>
+            <Tooltip label={t("topbar.showRail")} shortcut={keys("global.sidebar")}>
+              <Button variant="glass" size="icon-sm" aria-label={t("topbar.showRail")} onClick={showRail}>
                 <SidebarSimple />
               </Button>
             </Tooltip>
           )}
           {back && (
-            <Tooltip label={`Back to ${back.label}`}>
+            <Tooltip label={t("topbar.back", { place: back.label })}>
               <ContextArea
                 menu={
                   <ContextMenuItem onSelect={() => void navigate({ to: back.to })}>
-                    <CaretLeft /> Back to {back.label}
+                    <CaretLeft /> {t("topbar.back", { place: back.label })}
                   </ContextMenuItem>
                 }
               >
                 <Button variant="glass" size="icon-sm" asChild>
-                  <Link to={back.to} aria-label={`Back to ${back.label}`}>
+                  <Link to={back.to} aria-label={t("topbar.back", { place: back.label })}>
                     <CaretLeft weight="bold" />
                   </Link>
                 </Button>

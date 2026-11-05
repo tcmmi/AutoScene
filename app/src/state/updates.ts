@@ -1,5 +1,6 @@
 import { toast } from "sonner"
 import { create } from "zustand"
+import { t } from "@/lib/i18n"
 import { commands, errorMessage, events, type UpdateStatus } from "@/lib/ipc"
 
 type Phase = "idle" | "checking" | "current" | "available" | "downloading" | "installing" | "ready" | "error"
@@ -73,11 +74,11 @@ export const useUpdates = create<UpdatesState>((set, get) => ({
         dialogOpen: available && (manual || !suppressed(status.version)),
       })
       // A manual check from the palette or menu has no settings page to show its answer.
-      if (announce && !available) toast("AutoScene is up to date", { description: `Version ${status.currentVersion}` })
+      if (announce && !available) toast(t("shell:update.upToDate"), { description: t("shell:update.version", { version: status.currentVersion }) })
     } catch (e) {
       // Launch checks fail quietly (offline is normal); manual ones explain.
       set({ phase: manual ? "error" : "idle", error: errorMessage(e), lastChecked: Date.now() })
-      if (announce) toast.error("Couldn't check for updates", { description: errorMessage(e) })
+      if (announce) toast.error(t("shell:update.checkFailed"), { description: errorMessage(e) })
     }
   },
 

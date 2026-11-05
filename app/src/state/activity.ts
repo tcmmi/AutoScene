@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import type { JobId, JobInfo, JobProgress } from "@/bindings"
+import { t } from "@/lib/i18n"
 
 /**
  * Live view of background jobs. Filled from `jobs_list` once and then kept
@@ -200,8 +201,11 @@ export function useRunningCount(): number {
 
 /** What the Activity button tells assistive tech: "1 running, 2 waiting". */
 export function describeActive(running: number, waiting: number): string {
-  const parts = [running > 0 && `${running} running`, waiting > 0 && `${waiting} waiting`].filter(Boolean)
-  return parts.length > 0 ? parts.join(", ") : "Nothing running"
+  const parts = [
+    running > 0 && t("shell:activity.running", { count: running, n: running }),
+    waiting > 0 && t("shell:activity.waitingCount", { count: waiting, n: waiting }),
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(", ") : t("shell:activity.nothingRunning")
 }
 
 /** Do the unfinished jobs `of` takes all wait their turn (and is there one)? */

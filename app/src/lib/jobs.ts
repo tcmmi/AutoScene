@@ -1,5 +1,6 @@
 import { toast } from "sonner"
 import type { JobInfo } from "@/bindings"
+import { fmt, t } from "./i18n"
 import { commands, errorMessage } from "./ipc"
 
 /**
@@ -9,51 +10,53 @@ import { commands, errorMessage } from "./ipc"
 export function cancelLabel(kind: JobInfo["kind"]): string {
   switch (kind) {
     case "ingest":
-      return "Cancel indexing"
+      return t("shell:jobs.cancelIndexing")
     case "analyze":
-      return "Cancel analysis"
+      return t("shell:jobs.cancelAnalysis")
     case "proxy":
-      return "Cancel preview"
+      return t("shell:jobs.cancelPreview")
     default:
       return stopWord(kind)
   }
 }
 
 /** The word for stopping a job beside its title: a plugin's run is stopped, other work cancelled. */
-export function stopWord(kind: JobInfo["kind"]): "Stop" | "Cancel" {
-  return kind === "plugin" ? "Stop" : "Cancel"
+export function stopWord(kind: JobInfo["kind"]): string {
+  return kind === "plugin" ? t("common:action.stop") : t("common:action.cancel")
 }
 
-/**
- * What stops when its episode or project goes, in the order it is named.
- * Upkeep the person never started (posters, portraits, regrouping) isn't.
- */
+/** What stops when its episode or project goes, in the order it is named. Each says how many of its kind there are. */
 const STOPPING: [JobInfo["kind"], (n: number) => string][] = [
-  ["ingest", () => "indexing"],
-  ["analyze", () => "analysing"],
-  ["proxy", (n) => (n === 1 ? "building a preview" : "building previews")],
-  ["export", (n) => (n === 1 ? "an export" : `${n} exports`)],
-  ["plugin", (n) => (n === 1 ? "a plugin run" : `${n} plugin runs`)],
+  ["ingest", () => t("shell:jobs.stops.indexing")],
+  ["analyze", () => t("shell:jobs.stops.analysing")],
+  ["proxy", (count) => t("shell:jobs.stops.preview", { count })],
+  ["export", (n) => t("shell:jobs.stops.export", { count: n, n })],
+  ["plugin", (n) => t("shell:jobs.stops.pluginRun", { count: n, n })],
 ]
 
 /**
  * The sentence a removal ends with when work runs on what goes: "Work
  * running on it stops first: indexing, analysing and an export." `null` when
- * nothing the person would miss runs. Running work is named by what it does,
- * never "analysis", which the project dialog uses for what is stored.
+ * nothing the person would miss runs. Upkeep the person never started
+ * (posters, portraits, regrouping) isn't named. Running work is named by
+ * what it does, never "analysis", which the project dialog uses for what is
+ * stored.
  */
 export function stopsFirst(kinds: JobInfo["kind"][]): string | null {
   const words = STOPPING.flatMap(([kind, word]) => {
     const n = kinds.filter((k) => k === kind).length
     return n > 0 ? [word(n)] : []
   })
-  const last = words.pop()
-  if (last === undefined) return null
-  return `Work running on it stops first: ${words.length > 0 ? `${words.join(", ")} and ${last}` : last}.`
+  if (words.length === 0) return null
+  return t("shell:jobs.stopsFirst", { list: fmt.list(words) })
+}
+
+/** The toast title when stopping a job fails: a plugin's run is stopped, other work cancelled. */
+export function stopFailed(kind: JobInfo["kind"]): string {
+  return kind === "plugin" ? t("shell:activity.stopFailed") : t("shell:activity.cancelFailed")
 }
 
 /** Stop `job`, as the Activity drawer does; a toast says so when it can't. */
 export function cancelJob(job: JobInfo) {
-  const stop = stopWord(job.kind).toLowerCase()
-  void commands.jobCancel(job.id).catch((e) => toast.error(`Couldn't ${stop} the job`, { description: errorMessage(e) }))
+  void commands.jobCancel(job.id).catch((e) => toast.error(stopFailed(job.kind), { description: errorMessage(e) }))
 }

@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { errorMessage } from "@/lib/ipc"
+import { useTranslation } from "react-i18next"
 
 /**
  * Asks before something goes: Cancel and one answer, with whatever goes with
@@ -37,6 +38,7 @@ export function ConfirmDialog({
   onConfirm: () => Promise<unknown>
   children?: React.ReactNode
 }) {
+  const { t } = useTranslation("common")
   const [busy, setBusy] = useState(false)
   const confirm = async () => {
     setBusy(true)
@@ -60,7 +62,7 @@ export function ConfirmDialog({
         )}
         <DialogFooter>
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("action.cancel")}
           </Button>
           <Button variant="danger" busy={busy} onClick={() => void confirm()}>
             {icon} {answer}

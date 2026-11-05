@@ -4,11 +4,13 @@ import { useRouterState } from "@tanstack/react-router"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
 import { FolderPlus, PuzzlePiece } from "@/components/icons"
 import { toast } from "sonner"
+import { useTranslation } from "react-i18next"
 import { isPluginPagePath } from "@/features/plugins/page-items"
 import { isPluginPackage } from "@/features/plugins/plugin-items"
 import { busyReviewing, reviewPackages } from "@/features/plugins/review-packages"
 import { commands, errorMessage } from "@/lib/ipc"
 import { isTauri } from "@/lib/platform"
+import { addedFiles } from "@/lib/projects"
 import { cn } from "@/lib/utils"
 import { useNewProject } from "@/state/new-project"
 
@@ -25,6 +27,7 @@ import { useNewProject } from "@/state/new-project"
  * every drop, also one meant for the page, which never gets it.
  */
 export function DropZone() {
+  const { t } = useTranslation("shell")
   // What is dragged over the window: files for a project, plugin packages, or
   // both (which nothing takes).
   const [over, setOver] = useState<"files" | "package" | "mixed" | null>(null)
@@ -57,27 +60,27 @@ export function DropZone() {
           // A review is asked about: no second dialog over it.
           if (pluginPage) return
           if (packages) reviewPackages(paths)
-          else toast("Finish the plugin review first.")
+          else toast(t("drop.finishReview"))
         } else if (np.open) {
           // A package is no source for a project.
           const media = paths.filter((p) => !isPluginPackage(p))
-          if (media.length < paths.length) toast("Plugin packages are no project files. Close this window and drop them on their own.")
+          if (media.length < paths.length) toast(t("drop.packagesNotFiles"))
           if (media.length) np.show([...np.seed, ...media])
         } else if (pluginPage) return
         else if (paths.some(isPluginPackage)) {
           // Packages are reviewed on their own: not added to a project, not made one.
           if (packages) reviewPackages(paths)
-          else toast("Drop plugin packages on their own.")
+          else toast(t("drop.packagesAlone"))
         } else if (pid) {
           commands
             .mediaAdd(pid, paths)
-            .then((n) => toast(n === 0 ? "Nothing new to add" : `Added ${n} ${n === 1 ? "file" : "files"}`))
-            .catch((e) => toast.error("Couldn't add files", { description: errorMessage(e) }))
+            .then((n) => toast(addedFiles(n)))
+            .catch((e) => toast.error(t("files.addFailed"), { description: errorMessage(e) }))
         } else np.show(paths)
       }
     })
     return () => void un.then((f) => f())
-  }, [pid, pluginPage])
+  }, [pid, pluginPage, t])
 
   if (over == null || dialogOpen) return null
   const pkg = over === "package"
@@ -86,16 +89,16 @@ export function DropZone() {
       <Overlay
         quiet
         icon={<PuzzlePiece />}
-        heading="Drop plugin packages on their own"
-        hint="Packages and other files together are not taken"
+        heading={t("drop.mixed.heading")}
+        hint={t("drop.mixed.hint")}
       />
     )
   }
   return (
     <Overlay
       icon={pkg ? <PuzzlePiece /> : <FolderPlus />}
-      heading={pkg ? "Review a plugin" : pid ? "Add to this project" : "Create a project"}
-      hint={pkg ? "Drop its .asp package" : "Drop a season folder or video files"}
+      heading={pkg ? t("drop.plugin.heading") : pid ? t("drop.addHere") : t("drop.create")}
+      hint={pkg ? t("drop.plugin.hint") : t("drop.media")}
     />
   )
 }

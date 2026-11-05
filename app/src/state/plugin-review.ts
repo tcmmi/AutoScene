@@ -1,6 +1,7 @@
 import { toast } from "sonner"
 import { create } from "zustand"
 import type { PluginReview } from "@/bindings"
+import { t } from "@/lib/i18n"
 import { commands, errorMessage, isAppError } from "@/lib/ipc"
 
 /** A read that takes longer than this is given up on, so one stuck package can't hold up every later one. */
@@ -117,7 +118,7 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
       : new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             gaveUp = true
-            reject(new Error("Reading it took too long. Is the file on a drive that is not connected?"))
+            reject(new Error(t("shell:pluginReview.tookTooLong")))
           }, READ_LIMIT_MS)
         })
     // A read that ends after it was given up on has staged a ticket nobody will see.
@@ -147,7 +148,7 @@ export const usePluginReview = create<PluginReviewState>((set, get) => {
         set({ loading: false, getting: null })
         // Cancelled by the person: nothing went wrong.
         const cancelled = isAppError(e) && e.code === "cancelled"
-        if (!cancelled) toast.error(`Couldn't open ${head.label}`, { description: errorMessage(e) })
+        if (!cancelled) toast.error(t("shell:pluginReview.openFailed", { label: head.label }), { description: errorMessage(e) })
         head.settled(cancelled ? "cancelled" : "failed")
         next()
       },

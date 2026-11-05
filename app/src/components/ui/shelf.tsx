@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { CaretLeft, CaretRight } from "@/components/icons"
 import { cn } from "@/lib/utils"
 
@@ -79,10 +80,11 @@ export function Shelf({ className, children }: { className?: string; children: R
 }
 
 function ShelfArrow({ side, onClick }: { side: "left" | "right"; onClick: () => void }) {
+  const { t } = useTranslation("ui")
   return (
     <button
       onClick={onClick}
-      aria-label={side === "left" ? "Scroll back" : "Scroll on"}
+      aria-label={side === "left" ? t("shelf.back") : t("shelf.on")}
       className={cn(
         "glass-strong absolute top-[calc(50%-12px)] flex size-10 -translate-y-1/2 items-center justify-center rounded-full text-fg-1 opacity-0 transition-opacity duration-[var(--dur-med)] group-hover/shelf:opacity-100 focus-visible:opacity-100 [&_svg]:size-4",
         side === "left" ? "left-4" : "right-4",

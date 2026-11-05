@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { useState } from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import {
   AppWindow,
   ArrowCounterClockwise,
@@ -38,6 +39,7 @@ import { type PageItem, pageLink, railPages, railTooltip } from "@/features/plug
 import { useAppActions } from "@/lib/actions"
 import { commands } from "@/lib/ipc"
 import { reveal } from "@/lib/os"
+import { projectSize } from "@/lib/projects"
 import { usePlugins, useProjects } from "@/lib/queries"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
@@ -64,6 +66,7 @@ const RECENT = 7
  * pictures, and at the bottom search, background work and settings.
  */
 export function Rail() {
+  const { t } = useTranslation("shell")
   const keys = useShortcutKeys()
   const actions = useAppActions()
   const path = useRouterState({ select: (s) => s.location.pathname })
@@ -78,14 +81,14 @@ export function Rail() {
 
   return (
     <nav
-      aria-label="Main"
+      aria-label={t("rail.label")}
       className="relative z-10 flex w-[var(--rail-w)] shrink-0 flex-col items-center border-r border-white/[0.06] bg-rail pt-[calc(var(--traffic-inset)+12px)] pb-3"
     >
       {/* The window is dragged by the rail's top, around the mark. */}
       <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-[var(--topbar-h)]" />
-      <Tooltip label="Library" side="right">
+      <Tooltip label={t("place.library")} side="right">
         <ContextArea tail={false} menu={<LibraryItems />}>
-          <Link to="/" aria-label="AutoScene library" className="relative mb-4 rounded-xl">
+          <Link to="/" aria-label={t("rail.mark")} className="relative mb-4 rounded-xl">
             <AutoSceneMark className="size-9 drop-shadow-[0_6px_16px_rgb(224_180_92/0.25)]" />
           </Link>
         </ContextArea>
@@ -94,7 +97,7 @@ export function Rail() {
       <RailLink
         to="/"
         icon={<SquaresFour />}
-        label="Library"
+        label={t("place.library")}
         active={path === "/"}
         shortcut={keys("global.library")}
         menu={<LibraryItems />}
@@ -113,11 +116,11 @@ export function Rail() {
             onDelete={() => setDeleting(p)}
           />
         ))}
-        <Tooltip label="New project" shortcut={keys("global.newProject")} side="right">
+        <Tooltip label={t("rail.newProject")} shortcut={keys("global.newProject")} side="right">
           <ContextArea tail={false} menu={<NewProjectItems kit={contextKit} />}>
             <button
               onClick={() => useNewProject.getState().show()}
-              aria-label="New project"
+              aria-label={t("rail.newProject")}
               className="flex size-11 shrink-0 items-center justify-center rounded-[14px] border border-dashed border-white/20 text-fg-3 transition-colors hover:border-white/40 hover:bg-white/[0.05] hover:text-fg-1 [&_svg]:size-[18px]"
             >
               <Plus />
@@ -129,12 +132,12 @@ export function Rail() {
       <div className="flex flex-col items-center gap-1 pt-2">
         <RailButton
           icon={<MagnifyingGlass />}
-          label="Search"
+          label={t("rail.search")}
           onClick={actions.openPalette}
           shortcut={keys("global.palette")}
           menu={
             <ContextMenuItem onSelect={actions.openPalette} shortcut={keys("global.palette")}>
-              <MagnifyingGlass /> Command palette…
+              <MagnifyingGlass /> {t("menu.commandPalette")}
             </ContextMenuItem>
           }
         />
@@ -143,26 +146,26 @@ export function Rail() {
         <RailLink
           to="/settings/general"
           icon={<GearSix />}
-          label="Settings"
+          label={t("place.settings")}
           active={path.startsWith("/settings")}
           shortcut={keys("global.settings")}
           menu={
             <>
               <ContextMenuItem onSelect={() => actions.goSettings("general")}>
-                <GearSix /> General
+                <GearSix /> {t("rail.settings.general")}
               </ContextMenuItem>
               <ContextMenuItem onSelect={() => actions.goSettings("shortcuts")}>
-                <Keyboard /> Shortcuts
+                <Keyboard /> {t("rail.settings.shortcuts")}
               </ContextMenuItem>
               <ContextMenuItem onSelect={() => actions.goSettings("updates")}>
-                <ArrowCounterClockwise /> Updates
+                <ArrowCounterClockwise /> {t("rail.settings.updates")}
               </ContextMenuItem>
               <ContextMenuItem onSelect={actions.checkUpdates}>
-                <DownloadSimple /> Check for updates
+                <DownloadSimple /> {t("menu.checkUpdates")}
               </ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem onSelect={() => actions.goSettings("about")}>
-                <Info /> About AutoScene
+                <Info /> {t("menu.about")}
               </ContextMenuItem>
             </>
           }
@@ -183,6 +186,7 @@ export function Rail() {
  * whatever is open.
  */
 function PluginsTile({ active }: { active: boolean }) {
+  const { t } = useTranslation("shell")
   const flow = usePluginInstall()
   // Read for a review, however it was asked for: picked, dropped or opened from outside.
   const reading = usePluginReview((s) => s.loading)
@@ -190,7 +194,7 @@ function PluginsTile({ active }: { active: boolean }) {
     <RailLink
       to="/plugins"
       icon={flow.checking || reading ? <CircleNotch className="animate-spin" /> : <PuzzlePiece />}
-      label="Plugins"
+      label={t("place.plugins")}
       active={active}
       menu={<InstallItems flow={flow} />}
     />
@@ -199,15 +203,16 @@ function PluginsTile({ active }: { active: boolean }) {
 
 /** The library, and a new project: what the mark and the Library tile offer. */
 function LibraryItems() {
+  const { t } = useTranslation("shell")
   const keys = useShortcutKeys()
   const actions = useAppActions()
   return (
     <>
       <ContextMenuItem onSelect={actions.goLibrary} shortcut={keys("global.library")}>
-        <SquaresFour /> Library
+        <SquaresFour /> {t("place.library")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.newProject} shortcut={keys("global.newProject")}>
-        <Plus /> New project…
+        <Plus /> {t("menu.newProject")}
       </ContextMenuItem>
     </>
   )
@@ -258,6 +263,7 @@ function PageTileIcon({ src }: { src: string | null }) {
 
 /** What a plugin page's tile offers. */
 function PageTileItems({ page, to }: { page: PageItem; to: string }) {
+  const { t } = useTranslation("shell")
   const actions = useAppActions()
   const navigate = useNavigate()
   const { data: plugins } = usePlugins()
@@ -265,14 +271,14 @@ function PageTileItems({ page, to }: { page: PageItem; to: string }) {
   return (
     <>
       <ContextMenuItem onSelect={() => void navigate({ to })}>
-        <AppWindow /> Open
+        <AppWindow /> {t("rail.page.open")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => actions.goPlugin(page.pluginId)}>
-        <SlidersHorizontal /> Its settings
+        <SlidersHorizontal /> {t("rail.page.settings")}
       </ContextMenuItem>
       {log && (
         <ContextMenuItem onSelect={() => reveal(log)}>
-          <FileText /> Show its log
+          <FileText /> {t("rail.page.log")}
         </ContextMenuItem>
       )}
     </>
@@ -364,7 +370,7 @@ function RailButton({
             {icon}
             {children}
           </span>
-          <span className={cn("text-[10.5px] leading-3 font-medium", pressed ? "text-fg-1" : "text-fg-3 group-hover:text-fg-2")}>
+          <span className={cn("max-w-full truncate px-1 text-[10.5px] leading-3 font-medium", pressed ? "text-fg-1" : "text-fg-3 group-hover:text-fg-2")}>
             {label}
           </span>
         </button>
@@ -375,6 +381,7 @@ function RailButton({
 
 /** Background work: a ring fills as it runs; the count rides on the icon. */
 function ActivityButton() {
+  const { t } = useTranslation("shell")
   const keys = useShortcutKeys()
   const actions = useAppActions()
   const open = useUi((s) => s.activityOpen)
@@ -385,14 +392,14 @@ function ActivityButton() {
     <RailButton
       // Gold while something runs: work that only waits is counted, not lit.
       icon={<Queue className={cn(running > 0 && "text-accent")} />}
-      label="Activity"
+      label={t("place.activity")}
       onClick={actions.toggleActivity}
       shortcut={keys("global.activity")}
       pressed={open}
       menu={
         <>
           <ContextMenuItem onSelect={actions.toggleActivity} shortcut={keys("global.activity")}>
-            <Queue /> {open ? "Hide activity" : "Show activity"}
+            <Queue /> {open ? t("rail.hideActivity") : t("rail.showActivity")}
           </ContextMenuItem>
           <ContextMenuItem
             onSelect={() => {
@@ -400,7 +407,7 @@ function ActivityButton() {
               useActivity.getState().clearFinished()
             }}
           >
-            <Trash /> Clear finished
+            <Trash /> {t("activity.clearFinished")}
           </ContextMenuItem>
         </>
       }
@@ -443,6 +450,7 @@ function ProjectTile({
   onRename: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation("shell")
   const indexing = useProjectIndexing(p.id)
   const initials = p.title
     .split(/\s+/)
@@ -459,8 +467,7 @@ function ProjectTile({
               <span className="flex flex-col">
                 <span className="font-semibold">{p.title}</span>
                 <span className="text-fg-3">
-                  {p.kind === "movie" ? "Movie" : `${p.mediaCount} ${p.mediaCount === 1 ? "episode" : "episodes"}`}
-                  {indexing && " · indexing"}
+                  {indexing ? t("rail.indexing", { size: projectSize(p) }) : projectSize(p)}
                 </span>
               </span>
             }

@@ -89,11 +89,13 @@ export function canDo(state: TextState, action: TextAction, clipboard: string | 
 
 /** The keys that do the same, as a menu shows them. */
 export function textShortcut(action: TextAction): string[] | undefined {
+  // i18n-ignore: a key cap, printed on the key as the platform names it
   const mod = isMac ? "⌘" : "Ctrl"
   switch (action) {
     case "undo":
       return [mod, "Z"]
     case "redo":
+      // i18n-ignore: key caps
       return isMac ? ["⇧", "⌘", "Z"] : ["Ctrl", "Y"]
     case "cut":
       return [mod, "X"]
@@ -102,6 +104,7 @@ export function textShortcut(action: TextAction): string[] | undefined {
     case "paste":
       return [mod, "V"]
     case "delete":
+      // i18n-ignore: a key cap
       return [isMac ? "⌫" : "Del"]
     case "selectAll":
       return [mod, "A"]

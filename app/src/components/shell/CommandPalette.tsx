@@ -2,6 +2,8 @@ import type * as React from "react"
 import { useState } from "react"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
 import { Command } from "cmdk"
+import type { ParseKeys } from "i18next"
+import { useTranslation } from "react-i18next"
 import { Dialog as D } from "radix-ui"
 import {
   ArrowsClockwise,
@@ -29,6 +31,7 @@ import { checkCatalog } from "@/features/plugins/catalog-actions"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { runPlugin } from "@/features/plugins/plugin-actions"
 import { useAppActions } from "@/lib/actions"
+import { projectSize } from "@/lib/projects"
 import { useCast, useMediaList, usePlugins, useProjects } from "@/lib/queries"
 import { useShortcutKeys } from "@/lib/shortcuts"
 import { useUi } from "@/state/ui"
@@ -49,6 +52,9 @@ type Item = {
   keywords?: string[]
 }
 
+/** The words of a place or a command of the palette (`shell:palette.here`, `.go`, `.action`). */
+type PaletteWord = Extract<ParseKeys<"shell">, `palette.here.${string}` | `palette.go.${string}` | `palette.action.${string}`>
+
 /** Without a search, a few of the open project's characters and episodes. */
 const FIRST = 5
 /** With one, the first that match (a big series has hundreds of extras). */
@@ -56,6 +62,7 @@ const MATCHES = 30
 
 /** Everything the app can do or go to, behind one search field. */
 export function CommandPalette() {
+  const { t } = useTranslation("shell")
   const keys = useShortcutKeys()
   const open = useUi((s) => s.paletteOpen)
   const setOpen = useUi((s) => s.setPaletteOpen)
@@ -67,34 +74,41 @@ export function CommandPalette() {
   const pid = path.match(/^\/p\/([^/]+)/)?.[1]
   const current = projects?.find((p) => p.id === pid)
   const [query, setQuery] = useState("")
+  // A command's name, and its English name too: in another language the
+  // English words still find it.
+  const named = (key: PaletteWord): Pick<Item, "label" | "keywords"> => {
+    const label = t(key)
+    const english = t(key, { lng: "en" })
+    return english === label ? { label } : { label, keywords: [english] }
+  }
 
   const here: Item[] = current
     ? [
-        { id: "overview", label: "Overview", icon: <SquaresFour />, run: () => a.goProject(current.id) },
+        { id: "overview", ...named("palette.here.overview"), icon: <SquaresFour />, run: () => a.goProject(current.id) },
         {
           id: "episodes",
-          label: current.kind === "movie" ? "Files" : "Episodes",
+          ...named(current.kind === "movie" ? "palette.here.files" : "palette.here.episodes"),
           icon: <ListNumbers />,
           run: () => a.goProject(current.id, "episodes"),
         },
-        { id: "cast", label: "Cast", icon: <UserFocus />, run: () => a.goProject(current.id, "cast") },
-        { id: "exports", label: "Exports", icon: <Package />, run: () => a.goProject(current.id, "exports") },
+        { id: "cast", ...named("palette.here.cast"), icon: <UserFocus />, run: () => a.goProject(current.id, "cast") },
+        { id: "exports", ...named("palette.here.exports"), icon: <Package />, run: () => a.goProject(current.id, "exports") },
       ]
     : []
   const go: Item[] = [
-    { id: "library", label: "Library", icon: <SquaresFour />, run: a.goLibrary, keys: keys("global.library") },
-    { id: "settings", label: "Settings", icon: <GearSix />, run: () => a.goSettings(), keys: keys("global.settings") },
-    { id: "shortcuts", label: "Keyboard shortcuts", icon: <Keyboard />, run: () => a.goSettings("shortcuts") },
-    { id: "plugins", label: "Plugins", icon: <PuzzlePiece />, run: a.goPlugins },
-    { id: "browse-plugins", label: "Browse plugins", icon: <PuzzlePiece />, run: a.goBrowsePlugins },
-    { id: "about", label: "About AutoScene", icon: <Info />, run: () => a.goSettings("about") },
+    { id: "library", ...named("palette.go.library"), icon: <SquaresFour />, run: a.goLibrary, keys: keys("global.library") },
+    { id: "settings", ...named("palette.go.settings"), icon: <GearSix />, run: () => a.goSettings(), keys: keys("global.settings") },
+    { id: "shortcuts", ...named("palette.go.shortcuts"), icon: <Keyboard />, run: () => a.goSettings("shortcuts") },
+    { id: "plugins", ...named("palette.go.plugins"), icon: <PuzzlePiece />, run: a.goPlugins },
+    { id: "browse-plugins", ...named("palette.go.browsePlugins"), icon: <PuzzlePiece />, run: a.goBrowsePlugins },
+    { id: "about", ...named("palette.go.about"), icon: <Info />, run: () => a.goSettings("about") },
   ]
   const projectItems: Item[] = (projects ?? []).map((p) => ({
     id: `project-${p.id}`,
     label: p.title,
     icon: p.kind === "movie" ? <FilmStrip /> : <Television />,
     poster: p.posterSmall ?? p.poster,
-    hint: p.kind === "movie" ? "Movie" : `${p.mediaCount} ${p.mediaCount === 1 ? "episode" : "episodes"}`,
+    hint: projectSize(p),
     run: () => a.goProject(p.id),
   }))
   // Run in the open project, if any: a command that needs one shows only
@@ -118,12 +132,12 @@ export function CommandPalette() {
     })),
   ]
   const actions: Item[] = [
-    { id: "new-project", label: "New project…", icon: <Plus />, run: a.newProject, keys: keys("global.newProject") },
-    { id: "activity", label: "Show activity", icon: <Queue />, run: a.toggleActivity, keys: keys("global.activity") },
-    { id: "sidebar", label: "Show or hide the rail", icon: <SidebarSimple />, run: a.toggleSidebar, keys: keys("global.sidebar") },
-    { id: "updates", label: "Check for updates", icon: <DownloadSimple />, run: a.checkUpdates },
-    { id: "plugin-updates", label: "Check for plugin updates", icon: <ArrowsClockwise />, run: () => void checkCatalog() },
-    { id: "logs", label: "Open logs folder", icon: <FileText />, run: () => void a.openLogs() },
+    { id: "new-project", ...named("palette.action.newProject"), icon: <Plus />, run: a.newProject, keys: keys("global.newProject") },
+    { id: "activity", ...named("palette.action.activity"), icon: <Queue />, run: a.toggleActivity, keys: keys("global.activity") },
+    { id: "sidebar", ...named("palette.action.rail"), icon: <SidebarSimple />, run: a.toggleSidebar, keys: keys("global.sidebar") },
+    { id: "updates", ...named("palette.action.updates"), icon: <DownloadSimple />, run: a.checkUpdates },
+    { id: "plugin-updates", ...named("palette.action.pluginUpdates"), icon: <ArrowsClockwise />, run: () => void checkCatalog() },
+    { id: "logs", ...named("palette.action.logs"), icon: <FileText />, run: () => void a.openLogs() },
   ]
 
   const select = (item: Item) => {
@@ -147,7 +161,7 @@ export function CommandPalette() {
           className="glass-strong fixed top-[14vh] left-1/2 z-50 w-[min(640px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-[22px] focus:outline-none data-[state=open]:animate-pop-in"
           aria-describedby={undefined}
         >
-          <D.Title className="sr-only">Command palette</D.Title>
+          <D.Title className="sr-only">{t("palette.title")}</D.Title>
           <Command loop className="flex max-h-[min(500px,66vh)] flex-col">
             <div className="flex h-16 shrink-0 items-center gap-3 border-b border-white/[0.08] px-5">
               <MagnifyingGlass className="size-5 shrink-0 text-fg-2" weight="bold" />
@@ -157,19 +171,20 @@ export function CommandPalette() {
                 spellCheck={false}
                 value={query}
                 onValueChange={setQuery}
-                placeholder={current ? "Search characters, episodes, projects and commands" : "Search projects, places and commands"}
+                placeholder={current ? t("palette.searchInProject") : t("palette.search")}
                 className="h-full min-w-0 flex-1 bg-transparent text-lg text-fg-1 outline-none placeholder:text-fg-3"
               />
+              {/* i18n-ignore: a key cap, printed on the key */}
               <Kbd keys={["Esc"]} />
             </div>
             <Command.List className="min-h-0 flex-1 overflow-y-auto p-2">
-              <Command.Empty className="px-3 py-10 text-center text-md text-fg-3">Nothing matches.</Command.Empty>
+              <Command.Empty className="px-3 py-10 text-center text-md text-fg-3">{t("palette.empty")}</Command.Empty>
               {current && <Group heading={current.title} items={here} onSelect={select} />}
               {current && <ProjectFinds pid={current.id} query={query} onSelect={select} />}
-              {projectItems.length > 0 && <Group heading="Projects" items={projectItems} onSelect={select} />}
-              {pluginItems.length > 0 && <Group heading="Plugins" items={pluginItems} onSelect={select} />}
-              <Group heading="Actions" items={actions} onSelect={select} />
-              <Group heading="Go to" items={go} onSelect={select} />
+              {projectItems.length > 0 && <Group heading={t("palette.group.projects")} english={t("palette.group.projects", { lng: "en" })} items={projectItems} onSelect={select} />}
+              {pluginItems.length > 0 && <Group heading={t("palette.group.plugins")} english={t("palette.group.plugins", { lng: "en" })} items={pluginItems} onSelect={select} />}
+              <Group heading={t("palette.group.actions")} english={t("palette.group.actions", { lng: "en" })} items={actions} onSelect={select} />
+              <Group heading={t("palette.group.goTo")} english={t("palette.group.goTo", { lng: "en" })} items={go} onSelect={select} />
             </Command.List>
           </Command>
         </D.Content>
@@ -188,6 +203,7 @@ function ProjectFinds({
   query: string
   onSelect: (i: Item) => void
 }) {
+  const { t } = useTranslation("shell")
   const navigate = useNavigate()
   const { data: cast } = useCast(pid)
   const { data: media } = useMediaList(pid)
@@ -223,13 +239,13 @@ function ProjectFinds({
   }))
   return (
     <>
-      {characters.length > 0 && <Group heading="Characters" items={characters} onSelect={onSelect} />}
-      {episodes.length > 0 && <Group heading="Episodes" items={episodes} onSelect={onSelect} />}
+      {characters.length > 0 && <Group heading={t("palette.group.characters")} english={t("palette.group.characters", { lng: "en" })} items={characters} onSelect={onSelect} />}
+      {episodes.length > 0 && <Group heading={t("palette.group.episodes")} english={t("palette.group.episodes", { lng: "en" })} items={episodes} onSelect={onSelect} />}
     </>
   )
 }
 
-function Group({ heading, items, onSelect }: { heading: string; items: Item[]; onSelect: (i: Item) => void }) {
+function Group({ heading, english, items, onSelect }: { heading: string; english?: string; items: Item[]; onSelect: (i: Item) => void }) {
   return (
     <Command.Group
       heading={heading}
@@ -238,7 +254,7 @@ function Group({ heading, items, onSelect }: { heading: string; items: Item[]; o
       {items.map((it) => (
         <Command.Item
           key={it.id}
-          value={`${heading} ${it.label} ${it.id}`}
+          value={`${heading} ${english ?? ""} ${it.label} ${it.id}`}
           keywords={it.keywords}
           onSelect={() => onSelect(it)}
           className="group flex h-11 cursor-default items-center gap-3 rounded-xl px-3 text-md text-fg-2 data-[selected=true]:bg-white/[0.09] data-[selected=true]:text-fg-1"

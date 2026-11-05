@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Dialog as D } from "radix-ui"
+import { useTranslation } from "react-i18next"
 import { X } from "@/components/icons"
 import { cn } from "@/lib/utils"
 
@@ -14,6 +15,7 @@ type ContentProps = Omit<React.ComponentProps<typeof D.Content>, "title"> & {
 }
 
 export function DialogContent({ title, description, hideClose, className, children, ...props }: ContentProps) {
+  const { t } = useTranslation("common")
   return (
     <D.Portal>
       <D.Overlay className="fixed inset-0 z-50 bg-scrim backdrop-blur-sm data-[state=open]:animate-fade-in" />
@@ -37,7 +39,7 @@ export function DialogContent({ title, description, hideClose, className, childr
           {!hideClose && (
             <D.Close className="-mt-1 -mr-1 flex size-8 items-center justify-center rounded-full bg-white/[0.06] text-fg-2 transition-colors hover:bg-white/[0.12] hover:text-fg-1">
               <X className="size-4" />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{t("action.close")}</span>
             </D.Close>
           )}
         </div>

@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Dialog as D } from "radix-ui"
+import { useTranslation } from "react-i18next"
 import { X } from "@/components/icons"
 import { cn } from "@/lib/utils"
 
@@ -12,6 +13,7 @@ type SheetContentProps = Omit<React.ComponentProps<typeof D.Content>, "title"> &
 
 /** Right-hand drawer, floating below the top bar (the caption buttons stay usable). */
 export function SheetContent({ title, actions, className, children, ...props }: SheetContentProps) {
+  const { t } = useTranslation("common")
   return (
     <D.Portal>
       <D.Overlay className="fixed inset-0 top-[var(--topbar-h)] z-40 bg-scrim-soft data-[state=open]:animate-fade-in" />
@@ -30,7 +32,7 @@ export function SheetContent({ title, actions, className, children, ...props }: 
             {actions}
             <D.Close className="flex size-8 items-center justify-center rounded-full bg-white/[0.06] text-fg-2 transition-colors hover:bg-white/[0.12] hover:text-fg-1">
               <X className="size-4" />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{t("action.close")}</span>
             </D.Close>
           </div>
         </div>

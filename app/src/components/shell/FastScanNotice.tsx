@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouterState } from "@tanstack/react-router"
 import { Dialog as D } from "radix-ui"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { Cpu, FastForward, GraphicsCard, UserFocus } from "@/components/icons"
 import { Button } from "@/components/ui/button"
@@ -59,6 +60,7 @@ function chosen(d: Awaited<ReturnType<typeof commands.scanDefaultSet>>) {
 const setPhase = (phase: NoticePhase) => useFastScanNotice.setState({ phase })
 
 export function FastScanNotice() {
+  const { t } = useTranslation(["shell", "common"])
   const { data, isError } = useScanDefaults()
   const { data: info } = useAppInfo()
   const onLibrary = useRouterState({ select: (s) => s.location.pathname === "/" })
@@ -77,8 +79,8 @@ export function FastScanNotice() {
   const continueRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    const t = window.setTimeout(() => setSettled(true), AFTER_SPLASH_MS)
-    return () => window.clearTimeout(t)
+    const timer = window.setTimeout(() => setSettled(true), AFTER_SPLASH_MS)
+    return () => window.clearTimeout(timer)
   }, [])
 
   // Decide once, from the first answer after the splash. No answer: no notice.
@@ -132,19 +134,19 @@ export function FastScanNotice() {
     try {
       chosen(await commands.scanDefaultSet("full"))
       setPhase("done")
-      toast("Fast Scan is off", {
-        description: "New projects start with the full scan.",
+      toast(t("shell:fastScan.off"), {
+        description: t("shell:fastScan.offDescription"),
         action: {
-          label: "Undo",
+          label: t("common:action.undo"),
           onClick: () =>
             void commands
               .scanDefaultSet("auto")
               .then(chosen)
-              .catch((e) => toast.error("Couldn't turn Fast Scan back on", { description: errorMessage(e) })),
+              .catch((e) => toast.error(t("shell:fastScan.onFailed"), { description: errorMessage(e) })),
         },
       })
     } catch (e) {
-      toast.error("Couldn't turn off Fast Scan", { description: errorMessage(e) })
+      toast.error(t("shell:fastScan.offFailed"), { description: errorMessage(e) })
     } finally {
       setSaving(false)
     }
@@ -174,7 +176,7 @@ export function FastScanNotice() {
               {c.class === "processor" || platform === "macos" ? <Cpu /> : <GraphicsCard />}
               <span className="truncate">{deviceLabel(c, platform)}</span>
             </p>
-            <D.Title className="display mt-1.5 text-3xl text-fg-1">Fast Scan is on</D.Title>
+            <D.Title className="display mt-1.5 text-3xl text-fg-1">{t("shell:fastScan.title")}</D.Title>
             <D.Description className="mt-2.5 text-lg text-fg-2">
               <span className="sr-only">{deviceLabel(c, platform)}. </span>
               {noticeLead(c, platform)}
@@ -194,13 +196,13 @@ export function FastScanNotice() {
             </ul>
             <p className="mt-5 text-sm text-fg-3">{noticeFoot(data)}</p>
             <div className="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-              <Checkbox label="Don't show this again" checked={never} onCheckedChange={(v) => {
+              <Checkbox label={t("shell:fastScan.never")} checked={never} onCheckedChange={(v) => {
                   neverRef.current = v === true
                   setNever(v === true)
                 }} />
               <div className="ml-auto flex items-center gap-2">
                 <Button variant="secondary" disabled={saving} onClick={() => void turnOff()}>
-                  Turn off Fast Scan
+                  {t("shell:fastScan.turnOff")}
                 </Button>
                 <Button
                   ref={continueRef}
@@ -212,7 +214,7 @@ export function FastScanNotice() {
                   onBlur={() => setQuiet(false)}
                   onClick={close}
                 >
-                  Continue
+                  {t("shell:fastScan.continue")}
                 </Button>
               </div>
             </div>

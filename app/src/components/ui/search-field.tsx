@@ -1,4 +1,5 @@
 import { useRef } from "react"
+import { useTranslation } from "react-i18next"
 import { MagnifyingGlass, X } from "@/components/icons"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -18,6 +19,7 @@ export function SearchField({
   label: string
   className?: string
 }) {
+  const { t } = useTranslation("ui")
   const input = useRef<HTMLInputElement>(null)
   return (
     <div role="search" aria-label={label} className={cn("relative w-64", className)}>
@@ -40,7 +42,7 @@ export function SearchField({
             onChange("")
             input.current?.focus()
           }}
-          aria-label="Clear the search"
+          aria-label={t("search.clear")}
           className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-hover hover:text-fg-1"
         >
           <X className="size-3.5" />

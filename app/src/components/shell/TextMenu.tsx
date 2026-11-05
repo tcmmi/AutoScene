@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import { useTranslation } from "react-i18next"
 import { DismissableLayer } from "radix-ui/internal"
 import {
   ArrowUUpLeft,
@@ -19,19 +20,19 @@ import { cn } from "@/lib/utils"
 import { type OpenedTextMenu, useTextMenu } from "@/state/text-menu"
 
 type Entry =
-  | { kind: "item"; action: TextAction; label: string; icon: React.ReactNode }
+  | { kind: "item"; action: TextAction; icon: React.ReactNode }
   | { kind: "separator" }
 
 const ENTRIES: Entry[] = [
-  { kind: "item", action: "undo", label: "Undo", icon: <ArrowUUpLeft /> },
-  { kind: "item", action: "redo", label: "Redo", icon: <ArrowUUpRight /> },
+  { kind: "item", action: "undo", icon: <ArrowUUpLeft /> },
+  { kind: "item", action: "redo", icon: <ArrowUUpRight /> },
   { kind: "separator" },
-  { kind: "item", action: "cut", label: "Cut", icon: <Scissors /> },
-  { kind: "item", action: "copy", label: "Copy", icon: <Copy /> },
-  { kind: "item", action: "paste", label: "Paste", icon: <ClipboardText /> },
-  { kind: "item", action: "delete", label: "Delete", icon: <Backspace /> },
+  { kind: "item", action: "cut", icon: <Scissors /> },
+  { kind: "item", action: "copy", icon: <Copy /> },
+  { kind: "item", action: "paste", icon: <ClipboardText /> },
+  { kind: "item", action: "delete", icon: <Backspace /> },
   { kind: "separator" },
-  { kind: "item", action: "selectAll", label: "Select all", icon: <SelectionAll /> },
+  { kind: "item", action: "selectAll", icon: <SelectionAll /> },
 ]
 
 /**
@@ -48,11 +49,14 @@ export function TextMenu() {
 }
 
 function OpenTextMenu({ opened }: { opened: OpenedTextMenu }) {
+  const { t } = useTranslation("shell")
   const close = useTextMenu((s) => s.close)
   const { field, at, text, clipboard } = opened
   const menu = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
-  const items = ENTRIES.map((e) => (e.kind === "item" ? { ...e, enabled: canDo(text, e.action, clipboard) } : e))
+  const items = ENTRIES.map((e) =>
+    e.kind === "item" ? { ...e, label: t(`textMenu.${e.action}`), enabled: canDo(text, e.action, clipboard) } : e,
+  )
   const enabled = items.flatMap((e, i) => (e.kind === "item" && e.enabled ? [i] : []))
   const [active, setActive] = useState<number | null>(null)
   const id = useId()
@@ -190,7 +194,7 @@ function OpenTextMenu({ opened }: { opened: OpenedTextMenu }) {
       ref={menu}
       id={`${id}-menu`}
       role="menu"
-      aria-label="Edit"
+      aria-label={t("textMenu.label")}
       data-state="open"
       // Clicks in the menu never take the focus from the field. The arrow, as over every menu:
       // these handlers do nothing else.

@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { Fragment, isValidElement, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useCanGoBack } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { ContextMenu as M } from "radix-ui"
 import {
   ArrowCounterClockwise,
@@ -139,6 +140,7 @@ export function AppMenu({ children }: { children: React.ReactElement }) {
 }
 
 function MenuBody({ opened }: { opened: Opened | null }) {
+  const { t } = useTranslation("shell")
   // A touch long-press opens the menu without a right-click: the app's entries.
   if (!opened) {
     return (
@@ -152,7 +154,7 @@ function MenuBody({ opened }: { opened: Opened | null }) {
       {opened.copy && (
         <ContextMenuSection>
           <ContextMenuItem onSelect={() => void copyText(opened.copy ?? "")} shortcut={[modKey, "C"]}>
-            <Copy /> Copy
+            <Copy /> {t("menu.copy")}
           </ContextMenuItem>
         </ContextMenuSection>
       )}
@@ -190,15 +192,16 @@ function AreaItems({ area }: { area: Area }) {
 
 /** Under an element's own actions. */
 export function ShortAppItems() {
+  const { t } = useTranslation("shell")
   const keys = useShortcutKeys()
   const actions = useAppActions()
   return (
     <>
       <ContextMenuItem onSelect={actions.openPalette} shortcut={keys("global.palette")}>
-        <MagnifyingGlass /> Command palette…
+        <MagnifyingGlass /> {t("menu.commandPalette")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => actions.goSettings("general")} shortcut={keys("global.settings")}>
-        <GearSix /> Settings
+        <GearSix /> {t("place.settings")}
       </ContextMenuItem>
     </>
   )
@@ -206,6 +209,7 @@ export function ShortAppItems() {
 
 /** On a page's empty space, under the page's own actions. */
 export function FullAppItems() {
+  const { t } = useTranslation("shell")
   const keys = useShortcutKeys()
   const actions = useAppActions()
   const canGoBack = useCanGoBack()
@@ -214,34 +218,34 @@ export function FullAppItems() {
     <>
       {/* On a plugin page, Back leaves it: its frame's own entries are never stepped through. */}
       <ContextMenuItem disabled={!canGoBack && !pageOpen()} onSelect={() => leavePage() || window.history.back()}>
-        <ArrowLeft /> Back
+        <ArrowLeft /> {t("menu.back")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.openPalette} shortcut={keys("global.palette")}>
-        <MagnifyingGlass /> Command palette…
+        <MagnifyingGlass /> {t("menu.commandPalette")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.newProject} shortcut={keys("global.newProject")}>
-        <Plus /> New project…
+        <Plus /> {t("menu.newProject")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.goLibrary} shortcut={keys("global.library")}>
-        <SquaresFour /> Library
+        <SquaresFour /> {t("place.library")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.toggleActivity} shortcut={keys("global.activity")}>
-        <Queue /> Activity
+        <Queue /> {t("place.activity")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.goPlugins}>
-        <PuzzlePiece /> Plugins
+        <PuzzlePiece /> {t("place.plugins")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={actions.toggleSidebar} shortcut={keys("global.sidebar")}>
-        <SidebarSimple /> {railHidden ? "Show the rail" : "Hide the rail"}
+        <SidebarSimple /> {railHidden ? t("menu.showRail") : t("menu.hideRail")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => actions.goSettings("shortcuts")}>
-        <Keyboard /> Keyboard shortcuts
+        <Keyboard /> {t("menu.shortcuts")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => actions.goSettings("general")} shortcut={keys("global.settings")}>
-        <GearSix /> Settings
+        <GearSix /> {t("place.settings")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => window.location.reload()}>
-        <ArrowCounterClockwise /> Reload window
+        <ArrowCounterClockwise /> {t("menu.reloadWindow")}
       </ContextMenuItem>
     </>
   )

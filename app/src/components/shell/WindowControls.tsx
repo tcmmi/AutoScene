@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
+import { useTranslation } from "react-i18next"
 import { CornersIn, CornersOut, Minus, X } from "@/components/icons"
 import { ContextArea } from "@/components/ui/context-area"
 import { type MenuKit, contextKit } from "@/components/ui/menu-actions"
@@ -19,18 +20,19 @@ function useMaximized(): boolean {
 
 /** The window itself — what its caption's right-click offers on Windows. */
 export function WindowItems({ kit }: { kit: MenuKit }) {
+  const { t } = useTranslation(["shell", "common"])
   const maximized = useMaximized()
   const { Item } = kit
   return (
     <>
       <Item onSelect={() => void getCurrentWindow().minimize()}>
-        <Minus /> Minimize
+        <Minus /> {t("shell:window.minimize")}
       </Item>
       <Item onSelect={() => void getCurrentWindow().toggleMaximize()}>
-        {maximized ? <CornersIn /> : <CornersOut />} {maximized ? "Restore" : "Maximize"}
+        {maximized ? <CornersIn /> : <CornersOut />} {maximized ? t("shell:window.restore") : t("shell:window.maximize")}
       </Item>
       <Item onSelect={() => void getCurrentWindow().close()} shortcut={["Alt", "F4"]}>
-        <X /> Close
+        <X /> {t("common:action.close")}
       </Item>
     </>
   )
@@ -41,6 +43,7 @@ export function WindowItems({ kit }: { kit: MenuKit }) {
  * glyphs), over the top-right corner of every view (`--caption-inset`).
  */
 export function WindowControls() {
+  const { t } = useTranslation(["shell", "common"])
   const maximized = useMaximized()
   const win = () => getCurrentWindow()
   // The arrow, like Windows' own caption buttons, which these imitate.
@@ -50,13 +53,13 @@ export function WindowControls() {
   return (
     <ContextArea tail={false} menu={<WindowItems kit={contextKit} />}>
       <div className="fixed top-0 right-0 z-30 flex h-[var(--topbar-h)]">
-        <button aria-label="Minimize" className={cn(base, "hover:bg-white/10 hover:text-white")} onClick={() => void win().minimize()}>
+        <button aria-label={t("shell:window.minimize")} className={cn(base, "hover:bg-white/10 hover:text-white")} onClick={() => void win().minimize()}>
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
             <path d="M0 5h10" stroke="currentColor" strokeWidth="1" />
           </svg>
         </button>
         <button
-          aria-label={maximized ? "Restore" : "Maximize"}
+          aria-label={maximized ? t("shell:window.restore") : t("shell:window.maximize")}
           className={cn(base, "hover:bg-white/10 hover:text-white")}
           onClick={() => void win().toggleMaximize()}
         >
@@ -72,7 +75,7 @@ export function WindowControls() {
           )}
         </button>
         {/* Windows' own close-hover red: a platform convention, not a brand accent. */}
-        <button aria-label="Close" className={cn(base, "hover:bg-win-close hover:text-on-win-close")} onClick={() => void win().close()}>
+        <button aria-label={t("common:action.close")} className={cn(base, "hover:bg-win-close hover:text-on-win-close")} onClick={() => void win().close()}>
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
             <path d="M0 0l10 10M10 0L0 10" stroke="currentColor" strokeWidth="1" />
           </svg>

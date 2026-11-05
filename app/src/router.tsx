@@ -8,6 +8,7 @@ import {
   redirect,
 } from "@tanstack/react-router"
 import { AppShell } from "@/components/shell/AppShell"
+import { NameCrumb, SettingsCrumb } from "@/components/shell/crumbs"
 import { CastPage } from "@/features/cast/CastPage"
 import { CharacterPage } from "@/features/cast/CharacterPage"
 import { ReviewPage } from "@/features/cast/ReviewPage"
@@ -21,7 +22,6 @@ import { PluginPageCrumb, PluginPageView } from "@/features/plugins/PluginPageVi
 import { PluginCrumb, PluginSettingsPage } from "@/features/plugins/PluginSettingsPage"
 import { PluginsPage } from "@/features/plugins/PluginsPage"
 import { SettingsPage } from "@/features/settings/SettingsPage"
-import { settingsLabel } from "@/features/settings/sections"
 import { NotFound } from "@/features/not-found"
 import { PackPage } from "@/features/pack/PackPage"
 import { RouteError } from "@/features/route-error"
@@ -49,7 +49,7 @@ const libraryRoute = createRoute({
 const pluginsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/plugins",
-  staticData: { crumb: "Plugins" },
+  staticData: { crumb: <NameCrumb name="plugins" /> },
   // Installed, or what the catalog offers (`?view=browse`).
   validateSearch: (s: Record<string, unknown>): { view?: "browse" } => (s.view === "browse" ? { view: "browse" } : {}),
   component: PluginsPage,
@@ -98,14 +98,14 @@ const playerRoute = createRoute({
 const castRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/cast",
-  staticData: { crumb: "Cast" },
+  staticData: { crumb: <NameCrumb name="cast" /> },
   component: CastPage,
 })
 
 const reviewRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/cast/review",
-  staticData: { crumb: "Cast · Review" },
+  staticData: { crumb: <NameCrumb name="review" /> },
   // `c`: only the faces suggested for this character.
   validateSearch: (s: Record<string, unknown>): { c?: string } => (typeof s.c === "string" ? { c: s.c } : {}),
   component: ReviewPage,
@@ -128,7 +128,7 @@ const packRoute = createRoute({
 const exportsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/exports",
-  staticData: { crumb: "Exports" },
+  staticData: { crumb: <NameCrumb name="exports" /> },
   component: ExportsPage,
 })
 
@@ -165,7 +165,7 @@ const settingsIndexRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/$section",
-  staticData: { crumb: (p) => `Settings · ${settingsLabel(p.section)}` },
+  staticData: { crumb: (p) => <SettingsCrumb section={p.section} /> },
   params: {
     parse: (p): { section: SettingsSection | LegacySettingsSection } => ({ section: settingsSection(p.section) }),
     stringify: (p) => ({ section: p.section }),

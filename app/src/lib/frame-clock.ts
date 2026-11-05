@@ -28,6 +28,7 @@ export class FrameClock {
     this.offset = map.offset ?? 0
     this.step = map.times ? null : (map.step ?? 0)
     this.times = map.times ? checkedTimes(map.times, map.frames) : null
+    // i18n-ignore: an internal fault for the logs, never shown to a person
     if (!this.times && !this.step) throw new Error("frame map has neither times nor step")
     const nominal = map.fps.num / map.fps.den
     this.fps = this.step
@@ -96,9 +97,11 @@ export class FrameClock {
  * search anywhere).
  */
 function checkedTimes(times: (number | null)[], frames: number): number[] {
+  // i18n-ignore: an internal fault for the logs, never shown to a person
   if (times.length !== frames + 1) throw new Error(`frame map has ${times.length} times for ${frames} frames`)
   let before = -Infinity
   for (const [f, t] of times.entries()) {
+    // i18n-ignore: an internal fault for the logs, never shown to a person
     if (t == null || !Number.isFinite(t) || t <= before) throw new Error(`frame map time ${f} is ${t}, after ${before}`)
     before = t
   }

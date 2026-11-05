@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -435,6 +435,30 @@ describe("Settings → General → NVIDIA acceleration", () => {
     expect(await says()).toContain("You can download it again any time.")
   })
 
+  it("a removal that runs can't be dismissed: Esc, Cancel and the x do nothing until it ends", async () => {
+    const user = userEvent.setup()
+    let finish = () => {}
+    vi.mocked(commands.accelRemove).mockImplementationOnce(() => new Promise((done) => (finish = () => done(null as never))))
+    await row({ state: "ready" }, installed)
+    await user.click(remove() as HTMLElement)
+    const dialog = await screen.findByRole("dialog")
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }))
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Remove" }).getAttribute("aria-busy")).toBe("true"))
+    await user.keyboard("{Escape}")
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    // A press outside, on the overlay.
+    const overlay = document.querySelector(".fixed.inset-0")
+    expect(overlay).toBeTruthy()
+    fireEvent.pointerDown(overlay as Element)
+    fireEvent.pointerUp(overlay as Element)
+    fireEvent.click(overlay as Element)
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    expect(within(dialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true)
+    expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull()
+    finish()
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+
   it("a removal that fails says so", async () => {
     const user = userEvent.setup()
     vi.mocked(commands.accelRemove).mockRejectedValueOnce(new Error("NVIDIA's files couldn't be removed."))
@@ -487,11 +511,11 @@ describe("Settings → General → NVIDIA acceleration", () => {
     await row({ state: "stopped" }, installed)
     const button = screen.getByRole<HTMLButtonElement>("button", { name: "Try again" })
     await user.click(button)
-    await waitFor(() => expect(button.disabled).toBe(true))
+    await waitFor(() => expect(button.getAttribute("aria-busy")).toBe("true"))
     await user.click(button)
     expect(commands.accelTryAgain).toHaveBeenCalledOnce()
     finish()
-    await waitFor(() => expect(button.disabled).toBe(false))
+    await waitFor(() => expect(button.getAttribute("aria-busy")).toBeNull())
   })
 
   it("stopped working: a Try again that fails says so, and can be tried again", async () => {

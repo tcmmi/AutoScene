@@ -1,5 +1,5 @@
 import type * as React from "react"
-import { ArrowSquareOut, CheckCircle, CircleNotch } from "@/components/icons"
+import { ArrowSquareOut, CheckCircle } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
@@ -51,8 +51,7 @@ export function UpdatesSection() {
             View update
           </Button>
         ) : (
-          <Button size="sm" disabled={checking} onClick={() => void u.check(true)}>
-            {checking && <CircleNotch className="animate-spin" />}
+          <Button size="sm" busy={checking} onClick={() => void u.check(true)}>
             Check for updates
           </Button>
         )}

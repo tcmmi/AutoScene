@@ -276,8 +276,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
         <Button variant="ghost" onClick={onDone}>
           Cancel
         </Button>
-        <Button variant="primary" disabled={!title.trim() || chosen.length === 0 || creating} onClick={() => void create()}>
-          {creating && <CircleNotch className="animate-spin" />}
+        <Button variant="primary" busy={creating} disabled={!title.trim() || chosen.length === 0} onClick={() => void create()}>
           Create project
         </Button>
       </DialogFooter>

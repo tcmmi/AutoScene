@@ -11,9 +11,11 @@ import { Hero } from "@/components/ui/hero"
 import { contextKit } from "@/components/ui/menu-actions"
 import { Page } from "@/components/ui/page"
 import { Section } from "@/components/ui/shelf"
+import { Skeleton } from "@/components/ui/skeleton"
 import { TopBar } from "@/components/ui/topbar"
 import { useAmbient } from "@/lib/ambient"
 import { formatDuration } from "@/lib/format"
+import { CARD_GRID } from "@/lib/grid"
 import { projectFacts } from "@/lib/projects"
 import { useProjects } from "@/lib/queries"
 import { useNewProject } from "@/state/new-project"
@@ -73,9 +75,9 @@ export function LibraryPage() {
             <div className="h-[clamp(380px,56vh,600px)]" />
           )}
           <Section title="All projects" count={projects?.length} className="-mt-2 pb-14">
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-8">
+            <div className={CARD_GRID}>
               {isPending
-                ? Array.from({ length: 3 }, (_, i) => <div key={i} className="skeleton aspect-video rounded-2xl" />)
+                ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="aspect-video rounded-2xl" />)
                 : projects!.map((p) => (
                     <ProjectCard key={p.id} project={p} onRename={() => setRenaming(p)} onDelete={() => setDeleting(p)} />
                   ))}

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { CircleNotch, FolderOpen, Warning } from "@/components/icons"
+import { FolderOpen, Warning } from "@/components/icons"
 import type { MediaItem } from "@/bindings"
 import { Banner } from "@/components/ui/banner"
 import { Button } from "@/components/ui/button"
@@ -36,13 +36,13 @@ export function MissingBanner({
       actions={
         <Button
           variant="secondary"
-          disabled={looking}
+          busy={looking}
           onClick={() => {
             setLooking(true)
             void locateFolder(pid, missing, movie).finally(() => setLooking(false))
           }}
         >
-          {looking ? <CircleNotch className="animate-spin" /> : <FolderOpen />} Locate folder…
+          <FolderOpen /> Locate folder…
         </Button>
       }
       className={className}

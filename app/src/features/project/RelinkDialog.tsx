@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { CircleNotch } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { baseName, mediaTitle } from "@/lib/media"
@@ -24,7 +23,7 @@ export function RelinkDialog() {
             </Button>
             <Button
               variant="primary"
-              disabled={busy}
+              busy={busy}
               onClick={() => {
                 setBusy(true)
                 void relinkAnyway(question.pid, question.media, question.path).finally(() => {
@@ -34,7 +33,6 @@ export function RelinkDialog() {
                 })
               }}
             >
-              {busy && <CircleNotch className="animate-spin" />}
               Use it anyway
             </Button>
           </DialogFooter>

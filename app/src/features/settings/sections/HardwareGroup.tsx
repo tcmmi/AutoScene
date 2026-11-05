@@ -4,7 +4,7 @@ import { toast } from "sonner"
 import type { AppSettings, HardwareInfo } from "@/bindings"
 import { ArrowCounterClockwise, ArrowSquareOut, CircleNotch, DownloadSimple } from "@/components/icons"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Progress } from "@/components/ui/progress"
 import { Select, type SelectOption } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -89,39 +89,20 @@ function RemoveDialog({
   onOpenChange: (open: boolean) => void
   slower: boolean
 }) {
-  const [busy, setBusy] = useState(false)
-  const remove = async () => {
-    setBusy(true)
-    try {
-      await commands.accelRemove()
-      onOpenChange(false)
-    } catch (e) {
-      toast.error("Couldn't remove NVIDIA's files", { description: errorMessage(e) })
-    } finally {
-      setBusy(false)
-    }
-  }
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        title="Remove NVIDIA acceleration?"
-        description={
-          slower
-            ? "Analysis keeps running on this graphics card, more slowly. You can download it again any time."
-            : "You can download it again any time."
-        }
-      >
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button variant="danger" disabled={busy} onClick={() => void remove()}>
-            {busy && <CircleNotch className="animate-spin" />}
-            Remove
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Remove NVIDIA acceleration?"
+      description={
+        slower
+          ? "Analysis keeps running on this graphics card, more slowly. You can download it again any time."
+          : "You can download it again any time."
+      }
+      answer="Remove"
+      failure="Couldn't remove NVIDIA's files"
+      onConfirm={() => commands.accelRemove()}
+    />
   )
 }
 
@@ -158,8 +139,8 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
     />
   )
   const tryAgain = (onClick: () => void, busy = false) => (
-    <Button size="sm" disabled={busy} onClick={onClick}>
-      {busy ? <CircleNotch className="animate-spin motion-reduce:animate-none" /> : <ArrowCounterClockwise />} Try again
+    <Button size="sm" busy={busy} onClick={onClick}>
+      <ArrowCounterClockwise /> Try again
     </Button>
   )
   const retry = () => {
@@ -279,7 +260,7 @@ export function HardwareGroup() {
   } else if (!hw.data) {
     description = (
       <span className="inline-flex items-center gap-1.5">
-        <CircleNotch aria-hidden className="size-3.5 animate-spin motion-reduce:animate-none" />
+        <CircleNotch aria-hidden className="size-3.5 animate-spin" />
         {mac ? "Checking the chip…" : "Looking for graphics cards…"}
       </span>
     )

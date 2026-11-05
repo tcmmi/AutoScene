@@ -1,10 +1,7 @@
 import { useState } from "react"
-import { CircleNotch } from "@/components/icons"
-import { toast } from "sonner"
 import type { MediaItem } from "@/bindings"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
-import { commands, errorMessage } from "@/lib/ipc"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { commands } from "@/lib/ipc"
 import { stopsFirst } from "@/lib/jobs"
 import { releaseTitle } from "@/lib/media"
 import { unfinishedJobs } from "@/state/activity"
@@ -24,11 +21,7 @@ export function RemoveMediaDialog({
   media: MediaItem | null
   onOpenChange: (open: boolean) => void
 }) {
-  return (
-    <Dialog open={media != null} onOpenChange={onOpenChange}>
-      {media && <RemoveForm projectId={projectId} media={media} onDone={() => onOpenChange(false)} />}
-    </Dialog>
-  )
+  return media && <RemoveForm projectId={projectId} media={media} onDone={() => onOpenChange(false)} />
 }
 
 const WHAT_GOES =
@@ -41,7 +34,6 @@ function hasAnalysis(m: MediaItem): boolean {
 }
 
 function RemoveForm({ projectId, media: m, onDone }: { projectId: string; media: MediaItem; onDone: () => void }) {
-  const [busy, setBusy] = useState(false)
   // Said once, as it opens: a job ending meanwhile never moves the dialog
   // under the pointer, and the removal stops what runs then anyway.
   const [stops] = useState(() => stopsFirst(unfinishedJobs((j) => j.mediaId === m.id).map((j) => j.kind)))
@@ -51,31 +43,15 @@ function RemoveForm({ projectId, media: m, onDone }: { projectId: string; media:
   // analysis while it is queued. Fixed at open, like the sentence above.
   const [found] = useState(() => hasAnalysis(m))
   const name = m.label ? `${m.label} · ${releaseTitle(m.fileName)}` : releaseTitle(m.fileName)
-  const remove = async () => {
-    setBusy(true)
-    try {
-      await commands.mediaRemove(projectId, m.id)
-      onDone()
-    } catch (e) {
-      toast.error("Couldn't remove it", { description: errorMessage(e) })
-    } finally {
-      setBusy(false)
-    }
-  }
   return (
-    <DialogContent
+    <ConfirmDialog
+      open
+      onOpenChange={(open) => !open && onDone()}
       title={`Remove “${name}”?`}
       description={`${found ? WHAT_GOES : NOTHING_YET} The video file itself isn't touched.${stops ? ` ${stops}` : ""}`}
-    >
-      <DialogFooter>
-        <Button variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button variant="danger" disabled={busy} onClick={() => void remove()}>
-          {busy && <CircleNotch className="animate-spin" />}
-          Remove from project
-        </Button>
-      </DialogFooter>
-    </DialogContent>
+      answer="Remove from project"
+      failure="Couldn't remove it"
+      onConfirm={() => commands.mediaRemove(projectId, m.id)}
+    />
   )
 }

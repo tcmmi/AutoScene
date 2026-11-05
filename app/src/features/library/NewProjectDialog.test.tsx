@@ -106,6 +106,24 @@ describe("NewProjectDialog", () => {
     expect(vi.mocked(commands.projectCreate).mock.calls[0][0].files).toEqual(["D:\\Show\\Show - 01.mkv"])
   })
 
+  it("Create project is busy while it runs: a second click does nothing", async () => {
+    const user = userEvent.setup()
+    let finish = () => {}
+    vi.mocked(commands.projectCreate).mockImplementationOnce(
+      () => new Promise((done) => (finish = () => done({ id: "p" } as never))),
+    )
+    show()
+    await screen.findByText("1 video", { exact: false })
+    const button = screen.getByRole("button", { name: "Create project" })
+    await user.click(button)
+    await waitFor(() => expect(button.getAttribute("aria-busy")).toBe("true"))
+    await user.click(button)
+    expect(commands.projectCreate).toHaveBeenCalledOnce()
+    finish()
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(commands.projectCreate).toHaveBeenCalledOnce()
+  })
+
   it("shows its file list as where dragged files go", () => {
     show([])
     expect(screen.queryByText("Drop to add to this project")).toBeNull()

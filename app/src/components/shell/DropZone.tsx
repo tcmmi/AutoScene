@@ -1,3 +1,4 @@
+import type * as React from "react"
 import { useEffect, useState } from "react"
 import { useRouterState } from "@tanstack/react-router"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
@@ -8,6 +9,7 @@ import { isPluginPackage } from "@/features/plugins/plugin-items"
 import { busyReviewing, reviewPackages } from "@/features/plugins/review-packages"
 import { commands, errorMessage } from "@/lib/ipc"
 import { isTauri } from "@/lib/platform"
+import { cn } from "@/lib/utils"
 import { useNewProject } from "@/state/new-project"
 
 /**
@@ -81,25 +83,43 @@ export function DropZone() {
   const pkg = over === "package"
   if (over === "mixed") {
     return (
-      <div className="pointer-events-none fixed inset-0 z-[60] p-4">
-        <div className="flex size-full animate-fade-in flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-hairline bg-black/60 backdrop-blur-xl">
-          <span className="flex size-20 items-center justify-center rounded-full bg-white/5 text-fg-3 [&_svg]:size-9">
-            <PuzzlePiece />
-          </span>
-          <p className="display mt-6 text-4xl text-fg-2">Drop plugin packages on their own</p>
-          <p className="mt-2 text-md text-fg-3">Packages and other files together are not taken</p>
-        </div>
-      </div>
+      <Overlay
+        quiet
+        icon={<PuzzlePiece />}
+        heading="Drop plugin packages on their own"
+        hint="Packages and other files together are not taken"
+      />
     )
   }
   return (
+    <Overlay
+      icon={pkg ? <PuzzlePiece /> : <FolderPlus />}
+      heading={pkg ? "Review a plugin" : pid ? "Add to this project" : "Create a project"}
+      hint={pkg ? "Drop its .asp package" : "Drop a season folder or video files"}
+    />
+  )
+}
+
+/** The window's answer to files dragged over it: gold where a drop is taken, grey where it is not (`quiet`). */
+function Overlay({ icon, heading, hint, quiet }: { icon: React.ReactNode; heading: string; hint: string; quiet?: boolean }) {
+  return (
     <div className="pointer-events-none fixed inset-0 z-[60] p-4">
-      <div className="flex size-full animate-fade-in flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-accent-line bg-black/60 backdrop-blur-xl">
-        <span className="flex size-20 items-center justify-center rounded-full bg-accent-subtle text-accent shadow-[0_0_60px_rgb(224_180_92/0.3)] [&_svg]:size-9">
-          {pkg ? <PuzzlePiece /> : <FolderPlus />}
+      <div
+        className={cn(
+          "flex size-full animate-fade-in flex-col items-center justify-center rounded-[28px] border-2 border-dashed bg-black/60 backdrop-blur-xl",
+          quiet ? "border-hairline" : "border-accent-line",
+        )}
+      >
+        <span
+          className={cn(
+            "flex size-20 items-center justify-center rounded-full [&_svg]:size-9",
+            quiet ? "bg-white/5 text-fg-3" : "bg-accent-subtle text-accent shadow-[0_0_60px_rgb(224_180_92/0.3)]",
+          )}
+        >
+          {icon}
         </span>
-        <p className="display mt-6 text-4xl text-fg-1">{pkg ? "Review a plugin" : pid ? "Add to this project" : "Create a project"}</p>
-        <p className="mt-2 text-md text-fg-2">{pkg ? "Drop its .asp package" : "Drop a season folder or video files"}</p>
+        <p className={cn("display mt-6 text-4xl", quiet ? "text-fg-2" : "text-fg-1")}>{heading}</p>
+        <p className={cn("mt-2 text-md", quiet ? "text-fg-3" : "text-fg-2")}>{hint}</p>
       </div>
     </div>
   )

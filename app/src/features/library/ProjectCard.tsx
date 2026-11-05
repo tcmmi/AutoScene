@@ -1,14 +1,14 @@
 import { Link } from "@tanstack/react-router"
-import { DotsThree, FilmStrip, Television } from "@/components/icons"
+import { FilmStrip, Television } from "@/components/icons"
 import type { ProjectSummary } from "@/bindings"
 import { Artwork } from "@/components/ui/artwork"
 import { Badge } from "@/components/ui/badge"
+import { CardMenuButton } from "@/components/ui/card-menu-button"
 import { ContextArea } from "@/components/ui/context-area"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent } from "@/components/ui/dropdown-menu"
 import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { Progress } from "@/components/ui/progress"
 import { formatDuration } from "@/lib/format"
-import { cn } from "@/lib/utils"
 import { projectFacts } from "@/lib/projects"
 import { useProjectIndexing } from "@/state/activity"
 import { ProjectItems } from "./project-actions"
@@ -65,15 +65,7 @@ export function ProjectCard({
           </Link>
 
           <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={`${p.title} options`}
-              className={cn(
-                "absolute top-3 right-3 flex size-8 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white opacity-0 backdrop-blur-md transition-opacity",
-                "group-hover:opacity-100 hover:bg-black/60 focus-visible:opacity-100 data-[state=open]:opacity-100",
-              )}
-            >
-              <DotsThree className="size-5" weight="bold" />
-            </DropdownMenuTrigger>
+            <CardMenuButton aria-label={`${p.title} options`} />
             <DropdownMenuContent>
               <ProjectItems kit={dropdownKit} project={p} onRename={onRename} onDelete={onDelete} />
             </DropdownMenuContent>

@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
-import { CircleNotch } from "@/components/icons"
 import { toast } from "sonner"
 import type { ContentKind, ProjectSummary } from "@/bindings"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
+import { OptionRow } from "@/components/ui/option-row"
 import { Switch } from "@/components/ui/switch"
 import { fastScanHint } from "@/lib/fast-scan"
 import { footageBlurb } from "@/lib/footage"
@@ -110,8 +111,7 @@ function DetailsForm({ project, onDone }: { project: ProjectSummary; onDone: () 
           <Button variant="ghost" onClick={onDone}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !title.trim() || !(retitled || refilmed || rescanned)}>
-            {busy && <CircleNotch className="animate-spin" />}
+          <Button type="submit" variant="primary" busy={busy} disabled={!title.trim() || !(retitled || refilmed || rescanned)}>
             Save
           </Button>
         </DialogFooter>
@@ -127,58 +127,37 @@ export function DeleteProjectDialog({
   project: ProjectSummary | null
   onOpenChange: (open: boolean) => void
 }) {
-  return (
-    <Dialog open={project != null} onOpenChange={onOpenChange}>
-      {project && <DeleteForm project={project} onDone={() => onOpenChange(false)} />}
-    </Dialog>
-  )
+  return project && <DeleteForm project={project} onDone={() => onOpenChange(false)} />
 }
 
 function DeleteForm({ project, onDone }: { project: ProjectSummary; onDone: () => void }) {
   const [deleteFiles, setDeleteFiles] = useState(true)
-  const [busy, setBusy] = useState(false)
   // Its exports and plugin runs stop too, which would otherwise go without a
   // word. Said once, as it opens, so the dialog never moves under the pointer.
   const [stops] = useState(() => stopsFirst(unfinishedJobs((j) => j.projectId === project.id).map((j) => j.kind)))
   const navigate = useNavigate()
   const inProject = useRouterState({ select: (s) => s.location.pathname.startsWith(`/p/${project.id}`) })
   const remove = async () => {
-    setBusy(true)
-    try {
-      await commands.projectDelete(project.id, deleteFiles)
-      onDone()
-      if (inProject) void navigate({ to: "/" })
-      toast(`Removed “${project.title}”`)
-    } catch (e) {
-      toast.error("Couldn't remove the project", { description: errorMessage(e) })
-    } finally {
-      setBusy(false)
-    }
+    await commands.projectDelete(project.id, deleteFiles)
+    if (inProject) void navigate({ to: "/" })
+    toast(`Removed “${project.title}”`)
   }
   return (
-    <DialogContent
+    <ConfirmDialog
+      open
+      onOpenChange={(open) => !open && onDone()}
       title={`Remove “${project.title}”?`}
       description={`Your source videos and exported clips are never touched.${stops ? ` ${stops}` : ""}`}
+      answer={deleteFiles ? "Delete project" : "Remove from library"}
+      failure="Couldn't remove the project"
+      onConfirm={remove}
     >
-      <label className="flex items-center justify-between gap-4 rounded-lg border border-hairline bg-inset px-3.5 py-3">
-        <span>
-          <span className="block text-sm text-fg-1">Delete its analysis too</span>
-          <span className="block text-xs text-fg-3">
-            Shots, faces, the cast with your names and decisions, posters and previews (the .autoscene folder). Added
-            again later, the videos are analysed from scratch.
-          </span>
-        </span>
-        <Switch checked={deleteFiles} onCheckedChange={setDeleteFiles} />
-      </label>
-      <DialogFooter>
-        <Button variant="ghost" onClick={onDone}>
-          Cancel
-        </Button>
-        <Button variant="danger" disabled={busy} onClick={() => void remove()}>
-          {busy && <CircleNotch className="animate-spin" />}
-          {deleteFiles ? "Delete project" : "Remove from library"}
-        </Button>
-      </DialogFooter>
-    </DialogContent>
+      <OptionRow
+        label="Delete its analysis too"
+        description="Shots, faces, the cast with your names and decisions, posters and previews (the .autoscene folder). Added again later, the videos are analysed from scratch."
+        checked={deleteFiles}
+        onCheckedChange={setDeleteFiles}
+      />
+    </ConfirmDialog>
   )
 }

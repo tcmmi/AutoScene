@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { GraphicsClass, JobInfo, ProjectSummary, ScanDefaults } from "@/bindings"
@@ -8,7 +8,12 @@ import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
 import { DeleteProjectDialog, ProjectDetailsDialog } from "./ProjectDialogs"
 
-const { machine } = vi.hoisted(() => ({ machine: { cls: "forAi" as GraphicsClass } }))
+const { machine, nav, route, toasts } = vi.hoisted(() => ({
+  machine: { cls: "forAi" as GraphicsClass },
+  nav: vi.fn(),
+  route: { inProject: false },
+  toasts: Object.assign(vi.fn(), { error: vi.fn() }),
+}))
 
 /** What the library answers on Automatic, like `as_project::scan::defaults`. */
 function defaults(): ScanDefaults {
@@ -33,15 +38,17 @@ vi.mock("@/lib/ipc", () => ({
 }))
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
-  useNavigate: () => vi.fn(),
-  useRouterState: () => false,
+  useNavigate: () => nav,
+  useRouterState: () => route.inProject,
 }))
+vi.mock("sonner", () => ({ toast: toasts }))
 
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   useActivity.setState({ jobs: {}, order: [] })
   machine.cls = "forAi"
+  route.inProject = false
 })
 
 const film = {
@@ -166,5 +173,83 @@ describe("DeleteProjectDialog", () => {
     useActivity.setState({ jobs: {}, order: [] })
     render(<DeleteProjectDialog project={film} onOpenChange={vi.fn()} />)
     expect(description()).toBe("Your source videos and exported clips are never touched.")
+  })
+
+  it("is asked with the analysis switch in its box, and a running removal can't be dismissed", async () => {
+    const user = userEvent.setup()
+    let finish = () => {}
+    vi.mocked(commands.projectDelete).mockImplementationOnce(() => new Promise((done) => (finish = () => done(null))))
+    const onOpenChange = vi.fn()
+    render(<DeleteProjectDialog project={film} onOpenChange={onOpenChange} />)
+    const dialog = screen.getByRole("dialog")
+    const keep = within(dialog).getByRole("switch", { name: "Delete its analysis too" })
+    await user.click(keep)
+    await user.click(within(dialog).getByRole("button", { name: "Remove from library" }))
+    expect(commands.projectDelete).toHaveBeenCalledWith("p", false)
+    await user.keyboard("{Escape}")
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(within(dialog).getByRole("button", { name: "Remove from library" }).getAttribute("aria-busy")).toBe("true")
+    finish()
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+  it("leaves the project it was in and says it is gone", async () => {
+    const user = userEvent.setup()
+    route.inProject = true
+    const onOpenChange = vi.fn()
+    render(<DeleteProjectDialog project={film} onOpenChange={onOpenChange} />)
+    await user.click(screen.getByRole("button", { name: "Delete project" }))
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(commands.projectDelete).toHaveBeenCalledWith("p", true)
+    expect(nav).toHaveBeenCalledWith({ to: "/" })
+    expect(toasts).toHaveBeenCalledWith("Removed “Film”")
+  })
+
+  it("stays on the library page when it was deleted from there", async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    render(<DeleteProjectDialog project={film} onOpenChange={onOpenChange} />)
+    await user.click(screen.getByRole("button", { name: "Delete project" }))
+    await waitFor(() => expect(toasts).toHaveBeenCalledWith("Removed “Film”"))
+    expect(nav).not.toHaveBeenCalled()
+  })
+
+  it("a removal that fails stays open, says why, and doesn't navigate", async () => {
+    const user = userEvent.setup()
+    route.inProject = true
+    vi.mocked(commands.projectDelete).mockRejectedValueOnce("The folder is in use.")
+    const onOpenChange = vi.fn()
+    render(<DeleteProjectDialog project={film} onOpenChange={onOpenChange} />)
+    await user.click(screen.getByRole("button", { name: "Delete project" }))
+    await waitFor(() =>
+      expect(toasts.error).toHaveBeenCalledWith("Couldn't remove the project", { description: "The folder is in use." }),
+    )
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(nav).not.toHaveBeenCalled()
+    expect(toasts).not.toHaveBeenCalled()
+  })
+})
+
+describe("ProjectDetailsDialog's Save while it runs", () => {
+  it("does nothing on a second click or Enter, and says it is busy", async () => {
+    const user = userEvent.setup()
+    let finish = () => {}
+    vi.mocked(commands.projectRename).mockImplementationOnce(() => new Promise((done) => (finish = () => done({} as never))))
+    const onOpenChange = open(film)
+    const title = screen.getByLabelText("Title")
+    await user.clear(title)
+    await user.type(title, "Film 2")
+    const save = screen.getByRole("button", { name: "Save" })
+    await user.click(save)
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"))
+    await user.click(save)
+    await user.type(title, "{Enter}")
+    expect(commands.projectRename).toHaveBeenCalledOnce()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    finish()
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(commands.projectRename).toHaveBeenCalledOnce()
   })
 })

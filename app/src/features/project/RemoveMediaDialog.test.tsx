@@ -1,9 +1,13 @@
-import { act, cleanup, render, screen } from "@testing-library/react"
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { JobInfo, MediaItem } from "@/bindings"
+import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
 import { RemoveMediaDialog } from "./RemoveMediaDialog"
 
+const { toasts } = vi.hoisted(() => ({ toasts: { error: vi.fn() } }))
+vi.mock("sonner", () => ({ toast: toasts }))
 vi.mock("@/lib/ipc", () => ({
   commands: { mediaRemove: vi.fn(() => Promise.resolve(null)) },
   errorMessage: (e: unknown) => String(e),
@@ -114,5 +118,36 @@ describe("RemoveMediaDialog", () => {
     })
     rerender(<RemoveMediaDialog projectId="p" media={{ ...episode, shots: "ready" }} onOpenChange={() => {}} />)
     expect(description()).toBe(said)
+  })
+
+  it("can't be dismissed while the removal runs, and closes when it is done", async () => {
+    const user = userEvent.setup()
+    let finish = () => {}
+    vi.mocked(commands.mediaRemove).mockImplementationOnce(() => new Promise((done) => (finish = () => done(null as never))))
+    const onOpenChange = vi.fn()
+    render(<RemoveMediaDialog projectId="p" media={episode} onOpenChange={onOpenChange} />)
+    const dialog = screen.getByRole("dialog")
+    await user.click(within(dialog).getByRole("button", { name: "Remove from project" }))
+    expect(commands.mediaRemove).toHaveBeenCalledWith("p", "m")
+    await user.keyboard("{Escape}")
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }))
+    expect(onOpenChange).not.toHaveBeenCalled()
+    finish()
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+  it("a removal that fails stays open and says why", async () => {
+    const user = userEvent.setup()
+    vi.mocked(commands.mediaRemove).mockRejectedValueOnce("The database is locked.")
+    const onOpenChange = vi.fn()
+    render(<RemoveMediaDialog projectId="p" media={episode} onOpenChange={onOpenChange} />)
+    await user.click(screen.getByRole("button", { name: "Remove from project" }))
+    await waitFor(() =>
+      expect(toasts.error).toHaveBeenCalledWith("Couldn't remove it", { description: "The database is locked." }),
+    )
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    // Not busy any more: it can be answered again.
+    expect(screen.getByRole("button", { name: "Remove from project" }).getAttribute("aria-busy")).toBeNull()
   })
 })

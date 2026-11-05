@@ -20,6 +20,7 @@ import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Page } from "@/components/ui/page"
 import { Select } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip } from "@/components/ui/tooltip"
 import { TopBar } from "@/components/ui/topbar"
 import { formatBytes, formatDuration } from "@/lib/format"
@@ -127,7 +128,11 @@ export function EpisodesPage() {
           // Details fold away as the window narrows; picture, name and state always stay.
           <ul className="@container flex flex-col gap-1.5">
             {isPending
-              ? Array.from({ length: 3 }, (_, i) => <li key={i} className="skeleton h-[120px] rounded-2xl" />)
+              ? Array.from({ length: 3 }, (_, i) => (
+                  <li key={i}>
+                    <Skeleton className="h-[120px] rounded-2xl" />
+                  </li>
+                ))
               : media!.map((m) => (
                   <EpisodeRow
                     key={m.id}
@@ -269,7 +274,7 @@ export function EpisodeRow({
             {flags.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {flags.map((f) => (
-                  <Badge key={f} tone="outline" className="h-5 px-2 text-2xs">
+                  <Badge key={f} tone="outline" size="sm">
                     {f}
                   </Badge>
                 ))}

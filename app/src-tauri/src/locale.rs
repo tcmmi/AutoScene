@@ -5,7 +5,7 @@ use as_api::{Lang, UiLanguage, UiLocale};
 
 /// What AutoScene speaks, by language code. English comes first: it is what
 /// a system speaking none of these gets.
-const SPOKEN: &[(&str, Lang)] = &[("en", Lang::En)];
+pub(crate) const SPOKEN: &[(&str, Lang)] = &[("en", Lang::En)];
 
 /// What `setting` comes to on this computer, and what Automatic would. On a
 /// Mac the list follows the language chosen for AutoScene in System Settings

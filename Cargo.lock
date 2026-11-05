@@ -636,6 +636,7 @@ dependencies = [
  "specta-serde",
  "specta-typescript",
  "specta-util",
+ "syn 3.0.9",
  "sys-locale",
  "tauri",
  "tauri-build",

@@ -201,7 +201,14 @@ pub async fn settings_update(
         if launch_changed {
             state.relaunch();
         }
-        *state.language.lock() = crate::locale::ui_locale(saved.language);
+        let locale = crate::locale::ui_locale(saved.language);
+        let was = std::mem::replace(&mut *state.language.lock(), locale).resolved;
+        if cfg!(target_os = "macos")
+            && locale.resolved != was
+            && let Err(e) = crate::mac_menu::rebuild(&handle, crate::native_text::words(locale.resolved))
+        {
+            log::warn!("the menu couldn't change language: {e}");
+        }
         // The only place that starts or ends the status on Discord: it may
         // wait for its thread, here off the UI thread.
         if let Some(discord) = handle.try_state::<crate::discord::Presence>() {

@@ -35,6 +35,7 @@ use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::PluginsChanged;
+use crate::native_text::{self, Words};
 use crate::paths;
 use crate::plugins::calls::{self, PageIo, PageReply};
 use crate::plugins::pages::{self, PageMount};
@@ -83,8 +84,10 @@ pub async fn plugin_open_source(app: AppHandle, state: State<'_, AppState>, plug
                 msg!("plugin.noSource", "Its plugin.json names no source."),
             ));
         };
-        let asked = format!("Plugin “{name}” links to its source at:\n\n{}", link.url);
-        if link.asks && !confirm(&app, calls::OPEN_LINK_TITLE, asked, calls::OPEN_LINK_YES) {
+        let words = native_text::current(&app);
+        let asked = words.say("dialog.openLink.source", &[("name", name), ("url", &link.url)]);
+        let (title, yes) = (words.say("dialog.openLink.title", &[]), words.say("dialog.openLink.yes", &[]));
+        if link.asks && !confirm(&app, &title, asked, &yes) {
             return Ok(false);
         }
         app.opener().open_url(&link.url, None::<&str>).map_err(|e| {
@@ -112,7 +115,7 @@ pub async fn plugins_allow_unreviewed(app: AppHandle, state: State<'_, AppState>
     let (lib, plugins, jobs) = (state.library.clone(), state.plugins.clone(), state.jobs.clone());
     let asking = app.clone();
     let (changed_it, settings) = blocking(move || {
-        if on && !lib.allows_unreviewed_plugins()? && !confirm(&asking, ALLOW_TITLE, ALLOW_TEXT.into(), "Allow them") {
+        if on && !lib.allows_unreviewed_plugins()? && !ask_allowing(&asking) {
             return Ok((false, lib.settings()));
         }
         let _one = ALLOWING.lock();
@@ -130,21 +133,21 @@ pub async fn plugins_allow_unreviewed(app: AppHandle, state: State<'_, AppState>
     Ok(settings?)
 }
 
-const ALLOW_TITLE: &str = "Allow plugins AutoScene has not reviewed?";
-const ALLOW_TEXT: &str = "They run with your user rights: they can read, change and send anything you can. \
-Install only plugins from people you trust.\n\n\
-Turning this off again stops their runs. It doesn't undo what a plugin set up outside AutoScene.";
+/// Asks the person whether plugins AutoScene hasn't reviewed may run.
+fn ask_allowing(app: &AppHandle) -> bool {
+    let words = native_text::current(app);
+    let title = words.say("dialog.allowUnreviewed.title", &[]);
+    confirm(app, &title, words.say("dialog.allowUnreviewed.text", &[]), &words.say("dialog.allowUnreviewed.yes", &[]))
+}
 
 /// Asks the person `title`, as `message` says, with `yes` and Cancel, in a
 /// dialog of the system's own over the window: the page can neither answer
 /// nor change it. Blocks until they answer, so never on the main thread.
 fn confirm(app: &AppHandle, title: &str, message: String, yes: &str) -> bool {
-    let mut dialog = app
-        .dialog()
-        .message(message)
-        .title(title)
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(yes.into(), "Cancel".into()));
+    let mut dialog =
+        app.dialog().message(message).title(title).kind(MessageDialogKind::Warning).buttons(
+            MessageDialogButtons::OkCancelCustom(yes.into(), native_text::current(app).say("dialog.cancel", &[])),
+        );
     if let Some(window) = app.get_webview_window("main") {
         dialog = dialog.parent(&window);
     }
@@ -213,8 +216,9 @@ pub async fn plugin_install(
     let asking = app.clone();
     let installed = blocking(move || {
         let allow = lib.allows_unreviewed_plugins()?;
-        let ask = |(title, text, yes): plugins::Question| confirm(&asking, &title, text, yes);
-        let p = plugins::install(&host, &ticket_id, allow, accept_unreviewed, ask)?;
+        let ask = |(title, text, yes): plugins::Question| confirm(&asking, &title, text, &yes);
+        let words = native_text::current(&asking);
+        let p = plugins::install(&host, &ticket_id, allow, accept_unreviewed, words, ask)?;
         Ok(info(&p, &host.store, allow))
     })
     .await?;
@@ -534,6 +538,10 @@ impl PageIo for AppIo<'_> {
 
     fn copy_text(&self, text: &str) -> Result<(), String> {
         self.0.clipboard().write_text(text).map_err(|e| e.to_string())
+    }
+
+    fn words(&self) -> &'static Words {
+        native_text::current(self.0)
     }
 
     fn confirm(&self, title: &str, text: &str, yes: &str) -> bool {

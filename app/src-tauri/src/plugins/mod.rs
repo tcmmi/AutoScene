@@ -122,6 +122,7 @@ use tauri_specta::Event;
 
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::{PageEvent, PluginCompiling, PluginPageEvent};
+use crate::native_text::Words;
 use crate::state::AppState;
 use crate::work::job_error;
 use catalog::CatalogHost;
@@ -1366,14 +1367,15 @@ fn sandbox(m: &Manifest) -> Option<PluginSandbox> {
 }
 
 /// What a dialog of the system's own asks: its title, its text and the yes.
-pub type Question = (String, String, &'static str);
+pub type Question = (String, String, String);
 
 /// Installs the plugin the review `ticket_id` showed. One AutoScene hasn't
 /// reviewed needs the setting, `accept_unreviewed` (the person typed its
-/// name), and their yes to `ask`, a dialog of the system's own. So does one
-/// AutoScene reviewed that may do more than the version it replaces, as the
-/// person agreed to that ([`Store::widens`]), whatever the page says: the
-/// page can't answer that dialog. A no keeps the review (`cancelled`).
+/// name), and their yes to `ask`, a dialog of the system's own asked in
+/// `words`. So does one AutoScene reviewed that may do more than the version
+/// it replaces, as the person agreed to that ([`Store::widens`]), whatever
+/// the page says: the page can't answer that dialog. A no keeps the review
+/// (`cancelled`).
 /// Refused while the version it replaces runs, before anything is asked: a
 /// yes to what can't happen now would have to be given again.
 ///
@@ -1386,6 +1388,7 @@ pub fn install(
     ticket_id: &str,
     allow_unreviewed: bool,
     accept_unreviewed: bool,
+    words: &Words,
     ask: impl FnOnce(Question) -> bool,
 ) -> AppResult<Installed> {
     let mut ticket = host.take(ticket_id)?;
@@ -1402,7 +1405,7 @@ pub fn install(
         // commit refuses anyway.
         _ => allow_unreviewed && accept_unreviewed,
     };
-    if asks && !ask(install_question(&ticket, &widens)) {
+    if asks && !ask(install_question(&ticket, &widens, words)) {
         host.keep(ticket);
         return Err(AppError::new(ErrorCode::Cancelled, msg!("plugin.notInstalled", "It wasn't installed.")));
     }
@@ -1435,78 +1438,76 @@ pub fn install(
     Ok(p)
 }
 
-/// What installing the plugin of `t` asks, from what was checked here (not
-/// what the page shows), with `widens` what it may do that the installed
-/// version, as the person agreed to it, may not.
-fn install_question(t: &Ticket, widens: &Widens) -> Question {
+/// What installing the plugin of `t` asks, in `words`, from what was checked
+/// here (not what the page shows), with `widens` what it may do that the
+/// installed version, as the person agreed to it, may not.
+fn install_question(t: &Ticket, widens: &Widens, words: &Words) -> Question {
     let m = &t.manifest;
-    let yes = match (&t.source, &t.previous) {
-        (Source::Folder { .. }, _) => "Load",
-        (_, Some(_)) => "Update",
-        _ => "Install",
+    let (title, yes) = match (&t.source, &t.previous) {
+        (Source::Folder { .. }, _) => ("dialog.install.load.title", "dialog.install.load.yes"),
+        (_, Some(_)) => ("dialog.install.update.title", "dialog.install.update.yes"),
+        _ => ("dialog.install.install.title", "dialog.install.install.yes"),
     };
     let reviewed = t.verdict.trust == Trust::Reviewed;
+    let author = ("author", m.author.name.as_str());
     let who = match (reviewed, &t.verdict.author_key) {
-        (true, _) => format!("By: {}", m.author.name),
+        (true, _) => words.say("dialog.install.by", &[author]),
         (_, Some(key)) if t.verdict.trust == Trust::Pinned => {
-            format!("Says it is by: {}\nSigned with key {}", m.author.name, key.key_id)
+            words.say("dialog.install.saysSigned", &[author, ("key", &key.key_id)])
         }
-        _ => format!("Says it is by: {}\nNot signed", m.author.name),
+        _ => words.say("dialog.install.saysUnsigned", &[author]),
     };
     let place = match &t.source {
-        Source::Folder { path } => format!("\nFolder: {path}"),
+        Source::Folder { path } => format!("\n{}", words.say("dialog.install.folder", &[("path", path)])),
         Source::Package { .. } => String::new(),
     };
-    let installed = t.previous.as_ref().map_or(String::new(), |p| format!(" ({} is installed)", p.version));
+    let version = match &t.previous {
+        Some(p) => words.say("dialog.install.versionOver", &[("version", &m.version), ("installed", &p.version)]),
+        None => words.say("dialog.install.version", &[("version", &m.version)]),
+    };
     // A WebAssembly plugin can't do what a program can: the question says
     // what is true of it, as the review does.
-    let how = match m.is_sandboxed() {
-        true => "in a sandbox: it sees only its own folder and what it asks for.",
-        false => "with your user rights: it can read, change and send anything you can.",
-    };
+    let boxed = m.is_sandboxed();
     let runs = match widens.runtime {
-        RuntimeChange { leaves_sandbox: true, .. } => {
-            format!("The installed version ran in a sandbox. This version runs {how}")
-        }
-        RuntimeChange { starts_program: true, .. } => {
-            format!("The installed version runs no program. This version runs one {how}")
-        }
-        _ if !m.runs_program() => "It runs no program: its pages run in a sandbox.".to_owned(),
-        _ => format!("It runs {how}"),
+        RuntimeChange { leaves_sandbox: true, .. } => "dialog.install.runs.leftSandbox",
+        RuntimeChange { starts_program: true, .. } if boxed => "dialog.install.runs.startsSandboxed",
+        RuntimeChange { starts_program: true, .. } => "dialog.install.runs.startsProgram",
+        _ if !m.runs_program() => "dialog.install.runs.pagesOnly",
+        _ if boxed => "dialog.install.runs.sandbox",
+        _ => "dialog.install.runs.program",
     };
     let service = match widens.runtime.becomes_service {
-        true => " It now keeps its program running while its page is open.",
-        false => "",
+        true => format!(" {}", words.say("dialog.install.runs.becomesService", &[])),
+        false => String::new(),
     };
-    let new = new_lines(m, widens);
+    let new = new_lines(m, widens, words);
     let new = match new.is_empty() {
         true => String::new(),
-        false => format!("\n\nNew in this version:\n· {}", new.join("\n· ")),
+        false => format!("\n\n{}\n· {}", words.say("dialog.install.new", &[]), new.join("\n· ")),
     };
     let first = match reviewed {
-        true => "AutoScene reviewed this version.",
-        false => "AutoScene has not reviewed it.",
+        true => words.say("dialog.install.reviewed", &[]),
+        false => words.say("dialog.install.notReviewed", &[]),
     };
-    let text = format!(
-        "{first} {runs}{service}{new}\n\n\
-         Id: {}\nVersion: {}{installed}\n{who}{place}",
-        m.id, m.version
-    );
-    (format!("{yes} {}?", m.name), text, yes)
+    let runs = words.say(runs, &[]);
+    let id = words.say("dialog.install.id", &[("id", m.id.as_str())]);
+    let text = format!("{first} {runs}{service}{new}\n\n{id}\n{version}\n{who}{place}");
+    (words.say(title, &[("name", &m.name)]), text, words.say(yes, &[]))
 }
 
 /// What `widens` adds to the plugin of `m`, a line each, as its review says it.
-fn new_lines(m: &Manifest, widens: &Widens) -> Vec<String> {
+fn new_lines(m: &Manifest, widens: &Widens, words: &Words) -> Vec<String> {
     let sandbox = m.is_sandboxed().then_some(m.network_hosts.as_slice());
-    let mut new: Vec<String> = widens.permissions.iter().map(|p| permission_words(*p, sandbox).to_owned()).collect();
+    let mut new: Vec<String> = widens.permissions.iter().map(|p| permission_words(*p, sandbox, words)).collect();
     match sandbox {
         // Its line on the network ends in the sites, as in the review.
         Some(_) if !widens.hosts.is_empty() => {
-            let words = permission_words(Permission::Network, sandbox);
-            new.retain(|line| line != words);
-            new.push(format!("{words} {}", widens.hosts.join(", ")));
+            let network = permission_words(Permission::Network, sandbox, words);
+            new.retain(|line| *line != network);
+            let sites = widens.hosts.join(", ");
+            new.push(words.say("dialog.permission.sandbox.networkSites", &[("sites", &sites)]));
         }
-        _ => new.extend(widens.hosts.iter().map(|h| format!("Talks to {h}"))),
+        _ => new.extend(widens.hosts.iter().map(|h| words.say("dialog.permission.host", &[("host", h)]))),
     }
     new
 }
@@ -1515,18 +1516,19 @@ fn new_lines(m: &Manifest, widens: &Widens) -> Vec<String> {
 /// tests hold these words to its own): what it says it does, or, for one in
 /// the sandbox (`sandbox`, with the sites it may reach), what the sandbox lets
 /// it do.
-fn permission_words(p: Permission, sandbox: Option<&[String]>) -> &'static str {
-    match (p, sandbox) {
-        (Permission::ExportsRead, None) => "Reads the exported clips",
-        (Permission::ExportsWrite, None) => "Changes or adds files beside the exported clips",
-        (Permission::ProjectRead, None) => "Reads the project: its episodes and characters",
-        (Permission::Network, None) => "Talks to the internet",
-        (Permission::ExportsRead, Some(_)) => "Reads the files in the export's folder",
-        (Permission::ExportsWrite, Some(_)) => "Reads, changes and deletes files in the export's folder",
-        (Permission::ProjectRead, Some(_)) => "Reads the project's folder",
-        (Permission::Network, Some([])) => "May use the network, but names no site: every request is refused.",
-        (Permission::Network, Some(_)) => "Talks to these sites, over https only:",
-    }
+fn permission_words(p: Permission, sandbox: Option<&[String]>, words: &Words) -> String {
+    let key = match (p, sandbox) {
+        (Permission::ExportsRead, None) => "dialog.permission.exportsRead",
+        (Permission::ExportsWrite, None) => "dialog.permission.exportsWrite",
+        (Permission::ProjectRead, None) => "dialog.permission.projectRead",
+        (Permission::Network, None) => "dialog.permission.network",
+        (Permission::ExportsRead, Some(_)) => "dialog.permission.sandbox.exportsRead",
+        (Permission::ExportsWrite, Some(_)) => "dialog.permission.sandbox.exportsWrite",
+        (Permission::ProjectRead, Some(_)) => "dialog.permission.sandbox.projectRead",
+        (Permission::Network, Some([])) => "dialog.permission.sandbox.networkNoSite",
+        (Permission::Network, Some(_)) => "dialog.permission.sandbox.network",
+    };
+    words.say(key, &[])
 }
 
 /// `t` for the review dialog of `host`, with `allow_unreviewed` the
@@ -2372,6 +2374,7 @@ mod tests {
     use as_plugin::pages::MemoryKit;
 
     use super::*;
+    use crate::native_text::tests::{english, marked, unmarked};
 
     const UV: [&str; 5] = ["uv", "run", "--script", "--locked", "main.py"];
 
@@ -2746,7 +2749,7 @@ mod tests {
             host.keep(t);
             id
         };
-        install(&host, &review(&m), true, true, |_| true).unwrap();
+        install(&host, &review(&m), true, true, crate::native_text::tests::english(), |_| true).unwrap();
 
         let mut more = m.clone();
         more["version"] = serde_json::json!("1.1.0");
@@ -2755,18 +2758,21 @@ mod tests {
         // The setting off, or no typed name: refused, and nothing is asked.
         for (allow, typed) in [(false, true), (true, false)] {
             let t = review(&more);
-            assert!(install(&host, &t, allow, typed, |q| panic!("it asked {q:?}")).is_err());
+            assert!(
+                install(&host, &t, allow, typed, crate::native_text::tests::english(), |q| panic!("it asked {q:?}"))
+                    .is_err()
+            );
         }
         // A no keeps the review, and the plugin as it was.
         let t = review(&more);
         let mut asked = None;
-        let no = install(&host, &t, true, true, |q| {
+        let no = install(&host, &t, true, true, crate::native_text::tests::english(), |q| {
             asked = Some(q);
             false
         });
         assert_eq!(no.unwrap_err().code, ErrorCode::Cancelled);
         let (title, text, yes) = asked.unwrap();
-        assert_eq!((title.as_str(), yes), ("Load Plugin dev.a.dev?", "Load"));
+        assert_eq!((title.as_str(), yes.as_str()), ("Load Plugin dev.a.dev?", "Load"));
         assert!(text.starts_with("AutoScene has not reviewed it. It runs with your user rights"), "{text}");
         assert!(
             text.contains("\n\nNew in this version:\n· Talks to the internet\n· Talks to discord.com\n\n"),
@@ -2776,7 +2782,7 @@ mod tests {
         let id = PluginId::parse("dev.a.dev").unwrap();
         assert_eq!(host.store.get(&id).unwrap().record.version, "1.0.0");
 
-        let p = install(&host, &t, true, true, |_| true).unwrap();
+        let p = install(&host, &t, true, true, crate::native_text::tests::english(), |_| true).unwrap();
         assert_eq!(
             (p.record.version.as_str(), p.record.network_hosts.as_slice()),
             ("1.1.0", &["discord.com".to_owned()][..])
@@ -2795,7 +2801,7 @@ mod tests {
         std::fs::write(tmp.join("pages/plugin.json"), m.to_string()).unwrap();
         std::fs::write(tmp.join("pages/ui/index.html"), b"<p>hi</p>").unwrap();
         let t = host.store.stage_folder(&tmp.join("pages")).unwrap();
-        let (_, text, _) = install_question(&t, &Widens::default());
+        let (_, text, _) = install_question(&t, &Widens::default(), english());
         assert!(
             text.starts_with("AutoScene has not reviewed it. It runs no program: its pages run in a sandbox."),
             "{text}"
@@ -2812,15 +2818,72 @@ mod tests {
         let mut t = folder(&host, &tmp, &manifest("dev.a.runs", false));
         let starts =
             Widens { runtime: RuntimeChange { starts_program: true, ..RuntimeChange::default() }, ..Widens::default() };
-        let (_, text, _) = install_question(&t, &starts);
+        let (_, text, _) = install_question(&t, &starts, english());
         let says = "AutoScene has not reviewed it. The installed version runs no program. This version runs one \
                     with your user rights: it can read, change and send anything you can.";
         assert!(text.starts_with(says), "{text}");
         t.manifest.runtime.kind = RuntimeKind::Wasm;
-        let (_, text, _) = install_question(&t, &starts);
+        let (_, text, _) = install_question(&t, &starts, english());
         let says = "The installed version runs no program. This version runs one in a sandbox: it sees only its \
                     own folder and what it asks for.";
         assert!(text.contains(says), "{text}");
+        drop((t, host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// All of it, word for word: what the question said before its words
+    /// went into the catalog.
+    #[test]
+    fn the_question_keeps_its_english() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-question-english-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = host_in(&tmp);
+        let t = folder(&host, &tmp, &manifest("dev.a.english", false));
+        let Source::Folder { path } = &t.source else { panic!("a folder's") };
+        let wider = Widens {
+            permissions: vec![Permission::ExportsRead, Permission::Network],
+            hosts: vec!["discord.com".into()],
+            runtime: RuntimeChange { becomes_service: true, ..RuntimeChange::default() },
+        };
+        let (title, text, yes) = install_question(&t, &wider, english());
+        assert_eq!((title.as_str(), yes.as_str()), ("Load Plugin dev.a.english?", "Load"));
+        assert_eq!(
+            text,
+            format!(
+                "AutoScene has not reviewed it. It runs with your user rights: it can read, change and send \
+                 anything you can. It now keeps its program running while its page is open.\n\n\
+                 New in this version:\n· Reads the exported clips\n· Talks to the internet\n· Talks to discord.com\n\n\
+                 Id: dev.a.english\nVersion: 1.0.0\nSays it is by: Someone\nNot signed\nFolder: {path}"
+            )
+        );
+        drop((t, host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn the_question_is_asked_in_the_persons_language() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-question-language-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let (lib, host) = host_in(&tmp);
+        let mut t = folder(&host, &tmp, &manifest("dev.a.language", false));
+        let wider = Widens {
+            permissions: vec![Permission::ExportsRead, Permission::Network],
+            hosts: vec!["discord.com".into()],
+            runtime: RuntimeChange { becomes_service: true, ..RuntimeChange::default() },
+        };
+        let Source::Folder { path } = t.source.clone() else { panic!("a folder's") };
+        let (title, text, yes) = install_question(&t, &wider, marked());
+        assert_eq!(unmarked(&title), "");
+        assert_eq!((title.as_str(), yes.as_str()), ("«Load Plugin dev.a.language?»", "«Load»"));
+        // Only the layout is left, a line a sentence: no English outside the catalog.
+        assert_eq!(unmarked(&text), "  \n\n\n· \n· \n· \n\n\n\n\n");
+        assert!(text.contains(&format!("«Folder: {path}»")), "{text}");
+
+        // The sandbox's lines, as a program's.
+        t.manifest.runtime.kind = RuntimeKind::Wasm;
+        let (_, text, _) = install_question(&t, &wider, marked());
+        assert!(text.contains("«Talks to these sites, over https only: discord.com»"), "{text}");
+        assert_eq!(unmarked(&text), "  \n\n\n· \n· \n\n\n\n\n");
         drop((t, host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
     }
@@ -2832,7 +2895,7 @@ mod tests {
         let (lib, host) = host_in(&tmp);
         let mut t = folder(&host, &tmp, &manifest("dev.a.who", false));
         let by = t.manifest.author.name.clone();
-        let says = |t: &Ticket| install_question(t, &Widens::default()).1;
+        let says = |t: &Ticket| install_question(t, &Widens::default(), english()).1;
         assert!(says(&t).contains(&format!("\nSays it is by: {by}\nNot signed\n")), "{}", says(&t));
 
         let key = as_plugin::AuthorKey { base64: "a2V5".into(), key_id: "ABCD1234".into() };
@@ -2878,8 +2941,8 @@ mod tests {
             (Network, "Talks to the internet", "May use the network, but names no site: every request is refused."),
         ];
         for (p, as_a_program, in_the_sandbox) in cases {
-            assert_eq!(new_lines(&program, &adding(&[p], &[])), [as_a_program], "{p:?}");
-            assert_eq!(new_lines(&boxed, &adding(&[p], &[])), [in_the_sandbox], "{p:?}");
+            assert_eq!(new_lines(&program, &adding(&[p], &[]), english()), [as_a_program], "{p:?}");
+            assert_eq!(new_lines(&boxed, &adding(&[p], &[]), english()), [in_the_sandbox], "{p:?}");
         }
 
         // The sites it names: a program's are a line each, the sandbox's end its line on the network.
@@ -2888,13 +2951,16 @@ mod tests {
         named.network_hosts = hosts.map(str::to_owned).to_vec();
         let sites = "Talks to these sites, over https only: discord.com, api.example.org";
         assert_eq!(
-            new_lines(&program, &adding(&[Network], &hosts)),
+            new_lines(&program, &adding(&[Network], &hosts), english()),
             ["Talks to the internet", "Talks to discord.com", "Talks to api.example.org"]
         );
-        assert_eq!(new_lines(&named, &adding(&[Network], &hosts)), [sites]);
-        assert_eq!(new_lines(&named, &adding(&[], &hosts)), [sites]);
-        assert_eq!(new_lines(&named, &adding(&[Network, ProjectRead], &hosts)), ["Reads the project's folder", sites]);
-        assert!(new_lines(&named, &Widens::default()).is_empty());
+        assert_eq!(new_lines(&named, &adding(&[Network], &hosts), english()), [sites]);
+        assert_eq!(new_lines(&named, &adding(&[], &hosts), english()), [sites]);
+        assert_eq!(
+            new_lines(&named, &adding(&[Network, ProjectRead], &hosts), english()),
+            ["Reads the project's folder", sites]
+        );
+        assert!(new_lines(&named, &Widens::default(), english()).is_empty());
     }
 
     /// The `plugin.json` of a plugin `id` that runs no program and has `pages`.

@@ -268,12 +268,16 @@ fn in_front(app: &AppHandle) -> bool {
 /// Asks the person whether to close the page of the plugin `name` that
 /// stopped responding: true for "Close it".
 fn ask_hung(app: &AppHandle, name: &str) -> bool {
+    let words = crate::native_text::current(app);
     let mut dialog = app
         .dialog()
-        .message("Close it to use AutoScene again, or wait for it.")
-        .title(format!("Plugin “{name}”'s page stopped responding."))
+        .message(words.say("dialog.hung.text", &[]))
+        .title(words.say("dialog.hung.title", &[("name", name)]))
         .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom("Close it".into(), "Wait".into()));
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            words.say("dialog.hung.close", &[]),
+            words.say("dialog.hung.wait", &[]),
+        ));
     if let Some(window) = app.get_webview_window("main") {
         dialog = dialog.parent(&window);
     }

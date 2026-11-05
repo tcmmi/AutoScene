@@ -1064,6 +1064,9 @@ mod tests {
         fn in_front(&self) -> bool {
             unreachable!()
         }
+        fn words(&self) -> &'static crate::native_text::Words {
+            unreachable!()
+        }
         fn copy_text(&self, _: &str) -> Result<(), String> {
             unreachable!()
         }

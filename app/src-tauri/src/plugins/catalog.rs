@@ -2168,15 +2168,17 @@ pub(super) mod tests {
 
         // The setting off refuses it, and nothing is asked.
         let opened = reviewing(&host, &tmp, "off.asp", &package);
-        let off = super::super::install(&host, &opened, false, true, |q| panic!("it asked {q:?}"));
+        let off = super::super::install(&host, &opened, false, true, crate::native_text::tests::english(), |q| {
+            panic!("it asked {q:?}")
+        });
         assert!(off.is_err() && !compiled());
         // A no keeps the review, and compiles nothing.
         let opened = reviewing(&host, &tmp, "no.asp", &package);
-        let no = super::super::install(&host, &opened, true, true, |_| false);
+        let no = super::super::install(&host, &opened, true, true, crate::native_text::tests::english(), |_| false);
         assert_eq!(no.unwrap_err().code, ErrorCode::Cancelled);
         assert!(!compiled());
 
-        super::super::install(&host, &opened, true, true, |_| true).unwrap();
+        super::super::install(&host, &opened, true, true, crate::native_text::tests::english(), |_| true).unwrap();
         assert!(compiled());
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -2200,7 +2202,8 @@ pub(super) mod tests {
         let page = open_page(&host, &one);
 
         let opened = reviewing(&host, &tmp, "broken.asp", &never_compiles("dev.a.one"));
-        let e = super::super::install(&host, &opened, true, true, |_| true).unwrap_err();
+        let e = super::super::install(&host, &opened, true, true, crate::native_text::tests::english(), |_| true)
+            .unwrap_err();
         assert!(e.message.starts_with("The plugin's component doesn't load: "), "{e:?}");
         // Its page stays open, and nothing marked it as changing.
         assert!(host.pages.get(&page).is_some());
@@ -2228,7 +2231,8 @@ pub(super) mod tests {
         stopping.set(Arc::downgrade(&host)).unwrap();
 
         let opened = reviewing(&host, &tmp, "stopped.asp", &never_compiles("dev.a.stopped"));
-        let e = super::super::install(&host, &opened, true, true, |_| true).unwrap_err();
+        let e = super::super::install(&host, &opened, true, true, crate::native_text::tests::english(), |_| true)
+            .unwrap_err();
         assert_eq!(e.code, ErrorCode::Cancelled);
         assert_eq!(*told.lock(), std::slice::from_ref(&opened));
         assert!(host.compiles.lock().is_empty());
@@ -2237,7 +2241,7 @@ pub(super) mod tests {
 
         // A no never gets that far, and one that runs nothing has no compile.
         let opened = reviewing(&host, &tmp, "no.asp", &never_compiles("dev.a.no"));
-        let no = super::super::install(&host, &opened, true, true, |_| false);
+        let no = super::super::install(&host, &opened, true, true, crate::native_text::tests::english(), |_| false);
         assert_eq!(no.unwrap_err().code, ErrorCode::Cancelled);
         assert_eq!(told.lock().len(), 1);
         host.store.discard(host.take(&opened).unwrap());
@@ -2261,20 +2265,23 @@ pub(super) mod tests {
         host.store.set_catalog(living(listed, vec![]));
 
         let first = reviewing(&host, &tmp, "first.asp", &sandboxed);
-        let p = super::super::install(&host, &first, false, false, |q| panic!("a new plugin asked {q:?}")).unwrap();
+        let p = super::super::install(&host, &first, false, false, crate::native_text::tests::english(), |q| {
+            panic!("a new plugin asked {q:?}")
+        })
+        .unwrap();
         assert_eq!(p.extra.agreed_runtime(), RuntimeKind::Wasm);
 
         let update = reviewing(&host, &tmp, "update.asp", &program);
         // The page's consent is no answer: the question comes whatever it says.
         for page in [false, true] {
             let mut asked = Vec::new();
-            let no = super::super::install(&host, &update, false, page, |q| {
+            let no = super::super::install(&host, &update, false, page, crate::native_text::tests::english(), |q| {
                 asked.push(q);
                 false
             });
             assert_eq!(no.unwrap_err().code, ErrorCode::Cancelled);
             let [(title, text, yes)] = asked.as_slice() else { panic!("{asked:?}") };
-            assert_eq!((title.as_str(), *yes), (format!("Update Plugin {HELLO}?").as_str(), "Update"));
+            assert_eq!((title.as_str(), yes.as_str()), (format!("Update Plugin {HELLO}?").as_str(), "Update"));
             let says = "AutoScene reviewed this version. The installed version ran in a sandbox. This version \
                         runs with your user rights: it can read, change and send anything you can.";
             assert!(text.starts_with(says), "{text}");
@@ -2283,7 +2290,8 @@ pub(super) mod tests {
             assert_eq!((now.record.version.as_str(), now.extra.agreed_runtime()), ("1.0.0", RuntimeKind::Wasm));
         }
         // A no kept the review: the yes installs it, and that is what was agreed to.
-        let p = super::super::install(&host, &update, false, false, |_| true).unwrap();
+        let p = super::super::install(&host, &update, false, false, crate::native_text::tests::english(), |_| true)
+            .unwrap();
         assert_eq!((p.record.version.as_str(), p.extra.agreed_runtime()), ("1.1.0", RuntimeKind::Process));
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -2323,7 +2331,10 @@ pub(super) mod tests {
 
         let quietly = |name: &str, package| {
             let t = reviewing(&host, &tmp, name, package);
-            super::super::install(&host, &t, false, false, |q| panic!("it asked {q:?}")).unwrap();
+            super::super::install(&host, &t, false, false, crate::native_text::tests::english(), |q| {
+                panic!("it asked {q:?}")
+            })
+            .unwrap();
         };
         let asking = |name: &str, package| {
             let t = reviewing(&host, &tmp, name, package);
@@ -2332,7 +2343,7 @@ pub(super) mod tests {
                 text = said;
                 true
             };
-            super::super::install(&host, &t, false, false, yes).unwrap();
+            super::super::install(&host, &t, false, false, crate::native_text::tests::english(), yes).unwrap();
             text
         };
         quietly("1.0.0.asp", &v100);
@@ -2371,7 +2382,10 @@ pub(super) mod tests {
         let listed = vec![entry_of(HELLO, "1.0.0", &v100), entry_of(HELLO, "1.1.0", &v110)];
         host.store.set_catalog(living(listed, vec![]));
         let first = reviewing(&host, &tmp, "1.0.0.asp", &v100);
-        super::super::install(&host, &first, false, false, |q| panic!("it asked {q:?}")).unwrap();
+        super::super::install(&host, &first, false, false, crate::native_text::tests::english(), |q| {
+            panic!("it asked {q:?}")
+        })
+        .unwrap();
 
         let id = PluginId::parse(HELLO).unwrap();
         let (job, update) = (as_core::JobId::new(), reviewing(&host, &tmp, "1.1.0.asp", &v110));
@@ -2384,11 +2398,16 @@ pub(super) mod tests {
 
         // While it runs nothing is asked: a yes couldn't take effect.
         start();
-        running(super::super::install(&host, &update, false, false, |q| panic!("it asked {q:?}")).unwrap_err());
+        running(
+            super::super::install(&host, &update, false, false, crate::native_text::tests::english(), |q| {
+                panic!("it asked {q:?}")
+            })
+            .unwrap_err(),
+        );
         end();
 
         // A run that starts during the question: the yes is lost, the review kept.
-        let lost = super::super::install(&host, &update, false, false, |_| {
+        let lost = super::super::install(&host, &update, false, false, crate::native_text::tests::english(), |_| {
             start();
             true
         });
@@ -2400,14 +2419,15 @@ pub(super) mod tests {
 
         // Asked again, and a no stands, whatever was answered before.
         let mut asked = 0;
-        let no = super::super::install(&host, &update, false, false, |_| {
+        let no = super::super::install(&host, &update, false, false, crate::native_text::tests::english(), |_| {
             asked += 1;
             false
         });
         assert_eq!((no.unwrap_err().code, asked), (ErrorCode::Cancelled, 1));
         assert_eq!(host.store.get(&id).unwrap().record.version, "1.0.0");
 
-        let p = super::super::install(&host, &update, false, false, |_| true).unwrap();
+        let p = super::super::install(&host, &update, false, false, crate::native_text::tests::english(), |_| true)
+            .unwrap();
         assert_eq!(p.record.version, "1.1.0");
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();

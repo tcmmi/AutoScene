@@ -21,6 +21,7 @@ use tauri_specta::Event;
 use crate::accel::Accel;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::{HardwareChanged, JobChanged, JobProgressEvent};
+use crate::native_text::Words;
 use crate::paths;
 use crate::plugins::PluginHost;
 
@@ -158,6 +159,11 @@ impl AppState {
             engine_start,
             accel,
         }
+    }
+
+    /// The words of the language AutoScene speaks now.
+    pub fn words(&self) -> &'static Words {
+        crate::native_text::words(self.language.lock().resolved)
     }
 
     /// Analysis runs as the settings and NVIDIA's files now say from the next

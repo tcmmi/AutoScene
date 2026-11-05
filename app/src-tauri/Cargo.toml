@@ -80,6 +80,8 @@ minisign.workspace = true
 # The catalog's tests make writing its row fail, with a trigger.
 rusqlite.workspace = true
 sha2.workspace = true
+# A test reads the app's source for words a dialog or a menu holds in the code.
+syn = { workspace = true, features = ["full", "visit"] }
 tempfile.workspace = true
 # The catalog's tests pack the packages it offers.
 zip.workspace = true

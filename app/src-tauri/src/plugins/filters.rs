@@ -43,6 +43,7 @@ use as_plugin::runtime::{self, RunSpec};
 use as_plugin::{
     ActionContext, ActionKind, HostCalls, Manifest, PluginId, PluginResult, SettingValue, ShotFilterSpec, Trigger,
 };
+use as_project::naming::FileWords;
 use as_project::{FilterCheck, Library, PluginFilter, PluginFilters, ProjectResult};
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -52,6 +53,7 @@ use tauri_specta::Event;
 use super::{PluginHost, RunKey, active, calls_for, job_spec, plugin_job_error, project_context, runnable, startable};
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::PackChanged;
+use crate::native_text::Words;
 use crate::state::AppState;
 use crate::work::job_error;
 
@@ -240,7 +242,7 @@ pub trait Packs: Send + Sync {
     /// The project as a run gets it.
     fn project(&self, id: ProjectId) -> ProjectResult<ProjectContext>;
     /// `Project::character_label`.
-    fn name(&self, project: ProjectId, c: CharacterId) -> ProjectResult<String>;
+    fn name(&self, project: ProjectId, c: CharacterId, words: &dyn FileWords) -> ProjectResult<String>;
 }
 
 /// Where a check looks: a filter (`key`) of `filters`, for the pack `spec`
@@ -251,6 +253,8 @@ pub struct Place<'a> {
     pub spec: &'a PackSpec,
     pub filters: &'a PluginFilters,
     pub key: &'a str,
+    /// What an unnamed character goes by.
+    pub words: &'a dyn FileWords,
 }
 
 impl Packs for Arc<Library> {
@@ -259,7 +263,7 @@ impl Packs for Arc<Library> {
     }
 
     fn shots(&self, at: &Place, media: MediaId) -> ProjectResult<Option<FilterCheck>> {
-        Library::project(self, at.project)?.filter_shots(at.character, at.spec, at.filters, at.key, media)
+        Library::project(self, at.project)?.filter_shots(at.character, at.spec, at.filters, at.key, media, at.words)
     }
 
     fn keep(&self, at: &Place, media: MediaId, basis: &str, given: &[(FrameIdx, bool)]) -> ProjectResult<bool> {
@@ -271,8 +275,8 @@ impl Packs for Arc<Library> {
         project_context(&project)
     }
 
-    fn name(&self, project: ProjectId, c: CharacterId) -> ProjectResult<String> {
-        Library::project(self, project)?.character_label(c)
+    fn name(&self, project: ProjectId, c: CharacterId, words: &dyn FileWords) -> ProjectResult<String> {
+        Library::project(self, project)?.character_label(c, words)
     }
 }
 
@@ -296,6 +300,8 @@ pub struct Checking {
     /// Told that a character's pack changed: a run of a check of theirs is
     /// over.
     pub changed: Arc<dyn Fn(ProjectId, CharacterId) + Send + Sync>,
+    /// The language an unnamed character is called by in its runs.
+    pub words: &'static Words,
 }
 
 impl Checking {
@@ -316,6 +322,7 @@ impl Checking {
             changed: Arc::new(move |project_id, character_id| {
                 let _ = PackChanged { project_id, character_id }.emit(&changed);
             }),
+            words: state.words(),
         })
     }
 
@@ -356,7 +363,7 @@ pub fn queue_check(
     }
     ck.host.checks.clear(&chain);
     let filters = ck.filters(project, c, spec)?;
-    let at = Place { project, character: c, spec, filters: &filters, key };
+    let at = Place { project, character: c, spec, filters: &filters, key, words: ck.words };
     let Some(media) = ck.packs.next(&at, None)? else { return Ok(false) };
     // Asked twice at once, one call queues it, and both say it waits.
     Ok(queue_episode(ck, &chain, m, spec, media, &basis, None).is_some() || ck.host.is_queued(&ck.jobs, &chain.run()))
@@ -376,7 +383,7 @@ fn queue_episode(
 ) -> Option<JobId> {
     let title = m.shot_filters.iter().find(|f| f.id == chain.filter).map_or(chain.filter.as_str(), |f| &f.title);
     // Named by the character too: Walter's check and Jesse's each have their runs.
-    let title = match ck.packs.name(chain.project, chain.character) {
+    let title = match ck.packs.name(chain.project, chain.character, ck.words) {
         Ok(name) => format!("{title} · {name}"),
         Err(e) => {
             log::warn!("{} for {}: their name: {e}", chain.key(), chain.character);
@@ -467,7 +474,14 @@ fn check_episode(
         JobError::Failed(e.message)
     })?;
     let filter = chain.key();
-    let at = Place { project: chain.project, character: chain.character, spec, filters: &filters, key: &filter };
+    let at = Place {
+        project: chain.project,
+        character: chain.character,
+        spec,
+        filters: &filters,
+        key: &filter,
+        words: ck.words,
+    };
     let Some(check) = ck.packs.shots(&at, media).map_err(job_error).inspect_err(|_| fail(&basis))? else {
         // Judged meanwhile (or gone): on with the next.
         go_on(ck, ctx, chain, m, spec, media, &basis);
@@ -543,7 +557,14 @@ fn check_episode(
 fn go_on(ck: &Checking, ctx: &JobCtx, chain: &Chain, m: &Manifest, spec: &PackSpec, media: MediaId, basis: &str) {
     let next = ck.filters(chain.project, chain.character, spec).and_then(|filters| {
         let key = chain.key();
-        let at = Place { project: chain.project, character: chain.character, spec, filters: &filters, key: &key };
+        let at = Place {
+            project: chain.project,
+            character: chain.character,
+            spec,
+            filters: &filters,
+            key: &key,
+            words: ck.words,
+        };
         Ok(ck.packs.next(&at, Some(media))?)
     });
     match next {
@@ -711,7 +732,7 @@ mod tests {
             Ok(ProjectContext { id: id.to_string(), title: "Show".into(), folder: "/show".into() })
         }
 
-        fn name(&self, _: ProjectId, _: CharacterId) -> ProjectResult<String> {
+        fn name(&self, _: ProjectId, _: CharacterId, _: &dyn FileWords) -> ProjectResult<String> {
             Ok("Walter".into())
         }
     }
@@ -787,6 +808,7 @@ mod tests {
                     let state = pack_filters(Some(&reader), &read_jobs, true, p, c, &spec()).0[0].state;
                     heard.lock().push((c, state));
                 }),
+                words: crate::native_text::tests::english(),
             };
             let (walter, _tmp) = (CharacterId::new(), Gone(tmp));
             Self { lib, ck, fake, ran, changed, project, walter, _tmp }

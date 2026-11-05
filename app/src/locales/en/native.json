@@ -1,0 +1,134 @@
+{
+  "menu": {
+    "app": {
+      "title": "AutoScene",
+      "about": "About AutoScene",
+      "checkUpdates": "Check for Updates…",
+      "settings": "Settings…",
+      "services": "Services",
+      "hide": "Hide AutoScene",
+      "hideOthers": "Hide Others",
+      "showAll": "Show All",
+      "quit": "Quit AutoScene"
+    },
+    "file": {
+      "title": "File",
+      "newProject": "New Project…",
+      "addMedia": "Add Episodes…",
+      "export": "Export Clip…",
+      "reveal": "Reveal in Finder"
+    },
+    "edit": {
+      "title": "Edit",
+      "undo": "Undo",
+      "redo": "Redo",
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste",
+      "selectAll": "Select All",
+      "copyTimecodes": "Copy Timecodes"
+    },
+    "view": {
+      "title": "View",
+      "commandPalette": "Command Palette…",
+      "library": "Library",
+      "episodes": "Episodes",
+      "exports": "Exports",
+      "activity": "Activity",
+      "plugins": "Plugins",
+      "toggleSidebar": "Toggle Sidebar",
+      "fullScreen": "Toggle Full Screen"
+    },
+    "window": {
+      "title": "Window",
+      "minimize": "Minimize",
+      "zoom": "Zoom",
+      "close": "Close Window"
+    },
+    "help": {
+      "title": "Help",
+      "logs": "Show Logs in Finder"
+    }
+  },
+  "dialog": {
+    "cancel": "Cancel",
+    "libraryFailed": {
+      "title": "AutoScene",
+      "text": "AutoScene couldn't open its library.\n\n{{why}}\n\nThe log is in {{path}}"
+    },
+    "openLink": {
+      "title": "Open this link in your browser?",
+      "yes": "Open",
+      "page": "Plugin “{{name}}” asks to open:\n\n{{url}}",
+      "source": "Plugin “{{name}}” links to its source at:\n\n{{url}}"
+    },
+    "allowUnreviewed": {
+      "title": "Allow plugins AutoScene has not reviewed?",
+      "text": "They run with your user rights: they can read, change and send anything you can. Install only plugins from people you trust.\n\nTurning this off again stops their runs. It doesn't undo what a plugin set up outside AutoScene.",
+      "yes": "Allow them"
+    },
+    "hung": {
+      "title": "Plugin “{{name}}”'s page stopped responding.",
+      "text": "Close it to use AutoScene again, or wait for it.",
+      "close": "Close it",
+      "wait": "Wait"
+    },
+    "files": {
+      "save": "Plugin “{{name}}” saves a file",
+      "open": "Plugin “{{name}}” asks for a file",
+      "savePack": "Plugin “{{name}}” saves {{character}}'s scenepack"
+    },
+    "install": {
+      "install": {
+        "title": "Install {{name}}?",
+        "yes": "Install"
+      },
+      "update": {
+        "title": "Update {{name}}?",
+        "yes": "Update"
+      },
+      "load": {
+        "title": "Load {{name}}?",
+        "yes": "Load"
+      },
+      "reviewed": "AutoScene reviewed this version.",
+      "notReviewed": "AutoScene has not reviewed it.",
+      "runs": {
+        "program": "It runs with your user rights: it can read, change and send anything you can.",
+        "sandbox": "It runs in a sandbox: it sees only its own folder and what it asks for.",
+        "pagesOnly": "It runs no program: its pages run in a sandbox.",
+        "leftSandbox": "The installed version ran in a sandbox. This version runs with your user rights: it can read, change and send anything you can.",
+        "startsProgram": "The installed version runs no program. This version runs one with your user rights: it can read, change and send anything you can.",
+        "startsSandboxed": "The installed version runs no program. This version runs one in a sandbox: it sees only its own folder and what it asks for.",
+        "becomesService": "It now keeps its program running while its page is open."
+      },
+      "new": "New in this version:",
+      "id": "Id: {{id}}",
+      "version": "Version: {{version}}",
+      "versionOver": "Version: {{version}} ({{installed}} is installed)",
+      "by": "By: {{author}}",
+      "saysSigned": "Says it is by: {{author}}\nSigned with key {{key}}",
+      "saysUnsigned": "Says it is by: {{author}}\nNot signed",
+      "folder": "Folder: {{path}}"
+    },
+    "permission": {
+      "exportsRead": "Reads the exported clips",
+      "exportsWrite": "Changes or adds files beside the exported clips",
+      "projectRead": "Reads the project: its episodes and characters",
+      "network": "Talks to the internet",
+      "host": "Talks to {{host}}",
+      "sandbox": {
+        "exportsRead": "Reads the files in the export's folder",
+        "exportsWrite": "Reads, changes and deletes files in the export's folder",
+        "projectRead": "Reads the project's folder",
+        "networkNoSite": "May use the network, but names no site: every request is refused.",
+        "network": "Talks to these sites, over https only:",
+        "networkSites": "Talks to these sites, over https only: {{sites}}"
+      }
+    }
+  },
+  "file": {
+    "unnamedCharacter": "Character {{n}}",
+    "packLabel": "{{character}} · scenepack"
+  }
+}

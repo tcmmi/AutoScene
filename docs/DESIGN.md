@@ -339,9 +339,16 @@ The UI's words are in a catalog, not in the code, so AutoScene can speak more th
   things (previous / next) is `.slots.<n>`. Groups, presets, key names and the reasons a key is refused sit beside
   them. `shortcutName(s)` and `slotName(s, n)` (`lib/shortcuts.ts`) read them when asked, never at module scope; the
   old `label` of a shortcut is a getter that does the same, until no screen reads it. A test walks every shortcut.
+- What Rust draws itself is in `locales/<language>/native.json`, read through `app/src-tauri/src/native_text.rs`: the
+  macOS menu, the system's dialogs, and the words written into exports, an unnamed character and a pack's label
+  (`FileWords`, as `as-project` keeps no catalog). English is edited there by hand. A test refuses a dialog's or a
+  menu's words in the code, and a question about a plugin opens with words it can't choose. The format and the headers
+  of cut lists and EDLs stay English, as scripts read them; their title and clip names are the export's, in the words
+  it was made with. The default library folder stays English: a folder stays where it was made.
 - The language is a setting (`AppSettings.language`). Automatic takes the first language on the system's list that
   AutoScene speaks, English when it speaks none (`app/src-tauri/src/locale.rs`). A language joins `SPOKEN` there and
-  `OFFERED` in `lib/i18n.ts` together, when its catalog is complete; Settings shows no choice until there is one.
+  `OFFERED` in `lib/i18n.ts` together, when its catalog is complete; Settings shows no choice until there is one. Its
+  `native.json` joins `CATALOGS` in `native_text.rs` then too, and `app/src-tauri/Info.plist` names it for AppKit.
 
 Rules for every word on screen:
 

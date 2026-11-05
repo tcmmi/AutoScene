@@ -39,7 +39,7 @@ use as_jobs::{JobCtx, JobError, JobResult, JobRunner};
 use as_plugin::calls::{FileFilter, runnable_name};
 use as_plugin::protocol::{CharacterContext, EpisodeContext, PackClipContext, PackContext, ProjectContext};
 use as_plugin::{ActionContext, ActionKind, HostCalls, PluginId, Trigger, runtime};
-use as_project::naming::safe_component;
+use as_project::naming::{FileWords, safe_component};
 use as_project::{Library, PackCut, PluginFilters, ProjectResult};
 use serde::Serialize;
 use specta::Type;
@@ -49,6 +49,7 @@ use super::calls::mark_downloaded;
 use super::filters::{self, RunFn, ToolsFn};
 use super::{PluginHost, RunKey, calls_for, job_spec, plugin_job_error, project_context, runnable, startable};
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::native_text::Words;
 use crate::paths;
 use crate::state::AppState;
 use crate::work::job_error;
@@ -79,9 +80,15 @@ pub struct Shown<'a> {
 /// (`as_project::Project`), or a test's stand-in.
 pub trait Cuts: Send + Sync {
     /// `Project::pack_cut` of `c`'s pack in `project`, with the plugins'
-    /// `filters`.
-    fn cut(&self, project: ProjectId, c: CharacterId, shown: &Shown, filters: &PluginFilters)
-    -> ProjectResult<PackCut>;
+    /// `filters`, named in `words`.
+    fn cut(
+        &self,
+        project: ProjectId,
+        c: CharacterId,
+        shown: &Shown,
+        filters: &PluginFilters,
+        words: &dyn FileWords,
+    ) -> ProjectResult<PackCut>;
     /// The project as a run gets it.
     fn project(&self, id: ProjectId) -> ProjectResult<ProjectContext>;
     /// Where the project's exports go by default
@@ -96,8 +103,9 @@ impl Cuts for Arc<Library> {
         c: CharacterId,
         shown: &Shown,
         filters: &PluginFilters,
+        words: &dyn FileWords,
     ) -> ProjectResult<PackCut> {
-        Library::project(self, project)?.pack_cut(c, shown.spec, filters, shown.naming, shown.stamp)
+        Library::project(self, project)?.pack_cut(c, shown.spec, filters, shown.naming, shown.stamp, words)
     }
 
     fn project(&self, id: ProjectId) -> ProjectResult<ProjectContext> {
@@ -133,6 +141,8 @@ pub struct Saving {
     pub tools: Arc<ToolsFn>,
     pub run: Arc<RunFn>,
     pub ask: Arc<AskFn>,
+    /// The language the save dialog asks in, and a pack's names are in.
+    pub words: &'static Words,
 }
 
 impl Saving {
@@ -151,6 +161,7 @@ impl Saving {
             }),
             run: Arc::new(|spec, cancel, report| runtime::run(spec, cancel, report)),
             ask,
+            words: state.words(),
         })
     }
 }
@@ -190,13 +201,13 @@ pub fn queue_pack_action(
     if let Some(why) = filters::export_waits(&filters, shown.spec) {
         return Err(AppError::new(ErrorCode::Invalid, why));
     }
-    let cut = sv.packs.cut(project, c, shown, &filters)?;
+    let cut = sv.packs.cut(project, c, shown, &filters, sv.words)?;
     let name = offered_name(&a.file.name, &cut.name);
     let kinds = FileFilter {
         name: a.file.extensions.iter().map(|e| e.to_uppercase()).collect::<Vec<_>>().join(", "),
         extensions: a.file.extensions.clone(),
     };
-    let asked = format!("Plugin “{}” saves {}'s scenepack", m.name, cut.name);
+    let asked = sv.words.say("dialog.files.savePack", &[("name", &m.name), ("character", &cut.name)]);
     // Where its exports go, or the nearest folder above that is there yet.
     let exports = sv.packs.export_dir(project).ok();
     let folder = exports.as_deref().and_then(|d| d.ancestors().take(3).find(|d| d.is_dir()));
@@ -492,7 +503,14 @@ mod tests {
     }
 
     impl Cuts for Fake {
-        fn cut(&self, _: ProjectId, c: CharacterId, shown: &Shown, _: &PluginFilters) -> ProjectResult<PackCut> {
+        fn cut(
+            &self,
+            _: ProjectId,
+            c: CharacterId,
+            shown: &Shown,
+            _: &PluginFilters,
+            _: &dyn FileWords,
+        ) -> ProjectResult<PackCut> {
             if shown.stamp != "s1" || self.changed.load(Ordering::SeqCst) {
                 return Err(ProjectError::Invalid(msg!(
                     "pack.changed",
@@ -598,6 +616,7 @@ mod tests {
                     ));
                     answers.lock().clone()
                 }),
+                words: crate::native_text::tests::english(),
             };
             let (project, walter) = (ProjectId::new(), CharacterId::new());
             Self { sv, fake, ran, asked, choice, project, walter, cuts, _tmp: Gone(tmp) }
@@ -666,6 +685,16 @@ mod tests {
             write(m)
         });
         (go, answer)
+    }
+
+    #[test]
+    fn the_save_dialog_is_in_the_persons_language() {
+        let mut b = Bench::new("language", writes());
+        b.sv.words = crate::native_text::tests::marked();
+        let PackActionStart::Queued { .. } = b.click(b.walter) else { panic!("not queued") };
+        b.settle();
+        let title = b.asked.lock()[0].0.clone();
+        assert_eq!(title, "«Plugin “Timeline” saves Walter White's scenepack»");
     }
 
     #[test]

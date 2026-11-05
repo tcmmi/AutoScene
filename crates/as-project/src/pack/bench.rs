@@ -18,6 +18,8 @@ use as_core::{AppPaths, ProjectId, Rational};
 use as_db::{IngestRecord, NewTrack};
 
 use super::*;
+use crate::PackSizing;
+use crate::naming::English;
 use crate::verdicts::PluginFilter;
 
 const EPISODES: usize = 60;
@@ -220,7 +222,21 @@ fn measure(project: &Project, c: CharacterId) {
     row("pack_preview (best, limit 200)", ms(11, || project.pack_preview(c, &best, &PluginFilters::NONE).unwrap()));
     row("pack_preview + its JSON", ms(11, || json(&project.pack_preview(c, &spec, &PluginFilters::NONE).unwrap())));
     row("pack_choices + its JSON", ms(11, || json(&project.pack_choices(c, &spec, &PluginFilters::NONE).unwrap())));
-    row("pack_plan", ms(11, || project.pack_plan(c, &spec, &PluginFilters::NONE, &naming, &presets, &caps).unwrap()));
+    row(
+        "pack_plan",
+        ms(11, || {
+            project
+                .pack_plan(
+                    c,
+                    &spec,
+                    &PluginFilters::NONE,
+                    &naming,
+                    PackSizing { presets: &presets, caps: &caps },
+                    &English,
+                )
+                .unwrap()
+        }),
+    );
     let key = |i: usize| PackKey { media_id: v.clips[i].shot.media_id, shot: v.clips[i].shot.start };
     row(
         "set_pack_overrides (1 shot)",
@@ -241,7 +257,18 @@ fn measure(project: &Project, c: CharacterId) {
     let sizes = (
         json(&project.pack_preview(c, &spec, &PluginFilters::NONE).unwrap()),
         json(&project.pack_choices(c, &spec, &PluginFilters::NONE).unwrap()),
-        json(&project.pack_plan(c, &spec, &PluginFilters::NONE, &naming, &presets, &caps).unwrap()),
+        json(
+            &project
+                .pack_plan(
+                    c,
+                    &spec,
+                    &PluginFilters::NONE,
+                    &naming,
+                    PackSizing { presets: &presets, caps: &caps },
+                    &English,
+                )
+                .unwrap(),
+        ),
     );
     println!("JSON: preview {:.0} kB, choices {:.0} kB, plan {:.1} kB", kb(sizes.0), kb(sizes.1), kb(sizes.2));
     // A click as the builder makes it: the pick answered with the pack's
@@ -251,7 +278,18 @@ fn measure(project: &Project, c: CharacterId) {
         ms(5, || {
             project.set_pack_overrides(c, &[key(10)], Some(false)).unwrap();
             json(&project.pack_choices(c, &spec, &PluginFilters::NONE).unwrap());
-            json(&project.pack_plan(c, &spec, &PluginFilters::NONE, &naming, &presets, &caps).unwrap());
+            json(
+                &project
+                    .pack_plan(
+                        c,
+                        &spec,
+                        &PluginFilters::NONE,
+                        &naming,
+                        PackSizing { presets: &presets, caps: &caps },
+                        &English,
+                    )
+                    .unwrap(),
+            );
             project.set_pack_overrides(c, &[key(10)], None).unwrap();
         }),
     );
@@ -313,9 +351,9 @@ fn measure(project: &Project, c: CharacterId) {
         let what = if merge { "one file" } else { "a file per clip" };
         row(
             &format!("pack_export_request ({what})"),
-            ms(3, || project.pack_export_request(c, &req, &PluginFilters::NONE, &out).unwrap()),
+            ms(3, || project.pack_export_request(c, &req, &PluginFilters::NONE, &out, &English).unwrap()),
         );
-        let (request, dir) = project.pack_export_request(c, &req, &PluginFilters::NONE, &out).unwrap();
+        let (request, dir) = project.pack_export_request(c, &req, &PluginFilters::NONE, &out, &English).unwrap();
         let runs = times(3, || project.create_export(&request, preset.clone(), &dir).unwrap());
         let runs: Vec<String> = runs.iter().map(|t| format!("{t:.0}")).collect();
         println!("create_export ({} clips, {what}): {} ms, run after run", request.clips.len(), runs.join(" / "));

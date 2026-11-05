@@ -62,6 +62,7 @@ use specta_typescript::Unknown;
 
 use super::{PluginHost, RunKey, export_context, serde_name};
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::native_text::Words;
 use crate::paths;
 
 /// A run's or an open page's calls, bound to its plugin and the project
@@ -395,9 +396,11 @@ impl AppCalls {
                 if !plain_link(&url) {
                     return Err(invalid("ui.openExternal opens only plain https:// links."));
                 }
-                let asked = format!("Plugin “{}” asks to open:\n\n{url}", m.name);
+                let words = io.words();
+                let asked = words.say("dialog.openLink.page", &[("name", &m.name), ("url", &url)]);
+                let (title, answer) = (words.say("dialog.openLink.title", &[]), words.say("dialog.openLink.yes", &[]));
                 let dialog = limits.dialog(m, io, now)?;
-                let yes = io.confirm(OPEN_LINK_TITLE, &asked, OPEN_LINK_YES);
+                let yes = io.confirm(&title, &asked, &answer);
                 dialog.closed(yes)?;
                 if !yes {
                     return Ok(PageAnswer::value(json!({ "opened": false })));
@@ -430,7 +433,8 @@ impl AppCalls {
                     return Err(too_large());
                 }
                 let dialog = limits.dialog(m, io, now)?;
-                let path = io.save_to(&format!("Plugin “{}” saves a file", m.name), &name, &filters);
+                let title = io.words().say("dialog.files.save", &[("name", &m.name)]);
+                let path = io.save_to(&title, &name, &filters);
                 dialog.closed(path.is_some())?;
                 let Some(path) = path else { return Ok(PageAnswer::value(json!({ "saved": false }))) };
                 paths::check(&path).map_err(|e| invalid(e.message))?;
@@ -447,7 +451,8 @@ impl AppCalls {
                 check_filters(&filters)?;
                 let most = max_bytes.map_or(MAX_OPENED, |n| u64::from(n).min(MAX_OPENED));
                 let dialog = limits.dialog(m, io, now)?;
-                let path = io.pick(&format!("Plugin “{}” asks for a file", m.name), &filters);
+                let title = io.words().say("dialog.files.open", &[("name", &m.name)]);
+                let path = io.pick(&title, &filters);
                 dialog.closed(path.is_some())?;
                 let Some(path) = path else { return Ok(PageAnswer::value(Value::Null)) };
                 paths::check(&path).map_err(|e| invalid(e.message))?;
@@ -688,12 +693,6 @@ const MAX_SERVICE_METHOD: usize = 64;
 /// The most calls of one page AutoScene answers at once.
 pub const MAX_PAGE_CALLS: usize = 16;
 
-/// The title and the yes of the dialog that asks before a plugin's link
-/// opens: one its page asks to open (`ui.openExternal`), and its source
-/// (`plugin_open_source`).
-pub(crate) const OPEN_LINK_TITLE: &str = "Open this link in your browser?";
-pub(crate) const OPEN_LINK_YES: &str = "Open";
-
 /// What an open page's call gets: its answer; an effect the app's page
 /// carries out, then answers with `result`; or an error.
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
@@ -752,6 +751,8 @@ pub trait PageIo: Send + Sync {
     /// Whether AutoScene's window has the person's focus: a page copies and
     /// opens dialogs only then, never while they work in another app.
     fn in_front(&self) -> bool;
+    /// The words of the language the person's dialogs are in.
+    fn words(&self) -> &'static Words;
     fn copy_text(&self, text: &str) -> Result<(), String>;
     /// Asks the person `title`, as `text` says, with `yes` and Cancel:
     /// whether they said yes.
@@ -1639,6 +1640,8 @@ mod tests {
         held: Mutex<Option<Arc<Barrier>>>,
         /// They work in another app: AutoScene isn't in front.
         away: AtomicBool,
+        /// The language their dialogs are in: English unless a test says.
+        words: Mutex<Option<&'static Words>>,
     }
 
     impl Person {
@@ -1655,6 +1658,10 @@ mod tests {
     impl PageIo for Person {
         fn in_front(&self) -> bool {
             !self.away.load(Ordering::SeqCst)
+        }
+
+        fn words(&self) -> &'static Words {
+            self.words.lock().unwrap_or_else(crate::native_text::tests::english)
         }
 
         fn copy_text(&self, text: &str) -> Result<(), String> {
@@ -2162,6 +2169,36 @@ mod tests {
     }
 
     #[test]
+    fn a_pages_dialogs_are_in_the_persons_language() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-language-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let place = place(&tmp);
+        let person = Person::default();
+        *person.words.lock() = Some(crate::native_text::tests::marked());
+        let page = place.open_page(&tmp, "Linker", &[], false);
+        let now = unhurried();
+        let ask = |method, params| place.page_asks(&person, &page, method, params, now());
+        let url = "https://example.org/docs";
+
+        assert_eq!(got(ask("ui.openExternal", json!({ "url": url }))), json!({"opened": false}));
+        let asked = (
+            "«Open this link in your browser?»".to_owned(),
+            format!("«Plugin “Linker” asks to open:\n\n{url}»"),
+            "«Open»".to_owned(),
+        );
+        assert_eq!(*person.asked.lock(), [asked]);
+
+        assert_eq!(got(ask("files.save", json!({"name": "clips.txt", "text": "one"}))), json!({"saved": false}));
+        assert_eq!(got(ask("files.open", json!({}))), Value::Null);
+        assert_eq!(
+            *person.dialogs.lock(),
+            ["«Plugin “Linker” saves a file»: clips.txt", "«Plugin “Linker” asks for a file»"]
+        );
+        drop(place);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
     fn files_save_takes_one_plain_name() {
         let tmp = std::env::temp_dir().join(format!("autoscene-plugin-page-save-{}", std::process::id()));
         let place = place(&tmp);
@@ -2446,6 +2483,10 @@ mod tests {
     impl PageIo for Activity {
         fn in_front(&self) -> bool {
             true
+        }
+
+        fn words(&self) -> &'static Words {
+            unreachable!()
         }
 
         fn copy_text(&self, _: &str) -> Result<(), String> {

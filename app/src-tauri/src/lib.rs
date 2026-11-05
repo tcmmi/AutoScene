@@ -13,8 +13,8 @@ mod error;
 mod events;
 mod keep_awake;
 mod locale;
-#[cfg(target_os = "macos")]
 mod mac_menu;
+mod native_text;
 mod paths;
 mod plugins;
 mod state;
@@ -22,6 +22,7 @@ mod updater;
 mod window;
 mod work;
 
+use as_api::UiLanguage;
 use as_core::AppPaths;
 use as_project::{Library, ProjectResult};
 use tauri::Manager;
@@ -309,9 +310,13 @@ pub fn run() {
         })
         .invoke_handler(specta.invoke_handler());
 
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.menu(mac_menu::build).on_menu_event(mac_menu::on_event);
+    // The library isn't open yet: Automatic's language for now, and the one
+    // chosen once it is.
+    let automatic = locale::ui_locale(UiLanguage::System).resolved;
+    if cfg!(target_os = "macos") {
+        builder = builder
+            .menu(move |app| mac_menu::build(app, native_text::words(automatic)))
+            .on_menu_event(mac_menu::on_event);
     }
 
     builder
@@ -333,16 +338,12 @@ pub fn run() {
                 Ok(l) => l,
                 Err(e) => {
                     log::error!("opening the library failed: {}", e.detail());
+                    // No library, no choice of language to read.
+                    let words = native_text::words(automatic);
+                    let (why, logs) = (e.to_string(), paths.logs().display().to_string());
                     app.dialog()
-                        .message(format!(
-                            "AutoScene couldn't open its library.
-
-{e}
-
-The log is in {}",
-                            paths.logs().display()
-                        ))
-                        .title("AutoScene")
+                        .message(words.say("dialog.libraryFailed.text", &[("why", &why), ("path", &logs)]))
+                        .title(words.say("dialog.libraryFailed.title", &[]))
                         .kind(MessageDialogKind::Error)
                         .blocking_show();
                     std::process::exit(1);
@@ -351,6 +352,13 @@ The log is in {}",
             let handle = app.handle().clone();
             // Reads the plugin catalog held, before the window opens.
             app.manage(state::AppState::new(&handle, library, &paths));
+            let spoken = app.state::<state::AppState>().language.lock().resolved;
+            if cfg!(target_os = "macos")
+                && spoken != automatic
+                && let Err(e) = mac_menu::rebuild(&handle, native_text::words(spoken))
+            {
+                log::warn!("the menu couldn't take the language chosen: {e}");
+            }
             app.manage(discord::Presence::default());
             // Off, as it starts for everyone, this starts nothing.
             if let Ok(chosen) = app.state::<state::AppState>().library.discord_rpc() {

@@ -204,13 +204,12 @@ pub fn open_logs_dir() -> AppResult<()> {
 #[tauri::command]
 #[specta::specta]
 pub fn menu_set_keys(app: AppHandle, keys: HashMap<String, String>) -> AppResult<()> {
-    #[cfg(target_os = "macos")]
-    crate::mac_menu::set_keys(&app, &keys).map_err(|e| {
-        log::warn!("setting the menu's keys: {e}");
-        AppError::internal(msg!("system.menuKeysFailed", "The menu's keys couldn't be changed."))
-    })?;
-    #[cfg(not(target_os = "macos"))]
-    let _ = (app, keys);
+    if cfg!(target_os = "macos") {
+        crate::mac_menu::set_keys(&app, &keys).map_err(|e| {
+            log::warn!("setting the menu's keys: {e}");
+            AppError::internal(msg!("system.menuKeysFailed", "The menu's keys couldn't be changed."))
+        })?;
+    }
     Ok(())
 }
 

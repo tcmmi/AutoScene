@@ -80,16 +80,17 @@ impl ProjectDb {
         })
     }
 
-    /// A character's name, or "Character N" until named; `None` when gone.
+    /// A character's name, or what `unnamed` calls their number until named;
+    /// `None` when gone.
     /// (The whole cast costs far more: it counts every track.)
-    pub fn character_label(&self, c: CharacterId) -> DbResult<Option<String>> {
+    pub fn character_label(&self, c: CharacterId, unnamed: impl Fn(u32) -> String) -> DbResult<Option<String>> {
         self.0.read(|conn| {
             let row = conn
                 .query_row("SELECT name, number FROM characters WHERE id = ?1", [c.to_string()], |r| {
                     Ok((r.get::<_, Option<String>>(0)?, r.get::<_, u32>(1)?))
                 })
                 .optional()?;
-            Ok(row.map(|(name, n)| name.unwrap_or_else(|| format!("Character {n}"))))
+            Ok(row.map(|(name, n)| name.unwrap_or_else(|| unnamed(n))))
         })
     }
 
@@ -262,8 +263,9 @@ mod tests {
     fn filters_and_hand_picks_are_kept_per_character() {
         let (db, m, ids) = setup();
         let walter = character(&db, &[ids[0]], "Walter");
-        assert_eq!(db.character_label(walter).unwrap().as_deref(), Some("Walter"));
-        assert_eq!(db.character_label(CharacterId::new()).unwrap(), None);
+        let unnamed = |n: u32| format!("Personaj {n}");
+        assert_eq!(db.character_label(walter, unnamed).unwrap().as_deref(), Some("Walter"));
+        assert_eq!(db.character_label(CharacterId::new(), unnamed).unwrap(), None);
         assert_eq!(db.pack_state(walter).unwrap(), None);
         assert!(db.set_pack_state(walter, r#"{"solo":true}"#, None).unwrap());
         assert!(db.set_pack_state(walter, r#"{"solo":false}"#, Some(r#"{"folder":true}"#)).unwrap());

@@ -15,6 +15,7 @@ use as_core::{CharacterId, ProjectId, msg};
 use as_export::builtin_presets;
 use as_media::Caps;
 use as_plugin::calls::FileFilter;
+use as_project::PackSizing;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_specta::Event;
@@ -109,14 +110,16 @@ pub async fn pack_plan(
     spec: PackSpec,
     naming: PackNaming,
 ) -> AppResult<ExportPlan> {
-    let (lib, tools, source) = (state.library.clone(), state.tools().ok(), filters::Source::of(&state));
+    let (lib, tools, source, words) =
+        (state.library.clone(), state.tools().ok(), filters::Source::of(&state), state.words());
     blocking(move || {
         let filters = source.filters(project_id, character_id, &spec)?;
         // Sized for the encoders an export would use (found once, in about a second).
         let none = Caps::default();
         let caps = tools.as_deref().map_or(&none, |t| t.caps());
         let p = lib.project(project_id)?;
-        Ok(p.pack_plan(character_id, &spec, &filters, &naming, &builtin_presets(), caps)?)
+        let sizing = PackSizing { presets: &builtin_presets(), caps };
+        Ok(p.pack_plan(character_id, &spec, &filters, &naming, sizing, words)?)
     })
     .await
 }
@@ -207,7 +210,7 @@ pub async fn pack_export(
     if let Some(dir) = req.out_dir.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
         paths::check(dir)?;
     }
-    let (lib, source) = (state.library.clone(), filters::Source::of(&state));
+    let (lib, source, words) = (state.library.clone(), filters::Source::of(&state), state.words());
     let (project, summary) = blocking(move || {
         // Not while a filter it turns on checks shots: the pack is still changing.
         let filters = source.filters(project_id, character_id, &req.spec)?;
@@ -216,7 +219,7 @@ pub async fn pack_export(
         }
         let project = lib.project(project_id)?;
         let default_dir = lib.default_export_dir(&lib.summary(project_id)?)?;
-        let (request, out_dir) = project.pack_export_request(character_id, &req, &filters, &default_dir)?;
+        let (request, out_dir) = project.pack_export_request(character_id, &req, &filters, &default_dir, words)?;
         let summary = project.create_export(&request, preset, &out_dir)?;
         Ok((project, summary))
     })

@@ -126,6 +126,32 @@ pub struct NameParts<'a> {
     pub frame: u32,
 }
 
+/// The words of what AutoScene writes into what it exports, in the language
+/// of whoever exports: the app has them from its `native` catalog, as this
+/// crate keeps none. A name a person gave is theirs, and never comes here.
+pub trait FileWords: Sync {
+    /// What a character without a name goes by, from their number:
+    /// "Character 12".
+    fn unnamed_character(&self, number: u32) -> String;
+    /// What the export of `character`'s pack is called: "Walter · scenepack".
+    fn pack_label(&self, character: &str) -> String;
+}
+
+/// The English of [`FileWords`], for this crate's tests.
+#[cfg(test)]
+pub(crate) struct English;
+
+#[cfg(test)]
+impl FileWords for English {
+    fn unnamed_character(&self, number: u32) -> String {
+        format!("Character {number}")
+    }
+
+    fn pack_label(&self, character: &str) -> String {
+        format!("{character} · scenepack")
+    }
+}
+
 /// The name parts a template can use, each with the label of the button
 /// that puts it in, in the order the export dialog shows those buttons. The
 /// one list of them: the checks, their messages and the dialog (through

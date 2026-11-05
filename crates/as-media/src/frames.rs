@@ -171,6 +171,13 @@ fn nvdec_suits(info: &MediaInfo) -> bool {
         && info.video.rotation == 0
 }
 
+/// What [`decode_samples_with`] starts on when asked for `decoder`: the
+/// decoder itself where the file suits NVDEC and the check of this machine
+/// found CUDA working, else software. Asking for software asks no check.
+pub fn decoder_for(tools: &Tools, info: &MediaInfo, decoder: Decoder) -> Decoder {
+    if decoder != Decoder::Cpu && nvdec_suits(info) && cuda_works(tools) { decoder } else { Decoder::Cpu }
+}
+
 /// [`decode_samples`] with `decoder`. NVDEC is tried only where the check of
 /// this machine found CUDA working ([`Tools::caps`]): a driver that failed or
 /// hung there isn't started again, as nothing but a cancel would end a
@@ -192,7 +199,8 @@ pub fn decode_samples_with(
     mut on_frame: impl FnMut(FrameIdx, &[u8]) -> MediaResult<bool>,
 ) -> MediaResult<u32> {
     assert!(step > 0);
-    if decoder == Decoder::Cpu || !nvdec_suits(src.info) || !cuda_works(tools) {
+    let decoder = decoder_for(tools, src.info, decoder);
+    if decoder == Decoder::Cpu {
         return decode_samples(tools, src, from, step, (w, h), cancel, on_frame);
     }
     let mut chain: Vec<String> = Vec::new();
@@ -572,6 +580,26 @@ mod tests {
             assert!(!starts_the_driver(Caps { decode: Some(elsewhere), ..Caps::default() }, decoder));
             assert!(starts_the_driver(cuda(), decoder));
         }
+    }
+
+    /// What a job says it decodes on is what it starts on: software where
+    /// the check refused CUDA or the file doesn't suit NVDEC, and without
+    /// the check when software was asked for.
+    #[test]
+    fn the_decoder_named_is_the_one_a_decode_starts() {
+        let (info, _) = hundred_frames();
+        let dir = tempfile::tempdir().unwrap();
+        let (refused, works) =
+            (Tools::hung(dir.path()).with_caps(Caps::default()), Tools::hung(dir.path()).with_caps(cuda()));
+        for decoder in [Decoder::Nvdec, Decoder::NvdecOn(1)] {
+            assert_eq!(decoder_for(&works, &info, decoder), decoder);
+            assert_eq!(decoder_for(&refused, &info, decoder), Decoder::Cpu);
+            let mut av1 = info.clone();
+            av1.video.codec = "av1".into();
+            assert_eq!(decoder_for(&works, &av1, decoder), Decoder::Cpu);
+        }
+        // A check that would hang is never reached.
+        assert_eq!(decoder_for(&Tools::hung(dir.path()), &info, Decoder::Cpu), Decoder::Cpu);
     }
 
     /// A decode nobody cancels still runs to its end.

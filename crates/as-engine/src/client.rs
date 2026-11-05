@@ -453,8 +453,8 @@ impl Engine {
         self.devices.lock().as_ref().is_some_and(|d| !d.on_cpu().is_empty())
     }
 
-    /// Where the last job with a choice (Fast Scan) decoded, as its engine
-    /// said; `None` before one did.
+    /// Where the last job with a choice (Fast Scan) started decoding, as
+    /// its engine said; `None` before one did.
     pub fn decoder(&self) -> Option<Decoder> {
         *self.decoder.lock()
     }

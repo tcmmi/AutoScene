@@ -150,8 +150,11 @@ pub enum Reply {
         preferred: String,
         models: Vec<ModelDevice>,
     },
-    /// Where job `id` decodes, for a job that has a choice (Fast Scan), said
-    /// before its models load.
+    /// Where job `id` starts decoding, for a job that has a choice (Fast
+    /// Scan), said before its models load: software, whatever the choice,
+    /// where the file or this machine's check rule NVDEC out
+    /// (`frames::decoder_for`). A decode that fails on the GPU part way goes
+    /// on in software without another word.
     Decoding {
         id: u64,
         decoder: Decoder,

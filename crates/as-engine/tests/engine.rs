@@ -386,6 +386,16 @@ fn a_fast_scan_job_decodes_where_the_choice_says() {
     if hw.gpu().filter(nvidia).is_some() && hw.gpus.iter().filter(nvidia).count() == 1 {
         assert_eq!(decoded(&auto, fast(), &as_models::ids::FAST_FACES), Some(Decoder::Nvdec));
     }
+    // A file NVDEC doesn't take runs in software, and the job says so, on
+    // any machine and whatever the engine would choose.
+    let av1 = || {
+        let mut job = fast();
+        job.info.video.codec = "av1".into();
+        job
+    };
+    assert_eq!(decoded(&auto, av1(), &as_models::ids::FAST_FACES), Some(Decoder::Cpu));
+    let anime_av1 = FacesInput { anime: true, ..av1() };
+    assert_eq!(decoded(&auto, anime_av1, &as_models::ids::ANIME), Some(Decoder::Cpu));
 }
 
 fn face_chunks_tile(engine: &Engine, m: &Media, job: FacesInput) {

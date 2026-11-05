@@ -763,8 +763,9 @@ fn run_fast_faces(
     if job.known.is_some() || job.bodies {
         return Err(AnalysisError::Internal("Fast Scan looks for faces alone".into()));
     }
-    let params = FastParams { decoder: models.decoder(rt), ..FastParams::default() };
-    out.send(&Reply::Decoding { id: job.id, decoder: params.decoder });
+    let decoder = frames::decoder_for(tools, &job.info, models.decoder(rt));
+    let params = FastParams { decoder, ..FastParams::default() };
+    out.send(&Reply::Decoding { id: job.id, decoder });
     models.load_fast(rt, fast::frame_size(&job.info, &params))?;
     let (detector, embedder) = (models.yunet.as_mut().expect("loaded"), models.sface.as_mut().expect("loaded"));
     let device = detector.device();
@@ -830,7 +831,10 @@ fn run_anime_faces(
         return Err(AnalysisError::Internal("the anime pass looks for characters alone".into()));
     }
     let params = anime::Params::anime();
-    let fast_params = job.fast.then(|| FastParams { decoder: models.decoder(rt), ..FastParams::anime() });
+    let fast_params = job.fast.then(|| {
+        let decoder = frames::decoder_for(tools, &job.info, models.decoder(rt));
+        FastParams { decoder, ..FastParams::anime() }
+    });
     if let Some(p) = &fast_params {
         out.send(&Reply::Decoding { id: job.id, decoder: p.decoder });
     }

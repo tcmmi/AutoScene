@@ -1,0 +1,18 @@
+{
+  "errorState": {
+    "title": "Nu s-a putut încărca",
+    "generic": "Ceva nu a mers bine la afișare.",
+    "openLogs": "Deschide jurnalele"
+  },
+  "search": {
+    "clear": "Șterge căutarea"
+  },
+  "shelf": {
+    "back": "Derulează înapoi",
+    "on": "Derulează mai departe"
+  },
+  "topbar": {
+    "showRail": "Arată bara laterală",
+    "back": "Înapoi la {{place}}"
+  }
+}

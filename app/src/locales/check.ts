@@ -1,7 +1,9 @@
-// Checks a catalog's values can render: tags `<Trans>` can fill, no empty
-// text, and a plugin can't lead its own toast. The full per-language checks
-// (keys, plural forms, variables, meta hashes) join with the Romanian catalog
-// (docs/DESIGN.md, Copy).
+// Checks a catalog's values can render, and that a translation is the English's
+// translation: tags `<Trans>` can fill, no empty text, a plugin can't lead its
+// own toast (`catalogProblems`), the plural forms a language has, the keys,
+// variables and tags of the English, and the hash of the English each entry
+// was made from (`translationProblems`; docs/DESIGN.md, Copy, and
+// docs/TRANSLATING.md).
 
 /** Tag names a message may use for `<Trans components>`. An HTML void name (`<link>`, `<br>`) would render empty. */
 export const TRANS_TAGS = ["b", "strong", "em", "mono", "key", "x", "go"] as const
@@ -48,4 +50,132 @@ export function catalogProblems(bundle: unknown, prefix = ""): string[] {
     return Object.entries(bundle).flatMap(([k, v]) => catalogProblems(v, prefix ? `${prefix}.${k}` : k))
   }
   return [`${prefix}: not text`]
+}
+
+type Words = Record<string, unknown>
+/** A language's catalog: `{ cast: { … }, backend: { … } }`. */
+export type Bundle = Record<string, Words>
+
+/** What `ro/meta.json` says of one message: who stands behind it, and the English it was made from. */
+export interface MetaEntry {
+  state: "draft" | "reviewed" | "stale"
+  /** `messageHash` of the English when the translation was made or checked. */
+  en: string
+  /** A stale entry's old translation, kept for the translator; the catalog has no text for it, so the app shows English. */
+  was?: string
+}
+export type Meta = Record<string, MetaEntry>
+
+const FORMS = ["zero", "one", "two", "few", "many", "other"]
+const FORM_SUFFIX = /_(zero|one|two|few|many|other)$/
+
+/** Every message of a catalog by `ns:path`, its texts by form: `""` for a plain text, else the plural form's name. */
+export function messagesOf(bundle: Bundle): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>()
+  const walk = (value: unknown, key: string) => {
+    if (typeof value === "string") {
+      const form = FORM_SUFFIX.exec(key)?.[1] ?? ""
+      const base = form ? key.slice(0, -form.length - 1) : key
+      if (!out.has(base)) out.set(base, new Map())
+      out.get(base)?.set(form, value)
+    } else if (value && typeof value === "object") {
+      for (const [k, v] of Object.entries(value)) walk(v, key.endsWith(":") ? `${key}${k}` : `${key}.${k}`)
+    }
+  }
+  for (const [ns, words] of Object.entries(bundle)) walk(words, `${ns}:`)
+  return out
+}
+
+/**
+ * The 8 letters a translation's meta entry holds of its English: FNV-1a over the message's texts, plural
+ * forms in the order of the CLDR (`one`, then `other`), so an edit to any of them changes it.
+ */
+export function messageHash(forms: ReadonlyMap<string, string>): string {
+  const text = FORMS.filter((f) => forms.has(f))
+    .map((f) => forms.get(f))
+    .concat(forms.get("") ?? [])
+    .join("\n")
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
+  return (h >>> 0).toString(16).padStart(8, "0")
+}
+
+/** Every `{{variable, format}}` and `$t(key)` of a text, written the same way for any spacing, in a fixed order. */
+const placeholders = (text: string): string =>
+  (text.match(/\{\{[^}]*\}\}|\$t\([^)]*\)/g) ?? [])
+    .map((p) => p.replace(/\s+/g, ""))
+    .sort()
+    .join(" ")
+/** Every tag of a text, `<b>`, `</b>`, `<what/>`, in a fixed order. */
+const tagsOf = (text: string): string => (text.match(/<\/?[A-Za-z][\w-]*\s*\/?>/g) ?? []).sort().join(" ")
+
+/**
+ * Plural forms: a message with plural forms has exactly the language's (`Intl.PluralRules`: en `one`, `other`;
+ * ro `one`, `few`, `other`). A plain text may sit beside them under the same key (`hide`, `hide_one`): it is
+ * what `t()` reads without a count.
+ */
+export function pluralProblems(lang: string, bundle: Bundle): string[] {
+  const want = new Intl.PluralRules(lang).resolvedOptions().pluralCategories.toSorted()
+  const problems: string[] = []
+  for (const [key, forms] of messagesOf(bundle)) {
+    const have = [...forms.keys()].filter((f) => f !== "").toSorted()
+    if (have.length > 0 && have.join() !== want.join()) problems.push(`${key}: plural forms ${have.join(" ")}, ${lang} has ${want.join(" ")}`)
+  }
+  return problems
+}
+
+/** Letters a language never writes: Romanian has the comma below (ș ț), never the cedilla of old fonts (ş ţ). */
+const FORBIDDEN: Record<string, { letters: RegExp; why: string }> = {
+  ro: { letters: /[\u015e\u015f\u0162\u0163]/, why: "cedilla, Romanian writes the comma below (ș ț Ș Ț)" },
+}
+
+/**
+ * What a translation breaks against the English it answers, as `"ns:key: what"`: a key the English has and it
+ * hasn't (unless `meta` marks it stale, and then it has no text), a key the English hasn't, other variables,
+ * formats or tags, forbidden letters, and a `meta` entry that is missing, unknown or made from other English.
+ * A plural form is held to the English form of its name, `other` when the English has none (`few`).
+ */
+export function translationProblems(lang: string, english: Bundle, bundle: Bundle, meta: Meta): string[] {
+  const en = messagesOf(english)
+  const tr = messagesOf(bundle)
+  const problems: string[] = []
+  for (const [key, forms] of tr) {
+    const source = en.get(key)
+    if (!source) {
+      problems.push(`${key}: not in the English`)
+      continue
+    }
+    const shapes = (m: ReadonlyMap<string, string>) => `${m.has("")} ${[...m.keys()].some((f) => f !== "")}`
+    if (shapes(forms) !== shapes(source)) {
+      problems.push(`${key}: a text and plural forms, the English has other ones`)
+      continue
+    }
+    for (const [form, text] of forms) {
+      const english = source.get(form) ?? source.get("other") ?? ""
+      const at = form ? `${key}_${form}` : key
+      if (placeholders(text) !== placeholders(english)) problems.push(`${at}: variables are [${placeholders(text)}], the English's [${placeholders(english)}]`)
+      if (tagsOf(text) !== tagsOf(english)) problems.push(`${at}: tags are [${tagsOf(text)}], the English's [${tagsOf(english)}]`)
+      const bad = FORBIDDEN[lang]
+      if (bad?.letters.test(text)) problems.push(`${at}: ${bad.why}`)
+    }
+  }
+  for (const [key, source] of en) {
+    const entry = meta[key]
+    const has = tr.has(key)
+    if (!has && entry?.state !== "stale") problems.push(`${key}: missing`)
+    if (!entry) {
+      if (has) problems.push(`${key}: no meta entry`)
+      continue
+    }
+    if (entry.state === "stale") {
+      if (has) problems.push(`${key}: stale, so it has no text`)
+      if (typeof entry.was !== "string" || entry.was.trim() === "") problems.push(`${key}: stale without its old text (was)`)
+    } else if (entry.state !== "draft" && entry.state !== "reviewed") {
+      problems.push(`${key}: meta state ${JSON.stringify(entry.state)}`)
+    } else if (entry.was !== undefined) problems.push(`${key}: ${entry.state} with an old text (was)`)
+    const now = messageHash(source)
+    if (entry.en !== now) problems.push(`${key}: the English changed (meta ${entry.en}, now ${now}): update the translation and its hash, or mark it stale`)
+  }
+  for (const key of Object.keys(meta)) if (!en.has(key)) problems.push(`${key}: meta entry for a key the English hasn't`)
+  return problems
 }

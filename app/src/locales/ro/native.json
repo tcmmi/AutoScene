@@ -1,0 +1,134 @@
+{
+  "menu": {
+    "app": {
+      "title": "AutoScene",
+      "about": "Despre AutoScene",
+      "checkUpdates": "Caută actualizări…",
+      "settings": "Setări…",
+      "services": "Servicii",
+      "hide": "Ascunde AutoScene",
+      "hideOthers": "Ascunde celelalte",
+      "showAll": "Arată tot",
+      "quit": "Ieși din AutoScene"
+    },
+    "file": {
+      "title": "Fișier",
+      "newProject": "Proiect nou…",
+      "addMedia": "Adaugă episoade…",
+      "export": "Exportă clipul…",
+      "reveal": "Arată în Finder"
+    },
+    "edit": {
+      "title": "Editare",
+      "undo": "Anulează",
+      "redo": "Refă",
+      "cut": "Taie",
+      "copy": "Copiază",
+      "paste": "Lipește",
+      "selectAll": "Selectează tot",
+      "copyTimecodes": "Copiază timecode-urile"
+    },
+    "view": {
+      "title": "Afișare",
+      "commandPalette": "Paleta de comenzi…",
+      "library": "Bibliotecă",
+      "episodes": "Episoade",
+      "exports": "Exporturi",
+      "activity": "Activitate",
+      "plugins": "Pluginuri",
+      "toggleSidebar": "Arată/ascunde bara laterală",
+      "fullScreen": "Ecran complet"
+    },
+    "window": {
+      "title": "Fereastră",
+      "minimize": "Minimizează",
+      "zoom": "Zoom",
+      "close": "Închide fereastra"
+    },
+    "help": {
+      "title": "Ajutor",
+      "logs": "Arată jurnalele în Finder"
+    }
+  },
+  "dialog": {
+    "cancel": "Anulează",
+    "libraryFailed": {
+      "title": "AutoScene",
+      "text": "AutoScene nu a putut deschide biblioteca.\n\n{{why}}\n\nJurnalul este în {{path}}"
+    },
+    "openLink": {
+      "title": "Deschizi acest link în browser?",
+      "yes": "Deschide",
+      "page": "Pluginul „{{name}}” cere să deschidă:\n\n{{url}}",
+      "source": "Pluginul „{{name}}” trimite către codul sursă:\n\n{{url}}"
+    },
+    "allowUnreviewed": {
+      "title": "Permiți pluginuri pe care AutoScene nu le-a revizuit?",
+      "text": "Pluginurile rulează cu drepturile tale de utilizator: pot citi, schimba și trimite orice poți și tu. Instalează doar pluginuri de la oameni în care ai încredere.\n\nDacă dezactivezi din nou opțiunea, rulările lor se opresc. Ce a configurat un plugin în afara AutoScene nu se anulează.",
+      "yes": "Permite-le"
+    },
+    "hung": {
+      "title": "Pagina pluginului „{{name}}” nu mai răspunde.",
+      "text": "Închide pagina ca să folosești din nou AutoScene sau așteaptă.",
+      "close": "Închide-o",
+      "wait": "Așteaptă"
+    },
+    "files": {
+      "save": "Pluginul „{{name}}” salvează un fișier",
+      "open": "Pluginul „{{name}}” cere un fișier",
+      "savePack": "Pluginul „{{name}}” salvează scenepackul pentru {{character}}"
+    },
+    "install": {
+      "install": {
+        "title": "Instalezi {{name}}?",
+        "yes": "Instalează"
+      },
+      "update": {
+        "title": "Actualizezi {{name}}?",
+        "yes": "Actualizează"
+      },
+      "load": {
+        "title": "Încarci {{name}}?",
+        "yes": "Încarcă"
+      },
+      "reviewed": "AutoScene a revizuit această versiune.",
+      "notReviewed": "AutoScene nu l-a revizuit.",
+      "runs": {
+        "program": "Pluginul rulează cu drepturile tale de utilizator: poate citi, schimba și trimite orice poți și tu.",
+        "sandbox": "Pluginul rulează într-un mediu izolat: vede doar propriul folder și ce cere.",
+        "pagesOnly": "Pluginul nu rulează niciun program: paginile rulează într-un mediu izolat.",
+        "leftSandbox": "Versiunea instalată rula într-un mediu izolat. Această versiune rulează cu drepturile tale de utilizator: poate citi, schimba și trimite orice poți și tu.",
+        "startsProgram": "Versiunea instalată nu rulează niciun program. Această versiune rulează unul cu drepturile tale de utilizator: poate citi, schimba și trimite orice poți și tu.",
+        "startsSandboxed": "Versiunea instalată nu rulează niciun program. Această versiune rulează unul într-un mediu izolat: vede doar propriul folder și ce cere.",
+        "becomesService": "Acum programul rămâne pornit cât timp pagina este deschisă."
+      },
+      "new": "Noutăți în această versiune:",
+      "id": "Id: {{id}}",
+      "version": "Versiune: {{version}}",
+      "versionOver": "Versiune: {{version}} (este instalată {{installed}})",
+      "by": "Autor: {{author}}",
+      "saysSigned": "Spune că autorul este: {{author}}\nSemnat cu cheia {{key}}",
+      "saysUnsigned": "Spune că autorul este: {{author}}\nNesemnat",
+      "folder": "Folder: {{path}}"
+    },
+    "permission": {
+      "exportsRead": "Poate citi clipurile exportate",
+      "exportsWrite": "Poate schimba sau adăuga fișiere lângă clipurile exportate",
+      "projectRead": "Poate citi proiectul: episoadele și personajele",
+      "network": "Poate comunica prin internet",
+      "host": "Poate comunica cu {{host}}",
+      "sandbox": {
+        "exportsRead": "Poate citi fișierele din folderul exportului",
+        "exportsWrite": "Poate citi, schimba și șterge fișiere din folderul exportului",
+        "projectRead": "Poate citi folderul proiectului",
+        "networkNoSite": "Poate folosi rețeaua, dar nu numește niciun site: orice cerere este refuzată.",
+        "network": "Poate comunica cu aceste site-uri, doar prin https:",
+        "networkSites": "Poate comunica cu aceste site-uri, doar prin https: {{sites}}"
+      }
+    }
+  },
+  "file": {
+    "unnamedCharacter": "Personajul {{n}}",
+    "packLabel": "{{character}} · scenepack"
+  }
+}

@@ -1,0 +1,237 @@
+{
+  "shots_one": "{{count}} plan",
+  "shots_few": "{{count}} planuri",
+  "shots_other": "{{count}} de planuri",
+  "episodes_one": "{{count}} episod",
+  "episodes_few": "{{count}} episoade",
+  "episodes_other": "{{count}} de episoade",
+  "reason": {
+    "missing": "Fișier lipsă",
+    "episode": "Alt episod",
+    "tiny": "Plan-fulger",
+    "short": "Prea scurt",
+    "long": "Prea lung",
+    "size": "Altă mărime",
+    "notSolo": "Cu alte personaje",
+    "faceless": "Fără față",
+    "limit": "Peste limită",
+    "removed": "Scos",
+    "plugin": "Filtru de plugin",
+    "other": "Omis"
+  },
+  "size": {
+    "extremeCloseUp": { "label": "Gros-plan", "short": "GP" },
+    "closeUp": { "label": "Prim-plan", "short": "PP" },
+    "mediumCloseUp": { "label": "Plan apropiat", "short": "PA" },
+    "medium": { "label": "Plan mediu", "short": "PM" },
+    "wide": { "label": "Plan general", "short": "PG" }
+  },
+  "length": {
+    "any": "Orice durată",
+    "between": "Între {{min}} și {{max}} s",
+    "orLonger": "{{min}} s sau mai mult",
+    "upTo": "Până la {{max}} s"
+  },
+  "check": {
+    "some_one": "Se verifică {{checked}} din {{total}} plan",
+    "some_few": "Se verifică {{checked}} din {{total}} planuri",
+    "some_other": "Se verifică {{checked}} din {{total}} de planuri",
+    "all_one": "Se verifică {{total}} plan",
+    "all_few": "Se verifică {{total}} planuri",
+    "all_other": "Se verifică {{total}} de planuri",
+    "failed_one": "Nu s-a putut verifica {{count}} plan",
+    "failed_few": "Nu s-au putut verifica {{count}} planuri",
+    "failed_other": "Nu s-au putut verifica {{count}} de planuri"
+  },
+  "save": {
+    "heading": "Salvare cu un plugin",
+    "waitsForCheck": "Salvarea cu un plugin așteaptă verificarea",
+    "needsShot": "Salvarea cu un plugin are nevoie de un plan în scenepack",
+    "waitsForPack": "Salvarea cu un plugin așteaptă scenepackul"
+  },
+  "namePart": {
+    "series": { "label": "Serial", "hint": "Titlul proiectului" },
+    "character": { "label": "Personaj", "hint": "Numele personajului" },
+    "episode": { "label": "Episod", "hint": "Episodul, ca S01E03, sau numele fișierului" },
+    "index": { "label": "Număr", "hint": "Locul planului în scenepack: 001, 002, …" },
+    "tc": { "label": "Timecode", "hint": "Unde începe planul, ca 00-12-03-05" },
+    "frame": { "label": "Cadru", "hint": "Cadrul de la care începe planul, ca 17357" }
+  },
+  "card": {
+    "added": "Adăugat",
+    "hint": {
+      "faceless": "fața nu se vede",
+      "wouldLeaveOut": "„{{title}}” ar omite planul",
+      "takeOut": "Dă clic pentru a-l scoate",
+      "takeIn": "Dă clic pentru a-l include"
+    },
+    "before": {
+      "sure": "„{{title}}” a spus asta cu setările de dinainte",
+      "maybe": "„{{title}}” poate a spus asta cu setările de dinainte"
+    },
+    "aria": {
+      "shot": "Plan",
+      "shotAt": "Plan la {{at}}",
+      "withoutFace": "fără față",
+      "inPack": "în scenepack",
+      "leftOut": "omis: {{why}}"
+    },
+    "watchAria": "Vezi planul",
+    "watchAriaAt": "Vezi planul de la {{at}}",
+    "watch": "Vezi planul",
+    "remove": "Elimină din scenepack",
+    "add": "Adaugă în scenepack",
+    "handBack": "Lasă filtrele să decidă",
+    "notThem": "Nu este {{name}}",
+    "notThemAnon": "Nu este personajul",
+    "notPerson": "Nu este o persoană",
+    "copyTimecode": "Copiază timecode-ul"
+  },
+  "filters": {
+    "title": "Filtre",
+    "titleOn_one": "Filtre, {{count}} activ",
+    "titleOn_few": "Filtre, {{count}} active",
+    "titleOn_other": "Filtre, {{count}} active",
+    "order": {
+      "aria": "Ordine",
+      "episodes": "Ordinea episoadelor",
+      "best": "Întâi cele mai bune"
+    },
+    "sizes": "Mărimi de plan",
+    "length": "Durată",
+    "episodes": "Episoade",
+    "limit": "Limită",
+    "episodesOf": "{{n}} din {{total}}",
+    "all": "Toate",
+    "allEpisodes": "Toate episoadele",
+    "noLimit": "Fără limită",
+    "best": "Top {{n}}",
+    "theBest": "Cele mai bune {{n}}",
+    "solo": "Doar personajul în plan",
+    "skipTiny": "Omite planurile-fulger",
+    "withFace": "Doar cu fața vizibilă",
+    "withFaceHint": "Omite planurile găsite după corp",
+    "noHandles": "Fără margini",
+    "handles": "Margini {{n}} c",
+    "framesAround_one": "{{count}} cadru înainte și după",
+    "framesAround_few": "{{count}} cadre înainte și după",
+    "framesAround_other": "{{count}} de cadre înainte și după",
+    "reset": "Resetează filtrele",
+    "plugin": {
+      "gone": "Pluginul acestui filtru nu mai există sau nu îl mai are. Dezactivează filtrul.",
+      "off": "Pluginul „{{plugin}}” este dezactivat. Activează-l în Pluginuri sau dezactivează filtrul.",
+      "says": "Pluginul „{{plugin}}”: {{what}}",
+      "pluginOff": "Plugin dezactivat",
+      "checkingAria": "Se verifică {{title}}",
+      "failedAria": "Nu s-a putut verifica {{title}}"
+    }
+  },
+  "footer": {
+    "about": "circa {{size}}",
+    "aboutIn": "circa {{size}} ({{format}})",
+    "failedHint": "Până sunt verificate, rămân cum a spus filtrul cu setările de dinainte sau rămân incluse, dacă nu a spus nimic. Exportul le preia așa cum apar în grilă.",
+    "picksByHand_one": "{{count}} alegere manuală",
+    "picksByHand_few": "{{count}} alegeri manuale",
+    "picksByHand_other": "{{count}} de alegeri manuale",
+    "handBackAll": "Lasă filtrele să decidă pentru toate planurile",
+    "options": "Opțiunile scenepackului",
+    "showExport": "Arată în Activitate",
+    "exportQueued": "Export în așteptare",
+    "exporting": "Se exportă… <x>{{percent}}</x>",
+    "waitsForCheck": "Așteaptă verificarea",
+    "exportWaitsAria": "Export, așteaptă verificarea",
+    "exportTooltip": "Exportă scenepackul",
+    "export": "Exportă"
+  },
+  "page": {
+    "title": "{{name}} · Scenepack",
+    "titleBare": "Scenepack",
+    "characterFallback": "Personaj",
+    "eyebrow": "Scenepack",
+    "header": "{{shots}} în {{episodes}} · în scenepack intră cele luminoase",
+    "gone": {
+      "title": "Personajul nu mai este în distribuție",
+      "description": "Este posibil să fi fost unit cu alt personaj.",
+      "back": "Înapoi la distribuție"
+    },
+    "show": {
+      "aria": "Arată",
+      "all": "Toate {{n}}",
+      "in": "În scenepack {{n}}",
+      "out": "Omise {{n}}"
+    },
+    "hint": "Dă clic pentru a include sau a scoate un plan · Shift pentru toate de la ultimul · Enter pentru a-l vedea",
+    "loadFailed": "Nu s-a putut crea scenepackul",
+    "reanalysing": "Episodul se analizează din nou; planurile revin când se termină analiza.",
+    "noShots": "Încă nu există planuri cu acest personaj.",
+    "takesNone": "Scenepackul nu include niciun plan. Relaxează un filtru sau dă clic pe planuri pentru a le include.",
+    "takesAll": "Scenepackul include toate planurile.",
+    "menu": {
+      "export": "Exportă scenepackul…",
+      "takeAll": "Include toate planurile",
+      "leaveAll": "Scoate toate planurile",
+      "invert": "Inversează scenepackul",
+      "handBackAll": "Lasă filtrele să decidă pentru toate planurile",
+      "show": "Arată",
+      "showAll": "Toate planurile",
+      "showIn": "În scenepack",
+      "showOut": "Omise"
+    }
+  },
+  "toast": {
+    "tookAll": "Toate planurile incluse",
+    "leftAll": "Toate planurile scoase",
+    "inverted": "Scenepack inversat",
+    "handedBack_one": "Filtrele decid din nou pentru {{count}} plan",
+    "handedBack_few": "Filtrele decid din nou pentru {{count}} planuri",
+    "handedBack_other": "Filtrele decid din nou pentru {{count}} de planuri",
+    "limitLeavesAlone": "Alese manual: limita nu se aplică.",
+    "notThem": "Nu este {{name}}: scos din scenepack",
+    "notThemAnon": "Nu este personajul: scos din scenepack",
+    "notPerson": "Nu este o persoană: scos din scenepack",
+    "checkFailed": "Nu s-au putut verifica planurile",
+    "changeFailed": "Nu s-a putut schimba scenepackul"
+  },
+  "export": {
+    "title": "Exportă scenepackul pentru {{name}}",
+    "descriptionOneFile_one": "{{count}} plan într-un singur video, tăiat exact la cadru și comparat cu sursa.",
+    "descriptionOneFile_few": "{{count}} planuri într-un singur video, fiecare tăiat exact la cadru și comparat cu sursa.",
+    "descriptionOneFile_other": "{{count}} de planuri într-un singur video, fiecare tăiat exact la cadru și comparat cu sursa.",
+    "description_one": "{{count}} plan, tăiat exact la cadru și comparat cu sursa.",
+    "description_few": "{{count}} planuri, fiecare tăiat exact la cadru și comparat cu sursa.",
+    "description_other": "{{count}} de planuri, fiecare tăiat exact la cadru și comparat cu sursa.",
+    "analysing": {
+      "episode_one": "{{count}} episod este încă în analiză. Planurile cu {{name}} găsite ulterior nu vor intra în acest export.",
+      "episode_few": "{{count}} episoade sunt încă în analiză. Planurile cu {{name}} găsite ulterior nu vor intra în acest export.",
+      "episode_other": "{{count}} de episoade sunt încă în analiză. Planurile cu {{name}} găsite ulterior nu vor intra în acest export.",
+      "file_one": "{{count}} fișier este încă în analiză. Planurile cu {{name}} găsite ulterior nu vor intra în acest export.",
+      "file_few": "{{count}} fișiere sunt încă în analiză. Planurile cu {{name}} găsite ulterior nu vor intra în acest export.",
+      "file_other": "{{count}} de fișiere sunt încă în analiză. Planurile cu {{name}} găsite ulterior nu vor intra în acest export."
+    },
+    "oneFile": {
+      "label": "Toate planurile într-un singur fișier",
+      "description": "Un singur video cu câte un capitol pentru fiecare plan, în ordinea din scenepack."
+    },
+    "fileName": "Numele fișierului",
+    "chapterNames": "Numele capitolelor",
+    "fileNames": "Numele fișierelor",
+    "nameParts": "Părți ale numelui",
+    "freeSpace": "Planurile se randează mai întâi, așa că este nevoie de spațiu liber suplimentar o vreme.",
+    "folder": "Într-un folder cu numele {{name}}",
+    "submit_one": "Exportă {{count}} plan",
+    "submit_few": "Exportă {{count}} planuri",
+    "submit_other": "Exportă {{count}} de planuri",
+    "submitOneFile_one": "Exportă {{count}} plan într-un singur fișier",
+    "submitOneFile_few": "Exportă {{count}} planuri într-un singur fișier",
+    "submitOneFile_other": "Exportă {{count}} de planuri într-un singur fișier",
+    "started_one": "Se exportă {{count}} plan cu {{name}}",
+    "started_few": "Se exportă {{count}} planuri cu {{name}}",
+    "started_other": "Se exportă {{count}} de planuri cu {{name}}",
+    "startedOneFile_one": "Se exportă {{count}} plan cu {{name}} într-un singur fișier",
+    "startedOneFile_few": "Se exportă {{count}} planuri cu {{name}} într-un singur fișier",
+    "startedOneFile_other": "Se exportă {{count}} de planuri cu {{name}} într-un singur fișier",
+    "more_one": "și încă {{count}}",
+    "more_few": "și încă {{count}}",
+    "more_other": "și încă {{count}}"
+  }
+}

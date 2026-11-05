@@ -1,0 +1,278 @@
+{
+  "place": {
+    "library": "Bibliotecă",
+    "settings": "Setări",
+    "plugins": "Pluginuri",
+    "activity": "Activitate"
+  },
+  "menu": {
+    "back": "Înapoi",
+    "copy": "Copiază",
+    "commandPalette": "Paleta de comenzi…",
+    "newProject": "Proiect nou…",
+    "showRail": "Arată bara laterală",
+    "hideRail": "Ascunde bara laterală",
+    "shortcuts": "Comenzi rapide",
+    "reloadWindow": "Reîncarcă fereastra",
+    "checkUpdates": "Caută actualizări",
+    "about": "Despre AutoScene"
+  },
+  "rail": {
+    "label": "Principal",
+    "mark": "Biblioteca AutoScene",
+    "newProject": "Proiect nou",
+    "search": "Caută",
+    "hideActivity": "Ascunde activitatea",
+    "showActivity": "Arată activitatea",
+    "settings": {
+      "general": "General",
+      "shortcuts": "Comenzi rapide",
+      "updates": "Actualizări"
+    },
+    "page": {
+      "open": "Deschide",
+      "settings": "Setări",
+      "log": "Arată jurnalul"
+    },
+    "indexing": "{{size}} · se indexează"
+  },
+  "project": {
+    "movie": "Film",
+    "episodes_one": "{{n}} episod",
+    "episodes_few": "{{n}} episoade",
+    "episodes_other": "{{n}} de episoade"
+  },
+  "projectFacts": {
+    "movie_one": "Film · {{footage}} · {{n}} fișier",
+    "movie_few": "Film · {{footage}} · {{n}} fișiere",
+    "movie_other": "Film · {{footage}} · {{n}} de fișiere",
+    "series_one": "Serial · {{footage}} · {{n}} episod",
+    "series_few": "Serial · {{footage}} · {{n}} episoade",
+    "series_other": "Serial · {{footage}} · {{n}} de episoade"
+  },
+  "palette": {
+    "title": "Paleta de comenzi",
+    "searchInProject": "Caută personaje, episoade, proiecte și comenzi",
+    "search": "Caută proiecte, locuri și comenzi",
+    "empty": "Nu s-a găsit nimic.",
+    "group": {
+      "projects": "Proiecte",
+      "plugins": "Pluginuri",
+      "actions": "Acțiuni",
+      "goTo": "Mergi la",
+      "characters": "Personaje",
+      "episodes": "Episoade"
+    },
+    "here": {
+      "overview": "Rezumat",
+      "files": "Fișiere",
+      "episodes": "Episoade",
+      "cast": "Distribuție",
+      "exports": "Exporturi"
+    },
+    "go": {
+      "library": "Bibliotecă",
+      "settings": "Setări",
+      "shortcuts": "Comenzi rapide",
+      "plugins": "Pluginuri",
+      "browsePlugins": "Răsfoiește pluginurile",
+      "about": "Despre AutoScene"
+    },
+    "action": {
+      "newProject": "Proiect nou…",
+      "activity": "Arată activitatea",
+      "rail": "Arată sau ascunde bara laterală",
+      "updates": "Caută actualizări",
+      "pluginUpdates": "Caută actualizări de pluginuri",
+      "logs": "Deschide folderul de jurnale"
+    },
+    "openPage": "Deschide {{title}}",
+    "unnamed": "Personajul {{number}}",
+    "unnamedWord": "fără nume",
+    "character_one": "{{time}} · {{count}} plan",
+    "character_few": "{{time}} · {{count}} planuri",
+    "character_other": "{{time}} · {{count}} de planuri",
+    "fileMissing": "Fișier lipsă",
+    "episodeWord": "Episodul {{number}}"
+  },
+  "textMenu": {
+    "label": "Editare",
+    "undo": "Anulează",
+    "redo": "Refă",
+    "cut": "Taie",
+    "copy": "Copiază",
+    "paste": "Lipește",
+    "delete": "Șterge",
+    "selectAll": "Selectează tot"
+  },
+  "window": {
+    "minimize": "Minimizează",
+    "maximize": "Maximizează",
+    "restore": "Restaurează"
+  },
+  "crumb": {
+    "plugins": "Pluginuri",
+    "cast": "Distribuție",
+    "review": "Distribuție · Verificare",
+    "exports": "Exporturi",
+    "settings": "Setări · {{section}}"
+  },
+  "activity": {
+    "title": "Activitate",
+    "clearFinished": "Elimină ce s-a terminat",
+    "clearFailed": "Nu s-a putut goli lista",
+    "empty": {
+      "title": "Nu rulează nimic",
+      "description": "Indexarea, previzualizările și exporturile apar aici, cu progresul în timp real, cât timp rulează."
+    },
+    "group": {
+      "inProgress": "În lucru",
+      "finished": "Finalizate"
+    },
+    "done": "Gata",
+    "failed": "A eșuat",
+    "cancelled": "Anulat",
+    "waiting": "În așteptare",
+    "working": "Se lucrează…",
+    "stopJob": "Oprește {{title}}",
+    "cancelJob": "Anulează {{title}}",
+    "stopFailed": "Nu s-a putut opri sarcina",
+    "cancelFailed": "Nu s-a putut anula sarcina",
+    "showExports": "Arată exporturile",
+    "openPlayer": "Deschide în player",
+    "openCast": "Deschide distribuția",
+    "openProject": "Deschide proiectul",
+    "copyError": "Copiază eroarea",
+    "copyMessage": "Copiază mesajul",
+    "nothingRunning": "Nu rulează nimic",
+    "running_one": "{{n}} rulează",
+    "running_few": "{{n}} rulează",
+    "running_other": "{{n}} rulează",
+    "waitingCount_one": "{{n}} în așteptare",
+    "waitingCount_few": "{{n}} în așteptare",
+    "waitingCount_other": "{{n}} în așteptare"
+  },
+  "jobs": {
+    "cancelIndexing": "Anulează indexarea",
+    "cancelAnalysis": "Anulează analiza",
+    "cancelPreview": "Anulează previzualizarea",
+    "stopsFirst": "Mai întâi se oprește ce rulează acum: {{list}}.",
+    "stops": {
+      "indexing": "indexarea",
+      "analysing": "analiza",
+      "preview_one": "crearea unei previzualizări",
+      "preview_few": "crearea previzualizărilor",
+      "preview_other": "crearea previzualizărilor",
+      "export_one": "un export",
+      "export_few": "{{n}} exporturi",
+      "export_other": "{{n}} de exporturi",
+      "pluginRun_one": "o rulare de plugin",
+      "pluginRun_few": "{{n}} rulări de plugin",
+      "pluginRun_other": "{{n}} de rulări de plugin"
+    }
+  },
+  "copy": {
+    "copied": {
+      "timecode": "Timecode copiat",
+      "timecodes": "Timecode-uri copiate",
+      "filePath": "Cale de fișier copiată",
+      "folderPath": "Cale de folder copiată",
+      "path": "Cale copiată",
+      "error": "Eroare copiată",
+      "message": "Mesaj copiat",
+      "pluginId": "ID de plugin copiat"
+    },
+    "failed": {
+      "timecode": "Nu s-a putut copia timecode-ul",
+      "timecodes": "Nu s-au putut copia timecode-urile",
+      "filePath": "Nu s-a putut copia calea fișierului",
+      "folderPath": "Nu s-a putut copia calea folderului",
+      "path": "Nu s-a putut copia calea",
+      "error": "Nu s-a putut copia eroarea",
+      "message": "Nu s-a putut copia mesajul",
+      "pluginId": "Nu s-a putut copia ID-ul pluginului",
+      "other": "Nu s-a putut copia"
+    }
+  },
+  "os": {
+    "revealFailed": "Nu s-a putut arăta",
+    "linkFailed": "Nu s-a putut deschide linkul"
+  },
+  "files": {
+    "added_one": "{{n}} fișier adăugat",
+    "added_few": "{{n}} fișiere adăugate",
+    "added_other": "{{n}} de fișiere adăugate",
+    "nothingNew": "Nimic nou de adăugat",
+    "alreadyIn": "Fișierele sunt deja în proiect",
+    "addFailed": "Nu s-au putut adăuga fișierele"
+  },
+  "events": {
+    "logsFailed": "Nu s-au putut deschide jurnalele",
+    "showInFolder": "Arată în folder",
+    "show": "Arată",
+    "withdrew": "AutoScene a retras pluginul „{{name}}”",
+    "nvidiaFailed": "Nu s-a putut descărca accelerarea NVIDIA",
+    "nvidiaReady": "Accelerarea NVIDIA este gata",
+    "exportDone": "Export finalizat",
+    "exportErrors": "Export finalizat cu erori"
+  },
+  "jobFailed": {
+    "indexing": "Nu s-a putut indexa {{name}}",
+    "analysing": "Nu s-a putut analiza {{name}}"
+  },
+  "update": {
+    "available": "AutoScene {{version}} este disponibil",
+    "simulated": "Simulat",
+    "youHave": "Ai {{current}}",
+    "youHaveDated": "Ai {{current}} · lansat pe {{date}}",
+    "downloading": "{{done}} din {{total}}",
+    "installing": "Se instalează…",
+    "ready": "Instalat. Repornește pentru a finaliza.",
+    "restart": "Repornește acum",
+    "skip": "Omite această versiune",
+    "later": "Amintește-mi mai târziu",
+    "updating": "Se actualizează…",
+    "install": "Actualizează acum",
+    "upToDate": "AutoScene este la zi",
+    "version": "Versiunea {{version}}",
+    "checkFailed": "Nu s-au putut căuta actualizări"
+  },
+  "drop": {
+    "finishReview": "Termină mai întâi revizuirea pluginului.",
+    "packagesNotFiles": "Pachetele de pluginuri nu sunt fișiere de proiect. Închide fereastra și trage-le separat.",
+    "packagesAlone": "Trage pachetele de pluginuri separat.",
+    "mixed": {
+      "heading": "Trage pachetele de pluginuri separat",
+      "hint": "Pachetele și alte fișiere nu se acceptă împreună"
+    },
+    "plugin": {
+      "heading": "Revizuiește un plugin",
+      "hint": "Trage aici pachetul .asp"
+    },
+    "addHere": "Adaugă în acest proiect",
+    "create": "Creează un proiect",
+    "media": "Trage aici un folder de sezon sau fișiere video"
+  },
+  "pluginReview": {
+    "tookTooLong": "Citirea a durat prea mult. Fișierul este pe o unitate care nu este conectată?",
+    "openFailed": "Nu s-a putut deschide {{label}}"
+  },
+  "fastScan": {
+    "title": "Scanarea rapidă este activată",
+    "never": "Nu mai arăta",
+    "turnOff": "Dezactivează scanarea rapidă",
+    "continue": "Continuă",
+    "off": "Scanarea rapidă este dezactivată",
+    "offDescription": "Proiectele noi încep cu scanarea completă.",
+    "offFailed": "Nu s-a putut dezactiva scanarea rapidă",
+    "onFailed": "Nu s-a putut reactiva scanarea rapidă"
+  },
+  "notFound": {
+    "title": "Nu este nimic aici",
+    "description": "Pagina nu mai există. Este posibil ca proiectul sau episodul să fi fost eliminat.",
+    "back": "Înapoi la Bibliotecă"
+  },
+  "routeError": {
+    "title": "Ceva nu a mers bine aici"
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "group": {
+    "global": {
+      "title": "Peste tot",
+      "description": "Lucrează mai repede fără să lași tastatura."
+    },
+    "player": {
+      "title": "Player",
+      "description": "Cât timp este deschis un episod."
+    },
+    "review": {
+      "title": "Verifică fețele",
+      "description": "Răspunde cu o tastă; fiecare răspuns se păstrează."
+    },
+    "cast": {
+      "title": "Distribuție",
+      "description": "Pe pagina Distribuție. {{mod}}-clic selectează și un personaj, iar Shift-clic, toate cele dintre."
+    },
+    "faces": {
+      "title": "Fețele unui personaj",
+      "description": "În vizualizarea Fețe a unui personaj."
+    },
+    "shots": {
+      "title": "Planurile unui personaj",
+      "description": "În vizualizarea Planuri a unui personaj."
+    },
+    "pack": {
+      "title": "Scenepack",
+      "description": "Când alegi planurile unui personaj."
+    }
+  },
+  "global": {
+    "palette": { "name": "Paleta de comenzi" },
+    "activity": { "name": "Arată activitatea" },
+    "sidebar": { "name": "Arată sau ascunde bara laterală" },
+    "settings": { "name": "Setări" },
+    "library": { "name": "Bibliotecă" },
+    "newProject": { "name": "Proiect nou" }
+  },
+  "player": {
+    "playPause": { "name": "Redă / întrerupe" },
+    "shuttle": {
+      "name": "Înapoi / oprește / înainte (repetat: mai repede; oprește ținut: un cadru)",
+      "slots": { "0": "Înapoi", "1": "Oprește", "2": "Înainte" }
+    },
+    "frame": {
+      "name": "Cadrul anterior / următor",
+      "slots": { "0": "Cadrul anterior", "1": "Cadrul următor" }
+    },
+    "second": {
+      "name": "O secundă înapoi / înainte",
+      "slots": { "0": "O secundă înapoi", "1": "O secundă înainte" }
+    },
+    "shot": {
+      "name": "Planul anterior / următor",
+      "slots": { "0": "Planul anterior", "1": "Planul următor" }
+    },
+    "ends": {
+      "name": "Primul / ultimul cadru",
+      "slots": { "0": "Primul cadru", "1": "Ultimul cadru" }
+    },
+    "mark": {
+      "name": "Marchează intrarea / ieșirea",
+      "slots": { "0": "Marchează intrarea", "1": "Marchează ieșirea" }
+    },
+    "goToMark": {
+      "name": "Mergi la intrare / ieșire",
+      "slots": { "0": "Mergi la intrare", "1": "Mergi la ieșire" }
+    },
+    "markShot": { "name": "Marchează planul drept clip" },
+    "clearMarks": { "name": "Șterge intrarea și ieșirea" },
+    "goTo": { "name": "Mergi la un timecode" },
+    "mute": { "name": "Dezactivează sunetul" },
+    "zoomIn": { "name": "Mărește zoomul pe timeline" },
+    "zoomOut": { "name": "Micșorează zoomul pe timeline" },
+    "zoomFit": { "name": "Tot episodul pe timeline" },
+    "export": { "name": "Exportă clipul marcat" }
+  },
+  "review": {
+    "yes": { "name": "Da, este personajul" },
+    "no": { "name": "Nu, altcineva" },
+    "notFace": { "name": "Nu este o față" },
+    "skip": { "name": "Omite deocamdată" },
+    "pick": { "name": "Este personajul 1–9" }
+  },
+  "faces": {
+    "selectAll": { "name": "Selectează toate fețele" },
+    "clearSelection": { "name": "Deselectează tot" }
+  },
+  "shots": {
+    "toggle": { "name": "Arată sau ascunde planurile unui teanc" },
+    "watch": { "name": "Vezi de la primul plan din teanc" },
+    "close": { "name": "Închide teancul deschis" }
+  },
+  "cast": {
+    "selectAll": { "name": "Selectează toate personajele" },
+    "clearSelection": { "name": "Deselectează tot" }
+  },
+  "pack": {
+    "toggle": { "name": "Include sau scoate planul (Shift: toate planurile de la ultimul)" },
+    "watch": { "name": "Vezi planul" },
+    "takeAll": { "name": "Include toate planurile (când sunt toate incluse: scoate-le)" },
+    "leaveAll": { "name": "Scoate toate planurile" },
+    "invert": { "name": "Inversează scenepackul: ce este inclus iese, ce este scos intră" },
+    "export": { "name": "Exportă scenepackul" }
+  },
+  "preset": {
+    "autoscene": { "description": "Tastele cu care vine AutoScene." },
+    "premiere": {
+      "description": "Export cu {{mod}} M, zoom cu = − \\, ștergerea intrării și ieșirii cu {{mod}} Shift X.",
+      "descriptionMac": "Zoom cu = − \\, restul ca în AutoScene."
+    },
+    "resolve": {
+      "description": "Zoom cu {{mod}} = și {{mod}} −."
+    }
+  },
+  "key": {
+    "space": "Space",
+    "esc": "Esc",
+    "enter": "Enter",
+    "backspace": "Backspace",
+    "del": "Del",
+    "ins": "Ins",
+    "pageUp": "Page Up",
+    "pageDown": "Page Down"
+  },
+  "quote": "„{{name}}”",
+  "verdict": {
+    "editing": "{{caps}} rămâne pentru editarea textului",
+    "menuBar": "{{caps}} aparține barei de meniu",
+    "closesWindow": "{{caps}} închide fereastra",
+    "needsMod": "Tastele care funcționează peste tot au nevoie de {{mod}}",
+    "caret": "{{caps}} mută cursorul în text",
+    "fixed": "{{caps}} este „{{name}}”",
+    "keepFailed": "Nu s-au putut păstra tastele"
+  }
+}

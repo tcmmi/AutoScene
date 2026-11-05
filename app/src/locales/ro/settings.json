@@ -1,0 +1,264 @@
+{
+  "page": {
+    "title": "Setări"
+  },
+  "section": {
+    "general": "General",
+    "discord": "Discord",
+    "shortcuts": "Comenzi rapide",
+    "updates": "Actualizări",
+    "about": "Despre",
+    "contributors": "Contribuitori"
+  },
+  "saveFailed": "Nu s-a putut salva setarea",
+  "reveal": "Arată",
+  "path": {
+    "show": "Arată în folder",
+    "copy": "Copiază calea"
+  },
+  "general": {
+    "storage": {
+      "title": "Stocare",
+      "description": "Unde păstrează AutoScene proiectele, modelele și jurnalele.",
+      "library": {
+        "label": "Locația bibliotecii",
+        "note": "Proiectele noi și exporturile implicite ajung aici. Proiectele existente rămân unde sunt.",
+        "change": "Schimbă…",
+        "pickTitle": "Alege folderul bibliotecii"
+      },
+      "appData": "Datele aplicației"
+    },
+    "characters": {
+      "title": "Personaje",
+      "description": "Cum găsește analiza cine este într-un plan.",
+      "bodies": {
+        "label": "Găsește personaje fără față vizibilă",
+        "description": "Urmărește persoanele și după corp și haine, așa că planurile în care fața este întoarsă sau prea mică ajung și ele în scenepack, marcate „Fără față”. Analiza durează cu circa un sfert mai mult; episoadele analizate înainte sunt parcurse din nou pentru a găsi persoanele. Cele două modele vin de la InsightFace și pot fi folosite doar pentru lucrări necomerciale."
+      },
+      "fastScan": {
+        "label": "Scanare rapidă",
+        "description": "Se uită doar la câteva cadre din fiecare plan: mult mai repede, dar găsește mai puține fețe și pe nimeni fără față vizibilă. Se aplică proiectelor noi; Editează detaliile… schimbă un proiect existent. Modelele de fețe pot fi folosite pentru orice lucrare, iar cele ale scanării complete doar pentru lucrări necomerciale.",
+        "aria": "Scanare rapidă pentru proiecte noi",
+        "auto": "Automat",
+        "on": "Activat",
+        "off": "Dezactivat"
+      },
+      "names": {
+        "label": "Numele personajelor din AniList, TVmaze și Fandom",
+        "description": "După ce personajele unui proiect sunt găsite, AutoScene le caută numele: pentru anime pe AniList, pentru seriale animate pe TVmaze, pentru filme animate pe wikiul Fandom al francizei (găsit prin Wikidata). Tu le atribui cu un clic. Către aceste servicii (API-uri și servere de imagini) se trimit titlul proiectului sau textul de căutare pe care îl scrii, plus cererile pentru distribuția și imaginile potrivite; ele îți văd adresa IP. Proiectele de animație descarcă o singură dată modelul pentru personaje anime, ca să compare imaginile. Dacă dezactivezi opțiunea, se șterg toate imaginile păstrate de la aceste servicii."
+      }
+    },
+    "audio": {
+      "title": "Audio",
+      "description": "Multe fișiere au mai multe piste audio, iar dublajele sunt adesea marcate ca implicite.",
+      "language": {
+        "label": "Limba preferată",
+        "description": "Se alege automat când adaugi un episod. Poți schimba oricând pista pentru fiecare episod.",
+        "aria": "Limba audio preferată"
+      }
+    },
+    "export": {
+      "title": "Export",
+      "description": "Valori implicite pentru exporturile noi. Le poți schimba la fiecare export.",
+      "format": {
+        "label": "Format",
+        "aria": "Format implicit de export"
+      }
+    }
+  },
+  "hardware": {
+    "title": "Accelerare hardware",
+    "description": "Unde rulează analiza pe acest calculator.",
+    "automatic": "Automat",
+    "processorOnly": "Doar procesorul",
+    "chip": "Cip",
+    "graphicsCard": "Placă video",
+    "checkFailed": {
+      "chip": "Nu s-a putut verifica cipul.",
+      "cards": "Nu s-au putut verifica plăcile video."
+    },
+    "checking": {
+      "chip": "Se verifică cipul…",
+      "cards": "Se caută plăci video…"
+    },
+    "line": {
+      "pending": "Se aplică de la următoarea analiză.",
+      "missing": {
+        "processor": "Placa video aleasă nu este conectată, așa că analiza folosește procesorul.",
+        "card": "Placa video aleasă nu este conectată, așa că analiza folosește {{name}}.",
+        "generic": "Placa video aleasă nu este conectată, așa că analiza folosește placa video a acestui calculator."
+      },
+      "fellBack": "La ultima analiză, unii pași au rulat pe procesor, care este mai lent.",
+      "processorChosen": "Analiza rulează pe procesor. Este mult mai lent.",
+      "runs": {
+        "processor": "Analiza rulează pe procesor.",
+        "processorAccel": "Analiza rulează pe procesor, cu accelerare NVIDIA.",
+        "card": "Analiza rulează pe {{name}}.",
+        "cardAccel": "Analiza rulează pe {{name}}, cu accelerare NVIDIA.",
+        "generic": "Analiza rulează pe placa video a acestui calculator.",
+        "genericAccel": "Analiza rulează pe placa video a acestui calculator, cu accelerare NVIDIA."
+      }
+    },
+    "accel": {
+      "label": "Accelerare NVIDIA",
+      "available": "Motorul NVIDIA pentru plăcile GeForce RTX, ca analiza anime să ruleze mai repede. AutoScene descarcă fișierele NVIDIA (circa {{mb}} MB) din Python Package Index, care îți vede adresa IP. Prin descărcare accepți <go>licența NVIDIA</go>.",
+      "agree": "Acceptă și descarcă",
+      "downloading": "Se descarcă fișierele NVIDIA.",
+      "progress": "{{done}} din {{total}} MB",
+      "removing": "Se elimină după analiza curentă.",
+      "notUsedProcessor": "Nefolosită: analiza rulează pe procesor.",
+      "notUsedOtherCard": "Nefolosită: este aleasă altă placă video.",
+      "stopped": "Accelerarea NVIDIA nu mai funcționează, așa că analiza rulează fără ea.",
+      "needsDriver": "Accelerarea NVIDIA nu a putut folosi această placă. Un driver NVIDIA mai nou poate ajuta.",
+      "getDriver": "Descarcă driverul",
+      "ready": "Motorul NVIDIA pentru plăcile GeForce RTX, ca analiza anime să ruleze mai repede.",
+      "update": "Descarcă actualizarea (circa {{mb}} MB)",
+      "removeFiles": "Elimină fișierele NVIDIA",
+      "installFailed": "Nu s-au putut descărca fișierele NVIDIA",
+      "cancelFailed": "Nu s-a putut anula descărcarea",
+      "retryFailed": "Nu s-a putut încerca din nou",
+      "remove": {
+        "title": "Elimini accelerarea NVIDIA?",
+        "slower": "Analiza rulează în continuare pe această placă video, mai lent. O poți descărca din nou oricând.",
+        "plain": "O poți descărca din nou oricând.",
+        "answer": "Elimină",
+        "failed": "Nu s-au putut elimina fișierele NVIDIA"
+      }
+    }
+  },
+  "discord": {
+    "status": {
+      "title": "Statusul tău",
+      "description": "Lasă persoanele de pe Discord să vadă că lucrezi în AutoScene."
+    },
+    "show": {
+      "label": "Arată pe Discord",
+      "description": "Trece prin aplicația Discord de pe acest calculator. Nu se trimite nimic până nu activezi opțiunea."
+    },
+    "seeing": {
+      "on": "Ce văd ceilalți",
+      "off": "Ce ar vedea ceilalți",
+      "description": "În plus, de cât timp este deschis AutoScene și un link către aplicație."
+    },
+    "names": {
+      "title": "Nume",
+      "description": "Când este dezactivat, statusul spune ce faci, fără să dea nume.",
+      "project": "Proiect",
+      "episode": "Episod sau fișier",
+      "character": "Personaj"
+    }
+  },
+  "keymap": {
+    "title": "Taste",
+    "description": "Dă clic pe o tastă de mai jos ca să o schimbi, apoi apasă-o pe cea nouă.",
+    "likeIn": "Taste ca în",
+    "yourChanges": "Schimbările tale",
+    "none": "Niciuna: toate tastele sunt din {{preset}}.",
+    "differs_one": "{{count}} tastă diferă de cea din {{preset}}.",
+    "differs_few": "{{count}} taste diferă de cele din {{preset}}.",
+    "differs_other": "{{count}} de taste diferă de cele din {{preset}}.",
+    "resetAll": "Resetează tot",
+    "switched": "Taste ca în {{preset}}",
+    "letGo_one": "Schimbarea ta nu s-a păstrat.",
+    "letGo_few": "Cele {{count}} schimbări ale tale nu s-au păstrat.",
+    "letGo_other": "Cele {{count}} de schimbări ale tale nu s-au păstrat.",
+    "backAll": "Înapoi la tastele din {{preset}}",
+    "tookBack": "Luate înapoi de la {{names}}",
+    "tookKey": "Tasta {{caps}} luată de la {{names}}",
+    "unlike": "Diferențe față de tastele AutoScene",
+    "backTo_one": "Înapoi la tasta din {{preset}}",
+    "backTo_few": "Înapoi la tastele din {{preset}}",
+    "backTo_other": "Înapoi la tastele din {{preset}}",
+    "reset": "Resetează „{{name}}”",
+    "change": "Schimbă tasta",
+    "clickToChange": "Dă clic ca să schimbi",
+    "pressNew": "Apasă noua tastă pentru „{{name}}”",
+    "slot": "{{name}}: {{keys}}. Schimbă",
+    "slotNone": "{{name}}: nicio tastă. Schimbă",
+    "pressKey": "Apasă o tastă",
+    "noKey": "Nicio tastă",
+    "useCmd": "Folosește ⌘ în loc de Control",
+    "windowsKey": "Tasta Windows este rezervată pentru Windows"
+  },
+  "updates": {
+    "title": "Actualizări",
+    "description": "AutoScene se actualizează pe loc. Proiectele și modelele se păstrează.",
+    "check": "Caută actualizări",
+    "checkingLine": "Se verifică…",
+    "autoLine": "Verifică automat la pornire și o dată la câteva ore.",
+    "manualLine": "Verifică doar când ceri.",
+    "upToDate": "Ai cea mai nouă versiune",
+    "checked": {
+      "justNow": "verificat chiar acum",
+      "minutes_one": "verificat acum {{count}} min",
+      "minutes_few": "verificat acum {{count}} min",
+      "minutes_other": "verificat acum {{count}} min",
+      "hours_one": "verificat acum {{count}} h",
+      "hours_few": "verificat acum {{count}} h",
+      "hours_other": "verificat acum {{count}} h"
+    },
+    "ready": "Versiunea {{version}} este gata de instalare.",
+    "readyNoVersion": "O actualizare este gata de instalare.",
+    "simulated": "Flux simulat",
+    "view": "Vezi actualizarea",
+    "auto": {
+      "label": "Caută actualizări automat",
+      "description": "La pornire și o dată la câteva ore. Când este dezactivat, AutoScene verifică doar când dai clic pe {{check}}."
+    },
+    "whatsNew": {
+      "label": "Noutăți",
+      "description": "Ce s-a schimbat în AutoScene {{version}}, pe GitHub.",
+      "button": "Note de lansare"
+    }
+  },
+  "about": {
+    "version": "Versiunea <mono>{{version}}</mono>",
+    "openLogs": "Deschide jurnalele",
+    "checking": "Se verifică…",
+    "media": {
+      "title": "Motor media",
+      "description": "Decodarea, indexarea și codarea rulează pe FFmpeg."
+    },
+    "ai": {
+      "title": "Motor AI",
+      "description": "Analiza rulează pe ONNX Runtime.",
+      "onnx": {
+        "plain": "ONNX Runtime",
+        "plainVersion": "ONNX Runtime {{version}}",
+        "directMl": "ONNX Runtime cu DirectML",
+        "directMlVersion": "ONNX Runtime {{version}} cu DirectML",
+        "coreMl": "ONNX Runtime cu Core ML",
+        "coreMlVersion": "ONNX Runtime {{version}} cu Core ML"
+      },
+      "nvidiaDescription": "Fișierele proprii NVIDIA, descărcate din Setări → General.",
+      "nvidiaLicence": "Licența NVIDIA",
+      "notices": "Mulțumiri",
+      "noticesFailed": "Nu s-au putut deschide mulțumirile"
+    },
+    "models": {
+      "title": "Modele AI",
+      "description": "Se descarcă prima dată când o analiză are nevoie de ele. Modelele marcate ca necomerciale pot fi folosite doar pentru lucrări necomerciale; scanarea rapidă nu folosește niciunul dintre ele.",
+      "downloaded": "Descărcat",
+      "notDownloaded": "Încă nu este descărcat",
+      "nonCommercial": "Necomercial"
+    },
+    "licenses": {
+      "title": "Licențe open-source",
+      "description": "AutoScene este construit pe aceste proiecte."
+    },
+    "stills": {
+      "title": "Imagini de exemplu",
+      "description": "Exemplele de material dintr-un proiect nou sunt imagini din aceste filme și lucrări grafice cu licență deschisă, decupate și scalate."
+    }
+  },
+  "contributors": {
+    "banner": {
+      "title": "Contribuitori din comunitate",
+      "description": "AutoScene există datorită contribuitorilor open-source și feedbackului comunității.",
+      "action": "Contribuie pe GitHub"
+    },
+    "title": "Contribuitori",
+    "description": "Persoanele care au modelat AutoScene cu cod, design și idei.",
+    "open": "Deschide profilul GitHub: {{name}}"
+  }
+}

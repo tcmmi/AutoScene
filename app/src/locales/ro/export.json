@@ -1,0 +1,25 @@
+{
+  "title": "Exportă clipul",
+  "titleMany_one": "Exportă {{total}} clip",
+  "titleMany_few": "Exportă {{total}} clipuri",
+  "titleMany_other": "Exportă {{total}} de clipuri",
+  "description": "Fiecare clip este tăiat exact la cadru și comparat cu sursa.",
+  "field": {
+    "fileName": "Numele fișierului",
+    "format": "Format",
+    "formatAria": "Formatul exportului",
+    "formatPlaceholder": "Alege un format",
+    "destination": "Destinație"
+  },
+  "change": "Schimbă…",
+  "pickDestination": "Exportă în",
+  "about": "Circa {{size}} în total ca {{format}}.",
+  "submit": "Exportă",
+  "started": "Se exportă „{{name}}”",
+  "theClip": "clipul",
+  "startedMany_one": "Se exportă {{total}} clip",
+  "startedMany_few": "Se exportă {{total}} clipuri",
+  "startedMany_other": "Se exportă {{total}} de clipuri",
+  "show": "Arată",
+  "startFailed": "Nu s-a putut porni exportul"
+}

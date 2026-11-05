@@ -1,0 +1,36 @@
+{
+  "action": {
+    "cancel": "Anulează",
+    "stop": "Oprește",
+    "close": "Închide",
+    "undo": "Anulează",
+    "tryAgain": "Încearcă din nou",
+    "retry": "Încearcă din nou"
+  },
+  "state": {
+    "waiting": "În așteptare…",
+    "working": "Se lucrează…",
+    "done": "Gata"
+  },
+  "format": {
+    "bytes": {
+      "b": "{{value}} B",
+      "kb": "{{value}} KB",
+      "mb": "{{value}} MB",
+      "gb": "{{value}} GB",
+      "tb": "{{value}} TB"
+    },
+    "eta": {
+      "almostDone": "aproape gata",
+      "seconds": "încă {{s}} s",
+      "minutes": "încă circa {{m}} min",
+      "hours": "încă circa {{h}} h"
+    },
+    "percent": "{{value}} %",
+    "screenTime": {
+      "seconds": "{{s}} s",
+      "minutes": "{{m}} min",
+      "hours": "{{h}} h {{mm}} min"
+    }
+  }
+}

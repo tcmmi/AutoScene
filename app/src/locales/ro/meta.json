@@ -1,0 +1,8618 @@
+{
+  "common:action.cancel": {
+    "state": "draft",
+    "en": "35afca3b"
+  },
+  "common:action.stop": {
+    "state": "draft",
+    "en": "4b7f7705"
+  },
+  "common:action.close": {
+    "state": "draft",
+    "en": "cd86acc3"
+  },
+  "common:action.undo": {
+    "state": "draft",
+    "en": "71fd4acf"
+  },
+  "common:action.tryAgain": {
+    "state": "draft",
+    "en": "213e90fa"
+  },
+  "common:action.retry": {
+    "state": "draft",
+    "en": "8036af59"
+  },
+  "common:state.waiting": {
+    "state": "draft",
+    "en": "45e8172a"
+  },
+  "common:state.working": {
+    "state": "draft",
+    "en": "c08b976a"
+  },
+  "common:state.done": {
+    "state": "draft",
+    "en": "8dd31791"
+  },
+  "common:format.bytes.b": {
+    "state": "draft",
+    "en": "a56cc448"
+  },
+  "common:format.bytes.kb": {
+    "state": "draft",
+    "en": "66273c93"
+  },
+  "common:format.bytes.mb": {
+    "state": "draft",
+    "en": "ce36ead5"
+  },
+  "common:format.bytes.gb": {
+    "state": "draft",
+    "en": "ae45c2ff"
+  },
+  "common:format.bytes.tb": {
+    "state": "draft",
+    "en": "742096d8"
+  },
+  "common:format.eta.almostDone": {
+    "state": "draft",
+    "en": "4e456589"
+  },
+  "common:format.eta.seconds": {
+    "state": "draft",
+    "en": "4570232c"
+  },
+  "common:format.eta.minutes": {
+    "state": "draft",
+    "en": "766e0966"
+  },
+  "common:format.eta.hours": {
+    "state": "draft",
+    "en": "4105944f"
+  },
+  "common:format.percent": {
+    "state": "draft",
+    "en": "8dddf321"
+  },
+  "common:format.screenTime.seconds": {
+    "state": "draft",
+    "en": "2a97f75b"
+  },
+  "common:format.screenTime.minutes": {
+    "state": "draft",
+    "en": "66aff194"
+  },
+  "common:format.screenTime.hours": {
+    "state": "draft",
+    "en": "43ece5fb"
+  },
+  "shell:place.library": {
+    "state": "draft",
+    "en": "a8532270"
+  },
+  "shell:place.settings": {
+    "state": "draft",
+    "en": "4b058728"
+  },
+  "shell:place.plugins": {
+    "state": "draft",
+    "en": "847d7bcb"
+  },
+  "shell:place.activity": {
+    "state": "draft",
+    "en": "9e75940c"
+  },
+  "shell:menu.back": {
+    "state": "draft",
+    "en": "c2954bc2"
+  },
+  "shell:menu.copy": {
+    "state": "draft",
+    "en": "658f3664"
+  },
+  "shell:menu.commandPalette": {
+    "state": "draft",
+    "en": "55d418b5"
+  },
+  "shell:menu.newProject": {
+    "state": "draft",
+    "en": "4efd8712"
+  },
+  "shell:menu.showRail": {
+    "state": "draft",
+    "en": "ddb268b9"
+  },
+  "shell:menu.hideRail": {
+    "state": "draft",
+    "en": "7355db22"
+  },
+  "shell:menu.shortcuts": {
+    "state": "draft",
+    "en": "31eaddb7"
+  },
+  "shell:menu.reloadWindow": {
+    "state": "draft",
+    "en": "7b7f7758"
+  },
+  "shell:menu.checkUpdates": {
+    "state": "draft",
+    "en": "70ad7706"
+  },
+  "shell:menu.about": {
+    "state": "draft",
+    "en": "99694ea3"
+  },
+  "shell:rail.label": {
+    "state": "draft",
+    "en": "51707928"
+  },
+  "shell:rail.mark": {
+    "state": "draft",
+    "en": "6e57cc45"
+  },
+  "shell:rail.newProject": {
+    "state": "draft",
+    "en": "3459afc0"
+  },
+  "shell:rail.search": {
+    "state": "draft",
+    "en": "c646a2c9"
+  },
+  "shell:rail.hideActivity": {
+    "state": "draft",
+    "en": "66089ae6"
+  },
+  "shell:rail.showActivity": {
+    "state": "draft",
+    "en": "40c5b9c9"
+  },
+  "shell:rail.settings.general": {
+    "state": "draft",
+    "en": "5561fd0b"
+  },
+  "shell:rail.settings.shortcuts": {
+    "state": "draft",
+    "en": "f09038a0"
+  },
+  "shell:rail.settings.updates": {
+    "state": "draft",
+    "en": "483075a5"
+  },
+  "shell:rail.page.open": {
+    "state": "draft",
+    "en": "538b10e9"
+  },
+  "shell:rail.page.settings": {
+    "state": "draft",
+    "en": "2b70d3c6"
+  },
+  "shell:rail.page.log": {
+    "state": "draft",
+    "en": "42e0cc20"
+  },
+  "shell:rail.indexing": {
+    "state": "draft",
+    "en": "2d81808b"
+  },
+  "shell:project.movie": {
+    "state": "draft",
+    "en": "8368886f"
+  },
+  "shell:project.episodes": {
+    "state": "draft",
+    "en": "e9369fee"
+  },
+  "shell:projectFacts.movie": {
+    "state": "draft",
+    "en": "3efd4d44"
+  },
+  "shell:projectFacts.series": {
+    "state": "draft",
+    "en": "975b47c4"
+  },
+  "shell:palette.title": {
+    "state": "draft",
+    "en": "d54729b1"
+  },
+  "shell:palette.searchInProject": {
+    "state": "draft",
+    "en": "c1897f78"
+  },
+  "shell:palette.search": {
+    "state": "draft",
+    "en": "3c9ddfbe"
+  },
+  "shell:palette.empty": {
+    "state": "draft",
+    "en": "f8e003c3"
+  },
+  "shell:palette.group.projects": {
+    "state": "draft",
+    "en": "64fda4d7"
+  },
+  "shell:palette.group.plugins": {
+    "state": "draft",
+    "en": "847d7bcb"
+  },
+  "shell:palette.group.actions": {
+    "state": "draft",
+    "en": "e65fb504"
+  },
+  "shell:palette.group.goTo": {
+    "state": "draft",
+    "en": "b74eb9b0"
+  },
+  "shell:palette.group.characters": {
+    "state": "draft",
+    "en": "fc6ef2f9"
+  },
+  "shell:palette.group.episodes": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "shell:palette.here.overview": {
+    "state": "draft",
+    "en": "6a494fba"
+  },
+  "shell:palette.here.files": {
+    "state": "draft",
+    "en": "e71d1b30"
+  },
+  "shell:palette.here.episodes": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "shell:palette.here.cast": {
+    "state": "draft",
+    "en": "2a519c6e"
+  },
+  "shell:palette.here.exports": {
+    "state": "draft",
+    "en": "744ce6e0"
+  },
+  "shell:palette.go.library": {
+    "state": "draft",
+    "en": "a8532270"
+  },
+  "shell:palette.go.settings": {
+    "state": "draft",
+    "en": "4b058728"
+  },
+  "shell:palette.go.shortcuts": {
+    "state": "draft",
+    "en": "31eaddb7"
+  },
+  "shell:palette.go.plugins": {
+    "state": "draft",
+    "en": "847d7bcb"
+  },
+  "shell:palette.go.browsePlugins": {
+    "state": "draft",
+    "en": "702ddd4b"
+  },
+  "shell:palette.go.about": {
+    "state": "draft",
+    "en": "99694ea3"
+  },
+  "shell:palette.action.newProject": {
+    "state": "draft",
+    "en": "4efd8712"
+  },
+  "shell:palette.action.activity": {
+    "state": "draft",
+    "en": "40c5b9c9"
+  },
+  "shell:palette.action.rail": {
+    "state": "draft",
+    "en": "21255f68"
+  },
+  "shell:palette.action.updates": {
+    "state": "draft",
+    "en": "70ad7706"
+  },
+  "shell:palette.action.pluginUpdates": {
+    "state": "draft",
+    "en": "da1d1031"
+  },
+  "shell:palette.action.logs": {
+    "state": "draft",
+    "en": "c01b2d2c"
+  },
+  "shell:palette.openPage": {
+    "state": "draft",
+    "en": "da8a7207"
+  },
+  "shell:palette.unnamed": {
+    "state": "draft",
+    "en": "fb25718d"
+  },
+  "shell:palette.unnamedWord": {
+    "state": "draft",
+    "en": "faca275f"
+  },
+  "shell:palette.character": {
+    "state": "draft",
+    "en": "ddeacaba"
+  },
+  "shell:palette.fileMissing": {
+    "state": "draft",
+    "en": "a71b41fb"
+  },
+  "shell:palette.episodeWord": {
+    "state": "draft",
+    "en": "a4d36cff"
+  },
+  "shell:textMenu.label": {
+    "state": "draft",
+    "en": "c2c76cb1"
+  },
+  "shell:textMenu.undo": {
+    "state": "draft",
+    "en": "71fd4acf"
+  },
+  "shell:textMenu.redo": {
+    "state": "draft",
+    "en": "7412e5e9"
+  },
+  "shell:textMenu.cut": {
+    "state": "draft",
+    "en": "58e25863"
+  },
+  "shell:textMenu.copy": {
+    "state": "draft",
+    "en": "658f3664"
+  },
+  "shell:textMenu.paste": {
+    "state": "draft",
+    "en": "b34a0288"
+  },
+  "shell:textMenu.delete": {
+    "state": "draft",
+    "en": "5797ea6a"
+  },
+  "shell:textMenu.selectAll": {
+    "state": "draft",
+    "en": "6af21072"
+  },
+  "shell:window.minimize": {
+    "state": "draft",
+    "en": "f0ffec5d"
+  },
+  "shell:window.maximize": {
+    "state": "draft",
+    "en": "604e45af"
+  },
+  "shell:window.restore": {
+    "state": "draft",
+    "en": "0ff87f71"
+  },
+  "shell:crumb.plugins": {
+    "state": "draft",
+    "en": "847d7bcb"
+  },
+  "shell:crumb.cast": {
+    "state": "draft",
+    "en": "2a519c6e"
+  },
+  "shell:crumb.review": {
+    "state": "draft",
+    "en": "d33413a1"
+  },
+  "shell:crumb.exports": {
+    "state": "draft",
+    "en": "744ce6e0"
+  },
+  "shell:crumb.settings": {
+    "state": "draft",
+    "en": "a2609ab2"
+  },
+  "shell:activity.title": {
+    "state": "draft",
+    "en": "9e75940c"
+  },
+  "shell:activity.clearFinished": {
+    "state": "draft",
+    "en": "30c178e8"
+  },
+  "shell:activity.clearFailed": {
+    "state": "draft",
+    "en": "6db5f083"
+  },
+  "shell:activity.empty.title": {
+    "state": "draft",
+    "en": "1a2a035d"
+  },
+  "shell:activity.empty.description": {
+    "state": "draft",
+    "en": "d38578d5"
+  },
+  "shell:activity.group.inProgress": {
+    "state": "draft",
+    "en": "2948b425"
+  },
+  "shell:activity.group.finished": {
+    "state": "draft",
+    "en": "a7b2cec3"
+  },
+  "shell:activity.done": {
+    "state": "draft",
+    "en": "8dd31791"
+  },
+  "shell:activity.failed": {
+    "state": "draft",
+    "en": "5579c3d4"
+  },
+  "shell:activity.cancelled": {
+    "state": "draft",
+    "en": "a62b09bc"
+  },
+  "shell:activity.waiting": {
+    "state": "draft",
+    "en": "c9450e48"
+  },
+  "shell:activity.working": {
+    "state": "draft",
+    "en": "df54f508"
+  },
+  "shell:activity.stopJob": {
+    "state": "draft",
+    "en": "857db3a3"
+  },
+  "shell:activity.cancelJob": {
+    "state": "draft",
+    "en": "e092d9c9"
+  },
+  "shell:activity.stopFailed": {
+    "state": "draft",
+    "en": "3e168fbd"
+  },
+  "shell:activity.cancelFailed": {
+    "state": "draft",
+    "en": "e20903d7"
+  },
+  "shell:activity.showExports": {
+    "state": "draft",
+    "en": "92b83300"
+  },
+  "shell:activity.openPlayer": {
+    "state": "draft",
+    "en": "012e8224"
+  },
+  "shell:activity.openCast": {
+    "state": "draft",
+    "en": "c87ba159"
+  },
+  "shell:activity.openProject": {
+    "state": "draft",
+    "en": "9c7ebf7b"
+  },
+  "shell:activity.copyError": {
+    "state": "draft",
+    "en": "30d23699"
+  },
+  "shell:activity.copyMessage": {
+    "state": "draft",
+    "en": "f79b5b4c"
+  },
+  "shell:activity.nothingRunning": {
+    "state": "draft",
+    "en": "1a2a035d"
+  },
+  "shell:activity.running": {
+    "state": "draft",
+    "en": "39682379"
+  },
+  "shell:activity.waitingCount": {
+    "state": "draft",
+    "en": "c0813eb5"
+  },
+  "shell:jobs.cancelIndexing": {
+    "state": "draft",
+    "en": "9b297f01"
+  },
+  "shell:jobs.cancelAnalysis": {
+    "state": "draft",
+    "en": "2fbc02cf"
+  },
+  "shell:jobs.cancelPreview": {
+    "state": "draft",
+    "en": "46368a7b"
+  },
+  "shell:jobs.stopsFirst": {
+    "state": "draft",
+    "en": "fe676c02"
+  },
+  "shell:jobs.stops.indexing": {
+    "state": "draft",
+    "en": "0d36116d"
+  },
+  "shell:jobs.stops.analysing": {
+    "state": "draft",
+    "en": "723c1119"
+  },
+  "shell:jobs.stops.preview": {
+    "state": "draft",
+    "en": "bb7c3445"
+  },
+  "shell:jobs.stops.export": {
+    "state": "draft",
+    "en": "6a4437ab"
+  },
+  "shell:jobs.stops.pluginRun": {
+    "state": "draft",
+    "en": "b53cce21"
+  },
+  "shell:copy.copied.timecode": {
+    "state": "draft",
+    "en": "6a2e1353"
+  },
+  "shell:copy.copied.timecodes": {
+    "state": "draft",
+    "en": "46881b60"
+  },
+  "shell:copy.copied.filePath": {
+    "state": "draft",
+    "en": "439f7404"
+  },
+  "shell:copy.copied.folderPath": {
+    "state": "draft",
+    "en": "98c308ea"
+  },
+  "shell:copy.copied.path": {
+    "state": "draft",
+    "en": "7f2ed8b8"
+  },
+  "shell:copy.copied.error": {
+    "state": "draft",
+    "en": "c776a3af"
+  },
+  "shell:copy.copied.message": {
+    "state": "draft",
+    "en": "aeb59abe"
+  },
+  "shell:copy.copied.pluginId": {
+    "state": "draft",
+    "en": "51c76821"
+  },
+  "shell:copy.failed.timecode": {
+    "state": "draft",
+    "en": "803f36cd"
+  },
+  "shell:copy.failed.timecodes": {
+    "state": "draft",
+    "en": "a1832d1a"
+  },
+  "shell:copy.failed.filePath": {
+    "state": "draft",
+    "en": "fadd5026"
+  },
+  "shell:copy.failed.folderPath": {
+    "state": "draft",
+    "en": "6a800c84"
+  },
+  "shell:copy.failed.path": {
+    "state": "draft",
+    "en": "88d0ce4a"
+  },
+  "shell:copy.failed.error": {
+    "state": "draft",
+    "en": "58080ad5"
+  },
+  "shell:copy.failed.message": {
+    "state": "draft",
+    "en": "7b819d48"
+  },
+  "shell:copy.failed.pluginId": {
+    "state": "draft",
+    "en": "5aacdfcf"
+  },
+  "shell:copy.failed.other": {
+    "state": "draft",
+    "en": "9228a2d0"
+  },
+  "shell:os.revealFailed": {
+    "state": "draft",
+    "en": "2d87067d"
+  },
+  "shell:os.linkFailed": {
+    "state": "draft",
+    "en": "dd6185a3"
+  },
+  "shell:files.added": {
+    "state": "draft",
+    "en": "c06ce82e"
+  },
+  "shell:files.nothingNew": {
+    "state": "draft",
+    "en": "07968d86"
+  },
+  "shell:files.alreadyIn": {
+    "state": "draft",
+    "en": "d1df4ed3"
+  },
+  "shell:files.addFailed": {
+    "state": "draft",
+    "en": "35f085af"
+  },
+  "shell:events.logsFailed": {
+    "state": "draft",
+    "en": "6aae0264"
+  },
+  "shell:events.showInFolder": {
+    "state": "draft",
+    "en": "63890d31"
+  },
+  "shell:events.show": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "shell:events.withdrew": {
+    "state": "draft",
+    "en": "5f930faf"
+  },
+  "shell:events.nvidiaFailed": {
+    "state": "draft",
+    "en": "33b7a246"
+  },
+  "shell:events.nvidiaReady": {
+    "state": "draft",
+    "en": "7f91ed25"
+  },
+  "shell:events.exportDone": {
+    "state": "draft",
+    "en": "1a64e017"
+  },
+  "shell:events.exportErrors": {
+    "state": "draft",
+    "en": "b5be9730"
+  },
+  "shell:jobFailed.indexing": {
+    "state": "draft",
+    "en": "13e14f4e"
+  },
+  "shell:jobFailed.analysing": {
+    "state": "draft",
+    "en": "ffef4961"
+  },
+  "shell:update.available": {
+    "state": "draft",
+    "en": "2b69e13d"
+  },
+  "shell:update.simulated": {
+    "state": "draft",
+    "en": "2a3dac71"
+  },
+  "shell:update.youHave": {
+    "state": "draft",
+    "en": "339bda03"
+  },
+  "shell:update.youHaveDated": {
+    "state": "draft",
+    "en": "c0bc2ba7"
+  },
+  "shell:update.downloading": {
+    "state": "draft",
+    "en": "be564428"
+  },
+  "shell:update.installing": {
+    "state": "draft",
+    "en": "735b4aaa"
+  },
+  "shell:update.ready": {
+    "state": "draft",
+    "en": "800b110c"
+  },
+  "shell:update.restart": {
+    "state": "draft",
+    "en": "54001a7c"
+  },
+  "shell:update.skip": {
+    "state": "draft",
+    "en": "2c33d756"
+  },
+  "shell:update.later": {
+    "state": "draft",
+    "en": "2548cb3c"
+  },
+  "shell:update.updating": {
+    "state": "draft",
+    "en": "4f1bb013"
+  },
+  "shell:update.install": {
+    "state": "draft",
+    "en": "e9601784"
+  },
+  "shell:update.upToDate": {
+    "state": "draft",
+    "en": "7cebbca0"
+  },
+  "shell:update.version": {
+    "state": "draft",
+    "en": "5f6e0687"
+  },
+  "shell:update.checkFailed": {
+    "state": "draft",
+    "en": "fa5cf7ba"
+  },
+  "shell:drop.finishReview": {
+    "state": "draft",
+    "en": "4c5621b8"
+  },
+  "shell:drop.packagesNotFiles": {
+    "state": "draft",
+    "en": "01df5d1d"
+  },
+  "shell:drop.packagesAlone": {
+    "state": "draft",
+    "en": "97624845"
+  },
+  "shell:drop.mixed.heading": {
+    "state": "draft",
+    "en": "16c015e9"
+  },
+  "shell:drop.mixed.hint": {
+    "state": "draft",
+    "en": "e38c1522"
+  },
+  "shell:drop.plugin.heading": {
+    "state": "draft",
+    "en": "feb7599d"
+  },
+  "shell:drop.plugin.hint": {
+    "state": "draft",
+    "en": "e5b5d084"
+  },
+  "shell:drop.addHere": {
+    "state": "draft",
+    "en": "e3143346"
+  },
+  "shell:drop.create": {
+    "state": "draft",
+    "en": "a4f77307"
+  },
+  "shell:drop.media": {
+    "state": "draft",
+    "en": "aba3f45d"
+  },
+  "shell:pluginReview.tookTooLong": {
+    "state": "draft",
+    "en": "a7e7d902"
+  },
+  "shell:pluginReview.openFailed": {
+    "state": "draft",
+    "en": "6ec3d227"
+  },
+  "shell:fastScan.title": {
+    "state": "draft",
+    "en": "97437c11"
+  },
+  "shell:fastScan.never": {
+    "state": "draft",
+    "en": "7683fc32"
+  },
+  "shell:fastScan.turnOff": {
+    "state": "draft",
+    "en": "c23ecf1c"
+  },
+  "shell:fastScan.continue": {
+    "state": "draft",
+    "en": "ab43d664"
+  },
+  "shell:fastScan.off": {
+    "state": "draft",
+    "en": "a627edcd"
+  },
+  "shell:fastScan.offDescription": {
+    "state": "draft",
+    "en": "3aa77210"
+  },
+  "shell:fastScan.offFailed": {
+    "state": "draft",
+    "en": "3df9e188"
+  },
+  "shell:fastScan.onFailed": {
+    "state": "draft",
+    "en": "e03b6ded"
+  },
+  "shell:notFound.title": {
+    "state": "draft",
+    "en": "827bdf10"
+  },
+  "shell:notFound.description": {
+    "state": "draft",
+    "en": "76221e7f"
+  },
+  "shell:notFound.back": {
+    "state": "draft",
+    "en": "2670948c"
+  },
+  "shell:routeError.title": {
+    "state": "draft",
+    "en": "f29cd3ac"
+  },
+  "ui:errorState.title": {
+    "state": "draft",
+    "en": "91337567"
+  },
+  "ui:errorState.generic": {
+    "state": "draft",
+    "en": "10e8e442"
+  },
+  "ui:errorState.openLogs": {
+    "state": "draft",
+    "en": "2c150558"
+  },
+  "ui:search.clear": {
+    "state": "draft",
+    "en": "60070c97"
+  },
+  "ui:shelf.back": {
+    "state": "draft",
+    "en": "3eb12a6f"
+  },
+  "ui:shelf.on": {
+    "state": "draft",
+    "en": "1f55b9cd"
+  },
+  "ui:topbar.showRail": {
+    "state": "draft",
+    "en": "ddb268b9"
+  },
+  "ui:topbar.back": {
+    "state": "draft",
+    "en": "349743ec"
+  },
+  "shortcuts:group.global.title": {
+    "state": "draft",
+    "en": "327a596f"
+  },
+  "shortcuts:group.global.description": {
+    "state": "draft",
+    "en": "4b65d497"
+  },
+  "shortcuts:group.player.title": {
+    "state": "draft",
+    "en": "1c70fc20"
+  },
+  "shortcuts:group.player.description": {
+    "state": "draft",
+    "en": "38591272"
+  },
+  "shortcuts:group.review.title": {
+    "state": "draft",
+    "en": "6128977b"
+  },
+  "shortcuts:group.review.description": {
+    "state": "draft",
+    "en": "3a7b6bdc"
+  },
+  "shortcuts:group.cast.title": {
+    "state": "draft",
+    "en": "2a519c6e"
+  },
+  "shortcuts:group.cast.description": {
+    "state": "draft",
+    "en": "b9351f77"
+  },
+  "shortcuts:group.faces.title": {
+    "state": "draft",
+    "en": "97cfa7cf"
+  },
+  "shortcuts:group.faces.description": {
+    "state": "draft",
+    "en": "68777a33"
+  },
+  "shortcuts:group.shots.title": {
+    "state": "draft",
+    "en": "6ccdabd4"
+  },
+  "shortcuts:group.shots.description": {
+    "state": "draft",
+    "en": "9f5fdde4"
+  },
+  "shortcuts:group.pack.title": {
+    "state": "draft",
+    "en": "3c19352e"
+  },
+  "shortcuts:group.pack.description": {
+    "state": "draft",
+    "en": "ec469cc0"
+  },
+  "shortcuts:global.palette.name": {
+    "state": "draft",
+    "en": "d54729b1"
+  },
+  "shortcuts:global.activity.name": {
+    "state": "draft",
+    "en": "40c5b9c9"
+  },
+  "shortcuts:global.sidebar.name": {
+    "state": "draft",
+    "en": "21255f68"
+  },
+  "shortcuts:global.settings.name": {
+    "state": "draft",
+    "en": "4b058728"
+  },
+  "shortcuts:global.library.name": {
+    "state": "draft",
+    "en": "a8532270"
+  },
+  "shortcuts:global.newProject.name": {
+    "state": "draft",
+    "en": "3459afc0"
+  },
+  "shortcuts:player.playPause.name": {
+    "state": "draft",
+    "en": "80710f10"
+  },
+  "shortcuts:player.shuttle.name": {
+    "state": "draft",
+    "en": "af1bf2ed"
+  },
+  "shortcuts:player.shuttle.slots.0": {
+    "state": "draft",
+    "en": "31438bb5"
+  },
+  "shortcuts:player.shuttle.slots.1": {
+    "state": "draft",
+    "en": "4b7f7705"
+  },
+  "shortcuts:player.shuttle.slots.2": {
+    "state": "draft",
+    "en": "5567756b"
+  },
+  "shortcuts:player.frame.name": {
+    "state": "draft",
+    "en": "3b1ccd3b"
+  },
+  "shortcuts:player.frame.slots.0": {
+    "state": "draft",
+    "en": "9de74fc5"
+  },
+  "shortcuts:player.frame.slots.1": {
+    "state": "draft",
+    "en": "1d59a505"
+  },
+  "shortcuts:player.second.name": {
+    "state": "draft",
+    "en": "fd82d7b2"
+  },
+  "shortcuts:player.second.slots.0": {
+    "state": "draft",
+    "en": "d87ec396"
+  },
+  "shortcuts:player.second.slots.1": {
+    "state": "draft",
+    "en": "4ee8de3e"
+  },
+  "shortcuts:player.shot.name": {
+    "state": "draft",
+    "en": "40bd95b2"
+  },
+  "shortcuts:player.shot.slots.0": {
+    "state": "draft",
+    "en": "4d85e618"
+  },
+  "shortcuts:player.shot.slots.1": {
+    "state": "draft",
+    "en": "252ba258"
+  },
+  "shortcuts:player.ends.name": {
+    "state": "draft",
+    "en": "5df7e7c1"
+  },
+  "shortcuts:player.ends.slots.0": {
+    "state": "draft",
+    "en": "06742138"
+  },
+  "shortcuts:player.ends.slots.1": {
+    "state": "draft",
+    "en": "40e34680"
+  },
+  "shortcuts:player.mark.name": {
+    "state": "draft",
+    "en": "136bfc06"
+  },
+  "shortcuts:player.mark.slots.0": {
+    "state": "draft",
+    "en": "14c4e4df"
+  },
+  "shortcuts:player.mark.slots.1": {
+    "state": "draft",
+    "en": "e4d542e4"
+  },
+  "shortcuts:player.goToMark.name": {
+    "state": "draft",
+    "en": "404dedd6"
+  },
+  "shortcuts:player.goToMark.slots.0": {
+    "state": "draft",
+    "en": "c79635af"
+  },
+  "shortcuts:player.goToMark.slots.1": {
+    "state": "draft",
+    "en": "94085f94"
+  },
+  "shortcuts:player.markShot.name": {
+    "state": "draft",
+    "en": "2e57c6ea"
+  },
+  "shortcuts:player.clearMarks.name": {
+    "state": "draft",
+    "en": "ef98c498"
+  },
+  "shortcuts:player.goTo.name": {
+    "state": "draft",
+    "en": "f20cffa5"
+  },
+  "shortcuts:player.mute.name": {
+    "state": "draft",
+    "en": "3f609f74"
+  },
+  "shortcuts:player.zoomIn.name": {
+    "state": "draft",
+    "en": "a7418c4b"
+  },
+  "shortcuts:player.zoomOut.name": {
+    "state": "draft",
+    "en": "a9b00f18"
+  },
+  "shortcuts:player.zoomFit.name": {
+    "state": "draft",
+    "en": "ccbe270f"
+  },
+  "shortcuts:player.export.name": {
+    "state": "draft",
+    "en": "f60900f6"
+  },
+  "shortcuts:review.yes.name": {
+    "state": "draft",
+    "en": "8458cc5f"
+  },
+  "shortcuts:review.no.name": {
+    "state": "draft",
+    "en": "cd40fc7f"
+  },
+  "shortcuts:review.notFace.name": {
+    "state": "draft",
+    "en": "59d76bce"
+  },
+  "shortcuts:review.skip.name": {
+    "state": "draft",
+    "en": "85953101"
+  },
+  "shortcuts:review.pick.name": {
+    "state": "draft",
+    "en": "def04434"
+  },
+  "shortcuts:faces.selectAll.name": {
+    "state": "draft",
+    "en": "bb702387"
+  },
+  "shortcuts:faces.clearSelection.name": {
+    "state": "draft",
+    "en": "d40a98b3"
+  },
+  "shortcuts:shots.toggle.name": {
+    "state": "draft",
+    "en": "886ade25"
+  },
+  "shortcuts:shots.watch.name": {
+    "state": "draft",
+    "en": "436d26e9"
+  },
+  "shortcuts:shots.close.name": {
+    "state": "draft",
+    "en": "e86a99a8"
+  },
+  "shortcuts:cast.selectAll.name": {
+    "state": "draft",
+    "en": "928aeb29"
+  },
+  "shortcuts:cast.clearSelection.name": {
+    "state": "draft",
+    "en": "d40a98b3"
+  },
+  "shortcuts:pack.toggle.name": {
+    "state": "draft",
+    "en": "f2d0558c"
+  },
+  "shortcuts:pack.watch.name": {
+    "state": "draft",
+    "en": "ca5fce49"
+  },
+  "shortcuts:pack.takeAll.name": {
+    "state": "draft",
+    "en": "7bc4ec3f"
+  },
+  "shortcuts:pack.leaveAll.name": {
+    "state": "draft",
+    "en": "98bc7f4d"
+  },
+  "shortcuts:pack.invert.name": {
+    "state": "draft",
+    "en": "3d426a42"
+  },
+  "shortcuts:pack.export.name": {
+    "state": "draft",
+    "en": "ea46a059"
+  },
+  "shortcuts:preset.autoscene.description": {
+    "state": "draft",
+    "en": "32fde2c2"
+  },
+  "shortcuts:preset.premiere.description": {
+    "state": "draft",
+    "en": "b332eeed"
+  },
+  "shortcuts:preset.premiere.descriptionMac": {
+    "state": "draft",
+    "en": "687d4dcc"
+  },
+  "shortcuts:preset.resolve.description": {
+    "state": "draft",
+    "en": "78448e18"
+  },
+  "shortcuts:key.space": {
+    "state": "draft",
+    "en": "c1c43225"
+  },
+  "shortcuts:key.esc": {
+    "state": "draft",
+    "en": "caa03a5e"
+  },
+  "shortcuts:key.enter": {
+    "state": "draft",
+    "en": "aff863ad"
+  },
+  "shortcuts:key.backspace": {
+    "state": "draft",
+    "en": "6120d7cc"
+  },
+  "shortcuts:key.del": {
+    "state": "draft",
+    "en": "345e8eea"
+  },
+  "shortcuts:key.ins": {
+    "state": "draft",
+    "en": "fb741ab7"
+  },
+  "shortcuts:key.pageUp": {
+    "state": "draft",
+    "en": "4341e6df"
+  },
+  "shortcuts:key.pageDown": {
+    "state": "draft",
+    "en": "ebb3047a"
+  },
+  "shortcuts:quote": {
+    "state": "draft",
+    "en": "66e6d4ef"
+  },
+  "shortcuts:verdict.editing": {
+    "state": "draft",
+    "en": "e2e9d7f1"
+  },
+  "shortcuts:verdict.menuBar": {
+    "state": "draft",
+    "en": "e033cac8"
+  },
+  "shortcuts:verdict.closesWindow": {
+    "state": "draft",
+    "en": "fe9220ae"
+  },
+  "shortcuts:verdict.needsMod": {
+    "state": "draft",
+    "en": "c1bfd205"
+  },
+  "shortcuts:verdict.caret": {
+    "state": "draft",
+    "en": "aed0414c"
+  },
+  "shortcuts:verdict.fixed": {
+    "state": "draft",
+    "en": "04136636"
+  },
+  "shortcuts:verdict.keepFailed": {
+    "state": "draft",
+    "en": "c3744e1d"
+  },
+  "settings:page.title": {
+    "state": "draft",
+    "en": "4b058728"
+  },
+  "settings:section.general": {
+    "state": "draft",
+    "en": "5561fd0b"
+  },
+  "settings:section.discord": {
+    "state": "draft",
+    "en": "c839636f"
+  },
+  "settings:section.shortcuts": {
+    "state": "draft",
+    "en": "f09038a0"
+  },
+  "settings:section.updates": {
+    "state": "draft",
+    "en": "483075a5"
+  },
+  "settings:section.about": {
+    "state": "draft",
+    "en": "58e096de"
+  },
+  "settings:section.contributors": {
+    "state": "draft",
+    "en": "8a060bfb"
+  },
+  "settings:saveFailed": {
+    "state": "draft",
+    "en": "fc39e88b"
+  },
+  "settings:reveal": {
+    "state": "draft",
+    "en": "bba2a3f0"
+  },
+  "settings:path.show": {
+    "state": "draft",
+    "en": "63890d31"
+  },
+  "settings:path.copy": {
+    "state": "draft",
+    "en": "f165cb2b"
+  },
+  "settings:general.storage.title": {
+    "state": "draft",
+    "en": "34eddf06"
+  },
+  "settings:general.storage.description": {
+    "state": "draft",
+    "en": "b55b854b"
+  },
+  "settings:general.storage.library.label": {
+    "state": "draft",
+    "en": "01321c97"
+  },
+  "settings:general.storage.library.note": {
+    "state": "draft",
+    "en": "6f0a208b"
+  },
+  "settings:general.storage.library.change": {
+    "state": "draft",
+    "en": "cb932821"
+  },
+  "settings:general.storage.library.pickTitle": {
+    "state": "draft",
+    "en": "ac7a3dd0"
+  },
+  "settings:general.storage.appData": {
+    "state": "draft",
+    "en": "125519cc"
+  },
+  "settings:general.characters.title": {
+    "state": "draft",
+    "en": "fc6ef2f9"
+  },
+  "settings:general.characters.description": {
+    "state": "draft",
+    "en": "254c7afa"
+  },
+  "settings:general.characters.bodies.label": {
+    "state": "draft",
+    "en": "70ab64a8"
+  },
+  "settings:general.characters.bodies.description": {
+    "state": "draft",
+    "en": "7e47e7d9"
+  },
+  "settings:general.characters.fastScan.label": {
+    "state": "draft",
+    "en": "bd1de6f0"
+  },
+  "settings:general.characters.fastScan.description": {
+    "state": "draft",
+    "en": "3d759f2c"
+  },
+  "settings:general.characters.fastScan.aria": {
+    "state": "draft",
+    "en": "b7857a01"
+  },
+  "settings:general.characters.fastScan.auto": {
+    "state": "draft",
+    "en": "616a6784"
+  },
+  "settings:general.characters.fastScan.on": {
+    "state": "draft",
+    "en": "60e47df0"
+  },
+  "settings:general.characters.fastScan.off": {
+    "state": "draft",
+    "en": "0dc6b4aa"
+  },
+  "settings:general.characters.names.label": {
+    "state": "draft",
+    "en": "c135bcd5"
+  },
+  "settings:general.characters.names.description": {
+    "state": "draft",
+    "en": "982e69ae"
+  },
+  "settings:general.audio.title": {
+    "state": "draft",
+    "en": "88971439"
+  },
+  "settings:general.audio.description": {
+    "state": "draft",
+    "en": "f7af1b64"
+  },
+  "settings:general.audio.language.label": {
+    "state": "draft",
+    "en": "cbb78ae8"
+  },
+  "settings:general.audio.language.description": {
+    "state": "draft",
+    "en": "1a2d24dd"
+  },
+  "settings:general.audio.language.aria": {
+    "state": "draft",
+    "en": "d9de3326"
+  },
+  "settings:general.export.title": {
+    "state": "draft",
+    "en": "e86349d3"
+  },
+  "settings:general.export.description": {
+    "state": "draft",
+    "en": "9f99fec1"
+  },
+  "settings:general.export.format.label": {
+    "state": "draft",
+    "en": "ffb0ff72"
+  },
+  "settings:general.export.format.aria": {
+    "state": "draft",
+    "en": "2e97342b"
+  },
+  "settings:hardware.title": {
+    "state": "draft",
+    "en": "7f3c3df7"
+  },
+  "settings:hardware.description": {
+    "state": "draft",
+    "en": "e1150f22"
+  },
+  "settings:hardware.automatic": {
+    "state": "draft",
+    "en": "616a6784"
+  },
+  "settings:hardware.processorOnly": {
+    "state": "draft",
+    "en": "0dfb88f7"
+  },
+  "settings:hardware.chip": {
+    "state": "draft",
+    "en": "16663e2f"
+  },
+  "settings:hardware.graphicsCard": {
+    "state": "draft",
+    "en": "c51ad096"
+  },
+  "settings:hardware.checkFailed.chip": {
+    "state": "draft",
+    "en": "73b9c4ac"
+  },
+  "settings:hardware.checkFailed.cards": {
+    "state": "draft",
+    "en": "3b8ac068"
+  },
+  "settings:hardware.checking.chip": {
+    "state": "draft",
+    "en": "73fc42ca"
+  },
+  "settings:hardware.checking.cards": {
+    "state": "draft",
+    "en": "b8cc7131"
+  },
+  "settings:hardware.line.pending": {
+    "state": "draft",
+    "en": "03caf467"
+  },
+  "settings:hardware.line.missing.processor": {
+    "state": "draft",
+    "en": "e68f49cf"
+  },
+  "settings:hardware.line.missing.card": {
+    "state": "draft",
+    "en": "6befbcd4"
+  },
+  "settings:hardware.line.missing.generic": {
+    "state": "draft",
+    "en": "527dd3c8"
+  },
+  "settings:hardware.line.fellBack": {
+    "state": "draft",
+    "en": "fab46640"
+  },
+  "settings:hardware.line.processorChosen": {
+    "state": "draft",
+    "en": "ae95f6a1"
+  },
+  "settings:hardware.line.runs.processor": {
+    "state": "draft",
+    "en": "e00f371f"
+  },
+  "settings:hardware.line.runs.processorAccel": {
+    "state": "draft",
+    "en": "86b6af9c"
+  },
+  "settings:hardware.line.runs.card": {
+    "state": "draft",
+    "en": "4ebd57a4"
+  },
+  "settings:hardware.line.runs.cardAccel": {
+    "state": "draft",
+    "en": "465f300b"
+  },
+  "settings:hardware.line.runs.generic": {
+    "state": "draft",
+    "en": "55c00f38"
+  },
+  "settings:hardware.line.runs.genericAccel": {
+    "state": "draft",
+    "en": "4ef9f5cf"
+  },
+  "settings:hardware.accel.label": {
+    "state": "draft",
+    "en": "60c9dbda"
+  },
+  "settings:hardware.accel.available": {
+    "state": "draft",
+    "en": "db976dba"
+  },
+  "settings:hardware.accel.agree": {
+    "state": "draft",
+    "en": "710f026e"
+  },
+  "settings:hardware.accel.downloading": {
+    "state": "draft",
+    "en": "47b0c1db"
+  },
+  "settings:hardware.accel.progress": {
+    "state": "draft",
+    "en": "f09e4977"
+  },
+  "settings:hardware.accel.removing": {
+    "state": "draft",
+    "en": "b333652a"
+  },
+  "settings:hardware.accel.notUsedProcessor": {
+    "state": "draft",
+    "en": "8f640d5f"
+  },
+  "settings:hardware.accel.notUsedOtherCard": {
+    "state": "draft",
+    "en": "1fa9ef13"
+  },
+  "settings:hardware.accel.stopped": {
+    "state": "draft",
+    "en": "5c4a328f"
+  },
+  "settings:hardware.accel.needsDriver": {
+    "state": "draft",
+    "en": "f60fa0e6"
+  },
+  "settings:hardware.accel.getDriver": {
+    "state": "draft",
+    "en": "682b4f7a"
+  },
+  "settings:hardware.accel.ready": {
+    "state": "draft",
+    "en": "b5abc2f0"
+  },
+  "settings:hardware.accel.update": {
+    "state": "draft",
+    "en": "5c8af871"
+  },
+  "settings:hardware.accel.removeFiles": {
+    "state": "draft",
+    "en": "ddc8dc11"
+  },
+  "settings:hardware.accel.installFailed": {
+    "state": "draft",
+    "en": "aa201829"
+  },
+  "settings:hardware.accel.cancelFailed": {
+    "state": "draft",
+    "en": "e4cd865c"
+  },
+  "settings:hardware.accel.retryFailed": {
+    "state": "draft",
+    "en": "37b9345e"
+  },
+  "settings:hardware.accel.remove.title": {
+    "state": "draft",
+    "en": "55a257a9"
+  },
+  "settings:hardware.accel.remove.slower": {
+    "state": "draft",
+    "en": "0d06a14e"
+  },
+  "settings:hardware.accel.remove.plain": {
+    "state": "draft",
+    "en": "6b77b33c"
+  },
+  "settings:hardware.accel.remove.answer": {
+    "state": "draft",
+    "en": "21a5901d"
+  },
+  "settings:hardware.accel.remove.failed": {
+    "state": "draft",
+    "en": "731ab8dd"
+  },
+  "settings:discord.status.title": {
+    "state": "draft",
+    "en": "f69b9540"
+  },
+  "settings:discord.status.description": {
+    "state": "draft",
+    "en": "330e7ec0"
+  },
+  "settings:discord.show.label": {
+    "state": "draft",
+    "en": "13d7dc95"
+  },
+  "settings:discord.show.description": {
+    "state": "draft",
+    "en": "1dace230"
+  },
+  "settings:discord.seeing.on": {
+    "state": "draft",
+    "en": "95ef7085"
+  },
+  "settings:discord.seeing.off": {
+    "state": "draft",
+    "en": "789f4910"
+  },
+  "settings:discord.seeing.description": {
+    "state": "draft",
+    "en": "bd447cf2"
+  },
+  "settings:discord.names.title": {
+    "state": "draft",
+    "en": "7355c12f"
+  },
+  "settings:discord.names.description": {
+    "state": "draft",
+    "en": "31b3da1c"
+  },
+  "settings:discord.names.project": {
+    "state": "draft",
+    "en": "7b5fea5e"
+  },
+  "settings:discord.names.episode": {
+    "state": "draft",
+    "en": "ec98b297"
+  },
+  "settings:discord.names.character": {
+    "state": "draft",
+    "en": "ec7340b0"
+  },
+  "settings:keymap.title": {
+    "state": "draft",
+    "en": "271b2312"
+  },
+  "settings:keymap.description": {
+    "state": "draft",
+    "en": "494010e3"
+  },
+  "settings:keymap.likeIn": {
+    "state": "draft",
+    "en": "c9a7ba43"
+  },
+  "settings:keymap.yourChanges": {
+    "state": "draft",
+    "en": "7090d19b"
+  },
+  "settings:keymap.none": {
+    "state": "draft",
+    "en": "1e2432d8"
+  },
+  "settings:keymap.differs": {
+    "state": "draft",
+    "en": "0937067b"
+  },
+  "settings:keymap.resetAll": {
+    "state": "draft",
+    "en": "3c3d9373"
+  },
+  "settings:keymap.switched": {
+    "state": "draft",
+    "en": "39eaa15e"
+  },
+  "settings:keymap.letGo": {
+    "state": "draft",
+    "en": "b948a8e7"
+  },
+  "settings:keymap.backAll": {
+    "state": "draft",
+    "en": "e5f10c24"
+  },
+  "settings:keymap.tookBack": {
+    "state": "draft",
+    "en": "f533e869"
+  },
+  "settings:keymap.tookKey": {
+    "state": "draft",
+    "en": "ffcdca95"
+  },
+  "settings:keymap.unlike": {
+    "state": "draft",
+    "en": "e548e92a"
+  },
+  "settings:keymap.backTo": {
+    "state": "draft",
+    "en": "f86823f2"
+  },
+  "settings:keymap.reset": {
+    "state": "draft",
+    "en": "c622705a"
+  },
+  "settings:keymap.change": {
+    "state": "draft",
+    "en": "2551e1bd"
+  },
+  "settings:keymap.clickToChange": {
+    "state": "draft",
+    "en": "2aaa6394"
+  },
+  "settings:keymap.pressNew": {
+    "state": "draft",
+    "en": "b777c555"
+  },
+  "settings:keymap.slot": {
+    "state": "draft",
+    "en": "09a0fc1e"
+  },
+  "settings:keymap.slotNone": {
+    "state": "draft",
+    "en": "34567902"
+  },
+  "settings:keymap.pressKey": {
+    "state": "draft",
+    "en": "3b483c4c"
+  },
+  "settings:keymap.noKey": {
+    "state": "draft",
+    "en": "336b5a75"
+  },
+  "settings:keymap.useCmd": {
+    "state": "draft",
+    "en": "2d6bde52"
+  },
+  "settings:keymap.windowsKey": {
+    "state": "draft",
+    "en": "05690674"
+  },
+  "settings:updates.title": {
+    "state": "draft",
+    "en": "483075a5"
+  },
+  "settings:updates.description": {
+    "state": "draft",
+    "en": "bcbf4d47"
+  },
+  "settings:updates.check": {
+    "state": "draft",
+    "en": "70ad7706"
+  },
+  "settings:updates.checkingLine": {
+    "state": "draft",
+    "en": "732bdad5"
+  },
+  "settings:updates.autoLine": {
+    "state": "draft",
+    "en": "c25e85cc"
+  },
+  "settings:updates.manualLine": {
+    "state": "draft",
+    "en": "dca31a5e"
+  },
+  "settings:updates.upToDate": {
+    "state": "draft",
+    "en": "8a7c080e"
+  },
+  "settings:updates.checked.justNow": {
+    "state": "draft",
+    "en": "3b6cdcf0"
+  },
+  "settings:updates.checked.minutes": {
+    "state": "draft",
+    "en": "ac049fe5"
+  },
+  "settings:updates.checked.hours": {
+    "state": "draft",
+    "en": "4a3da575"
+  },
+  "settings:updates.ready": {
+    "state": "draft",
+    "en": "50d4c3c2"
+  },
+  "settings:updates.readyNoVersion": {
+    "state": "draft",
+    "en": "0d2808a6"
+  },
+  "settings:updates.simulated": {
+    "state": "draft",
+    "en": "e7919def"
+  },
+  "settings:updates.view": {
+    "state": "draft",
+    "en": "f4bbfaa9"
+  },
+  "settings:updates.auto.label": {
+    "state": "draft",
+    "en": "bdde7a57"
+  },
+  "settings:updates.auto.description": {
+    "state": "draft",
+    "en": "aac1c821"
+  },
+  "settings:updates.whatsNew.label": {
+    "state": "draft",
+    "en": "091ebd33"
+  },
+  "settings:updates.whatsNew.description": {
+    "state": "draft",
+    "en": "17e7aa35"
+  },
+  "settings:updates.whatsNew.button": {
+    "state": "draft",
+    "en": "c52ab62f"
+  },
+  "settings:about.version": {
+    "state": "draft",
+    "en": "663712be"
+  },
+  "settings:about.openLogs": {
+    "state": "draft",
+    "en": "2c150558"
+  },
+  "settings:about.checking": {
+    "state": "draft",
+    "en": "732bdad5"
+  },
+  "settings:about.media.title": {
+    "state": "draft",
+    "en": "ce3c2927"
+  },
+  "settings:about.media.description": {
+    "state": "draft",
+    "en": "a6e5906d"
+  },
+  "settings:about.ai.title": {
+    "state": "draft",
+    "en": "c7798193"
+  },
+  "settings:about.ai.description": {
+    "state": "draft",
+    "en": "16419c87"
+  },
+  "settings:about.ai.onnx.plain": {
+    "state": "draft",
+    "en": "fd3de68a"
+  },
+  "settings:about.ai.onnx.plainVersion": {
+    "state": "draft",
+    "en": "4d92b0ce"
+  },
+  "settings:about.ai.onnx.directMl": {
+    "state": "draft",
+    "en": "83c87a86"
+  },
+  "settings:about.ai.onnx.directMlVersion": {
+    "state": "draft",
+    "en": "53a71492"
+  },
+  "settings:about.ai.onnx.coreMl": {
+    "state": "draft",
+    "en": "aa434a12"
+  },
+  "settings:about.ai.onnx.coreMlVersion": {
+    "state": "draft",
+    "en": "8bbbd77e"
+  },
+  "settings:about.ai.nvidiaDescription": {
+    "state": "draft",
+    "en": "6e2800c1"
+  },
+  "settings:about.ai.nvidiaLicence": {
+    "state": "draft",
+    "en": "fbdcb83b"
+  },
+  "settings:about.ai.notices": {
+    "state": "draft",
+    "en": "9fd5f04c"
+  },
+  "settings:about.ai.noticesFailed": {
+    "state": "draft",
+    "en": "574407d7"
+  },
+  "settings:about.models.title": {
+    "state": "draft",
+    "en": "5ab9fde3"
+  },
+  "settings:about.models.description": {
+    "state": "draft",
+    "en": "a774bc6e"
+  },
+  "settings:about.models.downloaded": {
+    "state": "draft",
+    "en": "36a229f0"
+  },
+  "settings:about.models.notDownloaded": {
+    "state": "draft",
+    "en": "79a53bb5"
+  },
+  "settings:about.models.nonCommercial": {
+    "state": "draft",
+    "en": "a6344381"
+  },
+  "settings:about.licenses.title": {
+    "state": "draft",
+    "en": "1b63005b"
+  },
+  "settings:about.licenses.description": {
+    "state": "draft",
+    "en": "6801715c"
+  },
+  "settings:about.stills.title": {
+    "state": "draft",
+    "en": "0a1a1cf4"
+  },
+  "settings:about.stills.description": {
+    "state": "draft",
+    "en": "9a681485"
+  },
+  "settings:contributors.banner.title": {
+    "state": "draft",
+    "en": "a67c6a78"
+  },
+  "settings:contributors.banner.description": {
+    "state": "draft",
+    "en": "19196b8a"
+  },
+  "settings:contributors.banner.action": {
+    "state": "draft",
+    "en": "c280f5d2"
+  },
+  "settings:contributors.title": {
+    "state": "draft",
+    "en": "8a060bfb"
+  },
+  "settings:contributors.description": {
+    "state": "draft",
+    "en": "a16badac"
+  },
+  "settings:contributors.open": {
+    "state": "draft",
+    "en": "e6f19b48"
+  },
+  "cast:title": {
+    "state": "draft",
+    "en": "2a519c6e"
+  },
+  "cast:unnamed": {
+    "state": "draft",
+    "en": "86adfdde"
+  },
+  "cast:count.shots": {
+    "state": "draft",
+    "en": "05972ad4"
+  },
+  "cast:count.faces": {
+    "state": "draft",
+    "en": "8d2b58ba"
+  },
+  "cast:count.characters": {
+    "state": "draft",
+    "en": "b15bfee6"
+  },
+  "cast:count.episodes": {
+    "state": "draft",
+    "en": "e2f8c172"
+  },
+  "cast:editFailed": {
+    "state": "draft",
+    "en": "f80b6839"
+  },
+  "cast:filters.group": {
+    "state": "draft",
+    "en": "3e1cd17a"
+  },
+  "cast:filters.search": {
+    "state": "draft",
+    "en": "eac2a08e"
+  },
+  "cast:filters.show": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "cast:filters.all": {
+    "state": "draft",
+    "en": "75afe364"
+  },
+  "cast:filters.named": {
+    "state": "draft",
+    "en": "6055a346"
+  },
+  "cast:filters.toReview": {
+    "state": "draft",
+    "en": "efec5b50"
+  },
+  "cast:filters.order.screen": {
+    "state": "draft",
+    "en": "7a62dfe7"
+  },
+  "cast:filters.order.shots": {
+    "state": "draft",
+    "en": "7b75ecc7"
+  },
+  "cast:filters.order.name": {
+    "state": "draft",
+    "en": "983e37f7"
+  },
+  "cast:filters.orderBy": {
+    "state": "draft",
+    "en": "5ba46d0f"
+  },
+  "cast:page.narrowed": {
+    "state": "draft",
+    "en": "6b1c9fd2"
+  },
+  "cast:page.facesFromEpisodes": {
+    "state": "draft",
+    "en": "97d8bd44"
+  },
+  "cast:page.facesFromFiles": {
+    "state": "draft",
+    "en": "865b4482"
+  },
+  "cast:page.viewLayout": {
+    "state": "draft",
+    "en": "b8d5379e"
+  },
+  "cast:page.mainCast": {
+    "state": "draft",
+    "en": "03613887"
+  },
+  "cast:page.supportingCast": {
+    "state": "draft",
+    "en": "3a01b2d2"
+  },
+  "cast:page.hidden": {
+    "state": "draft",
+    "en": "3c2dfe59"
+  },
+  "cast:page.looking": {
+    "state": "draft",
+    "en": "6b88ce4f"
+  },
+  "cast:page.none": {
+    "state": "draft",
+    "en": "c524c100"
+  },
+  "cast:page.noEpisodes": {
+    "state": "draft",
+    "en": "bd115e94"
+  },
+  "cast:page.waitingForFaces": {
+    "state": "draft",
+    "en": "826b5a48"
+  },
+  "cast:page.noMatch": {
+    "state": "draft",
+    "en": "668eb18a"
+  },
+  "cast:page.noNamed": {
+    "state": "draft",
+    "en": "57576552"
+  },
+  "cast:page.noReview": {
+    "state": "draft",
+    "en": "a82b3a98"
+  },
+  "cast:page.showEveryone": {
+    "state": "draft",
+    "en": "cbc77ca5"
+  },
+  "cast:page.foldHidden": {
+    "state": "draft",
+    "en": "86d20c41"
+  },
+  "cast:page.showHidden": {
+    "state": "draft",
+    "en": "5b7ea7cb"
+  },
+  "cast:page.selectEvery": {
+    "state": "draft",
+    "en": "928aeb29"
+  },
+  "cast:unplaced": {
+    "state": "draft",
+    "en": "17cdb623"
+  },
+  "cast:selection.select": {
+    "state": "draft",
+    "en": "3e892b4d"
+  },
+  "cast:selection.selected": {
+    "state": "draft",
+    "en": "ef233294"
+  },
+  "cast:selection.selectAll": {
+    "state": "draft",
+    "en": "6af21072"
+  },
+  "cast:selection.clear": {
+    "state": "draft",
+    "en": "50a6b1e0"
+  },
+  "cast:selection.clearShort": {
+    "state": "draft",
+    "en": "04a57fc2"
+  },
+  "cast:selection.hide": {
+    "state": "draft",
+    "en": "168a8d40"
+  },
+  "cast:selection.showInCast": {
+    "state": "draft",
+    "en": "7da3b8cc"
+  },
+  "cast:selection.hid": {
+    "state": "draft",
+    "en": "64e1e192"
+  },
+  "cast:card.refinding": {
+    "state": "draft",
+    "en": "a1162c9a"
+  },
+  "cast:card.toReview": {
+    "state": "draft",
+    "en": "de4338a1"
+  },
+  "cast:card.moreToReview": {
+    "state": "draft",
+    "en": "fa8dcdb7"
+  },
+  "cast:faces.review": {
+    "state": "draft",
+    "en": "05b8dea2"
+  },
+  "cast:faces.move": {
+    "state": "draft",
+    "en": "b0f84000"
+  },
+  "cast:faces.moveShort": {
+    "state": "draft",
+    "en": "83e9b589"
+  },
+  "cast:faces.notAFace": {
+    "state": "draft",
+    "en": "59d76bce"
+  },
+  "cast:faces.useAsPicture": {
+    "state": "draft",
+    "en": "bbac0e06"
+  },
+  "cast:faces.aria": {
+    "state": "draft",
+    "en": "94122cfc"
+  },
+  "cast:faces.ariaAt": {
+    "state": "draft",
+    "en": "552bbe0a"
+  },
+  "cast:faces.ariaNow": {
+    "state": "draft",
+    "en": "da5c43e2"
+  },
+  "cast:faces.ariaAtNow": {
+    "state": "draft",
+    "en": "a135c8d4"
+  },
+  "cast:faces.confirmed": {
+    "state": "draft",
+    "en": "382d99ae"
+  },
+  "cast:faces.watchMoment": {
+    "state": "draft",
+    "en": "c6a6dd10"
+  },
+  "cast:faces.selectHint": {
+    "state": "draft",
+    "en": "960b2c8b"
+  },
+  "cast:faces.watchHint": {
+    "state": "draft",
+    "en": "eddb76c1"
+  },
+  "cast:faces.watchOrPlayHint": {
+    "state": "draft",
+    "en": "eabd29c4"
+  },
+  "cast:faces.thisFace": {
+    "state": "draft",
+    "en": "8f42ab2a"
+  },
+  "cast:faces.ariaIn": {
+    "state": "draft",
+    "en": "1e670554"
+  },
+  "cast:everyoneElse.title": {
+    "state": "draft",
+    "en": "82f374a9"
+  },
+  "cast:everyoneElse.open": {
+    "state": "draft",
+    "en": "f06cb047"
+  },
+  "cast:everyoneElse.unclaimed": {
+    "state": "draft",
+    "en": "56ebc870"
+  },
+  "cast:everyoneElse.about": {
+    "state": "draft",
+    "en": "38f176d5"
+  },
+  "cast:everyoneElse.heading": {
+    "state": "draft",
+    "en": "8d0eefe5"
+  },
+  "cast:character.goneTitle": {
+    "state": "draft",
+    "en": "8e5e4153"
+  },
+  "cast:character.goneDescription": {
+    "state": "draft",
+    "en": "090b42b6"
+  },
+  "cast:character.backToCast": {
+    "state": "draft",
+    "en": "301e890f"
+  },
+  "cast:character.show": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "cast:character.shots": {
+    "state": "draft",
+    "en": "60ece992"
+  },
+  "cast:character.faces": {
+    "state": "draft",
+    "en": "a79c251d"
+  },
+  "cast:character.showFaces": {
+    "state": "draft",
+    "en": "0c2396be"
+  },
+  "cast:character.showShots": {
+    "state": "draft",
+    "en": "b18db8d1"
+  },
+  "cast:character.selectEveryFace": {
+    "state": "draft",
+    "en": "bb702387"
+  },
+  "cast:character.noFaces": {
+    "state": "draft",
+    "en": "d72bb304"
+  },
+  "cast:character.facesHint": {
+    "state": "draft",
+    "en": "e7f09f77"
+  },
+  "cast:character.not": {
+    "state": "draft",
+    "en": "47d867a9"
+  },
+  "cast:character.notThemToast": {
+    "state": "draft",
+    "en": "de007fc7"
+  },
+  "cast:character.notAPersonToast": {
+    "state": "draft",
+    "en": "792fda48"
+  },
+  "cast:character.open": {
+    "state": "draft",
+    "en": "f3784aaa"
+  },
+  "cast:character.buildPack": {
+    "state": "draft",
+    "en": "b996ba31"
+  },
+  "cast:character.rename": {
+    "state": "draft",
+    "en": "c80631f3"
+  },
+  "cast:character.choosePicture": {
+    "state": "draft",
+    "en": "3ea3b78c"
+  },
+  "cast:character.samePersonAs": {
+    "state": "draft",
+    "en": "7e08910e"
+  },
+  "cast:character.hideFromCast": {
+    "state": "draft",
+    "en": "0aaccaff"
+  },
+  "cast:character.options": {
+    "state": "draft",
+    "en": "f2664adc"
+  },
+  "cast:shots.loadFailed": {
+    "state": "draft",
+    "en": "aecaad6a"
+  },
+  "cast:shots.waiting": {
+    "state": "draft",
+    "en": "5ca86e51"
+  },
+  "cast:shots.none": {
+    "state": "draft",
+    "en": "d5e26ed9"
+  },
+  "cast:shots.summary": {
+    "state": "draft",
+    "en": "e532412c"
+  },
+  "cast:header.choosePictureTip": {
+    "state": "draft",
+    "en": "3f3171e2"
+  },
+  "cast:header.onScreen": {
+    "state": "draft",
+    "en": "31c9eb3f"
+  },
+  "cast:header.clickToRename": {
+    "state": "draft",
+    "en": "90ba099e"
+  },
+  "cast:maybe.title": {
+    "state": "draft",
+    "en": "2f73b92f"
+  },
+  "cast:maybe.lookLike": {
+    "state": "draft",
+    "en": "9221d4f5"
+  },
+  "cast:maybe.reviewOneByOne": {
+    "state": "draft",
+    "en": "325bf6e2"
+  },
+  "cast:maybe.allAre": {
+    "state": "draft",
+    "en": "1e410fcd"
+  },
+  "cast:maybe.yes": {
+    "state": "draft",
+    "en": "0f5e292b"
+  },
+  "cast:maybe.showFewer": {
+    "state": "draft",
+    "en": "40e1838d"
+  },
+  "cast:maybe.showMore": {
+    "state": "draft",
+    "en": "68bb1cea"
+  },
+  "cast:pick.mergeTitle": {
+    "state": "draft",
+    "en": "49bc9aa4"
+  },
+  "cast:pick.mergeDescription": {
+    "state": "draft",
+    "en": "4f9e8bc1"
+  },
+  "cast:pick.mergeQuestion": {
+    "state": "draft",
+    "en": "e508de72"
+  },
+  "cast:pick.mergeDetail": {
+    "state": "draft",
+    "en": "5c296720"
+  },
+  "cast:pick.merge": {
+    "state": "draft",
+    "en": "8b725bc7"
+  },
+  "cast:pick.back": {
+    "state": "draft",
+    "en": "c2954bc2"
+  },
+  "cast:pick.search": {
+    "state": "draft",
+    "en": "c646a2c9"
+  },
+  "cast:pick.searchOrNew": {
+    "state": "draft",
+    "en": "8a185b90"
+  },
+  "cast:pick.newCharacter": {
+    "state": "draft",
+    "en": "60c56162"
+  },
+  "cast:pick.newCharacterNamed": {
+    "state": "draft",
+    "en": "680729ac"
+  },
+  "cast:pick.nobody": {
+    "state": "draft",
+    "en": "8423690f"
+  },
+  "cast:choosePicture.title": {
+    "state": "draft",
+    "en": "225d3341"
+  },
+  "cast:choosePicture.description": {
+    "state": "draft",
+    "en": "18f59340"
+  },
+  "cast:choosePicture.loadFailed": {
+    "state": "draft",
+    "en": "7992b4d7"
+  },
+  "cast:choosePicture.none": {
+    "state": "draft",
+    "en": "ebeca162"
+  },
+  "cast:choosePicture.now": {
+    "state": "draft",
+    "en": "42655b65"
+  },
+  "cast:choosePicture.showMore": {
+    "state": "draft",
+    "en": "e67d7237"
+  },
+  "cast:rename.title": {
+    "state": "draft",
+    "en": "6a5b5d42"
+  },
+  "cast:rename.description": {
+    "state": "draft",
+    "en": "f5310276"
+  },
+  "cast:rename.nameLabel": {
+    "state": "draft",
+    "en": "e102a633"
+  },
+  "cast:rename.save": {
+    "state": "draft",
+    "en": "4d2d5d68"
+  },
+  "cast:review.title": {
+    "state": "draft",
+    "en": "6128977b"
+  },
+  "cast:review.allDone": {
+    "state": "draft",
+    "en": "3d572df1"
+  },
+  "cast:review.nothing": {
+    "state": "draft",
+    "en": "35c38085"
+  },
+  "cast:review.skipped": {
+    "state": "draft",
+    "en": "79e9c136"
+  },
+  "cast:review.saved": {
+    "state": "draft",
+    "en": "11f636c8"
+  },
+  "cast:review.waiting": {
+    "state": "draft",
+    "en": "95018351"
+  },
+  "cast:review.showSkipped": {
+    "state": "draft",
+    "en": "f5c1c98e"
+  },
+  "cast:review.progress": {
+    "state": "draft",
+    "en": "be564428"
+  },
+  "cast:review.skippedCount": {
+    "state": "draft",
+    "en": "e2745569"
+  },
+  "cast:review.isThis": {
+    "state": "draft",
+    "en": "0dee9efe"
+  },
+  "cast:review.whoIsThis": {
+    "state": "draft",
+    "en": "c40e60a8"
+  },
+  "cast:review.lookALot": {
+    "state": "draft",
+    "en": "03f8fcb2"
+  },
+  "cast:review.mightBe": {
+    "state": "draft",
+    "en": "13ae9221"
+  },
+  "cast:review.faceAlt": {
+    "state": "draft",
+    "en": "58e70507"
+  },
+  "cast:review.watch": {
+    "state": "draft",
+    "en": "ec266ec8"
+  },
+  "cast:review.yes": {
+    "state": "draft",
+    "en": "0f5e292b"
+  },
+  "cast:review.no": {
+    "state": "draft",
+    "en": "cd40fc7f"
+  },
+  "cast:review.skip": {
+    "state": "draft",
+    "en": "c197c7e2"
+  },
+  "cast:review.skipForNow": {
+    "state": "draft",
+    "en": "85953101"
+  },
+  "cast:review.orSomeoneElse": {
+    "state": "draft",
+    "en": "2644c3b1"
+  },
+  "cast:review.itsThem": {
+    "state": "draft",
+    "en": "16b81cc1"
+  },
+  "cast:names.fromSource": {
+    "state": "draft",
+    "en": "e75f17fe"
+  },
+  "cast:names.thisFilm": {
+    "state": "draft",
+    "en": "890a773e"
+  },
+  "cast:names.thisSeries": {
+    "state": "draft",
+    "en": "7b52fe1f"
+  },
+  "cast:names.suggestions": {
+    "state": "draft",
+    "en": "faa6d5b7"
+  },
+  "cast:names.descriptionFilm": {
+    "state": "draft",
+    "en": "8b26efe3"
+  },
+  "cast:names.descriptionSeries": {
+    "state": "draft",
+    "en": "e56aa48c"
+  },
+  "cast:names.creditTvmaze": {
+    "state": "draft",
+    "en": "e070ea9c"
+  },
+  "cast:names.creditFandom": {
+    "state": "draft",
+    "en": "8673483b"
+  },
+  "cast:names.searchFilm": {
+    "state": "draft",
+    "en": "c11eb0ab"
+  },
+  "cast:names.searchSeries": {
+    "state": "draft",
+    "en": "b501b6dc"
+  },
+  "cast:names.searchLabel": {
+    "state": "draft",
+    "en": "deb26bfc"
+  },
+  "cast:names.search": {
+    "state": "draft",
+    "en": "c646a2c9"
+  },
+  "cast:names.episodesShort": {
+    "state": "draft",
+    "en": "fc381e0e"
+  },
+  "cast:names.nothingFilm": {
+    "state": "draft",
+    "en": "da7a4d14"
+  },
+  "cast:names.nothingSeries": {
+    "state": "draft",
+    "en": "818ed021"
+  },
+  "cast:names.chain": {
+    "state": "draft",
+    "en": "d8ecf599"
+  },
+  "cast:names.chainOne": {
+    "state": "draft",
+    "en": "91c2f0ee"
+  },
+  "cast:names.matchCast": {
+    "state": "draft",
+    "en": "5056ac6c"
+  },
+  "cast:names.noMatch": {
+    "state": "draft",
+    "en": "70ca75b4"
+  },
+  "cast:names.clickWrong": {
+    "state": "draft",
+    "en": "c5618f7a"
+  },
+  "cast:names.merge": {
+    "state": "draft",
+    "en": "2eecf739"
+  },
+  "cast:names.notNow": {
+    "state": "draft",
+    "en": "2c3d6fce"
+  },
+  "cast:names.apply": {
+    "state": "draft",
+    "en": "ca77bbdb"
+  },
+  "cast:names.applyN": {
+    "state": "draft",
+    "en": "05bac2d5"
+  },
+  "cast:names.couldntAnswer": {
+    "state": "draft",
+    "en": "33431eec"
+  },
+  "cast:names.named": {
+    "state": "draft",
+    "en": "6a32c450"
+  },
+  "cast:names.applied": {
+    "state": "draft",
+    "en": "5f6138f2"
+  },
+  "cast:names.merged": {
+    "state": "draft",
+    "en": "3a93d897"
+  },
+  "cast:names.aCharacter": {
+    "state": "draft",
+    "en": "fdc44e2b"
+  },
+  "cast:names.aCharacterStart": {
+    "state": "draft",
+    "en": "ba0c894b"
+  },
+  "cast:names.another": {
+    "state": "draft",
+    "en": "23176214"
+  },
+  "cast:names.hasNames": {
+    "state": "draft",
+    "en": "13262692"
+  },
+  "cast:names.seesOne": {
+    "state": "draft",
+    "en": "1c391c4a"
+  },
+  "cast:names.fromCast": {
+    "state": "draft",
+    "en": "d7102a92"
+  },
+  "cast:names.fromCastUnknown": {
+    "state": "draft",
+    "en": "886d3c55"
+  },
+  "cast:names.wrongFilm": {
+    "state": "draft",
+    "en": "7569afbe"
+  },
+  "cast:names.wrongSeries": {
+    "state": "draft",
+    "en": "43966047"
+  },
+  "cast:names.giveNames": {
+    "state": "draft",
+    "en": "e5fcc434"
+  },
+  "cast:names.giveN": {
+    "state": "draft",
+    "en": "12c80d42"
+  },
+  "cast:names.same": {
+    "state": "draft",
+    "en": "c3ac5a43"
+  },
+  "cast:names.looking": {
+    "state": "draft",
+    "en": "13df26e3"
+  },
+  "cast:names.giveFailed": {
+    "state": "draft",
+    "en": "18233cf3"
+  },
+  "cast:names.dismissFailed": {
+    "state": "draft",
+    "en": "12ccc4f3"
+  },
+  "cast:names.rejectFailed": {
+    "state": "draft",
+    "en": "35b35d53"
+  },
+  "project:nav.label": {
+    "state": "draft",
+    "en": "7b5fea5e"
+  },
+  "project:nav.overview": {
+    "state": "draft",
+    "en": "6a494fba"
+  },
+  "project:nav.episodes": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "project:nav.files": {
+    "state": "draft",
+    "en": "e71d1b30"
+  },
+  "project:nav.cast": {
+    "state": "draft",
+    "en": "2a519c6e"
+  },
+  "project:nav.exports": {
+    "state": "draft",
+    "en": "744ce6e0"
+  },
+  "project:nav.more": {
+    "state": "draft",
+    "en": "4f34d900"
+  },
+  "project:menu.addFiles": {
+    "state": "draft",
+    "en": "f20b9c27"
+  },
+  "project:menu.addFolder": {
+    "state": "draft",
+    "en": "ddfe12ea"
+  },
+  "project:menu.editDetails": {
+    "state": "draft",
+    "en": "e2c8dfef"
+  },
+  "project:menu.showProjectFolder": {
+    "state": "draft",
+    "en": "145328df"
+  },
+  "project:menu.showInFolder": {
+    "state": "draft",
+    "en": "63890d31"
+  },
+  "project:menu.showFolder": {
+    "state": "draft",
+    "en": "7a76be20"
+  },
+  "project:menu.copyFilePath": {
+    "state": "draft",
+    "en": "6fa72885"
+  },
+  "project:menu.copyFolderPath": {
+    "state": "draft",
+    "en": "5927981f"
+  },
+  "project:menu.copyError": {
+    "state": "draft",
+    "en": "30d23699"
+  },
+  "project:copied.filePath": {
+    "state": "draft",
+    "en": "31226842"
+  },
+  "project:copied.folderPath": {
+    "state": "draft",
+    "en": "ef6ddf70"
+  },
+  "project:copied.error": {
+    "state": "draft",
+    "en": "21918751"
+  },
+  "project:copied.timecodes": {
+    "state": "draft",
+    "en": "db0af266"
+  },
+  "project:add.files": {
+    "state": "draft",
+    "en": "dd45c7bb"
+  },
+  "project:add.folder": {
+    "state": "draft",
+    "en": "de73bb88"
+  },
+  "project:analysis.waiting": {
+    "state": "draft",
+    "en": "6b235630"
+  },
+  "project:analysis.running": {
+    "state": "draft",
+    "en": "ec2661b9"
+  },
+  "project:analysis.moreQueued": {
+    "state": "draft",
+    "en": "784a371e"
+  },
+  "project:overview.buildPack": {
+    "state": "draft",
+    "en": "b996ba31"
+  },
+  "project:overview.buildPackMenu": {
+    "state": "draft",
+    "en": "3f149235"
+  },
+  "project:overview.addEpisodes": {
+    "state": "draft",
+    "en": "6452060a"
+  },
+  "project:overview.addEpisodesMenu": {
+    "state": "draft",
+    "en": "19521744"
+  },
+  "project:overview.addFolder": {
+    "state": "draft",
+    "en": "4ae19dfd"
+  },
+  "project:overview.addFolderMenu": {
+    "state": "draft",
+    "en": "bc5ddfc1"
+  },
+  "project:overview.more": {
+    "state": "draft",
+    "en": "4f34d900"
+  },
+  "project:overview.characters": {
+    "state": "draft",
+    "en": "b15bfee6"
+  },
+  "project:overview.cast": {
+    "state": "draft",
+    "en": "2a519c6e"
+  },
+  "project:overview.facesToReview": {
+    "state": "draft",
+    "en": "eec94856"
+  },
+  "project:overview.allCharacters": {
+    "state": "draft",
+    "en": "b7123680"
+  },
+  "project:overview.episodes": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "project:overview.files": {
+    "state": "draft",
+    "en": "e71d1b30"
+  },
+  "project:overview.details": {
+    "state": "draft",
+    "en": "0ec24245"
+  },
+  "project:overview.castEmptyNoEpisodes": {
+    "state": "draft",
+    "en": "4f7faa1e"
+  },
+  "project:overview.castEmpty": {
+    "state": "draft",
+    "en": "826b5a48"
+  },
+  "project:overview.addSeasonFolder": {
+    "state": "draft",
+    "en": "87a514cc"
+  },
+  "project:overview.addMovieFolder": {
+    "state": "draft",
+    "en": "4ae19dfd"
+  },
+  "project:overview.whoseTitle": {
+    "state": "draft",
+    "en": "673c96b7"
+  },
+  "project:overview.whoseDescription": {
+    "state": "draft",
+    "en": "f733e949"
+  },
+  "project:episode.missing": {
+    "state": "draft",
+    "en": "3d94d6a7"
+  },
+  "project:episode.failed": {
+    "state": "draft",
+    "en": "5579c3d4"
+  },
+  "project:episode.shots": {
+    "state": "draft",
+    "en": "2534c175"
+  },
+  "project:episode.faces": {
+    "state": "draft",
+    "en": "a105fc09"
+  },
+  "project:episode.notAnalysed": {
+    "state": "draft",
+    "en": "849ec953"
+  },
+  "project:episode.working": {
+    "state": "draft",
+    "en": "df54f508"
+  },
+  "project:missing.episodes": {
+    "state": "draft",
+    "en": "a4d52f3c"
+  },
+  "project:missing.files": {
+    "state": "draft",
+    "en": "a80a73c0"
+  },
+  "project:missing.description": {
+    "state": "draft",
+    "en": "35f32400"
+  },
+  "project:missing.locateFolder": {
+    "state": "draft",
+    "en": "ba8ba539"
+  },
+  "project:loadError.goneTitle": {
+    "state": "draft",
+    "en": "2da86eb0"
+  },
+  "project:loadError.backToLibrary": {
+    "state": "draft",
+    "en": "2670948c"
+  },
+  "project:crumbs.project": {
+    "state": "draft",
+    "en": "7b5fea5e"
+  },
+  "project:crumbs.episode": {
+    "state": "draft",
+    "en": "7a22f972"
+  },
+  "project:crumbs.character": {
+    "state": "draft",
+    "en": "ec7340b0"
+  },
+  "project:crumbs.pack": {
+    "state": "draft",
+    "en": "35e5efc6"
+  },
+  "project:crumbs.everyoneElse": {
+    "state": "draft",
+    "en": "741149c9"
+  },
+  "project:crumbs.cast": {
+    "state": "draft",
+    "en": "b8782a66"
+  },
+  "project:episodes.title": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "project:episodes.titleFiles": {
+    "state": "draft",
+    "en": "e71d1b30"
+  },
+  "project:episodes.emptyTitle": {
+    "state": "draft",
+    "en": "70f7b60c"
+  },
+  "project:episodes.emptyDescription": {
+    "state": "draft",
+    "en": "4a3d60df"
+  },
+  "project:episodes.open": {
+    "state": "draft",
+    "en": "d0b38db8"
+  },
+  "project:episodes.options": {
+    "state": "draft",
+    "en": "f2664adc"
+  },
+  "project:episodes.audioTrack": {
+    "state": "draft",
+    "en": "82d2f8ba"
+  },
+  "project:episodes.noAudio": {
+    "state": "draft",
+    "en": "33438798"
+  },
+  "project:episodes.audioFailed": {
+    "state": "draft",
+    "en": "3ef24f63"
+  },
+  "project:actions.open": {
+    "state": "draft",
+    "en": "538b10e9"
+  },
+  "project:actions.locateFile": {
+    "state": "draft",
+    "en": "031ba517"
+  },
+  "project:actions.indexAgain": {
+    "state": "draft",
+    "en": "89fb9f33"
+  },
+  "project:actions.findShotsAgain": {
+    "state": "draft",
+    "en": "b56b6857"
+  },
+  "project:actions.findCharactersAgain": {
+    "state": "draft",
+    "en": "de28ce4a"
+  },
+  "project:actions.removeFromProject": {
+    "state": "draft",
+    "en": "94e222c4"
+  },
+  "project:actions.retryIndexFailed": {
+    "state": "draft",
+    "en": "124229d4"
+  },
+  "project:actions.analysisFailed": {
+    "state": "draft",
+    "en": "113f5a02"
+  },
+  "project:status.fileMissing": {
+    "state": "draft",
+    "en": "a71b41fb"
+  },
+  "project:status.indexingFailed": {
+    "state": "draft",
+    "en": "15a3a522"
+  },
+  "project:status.failed": {
+    "state": "draft",
+    "en": "5579c3d4"
+  },
+  "project:status.preparingPreview": {
+    "state": "draft",
+    "en": "a612df0f"
+  },
+  "project:status.analysing": {
+    "state": "draft",
+    "en": "ec2661b9"
+  },
+  "project:status.indexing": {
+    "state": "draft",
+    "en": "35c0e38d"
+  },
+  "project:status.queued": {
+    "state": "draft",
+    "en": "9e437c74"
+  },
+  "project:status.previewQueued": {
+    "state": "draft",
+    "en": "ba2d73e4"
+  },
+  "project:status.analysisQueued": {
+    "state": "draft",
+    "en": "4b21b5f0"
+  },
+  "project:status.analysisFailed": {
+    "state": "draft",
+    "en": "e4bc61d8"
+  },
+  "project:status.shotsFailed": {
+    "state": "draft",
+    "en": "b3c3a35b"
+  },
+  "project:status.stopped": {
+    "state": "draft",
+    "en": "863f19ee"
+  },
+  "project:status.indexed": {
+    "state": "draft",
+    "en": "ad43cc0a"
+  },
+  "project:status.continue": {
+    "state": "draft",
+    "en": "ab43d664"
+  },
+  "project:status.findShots": {
+    "state": "draft",
+    "en": "94e24fcf"
+  },
+  "project:status.shots": {
+    "state": "draft",
+    "en": "86dfc73f"
+  },
+  "project:status.faces": {
+    "state": "draft",
+    "en": "5af734cd"
+  },
+  "project:status.charactersFailed": {
+    "state": "draft",
+    "en": "98ccc0b6"
+  },
+  "project:status.charactersFailedWhy": {
+    "state": "draft",
+    "en": "72d37c07"
+  },
+  "project:status.stoppedContinue": {
+    "state": "draft",
+    "en": "8053d7a4"
+  },
+  "project:status.findCharacters": {
+    "state": "draft",
+    "en": "e88be77e"
+  },
+  "project:status.peopleFailed": {
+    "state": "draft",
+    "en": "52a8eabb"
+  },
+  "project:status.peopleFailedWhy": {
+    "state": "draft",
+    "en": "e532b3fe"
+  },
+  "project:status.peopleStoppedContinue": {
+    "state": "draft",
+    "en": "9ab20beb"
+  },
+  "project:status.findPeople": {
+    "state": "draft",
+    "en": "f955511d"
+  },
+  "project:status.retryFailed": {
+    "state": "draft",
+    "en": "06246b15"
+  },
+  "project:relink.questionTitle": {
+    "state": "draft",
+    "en": "68a5b6d4"
+  },
+  "project:relink.questionDescription": {
+    "state": "draft",
+    "en": "e439e416"
+  },
+  "project:relink.useAnyway": {
+    "state": "draft",
+    "en": "52386b1a"
+  },
+  "project:relink.whereIs": {
+    "state": "draft",
+    "en": "36f98df7"
+  },
+  "project:relink.whereAreEpisodes": {
+    "state": "draft",
+    "en": "70aadd4e"
+  },
+  "project:relink.whereAreFiles": {
+    "state": "draft",
+    "en": "62c92337"
+  },
+  "project:relink.couldntUse": {
+    "state": "draft",
+    "en": "8df3a805"
+  },
+  "project:relink.couldntLook": {
+    "state": "draft",
+    "en": "4c9fc6be"
+  },
+  "project:relink.using": {
+    "state": "draft",
+    "en": "c5a1d97d"
+  },
+  "project:relink.usingDescription": {
+    "state": "draft",
+    "en": "a320cc56"
+  },
+  "project:relink.found": {
+    "state": "draft",
+    "en": "a3a9c83d"
+  },
+  "project:relink.foundAgain": {
+    "state": "draft",
+    "en": "2b541614"
+  },
+  "project:relink.foundAgainDescription": {
+    "state": "draft",
+    "en": "8743984f"
+  },
+  "project:relink.folder.episodes.noneTitle": {
+    "state": "draft",
+    "en": "046b2f0c"
+  },
+  "project:relink.folder.episodes.noneDescription": {
+    "state": "draft",
+    "en": "1c38df2d"
+  },
+  "project:relink.folder.episodes.foundAll": {
+    "state": "draft",
+    "en": "7cd56417"
+  },
+  "project:relink.folder.episodes.foundSome": {
+    "state": "draft",
+    "en": "ddd82561"
+  },
+  "project:relink.folder.episodes.stillMissing": {
+    "state": "draft",
+    "en": "5ad87912"
+  },
+  "project:relink.folder.files.noneTitle": {
+    "state": "draft",
+    "en": "046b2f0c"
+  },
+  "project:relink.folder.files.noneDescription": {
+    "state": "draft",
+    "en": "a36e2984"
+  },
+  "project:relink.folder.files.foundAll": {
+    "state": "draft",
+    "en": "3096489f"
+  },
+  "project:relink.folder.files.foundSome": {
+    "state": "draft",
+    "en": "28b176a1"
+  },
+  "project:relink.folder.files.stillMissing": {
+    "state": "draft",
+    "en": "c39a8380"
+  },
+  "project:relink.folder.copies": {
+    "state": "draft",
+    "en": "6ac65554"
+  },
+  "project:remove.title": {
+    "state": "draft",
+    "en": "94b1078e"
+  },
+  "project:remove.descriptionFound": {
+    "state": "draft",
+    "en": "00f83e89"
+  },
+  "project:remove.descriptionNothing": {
+    "state": "draft",
+    "en": "4f941f68"
+  },
+  "project:remove.answer": {
+    "state": "draft",
+    "en": "f9973c8a"
+  },
+  "project:remove.failed": {
+    "state": "draft",
+    "en": "3c813be6"
+  },
+  "project:exports.title": {
+    "state": "draft",
+    "en": "744ce6e0"
+  },
+  "project:exports.subtitle": {
+    "state": "draft",
+    "en": "8ca5ace1"
+  },
+  "project:exports.emptyTitle": {
+    "state": "draft",
+    "en": "74aee953"
+  },
+  "project:exports.emptyDescription": {
+    "state": "draft",
+    "en": "f599a228"
+  },
+  "project:exports.showFolderFailed": {
+    "state": "draft",
+    "en": "2d87067d"
+  },
+  "project:exports.showExportsFolder": {
+    "state": "draft",
+    "en": "c36ebc64"
+  },
+  "project:exports.options": {
+    "state": "draft",
+    "en": "f2664adc"
+  },
+  "project:exports.clipsDone": {
+    "state": "draft",
+    "en": "15d65218"
+  },
+  "project:exports.clipsDoneInOneFile": {
+    "state": "draft",
+    "en": "5176743c"
+  },
+  "project:exports.hideClips": {
+    "state": "draft",
+    "en": "661f0246"
+  },
+  "project:exports.showClips": {
+    "state": "draft",
+    "en": "e87b3f4f"
+  },
+  "project:exports.showAllClips": {
+    "state": "draft",
+    "en": "e2d511c1"
+  },
+  "project:exports.saveEdl": {
+    "state": "draft",
+    "en": "2dce878b"
+  },
+  "project:exports.saveCutList": {
+    "state": "draft",
+    "en": "4824f5e7"
+  },
+  "project:exports.saveEdlTitle": {
+    "state": "draft",
+    "en": "f7c0dd0f"
+  },
+  "project:exports.saveCutListTitle": {
+    "state": "draft",
+    "en": "34732230"
+  },
+  "project:exports.savedEdl": {
+    "state": "draft",
+    "en": "99316588"
+  },
+  "project:exports.savedCutList": {
+    "state": "draft",
+    "en": "a4f042ad"
+  },
+  "project:exports.saveEdlFailed": {
+    "state": "draft",
+    "en": "93031560"
+  },
+  "project:exports.saveCutListFailed": {
+    "state": "draft",
+    "en": "4da68985"
+  },
+  "project:exports.leftOut": {
+    "state": "draft",
+    "en": "e25a9e6b"
+  },
+  "project:exports.queued": {
+    "state": "draft",
+    "en": "9e437c74"
+  },
+  "project:exports.exporting": {
+    "state": "draft",
+    "en": "9d4d1c85"
+  },
+  "project:exports.cancelled": {
+    "state": "draft",
+    "en": "a62b09bc"
+  },
+  "project:exports.fileNotMade": {
+    "state": "draft",
+    "en": "dd5a44e7"
+  },
+  "project:exports.someFailed": {
+    "state": "draft",
+    "en": "b9f0a627"
+  },
+  "project:exports.unverified": {
+    "state": "draft",
+    "en": "4b14a5b5"
+  },
+  "project:exports.file.chapters": {
+    "state": "draft",
+    "en": "f1db468a"
+  },
+  "project:exports.file.notMade": {
+    "state": "draft",
+    "en": "2f1345c3"
+  },
+  "project:exports.file.couldntBeMade": {
+    "state": "draft",
+    "en": "e4a7a161"
+  },
+  "project:exports.file.joining": {
+    "state": "draft",
+    "en": "bd9b09cf"
+  },
+  "project:exports.file.waiting": {
+    "state": "draft",
+    "en": "9f91ef05"
+  },
+  "project:exports.file.show": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "project:exports.clip.watchSource": {
+    "state": "draft",
+    "en": "9b0edf34"
+  },
+  "project:exports.clip.copyTimecodes": {
+    "state": "draft",
+    "en": "a806898d"
+  },
+  "project:exports.clip.frames": {
+    "state": "draft",
+    "en": "a19a828f"
+  },
+  "project:exports.clip.show": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "project:exports.verified": {
+    "state": "draft",
+    "en": "365a3e86"
+  },
+  "project:exports.unverifiedWhy": {
+    "state": "draft",
+    "en": "2f53a025"
+  },
+  "library:page.title": {
+    "state": "draft",
+    "en": "a8532270"
+  },
+  "library:page.newProject": {
+    "state": "draft",
+    "en": "3459afc0"
+  },
+  "library:page.dropHint": {
+    "state": "draft",
+    "en": "63d7ede6"
+  },
+  "library:page.allProjects": {
+    "state": "draft",
+    "en": "9ec1d6f6"
+  },
+  "library:page.loadFailed": {
+    "state": "draft",
+    "en": "481ba0f1"
+  },
+  "library:page.continue": {
+    "state": "draft",
+    "en": "ab43d664"
+  },
+  "library:welcome.title": {
+    "state": "draft",
+    "en": "e94faea9"
+  },
+  "library:welcome.intro": {
+    "state": "draft",
+    "en": "8c157a07"
+  },
+  "library:welcome.steps.add.title": {
+    "state": "draft",
+    "en": "6452060a"
+  },
+  "library:welcome.steps.add.body": {
+    "state": "draft",
+    "en": "ac920ba3"
+  },
+  "library:welcome.steps.cast.title": {
+    "state": "draft",
+    "en": "daee79ac"
+  },
+  "library:welcome.steps.cast.body": {
+    "state": "draft",
+    "en": "33ba8484"
+  },
+  "library:welcome.steps.export.title": {
+    "state": "draft",
+    "en": "19bbf225"
+  },
+  "library:welcome.steps.export.body": {
+    "state": "draft",
+    "en": "37d9cb72"
+  },
+  "library:project.open": {
+    "state": "draft",
+    "en": "de5a8918"
+  },
+  "library:project.files": {
+    "state": "draft",
+    "en": "e71d1b30"
+  },
+  "library:project.episodes": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "library:project.cast": {
+    "state": "draft",
+    "en": "2a519c6e"
+  },
+  "library:project.exports": {
+    "state": "draft",
+    "en": "744ce6e0"
+  },
+  "library:project.showFolder": {
+    "state": "draft",
+    "en": "145328df"
+  },
+  "library:project.editDetails": {
+    "state": "draft",
+    "en": "e2c8dfef"
+  },
+  "library:project.remove": {
+    "state": "draft",
+    "en": "32d46ce1"
+  },
+  "library:project.options": {
+    "state": "draft",
+    "en": "5d8e1abb"
+  },
+  "library:menu.newProject": {
+    "state": "draft",
+    "en": "4efd8712"
+  },
+  "library:menu.newFromFolderPage": {
+    "state": "draft",
+    "en": "0a8ef02d"
+  },
+  "library:menu.newFromFilesPage": {
+    "state": "draft",
+    "en": "8170816b"
+  },
+  "library:menu.fromFolder": {
+    "state": "draft",
+    "en": "c2b213b8"
+  },
+  "library:menu.fromFiles": {
+    "state": "draft",
+    "en": "1565f730"
+  },
+  "library:footage.label": {
+    "state": "draft",
+    "en": "983d5408"
+  },
+  "library:footage.live.label": {
+    "state": "draft",
+    "en": "0e07c207"
+  },
+  "library:footage.live.blurb": {
+    "state": "draft",
+    "en": "f0f58fff"
+  },
+  "library:footage.animation.label": {
+    "state": "draft",
+    "en": "41e389fd"
+  },
+  "library:footage.animation.blurb": {
+    "state": "draft",
+    "en": "dc5290f4"
+  },
+  "library:footage.anime.label": {
+    "state": "draft",
+    "en": "3e234f0f"
+  },
+  "library:footage.anime.blurb": {
+    "state": "draft",
+    "en": "b58a987c"
+  },
+  "library:footage.mixed.label": {
+    "state": "draft",
+    "en": "b9a8ef98"
+  },
+  "library:footage.mixed.blurb": {
+    "state": "draft",
+    "en": "f75426c8"
+  },
+  "library:footage.stills": {
+    "state": "draft",
+    "en": "2fdee759"
+  },
+  "library:newProject.title": {
+    "state": "draft",
+    "en": "3459afc0"
+  },
+  "library:newProject.description": {
+    "state": "draft",
+    "en": "9caafcb2"
+  },
+  "library:newProject.titleLabel": {
+    "state": "draft",
+    "en": "24d471a9"
+  },
+  "library:newProject.titlePlaceholder": {
+    "state": "draft",
+    "en": "8164e817"
+  },
+  "library:newProject.typeLabel": {
+    "state": "draft",
+    "en": "d155d06d"
+  },
+  "library:newProject.typeAria": {
+    "state": "draft",
+    "en": "da825c1a"
+  },
+  "library:newProject.series": {
+    "state": "draft",
+    "en": "098b99d0"
+  },
+  "library:newProject.movie": {
+    "state": "draft",
+    "en": "8368886f"
+  },
+  "library:newProject.fastScan": {
+    "state": "draft",
+    "en": "bd1de6f0"
+  },
+  "library:newProject.dropToAdd": {
+    "state": "draft",
+    "en": "c145938c"
+  },
+  "library:newProject.dropToAddKinds": {
+    "state": "draft",
+    "en": "177db744"
+  },
+  "library:newProject.dropHere": {
+    "state": "draft",
+    "en": "55ef5731"
+  },
+  "library:newProject.dropFormats": {
+    "state": "draft",
+    "en": "34c209de"
+  },
+  "library:newProject.chooseFolder": {
+    "state": "draft",
+    "en": "b3fa093f"
+  },
+  "library:newProject.addFolder": {
+    "state": "draft",
+    "en": "ddfe12ea"
+  },
+  "library:newProject.addFiles": {
+    "state": "draft",
+    "en": "f20b9c27"
+  },
+  "library:newProject.folder": {
+    "state": "draft",
+    "en": "a0fe06c1"
+  },
+  "library:newProject.files": {
+    "state": "draft",
+    "en": "e90403a2"
+  },
+  "library:newProject.include": {
+    "state": "draft",
+    "en": "93196fb0"
+  },
+  "library:newProject.skip": {
+    "state": "draft",
+    "en": "ad9909cb"
+  },
+  "library:newProject.includeFile": {
+    "state": "draft",
+    "en": "eb61ac26"
+  },
+  "library:newProject.skipFile": {
+    "state": "draft",
+    "en": "8a98af91"
+  },
+  "library:newProject.videos": {
+    "state": "draft",
+    "en": "7ac179ce"
+  },
+  "library:newProject.create": {
+    "state": "draft",
+    "en": "2c36aaf4"
+  },
+  "library:newProject.readFailed": {
+    "state": "draft",
+    "en": "bf26b97b"
+  },
+  "library:newProject.createFailed": {
+    "state": "draft",
+    "en": "2212614b"
+  },
+  "library:details.title": {
+    "state": "draft",
+    "en": "5e13f188"
+  },
+  "library:details.description": {
+    "state": "draft",
+    "en": "ac48a1ba"
+  },
+  "library:details.titleLabel": {
+    "state": "draft",
+    "en": "24d471a9"
+  },
+  "library:details.animeApart": {
+    "state": "draft",
+    "en": "e9ae7b0b"
+  },
+  "library:details.refilmedResearched": {
+    "state": "draft",
+    "en": "80fcb77c"
+  },
+  "library:details.refilmed": {
+    "state": "draft",
+    "en": "fa53e85a"
+  },
+  "library:details.save": {
+    "state": "draft",
+    "en": "4d2d5d68"
+  },
+  "library:details.partlyChanged": {
+    "state": "draft",
+    "en": "c200dbd1"
+  },
+  "library:details.changeFailed": {
+    "state": "draft",
+    "en": "f8c5bcdb"
+  },
+  "library:remove.title": {
+    "state": "draft",
+    "en": "5c6a6c39"
+  },
+  "library:remove.description": {
+    "state": "draft",
+    "en": "1c92360c"
+  },
+  "library:remove.descriptionStops": {
+    "state": "draft",
+    "en": "3405cd2d"
+  },
+  "library:remove.answerDelete": {
+    "state": "draft",
+    "en": "30620a5f"
+  },
+  "library:remove.answerKeep": {
+    "state": "draft",
+    "en": "b855f06c"
+  },
+  "library:remove.failed": {
+    "state": "draft",
+    "en": "eaadcecb"
+  },
+  "library:remove.removed": {
+    "state": "draft",
+    "en": "f52d8ab2"
+  },
+  "library:remove.deleteAnalysis": {
+    "state": "draft",
+    "en": "a34168ac"
+  },
+  "library:remove.deleteAnalysisHint": {
+    "state": "draft",
+    "en": "fe892e62"
+  },
+  "library:fastScan.settings.fast": {
+    "state": "draft",
+    "en": "110f7522"
+  },
+  "library:fastScan.settings.full": {
+    "state": "draft",
+    "en": "d644af91"
+  },
+  "library:fastScan.settings.integratedMac": {
+    "state": "draft",
+    "en": "bad8ad67"
+  },
+  "library:fastScan.settings.integrated": {
+    "state": "draft",
+    "en": "15d3bbbb"
+  },
+  "library:fastScan.settings.notForAi": {
+    "state": "draft",
+    "en": "7d8ea1c1"
+  },
+  "library:fastScan.settings.processorMac": {
+    "state": "draft",
+    "en": "f3188581"
+  },
+  "library:fastScan.settings.processor": {
+    "state": "draft",
+    "en": "2f6deed3"
+  },
+  "library:fastScan.settings.forAi": {
+    "state": "draft",
+    "en": "af58b7d5"
+  },
+  "library:fastScan.settings.unknown": {
+    "state": "draft",
+    "en": "0f83cbf5"
+  },
+  "library:fastScan.settings.keeps": {
+    "state": "draft",
+    "en": "6e59861f"
+  },
+  "library:fastScan.settings.keepsWithBodies": {
+    "state": "draft",
+    "en": "1ef4b530"
+  },
+  "library:fastScan.cost.anime": {
+    "state": "draft",
+    "en": "e3ddc8f8"
+  },
+  "library:fastScan.cost.animationBodies": {
+    "state": "draft",
+    "en": "bd7232d7"
+  },
+  "library:fastScan.cost.animation": {
+    "state": "draft",
+    "en": "8dbeb358"
+  },
+  "library:fastScan.cost.liveBodies": {
+    "state": "draft",
+    "en": "04a6b7fc"
+  },
+  "library:fastScan.cost.live": {
+    "state": "draft",
+    "en": "0cd924ee"
+  },
+  "library:fastScan.suits.integrated": {
+    "state": "draft",
+    "en": "b1c0befb"
+  },
+  "library:fastScan.suits.notForAi": {
+    "state": "draft",
+    "en": "95b3550b"
+  },
+  "library:fastScan.suits.processor": {
+    "state": "draft",
+    "en": "5e38f345"
+  },
+  "library:fastScan.fastScanSuits.integrated": {
+    "state": "draft",
+    "en": "a008f93a"
+  },
+  "library:fastScan.fastScanSuits.notForAi": {
+    "state": "draft",
+    "en": "0011b58e"
+  },
+  "library:fastScan.fastScanSuits.processor": {
+    "state": "draft",
+    "en": "4fb96b98"
+  },
+  "library:fastScan.hint.animeRescanned": {
+    "state": "draft",
+    "en": "59cc63de"
+  },
+  "library:fastScan.hint.animeFast": {
+    "state": "draft",
+    "en": "ce40774e"
+  },
+  "library:fastScan.hint.animeFull": {
+    "state": "draft",
+    "en": "ed9e4be5"
+  },
+  "library:fastScan.hint.rescanned": {
+    "state": "draft",
+    "en": "e34179cd"
+  },
+  "library:fastScan.hint.fast": {
+    "state": "draft",
+    "en": "89a097f6"
+  },
+  "library:fastScan.hint.full": {
+    "state": "draft",
+    "en": "b3b1c65e"
+  },
+  "library:fastScan.device.processor": {
+    "state": "draft",
+    "en": "e045ef67"
+  },
+  "library:fastScan.device.mac": {
+    "state": "draft",
+    "en": "987b3b46"
+  },
+  "library:fastScan.device.integrated": {
+    "state": "draft",
+    "en": "9f66754a"
+  },
+  "library:fastScan.lead.integratedMac": {
+    "state": "draft",
+    "en": "b907b81a"
+  },
+  "library:fastScan.lead.integrated": {
+    "state": "draft",
+    "en": "1c0085ce"
+  },
+  "library:fastScan.lead.notForAi": {
+    "state": "draft",
+    "en": "56448f70"
+  },
+  "library:fastScan.lead.processorLinux": {
+    "state": "draft",
+    "en": "159c6f5e"
+  },
+  "library:fastScan.lead.processorMac": {
+    "state": "draft",
+    "en": "a802a46a"
+  },
+  "library:fastScan.lead.processor": {
+    "state": "draft",
+    "en": "5c349d0c"
+  },
+  "library:fastScan.notice.faster.title": {
+    "state": "draft",
+    "en": "78111e65"
+  },
+  "library:fastScan.notice.faster.body": {
+    "state": "draft",
+    "en": "d9a1199e"
+  },
+  "library:fastScan.notice.faces.title": {
+    "state": "draft",
+    "en": "a0363c6b"
+  },
+  "library:fastScan.notice.faces.body": {
+    "state": "draft",
+    "en": "157d4c34"
+  },
+  "library:fastScan.notice.keeps": {
+    "state": "draft",
+    "en": "6e59861f"
+  },
+  "library:fastScan.notice.keepsWithBodies": {
+    "state": "draft",
+    "en": "0bb078b4"
+  },
+  "library:fastScan.notice.change": {
+    "state": "draft",
+    "en": "b62c271f"
+  },
+  "library:shots.noFace": {
+    "state": "draft",
+    "en": "39d694b7"
+  },
+  "library:shots.watchShot": {
+    "state": "draft",
+    "en": "15626098"
+  },
+  "library:shots.copyTimecode": {
+    "state": "draft",
+    "en": "7b6abc2c"
+  },
+  "library:shots.notThem": {
+    "state": "draft",
+    "en": "47d867a9"
+  },
+  "library:shots.notThemUnnamed": {
+    "state": "draft",
+    "en": "1e7e0478"
+  },
+  "library:shots.notAPerson": {
+    "state": "draft",
+    "en": "8041a7da"
+  },
+  "library:shots.hintFaceless": {
+    "state": "draft",
+    "en": "dec5e975"
+  },
+  "library:shots.hintWatch": {
+    "state": "draft",
+    "en": "7ceeb617"
+  },
+  "library:shots.label": {
+    "state": "draft",
+    "en": "2c743315"
+  },
+  "library:shots.labelAt": {
+    "state": "draft",
+    "en": "3011f709"
+  },
+  "library:shots.withoutFace": {
+    "state": "draft",
+    "en": "6e4b94c0"
+  },
+  "library:shots.count": {
+    "state": "draft",
+    "en": "05972ad4"
+  },
+  "library:shots.countAt": {
+    "state": "draft",
+    "en": "52f9ba80"
+  },
+  "library:shots.bandAt": {
+    "state": "draft",
+    "en": "97f08ade"
+  },
+  "library:shots.together": {
+    "state": "draft",
+    "en": "56bb78be"
+  },
+  "library:shots.hide": {
+    "state": "draft",
+    "en": "d1c00c76"
+  },
+  "library:shots.show": {
+    "state": "draft",
+    "en": "870c04d3"
+  },
+  "library:shots.watchFromFirst": {
+    "state": "draft",
+    "en": "393cb767"
+  },
+  "library:shots.watchFromWhere": {
+    "state": "draft",
+    "en": "ff8db167"
+  },
+  "library:shots.watchFromClock": {
+    "state": "draft",
+    "en": "c430d286"
+  },
+  "media:audio.mono": {
+    "state": "draft",
+    "en": "5966858a"
+  },
+  "media:audio.stereo": {
+    "state": "draft",
+    "en": "f94ffe6d"
+  },
+  "media:audio.channels": {
+    "state": "draft",
+    "en": "002919d0"
+  },
+  "media:audio.track": {
+    "state": "draft",
+    "en": "0f30c462"
+  },
+  "media:audio.commentary": {
+    "state": "draft",
+    "en": "49a77c3c"
+  },
+  "media:audio.defaultTrack": {
+    "state": "draft",
+    "en": "0d3f08fe"
+  },
+  "media:flags.bitDepth": {
+    "state": "draft",
+    "en": "20c195f7"
+  },
+  "media:flags.interlaced": {
+    "state": "draft",
+    "en": "9093151a"
+  },
+  "media:dialog.videoFilter": {
+    "state": "draft",
+    "en": "5b67c80c"
+  },
+  "media:dialog.pluginFilter": {
+    "state": "draft",
+    "en": "0aeb679d"
+  },
+  "media:dialog.installPlugin": {
+    "state": "draft",
+    "en": "291f30be"
+  },
+  "player:frames": {
+    "state": "draft",
+    "en": "9c6cd91a"
+  },
+  "player:percent": {
+    "state": "draft",
+    "en": "0c6d666d"
+  },
+  "player:character.unnamed": {
+    "state": "draft",
+    "en": "fb25718d"
+  },
+  "player:page.episodes": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "player:page.files": {
+    "state": "draft",
+    "en": "e71d1b30"
+  },
+  "player:page.previewTip": {
+    "state": "draft",
+    "en": "07f620ea"
+  },
+  "player:page.preview": {
+    "state": "draft",
+    "en": "fdda4cf7"
+  },
+  "player:page.details": {
+    "state": "draft",
+    "en": "0ec24245"
+  },
+  "player:page.hideDetails": {
+    "state": "draft",
+    "en": "8aa23e3f"
+  },
+  "player:page.showDetails": {
+    "state": "draft",
+    "en": "dc152062"
+  },
+  "player:page.previousEpisode": {
+    "state": "draft",
+    "en": "8636a111"
+  },
+  "player:page.nextEpisode": {
+    "state": "draft",
+    "en": "d8b16551"
+  },
+  "player:page.previousEpisodeTitled": {
+    "state": "draft",
+    "en": "2995202f"
+  },
+  "player:page.nextEpisodeTitled": {
+    "state": "draft",
+    "en": "0238e26f"
+  },
+  "player:notReady.loading": {
+    "state": "draft",
+    "en": "2e7e4ae3"
+  },
+  "player:notReady.listFailed": {
+    "state": "draft",
+    "en": "d007a948"
+  },
+  "player:notReady.goneTitle": {
+    "state": "draft",
+    "en": "cee7f465"
+  },
+  "player:notReady.goneBody": {
+    "state": "draft",
+    "en": "e835a779"
+  },
+  "player:notReady.indexingTitle": {
+    "state": "draft",
+    "en": "35c0e38d"
+  },
+  "player:notReady.indexingBody": {
+    "state": "draft",
+    "en": "4bae6414"
+  },
+  "player:notReady.indexFailed": {
+    "state": "draft",
+    "en": "f8d1247f"
+  },
+  "player:notReady.missingTitle": {
+    "state": "draft",
+    "en": "87ea9fc6"
+  },
+  "player:notReady.missingBody": {
+    "state": "draft",
+    "en": "451998e3"
+  },
+  "player:notReady.previewing": {
+    "state": "draft",
+    "en": "a612df0f"
+  },
+  "player:notReady.previewFailed": {
+    "state": "draft",
+    "en": "8c4e8764"
+  },
+  "player:notReady.previewMissing": {
+    "state": "draft",
+    "en": "0c977bbb"
+  },
+  "player:notReady.previewBody": {
+    "state": "draft",
+    "en": "899f6126"
+  },
+  "player:notReady.cantPlay": {
+    "state": "draft",
+    "en": "e9177bd6"
+  },
+  "player:notReady.preparePreview": {
+    "state": "draft",
+    "en": "cb55af10"
+  },
+  "player:notReady.locate": {
+    "state": "draft",
+    "en": "031ba517"
+  },
+  "player:notReady.backToEpisodes": {
+    "state": "draft",
+    "en": "3bfc818e"
+  },
+  "player:notReady.framesOfAbout": {
+    "state": "draft",
+    "en": "ec57ca72"
+  },
+  "player:notReady.framesRead": {
+    "state": "draft",
+    "en": "ffacea04"
+  },
+  "player:notReady.measuring": {
+    "state": "draft",
+    "en": "35003d4f"
+  },
+  "player:notReady.pace": {
+    "state": "draft",
+    "en": "66e77780"
+  },
+  "player:notReady.paceReal": {
+    "state": "draft",
+    "en": "a0ba10f9"
+  },
+  "player:transport.firstFrame": {
+    "state": "draft",
+    "en": "06742138"
+  },
+  "player:transport.previousFrame": {
+    "state": "draft",
+    "en": "9de74fc5"
+  },
+  "player:transport.nextFrame": {
+    "state": "draft",
+    "en": "1d59a505"
+  },
+  "player:transport.lastFrame": {
+    "state": "draft",
+    "en": "40e34680"
+  },
+  "player:transport.play": {
+    "state": "draft",
+    "en": "29ab6f83"
+  },
+  "player:transport.pause": {
+    "state": "draft",
+    "en": "44f9bf2d"
+  },
+  "player:transport.mute": {
+    "state": "draft",
+    "en": "3f609f74"
+  },
+  "player:transport.unmute": {
+    "state": "draft",
+    "en": "bb6972bb"
+  },
+  "player:transport.volume": {
+    "state": "draft",
+    "en": "74f576af"
+  },
+  "player:transport.clipLength": {
+    "state": "draft",
+    "en": "da7ff421"
+  },
+  "player:transport.clearMarks": {
+    "state": "draft",
+    "en": "ef98c498"
+  },
+  "player:transport.exportClip": {
+    "state": "draft",
+    "en": "542c18c7"
+  },
+  "player:transport.export": {
+    "state": "draft",
+    "en": "e86349d3"
+  },
+  "player:transport.exportHint": {
+    "state": "draft",
+    "en": "59976c74"
+  },
+  "player:transport.exportHintKeys": {
+    "state": "draft",
+    "en": "0746f987"
+  },
+  "player:transport.in": {
+    "state": "draft",
+    "en": "40e8c8be"
+  },
+  "player:transport.out": {
+    "state": "draft",
+    "en": "0da660ff"
+  },
+  "player:transport.markIn": {
+    "state": "draft",
+    "en": "14c4e4df"
+  },
+  "player:transport.markOut": {
+    "state": "draft",
+    "en": "e4d542e4"
+  },
+  "player:transport.goToIn": {
+    "state": "draft",
+    "en": "71d9eee8"
+  },
+  "player:transport.goToOut": {
+    "state": "draft",
+    "en": "a0c5652d"
+  },
+  "player:transport.goToInAt": {
+    "state": "draft",
+    "en": "c82571e5"
+  },
+  "player:transport.goToOutAt": {
+    "state": "draft",
+    "en": "98d59274"
+  },
+  "player:readout.elapsed": {
+    "state": "draft",
+    "en": "ec41bd5d"
+  },
+  "player:readout.remaining": {
+    "state": "draft",
+    "en": "bf158125"
+  },
+  "player:readout.frameNumber": {
+    "state": "draft",
+    "en": "9993817f"
+  },
+  "player:readout.percentage": {
+    "state": "draft",
+    "en": "745595d5"
+  },
+  "player:readout.currentFrame": {
+    "state": "draft",
+    "en": "0b61ed5f"
+  },
+  "player:readout.aria": {
+    "state": "draft",
+    "en": "08c9fa88"
+  },
+  "player:readout.goTo": {
+    "state": "draft",
+    "en": "3639d66c"
+  },
+  "player:readout.goToMenu": {
+    "state": "draft",
+    "en": "a73eb67e"
+  },
+  "player:readout.goToHint": {
+    "state": "draft",
+    "en": "da5baf1b"
+  },
+  "player:readout.counterTip": {
+    "state": "draft",
+    "en": "75680e57"
+  },
+  "player:readout.frameUnit": {
+    "state": "draft",
+    "en": "e30c2799"
+  },
+  "player:readout.badTimecode": {
+    "state": "draft",
+    "en": "4e06f9e7"
+  },
+  "player:readout.badTimecodeTry": {
+    "state": "draft",
+    "en": "655cb0c8"
+  },
+  "player:clip.summary": {
+    "state": "draft",
+    "en": "fc20fa66"
+  },
+  "player:clip.onlyIn": {
+    "state": "draft",
+    "en": "8cbd06a8"
+  },
+  "player:clip.onlyInNoKey": {
+    "state": "draft",
+    "en": "29bc92dd"
+  },
+  "player:clip.onlyOut": {
+    "state": "draft",
+    "en": "c74bbbd6"
+  },
+  "player:clip.onlyOutNoKey": {
+    "state": "draft",
+    "en": "0ad87c96"
+  },
+  "player:menu.exportClip": {
+    "state": "draft",
+    "en": "629d8a33"
+  },
+  "player:menu.copyInOut": {
+    "state": "draft",
+    "en": "3f585b8a"
+  },
+  "player:menu.copyTimecode": {
+    "state": "draft",
+    "en": "7b6abc2c"
+  },
+  "player:menu.goToTimecode": {
+    "state": "draft",
+    "en": "8d43db39"
+  },
+  "player:menu.playerKeys": {
+    "state": "draft",
+    "en": "0ef345c6"
+  },
+  "player:timeline.zoomIn": {
+    "state": "draft",
+    "en": "a3583899"
+  },
+  "player:timeline.zoomOut": {
+    "state": "draft",
+    "en": "8570fe3a"
+  },
+  "player:timeline.wholeEpisode": {
+    "state": "draft",
+    "en": "58b85672"
+  },
+  "player:timeline.shots": {
+    "state": "draft",
+    "en": "60ece992"
+  },
+  "player:timeline.characters": {
+    "state": "draft",
+    "en": "8f01679e"
+  },
+  "player:timeline.inView": {
+    "state": "draft",
+    "en": "748df767"
+  },
+  "player:timeline.playhead": {
+    "state": "draft",
+    "en": "c896e079"
+  },
+  "player:timeline.goHere": {
+    "state": "draft",
+    "en": "eff81907"
+  },
+  "player:timeline.markInHere": {
+    "state": "draft",
+    "en": "d1576743"
+  },
+  "player:timeline.markOutHere": {
+    "state": "draft",
+    "en": "0d4329da"
+  },
+  "player:timeline.copyTimecode": {
+    "state": "draft",
+    "en": "9e483838"
+  },
+  "player:timeline.shotDetail": {
+    "state": "draft",
+    "en": "a2b0efde"
+  },
+  "player:timeline.shotDetailTiny": {
+    "state": "draft",
+    "en": "ccd3933b"
+  },
+  "player:timeline.appearance": {
+    "state": "draft",
+    "en": "902442f1"
+  },
+  "player:timeline.appearanceNoFace": {
+    "state": "draft",
+    "en": "c0eee150"
+  },
+  "player:timeline.goToAppearance": {
+    "state": "draft",
+    "en": "a3333866"
+  },
+  "player:timeline.markAppearance": {
+    "state": "draft",
+    "en": "fa59340e"
+  },
+  "player:timeline.nextAppearance": {
+    "state": "draft",
+    "en": "4e159bda"
+  },
+  "player:timeline.stopHighlighting": {
+    "state": "draft",
+    "en": "56031283"
+  },
+  "player:timeline.highlight": {
+    "state": "draft",
+    "en": "eaf105c7"
+  },
+  "player:timeline.openInCast": {
+    "state": "draft",
+    "en": "9f31ee9a"
+  },
+  "player:segment.shot": {
+    "state": "draft",
+    "en": "2c743315"
+  },
+  "player:segment.dissolve": {
+    "state": "draft",
+    "en": "76c9ac8a"
+  },
+  "player:segment.fadeOut": {
+    "state": "draft",
+    "en": "4baf6463"
+  },
+  "player:segment.fadeIn": {
+    "state": "draft",
+    "en": "0a228aaa"
+  },
+  "player:segment.black": {
+    "state": "draft",
+    "en": "2b043744"
+  },
+  "player:segment.flash": {
+    "state": "draft",
+    "en": "55411ec9"
+  },
+  "player:shot.number": {
+    "state": "draft",
+    "en": "9a037dae"
+  },
+  "player:shot.of": {
+    "state": "draft",
+    "en": "1a236979"
+  },
+  "player:shot.ofTiny": {
+    "state": "draft",
+    "en": "b93ce7fa"
+  },
+  "player:shot.length": {
+    "state": "draft",
+    "en": "0b1a1544"
+  },
+  "player:shot.mark": {
+    "state": "draft",
+    "en": "769f2500"
+  },
+  "player:shot.markAsClip": {
+    "state": "draft",
+    "en": "2e57c6ea"
+  },
+  "player:shot.previous": {
+    "state": "draft",
+    "en": "4d85e618"
+  },
+  "player:shot.next": {
+    "state": "draft",
+    "en": "252ba258"
+  },
+  "player:shot.goTo": {
+    "state": "draft",
+    "en": "ce0e4df1"
+  },
+  "player:shot.goThere": {
+    "state": "draft",
+    "en": "cf80ad79"
+  },
+  "player:shot.copyTimecodes": {
+    "state": "draft",
+    "en": "09cbbc7b"
+  },
+  "player:details.cast": {
+    "state": "draft",
+    "en": "2a519c6e"
+  },
+  "player:details.file": {
+    "state": "draft",
+    "en": "2b183663"
+  },
+  "player:details.sections": {
+    "state": "draft",
+    "en": "1a77994b"
+  },
+  "player:castTab.shotsFailed": {
+    "state": "draft",
+    "en": "71fa512f"
+  },
+  "player:castTab.shotsStopped": {
+    "state": "draft",
+    "en": "f417cd0b"
+  },
+  "player:castTab.shotsMissing": {
+    "state": "draft",
+    "en": "6afdcc9f"
+  },
+  "player:castTab.facesFailed": {
+    "state": "draft",
+    "en": "ebec748b"
+  },
+  "player:castTab.facesStopped": {
+    "state": "draft",
+    "en": "c23309b8"
+  },
+  "player:castTab.facesMissing": {
+    "state": "draft",
+    "en": "77283e30"
+  },
+  "player:castTab.findAll": {
+    "state": "draft",
+    "en": "4b2dc31a"
+  },
+  "player:castTab.findCharacters": {
+    "state": "draft",
+    "en": "e88be77e"
+  },
+  "player:castTab.continue": {
+    "state": "draft",
+    "en": "ab43d664"
+  },
+  "player:castTab.shotsAgain": {
+    "state": "draft",
+    "en": "b56b6857"
+  },
+  "player:castTab.shotsContinue": {
+    "state": "draft",
+    "en": "5e820af8"
+  },
+  "player:castTab.facesAgain": {
+    "state": "draft",
+    "en": "de28ce4a"
+  },
+  "player:castTab.facesContinue": {
+    "state": "draft",
+    "en": "be57836b"
+  },
+  "player:castTab.findingShots": {
+    "state": "draft",
+    "en": "10a9826b"
+  },
+  "player:castTab.findingCharacters": {
+    "state": "draft",
+    "en": "fe889f82"
+  },
+  "player:castTab.startFailed": {
+    "state": "draft",
+    "en": "113f5a02"
+  },
+  "player:castTab.nobody": {
+    "state": "draft",
+    "en": "aae92e42"
+  },
+  "player:castTab.inShot": {
+    "state": "draft",
+    "en": "0a840882"
+  },
+  "player:castTab.listHint": {
+    "state": "draft",
+    "en": "d2dfdbe2"
+  },
+  "player:castTab.showFewer": {
+    "state": "draft",
+    "en": "40e1838d"
+  },
+  "player:castTab.showMore": {
+    "state": "draft",
+    "en": "6f70f891"
+  },
+  "player:castTab.moreInEpisode": {
+    "state": "draft",
+    "en": "31a047cd"
+  },
+  "player:castTab.openCast": {
+    "state": "draft",
+    "en": "c87ba159"
+  },
+  "player:file.showInFolder": {
+    "state": "draft",
+    "en": "63890d31"
+  },
+  "player:file.copyPath": {
+    "state": "draft",
+    "en": "6fa72885"
+  },
+  "player:file.audioTrack": {
+    "state": "draft",
+    "en": "82d2f8ba"
+  },
+  "player:file.audioFailed": {
+    "state": "draft",
+    "en": "3ef24f63"
+  },
+  "player:file.video": {
+    "state": "draft",
+    "en": "03aa09b9"
+  },
+  "player:file.length": {
+    "state": "draft",
+    "en": "4c24acd2"
+  },
+  "player:keys.title": {
+    "state": "draft",
+    "en": "2e7bf6c4"
+  },
+  "player:keys.noKey": {
+    "state": "draft",
+    "en": "336b5a75"
+  },
+  "player:keys.change": {
+    "state": "draft",
+    "en": "aa0c9dc3"
+  },
+  "pack:shots": {
+    "state": "draft",
+    "en": "05972ad4"
+  },
+  "pack:episodes": {
+    "state": "draft",
+    "en": "e2f8c172"
+  },
+  "pack:reason.missing": {
+    "state": "draft",
+    "en": "a71b41fb"
+  },
+  "pack:reason.episode": {
+    "state": "draft",
+    "en": "dfd36fe0"
+  },
+  "pack:reason.tiny": {
+    "state": "draft",
+    "en": "df6600b9"
+  },
+  "pack:reason.short": {
+    "state": "draft",
+    "en": "32893df3"
+  },
+  "pack:reason.long": {
+    "state": "draft",
+    "en": "9bf49bdd"
+  },
+  "pack:reason.size": {
+    "state": "draft",
+    "en": "be97d846"
+  },
+  "pack:reason.notSolo": {
+    "state": "draft",
+    "en": "6f3a41b1"
+  },
+  "pack:reason.faceless": {
+    "state": "draft",
+    "en": "39d694b7"
+  },
+  "pack:reason.limit": {
+    "state": "draft",
+    "en": "5da60fa5"
+  },
+  "pack:reason.removed": {
+    "state": "draft",
+    "en": "84629f1c"
+  },
+  "pack:reason.plugin": {
+    "state": "draft",
+    "en": "bd80f9a8"
+  },
+  "pack:reason.other": {
+    "state": "draft",
+    "en": "6a531974"
+  },
+  "pack:size.extremeCloseUp.label": {
+    "state": "draft",
+    "en": "510f7637"
+  },
+  "pack:size.extremeCloseUp.short": {
+    "state": "draft",
+    "en": "fc2834c4"
+  },
+  "pack:size.closeUp.label": {
+    "state": "draft",
+    "en": "b1b71bc7"
+  },
+  "pack:size.closeUp.short": {
+    "state": "draft",
+    "en": "6bda01e5"
+  },
+  "pack:size.mediumCloseUp.label": {
+    "state": "draft",
+    "en": "d4f7e0ec"
+  },
+  "pack:size.mediumCloseUp.short": {
+    "state": "draft",
+    "en": "135e017c"
+  },
+  "pack:size.medium.label": {
+    "state": "draft",
+    "en": "11fb86aa"
+  },
+  "pack:size.medium.short": {
+    "state": "draft",
+    "en": "35dfbd11"
+  },
+  "pack:size.wide.label": {
+    "state": "draft",
+    "en": "3b02fc16"
+  },
+  "pack:size.wide.short": {
+    "state": "draft",
+    "en": "2df7b55f"
+  },
+  "pack:length.any": {
+    "state": "draft",
+    "en": "16fbc937"
+  },
+  "pack:length.between": {
+    "state": "draft",
+    "en": "32c6d11f"
+  },
+  "pack:length.orLonger": {
+    "state": "draft",
+    "en": "128b076c"
+  },
+  "pack:length.upTo": {
+    "state": "draft",
+    "en": "7715d3ba"
+  },
+  "pack:check.some": {
+    "state": "draft",
+    "en": "ad09e03a"
+  },
+  "pack:check.all": {
+    "state": "draft",
+    "en": "e2bf57ca"
+  },
+  "pack:check.failed": {
+    "state": "draft",
+    "en": "3853f9a6"
+  },
+  "pack:save.heading": {
+    "state": "draft",
+    "en": "733b222e"
+  },
+  "pack:save.waitsForCheck": {
+    "state": "draft",
+    "en": "1440ffe0"
+  },
+  "pack:save.needsShot": {
+    "state": "draft",
+    "en": "e733369d"
+  },
+  "pack:save.waitsForPack": {
+    "state": "draft",
+    "en": "02069339"
+  },
+  "pack:namePart.series.label": {
+    "state": "draft",
+    "en": "098b99d0"
+  },
+  "pack:namePart.series.hint": {
+    "state": "draft",
+    "en": "95d056fd"
+  },
+  "pack:namePart.character.label": {
+    "state": "draft",
+    "en": "ec7340b0"
+  },
+  "pack:namePart.character.hint": {
+    "state": "draft",
+    "en": "200448bc"
+  },
+  "pack:namePart.episode.label": {
+    "state": "draft",
+    "en": "7a22f972"
+  },
+  "pack:namePart.episode.hint": {
+    "state": "draft",
+    "en": "46652a7b"
+  },
+  "pack:namePart.index.label": {
+    "state": "draft",
+    "en": "61e9eac0"
+  },
+  "pack:namePart.index.hint": {
+    "state": "draft",
+    "en": "8cbe9605"
+  },
+  "pack:namePart.tc.label": {
+    "state": "draft",
+    "en": "7f7c00d1"
+  },
+  "pack:namePart.tc.hint": {
+    "state": "draft",
+    "en": "0d7a9b8c"
+  },
+  "pack:namePart.frame.label": {
+    "state": "draft",
+    "en": "5e7ac146"
+  },
+  "pack:namePart.frame.hint": {
+    "state": "draft",
+    "en": "a97c6c71"
+  },
+  "pack:card.added": {
+    "state": "draft",
+    "en": "b35c3185"
+  },
+  "pack:card.hint.faceless": {
+    "state": "draft",
+    "en": "f345f54f"
+  },
+  "pack:card.hint.wouldLeaveOut": {
+    "state": "draft",
+    "en": "2a696dd1"
+  },
+  "pack:card.hint.takeOut": {
+    "state": "draft",
+    "en": "0bb29860"
+  },
+  "pack:card.hint.takeIn": {
+    "state": "draft",
+    "en": "d013646f"
+  },
+  "pack:card.before.sure": {
+    "state": "draft",
+    "en": "0743561f"
+  },
+  "pack:card.before.maybe": {
+    "state": "draft",
+    "en": "50a363b0"
+  },
+  "pack:card.aria.shot": {
+    "state": "draft",
+    "en": "2c743315"
+  },
+  "pack:card.aria.shotAt": {
+    "state": "draft",
+    "en": "d44f6613"
+  },
+  "pack:card.aria.withoutFace": {
+    "state": "draft",
+    "en": "6e4b94c0"
+  },
+  "pack:card.aria.inPack": {
+    "state": "draft",
+    "en": "c9a3dba6"
+  },
+  "pack:card.aria.leftOut": {
+    "state": "draft",
+    "en": "eb7cd784"
+  },
+  "pack:card.watchAria": {
+    "state": "draft",
+    "en": "ca5fce49"
+  },
+  "pack:card.watchAriaAt": {
+    "state": "draft",
+    "en": "a310d867"
+  },
+  "pack:card.watch": {
+    "state": "draft",
+    "en": "15626098"
+  },
+  "pack:card.remove": {
+    "state": "draft",
+    "en": "b6feadbc"
+  },
+  "pack:card.add": {
+    "state": "draft",
+    "en": "194f412a"
+  },
+  "pack:card.handBack": {
+    "state": "draft",
+    "en": "77f938c0"
+  },
+  "pack:card.notThem": {
+    "state": "draft",
+    "en": "47d867a9"
+  },
+  "pack:card.notThemAnon": {
+    "state": "draft",
+    "en": "1e7e0478"
+  },
+  "pack:card.notPerson": {
+    "state": "draft",
+    "en": "8041a7da"
+  },
+  "pack:card.copyTimecode": {
+    "state": "draft",
+    "en": "7b6abc2c"
+  },
+  "pack:filters.title": {
+    "state": "draft",
+    "en": "0b3aa6ec"
+  },
+  "pack:filters.titleOn": {
+    "state": "draft",
+    "en": "b99f0669"
+  },
+  "pack:filters.order.aria": {
+    "state": "draft",
+    "en": "18e78237"
+  },
+  "pack:filters.order.episodes": {
+    "state": "draft",
+    "en": "35df1dae"
+  },
+  "pack:filters.order.best": {
+    "state": "draft",
+    "en": "8bb6f541"
+  },
+  "pack:filters.sizes": {
+    "state": "draft",
+    "en": "7dcef2ef"
+  },
+  "pack:filters.length": {
+    "state": "draft",
+    "en": "cc5e1935"
+  },
+  "pack:filters.episodes": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "pack:filters.limit": {
+    "state": "draft",
+    "en": "d8964ad4"
+  },
+  "pack:filters.episodesOf": {
+    "state": "draft",
+    "en": "66a432b0"
+  },
+  "pack:filters.all": {
+    "state": "draft",
+    "en": "75afe364"
+  },
+  "pack:filters.allEpisodes": {
+    "state": "draft",
+    "en": "6d21b09a"
+  },
+  "pack:filters.noLimit": {
+    "state": "draft",
+    "en": "6de7f47d"
+  },
+  "pack:filters.best": {
+    "state": "draft",
+    "en": "2b127de9"
+  },
+  "pack:filters.theBest": {
+    "state": "draft",
+    "en": "c98a7edc"
+  },
+  "pack:filters.solo": {
+    "state": "draft",
+    "en": "4457385f"
+  },
+  "pack:filters.skipTiny": {
+    "state": "draft",
+    "en": "061a9695"
+  },
+  "pack:filters.withFace": {
+    "state": "draft",
+    "en": "554b3856"
+  },
+  "pack:filters.withFaceHint": {
+    "state": "draft",
+    "en": "a34f0fe4"
+  },
+  "pack:filters.noHandles": {
+    "state": "draft",
+    "en": "d36a2d71"
+  },
+  "pack:filters.handles": {
+    "state": "draft",
+    "en": "3e0d5602"
+  },
+  "pack:filters.framesAround": {
+    "state": "draft",
+    "en": "e09bd1b4"
+  },
+  "pack:filters.reset": {
+    "state": "draft",
+    "en": "cb336bf3"
+  },
+  "pack:filters.plugin.gone": {
+    "state": "draft",
+    "en": "961d0557"
+  },
+  "pack:filters.plugin.off": {
+    "state": "draft",
+    "en": "4caa6ba6"
+  },
+  "pack:filters.plugin.says": {
+    "state": "draft",
+    "en": "1f373574"
+  },
+  "pack:filters.plugin.pluginOff": {
+    "state": "draft",
+    "en": "8f1eb84b"
+  },
+  "pack:filters.plugin.checkingAria": {
+    "state": "draft",
+    "en": "247e1fcf"
+  },
+  "pack:filters.plugin.failedAria": {
+    "state": "draft",
+    "en": "fd697509"
+  },
+  "pack:footer.about": {
+    "state": "draft",
+    "en": "4447a8b3"
+  },
+  "pack:footer.aboutIn": {
+    "state": "draft",
+    "en": "40e5aef7"
+  },
+  "pack:footer.failedHint": {
+    "state": "draft",
+    "en": "c28e3f52"
+  },
+  "pack:footer.picksByHand": {
+    "state": "draft",
+    "en": "1e0bf7e2"
+  },
+  "pack:footer.handBackAll": {
+    "state": "draft",
+    "en": "50c7aa11"
+  },
+  "pack:footer.options": {
+    "state": "draft",
+    "en": "5733c87e"
+  },
+  "pack:footer.showExport": {
+    "state": "draft",
+    "en": "509ac795"
+  },
+  "pack:footer.exportQueued": {
+    "state": "draft",
+    "en": "04d7c400"
+  },
+  "pack:footer.exporting": {
+    "state": "draft",
+    "en": "91bb9d13"
+  },
+  "pack:footer.waitsForCheck": {
+    "state": "draft",
+    "en": "f55111dd"
+  },
+  "pack:footer.exportWaitsAria": {
+    "state": "draft",
+    "en": "5f5c8633"
+  },
+  "pack:footer.exportTooltip": {
+    "state": "draft",
+    "en": "ea46a059"
+  },
+  "pack:footer.export": {
+    "state": "draft",
+    "en": "e86349d3"
+  },
+  "pack:page.title": {
+    "state": "draft",
+    "en": "35e5efc6"
+  },
+  "pack:page.titleBare": {
+    "state": "draft",
+    "en": "3c19352e"
+  },
+  "pack:page.characterFallback": {
+    "state": "draft",
+    "en": "ec7340b0"
+  },
+  "pack:page.eyebrow": {
+    "state": "draft",
+    "en": "3c19352e"
+  },
+  "pack:page.header": {
+    "state": "draft",
+    "en": "9973ec62"
+  },
+  "pack:page.gone.title": {
+    "state": "draft",
+    "en": "8e5e4153"
+  },
+  "pack:page.gone.description": {
+    "state": "draft",
+    "en": "090b42b6"
+  },
+  "pack:page.gone.back": {
+    "state": "draft",
+    "en": "301e890f"
+  },
+  "pack:page.show.aria": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "pack:page.show.all": {
+    "state": "draft",
+    "en": "0bee0ffa"
+  },
+  "pack:page.show.in": {
+    "state": "draft",
+    "en": "b8903d48"
+  },
+  "pack:page.show.out": {
+    "state": "draft",
+    "en": "ffe83bca"
+  },
+  "pack:page.hint": {
+    "state": "draft",
+    "en": "0c362244"
+  },
+  "pack:page.loadFailed": {
+    "state": "draft",
+    "en": "36f69bdf"
+  },
+  "pack:page.reanalysing": {
+    "state": "draft",
+    "en": "5ca86e51"
+  },
+  "pack:page.noShots": {
+    "state": "draft",
+    "en": "3100e4ee"
+  },
+  "pack:page.takesNone": {
+    "state": "draft",
+    "en": "d373ba03"
+  },
+  "pack:page.takesAll": {
+    "state": "draft",
+    "en": "aa947598"
+  },
+  "pack:page.menu.export": {
+    "state": "draft",
+    "en": "4bfc47ed"
+  },
+  "pack:page.menu.takeAll": {
+    "state": "draft",
+    "en": "dfd9ff73"
+  },
+  "pack:page.menu.leaveAll": {
+    "state": "draft",
+    "en": "98bc7f4d"
+  },
+  "pack:page.menu.invert": {
+    "state": "draft",
+    "en": "3be9754b"
+  },
+  "pack:page.menu.handBackAll": {
+    "state": "draft",
+    "en": "50c7aa11"
+  },
+  "pack:page.menu.show": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "pack:page.menu.showAll": {
+    "state": "draft",
+    "en": "5c8f0d4d"
+  },
+  "pack:page.menu.showIn": {
+    "state": "draft",
+    "en": "792311c6"
+  },
+  "pack:page.menu.showOut": {
+    "state": "draft",
+    "en": "6a531974"
+  },
+  "pack:toast.tookAll": {
+    "state": "draft",
+    "en": "1057c312"
+  },
+  "pack:toast.leftAll": {
+    "state": "draft",
+    "en": "5eac90fd"
+  },
+  "pack:toast.inverted": {
+    "state": "draft",
+    "en": "36700fc4"
+  },
+  "pack:toast.handedBack": {
+    "state": "draft",
+    "en": "a10bd6e2"
+  },
+  "pack:toast.limitLeavesAlone": {
+    "state": "draft",
+    "en": "8c6a9cb0"
+  },
+  "pack:toast.notThem": {
+    "state": "draft",
+    "en": "6cb4722a"
+  },
+  "pack:toast.notThemAnon": {
+    "state": "draft",
+    "en": "495ad839"
+  },
+  "pack:toast.notPerson": {
+    "state": "draft",
+    "en": "5656ce6f"
+  },
+  "pack:toast.checkFailed": {
+    "state": "draft",
+    "en": "f3af3e69"
+  },
+  "pack:toast.changeFailed": {
+    "state": "draft",
+    "en": "ce7839a3"
+  },
+  "pack:export.title": {
+    "state": "draft",
+    "en": "7cfd2545"
+  },
+  "pack:export.descriptionOneFile": {
+    "state": "draft",
+    "en": "9d604826"
+  },
+  "pack:export.description": {
+    "state": "draft",
+    "en": "347aa4e8"
+  },
+  "pack:export.analysing.episode": {
+    "state": "draft",
+    "en": "8dfe1d49"
+  },
+  "pack:export.analysing.file": {
+    "state": "draft",
+    "en": "9be1720f"
+  },
+  "pack:export.oneFile.label": {
+    "state": "draft",
+    "en": "be9a994e"
+  },
+  "pack:export.oneFile.description": {
+    "state": "draft",
+    "en": "74920c1d"
+  },
+  "pack:export.fileName": {
+    "state": "draft",
+    "en": "b0672212"
+  },
+  "pack:export.chapterNames": {
+    "state": "draft",
+    "en": "e5ea8df2"
+  },
+  "pack:export.fileNames": {
+    "state": "draft",
+    "en": "135b1eb3"
+  },
+  "pack:export.nameParts": {
+    "state": "draft",
+    "en": "225e2120"
+  },
+  "pack:export.freeSpace": {
+    "state": "draft",
+    "en": "168ef473"
+  },
+  "pack:export.folder": {
+    "state": "draft",
+    "en": "46e3b83f"
+  },
+  "pack:export.submit": {
+    "state": "draft",
+    "en": "51bc7c9a"
+  },
+  "pack:export.submitOneFile": {
+    "state": "draft",
+    "en": "c042661e"
+  },
+  "pack:export.started": {
+    "state": "draft",
+    "en": "332e587c"
+  },
+  "pack:export.startedOneFile": {
+    "state": "draft",
+    "en": "dee2f4e8"
+  },
+  "pack:export.more": {
+    "state": "draft",
+    "en": "fdcaf9f7"
+  },
+  "export:title": {
+    "state": "draft",
+    "en": "542c18c7"
+  },
+  "export:titleMany": {
+    "state": "draft",
+    "en": "ac1c469a"
+  },
+  "export:description": {
+    "state": "draft",
+    "en": "4233d31c"
+  },
+  "export:field.fileName": {
+    "state": "draft",
+    "en": "b0672212"
+  },
+  "export:field.format": {
+    "state": "draft",
+    "en": "ffb0ff72"
+  },
+  "export:field.formatAria": {
+    "state": "draft",
+    "en": "918e82a6"
+  },
+  "export:field.formatPlaceholder": {
+    "state": "draft",
+    "en": "30c431c6"
+  },
+  "export:field.destination": {
+    "state": "draft",
+    "en": "3b44095f"
+  },
+  "export:change": {
+    "state": "draft",
+    "en": "cb932821"
+  },
+  "export:pickDestination": {
+    "state": "draft",
+    "en": "e63cd9f8"
+  },
+  "export:about": {
+    "state": "draft",
+    "en": "1ddb2a30"
+  },
+  "export:submit": {
+    "state": "draft",
+    "en": "e86349d3"
+  },
+  "export:started": {
+    "state": "draft",
+    "en": "6df4a03d"
+  },
+  "export:theClip": {
+    "state": "draft",
+    "en": "1af99e72"
+  },
+  "export:startedMany": {
+    "state": "draft",
+    "en": "71847d7e"
+  },
+  "export:show": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "export:startFailed": {
+    "state": "draft",
+    "en": "84b04316"
+  },
+  "plugins:plugin": {
+    "state": "draft",
+    "en": "038fdf9a"
+  },
+  "plugins:unreadTitle": {
+    "state": "draft",
+    "en": "db740e72"
+  },
+  "plugins:goToPlugins": {
+    "state": "draft",
+    "en": "7c4210f0"
+  },
+  "plugins:sandboxed": {
+    "state": "draft",
+    "en": "acf00235"
+  },
+  "plugins:new": {
+    "state": "draft",
+    "en": "8b242db1"
+  },
+  "plugins:version": {
+    "state": "draft",
+    "en": "ba2f44e7"
+  },
+  "plugins:by": {
+    "state": "draft",
+    "en": "b4bd29d7"
+  },
+  "plugins:saysBy": {
+    "state": "draft",
+    "en": "dbfca6fe"
+  },
+  "plugins:saveFailed": {
+    "state": "draft",
+    "en": "fc39e88b"
+  },
+  "plugins:options": {
+    "state": "draft",
+    "en": "f2664adc"
+  },
+  "plugins:enable": {
+    "state": "draft",
+    "en": "84f21dcd"
+  },
+  "plugins:turnedOn": {
+    "state": "draft",
+    "en": "4080bc1c"
+  },
+  "plugins:notAllowed": {
+    "state": "draft",
+    "en": "be7c4eb5"
+  },
+  "plugins:toast.alreadyWaiting.named": {
+    "state": "draft",
+    "en": "9834a4a3"
+  },
+  "plugins:toast.alreadyWaiting.anonymous": {
+    "state": "draft",
+    "en": "79a29ae8"
+  },
+  "plugins:toast.cantStart.named": {
+    "state": "draft",
+    "en": "455d31ea"
+  },
+  "plugins:toast.cantStart.anonymous": {
+    "state": "draft",
+    "en": "290a81af"
+  },
+  "plugins:toast.finished.named": {
+    "state": "draft",
+    "en": "416c780c"
+  },
+  "plugins:toast.finished.anonymous": {
+    "state": "draft",
+    "en": "5b7e452b"
+  },
+  "plugins:toast.failed.named": {
+    "state": "draft",
+    "en": "a2095ed9"
+  },
+  "plugins:toast.failed.anonymous": {
+    "state": "draft",
+    "en": "2c1f1f50"
+  },
+  "plugins:toast.saved.named": {
+    "state": "draft",
+    "en": "29584b8d"
+  },
+  "plugins:toast.saved.anonymous": {
+    "state": "draft",
+    "en": "bb9a097a"
+  },
+  "plugins:toast.updated.named": {
+    "state": "draft",
+    "en": "715563da"
+  },
+  "plugins:toast.updated.anonymous": {
+    "state": "draft",
+    "en": "8090d82d"
+  },
+  "plugins:toast.updateFailed.named": {
+    "state": "draft",
+    "en": "56284932"
+  },
+  "plugins:toast.updateFailed.anonymous": {
+    "state": "draft",
+    "en": "03efc443"
+  },
+  "plugins:toast.inActivity": {
+    "state": "draft",
+    "en": "a5dff2e4"
+  },
+  "plugins:toast.showInFolder": {
+    "state": "draft",
+    "en": "63890d31"
+  },
+  "plugins:trust.withdrawn": {
+    "state": "draft",
+    "en": "a579599b"
+  },
+  "plugins:trust.folder": {
+    "state": "draft",
+    "en": "79a41579"
+  },
+  "plugins:trust.reviewed": {
+    "state": "draft",
+    "en": "dc1144c4"
+  },
+  "plugins:trust.pinned": {
+    "state": "draft",
+    "en": "2f283b1b"
+  },
+  "plugins:trust.unreviewed": {
+    "state": "draft",
+    "en": "fcd912f7"
+  },
+  "plugins:trustLine.folder": {
+    "state": "draft",
+    "en": "a211ed12"
+  },
+  "plugins:trustLine.reviewed": {
+    "state": "draft",
+    "en": "0954d53d"
+  },
+  "plugins:trustLine.pinnedSame": {
+    "state": "draft",
+    "en": "1366b750"
+  },
+  "plugins:trustLine.pinnedNew": {
+    "state": "draft",
+    "en": "c813b0cc"
+  },
+  "plugins:trustLine.unreviewed": {
+    "state": "draft",
+    "en": "a8868115"
+  },
+  "plugins:withdrawn.title": {
+    "state": "draft",
+    "en": "5f930faf"
+  },
+  "plugins:withdrawn.line": {
+    "state": "draft",
+    "en": "18eae5e9"
+  },
+  "plugins:withdrawn.more": {
+    "state": "draft",
+    "en": "e2fc2b63"
+  },
+  "plugins:resource.firstRun": {
+    "state": "draft",
+    "en": "6a663db6"
+  },
+  "plugins:resource.firstRunFrom": {
+    "state": "draft",
+    "en": "b8c9ced9"
+  },
+  "plugins:resource.firstStart": {
+    "state": "draft",
+    "en": "80ad208d"
+  },
+  "plugins:resource.firstStartFrom": {
+    "state": "draft",
+    "en": "275f4b36"
+  },
+  "plugins:resource.nextRun": {
+    "state": "draft",
+    "en": "e6477e95"
+  },
+  "plugins:resource.nextRunFrom": {
+    "state": "draft",
+    "en": "2173e718"
+  },
+  "plugins:resource.nextStart": {
+    "state": "draft",
+    "en": "0aad5f12"
+  },
+  "plugins:resource.nextStartFrom": {
+    "state": "draft",
+    "en": "cdb6b91f"
+  },
+  "plugins:resource.kept": {
+    "state": "draft",
+    "en": "840cd3ed"
+  },
+  "plugins:permission.says.exportsRead": {
+    "state": "draft",
+    "en": "36889643"
+  },
+  "plugins:permission.says.exportsWrite": {
+    "state": "draft",
+    "en": "850dd535"
+  },
+  "plugins:permission.says.projectRead": {
+    "state": "draft",
+    "en": "522590a5"
+  },
+  "plugins:permission.says.network": {
+    "state": "draft",
+    "en": "c62bf04f"
+  },
+  "plugins:permission.walled.exportsRead": {
+    "state": "draft",
+    "en": "623299a2"
+  },
+  "plugins:permission.walled.exportsWrite": {
+    "state": "draft",
+    "en": "d55c6ef3"
+  },
+  "plugins:permission.walled.projectRead": {
+    "state": "draft",
+    "en": "bfd4ffc2"
+  },
+  "plugins:permission.walled.network": {
+    "state": "draft",
+    "en": "c6b1a371"
+  },
+  "plugins:permission.walled.networkNone": {
+    "state": "draft",
+    "en": "575da53d"
+  },
+  "plugins:limits.minutes": {
+    "state": "draft",
+    "en": "191f71a8"
+  },
+  "plugins:limits.hours": {
+    "state": "draft",
+    "en": "17ad5e9c"
+  },
+  "plugins:checked.sandbox": {
+    "state": "draft",
+    "en": "5d9c78c2"
+  },
+  "plugins:checked.pages": {
+    "state": "draft",
+    "en": "91e1b1c1"
+  },
+  "plugins:checked.pagesAndProgram": {
+    "state": "draft",
+    "en": "9e055c36"
+  },
+  "plugins:checked.program": {
+    "state": "draft",
+    "en": "ca9b1a86"
+  },
+  "plugins:menu.update": {
+    "state": "draft",
+    "en": "13628236"
+  },
+  "plugins:menu.settings": {
+    "state": "draft",
+    "en": "2b70d3c6"
+  },
+  "plugins:menu.showSource": {
+    "state": "draft",
+    "en": "5767d0b7"
+  },
+  "plugins:menu.showNamedSource": {
+    "state": "draft",
+    "en": "1661e7bd"
+  },
+  "plugins:menu.showFolder": {
+    "state": "draft",
+    "en": "152e32d2"
+  },
+  "plugins:menu.showLog": {
+    "state": "draft",
+    "en": "42e0cc20"
+  },
+  "plugins:menu.copyId": {
+    "state": "draft",
+    "en": "f4129adf"
+  },
+  "plugins:menu.checkFolder": {
+    "state": "draft",
+    "en": "92b96c29"
+  },
+  "plugins:menu.loadFolderAgain": {
+    "state": "draft",
+    "en": "2cfb8a21"
+  },
+  "plugins:menu.uninstall": {
+    "state": "draft",
+    "en": "c3fd58cd"
+  },
+  "plugins:menu.checkFailed": {
+    "state": "draft",
+    "en": "c59520db"
+  },
+  "plugins:menu.folderUnchanged": {
+    "state": "draft",
+    "en": "3fb66651"
+  },
+  "plugins:menu.folderChanged": {
+    "state": "draft",
+    "en": "a260e32c"
+  },
+  "plugins:menu.linkFailed": {
+    "state": "draft",
+    "en": "03c26176"
+  },
+  "plugins:menu.turnOnFailed": {
+    "state": "draft",
+    "en": "bdccba61"
+  },
+  "plugins:menu.turnOffFailed": {
+    "state": "draft",
+    "en": "e0356a7d"
+  },
+  "plugins:installFromFile": {
+    "state": "draft",
+    "en": "9da8d9fb"
+  },
+  "plugins:loadFolder": {
+    "state": "draft",
+    "en": "26d737ec"
+  },
+  "plugins:chooseFolder": {
+    "state": "draft",
+    "en": "9a1cc804"
+  },
+  "plugins:packages.alreadyOne": {
+    "state": "draft",
+    "en": "e9862a6b"
+  },
+  "plugins:packages.alreadyMany": {
+    "state": "draft",
+    "en": "7e777976"
+  },
+  "plugins:packages.waits": {
+    "state": "draft",
+    "en": "feac2545"
+  },
+  "plugins:packages.reading": {
+    "state": "draft",
+    "en": "abb06c97"
+  },
+  "plugins:packages.readingMore": {
+    "state": "draft",
+    "en": "916a30d1"
+  },
+  "plugins:page.title": {
+    "state": "draft",
+    "en": "847d7bcb"
+  },
+  "plugins:page.summary": {
+    "state": "draft",
+    "en": "1c188472"
+  },
+  "plugins:page.show": {
+    "state": "draft",
+    "en": "d503b9a9"
+  },
+  "plugins:page.installed": {
+    "state": "draft",
+    "en": "68a76241"
+  },
+  "plugins:page.browse": {
+    "state": "draft",
+    "en": "0eac1f07"
+  },
+  "plugins:page.find": {
+    "state": "draft",
+    "en": "cb3f23dc"
+  },
+  "plugins:page.empty.title": {
+    "state": "draft",
+    "en": "d6d19f40"
+  },
+  "plugins:page.empty.allowed": {
+    "state": "draft",
+    "en": "614b4122"
+  },
+  "plugins:page.empty.notAllowed": {
+    "state": "draft",
+    "en": "d553e446"
+  },
+  "plugins:page.empty.browse": {
+    "state": "draft",
+    "en": "702ddd4b"
+  },
+  "plugins:page.noMatch.title": {
+    "state": "draft",
+    "en": "da76133f"
+  },
+  "plugins:page.noMatch.description": {
+    "state": "draft",
+    "en": "833d0fde"
+  },
+  "plugins:page.noMatch.clear": {
+    "state": "draft",
+    "en": "60070c97"
+  },
+  "plugins:page.updates": {
+    "state": "draft",
+    "en": "483075a5"
+  },
+  "plugins:page.updateAll": {
+    "state": "draft",
+    "en": "51de69be"
+  },
+  "plugins:page.others": {
+    "state": "draft",
+    "en": "68a76241"
+  },
+  "plugins:page.run.title": {
+    "state": "draft",
+    "en": "d9232cd6"
+  },
+  "plugins:page.run.allow": {
+    "state": "draft",
+    "en": "9a115418"
+  },
+  "plugins:page.run.description": {
+    "state": "draft",
+    "en": "16aaa263"
+  },
+  "plugins:page.crumb": {
+    "state": "draft",
+    "en": "62f634c1"
+  },
+  "plugins:page.label": {
+    "state": "draft",
+    "en": "27701d6f"
+  },
+  "plugins:page.railTooltip": {
+    "state": "draft",
+    "en": "7327fe18"
+  },
+  "plugins:browse.readFailed": {
+    "state": "draft",
+    "en": "432d9292"
+  },
+  "plugins:browse.newer.title": {
+    "state": "draft",
+    "en": "330a0b36"
+  },
+  "plugins:browse.newer.description": {
+    "state": "draft",
+    "en": "0accfa05"
+  },
+  "plugins:browse.newer.check": {
+    "state": "draft",
+    "en": "70ad7706"
+  },
+  "plugins:browse.closed.title": {
+    "state": "draft",
+    "en": "bb128225"
+  },
+  "plugins:browse.closed.description": {
+    "state": "draft",
+    "en": "a8a2c57e"
+  },
+  "plugins:browse.outOfDate.title": {
+    "state": "draft",
+    "en": "0d087ba3"
+  },
+  "plugins:browse.outOfDate.since": {
+    "state": "draft",
+    "en": "8a437559"
+  },
+  "plugins:browse.outOfDate.never": {
+    "state": "draft",
+    "en": "8b55cdb7"
+  },
+  "plugins:browse.outOfDate.tryAgain": {
+    "state": "draft",
+    "en": "213e90fa"
+  },
+  "plugins:browse.group": {
+    "state": "draft",
+    "en": "a6a0fbb8"
+  },
+  "plugins:browse.catalog.label": {
+    "state": "draft",
+    "en": "3c317cd4"
+  },
+  "plugins:browse.catalog.description": {
+    "state": "draft",
+    "en": "2ead2c8c"
+  },
+  "plugins:browse.catalog.checkNow": {
+    "state": "draft",
+    "en": "4f0e0677"
+  },
+  "plugins:browse.daily.label": {
+    "state": "draft",
+    "en": "a62bcdf9"
+  },
+  "plugins:browse.daily.on": {
+    "state": "draft",
+    "en": "2073fb52"
+  },
+  "plugins:browse.daily.off": {
+    "state": "draft",
+    "en": "9b0f75d4"
+  },
+  "plugins:browse.none.title": {
+    "state": "draft",
+    "en": "08771f4b"
+  },
+  "plugins:browse.none.description": {
+    "state": "draft",
+    "en": "4c43763d"
+  },
+  "plugins:browse.noMatch.title": {
+    "state": "draft",
+    "en": "da76133f"
+  },
+  "plugins:browse.noMatch.description": {
+    "state": "draft",
+    "en": "de4b7dc4"
+  },
+  "plugins:browse.noMatch.clear": {
+    "state": "draft",
+    "en": "60070c97"
+  },
+  "plugins:catalog.of": {
+    "state": "draft",
+    "en": "3519774b"
+  },
+  "plugins:catalog.noneYet": {
+    "state": "draft",
+    "en": "19ab5667"
+  },
+  "plugins:catalog.notChecked": {
+    "state": "draft",
+    "en": "52c7efb9"
+  },
+  "plugins:catalog.checkedToday": {
+    "state": "draft",
+    "en": "ac722db7"
+  },
+  "plugins:catalog.checkedYesterday": {
+    "state": "draft",
+    "en": "48d21db4"
+  },
+  "plugins:catalog.checkedOn": {
+    "state": "draft",
+    "en": "fa7425e9"
+  },
+  "plugins:catalog.failedToday": {
+    "state": "draft",
+    "en": "56b41f2b"
+  },
+  "plugins:catalog.failedYesterday": {
+    "state": "draft",
+    "en": "d7873f20"
+  },
+  "plugins:catalog.failedOn": {
+    "state": "draft",
+    "en": "5535a24d"
+  },
+  "plugins:catalog.talksTo": {
+    "state": "draft",
+    "en": "19200762"
+  },
+  "plugins:catalog.gpu": {
+    "state": "draft",
+    "en": "013e1203"
+  },
+  "plugins:catalog.nothing": {
+    "state": "draft",
+    "en": "36e736be"
+  },
+  "plugins:catalog.downloadsRun": {
+    "state": "draft",
+    "en": "cb0215fd"
+  },
+  "plugins:catalog.downloadsStart": {
+    "state": "draft",
+    "en": "08fba114"
+  },
+  "plugins:catalog.newHosts": {
+    "state": "draft",
+    "en": "786ebbad"
+  },
+  "plugins:catalog.installed": {
+    "state": "draft",
+    "en": "68a76241"
+  },
+  "plugins:catalog.elsewhere": {
+    "state": "draft",
+    "en": "7ce57c30"
+  },
+  "plugins:catalog.needsNewer": {
+    "state": "draft",
+    "en": "74f39391"
+  },
+  "plugins:catalog.install": {
+    "state": "draft",
+    "en": "68dbc792"
+  },
+  "plugins:catalog.update": {
+    "state": "draft",
+    "en": "13628236"
+  },
+  "plugins:catalog.installNamed": {
+    "state": "draft",
+    "en": "1ce36483"
+  },
+  "plugins:catalog.settingsNamed": {
+    "state": "draft",
+    "en": "9132f5b7"
+  },
+  "plugins:catalog.checkFailed": {
+    "state": "draft",
+    "en": "b6e06584"
+  },
+  "plugins:catalog.needsNewerApp": {
+    "state": "draft",
+    "en": "af1a5b72"
+  },
+  "plugins:catalog.noCatalog": {
+    "state": "draft",
+    "en": "bfc12481"
+  },
+  "plugins:catalog.upToDate": {
+    "state": "draft",
+    "en": "d28f3bd1"
+  },
+  "plugins:catalog.updates": {
+    "state": "draft",
+    "en": "47d5d9c2"
+  },
+  "plugins:uninstall.toast": {
+    "state": "draft",
+    "en": "afccebe7"
+  },
+  "plugins:uninstall.title": {
+    "state": "draft",
+    "en": "deb3b7f5"
+  },
+  "plugins:uninstall.description": {
+    "state": "draft",
+    "en": "c031087e"
+  },
+  "plugins:uninstall.answer": {
+    "state": "draft",
+    "en": "83e71839"
+  },
+  "plugins:uninstall.failure": {
+    "state": "draft",
+    "en": "430a7909"
+  },
+  "plugins:uninstall.dataLabel": {
+    "state": "draft",
+    "en": "12b95d25"
+  },
+  "plugins:uninstall.dataDescription": {
+    "state": "draft",
+    "en": "98f4666c"
+  },
+  "plugins:frame.quiet": {
+    "state": "draft",
+    "en": "2177473a"
+  },
+  "plugins:frame.closed": {
+    "state": "draft",
+    "en": "84fa7827"
+  },
+  "plugins:frame.overflow": {
+    "state": "draft",
+    "en": "3c2ca002"
+  },
+  "plugins:frame.failed": {
+    "state": "draft",
+    "en": "089ea320"
+  },
+  "plugins:frame.reload": {
+    "state": "draft",
+    "en": "1a43a2ac"
+  },
+  "plugins:frame.reloadPage": {
+    "state": "draft",
+    "en": "5d734c26"
+  },
+  "plugins:frame.showServiceLog": {
+    "state": "draft",
+    "en": "3b182443"
+  },
+  "plugins:frame.unavailable": {
+    "state": "draft",
+    "en": "b6b571e2"
+  },
+  "plugins:frame.turnedOff": {
+    "state": "draft",
+    "en": "9bc1c629"
+  },
+  "plugins:frame.theProject": {
+    "state": "draft",
+    "en": "10ea8e59"
+  },
+  "plugins:screen.notInstalled": {
+    "state": "draft",
+    "en": "16356b2b"
+  },
+  "plugins:screen.notInstalledDescription": {
+    "state": "draft",
+    "en": "c99a8ca9"
+  },
+  "plugins:screen.back": {
+    "state": "draft",
+    "en": "847d7bcb"
+  },
+  "plugins:screen.notReviewed": {
+    "state": "draft",
+    "en": "5682cf95"
+  },
+  "plugins:screen.allowThem": {
+    "state": "draft",
+    "en": "cf088022"
+  },
+  "plugins:screen.cantRun": {
+    "state": "draft",
+    "en": "6024356c"
+  },
+  "plugins:screen.settings.title": {
+    "state": "draft",
+    "en": "4b058728"
+  },
+  "plugins:screen.settings.withSecrets": {
+    "state": "draft",
+    "en": "d0c01ae1"
+  },
+  "plugins:screen.settings.plain": {
+    "state": "draft",
+    "en": "724879cc"
+  },
+  "plugins:screen.settings.unread": {
+    "state": "draft",
+    "en": "7aea3b90"
+  },
+  "plugins:screen.settings.macAgain": {
+    "state": "draft",
+    "en": "d1395429"
+  },
+  "plugins:screen.settings.choose": {
+    "state": "draft",
+    "en": "8718c132"
+  },
+  "plugins:screen.settings.takesNumber": {
+    "state": "draft",
+    "en": "1c0525e7"
+  },
+  "plugins:screen.runs.title": {
+    "state": "draft",
+    "en": "e8f2f26f"
+  },
+  "plugins:screen.runs.description": {
+    "state": "draft",
+    "en": "d0c03430"
+  },
+  "plugins:screen.runs.afterExport": {
+    "state": "draft",
+    "en": "97fd2608"
+  },
+  "plugins:screen.runs.afterExportFailed": {
+    "state": "draft",
+    "en": "d2436aa5"
+  },
+  "plugins:screen.runs.runAfter": {
+    "state": "draft",
+    "en": "e282318d"
+  },
+  "plugins:screen.runs.runAfterFailed": {
+    "state": "draft",
+    "en": "6828c0b4"
+  },
+  "plugins:screen.pages.title": {
+    "state": "draft",
+    "en": "7decab7f"
+  },
+  "plugins:screen.pages.description": {
+    "state": "draft",
+    "en": "eab6a1e2"
+  },
+  "plugins:screen.pages.inProject": {
+    "state": "draft",
+    "en": "30e85154"
+  },
+  "plugins:screen.pages.open": {
+    "state": "draft",
+    "en": "538b10e9"
+  },
+  "plugins:screen.pages.openNamed": {
+    "state": "draft",
+    "en": "da8a7207"
+  },
+  "plugins:screen.mayUse.title": {
+    "state": "draft",
+    "en": "936c30ba"
+  },
+  "plugins:screen.mayUse.programRights": {
+    "state": "draft",
+    "en": "d491195a"
+  },
+  "plugins:screen.mayUse.notChecked": {
+    "state": "draft",
+    "en": "cf3087ea"
+  },
+  "plugins:screen.mayUse.gpu": {
+    "state": "draft",
+    "en": "013e1203"
+  },
+  "plugins:screen.mayUse.gpuNote": {
+    "state": "draft",
+    "en": "2b0e29ec"
+  },
+  "plugins:screen.mayUse.nothing": {
+    "state": "draft",
+    "en": "4dfbd132"
+  },
+  "plugins:screen.keychain": {
+    "state": "draft",
+    "en": "2847833b"
+  },
+  "plugins:screen.files.title": {
+    "state": "draft",
+    "en": "e71d1b30"
+  },
+  "plugins:screen.files.folder": {
+    "state": "draft",
+    "en": "f4beb13f"
+  },
+  "plugins:screen.files.log": {
+    "state": "draft",
+    "en": "7f7b278b"
+  },
+  "plugins:screen.files.serviceLog": {
+    "state": "draft",
+    "en": "0319a930"
+  },
+  "plugins:screen.files.reveal": {
+    "state": "draft",
+    "en": "bba2a3f0"
+  },
+  "plugins:screen.files.downloaded": {
+    "state": "draft",
+    "en": "b661dbaf"
+  },
+  "plugins:screen.files.downloadedNote": {
+    "state": "draft",
+    "en": "3a32210e"
+  },
+  "plugins:screen.warnings.title": {
+    "state": "draft",
+    "en": "28fee3e9"
+  },
+  "plugins:screen.warnings.description": {
+    "state": "draft",
+    "en": "9620d45b"
+  },
+  "plugins:screen.secret.notSet": {
+    "state": "draft",
+    "en": "d7958fc6"
+  },
+  "plugins:screen.secret.set": {
+    "state": "draft",
+    "en": "94ceeb5f"
+  },
+  "plugins:screen.secret.remove": {
+    "state": "draft",
+    "en": "32d46ce1"
+  },
+  "plugins:screen.secret.setNamed": {
+    "state": "draft",
+    "en": "afe1c371"
+  },
+  "plugins:screen.secret.removeNamed": {
+    "state": "draft",
+    "en": "f363defb"
+  },
+  "plugins:screen.secret.removeTitle": {
+    "state": "draft",
+    "en": "ea37ae8c"
+  },
+  "plugins:screen.secret.removeDescription": {
+    "state": "draft",
+    "en": "bd349c40"
+  },
+  "plugins:screen.secret.removeAnswer": {
+    "state": "draft",
+    "en": "21a5901d"
+  },
+  "plugins:screen.secret.removeFailed": {
+    "state": "draft",
+    "en": "3b2dfe2a"
+  },
+  "plugins:screen.secret.dialogDescription": {
+    "state": "draft",
+    "en": "2e793614"
+  },
+  "plugins:screen.secret.tooLong": {
+    "state": "draft",
+    "en": "79c33447"
+  },
+  "plugins:screen.secret.saveFailed": {
+    "state": "draft",
+    "en": "13658971"
+  },
+  "plugins:screen.secret.save": {
+    "state": "draft",
+    "en": "4d2d5d68"
+  },
+  "plugins:event.analysisFinished.when": {
+    "state": "draft",
+    "en": "34045d5f"
+  },
+  "plugins:event.analysisFinished.run": {
+    "state": "draft",
+    "en": "2579e1e6"
+  },
+  "plugins:event.analysisFinished.adds": {
+    "state": "draft",
+    "en": "8de6e2ca"
+  },
+  "plugins:review.install": {
+    "state": "draft",
+    "en": "13b0f658"
+  },
+  "plugins:review.load": {
+    "state": "draft",
+    "en": "f13587a5"
+  },
+  "plugins:review.update": {
+    "state": "draft",
+    "en": "d9facefc"
+  },
+  "plugins:review.installButton": {
+    "state": "draft",
+    "en": "b50cbd40"
+  },
+  "plugins:review.loadButton": {
+    "state": "draft",
+    "en": "68afa209"
+  },
+  "plugins:review.updateButton": {
+    "state": "draft",
+    "en": "6e230e94"
+  },
+  "plugins:review.installed": {
+    "state": "draft",
+    "en": "9fa7e660"
+  },
+  "plugins:review.loaded": {
+    "state": "draft",
+    "en": "5c59c557"
+  },
+  "plugins:review.updated": {
+    "state": "draft",
+    "en": "13a2f627"
+  },
+  "plugins:review.failed": {
+    "state": "draft",
+    "en": "0bf65b2a"
+  },
+  "plugins:review.getting": {
+    "state": "draft",
+    "en": "e50eb560"
+  },
+  "plugins:review.updating": {
+    "state": "draft",
+    "en": "02c97e20"
+  },
+  "plugins:review.gettingReady": {
+    "state": "draft",
+    "en": "6c3c1ead"
+  },
+  "plugins:review.compiling": {
+    "state": "draft",
+    "en": "258949bf"
+  },
+  "plugins:review.nothingNew": {
+    "state": "draft",
+    "en": "c0695952"
+  },
+  "plugins:review.progress": {
+    "state": "draft",
+    "en": "6f783435"
+  },
+  "plugins:review.fromCatalog": {
+    "state": "draft",
+    "en": "98d4efd2"
+  },
+  "plugins:review.fact.id": {
+    "state": "draft",
+    "en": "36e8b900"
+  },
+  "plugins:review.fact.version": {
+    "state": "draft",
+    "en": "5dcdd537"
+  },
+  "plugins:review.fact.author": {
+    "state": "draft",
+    "en": "958fc776"
+  },
+  "plugins:review.fact.saysBy": {
+    "state": "draft",
+    "en": "5b081e8b"
+  },
+  "plugins:review.fact.notNamed": {
+    "state": "draft",
+    "en": "d8fd3b7b"
+  },
+  "plugins:review.fact.key": {
+    "state": "draft",
+    "en": "cd1ac90c"
+  },
+  "plugins:review.fact.folder": {
+    "state": "draft",
+    "en": "06357afd"
+  },
+  "plugins:review.fact.isInstalled": {
+    "state": "draft",
+    "en": "3a9923e7"
+  },
+  "plugins:review.built": {
+    "state": "draft",
+    "en": "b5d011b5"
+  },
+  "plugins:review.builtIn": {
+    "state": "draft",
+    "en": "b43cdf5e"
+  },
+  "plugins:review.before.unsigned": {
+    "state": "draft",
+    "en": "2581e362"
+  },
+  "plugins:review.before.was": {
+    "state": "draft",
+    "en": "b9795eb0"
+  },
+  "plugins:review.before.folderReplaced": {
+    "state": "draft",
+    "en": "2785c17f"
+  },
+  "plugins:review.before.leftSandbox": {
+    "state": "draft",
+    "en": "ae0fe1bf"
+  },
+  "plugins:review.ownWords": {
+    "state": "draft",
+    "en": "8dfc7ab5"
+  },
+  "plugins:review.warnings": {
+    "state": "draft",
+    "en": "28fee3e9"
+  },
+  "plugins:review.componentWarnings": {
+    "state": "draft",
+    "en": "eb59244b"
+  },
+  "plugins:review.typeToInstall": {
+    "state": "draft",
+    "en": "ec3c735d"
+  },
+  "plugins:review.typeToLoad": {
+    "state": "draft",
+    "en": "f0829d26"
+  },
+  "plugins:review.typeToUpdate": {
+    "state": "draft",
+    "en": "8cc78791"
+  },
+  "plugins:review.cantCheck": {
+    "state": "draft",
+    "en": "b63bcb6d"
+  },
+  "plugins:review.turnedOff": {
+    "state": "draft",
+    "en": "a0b29eb8"
+  },
+  "plugins:review.allowThem": {
+    "state": "draft",
+    "en": "cf088022"
+  },
+  "plugins:review.permissions.pagesMayUse": {
+    "state": "draft",
+    "en": "fd2b8c5b"
+  },
+  "plugins:review.permissions.saysItDoes": {
+    "state": "draft",
+    "en": "2a1655aa"
+  },
+  "plugins:review.permissions.notEnforced": {
+    "state": "draft",
+    "en": "26f3a55a"
+  },
+  "plugins:review.permissions.userRights": {
+    "state": "draft",
+    "en": "7e566e10"
+  },
+  "plugins:review.permissions.newHosts": {
+    "state": "draft",
+    "en": "0371651e"
+  },
+  "plugins:review.permissions.none": {
+    "state": "draft",
+    "en": "11f43d1f"
+  },
+  "plugins:review.permissions.gpu": {
+    "state": "draft",
+    "en": "c2a27f1e"
+  },
+  "plugins:review.sandbox.intro": {
+    "state": "draft",
+    "en": "7613b03e"
+  },
+  "plugins:review.sandbox.mayDo": {
+    "state": "draft",
+    "en": "eeb566c3"
+  },
+  "plugins:review.sandbox.none": {
+    "state": "draft",
+    "en": "6e61d801"
+  },
+  "plugins:review.sandbox.cant": {
+    "state": "draft",
+    "en": "cf73f5d8"
+  },
+  "plugins:review.sandbox.unlimitedNetwork": {
+    "state": "draft",
+    "en": "23df5c91"
+  },
+  "plugins:review.sandbox.unlimited": {
+    "state": "draft",
+    "en": "413d8ab8"
+  },
+  "plugins:review.runs.title": {
+    "state": "draft",
+    "en": "cadc270c"
+  },
+  "plugins:review.runs.none": {
+    "state": "draft",
+    "en": "6a329234"
+  },
+  "plugins:review.runs.wasm": {
+    "state": "draft",
+    "en": "0a690cbf"
+  },
+  "plugins:review.runs.program": {
+    "state": "draft",
+    "en": "9315a4ab"
+  },
+  "plugins:review.runs.uvRun": {
+    "state": "draft",
+    "en": "5be5bc7d"
+  },
+  "plugins:review.runs.uvRunGets": {
+    "state": "draft",
+    "en": "b8a063bf"
+  },
+  "plugins:review.runs.uvStart": {
+    "state": "draft",
+    "en": "137ea860"
+  },
+  "plugins:review.runs.uvStartGets": {
+    "state": "draft",
+    "en": "4e9aef28"
+  },
+  "plugins:review.runs.noProgramBefore": {
+    "state": "draft",
+    "en": "e6af5e87"
+  },
+  "plugins:review.runs.service": {
+    "state": "draft",
+    "en": "2a58a2e0"
+  },
+  "plugins:review.runs.becomesService": {
+    "state": "draft",
+    "en": "2cb17310"
+  },
+  "plugins:review.runs.newFileHosts": {
+    "state": "draft",
+    "en": "4fa2cabd"
+  },
+  "plugins:review.adds.title": {
+    "state": "draft",
+    "en": "405647d8"
+  },
+  "plugins:review.adds.pageRail": {
+    "state": "draft",
+    "en": "a76ae20b"
+  },
+  "plugins:review.adds.pageProject": {
+    "state": "draft",
+    "en": "84ad93f1"
+  },
+  "plugins:review.adds.pagePalette": {
+    "state": "draft",
+    "en": "d5c3b196"
+  },
+  "plugins:review.adds.exportAction": {
+    "state": "draft",
+    "en": "069bdf3f"
+  },
+  "plugins:review.adds.command": {
+    "state": "draft",
+    "en": "939b1045"
+  },
+  "plugins:review.adds.shotFilter": {
+    "state": "draft",
+    "en": "28404a25"
+  },
+  "plugins:review.adds.packAction": {
+    "state": "draft",
+    "en": "0e708899"
+  },
+  "plugins:review.adds.afterFailed": {
+    "state": "draft",
+    "en": "e26a4cdc"
+  },
+  "plugins:review.adds.settings": {
+    "state": "draft",
+    "en": "cc9fff44"
+  },
+  "plugins:review.adds.secret": {
+    "state": "draft",
+    "en": "f07be074"
+  },
+  "plugins:review.adds.nothing": {
+    "state": "draft",
+    "en": "9a409a51"
+  },
+  "backend:accel.changed": {
+    "state": "draft",
+    "en": "6a5e30d1"
+  },
+  "backend:accel.damaged": {
+    "state": "draft",
+    "en": "86b181b6"
+  },
+  "backend:accel.downloadFailed": {
+    "state": "draft",
+    "en": "160617b1"
+  },
+  "backend:accel.noSpace": {
+    "state": "draft",
+    "en": "a7242e94"
+  },
+  "backend:accel.noticesFailed": {
+    "state": "draft",
+    "en": "1acb6f4f"
+  },
+  "backend:accel.removeFailed": {
+    "state": "draft",
+    "en": "0b90049a"
+  },
+  "backend:accel.repairCancelled": {
+    "state": "draft",
+    "en": "6ec13180"
+  },
+  "backend:analysis.animeFromTheStart": {
+    "state": "draft",
+    "en": "e9ae7b0b"
+  },
+  "backend:analysis.facesNotFound": {
+    "state": "draft",
+    "en": "421fed90"
+  },
+  "backend:analysis.failed": {
+    "state": "draft",
+    "en": "1942fed5"
+  },
+  "backend:analysis.shotsNotFound": {
+    "state": "draft",
+    "en": "72368ec0"
+  },
+  "backend:analysis.signalsCover": {
+    "state": "draft",
+    "en": "e7e3eeee"
+  },
+  "backend:analysis.unreadablePeople": {
+    "state": "draft",
+    "en": "4ce30d21"
+  },
+  "backend:analysis.unreadableSignals": {
+    "state": "draft",
+    "en": "20e9cb1f"
+  },
+  "backend:analysis.unreadableTracks": {
+    "state": "draft",
+    "en": "159a5b91"
+  },
+  "backend:cast.characterGone": {
+    "state": "draft",
+    "en": "7a9a85f4"
+  },
+  "backend:cast.keptChanging": {
+    "state": "draft",
+    "en": "b930f23d"
+  },
+  "backend:cast.notInCast": {
+    "state": "draft",
+    "en": "9b6117c7"
+  },
+  "backend:catalog.badDates": {
+    "state": "draft",
+    "en": "b097dbbe"
+  },
+  "backend:catalog.badEntry": {
+    "state": "draft",
+    "en": "7d99f6a9"
+  },
+  "backend:catalog.badWithdrawal": {
+    "state": "draft",
+    "en": "336a313a"
+  },
+  "backend:catalog.certificateChanged": {
+    "state": "draft",
+    "en": "4e0475aa"
+  },
+  "backend:catalog.certificateEpoch": {
+    "state": "draft",
+    "en": "fdc7f716"
+  },
+  "backend:catalog.certificateWithdraws": {
+    "state": "draft",
+    "en": "f16eb7cb"
+  },
+  "backend:catalog.changed": {
+    "state": "draft",
+    "en": "02b1fd62"
+  },
+  "backend:catalog.keyUnknown": {
+    "state": "draft",
+    "en": "52d63475"
+  },
+  "backend:catalog.keyWithdrawn": {
+    "state": "draft",
+    "en": "533a3cf0"
+  },
+  "backend:catalog.needsNewerApp": {
+    "state": "draft",
+    "en": "af1a5b72"
+  },
+  "backend:catalog.none": {
+    "state": "draft",
+    "en": "bfc12481"
+  },
+  "backend:catalog.notAKey": {
+    "state": "draft",
+    "en": "afa49e04"
+  },
+  "backend:catalog.notASignature": {
+    "state": "draft",
+    "en": "a7463517"
+  },
+  "backend:catalog.notChecked": {
+    "state": "draft",
+    "en": "5bf08110"
+  },
+  "backend:catalog.notListed": {
+    "state": "draft",
+    "en": "5e7d6d20"
+  },
+  "backend:catalog.notOffline": {
+    "state": "draft",
+    "en": "7ebcc38d"
+  },
+  "backend:catalog.notYet": {
+    "state": "draft",
+    "en": "38c2c2de"
+  },
+  "backend:catalog.older": {
+    "state": "draft",
+    "en": "62fe7439"
+  },
+  "backend:catalog.otherCatalog": {
+    "state": "draft",
+    "en": "7538e1b3"
+  },
+  "backend:catalog.outOfDate": {
+    "state": "draft",
+    "en": "8826b934"
+  },
+  "backend:catalog.ranOut": {
+    "state": "draft",
+    "en": "894a7f45"
+  },
+  "backend:catalog.sameNumber": {
+    "state": "draft",
+    "en": "5d30c382"
+  },
+  "backend:catalog.tooLarge": {
+    "state": "draft",
+    "en": "099fb4f2"
+  },
+  "backend:catalog.tooManyPlugins": {
+    "state": "draft",
+    "en": "2efc725a"
+  },
+  "backend:catalog.tooManyWithdrawn": {
+    "state": "draft",
+    "en": "1ef1e0b0"
+  },
+  "backend:catalog.unreachable": {
+    "state": "draft",
+    "en": "07cf08f3"
+  },
+  "backend:catalog.unreadable": {
+    "state": "draft",
+    "en": "14a4273d"
+  },
+  "backend:catalog.unreadableCertificate": {
+    "state": "draft",
+    "en": "71e84ea5"
+  },
+  "backend:catalog.unreadableSignature": {
+    "state": "draft",
+    "en": "4a2c6b95"
+  },
+  "backend:db.busy": {
+    "state": "draft",
+    "en": "7d2fc7cc"
+  },
+  "backend:db.cannotOpen": {
+    "state": "draft",
+    "en": "aedea451"
+  },
+  "backend:db.damaged": {
+    "state": "draft",
+    "en": "ae63cbed"
+  },
+  "backend:db.diskFull": {
+    "state": "draft",
+    "en": "c072c94e"
+  },
+  "backend:db.driveFailed": {
+    "state": "draft",
+    "en": "e4d394f5"
+  },
+  "backend:db.generic": {
+    "state": "draft",
+    "en": "4d96d96e"
+  },
+  "backend:db.permission": {
+    "state": "draft",
+    "en": "52fe187e"
+  },
+  "backend:db.readOnly": {
+    "state": "draft",
+    "en": "1e8b3033"
+  },
+  "backend:db.tooNew": {
+    "state": "draft",
+    "en": "73a6d6af"
+  },
+  "backend:db.upgradeFailed": {
+    "state": "draft",
+    "en": "86e6cd9e"
+  },
+  "backend:engine.badRequest": {
+    "state": "draft",
+    "en": "564ecbeb"
+  },
+  "backend:engine.cancelled": {
+    "state": "draft",
+    "en": "27c010d6"
+  },
+  "backend:engine.couldntStart": {
+    "state": "draft",
+    "en": "fa18f0ec"
+  },
+  "backend:engine.crashed": {
+    "state": "draft",
+    "en": "006627f7"
+  },
+  "backend:engine.noEmbedding": {
+    "state": "draft",
+    "en": "5570b7a3"
+  },
+  "backend:engine.reinstall": {
+    "state": "draft",
+    "en": "a9fb0575"
+  },
+  "backend:engine.savingFailed": {
+    "state": "draft",
+    "en": "fe7dbb33"
+  },
+  "backend:episode.fileNotFound": {
+    "state": "draft",
+    "en": "378a6766"
+  },
+  "backend:episode.indexDamaged": {
+    "state": "draft",
+    "en": "8051b82a"
+  },
+  "backend:episode.indexingCancelled": {
+    "state": "draft",
+    "en": "8c7324c7"
+  },
+  "backend:episode.moved": {
+    "state": "draft",
+    "en": "f65ff4cc"
+  },
+  "backend:episode.noAudioTrack": {
+    "state": "draft",
+    "en": "a30f21f2"
+  },
+  "backend:episode.noPreviewNeeded": {
+    "state": "draft",
+    "en": "9036d047"
+  },
+  "backend:episode.notFound": {
+    "state": "draft",
+    "en": "3110361a"
+  },
+  "backend:episode.notIndexed": {
+    "state": "draft",
+    "en": "303da422"
+  },
+  "backend:episode.preview.failed": {
+    "state": "draft",
+    "en": "1a66b7c5"
+  },
+  "backend:episode.preview.missing": {
+    "state": "draft",
+    "en": "309d8e75"
+  },
+  "backend:episode.preview.needed": {
+    "state": "draft",
+    "en": "d426deab"
+  },
+  "backend:episode.preview.preparing": {
+    "state": "draft",
+    "en": "98e7ad8b"
+  },
+  "backend:episode.previewRefused": {
+    "state": "draft",
+    "en": "0118a91f"
+  },
+  "backend:episode.removed": {
+    "state": "draft",
+    "en": "63c4dfbd"
+  },
+  "backend:episode.stillIndexing": {
+    "state": "draft",
+    "en": "2070f9eb"
+  },
+  "backend:episode.stillStopping": {
+    "state": "draft",
+    "en": "576ae866"
+  },
+  "backend:export.badPreset": {
+    "state": "draft",
+    "en": "562844f9"
+  },
+  "backend:export.badRange": {
+    "state": "draft",
+    "en": "33ecb601"
+  },
+  "backend:export.cantWrite": {
+    "state": "draft",
+    "en": "347a329b"
+  },
+  "backend:export.csv.mixedRates": {
+    "state": "draft",
+    "en": "f52809ca"
+  },
+  "backend:export.edl.mixedRates": {
+    "state": "draft",
+    "en": "f1bf6223"
+  },
+  "backend:export.edl.pastMidnight": {
+    "state": "draft",
+    "en": "dab89245"
+  },
+  "backend:export.edl.tooFast": {
+    "state": "draft",
+    "en": "1552be4a"
+  },
+  "backend:export.edl.tooLong": {
+    "state": "draft",
+    "en": "f64544d2"
+  },
+  "backend:export.encoderMissing": {
+    "state": "draft",
+    "en": "cea454d0"
+  },
+  "backend:export.episodeNotIndexed": {
+    "state": "draft",
+    "en": "6ae5408c"
+  },
+  "backend:export.episodesRemoved": {
+    "state": "draft",
+    "en": "a1250cb4"
+  },
+  "backend:export.fileNeedsName": {
+    "state": "draft",
+    "en": "bcdc2e1b"
+  },
+  "backend:export.fullPath": {
+    "state": "draft",
+    "en": "7fd26bcf"
+  },
+  "backend:export.gone": {
+    "state": "draft",
+    "en": "a682599f"
+  },
+  "backend:export.inexact": {
+    "state": "draft",
+    "en": "35fbc2dd"
+  },
+  "backend:export.joinFailed": {
+    "state": "draft",
+    "en": "cfce5359"
+  },
+  "backend:export.listExtension": {
+    "state": "draft",
+    "en": "ccac9d65"
+  },
+  "backend:export.lossless.allFfv1": {
+    "state": "draft",
+    "en": "cdaf7444"
+  },
+  "backend:export.lossless.apart": {
+    "state": "draft",
+    "en": "28cd0475"
+  },
+  "backend:export.lossless.colours": {
+    "state": "draft",
+    "en": "a6c70a43"
+  },
+  "backend:export.lossless.decodeDiffers": {
+    "state": "draft",
+    "en": "cb2eaed9"
+  },
+  "backend:export.lossless.fields": {
+    "state": "draft",
+    "en": "31e56f5c"
+  },
+  "backend:export.lossless.hdr": {
+    "state": "draft",
+    "en": "89077cda"
+  },
+  "backend:export.lossless.pictures": {
+    "state": "draft",
+    "en": "d70c9ea1"
+  },
+  "backend:export.lossless.someFfv1": {
+    "state": "draft",
+    "en": "6bbdec73"
+  },
+  "backend:export.lossless.sound": {
+    "state": "draft",
+    "en": "49dae9d0"
+  },
+  "backend:export.lossless.soundFormat": {
+    "state": "draft",
+    "en": "0f20fb74"
+  },
+  "backend:export.noneExported": {
+    "state": "draft",
+    "en": "0a355345"
+  },
+  "backend:export.noneFinished": {
+    "state": "draft",
+    "en": "f673a169"
+  },
+  "backend:export.notJoined": {
+    "state": "draft",
+    "en": "94304981"
+  },
+  "backend:export.nothing": {
+    "state": "draft",
+    "en": "e27fdc93"
+  },
+  "backend:export.outside": {
+    "state": "draft",
+    "en": "cda87b27"
+  },
+  "backend:export.outsideRange": {
+    "state": "draft",
+    "en": "55f01b73"
+  },
+  "backend:export.preset.bitPerfect.description": {
+    "state": "draft",
+    "en": "7d01c580"
+  },
+  "backend:export.preset.bitPerfect.name": {
+    "state": "draft",
+    "en": "7b77f699"
+  },
+  "backend:export.preset.dnxhrHq.description": {
+    "state": "draft",
+    "en": "1237897e"
+  },
+  "backend:export.preset.dnxhrHq.name": {
+    "state": "draft",
+    "en": "8aea38e2"
+  },
+  "backend:export.preset.h264Edit.description": {
+    "state": "draft",
+    "en": "73899813"
+  },
+  "backend:export.preset.h264Edit.name": {
+    "state": "draft",
+    "en": "559a79c0"
+  },
+  "backend:export.preset.h264Intra.description": {
+    "state": "draft",
+    "en": "46c4d794"
+  },
+  "backend:export.preset.h264Intra.name": {
+    "state": "draft",
+    "en": "9da64f36"
+  },
+  "backend:export.preset.h264Mobile.description": {
+    "state": "draft",
+    "en": "a1ba08a8"
+  },
+  "backend:export.preset.h264Mobile.name": {
+    "state": "draft",
+    "en": "3b9bbade"
+  },
+  "backend:export.preset.hevc10.description": {
+    "state": "draft",
+    "en": "3ca5646d"
+  },
+  "backend:export.preset.hevc10.name": {
+    "state": "draft",
+    "en": "7fdf134f"
+  },
+  "backend:export.preset.proresHq.description": {
+    "state": "draft",
+    "en": "74e9010e"
+  },
+  "backend:export.preset.proresHq.name": {
+    "state": "draft",
+    "en": "f96ac82d"
+  },
+  "backend:export.unknownPreset": {
+    "state": "draft",
+    "en": "3d0eb89e"
+  },
+  "backend:export.why.cantShare": {
+    "state": "draft",
+    "en": "e67edb86"
+  },
+  "backend:export.why.followsSource": {
+    "state": "draft",
+    "en": "11bbbc88"
+  },
+  "backend:export.why.needsMov": {
+    "state": "draft",
+    "en": "bbbe4d39"
+  },
+  "backend:export.why.notItsParts": {
+    "state": "draft",
+    "en": "0e5300c8"
+  },
+  "backend:export.why.notTheSource": {
+    "state": "draft",
+    "en": "28d47a12"
+  },
+  "backend:export.why.pictures": {
+    "state": "draft",
+    "en": "7abd4af4"
+  },
+  "backend:export.why.plannedFromSources": {
+    "state": "draft",
+    "en": "1e3f28a5"
+  },
+  "backend:export.why.sound": {
+    "state": "draft",
+    "en": "7fed2435"
+  },
+  "backend:export.why.soundTrack": {
+    "state": "draft",
+    "en": "15953fc9"
+  },
+  "backend:file.badLocation": {
+    "state": "draft",
+    "en": "f72cb3bb"
+  },
+  "backend:file.badName": {
+    "state": "draft",
+    "en": "1fda942c"
+  },
+  "backend:file.cantShow": {
+    "state": "draft",
+    "en": "200ea053"
+  },
+  "backend:file.diskFull": {
+    "state": "draft",
+    "en": "c072c94e"
+  },
+  "backend:file.generic": {
+    "state": "draft",
+    "en": "962b6c0f"
+  },
+  "backend:file.gone": {
+    "state": "draft",
+    "en": "5aceaced"
+  },
+  "backend:file.inUse": {
+    "state": "draft",
+    "en": "e5990367"
+  },
+  "backend:file.missing": {
+    "state": "draft",
+    "en": "59f2ff59"
+  },
+  "backend:file.notOurs": {
+    "state": "draft",
+    "en": "8cf9dacf"
+  },
+  "backend:file.permission": {
+    "state": "draft",
+    "en": "a7560977"
+  },
+  "backend:file.readOnly": {
+    "state": "draft",
+    "en": "c885664d"
+  },
+  "backend:file.tooBig": {
+    "state": "draft",
+    "en": "611818f3"
+  },
+  "backend:hardware.unnamedCard": {
+    "state": "draft",
+    "en": "c51ad096"
+  },
+  "backend:hardware.unnamedCardNumbered": {
+    "state": "draft",
+    "en": "496d5347"
+  },
+  "backend:infer.missing": {
+    "state": "draft",
+    "en": "51723719"
+  },
+  "backend:infer.model": {
+    "state": "draft",
+    "en": "22e85d9f"
+  },
+  "backend:infer.run": {
+    "state": "draft",
+    "en": "976ce868"
+  },
+  "backend:infer.runtime": {
+    "state": "draft",
+    "en": "b38c367a"
+  },
+  "backend:internal": {
+    "state": "draft",
+    "en": "613a5644"
+  },
+  "backend:job.analysing": {
+    "state": "draft",
+    "en": "fd2c39e8"
+  },
+  "backend:job.cancelled": {
+    "state": "draft",
+    "en": "845df81c"
+  },
+  "backend:job.clipsFailedOneLeft": {
+    "state": "draft",
+    "en": "494d3d98"
+  },
+  "backend:job.clipsFailedSomeLeft": {
+    "state": "draft",
+    "en": "93faece8"
+  },
+  "backend:job.clipsFailed": {
+    "state": "draft",
+    "en": "cdc9d688"
+  },
+  "backend:job.exportingJoined": {
+    "state": "draft",
+    "en": "e97630fc"
+  },
+  "backend:job.exporting": {
+    "state": "draft",
+    "en": "459de4c4"
+  },
+  "backend:job.groupingCharacters": {
+    "state": "draft",
+    "en": "6dff3ca8"
+  },
+  "backend:job.indexing": {
+    "state": "draft",
+    "en": "91216ebc"
+  },
+  "backend:job.preparingPreview": {
+    "state": "draft",
+    "en": "5831d2e7"
+  },
+  "backend:job.sharpeningPortraits": {
+    "state": "draft",
+    "en": "475f18b0"
+  },
+  "backend:job.sharpeningPosters": {
+    "state": "draft",
+    "en": "64f0809a"
+  },
+  "backend:job.stage.clip": {
+    "state": "draft",
+    "en": "4306657a"
+  },
+  "backend:job.stage.creatingPoster": {
+    "state": "draft",
+    "en": "f69c39d3"
+  },
+  "backend:job.stage.downloadingModel": {
+    "state": "draft",
+    "en": "47d3e162"
+  },
+  "backend:job.stage.findingCharacters": {
+    "state": "draft",
+    "en": "fe889f82"
+  },
+  "backend:job.stage.findingPeople": {
+    "state": "draft",
+    "en": "fbce1591"
+  },
+  "backend:job.stage.findingShots": {
+    "state": "draft",
+    "en": "10a9826b"
+  },
+  "backend:job.stage.groupingCharacters": {
+    "state": "draft",
+    "en": "6dff3ca8"
+  },
+  "backend:job.stage.indexingFrames": {
+    "state": "draft",
+    "en": "631bd55d"
+  },
+  "backend:job.stage.joining": {
+    "state": "draft",
+    "en": "991d3caf"
+  },
+  "backend:job.stage.onCpu": {
+    "state": "draft",
+    "en": "4f8904fd"
+  },
+  "backend:job.stage.portrait": {
+    "state": "draft",
+    "en": "b0f849fd"
+  },
+  "backend:job.stage.poster": {
+    "state": "draft",
+    "en": "bc167b4b"
+  },
+  "backend:job.stage.preparingPreview": {
+    "state": "draft",
+    "en": "a612df0f"
+  },
+  "backend:job.stage.readingFile": {
+    "state": "draft",
+    "en": "67ae46e7"
+  },
+  "backend:job.stage.rendering": {
+    "state": "draft",
+    "en": "268400f3"
+  },
+  "backend:job.unexpectedError": {
+    "state": "draft",
+    "en": "a3a7a9cc"
+  },
+  "backend:keychain.damaged": {
+    "state": "draft",
+    "en": "f8156208"
+  },
+  "backend:keychain.error": {
+    "state": "draft",
+    "en": "723d7832"
+  },
+  "backend:keychain.locked": {
+    "state": "draft",
+    "en": "c746949c"
+  },
+  "backend:keychain.noStore": {
+    "state": "draft",
+    "en": "d9b8d58e"
+  },
+  "backend:keychain.notText": {
+    "state": "draft",
+    "en": "35e0de09"
+  },
+  "backend:keychain.refusedName": {
+    "state": "draft",
+    "en": "c17927b8"
+  },
+  "backend:keychain.twice": {
+    "state": "draft",
+    "en": "32975b9f"
+  },
+  "backend:keychain.unusable": {
+    "state": "draft",
+    "en": "8c2f9efa"
+  },
+  "backend:library.cantUse": {
+    "state": "draft",
+    "en": "579aa280"
+  },
+  "backend:library.fullPath": {
+    "state": "draft",
+    "en": "841e58e2"
+  },
+  "backend:library.notImported": {
+    "state": "draft",
+    "en": "be196f46"
+  },
+  "backend:library.notImportedMore": {
+    "state": "draft",
+    "en": "75f27215"
+  },
+  "backend:library.notUnicode": {
+    "state": "draft",
+    "en": "6e732913"
+  },
+  "backend:media.cancelled": {
+    "state": "draft",
+    "en": "27c010d6"
+  },
+  "backend:media.failed": {
+    "state": "draft",
+    "en": "48da6df6"
+  },
+  "backend:media.frameCheck": {
+    "state": "draft",
+    "en": "b2ff7516"
+  },
+  "backend:media.frameOrder": {
+    "state": "draft",
+    "en": "73043a7c"
+  },
+  "backend:media.noVideo": {
+    "state": "draft",
+    "en": "bb328b2d"
+  },
+  "backend:media.toolsMissing": {
+    "state": "draft",
+    "en": "c7dd7a39"
+  },
+  "backend:media.toolsTooOld": {
+    "state": "draft",
+    "en": "8936c816"
+  },
+  "backend:media.unreadable": {
+    "state": "draft",
+    "en": "96ea72ec"
+  },
+  "backend:model.cancelled": {
+    "state": "draft",
+    "en": "27c010d6"
+  },
+  "backend:model.changed": {
+    "state": "draft",
+    "en": "822daeb5"
+  },
+  "backend:model.damaged": {
+    "state": "draft",
+    "en": "52c2a39c"
+  },
+  "backend:model.downloadFailed": {
+    "state": "draft",
+    "en": "deed63d5"
+  },
+  "backend:model.noSpace": {
+    "state": "draft",
+    "en": "3d5798e0"
+  },
+  "backend:model.unknown": {
+    "state": "draft",
+    "en": "56d04719"
+  },
+  "backend:name.didYouMean": {
+    "state": "draft",
+    "en": "c1d68492"
+  },
+  "backend:name.empty": {
+    "state": "draft",
+    "en": "cdba5734"
+  },
+  "backend:name.notForFile": {
+    "state": "draft",
+    "en": "9f524046"
+  },
+  "backend:name.unclosed": {
+    "state": "draft",
+    "en": "7893104f"
+  },
+  "backend:name.unknownPart": {
+    "state": "draft",
+    "en": "176c1033"
+  },
+  "backend:names.anilist.busy": {
+    "state": "draft",
+    "en": "dfbb18bc"
+  },
+  "backend:names.anilist.noAnime": {
+    "state": "draft",
+    "en": "06fcc6b9"
+  },
+  "backend:names.anilist.notFound": {
+    "state": "draft",
+    "en": "1396daef"
+  },
+  "backend:names.anilist.refused": {
+    "state": "draft",
+    "en": "7c07458a"
+  },
+  "backend:names.anilist.unreachable": {
+    "state": "draft",
+    "en": "cd132875"
+  },
+  "backend:names.animatedOnly": {
+    "state": "draft",
+    "en": "3f67eaba"
+  },
+  "backend:names.castChanged": {
+    "state": "draft",
+    "en": "467592c0"
+  },
+  "backend:names.confirmSeries": {
+    "state": "draft",
+    "en": "5409d5e5"
+  },
+  "backend:names.fandom.busy": {
+    "state": "draft",
+    "en": "4cc58a80"
+  },
+  "backend:names.fandom.noFilm": {
+    "state": "draft",
+    "en": "4e3e9f84"
+  },
+  "backend:names.fandom.noWiki": {
+    "state": "draft",
+    "en": "8c030e3b"
+  },
+  "backend:names.fandom.unreachable": {
+    "state": "draft",
+    "en": "32616a79"
+  },
+  "backend:names.footageChanged": {
+    "state": "draft",
+    "en": "5c304dd8"
+  },
+  "backend:names.noLongerWaiting": {
+    "state": "draft",
+    "en": "cbeea91c"
+  },
+  "backend:names.portraitsFailed": {
+    "state": "draft",
+    "en": "5a84081f"
+  },
+  "backend:names.turnOn": {
+    "state": "draft",
+    "en": "89c64a30"
+  },
+  "backend:names.tvmaze.busy": {
+    "state": "draft",
+    "en": "7b5d9cf7"
+  },
+  "backend:names.tvmaze.noShow": {
+    "state": "draft",
+    "en": "b5ef18c5"
+  },
+  "backend:names.tvmaze.unreachable": {
+    "state": "draft",
+    "en": "c72130be"
+  },
+  "backend:names.typeFilm": {
+    "state": "draft",
+    "en": "61b0a800"
+  },
+  "backend:names.typeSeries": {
+    "state": "draft",
+    "en": "9ad3a0a5"
+  },
+  "backend:pack.changed": {
+    "state": "draft",
+    "en": "d67d75c9"
+  },
+  "backend:pack.empty": {
+    "state": "draft",
+    "en": "2fcf59e8"
+  },
+  "backend:pack.waitsForFilter": {
+    "state": "draft",
+    "en": "6c77bbd1"
+  },
+  "backend:plugin.badSignature": {
+    "state": "draft",
+    "en": "d4c7ca03"
+  },
+  "backend:plugin.badVersion": {
+    "state": "draft",
+    "en": "2f944218"
+  },
+  "backend:plugin.beingUpdated": {
+    "state": "draft",
+    "en": "9e0739dc"
+  },
+  "backend:plugin.busy": {
+    "state": "draft",
+    "en": "07551578"
+  },
+  "backend:plugin.cancelled": {
+    "state": "draft",
+    "en": "27c010d6"
+  },
+  "backend:plugin.cantStartFileMissing": {
+    "state": "draft",
+    "en": "fdab3fef"
+  },
+  "backend:plugin.cantStartNotRunnable": {
+    "state": "draft",
+    "en": "5e6759e5"
+  },
+  "backend:plugin.catalogChangedWhileWaiting": {
+    "state": "draft",
+    "en": "2ff1027c"
+  },
+  "backend:plugin.changedSinceQueued": {
+    "state": "draft",
+    "en": "078655f1"
+  },
+  "backend:plugin.changedWhileWaiting": {
+    "state": "draft",
+    "en": "5a2f88cb"
+  },
+  "backend:plugin.chooseExport": {
+    "state": "draft",
+    "en": "66aa446b"
+  },
+  "backend:plugin.closed": {
+    "state": "draft",
+    "en": "84fa7827"
+  },
+  "backend:plugin.closedBecause.tooMany": {
+    "state": "draft",
+    "en": "ba47fa46"
+  },
+  "backend:plugin.closedBecause.turnedOff": {
+    "state": "draft",
+    "en": "8293dc56"
+  },
+  "backend:plugin.closedBecause.uninstalling": {
+    "state": "draft",
+    "en": "5a2406c2"
+  },
+  "backend:plugin.closedBecause.updating": {
+    "state": "draft",
+    "en": "73259db2"
+  },
+  "backend:plugin.closedBecause.windowReloaded": {
+    "state": "draft",
+    "en": "b667cb4d"
+  },
+  "backend:plugin.closedBecause.withdrawn": {
+    "state": "draft",
+    "en": "9dfff5e7"
+  },
+  "backend:plugin.closedBecause.withdrawnIt": {
+    "state": "draft",
+    "en": "ac7c4c35"
+  },
+  "backend:plugin.commandNotOnExport": {
+    "state": "draft",
+    "en": "f0e7558a"
+  },
+  "backend:plugin.compileFailed": {
+    "state": "draft",
+    "en": "2b620bbb"
+  },
+  "backend:plugin.compileOutOfMemory": {
+    "state": "draft",
+    "en": "95a794a8"
+  },
+  "backend:plugin.compileStopped": {
+    "state": "draft",
+    "en": "a7d748f0"
+  },
+  "backend:plugin.componentDoesntFit": {
+    "state": "draft",
+    "en": "6ffa0de0"
+  },
+  "backend:plugin.componentDoesntLoad": {
+    "state": "draft",
+    "en": "a648ac14"
+  },
+  "backend:plugin.componentTooLarge": {
+    "state": "draft",
+    "en": "65ed74fd"
+  },
+  "backend:plugin.confirmInstall": {
+    "state": "draft",
+    "en": "ac45490a"
+  },
+  "backend:plugin.crashed": {
+    "state": "draft",
+    "en": "2bcaf3d1"
+  },
+  "backend:plugin.downloadFailed": {
+    "state": "draft",
+    "en": "7ed2eaec"
+  },
+  "backend:plugin.eventNeedsProject": {
+    "state": "draft",
+    "en": "bedad46e"
+  },
+  "backend:plugin.eventRunsItself": {
+    "state": "draft",
+    "en": "ab2b37ad"
+  },
+  "backend:plugin.eventSaysWhat": {
+    "state": "draft",
+    "en": "b12c222e"
+  },
+  "backend:plugin.exportFolderGone": {
+    "state": "draft",
+    "en": "0f4a6593"
+  },
+  "backend:plugin.filesChanged": {
+    "state": "draft",
+    "en": "a08b89c1"
+  },
+  "backend:plugin.filesMissing": {
+    "state": "draft",
+    "en": "ff115330"
+  },
+  "backend:plugin.filterNeedsPack": {
+    "state": "draft",
+    "en": "a4930ad6"
+  },
+  "backend:plugin.filterRunsInBuilder": {
+    "state": "draft",
+    "en": "b2c88597"
+  },
+  "backend:plugin.gettingAlready": {
+    "state": "draft",
+    "en": "8f9ce339"
+  },
+  "backend:plugin.hostFailed": {
+    "state": "draft",
+    "en": "90d0643b"
+  },
+  "backend:plugin.importNotOffered": {
+    "state": "draft",
+    "en": "76dedc6a"
+  },
+  "backend:plugin.installedByNewer": {
+    "state": "draft",
+    "en": "c314bc74"
+  },
+  "backend:plugin.invalid": {
+    "state": "draft",
+    "en": "fb8be8d1"
+  },
+  "backend:plugin.itsFiles": {
+    "state": "draft",
+    "en": "ea35dedf"
+  },
+  "backend:plugin.keyChanged": {
+    "state": "draft",
+    "en": "47e300bc"
+  },
+  "backend:plugin.linkFailed": {
+    "state": "draft",
+    "en": "c0418c05"
+  },
+  "backend:plugin.namesAnother": {
+    "state": "draft",
+    "en": "7663b2f8"
+  },
+  "backend:plugin.needsNewer": {
+    "state": "draft",
+    "en": "da7195ad"
+  },
+  "backend:plugin.needsOlder": {
+    "state": "draft",
+    "en": "10238192"
+  },
+  "backend:plugin.newerInstalled": {
+    "state": "draft",
+    "en": "41afd259"
+  },
+  "backend:plugin.noEvent": {
+    "state": "draft",
+    "en": "0f9866c8"
+  },
+  "backend:plugin.noExportAction": {
+    "state": "draft",
+    "en": "44b28a6e"
+  },
+  "backend:plugin.noLogYet": {
+    "state": "draft",
+    "en": "dec45454"
+  },
+  "backend:plugin.noOnEvent": {
+    "state": "draft",
+    "en": "54177eec"
+  },
+  "backend:plugin.noSecretSetting": {
+    "state": "draft",
+    "en": "6eb276b9"
+  },
+  "backend:plugin.noSource": {
+    "state": "draft",
+    "en": "68781c2e"
+  },
+  "backend:plugin.noSpace": {
+    "state": "draft",
+    "en": "84f02df8"
+  },
+  "backend:plugin.noSuchAction": {
+    "state": "draft",
+    "en": "e96e697c"
+  },
+  "backend:plugin.noSuchFilter": {
+    "state": "draft",
+    "en": "6737e374"
+  },
+  "backend:plugin.noSuchPackAction": {
+    "state": "draft",
+    "en": "46b21dcd"
+  },
+  "backend:plugin.noSuchPage": {
+    "state": "draft",
+    "en": "0efc9e7f"
+  },
+  "backend:plugin.notAComponent": {
+    "state": "draft",
+    "en": "918e16bd"
+  },
+  "backend:plugin.notAFilter": {
+    "state": "draft",
+    "en": "f708cf79"
+  },
+  "backend:plugin.notAPackAction": {
+    "state": "draft",
+    "en": "6592a598"
+  },
+  "backend:plugin.notAllowed": {
+    "state": "draft",
+    "en": "73130c31"
+  },
+  "backend:plugin.notFound": {
+    "state": "draft",
+    "en": "6d4d1fc1"
+  },
+  "backend:plugin.notInCatalog": {
+    "state": "draft",
+    "en": "a21b5b33"
+  },
+  "backend:plugin.notInstalled": {
+    "state": "draft",
+    "en": "421a91e6"
+  },
+  "backend:plugin.notWasm": {
+    "state": "draft",
+    "en": "4e0a09e1"
+  },
+  "backend:plugin.nothingToTell": {
+    "state": "draft",
+    "en": "82e37755"
+  },
+  "backend:plugin.openProject": {
+    "state": "draft",
+    "en": "b8f11365"
+  },
+  "backend:plugin.outOfMemory": {
+    "state": "draft",
+    "en": "5014fa3a"
+  },
+  "backend:plugin.packActionNeedsPack": {
+    "state": "draft",
+    "en": "a7011ba6"
+  },
+  "backend:plugin.packActionRunsInBuilder": {
+    "state": "draft",
+    "en": "39a9046c"
+  },
+  "backend:plugin.pageNeedsProject": {
+    "state": "draft",
+    "en": "94f77716"
+  },
+  "backend:plugin.pageNotProjects": {
+    "state": "draft",
+    "en": "f6f46d01"
+  },
+  "backend:plugin.pageToast": {
+    "state": "draft",
+    "en": "5531780d"
+  },
+  "backend:plugin.projectFolderGone": {
+    "state": "draft",
+    "en": "ab2dc930"
+  },
+  "backend:plugin.reviewClosed": {
+    "state": "draft",
+    "en": "62e2fd54"
+  },
+  "backend:plugin.reviewExpired": {
+    "state": "draft",
+    "en": "5c14058f"
+  },
+  "backend:plugin.reviewedOnlyInstalled": {
+    "state": "draft",
+    "en": "e296ebc2"
+  },
+  "backend:plugin.runsInSandbox": {
+    "state": "draft",
+    "en": "ab27a853"
+  },
+  "backend:plugin.runsNoProgram": {
+    "state": "draft",
+    "en": "cf70b2d7"
+  },
+  "backend:plugin.runsNoService": {
+    "state": "draft",
+    "en": "e4013a86"
+  },
+  "backend:plugin.runtimeChanged": {
+    "state": "draft",
+    "en": "3236887b"
+  },
+  "backend:plugin.sameVersionOtherFiles": {
+    "state": "draft",
+    "en": "5cfc4bca"
+  },
+  "backend:plugin.saveFailed": {
+    "state": "draft",
+    "en": "e132d7ff"
+  },
+  "backend:plugin.saveNameTooLong": {
+    "state": "draft",
+    "en": "3e0aca6a"
+  },
+  "backend:plugin.saveRunnable": {
+    "state": "draft",
+    "en": "fa984e14"
+  },
+  "backend:plugin.saved": {
+    "state": "draft",
+    "en": "6047dd9a"
+  },
+  "backend:plugin.savedNoFile": {
+    "state": "draft",
+    "en": "47b70188"
+  },
+  "backend:plugin.savedNothing": {
+    "state": "draft",
+    "en": "a696ed01"
+  },
+  "backend:plugin.savedUnreadable": {
+    "state": "draft",
+    "en": "3e51a884"
+  },
+  "backend:plugin.secretEmpty": {
+    "state": "draft",
+    "en": "295111be"
+  },
+  "backend:plugin.secretNul": {
+    "state": "draft",
+    "en": "cb523e4d"
+  },
+  "backend:plugin.secretOwnButton": {
+    "state": "draft",
+    "en": "ae454270"
+  },
+  "backend:plugin.secretTooLong": {
+    "state": "draft",
+    "en": "79c33447"
+  },
+  "backend:plugin.setting.atLeast": {
+    "state": "draft",
+    "en": "d4b28909"
+  },
+  "backend:plugin.setting.atMost": {
+    "state": "draft",
+    "en": "b6cd9b99"
+  },
+  "backend:plugin.setting.choice": {
+    "state": "draft",
+    "en": "0af8effc"
+  },
+  "backend:plugin.setting.noNul": {
+    "state": "draft",
+    "en": "548f4c9c"
+  },
+  "backend:plugin.setting.number": {
+    "state": "draft",
+    "en": "52406711"
+  },
+  "backend:plugin.setting.onOrOff": {
+    "state": "draft",
+    "en": "e7a04b0e"
+  },
+  "backend:plugin.setting.secret": {
+    "state": "draft",
+    "en": "6f141e80"
+  },
+  "backend:plugin.setting.text": {
+    "state": "draft",
+    "en": "29cc3340"
+  },
+  "backend:plugin.setting.tooLong": {
+    "state": "draft",
+    "en": "662bb11c"
+  },
+  "backend:plugin.setting.whole": {
+    "state": "draft",
+    "en": "a978228a"
+  },
+  "backend:plugin.settingsOfNewer": {
+    "state": "draft",
+    "en": "9c0ec9f1"
+  },
+  "backend:plugin.stage.checkingFiles": {
+    "state": "draft",
+    "en": "c833aaea"
+  },
+  "backend:plugin.stage.checkingFilesFor": {
+    "state": "draft",
+    "en": "fe3ec914"
+  },
+  "backend:plugin.stage.checkingShots": {
+    "state": "draft",
+    "en": "10303547"
+  },
+  "backend:plugin.stage.checkingShotsIn": {
+    "state": "draft",
+    "en": "e11499fb"
+  },
+  "backend:plugin.stage.gettingFiles": {
+    "state": "draft",
+    "en": "d486b310"
+  },
+  "backend:plugin.stage.gettingFilesFor": {
+    "state": "draft",
+    "en": "bfab7dae"
+  },
+  "backend:plugin.stage.gettingReady": {
+    "state": "draft",
+    "en": "02f8a699"
+  },
+  "backend:plugin.stage.gettingUv": {
+    "state": "draft",
+    "en": "19675c12"
+  },
+  "backend:plugin.stage.saving": {
+    "state": "draft",
+    "en": "68b34c23"
+  },
+  "backend:plugin.stage.starting": {
+    "state": "draft",
+    "en": "7d0e4b28"
+  },
+  "backend:plugin.stage.waitingForRun": {
+    "state": "draft",
+    "en": "6777b26a"
+  },
+  "backend:plugin.stage.waitingForUpdate": {
+    "state": "draft",
+    "en": "dfb1a861"
+  },
+  "backend:plugin.timedOut": {
+    "state": "draft",
+    "en": "36261220"
+  },
+  "backend:plugin.tooNew": {
+    "state": "draft",
+    "en": "f2c27018"
+  },
+  "backend:plugin.turnedOff": {
+    "state": "draft",
+    "en": "9bc1c629"
+  },
+  "backend:plugin.uninstalledWhileWaiting": {
+    "state": "draft",
+    "en": "b1235f19"
+  },
+  "backend:plugin.updateAsksMore": {
+    "state": "draft",
+    "en": "80f9254e"
+  },
+  "backend:plugin.uvMissing": {
+    "state": "draft",
+    "en": "a7cbbc8b"
+  },
+  "backend:plugin.versionInstalled": {
+    "state": "draft",
+    "en": "4ce4ebeb"
+  },
+  "backend:plugin.warn.badLink": {
+    "state": "draft",
+    "en": "c6ccf89e"
+  },
+  "backend:plugin.warn.bannerKind": {
+    "state": "draft",
+    "en": "0b7063b9"
+  },
+  "backend:plugin.warn.bannerNeedsV2": {
+    "state": "draft",
+    "en": "94f5078e"
+  },
+  "backend:plugin.warn.cut": {
+    "state": "draft",
+    "en": "298cc4c3"
+  },
+  "backend:plugin.warn.eventOn": {
+    "state": "draft",
+    "en": "6a96dac6"
+  },
+  "backend:plugin.warn.eventsNeedV2": {
+    "state": "draft",
+    "en": "ef522b94"
+  },
+  "backend:plugin.warn.followsBranch": {
+    "state": "draft",
+    "en": "9f494ce2"
+  },
+  "backend:plugin.warn.hostUnreachable": {
+    "state": "draft",
+    "en": "189f2bf4"
+  },
+  "backend:plugin.warn.hostsIgnored": {
+    "state": "draft",
+    "en": "bc19af90"
+  },
+  "backend:plugin.warn.httpWithoutNetwork": {
+    "state": "draft",
+    "en": "d9609725"
+  },
+  "backend:plugin.warn.iconKind": {
+    "state": "draft",
+    "en": "4d542c95"
+  },
+  "backend:plugin.warn.ignoredNeedsProtocol2": {
+    "state": "draft",
+    "en": "dfc6fa71"
+  },
+  "backend:plugin.warn.ignoredNeedsV2": {
+    "state": "draft",
+    "en": "65840cc9"
+  },
+  "backend:plugin.warn.ignoredUnknown": {
+    "state": "draft",
+    "en": "d334e0d3"
+  },
+  "backend:plugin.warn.limitsWasmOnly": {
+    "state": "draft",
+    "en": "946bc9e8"
+  },
+  "backend:plugin.warn.more": {
+    "state": "draft",
+    "en": "9b250914"
+  },
+  "backend:plugin.warn.networkWithoutHttp": {
+    "state": "draft",
+    "en": "f83e2139"
+  },
+  "backend:plugin.warn.packActionsNeedV2": {
+    "state": "draft",
+    "en": "f55f8c14"
+  },
+  "backend:plugin.warn.pageRail": {
+    "state": "draft",
+    "en": "f3c9724b"
+  },
+  "backend:plugin.warn.pageScope": {
+    "state": "draft",
+    "en": "6b516570"
+  },
+  "backend:plugin.warn.pagesNeedV2": {
+    "state": "draft",
+    "en": "c0db0ac8"
+  },
+  "backend:plugin.warn.platformUnknown": {
+    "state": "draft",
+    "en": "aa01eb3f"
+  },
+  "backend:plugin.warn.platformsIgnored": {
+    "state": "draft",
+    "en": "ff03147a"
+  },
+  "backend:plugin.warn.resourcesNeedV2": {
+    "state": "draft",
+    "en": "1c3787cd"
+  },
+  "backend:plugin.warn.secretNeedsProtocol2": {
+    "state": "draft",
+    "en": "dafd2577"
+  },
+  "backend:plugin.warn.secretNeedsV2": {
+    "state": "draft",
+    "en": "f53130c3"
+  },
+  "backend:plugin.warn.serviceNeverStarts": {
+    "state": "draft",
+    "en": "c4009d21"
+  },
+  "backend:plugin.warn.settingKind": {
+    "state": "draft",
+    "en": "045759b3"
+  },
+  "backend:plugin.warn.shotFiltersNeedV2": {
+    "state": "draft",
+    "en": "38a561a6"
+  },
+  "backend:plugin.warn.skippedUnknown": {
+    "state": "draft",
+    "en": "3d77e349"
+  },
+  "backend:plugin.wasmCantRun": {
+    "state": "draft",
+    "en": "2ed62a55"
+  },
+  "backend:plugin.wasmNoFilter": {
+    "state": "draft",
+    "en": "e774200f"
+  },
+  "backend:plugin.wasmNoPack": {
+    "state": "draft",
+    "en": "7b5d1f5f"
+  },
+  "backend:plugin.withdrawn": {
+    "state": "draft",
+    "en": "96ef64f9"
+  },
+  "backend:plugin.wrongPlatform": {
+    "state": "draft",
+    "en": "6ffac306"
+  },
+  "backend:project.alreadyInProject": {
+    "state": "draft",
+    "en": "65b362a4"
+  },
+  "backend:project.folderMissing": {
+    "state": "draft",
+    "en": "a62b17d8"
+  },
+  "backend:project.gone": {
+    "state": "draft",
+    "en": "222994f2"
+  },
+  "backend:project.needsName": {
+    "state": "draft",
+    "en": "ce134382"
+  },
+  "backend:project.stillStopping": {
+    "state": "draft",
+    "en": "87e35e2a"
+  },
+  "backend:relink.audio": {
+    "state": "draft",
+    "en": "e9d444ec"
+  },
+  "backend:relink.codec": {
+    "state": "draft",
+    "en": "741cdf26"
+  },
+  "backend:relink.container": {
+    "state": "draft",
+    "en": "11b8cdf9"
+  },
+  "backend:relink.frameRate": {
+    "state": "draft",
+    "en": "892e8c4a"
+  },
+  "backend:relink.length": {
+    "state": "draft",
+    "en": "1aa51070"
+  },
+  "backend:relink.picture": {
+    "state": "draft",
+    "en": "66cc2e81"
+  },
+  "backend:relink.size": {
+    "state": "draft",
+    "en": "c30f33c8"
+  },
+  "backend:relink.start": {
+    "state": "draft",
+    "en": "5aed44f7"
+  },
+  "backend:system.clipboardFailed": {
+    "state": "draft",
+    "en": "ba529cee"
+  },
+  "backend:system.gpuCheckFailed": {
+    "state": "draft",
+    "en": "3b8ac068"
+  },
+  "backend:system.logsFailed": {
+    "state": "draft",
+    "en": "c40a443f"
+  },
+  "backend:system.menuKeysFailed": {
+    "state": "draft",
+    "en": "d28252d2"
+  },
+  "backend:update.failed": {
+    "state": "draft",
+    "en": "fb8be8d1"
+  },
+  "backend:update.gone": {
+    "state": "draft",
+    "en": "972a5f8e"
+  },
+  "native:menu.app.title": {
+    "state": "draft",
+    "en": "c3003ed6"
+  },
+  "native:menu.app.about": {
+    "state": "draft",
+    "en": "99694ea3"
+  },
+  "native:menu.app.checkUpdates": {
+    "state": "draft",
+    "en": "8aad5980"
+  },
+  "native:menu.app.settings": {
+    "state": "draft",
+    "en": "27e5fb0a"
+  },
+  "native:menu.app.services": {
+    "state": "draft",
+    "en": "63b30055"
+  },
+  "native:menu.app.hide": {
+    "state": "draft",
+    "en": "4deb2eac"
+  },
+  "native:menu.app.hideOthers": {
+    "state": "draft",
+    "en": "b1ea29d0"
+  },
+  "native:menu.app.showAll": {
+    "state": "draft",
+    "en": "a23c130f"
+  },
+  "native:menu.app.quit": {
+    "state": "draft",
+    "en": "96b140bb"
+  },
+  "native:menu.file.title": {
+    "state": "draft",
+    "en": "2b183663"
+  },
+  "native:menu.file.newProject": {
+    "state": "draft",
+    "en": "9f2b9832"
+  },
+  "native:menu.file.addMedia": {
+    "state": "draft",
+    "en": "95ed0ee4"
+  },
+  "native:menu.file.export": {
+    "state": "draft",
+    "en": "07f43bd3"
+  },
+  "native:menu.file.reveal": {
+    "state": "draft",
+    "en": "03fe38c5"
+  },
+  "native:menu.edit.title": {
+    "state": "draft",
+    "en": "c2c76cb1"
+  },
+  "native:menu.edit.undo": {
+    "state": "draft",
+    "en": "71fd4acf"
+  },
+  "native:menu.edit.redo": {
+    "state": "draft",
+    "en": "7412e5e9"
+  },
+  "native:menu.edit.cut": {
+    "state": "draft",
+    "en": "58e25863"
+  },
+  "native:menu.edit.copy": {
+    "state": "draft",
+    "en": "658f3664"
+  },
+  "native:menu.edit.paste": {
+    "state": "draft",
+    "en": "b34a0288"
+  },
+  "native:menu.edit.selectAll": {
+    "state": "draft",
+    "en": "cd7e3b12"
+  },
+  "native:menu.edit.copyTimecodes": {
+    "state": "draft",
+    "en": "2df3002d"
+  },
+  "native:menu.view.title": {
+    "state": "draft",
+    "en": "5e4baa18"
+  },
+  "native:menu.view.commandPalette": {
+    "state": "draft",
+    "en": "5c678095"
+  },
+  "native:menu.view.library": {
+    "state": "draft",
+    "en": "a8532270"
+  },
+  "native:menu.view.episodes": {
+    "state": "draft",
+    "en": "460dfc93"
+  },
+  "native:menu.view.exports": {
+    "state": "draft",
+    "en": "744ce6e0"
+  },
+  "native:menu.view.activity": {
+    "state": "draft",
+    "en": "9e75940c"
+  },
+  "native:menu.view.plugins": {
+    "state": "draft",
+    "en": "847d7bcb"
+  },
+  "native:menu.view.toggleSidebar": {
+    "state": "draft",
+    "en": "1824bc01"
+  },
+  "native:menu.view.fullScreen": {
+    "state": "draft",
+    "en": "4b290362"
+  },
+  "native:menu.window.title": {
+    "state": "draft",
+    "en": "e78631fd"
+  },
+  "native:menu.window.minimize": {
+    "state": "draft",
+    "en": "f0ffec5d"
+  },
+  "native:menu.window.zoom": {
+    "state": "draft",
+    "en": "62399752"
+  },
+  "native:menu.window.close": {
+    "state": "draft",
+    "en": "c8b458e9"
+  },
+  "native:menu.help.title": {
+    "state": "draft",
+    "en": "b89df01a"
+  },
+  "native:menu.help.logs": {
+    "state": "draft",
+    "en": "0b2a7d56"
+  },
+  "native:dialog.cancel": {
+    "state": "draft",
+    "en": "35afca3b"
+  },
+  "native:dialog.libraryFailed.title": {
+    "state": "draft",
+    "en": "c3003ed6"
+  },
+  "native:dialog.libraryFailed.text": {
+    "state": "draft",
+    "en": "b2c75c6c"
+  },
+  "native:dialog.openLink.title": {
+    "state": "draft",
+    "en": "15263388"
+  },
+  "native:dialog.openLink.yes": {
+    "state": "draft",
+    "en": "538b10e9"
+  },
+  "native:dialog.openLink.page": {
+    "state": "draft",
+    "en": "0ee72be2"
+  },
+  "native:dialog.openLink.source": {
+    "state": "draft",
+    "en": "9c20d7ad"
+  },
+  "native:dialog.allowUnreviewed.title": {
+    "state": "draft",
+    "en": "f415d898"
+  },
+  "native:dialog.allowUnreviewed.text": {
+    "state": "draft",
+    "en": "74b56e5d"
+  },
+  "native:dialog.allowUnreviewed.yes": {
+    "state": "draft",
+    "en": "bae6bcb0"
+  },
+  "native:dialog.hung.title": {
+    "state": "draft",
+    "en": "a5c98007"
+  },
+  "native:dialog.hung.text": {
+    "state": "draft",
+    "en": "424cca29"
+  },
+  "native:dialog.hung.close": {
+    "state": "draft",
+    "en": "ece448ec"
+  },
+  "native:dialog.hung.wait": {
+    "state": "draft",
+    "en": "0bd501c0"
+  },
+  "native:dialog.files.save": {
+    "state": "draft",
+    "en": "b5fedd8d"
+  },
+  "native:dialog.files.open": {
+    "state": "draft",
+    "en": "f128dc00"
+  },
+  "native:dialog.files.savePack": {
+    "state": "draft",
+    "en": "ec92067a"
+  },
+  "native:dialog.install.install.title": {
+    "state": "draft",
+    "en": "13b0f658"
+  },
+  "native:dialog.install.install.yes": {
+    "state": "draft",
+    "en": "b50cbd40"
+  },
+  "native:dialog.install.update.title": {
+    "state": "draft",
+    "en": "d9facefc"
+  },
+  "native:dialog.install.update.yes": {
+    "state": "draft",
+    "en": "6e230e94"
+  },
+  "native:dialog.install.load.title": {
+    "state": "draft",
+    "en": "f13587a5"
+  },
+  "native:dialog.install.load.yes": {
+    "state": "draft",
+    "en": "68afa209"
+  },
+  "native:dialog.install.reviewed": {
+    "state": "draft",
+    "en": "0954d53d"
+  },
+  "native:dialog.install.notReviewed": {
+    "state": "draft",
+    "en": "d7c5153d"
+  },
+  "native:dialog.install.runs.program": {
+    "state": "draft",
+    "en": "7e566e10"
+  },
+  "native:dialog.install.runs.sandbox": {
+    "state": "draft",
+    "en": "d17f3d01"
+  },
+  "native:dialog.install.runs.pagesOnly": {
+    "state": "draft",
+    "en": "13afd6f1"
+  },
+  "native:dialog.install.runs.leftSandbox": {
+    "state": "draft",
+    "en": "5b8ca0b8"
+  },
+  "native:dialog.install.runs.startsProgram": {
+    "state": "draft",
+    "en": "74fa1887"
+  },
+  "native:dialog.install.runs.startsSandboxed": {
+    "state": "draft",
+    "en": "75ebe9ce"
+  },
+  "native:dialog.install.runs.becomesService": {
+    "state": "draft",
+    "en": "2e2c8187"
+  },
+  "native:dialog.install.new": {
+    "state": "draft",
+    "en": "bf697c0e"
+  },
+  "native:dialog.install.id": {
+    "state": "draft",
+    "en": "26cf08df"
+  },
+  "native:dialog.install.version": {
+    "state": "draft",
+    "en": "04b5a647"
+  },
+  "native:dialog.install.versionOver": {
+    "state": "draft",
+    "en": "a2c14b46"
+  },
+  "native:dialog.install.by": {
+    "state": "draft",
+    "en": "e9b08589"
+  },
+  "native:dialog.install.saysSigned": {
+    "state": "draft",
+    "en": "91a0e4dc"
+  },
+  "native:dialog.install.saysUnsigned": {
+    "state": "draft",
+    "en": "2c11cfbb"
+  },
+  "native:dialog.install.folder": {
+    "state": "draft",
+    "en": "4a04b4d4"
+  },
+  "native:dialog.permission.exportsRead": {
+    "state": "draft",
+    "en": "36889643"
+  },
+  "native:dialog.permission.exportsWrite": {
+    "state": "draft",
+    "en": "850dd535"
+  },
+  "native:dialog.permission.projectRead": {
+    "state": "draft",
+    "en": "522590a5"
+  },
+  "native:dialog.permission.network": {
+    "state": "draft",
+    "en": "c62bf04f"
+  },
+  "native:dialog.permission.host": {
+    "state": "draft",
+    "en": "85fa8191"
+  },
+  "native:dialog.permission.sandbox.exportsRead": {
+    "state": "draft",
+    "en": "623299a2"
+  },
+  "native:dialog.permission.sandbox.exportsWrite": {
+    "state": "draft",
+    "en": "d55c6ef3"
+  },
+  "native:dialog.permission.sandbox.projectRead": {
+    "state": "draft",
+    "en": "bfd4ffc2"
+  },
+  "native:dialog.permission.sandbox.networkNoSite": {
+    "state": "draft",
+    "en": "575da53d"
+  },
+  "native:dialog.permission.sandbox.network": {
+    "state": "draft",
+    "en": "c6b1a371"
+  },
+  "native:dialog.permission.sandbox.networkSites": {
+    "state": "draft",
+    "en": "4686a9f5"
+  },
+  "native:file.unnamedCharacter": {
+    "state": "draft",
+    "en": "86adfdde"
+  },
+  "native:file.packLabel": {
+    "state": "draft",
+    "en": "22f36f58"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "audio": {
+    "mono": "Mono",
+    "stereo": "Stereo",
+    "channels": "{{n}} can.",
+    "track": "Pista {{n}}",
+    "commentary": "Comentariu",
+    "defaultTrack": "Pista implicită a fiecărui fișier"
+  },
+  "flags": {
+    "bitDepth": "{{n}} biți",
+    "interlaced": "Întrețesut"
+  },
+  "dialog": {
+    "videoFilter": "Video",
+    "pluginFilter": "Plugin AutoScene",
+    "installPlugin": "Instalează un plugin"
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "page": {
+    "title": "Bibliotecă",
+    "newProject": "Proiect nou",
+    "dropHint": "sau trage oriunde un folder de sezon",
+    "allProjects": "Toate proiectele",
+    "loadFailed": "Nu s-a putut încărca biblioteca",
+    "continue": "Continuă"
+  },
+  "welcome": {
+    "title": "Creează primul scenepack",
+    "intro": "AutoScene găsește fiecare plan, învață distribuția de la un episod la altul și taie clipuri curate, exacte la cadru, cu personajul ales de tine.",
+    "steps": {
+      "add": {
+        "title": "Adaugă episoade",
+        "body": "Trage aici un folder de sezon sau un film. Episoadele sunt recunoscute și ordonate automat."
+      },
+      "cast": {
+        "title": "Cunoaște distribuția",
+        "body": "Fiecare personaj este găsit în toate episoadele. Numești, unești sau corectezi dintr-o apăsare de tastă."
+      },
+      "export": {
+        "title": "Exportă scenepackuri",
+        "body": "Clipuri exacte la cadru în ProRes, DNxHR sau H.264, denumite după personaj și episod, gata pentru orice program de editare."
+      }
+    }
+  },
+  "project": {
+    "open": "Deschide proiectul",
+    "files": "Fișiere",
+    "episodes": "Episoade",
+    "cast": "Distribuție",
+    "exports": "Exporturi",
+    "showFolder": "Arată folderul proiectului",
+    "editDetails": "Editează detaliile…",
+    "remove": "Elimină…",
+    "options": "Opțiuni: {{title}}"
+  },
+  "menu": {
+    "newProject": "Proiect nou…",
+    "newFromFolderPage": "Proiect nou dintr-un folder…",
+    "newFromFilesPage": "Proiect nou din fișiere…",
+    "fromFolder": "Dintr-un folder…",
+    "fromFiles": "Din fișiere…"
+  },
+  "footage": {
+    "label": "Material",
+    "live": {
+      "label": "Cu actori reali",
+      "blurb": "Filmat cu actori reali. Personajele sunt găsite după fețe."
+    },
+    "animation": {
+      "label": "Animație",
+      "blurb": "Filme și seriale animate pe calculator (3D). Personajele sunt găsite după fețe, cu reglaje pentru personaje animate desenate într-un singur stil."
+    },
+    "anime": {
+      "label": "Anime",
+      "blurb": "Anime și alte animații 2D desenate de mână. Personajele sunt găsite după cap și după aspectul întreg, cu detectoare făcute pentru anime."
+    },
+    "mixed": {
+      "label": "Mixt",
+      "blurb": "Actori reali și animație în același proiect. Personajele sunt găsite după fețe, de orice fel ar fi."
+    },
+    "stills": "Imagini: {{credit}}"
+  },
+  "newProject": {
+    "title": "Proiect nou",
+    "description": "Un proiect este un serial sau un film. Episoadele sunt recunoscute și ordonate după numele fișierelor.",
+    "titleLabel": "Titlu",
+    "titlePlaceholder": "Titlul serialului sau al filmului",
+    "typeLabel": "Tip",
+    "typeAria": "Tipul proiectului",
+    "series": "Serial",
+    "movie": "Film",
+    "fastScan": "Scanare rapidă",
+    "dropToAdd": "Trage aici ca să adaugi la acest proiect",
+    "dropToAddKinds": "Foldere de sezon și fișiere video",
+    "dropHere": "Trage aici un folder de sezon sau fișiere video",
+    "dropFormats": "MKV, MP4, MOV, TS și altele. Sursele nu sunt niciodată copiate sau modificate.",
+    "chooseFolder": "Alege un folder de sezon sau de film",
+    "addFolder": "Adaugă un folder…",
+    "addFiles": "Adaugă fișiere…",
+    "folder": "Folder…",
+    "files": "Fișiere…",
+    "include": "Include",
+    "skip": "Omite",
+    "includeFile": "Include {{name}}",
+    "skipFile": "Omite {{name}}",
+    "videos_one": "{{count}} fișier video",
+    "videos_few": "{{count}} fișiere video",
+    "videos_other": "{{count}} de fișiere video",
+    "create": "Creează proiectul",
+    "readFailed": "Nu s-au putut citi fișierele",
+    "createFailed": "Nu s-a putut crea proiectul"
+  },
+  "details": {
+    "title": "Detaliile proiectului",
+    "description": "Folderul proiectului de pe disc își păstrează numele.",
+    "titleLabel": "Titlu",
+    "animeApart": "Anime se analizează altfel încă de la început. Adaugă fișierele video ca proiect anime nou.",
+    "refilmedResearched": "Fețele sunt găsite din nou pentru acest material, apoi personajele sunt regrupate. Numele și deciziile tale rămân.",
+    "refilmed": "Personajele sunt regrupate pentru acest material. Numele și deciziile tale rămân.",
+    "save": "Salvează",
+    "partlyChanged": "Unele detalii s-au schimbat, dar nu toate",
+    "changeFailed": "Nu s-a putut schimba proiectul"
+  },
+  "remove": {
+    "title": "Elimini „{{title}}”?",
+    "description": "Fișierele video sursă și clipurile exportate nu sunt niciodată atinse.",
+    "descriptionStops": "Fișierele video sursă și clipurile exportate nu sunt niciodată atinse. {{stops}}",
+    "answerDelete": "Șterge proiectul",
+    "answerKeep": "Elimină din bibliotecă",
+    "failed": "Nu s-a putut elimina proiectul",
+    "removed": "Eliminat: „{{title}}”",
+    "deleteAnalysis": "Șterge și analiza",
+    "deleteAnalysisHint": "Planuri, fețe, distribuția cu numele și deciziile tale, afișe și previzualizări (folderul .autoscene). Dacă adaugi din nou fișierele video mai târziu, acestea sunt analizate de la zero."
+  },
+  "fastScan": {
+    "settings": {
+      "fast": "Orice proiect nou pornește cu scanarea rapidă, chiar și animația 3D.",
+      "full": "Orice proiect nou pornește cu scanarea completă.",
+      "integratedMac": "Aici, Automat înseamnă scanarea rapidă: acest Mac analizează materialul pe placa video integrată.",
+      "integrated": "Aici, Automat înseamnă scanarea rapidă: acest calculator analizează materialul pe placa video integrată.",
+      "notForAi": "Aici, Automat înseamnă scanarea rapidă: placa video a acestui calculator nu are hardware făcut pentru AI.",
+      "processorMac": "Aici, Automat înseamnă scanarea rapidă: AutoScene analizează materialul pe procesorul acestui Mac.",
+      "processor": "Aici, Automat înseamnă scanarea rapidă: AutoScene analizează materialul pe procesorul acestui calculator.",
+      "forAi": "Aici, Automat înseamnă scanarea completă: placa video a acestui calculator este făcută pentru AI.",
+      "unknown": "Aici, Automat înseamnă scanarea completă: AutoScene nu a putut recunoaște placa video a acestui calculator.",
+      "keeps": "Animația 3D păstrează scanarea completă.",
+      "keepsWithBodies": "Animația 3D păstrează scanarea completă, la fel și materialul cu actori reali cât timp este activată opțiunea Găsește personaje fără față vizibilă."
+    },
+    "cost": {
+      "anime": "Mult mai rapidă, găsește mai puține personaje.",
+      "animationBodies": "Mult mai rapidă, dar ratează multe fețe animate și pe oricine nu are fața vizibilă.",
+      "animation": "Mult mai rapidă, dar ratează multe fețe animate.",
+      "liveBodies": "Mult mai rapidă, găsește mai puține fețe și nu găsește pe nimeni fără față vizibilă.",
+      "live": "Mult mai rapidă, găsește mai puține fețe."
+    },
+    "suits": {
+      "integrated": "Potrivită pentru placa video integrată a acestui calculator.",
+      "notForAi": "Potrivită pentru placa video a acestui calculator.",
+      "processor": "Potrivită pentru analiza pe procesor."
+    },
+    "fastScanSuits": {
+      "integrated": "Scanarea rapidă este potrivită pentru placa video integrată a acestui calculator.",
+      "notForAi": "Scanarea rapidă este potrivită pentru placa video a acestui calculator.",
+      "processor": "Scanarea rapidă este potrivită pentru analiza pe procesor."
+    },
+    "hint": {
+      "animeRescanned": "Personajele sunt găsite din nou în acest fel, apoi regrupate. Numele și deciziile tale rămân.",
+      "animeFast": "Personajele sunt găsite cu modelele anime în doar câteva cadre din fiecare plan: mult mai rapid, dar mai puțin sigur cine este cine.",
+      "animeFull": "Personajele sunt găsite cu modelele anime la fiecare câteva cadre.",
+      "rescanned": "Fețele sunt găsite din nou în acest fel, apoi personajele sunt regrupate. Numele și deciziile tale rămân.",
+      "fast": "Fețele sunt găsite la fel ca în aplicația Scener: mult mai rapid, dar mai puțin sigur cine este cine.",
+      "full": "Fețele sunt găsite complet: la fiecare câteva cadre, cu modelele de fețe mai mari (doar pentru uz necomercial)."
+    },
+    "device": {
+      "processor": "Procesor",
+      "mac": "Acest Mac",
+      "integrated": "Placă video integrată"
+    },
+    "lead": {
+      "integratedMac": "Acest Mac analizează materialul pe placa video integrată. O scanare completă este o muncă grea pentru ea, așa că proiectele noi pornesc cu scanarea rapidă.",
+      "integrated": "Acest calculator analizează materialul pe placa video integrată. O scanare completă este o muncă grea pentru ea, așa că proiectele noi pornesc cu scanarea rapidă.",
+      "notForAi": "Această placă video nu are hardware făcut pentru AI. O scanare completă este o muncă grea pentru ea, așa că proiectele noi pornesc cu scanarea rapidă.",
+      "processorLinux": "Pe Linux, AutoScene analizează materialul pe procesor. O scanare completă este o muncă grea pentru un procesor, așa că proiectele noi pornesc cu scanarea rapidă.",
+      "processorMac": "Acest Mac analizează materialul pe procesor. O scanare completă este o muncă grea pentru un procesor, așa că proiectele noi pornesc cu scanarea rapidă.",
+      "processor": "Acest calculator nu are o placă video pe care AutoScene să o poată folosi. O scanare completă este o muncă grea pentru un procesor, așa că proiectele noi pornesc cu scanarea rapidă."
+    },
+    "notice": {
+      "faster": {
+        "title": "Mult mai rapidă",
+        "body": "Se uită doar la câteva cadre din fiecare plan."
+      },
+      "faces": {
+        "title": "Mai puțin sigură cine este cine",
+        "body": "Găsește mai puține fețe, așa că personajele se amestecă mai des."
+      },
+      "keeps": "Animația 3D păstrează scanarea completă.",
+      "keepsWithBodies": "Animația 3D păstrează scanarea completă, la fel și materialul cu actori reali cât timp se caută personaje fără față vizibilă.",
+      "change": "Poți schimba oricând valoarea implicită în Setări."
+    }
+  },
+  "shots": {
+    "noFace": "Fără față",
+    "watchShot": "Vezi planul",
+    "copyTimecode": "Copiază timecode-ul",
+    "notThem": "Nu este {{name}}",
+    "notThemUnnamed": "Nu este personajul",
+    "notAPerson": "Nu este o persoană",
+    "hintFaceless": "Fața nu se vede: găsit după corp · Dă clic ca să vezi",
+    "hintWatch": "Dă clic ca să vezi",
+    "label": "Plan",
+    "labelAt": "Plan la {{where}}",
+    "withoutFace": "fără față",
+    "count_one": "{{count}} plan",
+    "count_few": "{{count}} planuri",
+    "count_other": "{{count}} de planuri",
+    "countAt_one": "{{count}} plan la {{where}}",
+    "countAt_few": "{{count}} planuri la {{where}}",
+    "countAt_other": "{{count}} de planuri la {{where}}",
+    "bandAt": "{{facts}} la {{where}}",
+    "together_one": "{{count}} plan apropiat · Dă clic ca să vezi",
+    "together_few": "{{count}} planuri apropiate · Dă clic ca să vezi",
+    "together_other": "{{count}} de planuri apropiate · Dă clic ca să vezi",
+    "hide": "Ascunde planurile",
+    "show": "Arată planurile",
+    "watchFromFirst": "Vezi de la primul plan",
+    "watchFromWhere": "Vezi de la {{where}}",
+    "watchFromClock": "Vezi de la {{clock}}"
+  }
+}

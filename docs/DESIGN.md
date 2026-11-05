@@ -322,6 +322,7 @@ The UI's words are in a catalog, not in the code, so AutoScene can speak more th
   and never edits that one, nor `common` (a shared word it misses goes into its own namespace).
 - Other languages are JSON next to it (`locales/ro/<namespace>.json`), loaded when chosen. English starts
   synchronously, so the first paint and every test have it with no provider.
+- How a translation is made and kept current, and the Romanian glossary and style: [TRANSLATING.md](TRANSLATING.md).
 - Components call `useTranslation(ns)`; code outside React (toasts, palette data, `lib/`) calls `t` from
   `@/lib/i18n` when it shows the words. Numbers, sizes, dates, lists and times go through `fmt` (`@/lib/i18n`):
   English reads as it always did (en-GB dates, "14,200", "1.5 KB"), another language writes them its way.

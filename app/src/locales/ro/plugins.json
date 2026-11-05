@@ -1,0 +1,433 @@
+{
+  "plugin": "Plugin",
+  "unreadTitle": "Nu s-au putut citi pluginurile",
+  "goToPlugins": "Mergi la Pluginuri",
+  "sandboxed": "Izolat",
+  "new": "Nou",
+  "version": "versiunea {{version}}",
+  "by": "De {{author}}",
+  "saysBy": "Autor declarat: {{author}}",
+  "saveFailed": "Nu s-a putut salva setarea",
+  "options": "Opțiuni: {{name}}",
+  "enable": "Activează {{name}}",
+  "turnedOn": "Activat",
+  "notAllowed": "Nu rulează până nu o permite setarea de mai jos.",
+  "toast": {
+    "alreadyWaiting": {
+      "named": "Pluginul „{{name}}”: {{action}} este deja în așteptare sau rulează",
+      "anonymous": "Un plugin: {{action}} este deja în așteptare sau rulează"
+    },
+    "cantStart": {
+      "named": "Pluginul „{{name}}”: {{action}} nu a putut porni",
+      "anonymous": "Un plugin: {{action}} nu a putut porni"
+    },
+    "finished": {
+      "named": "Pluginul „{{name}}”: {{action}}",
+      "anonymous": "Un plugin: {{action}}"
+    },
+    "failed": {
+      "named": "Pluginul „{{name}}”: {{action}} a eșuat",
+      "anonymous": "Un plugin: {{action}} a eșuat"
+    },
+    "saved": {
+      "named": "Pluginul „{{name}}”: s-a salvat {{file}}",
+      "anonymous": "Un plugin: s-a salvat {{file}}"
+    },
+    "updated": {
+      "named": "Pluginul „{{name}}”: actualizat la {{version}}",
+      "anonymous": "Un plugin: actualizat la {{version}}"
+    },
+    "updateFailed": {
+      "named": "Pluginul „{{name}}”: nu s-a putut actualiza",
+      "anonymous": "Un plugin: nu s-a putut actualiza"
+    },
+    "inActivity": "Este în Activitate.",
+    "showInFolder": "Arată în folder"
+  },
+  "trust": {
+    "withdrawn": "Retras",
+    "folder": "Încărcat dintr-un folder",
+    "reviewed": "Revizuit de AutoScene",
+    "pinned": "Semnat, nerevizuit",
+    "unreviewed": "Nerevizuit"
+  },
+  "trustLine": {
+    "folder": "Rulează din folder, cu fișierele așa cum sunt acum. AutoScene nu l-a revizuit.",
+    "reviewed": "AutoScene a revizuit această versiune.",
+    "pinnedSame": "Semnat cu aceeași cheie ca versiunea instalată. AutoScene nu l-a revizuit.",
+    "pinnedNew": "Semnat cu o cheie venită în pachet: nimic nu arată cine o deține. AutoScene nu l-a revizuit. Actualizările trebuie semnate cu aceeași cheie.",
+    "unreviewed": "Nu este semnat de nimeni cunoscut de AutoScene, iar AutoScene nu l-a revizuit."
+  },
+  "withdrawn": {
+    "title": "AutoScene a retras pluginul „{{name}}”",
+    "line": "{{reason}} Pluginul este dezactivat.",
+    "more_one": "și încă {{count}} plugin retras de AutoScene, marcat pe card la Instalate.",
+    "more_few": "și încă {{count}} pluginuri retrase de AutoScene, marcate pe carduri la Instalate.",
+    "more_other": "și încă {{count}} de pluginuri retrase de AutoScene, marcate pe carduri la Instalate."
+  },
+  "resource": {
+    "firstRun": "La prima rulare, pluginul descarcă {{size}}. AutoScene păstrează fișierele în cache și verifică fiecare fișier după hash.",
+    "firstRunFrom": "La prima rulare, pluginul descarcă {{size}} de pe {{hosts}}. AutoScene păstrează fișierele în cache și verifică fiecare fișier după hash.",
+    "firstStart": "La prima pornire, pluginul descarcă {{size}}. AutoScene păstrează fișierele în cache și verifică fiecare fișier după hash.",
+    "firstStartFrom": "La prima pornire, pluginul descarcă {{size}} de pe {{hosts}}. AutoScene păstrează fișierele în cache și verifică fiecare fișier după hash.",
+    "nextRun": "La următoarea rulare, pluginul descarcă {{size}}. AutoScene păstrează fișierele în cache și verifică fiecare fișier după hash.",
+    "nextRunFrom": "La următoarea rulare, pluginul descarcă {{size}} de pe {{hosts}}. AutoScene păstrează fișierele în cache și verifică fiecare fișier după hash.",
+    "nextStart": "La următoarea pornire, pluginul descarcă {{size}}. AutoScene păstrează fișierele în cache și verifică fiecare fișier după hash.",
+    "nextStartFrom": "La următoarea pornire, pluginul descarcă {{size}} de pe {{hosts}}. AutoScene păstrează fișierele în cache și verifică fiecare fișier după hash.",
+    "kept": "Fișierele mari indicate de plugin vin de pe {{hosts}}. AutoScene le are deja și verifică fiecare fișier după hash."
+  },
+  "permission": {
+    "says": {
+      "exportsRead": "Poate citi clipurile exportate",
+      "exportsWrite": "Poate schimba sau adăuga fișiere lângă clipurile exportate",
+      "projectRead": "Poate citi proiectul: episoadele și personajele",
+      "network": "Poate comunica cu internetul"
+    },
+    "walled": {
+      "exportsRead": "Poate citi fișierele din folderul exportului",
+      "exportsWrite": "Poate citi, schimba și șterge fișierele din folderul exportului",
+      "projectRead": "Poate citi folderul proiectului",
+      "network": "Poate comunica cu aceste site-uri, doar prin https:",
+      "networkNone": "Poate folosi rețeaua, dar nu indică niciun site: orice cerere este refuzată."
+    }
+  },
+  "limits": {
+    "minutes_one": "Poate folosi până la {{memory}} MB de memorie. O rulare se oprește după {{n}} minut.",
+    "minutes_few": "Poate folosi până la {{memory}} MB de memorie. O rulare se oprește după {{n}} minute.",
+    "minutes_other": "Poate folosi până la {{memory}} MB de memorie. O rulare se oprește după {{n}} de minute.",
+    "hours_one": "Poate folosi până la {{memory}} MB de memorie. O rulare se oprește după {{n}} oră.",
+    "hours_few": "Poate folosi până la {{memory}} MB de memorie. O rulare se oprește după {{n}} ore.",
+    "hours_other": "Poate folosi până la {{memory}} MB de memorie. O rulare se oprește după {{n}} de ore."
+  },
+  "checked": {
+    "sandbox": "Rulează într-un mediu izolat. AutoScene le impune.",
+    "pages": "AutoScene le verifică de fiecare dată când paginile pluginului cer ceva.",
+    "pagesAndProgram": "AutoScene le verifică de fiecare dată când paginile sau programul pluginului îi cer ceva.",
+    "program": "AutoScene le verifică de fiecare dată când programul pluginului îi cere ceva."
+  },
+  "menu": {
+    "update": "Actualizează…",
+    "settings": "Setări",
+    "showSource": "Arată codul sursă",
+    "showNamedSource": "Arată codul sursă indicat de plugin",
+    "showFolder": "Arată folderul",
+    "showLog": "Arată jurnalul",
+    "copyId": "Copiază id-ul",
+    "checkFolder": "Verifică dacă folderul s-a schimbat",
+    "loadFolderAgain": "Reîncarcă folderul…",
+    "uninstall": "Dezinstalează…",
+    "checkFailed": "Nu s-a putut verifica folderul",
+    "folderUnchanged": "Folderul este neschimbat",
+    "folderChanged": "Schimbările din folder au fost citite",
+    "linkFailed": "Nu s-a putut deschide linkul",
+    "turnOnFailed": "Nu s-a putut activa pluginul",
+    "turnOffFailed": "Nu s-a putut dezactiva pluginul"
+  },
+  "installFromFile": "Instalează dintr-un fișier…",
+  "loadFolder": "Încarcă un folder…",
+  "chooseFolder": "Alege folderul pluginului",
+  "packages": {
+    "alreadyOne": "{{file}} este deja în revizuire",
+    "alreadyMany": "Aceste pluginuri sunt deja în revizuire",
+    "waits_one": "{{file}} așteaptă să se termine revizuirea deschisă",
+    "waits_few": "{{count}} pluginuri așteaptă să se termine revizuirea deschisă",
+    "waits_other": "{{count}} de pluginuri așteaptă să se termine revizuirea deschisă",
+    "reading": "Se citește {{file}}…",
+    "readingMore_one": "Se citește {{file}}… încă {{rest}} așteaptă la rând",
+    "readingMore_few": "Se citește {{file}}… încă {{rest}} așteaptă la rând",
+    "readingMore_other": "Se citește {{file}}… încă {{rest}} așteaptă la rând"
+  },
+  "page": {
+    "title": "Pluginuri",
+    "summary_one": "{{count}} plugin · {{running}} rulează",
+    "summary_few": "{{count}} pluginuri · {{running}} rulează",
+    "summary_other": "{{count}} de pluginuri · {{running}} rulează",
+    "show": "Pluginuri de afișat",
+    "installed": "Instalate",
+    "browse": "Răsfoiește",
+    "find": "Caută un plugin",
+    "empty": {
+      "title": "Încă nu există pluginuri",
+      "allowed": "Răsfoiește pluginurile revizuite de AutoScene, instalează unul din fișierul .asp sau încarcă unul din folder. Acțiunile apar apoi în meniul fiecărui export, iar comenzile, în paleta de comenzi.",
+      "notAllowed": "Răsfoiește pluginurile revizuite de AutoScene sau instalează unul din fișierul .asp. Un plugin nerevizuit de AutoScene are nevoie mai întâi de setarea de mai jos. Acțiunile apar apoi în meniul fiecărui export, iar comenzile, în paleta de comenzi.",
+      "browse": "Răsfoiește pluginurile"
+    },
+    "noMatch": {
+      "title": "Nu s-a găsit nimic.",
+      "description": "Niciun plugin nu are „{{query}}” în nume, autor, descriere sau id.",
+      "clear": "Șterge căutarea"
+    },
+    "updates": "Actualizări",
+    "updateAll": "Actualizează tot ({{n}})",
+    "others": "Instalate",
+    "run": {
+      "title": "Cine poate rula cod aici",
+      "allow": "Permite pluginurile pe care AutoScene nu le-a revizuit",
+      "description": "Pluginuri nesemnate, pluginuri semnate doar de autor și pluginuri încărcate dintr-un folder. AutoScene nu poate verifica ce fac."
+    },
+    "crumb": "Pluginuri · {{name}}",
+    "label": "Pluginul „{{name}}” · {{title}}",
+    "railTooltip": "Pluginul „{{name}}”: {{title}}"
+  },
+  "browse": {
+    "readFailed": "Nu s-a putut citi catalogul de pluginuri",
+    "newer": {
+      "title": "Actualizează AutoScene ca să folosești catalogul de pluginuri",
+      "description": "O versiune mai nouă de AutoScene a verificat catalogul sau indexul lui are nevoie de una. Pluginurile se instalează în continuare din fișierul .asp.",
+      "check": "Caută actualizări"
+    },
+    "closed": {
+      "title": "Catalogul de pluginuri nu este încă deschis",
+      "description": "Această versiune de AutoScene nu are catalog de pluginuri. Pluginurile se instalează în continuare din fișierul .asp."
+    },
+    "outOfDate": {
+      "title": "Catalogul de pluginuri nu este la zi",
+      "since": "AutoScene nu l-a putut verifica din {{date}}. Până când va putea, pluginurile nu se pot instala din el.",
+      "never": "AutoScene nu l-a putut verifica încă. Până când va putea, pluginurile nu se pot instala din el.",
+      "tryAgain": "Încearcă din nou"
+    },
+    "group": "Catalog",
+    "catalog": {
+      "label": "Catalogul de pluginuri AutoScene",
+      "description": "Pluginuri revizuite de AutoScene, fiecare construit din cod sursă public.",
+      "checkNow": "Verifică acum"
+    },
+    "daily": {
+      "label": "Verifică zilnic catalogul de pluginuri",
+      "on": "AutoScene întreabă GitHub o dată pe zi dacă există versiuni noi sau pluginuri retrase.",
+      "off": "Dezactivat: AutoScene nu află de pluginurile retrase."
+    },
+    "none": {
+      "title": "Încă nu există pluginuri în catalog",
+      "description": "Verifică din nou mai târziu."
+    },
+    "noMatch": {
+      "title": "Nu s-a găsit nimic.",
+      "description": "Niciun plugin din catalog nu are „{{query}}” în nume, autor, rezumat sau id.",
+      "clear": "Șterge căutarea"
+    }
+  },
+  "catalog": {
+    "of": "Catalog din {{date}}.",
+    "noneYet": "Încă nu există catalog.",
+    "notChecked": "Încă neverificat.",
+    "checkedToday": "Verificat azi.",
+    "checkedYesterday": "Verificat ieri.",
+    "checkedOn": "Verificat pe {{date}}.",
+    "failedToday": "Ultima verificare a eșuat azi.",
+    "failedYesterday": "Ultima verificare a eșuat ieri.",
+    "failedOn": "Ultima verificare a eșuat pe {{date}}.",
+    "talksTo": "Poate comunica cu {{hosts}}",
+    "gpu": "Poate folosi placa video",
+    "nothing": "Nu indică permisiuni",
+    "downloadsRun": "La prima rulare descarcă {{size}}",
+    "downloadsStart": "La prima pornire descarcă {{size}}",
+    "newHosts_one": "Gazdă nouă pentru descărcări: {{hosts}}",
+    "newHosts_few": "Gazde noi pentru descărcări: {{hosts}}",
+    "newHosts_other": "Gazde noi pentru descărcări: {{hosts}}",
+    "installed": "Instalat",
+    "elsewhere": "Nu este pentru acest calculator",
+    "needsNewer": "Necesită un AutoScene mai nou",
+    "install": "Instalează…",
+    "update": "Actualizează…",
+    "installNamed": "Instalează {{name}}…",
+    "settingsNamed": "Setări: {{name}}",
+    "checkFailed": "Nu s-a putut verifica catalogul de pluginuri",
+    "needsNewerApp": "Acest catalog necesită un AutoScene mai nou.",
+    "noCatalog": "Această versiune de AutoScene nu are catalog de pluginuri.",
+    "upToDate": "Pluginurile sunt la zi",
+    "updates_one": "{{count}} actualizare de plugin",
+    "updates_few": "{{count}} actualizări de pluginuri",
+    "updates_other": "{{count}} de actualizări de pluginuri"
+  },
+  "uninstall": {
+    "toast": "Dezinstalat: {{name}}",
+    "title": "Dezinstalezi {{name}}?",
+    "description": "Comenzile, setările și acțiunile pluginului vor dispărea.",
+    "answer": "Dezinstalează",
+    "failure": "Nu s-a putut dezinstala pluginul",
+    "dataLabel": "Șterge și ce a păstrat",
+    "dataDescription": "Șterge setările salvate, datele de autentificare, cache-urile și jurnalele."
+  },
+  "frame": {
+    "quiet": "Această pagină nu răspunde.",
+    "closed": "Această pagină a fost închisă.",
+    "overflow": "Această pagină a trimis mesaje pe care AutoScene nu le-a putut citi.",
+    "failed": "Nu s-a putut deschide această pagină.",
+    "reload": "Reîncarcă",
+    "reloadPage": "Reîncarcă pagina",
+    "showServiceLog": "Arată jurnalul serviciului",
+    "unavailable": "Această pagină nu este disponibilă",
+    "turnedOff": "Pluginul „{{name}}” este dezactivat.",
+    "theProject": "proiect"
+  },
+  "screen": {
+    "notInstalled": "Acest plugin nu este instalat",
+    "notInstalledDescription": "A fost dezinstalat sau linkul duce la alt plugin.",
+    "back": "Pluginuri",
+    "notReviewed": "AutoScene nu a revizuit acest plugin, așa că nu rulează.",
+    "allowThem": "Permite-le…",
+    "cantRun": "Acest plugin nu poate rula",
+    "settings": {
+      "title": "Setări",
+      "withSecrets": "Fiecare rulare le primește așa cum sunt la pornire, iar un secret, de fiecare dată când îl cere.",
+      "plain": "Fiecare rulare le primește așa cum sunt la pornire.",
+      "unread": "Nu s-au putut citi setările: {{why}}",
+      "macAgain": "După ce AutoScene se actualizează, macOS poate cere din nou permisiunea.",
+      "choose": "Alege…",
+      "takesNumber": "Setarea {{title}} acceptă doar numere."
+    },
+    "runs": {
+      "title": "Rulări automate",
+      "description": "Fiecare acțiune rulează de la sine după ce o activezi, ca sarcină în Activitate.",
+      "afterExport": "După fiecare export",
+      "afterExportFailed": "După fiecare export, și după unul eșuat",
+      "runAfter": "Rulează {{title}} după fiecare export",
+      "runAfterFailed": "Rulează {{title}} după fiecare export, și după unul eșuat"
+    },
+    "pages": {
+      "title": "Pagini",
+      "description": "Fiecare pagină se deschide pe ecran complet. Ce apare pe ea vine de la plugin.",
+      "inProject": "Deschide pagina din meniul Mai multe al unui proiect.",
+      "open": "Deschide",
+      "openNamed": "Deschide {{title}}"
+    },
+    "mayUse": {
+      "title": "Ce poate folosi",
+      "programRights": "Programul rulează cu drepturile tale de utilizator. {{when}}",
+      "notChecked": "AutoScene nu le verifică: sunt doar ce spune pluginul că face.",
+      "gpu": "Poate folosi placa video",
+      "gpuNote": "Rulările așteaptă cât timp rulează o analiză.",
+      "nothing": "Nimic în afara setărilor proprii."
+    },
+    "keychain": "Salvat în seiful sistemului",
+    "files": {
+      "title": "Fișiere",
+      "folder": "Folderul",
+      "log": "Jurnalul",
+      "serviceLog": "Jurnalul serviciului",
+      "reveal": "Arată",
+      "downloaded": "Fișiere descărcate",
+      "downloadedNote": "{{size}}. AutoScene le păstrează în cache și le șterge odată cu pluginul."
+    },
+    "warnings": {
+      "title": "Omise din plugin.json",
+      "description": "Ce a lăsat deoparte această versiune de AutoScene din ce cere pluginul."
+    },
+    "secret": {
+      "notSet": "Nesetat",
+      "set": "Setează…",
+      "remove": "Elimină…",
+      "setNamed": "Setează {{title}}",
+      "removeNamed": "Elimină {{title}}",
+      "removeTitle": "Elimini {{title}}?",
+      "removeDescription": "Dispare din seiful sistemului, iar pluginul nu îl poate folosi până nu îl introduci din nou.",
+      "removeAnswer": "Elimină",
+      "removeFailed": "Nu s-a putut elimina secretul",
+      "dialogDescription": "Se păstrează în seiful sistemului. AutoScene nu îl mai arată niciodată.",
+      "tooLong": "Caractere într-un secret: cel mult {{max}}.",
+      "saveFailed": "Nu s-a putut salva secretul",
+      "save": "Salvează"
+    }
+  },
+  "event": {
+    "analysisFinished": {
+      "when": "Când toate episoadele unui proiect sunt analizate",
+      "run": "Rulează {{title}} când toate episoadele unui proiect sunt analizate",
+      "adds": "<x>Poate rula la finalul unei analize:</x> <what/><x> (o activezi tu)</x>"
+    }
+  },
+  "review": {
+    "install": "Instalezi {{name}}?",
+    "load": "Încarci {{name}}?",
+    "update": "Actualizezi {{name}}?",
+    "installButton": "Instalează",
+    "loadButton": "Încarcă",
+    "updateButton": "Actualizează",
+    "installed": "Instalat: {{name}}",
+    "loaded": "Încărcat: {{name}}",
+    "updated": "Actualizat: {{name}}",
+    "failed": "Nu s-a putut instala pluginul",
+    "getting": "Se descarcă {{name}}…",
+    "updating": "Se actualizează {{name}}…",
+    "gettingReady": "Se pregătește {{name}}…",
+    "compiling": "AutoScene compilează pluginul ca să poată rula. Poate dura până la 2 minute, iar calculatorul poate fi ocupat între timp.",
+    "nothingNew": "Nu cere nimic nou, deci nu este nimic de revizuit.",
+    "progress": "{{done}} din {{total}} · catalogul de pluginuri AutoScene",
+    "fromCatalog": "Din catalogul de pluginuri AutoScene",
+    "fact": {
+      "id": "Id",
+      "version": "Versiune",
+      "author": "Autor",
+      "saysBy": "Autor declarat",
+      "notNamed": "Nespecificat",
+      "key": "Cheie",
+      "folder": "Folder",
+      "isInstalled": "Versiunea {{version}} este instalată"
+    },
+    "built": "Construit din <repo/> la <commit/>.",
+    "builtIn": "Construit din <repo/> la <commit/>, în <path/>.",
+    "before": {
+      "unsigned": "Versiunea instalată nu a fost semnată. Aceasta își fixează cheia: de acum înainte se instalează doar actualizările semnate cu ea.",
+      "was": "Versiunea instalată: {{label}}.",
+      "folderReplaced": "Acest pachet îi ia locul; folderul rămâne cum este.",
+      "leftSandbox": "Versiunea instalată rula într-un mediu izolat. Această versiune rulează cu drepturile tale de utilizator."
+    },
+    "ownWords": "În cuvintele pluginului",
+    "warnings": "Omise din plugin.json",
+    "componentWarnings": "Observate în componentă",
+    "typeToInstall": "Scrie <x/> ca să instalezi pluginul",
+    "typeToLoad": "Scrie <x/> ca să încarci pluginul",
+    "typeToUpdate": "Scrie <x/> ca să actualizezi pluginul",
+    "cantCheck": "AutoScene nu poate verifica ce face.",
+    "turnedOff": "Pluginurile pe care AutoScene nu le-a revizuit sunt dezactivate.",
+    "allowThem": "Permite-le…",
+    "permissions": {
+      "pagesMayUse": "Ce pot folosi paginile",
+      "saysItDoes": "Ce spune că face",
+      "notEnforced": "Ce spune că face (AutoScene nu impune)",
+      "userRights": "Rulează cu drepturile tale de utilizator: poate citi, schimba și trimite orice poți și tu.",
+      "newHosts": "Nou: {{hosts}}",
+      "none": "Nu indică nicio permisiune.",
+      "gpu": "Poate folosi placa video: rulările așteaptă cât timp rulează o analiză"
+    },
+    "sandbox": {
+      "intro": "Rulează într-un mediu izolat. Vede doar folderul propriu și ce este listat aici.",
+      "mayDo": "Ce poate face (impus de AutoScene)",
+      "none": "Nu mai cere nimic.",
+      "cant": "Nu poate porni programe și nu vede celelalte fișiere ale tale.",
+      "unlimitedNetwork": "Fără limită: ce trimite către acele site-uri și cât scrie.",
+      "unlimited": "Fără limită: cât scrie."
+    },
+    "runs": {
+      "title": "Cum rulează",
+      "none": "Nu rulează niciun program. Paginile rulează într-un mediu izolat.",
+      "wasm": "Un plugin WebAssembly. AutoScene îl compilează după ce confirmi.",
+      "program": "Un program din folderul pluginului.",
+      "uvRun": "Un script Python rulat de uv. La prima rulare, uv descarcă Python (dacă acest calculator nu îl are) și pachetele indicate de script.",
+      "uvRunGets": "Un script Python rulat de uv. La prima rulare, AutoScene obține uv ({{size}}, de pe github.com/astral-sh/uv), iar uv descarcă Python (dacă acest calculator nu îl are) și pachetele indicate de script.",
+      "uvStart": "Un script Python rulat de uv. La prima pornire, uv descarcă Python (dacă acest calculator nu îl are) și pachetele indicate de script.",
+      "uvStartGets": "Un script Python rulat de uv. La prima pornire, AutoScene obține uv ({{size}}, de pe github.com/astral-sh/uv), iar uv descarcă Python (dacă acest calculator nu îl are) și pachetele indicate de script.",
+      "noProgramBefore": "Versiunea instalată nu rulează niciun program.",
+      "service": "Își ține programul pornit cât timp pagina este deschisă.",
+      "becomesService": "Acum își ține programul pornit cât timp pagina este deschisă.",
+      "newFileHosts": "Versiunea instalată nu indică fișiere de pe {{hosts}}."
+    },
+    "adds": {
+      "title": "Ce adaugă",
+      "pageRail": "<x>O pagină:</x> <what/><x>, în bara laterală (pagini de pluginuri: cel mult {{max}}; celelalte sunt în paleta de comenzi)</x>",
+      "pageProject": "<x>O pagină:</x> <what/><x>, în meniul Mai multe al fiecărui proiect</x>",
+      "pagePalette": "<x>O pagină:</x> <what/><x>, în paleta de comenzi</x>",
+      "exportAction": "<x>Meniul fiecărui export:</x> <what/>",
+      "command": "<x>Paleta de comenzi:</x> <what/>",
+      "shotFilter": "<x>Un filtru de scenepack:</x> <what/>",
+      "packAction": "<x>Meniul ⋯ al unui scenepack:</x> <what/>",
+      "afterFailed": "<x>Poate rula după fiecare export, și după unul eșuat:</x> <what/><x> (o activezi tu)</x>",
+      "settings_one": "<x>Setări:</x> {{count}} setare",
+      "settings_few": "<x>Setări:</x> {{count}} setări",
+      "settings_other": "<x>Setări:</x> {{count}} de setări",
+      "secret": "Poate păstra {{title}} în seiful sistemului",
+      "nothing": "Nimic de listat."
+    }
+  }
+}

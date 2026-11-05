@@ -310,6 +310,9 @@ pub struct AccelInfo {
     pub removable: bool,
     /// Analysis uses them.
     pub active: bool,
+    /// The person stopped the update to the release this build pins, on a
+    /// card that would use it: only the row can bring it now.
+    pub update_stopped: bool,
     /// The bytes a download fetches.
     pub download_bytes: u64,
     /// NVIDIA's licence, which the person agrees to by downloading.

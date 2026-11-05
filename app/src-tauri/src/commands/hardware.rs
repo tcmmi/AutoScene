@@ -117,6 +117,7 @@ mod tests {
             installed: false,
             removable: false,
             active: false,
+            update_stopped: false,
             download_bytes: 0,
             licence: String::new(),
             engine: String::new(),

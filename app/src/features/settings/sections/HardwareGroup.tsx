@@ -130,6 +130,9 @@ function run(what: string, command: () => Promise<unknown>) {
   return command().catch((e: unknown) => toast.error(what, { description: errorMessage(e) }))
 }
 
+/** An action in the row's text, quieter than its control. */
+const ROW_ACTION = "mt-1.5 block cursor-pointer rounded-xs text-fg-3 transition-colors hover:text-fg-1"
+
 /**
  * NVIDIA acceleration: offered where analysis runs on a card it serves, and
  * shown wherever its files are. The row is the download's only home.
@@ -138,7 +141,7 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
   const [removing, setRemoving] = useState(false)
   // Trying again checks every file and starts an engine: that takes a while.
   const [retrying, setRetrying] = useState(false)
-  const { row, downloadBytes, licence, removable } = hw.accel
+  const { row, downloadBytes, licence, removable, updateStopped } = hw.accel
   if (row.state === "hidden") return null
 
   let text: React.ReactNode
@@ -236,12 +239,13 @@ function AccelSetting({ hw, settings }: { hw: HardwareInfo; settings: AppSetting
               {text}
             </span>
             {detail}
+            {updateStopped && (
+              <button type="button" className={ROW_ACTION} onClick={() => void install()}>
+                Download the update (about {mb(downloadBytes)} MB)
+              </button>
+            )}
             {removable && row.state !== "downloading" && row.state !== "removing" && (
-              <button
-                type="button"
-                className="mt-1.5 block cursor-pointer rounded-xs text-fg-3 transition-colors hover:text-fg-1"
-                onClick={() => setRemoving(true)}
-              >
+              <button type="button" className={ROW_ACTION} onClick={() => setRemoving(true)}>
                 Remove NVIDIA's files
               </button>
             )}

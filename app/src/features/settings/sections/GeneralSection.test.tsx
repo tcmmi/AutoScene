@@ -40,7 +40,7 @@ function hardware(): HardwareInfo {
     pending: false,
     fellBack: false,
     runtime: "1.24.4",
-    accel: { row: { state: "hidden" }, installed: false, removable: false, active: false, downloadBytes: 0, licence: "", engine: "" },
+    accel: { row: { state: "hidden" }, installed: false, removable: false, active: false, updateStopped: false, downloadBytes: 0, licence: "", engine: "" },
   }
 }
 

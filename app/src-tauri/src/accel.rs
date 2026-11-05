@@ -14,8 +14,8 @@
 //!   verified. It comes only while this computer's analysis runs on a card
 //!   the pack serves: else nothing would load what it fetched. That download
 //!   fails or stops quietly, as the old pack still works, and is tried again
-//!   at the next start, unless the person stopped it. A new licence asks the
-//!   person again instead.
+//!   at the next start, unless the person stopped it: then the row offers it
+//!   until they take it up. A new licence asks the person again instead.
 //! - **Removing waits for the engine.** Windows can't delete a loaded
 //!   library. A pack marked [`REMOVE`] is never used again, also after a
 //!   restart, and its files go once no engine holds them.
@@ -47,7 +47,7 @@ const LICENCE: &str = ".autoscene-licence";
 /// In a pack folder: its files are to go.
 const REMOVE: &str = ".autoscene-remove";
 /// In the folder of the release this build pins: the person stopped its
-/// update, so no start brings it until they ask.
+/// update, so no start brings it until they ask, in the row.
 const STOPPED: &str = ".autoscene-update-stopped";
 
 /// How often a removal looks whether the engine let go of the files, and how
@@ -99,11 +99,19 @@ impl Packs {
     }
 
     /// An update of the app pinned a new release of a pack that is here,
-    /// whose licence the person agreed to: it downloads without asking,
-    /// unless the person stopped that.
+    /// whose licence the person agreed to.
+    fn update_waits(&self, pins: &Pins) -> bool {
+        !finished(&self.current()) && self.older().iter().any(|dir| agreed(dir, pins))
+    }
+
+    /// That update downloads without asking, unless the person stopped it.
     fn update_due(&self, pins: &Pins) -> bool {
-        let current = self.current();
-        !finished(&current) && !current.join(STOPPED).exists() && self.older().iter().any(|dir| agreed(dir, pins))
+        self.update_waits(pins) && !self.current().join(STOPPED).exists()
+    }
+
+    /// The person stopped that update, and only they can bring it.
+    fn update_stopped(&self, pins: &Pins) -> bool {
+        self.update_waits(pins) && self.current().join(STOPPED).exists()
     }
 
     /// Files of a pack are here, finished or not, that aren't on their way out.
@@ -208,8 +216,8 @@ impl Packs {
         }
     }
 
-    /// The person stopped an update: what it fetched goes, and it stays away
-    /// until they ask.
+    /// The person stopped an update, by itself or the one they asked for:
+    /// what it fetched goes, and it stays away until they ask.
     fn stop_update(&self) -> io::Result<()> {
         self.forget_download();
         fs::create_dir_all(self.current())?;
@@ -461,9 +469,11 @@ impl Accel {
     /// `on`, and what the last `engine` made of the pack.
     pub fn info(&self, chosen: &Hardware, on: bool, engine: &Engine) -> AccelInfo {
         let state = engine.accel();
-        let row = self.row(offered(chosen), state.as_ref());
+        let offered = offered(chosen);
+        let row = self.row(offered, state.as_ref());
         AccelInfo {
             active: on && row == AccelRow::Ready && state == Some(AccelState::Active),
+            update_stopped: offered && self.packs.update_stopped(&self.pins),
             row,
             installed: self.packs.usable().is_some(),
             removable: self.packs.any_files(),
@@ -530,6 +540,7 @@ impl Accel {
         let repairing = once_complete(&current);
         // Only a first install says it is on: else the switch is the person's.
         let first = asked && !self.packs.had_one();
+        let update = self.packs.update_waits(&self.pins);
         let mut shown = 0;
         let result = self.packs.download(&self.pins, cancel, |done, total| {
             self.progressed(done, total);
@@ -562,14 +573,14 @@ impl Accel {
                 host.warm();
             }
             Err(ModelError::Cancelled) => {
-                if !asked {
+                if asked && repairing {
+                    self.packs.forget_parts();
+                    self.set(Phase::Failed(REPAIR_CANCELLED.into()));
+                } else if !asked || update {
                     if let Err(e) = self.packs.stop_update() {
                         log::warn!("noting that the update was stopped: {e}");
                     }
                     self.set(Phase::Idle);
-                } else if repairing {
-                    self.packs.forget_parts();
-                    self.set(Phase::Failed(REPAIR_CANCELLED.into()));
                 } else {
                     self.packs.forget_download();
                     self.set(Phase::Idle);
@@ -1314,11 +1325,21 @@ mod tests {
         let host = Fake::on();
         assert!(!accel.upkeep(&host), "no start brings it");
         assert!(accel.packs.current().join(STOPPED).exists(), "the next start knows too");
+        assert!(accel.packs.update_stopped(&accel.pins), "the row offers it");
 
-        // The person asks, by Agree and download or a repair of what is here.
+        // Taken up from the row and stopped again: as it was.
+        let again = Fake { on: AtomicBool::new(true), stop: Some(CancelToken::new()), ..Fake::default() };
+        run(&accel, &again, true);
+        assert_eq!(row_now(&accel), AccelRow::Ready, "the old pack goes on");
+        assert_eq!(accel.pack(true), Some(old.clone()));
+        assert!(!accel.upkeep(&host), "no start brings it");
+        assert!(accel.packs.update_stopped(&accel.pins), "the row still offers it");
+
+        // The person asks, by the row's Download the update.
         run(&accel, &host, true);
         assert_eq!(accel.pack(true), Some(accel.packs.current()));
         assert!(!accel.packs.current().join(STOPPED).exists());
+        assert!(!accel.packs.update_stopped(&accel.pins));
     }
 
     #[test]

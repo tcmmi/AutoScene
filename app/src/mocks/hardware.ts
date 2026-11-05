@@ -12,7 +12,7 @@
  * next), the last analysis on the processor in part, a chosen card that isn't
  * connected. `?mockFail=hardware_info` shows the error.
  *
- * `?mockAccel=on|off|downloading|failed|no-room|removing|driver|stopped|update-licence|half`
+ * `?mockAccel=on|off|downloading|failed|no-room|removing|driver|stopped|update-licence|update-stopped|half`
  * starts NVIDIA acceleration in that state: on an offered card, or with
  * `on`, `off` and `removing` on any card as a pack left there. `half` is an
  * unfinished download found at a start. Without it
@@ -142,8 +142,10 @@ let phase: Phase =
         : accelState === "removing"
           ? { state: "removing" }
           : { state: "idle" }
-let installed = ["on", "off", "removing", "driver", "stopped", "update-licence"].includes(accelState ?? "")
+let installed = ["on", "off", "removing", "driver", "stopped", "update-licence", "update-stopped"].includes(accelState ?? "")
 let stopped = accelState === "stopped"
+/** The person stopped the update to the release this build pins. */
+let updateStopped = accelState === "update-stopped"
 /** An unfinished download is here: nothing to use, but something to remove. */
 let half = accelState === "half"
 let ticking: ReturnType<typeof setInterval> | undefined
@@ -168,6 +170,7 @@ function accelInfo(offered: boolean, on: boolean): AccelInfo {
     installed,
     removable: installed || half,
     active: on && row.state === "ready",
+    updateStopped: offered && updateStopped,
     downloadBytes: ACCEL_BYTES,
     licence: ACCEL_LICENCE,
     engine: ACCEL_ENGINE,
@@ -183,6 +186,7 @@ export function accelCalls(switchedOn: () => void) {
   }
   return {
     accel_install: () => {
+      updateStopped = false
       phase = { state: "downloading", done: 0 }
       changed()
       ticking = setInterval(() => {

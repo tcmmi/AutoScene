@@ -512,6 +512,11 @@ export type AccelInfo = {
 	removable: boolean,
 	/**  Analysis uses them. */
 	active: boolean,
+	/**
+	 *  The person stopped the update to the release this build pins, on a
+	 *  card that would use it: only the row can bring it now.
+	 */
+	updateStopped: boolean,
 	/**  The bytes a download fetches. */
 	downloadBytes: number,
 	/**  NVIDIA's licence, which the person agrees to by downloading. */

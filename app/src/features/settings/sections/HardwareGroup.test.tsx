@@ -25,7 +25,7 @@ const { state } = vi.hoisted(() => ({
 
 /** NVIDIA acceleration with `row`. */
 function accel(row: AccelRow, over: Partial<AccelInfo> = {}): AccelInfo {
-  return { row, installed: false, removable: false, active: false, downloadBytes: 110_866_443, licence: LICENCE, engine: "1.7.1", ...over }
+  return { row, installed: false, removable: false, active: false, updateStopped: false, downloadBytes: 110_866_443, licence: LICENCE, engine: "1.7.1", ...over }
 }
 
 /** One card: Automatic is that card. */
@@ -358,6 +358,20 @@ describe("Settings → General → NVIDIA acceleration", () => {
     await user.click(within(group).getByRole("button", { name: "Try again" }))
     expect(commands.accelInstall).toHaveBeenCalledOnce()
     expect(remove()).toBeNull()
+  })
+
+  it("an update the person stopped can be taken up from the row, and only then", async () => {
+    const user = userEvent.setup()
+    const offer = () => screen.queryByRole("button", { name: /Download the update/ })
+    await row({ state: "ready" }, { ...installed, updateStopped: true, downloadBytes: 111_000_000 })
+    expect(offer()?.textContent).toBe("Download the update (about 111 MB)")
+    expect(screen.getByRole("switch", { name: "NVIDIA acceleration" })).toBeTruthy()
+    await user.click(offer() as HTMLElement)
+    expect(commands.accelInstall).toHaveBeenCalledOnce()
+    cleanup()
+    queryClient.clear()
+    await row({ state: "ready" }, installed)
+    expect(offer()).toBeNull()
   })
 
   it("download failed with files here: they can go too", async () => {

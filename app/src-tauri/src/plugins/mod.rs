@@ -1884,7 +1884,9 @@ fn calls_for(
 /// `key` as it was queued: an update, or a loaded folder's changed
 /// `plugin.json`, may have taken the action away, changed what it needs,
 /// moved the plugin to or from the GPU (`gpu`: it waited as analysis), or
-/// left its page's run to a program of protocol 1.
+/// left its page's run to a program of protocol 1. A run that was to start
+/// by itself, which the person turned off while it waited, ends as cancelled
+/// ([`turned_off`]): they said so, and nothing went wrong.
 fn startable(store: &Store, lib: &Library, key: &RunKey, trigger: Trigger, gpu: bool) -> Result<Installed, JobError> {
     let refused = |e: PluginError| JobError::Failed(e.to_string());
     let p = store.get(&key.plugin).map_err(plugin_job_error)?;
@@ -1894,7 +1896,21 @@ fn startable(store: &Store, lib: &Library, key: &RunKey, trigger: Trigger, gpu: 
     if m.runtime.gpu != gpu || takes(&p, trigger).is_err() {
         return Err(JobError::Failed(format!("{} changed since this run was queued. Run it again.", m.name)));
     }
+    if turned_off(&p, key, trigger) {
+        return Err(JobError::Cancelled);
+    }
     Ok(p)
+}
+
+/// Whether the run `key` starts by itself (an event's, or one after an
+/// export), and the person no longer has `p` do that. Who asked for a run
+/// from a menu or a page asked for that run.
+fn turned_off(p: &Installed, key: &RunKey, trigger: Trigger) -> bool {
+    match (key.kind, trigger) {
+        (ActionKind::Event, _) => !p.extra.events.contains(&key.action),
+        (_, Trigger::AfterExport) => !p.record.after_export.contains(&key.action),
+        _ => false,
+    }
 }
 
 /// Gives `message` what the run `key` is for: the project it runs in and
@@ -3861,6 +3877,47 @@ mod tests {
         assert_eq!(said(&tag, false), "Plugin dev.a.one is turned off.");
         host.store.uninstall(&id, false).unwrap();
         assert_eq!(said(&tag, false), "dev.a.one isn't installed.");
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// Waiting behind another run or an analysis, a run that starts by
+    /// itself may outlast the person's wish for it: it may post to the
+    /// network, so it asks again as it starts.
+    #[test]
+    fn what_runs_by_itself_stays_off_once_the_person_turned_it_off() {
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-turned-off-{}", std::process::id()));
+        let (lib, host) = host_in(&tmp);
+        lib.set_allows_unreviewed_plugins(true).unwrap();
+        let mut m = manifest("dev.a.tell", false);
+        m["manifestVersion"] = serde_json::json!(2);
+        m["contributes"]["events"] =
+            serde_json::json!([{"id": "done", "title": "Tell the channel", "on": "analysisFinished"}]);
+        let id = host.store.commit(folder(&host, &tmp, &m), true, true).unwrap().record.id;
+        let starts = |key: &RunKey, trigger| match startable(&host.store, &lib, key, trigger, false) {
+            Ok(_) => "starts".to_owned(),
+            Err(JobError::Cancelled) => "cancelled".to_owned(),
+            Err(JobError::Failed(why) | JobError::FailedFirst(why)) => why,
+        };
+        let (project, export) = (Some(ProjectId::new()), Some(ExportId::new()));
+
+        // An event: queued while it was on, it starts only while it still is.
+        let event = key(&id, ActionKind::Event, "done", project, None);
+        host.store.set_event(&id, "done", true).unwrap();
+        assert_eq!(starts(&event, Trigger::Event), "starts");
+        host.store.set_event(&id, "done", false).unwrap();
+        assert_eq!(starts(&event, Trigger::Event), "cancelled");
+        host.store.set_event(&id, "done", true).unwrap();
+        assert_eq!(starts(&event, Trigger::Event), "starts");
+
+        // After an export, also one that failed: the same.
+        let post = key(&id, ActionKind::ExportAction, "post", project, export);
+        host.store.set_after_export(&id, "post", true).unwrap();
+        assert_eq!(starts(&post, Trigger::AfterExport), "starts");
+        host.store.set_after_export(&id, "post", false).unwrap();
+        assert_eq!(starts(&post, Trigger::AfterExport), "cancelled");
+        // From the menu it is the person's own run, turned on or not.
+        assert_eq!(starts(&post, Trigger::Menu), "starts");
         drop((host, lib));
         std::fs::remove_dir_all(&tmp).unwrap();
     }

@@ -1,15 +1,18 @@
+use as_core::{Msg, ToMsg};
 use as_plugin::PluginError;
 use as_project::ProjectError;
 use serde::Serialize;
 use specta::Type;
 
-/// Error returned by every command. Serialised as `{ code, message }` and
-/// thrown on the TypeScript side, so UI code can branch on `code` and show
-/// `message` verbatim.
+/// Error returned by every command. Serialised as `{ code, message, msg }`
+/// and thrown on the TypeScript side, so UI code can branch on `code` and say
+/// `msg` in its language. `message` is its English: what the log gets, and
+/// what a plugin page gets from the bridge.
 #[derive(Debug, Serialize, Type)]
 pub struct AppError {
     pub code: ErrorCode,
     pub message: String,
+    pub msg: Msg,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -29,12 +32,12 @@ pub enum ErrorCode {
 }
 
 impl AppError {
-    pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+    pub fn new(code: ErrorCode, msg: Msg) -> Self {
+        Self { code, message: msg.text.clone(), msg }
     }
 
-    pub fn internal(message: impl Into<String>) -> Self {
-        Self::new(ErrorCode::Internal, message)
+    pub fn internal(msg: Msg) -> Self {
+        Self::new(ErrorCode::Internal, msg)
     }
 }
 
@@ -48,7 +51,7 @@ impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         log::warn!("file: {e}");
         let code = if e.kind() == std::io::ErrorKind::NotFound { ErrorCode::NotFound } else { ErrorCode::Io };
-        Self::new(code, as_core::io_message(&e))
+        Self::new(code, e.msg())
     }
 }
 
@@ -72,7 +75,7 @@ impl From<ProjectError> for AppError {
             }
             _ => log::warn!("{}", e.detail()),
         }
-        Self::new(code, e.to_string())
+        Self::new(code, e.msg())
     }
 }
 
@@ -123,7 +126,7 @@ impl From<PluginError> for AppError {
             }
             _ => log::warn!("{}", e.detail()),
         }
-        Self::new(code, e.to_string())
+        Self::new(code, e.msg())
     }
 }
 
@@ -133,12 +136,15 @@ pub type AppResult<T> = Result<T, AppError>;
 mod tests {
     use std::io::{Error, ErrorKind};
 
+    use as_media::MediaError;
+
     use super::*;
 
     #[test]
     fn plugin_errors_get_their_codes_and_keep_their_words() {
         let said = |e: PluginError| {
             let e = AppError::from(e);
+            assert_eq!(e.msg.text, e.message);
             (e.code, e.message)
         };
         let invalid = [
@@ -185,5 +191,45 @@ mod tests {
         assert_eq!(said(failed), (ErrorCode::Internal, "The webhook said no.".into()));
         let crashed = PluginError::Crashed { name: "Poster".into(), detail: "exit 1".into() };
         assert_eq!(said(crashed), (ErrorCode::Internal, "Poster stopped unexpectedly.".into()));
+    }
+
+    #[test]
+    fn a_full_disk_has_its_key_and_keeps_its_words() {
+        for e in [
+            AppError::from(Error::from(ErrorKind::StorageFull)),
+            AppError::from(ProjectError::Io(Error::from(ErrorKind::StorageFull))),
+            AppError::from(PluginError::Io(Error::from(ErrorKind::StorageFull))),
+        ] {
+            assert_eq!((e.code, e.msg.key.as_str()), (ErrorCode::Io, "file.diskFull"));
+            assert_eq!(e.message, "The disk is full.");
+        }
+    }
+
+    #[test]
+    fn an_error_of_the_media_tools_keeps_its_key_inside_a_project_error() {
+        let e = AppError::from(ProjectError::Media(MediaError::ToolsMissing));
+        assert_eq!((e.code, e.msg.key.as_str()), (ErrorCode::Media, "media.toolsMissing"));
+        assert_eq!(e.message, MediaError::ToolsMissing.to_string());
+    }
+
+    #[test]
+    fn words_without_a_key_yet_keep_their_english() {
+        let e = AppError::from(ProjectError::NotFound("This episode was removed.".into()));
+        assert_eq!((e.msg.key.as_str(), e.message.as_str()), ("", "This episode was removed."));
+        assert_eq!(e.msg.text, e.message);
+    }
+
+    #[test]
+    fn the_ui_gets_the_code_the_english_and_the_msg() {
+        let e = AppError::new(ErrorCode::NotReady, as_core::msg!("a.b", "{{name}} waits.", name = "Poster"));
+        let json = serde_json::to_value(&e).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "code": "not_ready",
+                "message": "Poster waits.",
+                "msg": { "key": "a.b", "args": { "name": "Poster" }, "text": "Poster waits." },
+            })
+        );
     }
 }

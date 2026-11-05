@@ -11,6 +11,7 @@
 import { emit } from "@tauri-apps/api/event"
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks"
 import { LANGUAGES, OFFERED } from "@/lib/i18n"
+import { isAppError } from "@/lib/ipc"
 import { isFinished } from "@/state/activity"
 import { catalogAtStart, catalogCancel, catalogGet, catalogList, catalogRefresh } from "./catalog"
 import {
@@ -1716,22 +1717,34 @@ function checkAtStart() {
   if (withdrawn.length > 0) window.setTimeout(() => void emit("catalog:changed", { withdrawn }), 800)
 }
 
+/** A mock error, as the real backend sends one: its `msg` is the mock's own words, with no key. */
+function withMsg(e: unknown): unknown {
+  return isAppError(e) ? { ...e, msg: e.msg ?? { key: "", text: e.message } } : e
+}
+
 export function installMockBackend() {
   // `?mockFail=cast_get,media_list` (before the `#`) makes those commands fail
   // the way a broken project database does, to see every error screen.
   const failing = new Set((new URLSearchParams(window.location.search).get("mockFail") ?? "").split(",").filter(Boolean))
   mockWindows("main")
+  const answer = (cmd: string, payload: unknown): unknown => {
+    if (failing.has(cmd)) {
+      throw { code: "internal", message: "AutoScene couldn't read or save its data. Details are in the log." }
+    }
+    const h = handlers[cmd]
+    if (h) return h((payload ?? {}) as Record<string, unknown>)
+    // Other built-in plugin calls (window controls…) are no-ops in the browser.
+    if (cmd.startsWith("plugin:")) return null
+    console.warn(`[mock] unhandled command ${cmd}`, payload)
+    throw { code: "not_found", message: `Mock backend has no handler for ${cmd}` }
+  }
   mockIPC(
-    (cmd, payload) => {
-      if (failing.has(cmd)) {
-        throw { code: "internal", message: "AutoScene couldn't read or save its data. Details are in the log." }
+    async (cmd, payload) => {
+      try {
+        return await answer(cmd, payload)
+      } catch (e) {
+        throw withMsg(e)
       }
-      const h = handlers[cmd]
-      if (h) return h((payload ?? {}) as Record<string, unknown>)
-      // Other built-in plugin calls (window controls…) are no-ops in the browser.
-      if (cmd.startsWith("plugin:")) return null
-      console.warn(`[mock] unhandled command ${cmd}`, payload)
-      throw { code: "not_found", message: `Mock backend has no handler for ${cmd}` }
     },
     { shouldMockEvents: true },
   )

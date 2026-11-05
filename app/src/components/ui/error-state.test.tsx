@@ -1,9 +1,14 @@
 import { cleanup, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import type { AppError } from "@/bindings"
 import { PuzzlePiece } from "@/components/icons"
+import { ProjectLoadError } from "@/features/project/ProjectLoadError"
 import { commands } from "@/lib/ipc"
+import { inLanguage } from "@/test/i18n"
 import { ErrorState } from "./error-state"
+
+vi.mock("@tanstack/react-router", () => ({ Link: () => null }))
 
 vi.mock("@/lib/ipc", async (real) => ({
   ...(await real<typeof import("@/lib/ipc")>()),
@@ -13,6 +18,14 @@ vi.mock("@/lib/ipc", async (real) => ({
 afterEach(cleanup)
 
 const appError = (code: string) => ({ code, message: "The plugin list is damaged" })
+
+const failed = (code: AppError["code"]): AppError => ({
+  code,
+  message: "The disk is full.",
+  msg: { key: "file.diskFull", text: "The disk is full." },
+})
+
+const romanian = { backend: { file: { diskFull: "Discul este plin." } } }
 
 describe("ErrorState", () => {
   it("Try again goes busy while it retries, and takes no second click", async () => {
@@ -61,5 +74,21 @@ describe("ErrorState", () => {
     render(<ErrorState error={new Error("x is undefined")} />)
     expect(screen.getByText("Something went wrong while showing this.")).toBeTruthy()
     expect(screen.getByText("x is undefined").hasAttribute("data-selectable")).toBe(true)
+  })
+})
+
+describe("what went wrong", () => {
+  it("reads in the UI's language on an error screen", async () => {
+    render(<ErrorState error={failed("io")} />)
+    expect(screen.getByText("The disk is full.")).toBeTruthy()
+    await inLanguage("ro", romanian)
+    render(<ErrorState error={failed("io")} />)
+    expect(screen.getByText("Discul este plin.")).toBeTruthy()
+  })
+
+  it("reads in the UI's language where a project is gone", async () => {
+    await inLanguage("ro", romanian)
+    render(<ProjectLoadError error={failed("not_found")} onRetry={() => {}} />)
+    expect(screen.getByText("Discul este plin.")).toBeTruthy()
   })
 })

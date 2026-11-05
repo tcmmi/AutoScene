@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useAppActions } from "@/lib/actions"
 import { formatBytes } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { openExternalUrl } from "@/lib/os"
 import { useAppInfo, useHardware, useMediaTools } from "@/lib/queries"
@@ -88,7 +89,7 @@ export function AboutSection() {
               tools.ready ? (
                 <span data-selectable className="font-mono">{tools.path}</span>
               ) : (
-                <span className="text-danger">{tools.error}</span>
+                <span className="text-danger">{tools.error && say(tools.error)}</span>
               )
             ) : (
               "Checking…"

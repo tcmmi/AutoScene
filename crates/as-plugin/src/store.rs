@@ -1919,7 +1919,7 @@ fn read_manifest(record: &Record, dir: &Path) -> Result<Parsed, String> {
         (Some(_), Err(_)) => return Err(CHANGED.into()),
         (None, Ok(bytes)) => bytes,
         (None, Err(e)) if e.kind() == ErrorKind::NotFound => return Err(MISSING.into()),
-        (None, Err(e)) => return Err(as_core::io_message(&e).into()),
+        (None, Err(e)) => return Err(as_core::io_message(&e)),
     };
     let parsed = manifest::parse_for_any_app(&bytes).map_err(|e| e.to_string())?;
     if parsed.manifest.id != record.id {

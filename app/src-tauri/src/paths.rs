@@ -12,6 +12,8 @@
 use std::borrow::Cow;
 use std::path::{Component, Path};
 
+use as_core::msg;
+
 use crate::error::{AppError, AppResult, ErrorCode};
 
 /// Refuse `raw` unless it's a plain path (see the module docs).
@@ -22,7 +24,10 @@ pub fn check(raw: impl AsRef<Path>) -> AppResult<()> {
     log::warn!("refused a path from the page: relative, a device's, verbatim or climbing out with `..`");
     Err(AppError::new(
         ErrorCode::Invalid,
-        "AutoScene can't use that location. Choose a file or folder on this computer or on a network share.",
+        msg!(
+            "file.badLocation",
+            "AutoScene can't use that location. Choose a file or folder on this computer or on a network share."
+        ),
     ))
 }
 

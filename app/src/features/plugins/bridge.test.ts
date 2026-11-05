@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { PageReply } from "@/bindings"
 import { GLOBAL_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
 import { LIMITS, type PageInit } from "@/plugin-kit/bridge-types"
+import { inLanguage } from "@/test/i18n"
 import {
   type HostDeps,
   type Limits,
@@ -262,6 +263,16 @@ describe("the bridge to a plugin page", () => {
     renderHook(() => useShortcuts(GLOBAL_SHORTCUTS, { palette }))
     replayKey(key.mock.calls[0][0], window)
     expect(palette).toHaveBeenCalledTimes(1)
+  })
+
+  it("a call the command itself refuses reaches the page in English, whatever the UI speaks", async () => {
+    await inLanguage("ro", { backend: { plugin: { hostFailed: "Pluginurile nu au pornit." } } })
+    const message = "Plugins couldn't start. Details are in the log."
+    const refused = { code: "internal", message, msg: { key: "plugin.hostFailed", args: {}, text: message } }
+    const page = hosted(deps({ call: vi.fn(() => Promise.reject(refused)) }))
+    const reply = heard(page)
+    page.postMessage({ t: "call", id: 1, method: "project.get", params: {} })
+    expect(await reply).toEqual({ t: "reply", id: 1, ok: false, error: { code: "failed", message } })
   })
 
   it("a toast effect shows Rust's title as it is", async () => {

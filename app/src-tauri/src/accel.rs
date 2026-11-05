@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use as_api::{AccelInfo, AccelRow};
 use as_core::paths::ACCEL_PREFIX;
-use as_core::{AppPaths, CancelToken};
+use as_core::{AppPaths, CancelToken, msg};
 use as_engine::accel::{self, AccelState, PinnedFile, Pins};
 use as_engine::hardware::Hardware;
 use as_engine::{Engine, PACK_FAILURES, cache, pack_failures};
@@ -615,7 +615,7 @@ impl Accel {
         let dirs = self.packs.mark_removed().map_err(|e| {
             self.set(Phase::Idle);
             log::warn!("removing NVIDIA's files: {e}");
-            AppError::new(ErrorCode::Io, "NVIDIA's files couldn't be removed.")
+            AppError::new(ErrorCode::Io, msg!("accel.removeFailed", "NVIDIA's files couldn't be removed."))
         })?;
         // An idle engine stops here; a busy one finishes its job first.
         host.relaunch();
@@ -704,7 +704,7 @@ pub fn open_notices(state: &AppState) -> AppResult<()> {
     });
     match opened {
         Some(Ok(())) => Ok(()),
-        _ => Err(AppError::new(ErrorCode::Io, "NVIDIA's notices couldn't be opened.")),
+        _ => Err(AppError::new(ErrorCode::Io, msg!("accel.noticesFailed", "NVIDIA's notices couldn't be opened."))),
     }
 }
 

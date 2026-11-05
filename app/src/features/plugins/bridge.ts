@@ -20,7 +20,7 @@
  */
 import { toast } from "sonner"
 import type { PageEffect, PageEvent, PageReply } from "@/bindings"
-import { commands, errorMessage } from "@/lib/ipc"
+import { commands, englishMessage } from "@/lib/ipc"
 import {
   BRIDGE_VERSION,
   LIMITS,
@@ -171,7 +171,7 @@ export function createHost(port: PortLike, deps: HostDeps, limits: Partial<Limit
           send({ t: "reply", id: c.id, ok: true, result: r.result })
         },
         // The command itself failed (plugins couldn't start): the page hears it as AutoScene's.
-        (e: unknown) => fail(c.id, "failed", errorMessage(e)),
+        (e: unknown) => fail(c.id, "failed", englishMessage(e)),
       )
       .finally(() => {
         inflight--

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use as_api::{
     ExportPlan, ExportSummary, PackChoices, PackExportRequest, PackNaming, PackPicks, PackPreview, PackSpec, PackState,
 };
-use as_core::{CharacterId, ProjectId};
+use as_core::{CharacterId, ProjectId, msg};
 use as_export::builtin_presets;
 use as_media::Caps;
 use as_plugin::calls::FileFilter;
@@ -202,7 +202,7 @@ pub async fn pack_export(
     let preset = builtin_presets()
         .into_iter()
         .find(|p| p.id == req.preset_id)
-        .ok_or_else(|| AppError::new(ErrorCode::Invalid, "Unknown export preset."))?;
+        .ok_or_else(|| AppError::new(ErrorCode::Invalid, msg!("export.unknownPreset", "Unknown export preset.")))?;
     // The folder picked for it (the character's own goes inside, by name).
     if let Some(dir) = req.out_dir.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
         paths::check(dir)?;

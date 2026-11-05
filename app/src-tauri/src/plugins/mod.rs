@@ -98,7 +98,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use as_api::{ExportStatus, ExportSummary, JobInfo, JobKind, JobState};
-use as_core::{AppPaths, CancelToken, CharacterId, ExportId, JobId, ProjectId};
+use as_core::{AppPaths, CancelToken, CharacterId, ExportId, JobId, ProjectId, msg};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_plugin::net::{Transport, UreqTransport};
 use as_plugin::pages::{Mount, Pages};
@@ -642,10 +642,9 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
 
 /// The plugin host, for a command.
 pub fn host(state: &AppState) -> AppResult<Arc<PluginHost>> {
-    state
-        .plugins
-        .clone()
-        .ok_or_else(|| AppError::new(ErrorCode::NotReady, "Plugins couldn't start. Details are in the log."))
+    state.plugins.clone().ok_or_else(|| {
+        AppError::new(ErrorCode::NotReady, msg!("plugin.hostFailed", "Plugins couldn't start. Details are in the log."))
+    })
 }
 
 impl PluginHost {
@@ -834,16 +833,13 @@ impl PluginHost {
     /// The ticket `id`, unless it was taken already (or its review was
     /// closed), or it waited longer than [`TICKET_TTL`] (it is dropped then).
     pub fn take(&self, id: &str) -> AppResult<Ticket> {
-        let t = self
-            .tickets
-            .lock()
-            .remove(id)
-            .ok_or_else(|| AppError::new(ErrorCode::NotFound, "This review was closed. Open the plugin again."))?;
+        let closed = || msg!("plugin.reviewClosed", "This review was closed. Open the plugin again.");
+        let t = self.tickets.lock().remove(id).ok_or_else(|| AppError::new(ErrorCode::NotFound, closed()))?;
         if t.created.elapsed() > TICKET_TTL {
             self.store.discard(t);
             return Err(AppError::new(
                 ErrorCode::NotFound,
-                "This plugin waited too long to be installed. Open it again.",
+                msg!("plugin.reviewExpired", "This plugin waited too long to be installed. Open it again."),
             ));
         }
         Ok(t)
@@ -1407,7 +1403,7 @@ pub fn install(
     };
     if asks && !ask(install_question(&ticket, &widens)) {
         host.keep(ticket);
-        return Err(AppError::new(ErrorCode::Cancelled, "It wasn't installed."));
+        return Err(AppError::new(ErrorCode::Cancelled, msg!("plugin.notInstalled", "It wasn't installed.")));
     }
     ticket.confirmed = asks;
     match host.compile(ticket_id, &mut ticket, allow_unreviewed, accept_unreviewed) {
@@ -1415,7 +1411,7 @@ pub fn install(
         Err(PluginError::Cancelled) => {
             ticket.confirmed = false;
             host.keep(ticket);
-            return Err(AppError::new(ErrorCode::Cancelled, "It wasn't installed."));
+            return Err(AppError::new(ErrorCode::Cancelled, msg!("plugin.notInstalled", "It wasn't installed.")));
         }
         Err(e) => {
             host.store.discard(ticket);

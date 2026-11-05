@@ -8,13 +8,15 @@
 pub mod cancel;
 pub mod error;
 pub mod ids;
+pub mod msg;
 pub mod paths;
 pub mod progress;
 pub mod time;
 
 pub use cancel::CancelToken;
-pub use error::{CoreError, CoreResult, io_message};
+pub use error::{CoreError, CoreResult, io_message, io_msg};
 pub use ids::*;
+pub use msg::{Count, Msg, MsgArg, ToMsg};
 pub use paths::AppPaths;
 pub use progress::{FrameCount, Progress, ProgressSink};
 pub use time::{FrameIdx, FrameIndex, FrameRange, Rational, Timecode};

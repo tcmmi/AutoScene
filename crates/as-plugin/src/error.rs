@@ -1,3 +1,4 @@
+use as_core::{Msg, ToMsg};
 use thiserror::Error;
 
 pub type PluginResult<T> = Result<T, PluginError>;
@@ -84,6 +85,16 @@ impl PluginError {
             Self::Db(e) => format!("plugin registry: {e}"),
             Self::Io(e) => format!("plugin files: {e}"),
             e => e.to_string(),
+        }
+    }
+}
+
+/// Its `Display`, with a key where the words have one so far.
+impl ToMsg for PluginError {
+    fn msg(&self) -> Msg {
+        match self {
+            Self::Io(e) => e.msg(),
+            e => Msg::plain(e.to_string()),
         }
     }
 }

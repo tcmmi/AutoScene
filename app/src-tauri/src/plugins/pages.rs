@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use as_core::ProjectId;
+use as_core::{Msg, ProjectId, msg};
 use as_plugin::pages::{self, AssetKit, KitSource, Served};
 use as_plugin::{Grants, PageScope, PageSpec, Permission, PluginError, PluginId, Trust};
 use as_project::Library;
@@ -106,13 +106,18 @@ pub fn open(
     let p = host.store.get(id)?;
     let m = runnable(&p, allow)?;
     if busy.changing.contains(id) {
-        return Err(AppError::new(ErrorCode::NotReady, format!("{} is being updated.", m.name)));
+        let waits = msg!("plugin.beingUpdated", "{{name}} is being updated.", name = &m.name);
+        return Err(AppError::new(ErrorCode::NotReady, waits));
     }
     let page = m.page(page_id).ok_or_else(|| PluginError::Invalid(format!("{} has no such page.", m.name)))?;
     let project = match (page.scope, project_id) {
         (PageScope::Project, Some(project_id)) => Some(project_id.to_string()),
-        (PageScope::Project, None) => return Err(invalid("Open a project to see this page.")),
-        (PageScope::Global, Some(_)) => return Err(invalid("This page isn't a project's.")),
+        (PageScope::Project, None) => {
+            return Err(invalid(msg!("plugin.pageNeedsProject", "Open a project to see this page.")));
+        }
+        (PageScope::Global, Some(_)) => {
+            return Err(invalid(msg!("plugin.pageNotProjects", "This page isn't a project's.")));
+        }
         (PageScope::Global, None) => None,
     };
     let grants = Grants::of(&p)?;
@@ -151,8 +156,8 @@ pub fn open(
     })
 }
 
-fn invalid(message: &str) -> AppError {
-    AppError::new(ErrorCode::Invalid, message)
+fn invalid(said: Msg) -> AppError {
+    AppError::new(ErrorCode::Invalid, said)
 }
 
 /// How long the app's page may go without saying it is there for an open

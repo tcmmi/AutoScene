@@ -1,3 +1,4 @@
+use as_core::{Msg, ToMsg};
 use as_db::DbError;
 use as_export::ExportError;
 use as_media::MediaError;
@@ -36,6 +37,17 @@ impl ProjectError {
             Self::Db(e) => format!("database: {e}"),
             Self::Io(e) => format!("file: {e}"),
             e => e.to_string(),
+        }
+    }
+}
+
+/// Its `Display`, with a key where the words have one so far.
+impl ToMsg for ProjectError {
+    fn msg(&self) -> Msg {
+        match self {
+            Self::Media(e) => e.msg(),
+            Self::Io(e) => e.msg(),
+            e => Msg::plain(e.to_string()),
         }
     }
 }

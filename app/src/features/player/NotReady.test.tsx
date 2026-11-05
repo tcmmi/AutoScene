@@ -3,15 +3,15 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { FrameCount, JobInfo, MediaItem } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
+import { inLanguage } from "@/test/i18n"
 import { NotReady } from "./NotReady"
 
-vi.mock("@/lib/ipc", () => ({
+vi.mock("@/lib/ipc", async (original) => ({
+  ...(await original<typeof import("@/lib/ipc")>()),
   commands: {
     jobCancel: vi.fn(() => Promise.resolve(null)),
     mediaIndexingStill: vi.fn(() => Promise.resolve(null)),
   },
-  errorMessage: (e: unknown) => String(e),
-  isAppError: (e: unknown) => typeof e === "object" && e !== null && "code" in e,
 }))
 
 /** A running job of the episode "m". */
@@ -46,6 +46,13 @@ afterEach(() => {
 })
 
 describe("the player while an episode isn't ready", () => {
+  it("says why a preview can't be shown in the UI's language", async () => {
+    await inLanguage("ro", { backend: { episode: { previewRefused: "Previzualizarea nu poate fi afișată." } } })
+    const text = "This episode's preview can't be shown. Prepare it again."
+    show(episode({ status: "ready", proxy: "pending" }), { code: "not_ready", message: text, msg: { key: "episode.previewRefused", text } })
+    expect(screen.getByText("Previzualizarea nu poate fi afișată.")).toBeTruthy()
+  })
+
   it("cancels the indexing it waits for, and says how long it has left", () => {
     useActivity.getState().replaceAll([job({ id: "ingest", etaMs: 150_000 })])
     show(episode({ status: "indexing" }))

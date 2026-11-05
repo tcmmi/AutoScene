@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { AccelInfo, ModelInfo, Platform } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { openExternalUrl } from "@/lib/os"
+import { inLanguage } from "@/test/i18n"
 import { AboutSection } from "./AboutSection"
 
 const { machine } = vi.hoisted(() => ({
@@ -99,5 +100,17 @@ describe("AboutSection", () => {
     expect(screen.getByText(/Fast Scan uses none of them/)).toBeTruthy()
     expect(screen.getByText(/^Downloaded · 29\.8 MB/)).toBeTruthy()
     expect(screen.getByText(/^Not downloaded yet/)).toBeTruthy()
+  })
+
+  it("says why FFmpeg isn't there in the UI's language", async () => {
+    await inLanguage("ro", { backend: { media: { toolsMissing: "FFmpeg lipsește." } } })
+    const error = { key: "media.toolsMissing", args: {}, text: "FFmpeg is missing." }
+    vi.mocked(commands.mediaTools).mockResolvedValueOnce({ ready: false, version: null, path: null, error })
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <AboutSection />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText("FFmpeg lipsește.")).toBeTruthy()
   })
 })

@@ -1,3 +1,4 @@
+use as_core::{Msg, ToMsg, msg};
 use thiserror::Error;
 
 pub type MediaResult<T> = Result<T, MediaError>;
@@ -40,6 +41,22 @@ fn file_name(path: &str) -> &str {
     path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
+/// Its `Display`, with a key where the words have one so far.
+impl ToMsg for MediaError {
+    fn msg(&self) -> Msg {
+        match self {
+            Self::ToolsMissing => {
+                msg!("media.toolsMissing", "AutoScene's video tools are missing. Reinstall AutoScene.")
+            }
+            Self::ToolsTooOld(_) => {
+                msg!("media.toolsTooOld", "AutoScene's video tools are out of date. Reinstall AutoScene.")
+            }
+            Self::Io(e) => e.msg(),
+            e => Msg::plain(e.to_string()),
+        }
+    }
+}
+
 impl MediaError {
     /// Technical description for logs (tool output, versions, paths).
     pub fn detail(&self) -> String {
@@ -57,5 +74,23 @@ impl MediaError {
 
     pub fn is_cancelled(&self) -> bool {
         matches!(self, Self::Cancelled | Self::Core(as_core::CoreError::Cancelled))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn its_msg_says_what_its_display_says() {
+        let keyed = [
+            (MediaError::ToolsMissing, "media.toolsMissing"),
+            (MediaError::ToolsTooOld("4.0".into()), "media.toolsTooOld"),
+            (MediaError::Io(std::io::ErrorKind::StorageFull.into()), "file.diskFull"),
+            (MediaError::Ffmpeg("exit 1".into()), ""),
+        ];
+        for (e, key) in keyed {
+            assert_eq!((e.msg().key.as_str(), e.msg().text), (key, e.to_string()));
+        }
     }
 }

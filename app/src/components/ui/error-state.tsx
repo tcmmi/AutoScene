@@ -34,7 +34,7 @@ export function ErrorState({
       tone="danger"
       icon={icon}
       title={title}
-      description={isAppError(error) ? error.message : "Something went wrong while showing this."}
+      description={isAppError(error) ? errorMessage(error) : "Something went wrong while showing this."}
       className={className}
       actions={
         <>

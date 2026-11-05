@@ -1,7 +1,7 @@
 //! The graphics the analysis runs on (Settings → General → Graphics card).
 
 use as_api::{AccelInfo, AnalysisDevice, GpuOption, HardwareChoice, HardwareInfo};
-use as_core::CancelToken;
+use as_core::{CancelToken, msg};
 use as_engine::hardware::{Hardware, Using};
 use as_project::computer::Choice;
 use tauri::{AppHandle, State};
@@ -21,7 +21,7 @@ pub async fn hardware_info(state: State<'_, AppState>) -> AppResult<HardwareInfo
     blocking(move || {
         let found = state.engine.probe(&CancelToken::new()).map_err(|e| {
             log::warn!("looking for graphics cards: {}", e.detail());
-            AppError::new(ErrorCode::Internal, "Couldn't check the graphics cards.")
+            AppError::new(ErrorCode::Internal, msg!("system.gpuCheckFailed", "Couldn't check the graphics cards."))
         })?;
         let gpu = state.library.gpu();
         let chosen = found.clone().chosen(&Choice::from_setting(&gpu));

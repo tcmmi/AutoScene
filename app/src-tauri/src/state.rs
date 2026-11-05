@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use as_api::{AnalysisStage, JobInfo, JobKind, JobState, MediaToolsStatus, UiLocale};
-use as_core::{AppPaths, MediaId, ProjectId};
+use as_core::{AppPaths, MediaId, ProjectId, ToMsg, msg};
 use as_engine::hardware::Hardware;
 use as_engine::{Engine, Launch, Note};
 use as_jobs::{Class, JobEvent, JobRunner};
@@ -177,7 +177,7 @@ impl AppState {
     pub fn tools(&self) -> AppResult<Arc<Tools>> {
         found(&self.tools, || Tools::locate(self.bundled_ffmpeg.as_deref()).map(Arc::new)).cloned().map_err(|e| {
             log::warn!("media tools: {}", e.detail());
-            AppError::new(ErrorCode::Media, e.to_string())
+            AppError::new(ErrorCode::Media, e.msg())
         })
     }
 
@@ -189,7 +189,7 @@ impl AppState {
                 path: Some(t.ffmpeg.display().to_string()),
                 error: None,
             },
-            Err(e) => MediaToolsStatus { ready: false, version: None, path: None, error: Some(e.message) },
+            Err(e) => MediaToolsStatus { ready: false, version: None, path: None, error: Some(e.msg) },
         }
     }
 }
@@ -348,7 +348,7 @@ fn grantable(path: &Path) -> bool {
 pub async fn blocking<T: Send + 'static>(f: impl FnOnce() -> AppResult<T> + Send + 'static) -> AppResult<T> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| {
         log::error!("a command failed unexpectedly: {e}");
-        AppError::internal("Something went wrong. Details are in the log.")
+        AppError::internal(msg!("internal", "Something went wrong. Details are in the log."))
     })?
 }
 

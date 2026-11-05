@@ -81,6 +81,12 @@ jobs:
         run: |
           cargo run -p autoscene-app --bin export-bindings --features export-bindings
           git diff --exit-code app/src/bindings.ts app/src/plugin-kit/protocol.ts
+      # The English of every msg!, which the UI's backend catalog is made of.
+      - name: The backend catalog is up to date
+        shell: bash
+        run: |
+          cargo xtask i18n
+          git diff --exit-code app/src/locales/en/backend.json
 
   # The two WebAssembly examples, built from their source as their READMEs
   # say, then checked, packed and run as AutoScene runs them. A component runs

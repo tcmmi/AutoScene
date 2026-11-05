@@ -65,7 +65,7 @@ export function NotReady({
     title = job ? "Preparing preview" : m?.proxy === "failed" ? "Preview failed" : "Preview not prepared"
     body = job
       ? "This format needs a lightweight preview copy for frame-accurate playback. Exports still cut from the original."
-      : error.message
+      : errorMessage(error)
   } else if (error) {
     title = "Can't play this file"
     body = errorMessage(error)

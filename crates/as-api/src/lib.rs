@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use as_core::{CharacterId, ExportId, FrameCount, FrameIdx, JobId, MediaId, ProjectId, Rational};
+use as_core::{CharacterId, ExportId, FrameCount, FrameIdx, JobId, MediaId, Msg, ProjectId, Rational};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -51,7 +51,7 @@ pub struct MediaToolsStatus {
     pub ready: bool,
     pub version: Option<String>,
     pub path: Option<String>,
-    pub error: Option<String>,
+    pub error: Option<Msg>,
 }
 
 /// An AI model AutoScene downloads the first time an analysis needs it

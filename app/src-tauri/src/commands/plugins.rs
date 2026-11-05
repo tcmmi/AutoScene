@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use as_api::AppSettings;
-use as_core::{ExportId, JobId, ProjectId};
+use as_core::{ExportId, JobId, ProjectId, msg};
 use as_plugin::calls::FileFilter;
 use as_plugin::{ActionKind, PluginError, PluginId, SettingValue, Trigger};
 use parking_lot::Mutex;
@@ -78,7 +78,10 @@ pub async fn plugin_open_source(app: AppHandle, state: State<'_, AppState>, plug
     blocking(move || {
         let p = host.store.get(&id)?;
         let Some((name, link)) = p.manifest.as_ref().and_then(|m| Some((&m.name, m.source_link()?))) else {
-            return Err(AppError::new(ErrorCode::NotFound, "Its plugin.json names no source."));
+            return Err(AppError::new(
+                ErrorCode::NotFound,
+                msg!("plugin.noSource", "Its plugin.json names no source."),
+            ));
         };
         let asked = format!("Plugin “{name}” links to its source at:\n\n{}", link.url);
         if link.asks && !confirm(&app, calls::OPEN_LINK_TITLE, asked, calls::OPEN_LINK_YES) {
@@ -86,7 +89,7 @@ pub async fn plugin_open_source(app: AppHandle, state: State<'_, AppState>, plug
         }
         app.opener().open_url(&link.url, None::<&str>).map_err(|e| {
             log::warn!("plugin {id}: opening its source: {e}");
-            AppError::new(ErrorCode::Io, "AutoScene couldn't open the link.")
+            AppError::new(ErrorCode::Io, msg!("plugin.linkFailed", "AutoScene couldn't open the link."))
         })?;
         Ok(true)
     })
@@ -426,15 +429,19 @@ pub async fn plugin_run(
         ActionKind::ExportAction => Trigger::Menu,
         ActionKind::Command => Trigger::Palette,
         ActionKind::Event => {
-            return Err(AppError::new(ErrorCode::Invalid, "An event runs by itself, once it is turned on."));
+            let by_itself = msg!("plugin.eventRunsItself", "An event runs by itself, once it is turned on.");
+            return Err(AppError::new(ErrorCode::Invalid, by_itself));
         }
         // A check runs from the scenepack builder (`pack_filter_check`).
         ActionKind::ShotFilter => {
-            return Err(AppError::new(ErrorCode::Invalid, "A shot filter checks shots from the scenepack builder."));
+            let elsewhere =
+                msg!("plugin.filterRunsInBuilder", "A shot filter checks shots from the scenepack builder.");
+            return Err(AppError::new(ErrorCode::Invalid, elsewhere));
         }
         // It saves where the person chooses first (`pack_action_run`).
         ActionKind::PackAction => {
-            return Err(AppError::new(ErrorCode::Invalid, "A pack action saves a scenepack from its builder."));
+            let elsewhere = msg!("plugin.packActionRunsInBuilder", "A pack action saves a scenepack from its builder.");
+            return Err(AppError::new(ErrorCode::Invalid, elsewhere));
         }
     };
     blocking(move || plugins::queue_run(&app, &id, kind, &action_id, trigger, project_id, export_id, None)).await

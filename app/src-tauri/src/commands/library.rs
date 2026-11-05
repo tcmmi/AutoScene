@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use as_api::{AppSettings, ContentKind, ImportCandidate, JobInfo, NewProject, ProjectKind, ProjectSummary};
-use as_core::ProjectId;
+use as_core::{ProjectId, msg};
 use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 
@@ -136,7 +136,7 @@ pub async fn project_delete(
     // go on writing into its folder or hold its database open. When that
     // takes too long, the project stays as it was.
     let of = move |j: &JobInfo| j.project_id == Some(project_id);
-    let still = "The work on this project is still stopping. Try again in a moment.";
+    let still = msg!("project.stillStopping", "The work on this project is still stopping. Try again in a moment.");
     stop_jobs(&state, of, || false, still).await?;
     let lib = state.library.clone();
     let result = blocking(move || Ok(lib.delete_project(project_id, delete_files)?)).await;

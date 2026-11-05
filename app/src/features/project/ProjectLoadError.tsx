@@ -3,7 +3,7 @@ import { Compass } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ErrorState } from "@/components/ui/error-state"
-import { isAppError } from "@/lib/ipc"
+import { errorMessage, isAppError } from "@/lib/ipc"
 
 /**
  * A project view whose data couldn't be loaded. A project that is gone
@@ -16,7 +16,7 @@ export function ProjectLoadError({ error, onRetry }: { error: unknown; onRetry: 
       <EmptyState
         icon={<Compass />}
         title="This project isn't here any more"
-        description={error.message}
+        description={errorMessage(error)}
         className="h-full"
         actions={
           <Button asChild>

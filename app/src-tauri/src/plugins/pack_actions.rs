@@ -34,7 +34,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use as_api::{PackNaming, PackSpec};
-use as_core::{CharacterId, JobId, ProjectId};
+use as_core::{CharacterId, JobId, ProjectId, msg};
 use as_jobs::{JobCtx, JobError, JobResult, JobRunner};
 use as_plugin::calls::{FileFilter, runnable_name};
 use as_plugin::protocol::{CharacterContext, EpisodeContext, PackClipContext, PackContext, ProjectContext};
@@ -167,14 +167,16 @@ pub fn queue_pack_action(
     key: &str,
     shown: &Shown,
 ) -> AppResult<PackActionStart> {
-    let unknown = || AppError::new(ErrorCode::Invalid, "That isn't a plugin's pack action.");
+    let unknown =
+        || AppError::new(ErrorCode::Invalid, msg!("plugin.notAPackAction", "That isn't a plugin's pack action."));
     let (plugin, action) = key.split_once('/').ok_or_else(unknown)?;
     let plugin = PluginId::parse(plugin).map_err(|_| unknown())?;
     let p = sv.host.store.get(&plugin)?;
     let allow = sv.lib.allows_unreviewed_plugins()?;
     let m = runnable(&p, allow)?;
     let Some(a) = m.pack_actions.iter().find(|a| a.id == action) else {
-        return Err(AppError::new(ErrorCode::NotFound, format!("{} has no such pack action.", m.name)));
+        let gone = msg!("plugin.noSuchPackAction", "{{name}} has no such pack action.", name = &m.name);
+        return Err(AppError::new(ErrorCode::NotFound, gone));
     };
     let run = RunKey {
         character_id: Some(c),
@@ -207,7 +209,8 @@ pub fn queue_pack_action(
         return Err(runnable_refused());
     }
     if chosen.len() > MAX_CHOSEN_NAME {
-        return Err(AppError::new(ErrorCode::Invalid, "That file name is too long. Choose a shorter one."));
+        let refused = msg!("plugin.saveNameTooLong", "That file name is too long. Choose a shorter one.");
+        return Err(AppError::new(ErrorCode::Invalid, refused));
     }
     // Named by the character too: Walter's pack and Jesse's each have their run.
     let title = format!("{} · {}", a.title.trim_end_matches(['…', '.', ' ']), cut.name);
@@ -226,7 +229,10 @@ pub fn queue_pack_action(
 }
 
 fn runnable_refused() -> AppError {
-    AppError::new(ErrorCode::Invalid, "A plugin can't save a program, a script or a shortcut.")
+    AppError::new(
+        ErrorCode::Invalid,
+        msg!("plugin.saveRunnable", "A plugin can't save a program, a script or a shortcut."),
+    )
 }
 
 /// The name a save dialog offers for `character`'s pack: `template` with

@@ -8,7 +8,7 @@
 import i18next, { type FormatterModule } from "i18next"
 import { createElement, Fragment, type ReactNode, useSyncExternalStore } from "react"
 import { initReactI18next } from "react-i18next"
-import { commands } from "@/bindings"
+import { commands, type Msg } from "@/bindings"
 import { en, loadLanguage, NAMESPACES } from "@/locales"
 
 /** What i18n can load. Settings offers `OFFERED`; the pseudo-locale is for development only. */
@@ -104,6 +104,24 @@ void i18n
 
 /** The UI's words, for code outside components: call it when the words are shown. */
 export const t: typeof i18n.t = i18n.t.bind(i18n) as typeof i18n.t
+
+type Say = (key: string, options: object) => string
+
+/**
+ * What Rust said, in the UI's language: a `Msg` through the `backend` catalog,
+ * its values said first. Words AutoScene didn't write (no key), a key the
+ * catalog doesn't have and a plain string stay as they came.
+ */
+export function say(m: Msg | string): string {
+  if (typeof m === "string") return m
+  if (!m.key) return m.text
+  const said = Object.entries(m.args ?? {}).map(([name, v]) => [name, v !== null && typeof v === "object" ? say(v) : v])
+  const replace: Record<string, unknown> = Object.fromEntries(said)
+  // In `replace`, a value can't be taken for an option of `t`, whatever it is called.
+  const options = { replace, count: replace.count as number | undefined }
+  const key = `backend:${m.key}`
+  return i18n.exists(key, options) ? (i18n.t as unknown as Say)(key, options) : m.text
+}
 
 let switches = 0
 

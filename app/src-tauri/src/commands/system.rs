@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use as_api::{AppInfo, MediaToolsStatus, ModelInfo, Platform, ScanChoice, ScanDefaults, UiLocale};
-use as_core::AppPaths;
+use as_core::{AppPaths, Msg, msg};
 use as_project::Library;
 use tauri::{AppHandle, State};
 
@@ -113,14 +113,15 @@ pub async fn reveal_path(state: State<'_, AppState>, path: String) -> AppResult<
         let saved = saved.lock().clone();
         if !known(&lib, &app, &loaded, &saved, &p) {
             log::warn!("not revealing {}, which isn't AutoScene's", paths::name(&p));
-            return Err(AppError::new(ErrorCode::Invalid, "AutoScene only shows its own files and folders."));
+            let refused = msg!("file.notOurs", "AutoScene only shows its own files and folders.");
+            return Err(AppError::new(ErrorCode::Invalid, refused));
         }
         if !p.exists() {
             return Err(AppError::new(ErrorCode::NotFound, missing(&app, &p)));
         }
         tauri_plugin_opener::reveal_item_in_dir(&p).map_err(|e| {
             log::warn!("revealing {}: {e}", paths::name(&p));
-            AppError::new(ErrorCode::Io, "That file or folder couldn't be shown.")
+            AppError::new(ErrorCode::Io, msg!("file.cantShow", "That file or folder couldn't be shown."))
         })
     })
     .await
@@ -151,11 +152,11 @@ fn known(lib: &Library, app: &AppPaths, loaded: &[PathBuf], saved: &HashSet<Path
 
 /// Why `path` (one AutoScene knows) can't be shown: it is gone, or it is a
 /// plugin's log, which its first run starts.
-fn missing(app: &AppPaths, path: &Path) -> &'static str {
+fn missing(app: &AppPaths, path: &Path) -> Msg {
     if path.parent() == Some(app.plugin_logs().as_path()) {
-        "It hasn't run yet, so it has no log."
+        msg!("plugin.noLogYet", "It hasn't run yet, so it has no log.")
     } else {
-        "That file or folder isn't there any more."
+        msg!("file.gone", "That file or folder isn't there any more.")
     }
 }
 
@@ -167,7 +168,7 @@ pub fn clipboard_write(app: AppHandle, text: String) -> AppResult<()> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     app.clipboard().write_text(text).map_err(|e| {
         log::warn!("clipboard: {e}");
-        AppError::new(ErrorCode::Internal, "Couldn't copy to the clipboard.")
+        AppError::new(ErrorCode::Internal, msg!("system.clipboardFailed", "Couldn't copy to the clipboard."))
     })
 }
 
@@ -193,7 +194,7 @@ pub fn open_logs_dir() -> AppResult<()> {
     std::fs::create_dir_all(&dir)?;
     tauri_plugin_opener::open_path(dir.display().to_string(), None::<&str>).map_err(|e| {
         log::warn!("opening the logs folder: {e}");
-        AppError::new(ErrorCode::Io, "The logs folder couldn't be opened.")
+        AppError::new(ErrorCode::Io, msg!("system.logsFailed", "The logs folder couldn't be opened."))
     })
 }
 
@@ -206,7 +207,7 @@ pub fn menu_set_keys(app: AppHandle, keys: HashMap<String, String>) -> AppResult
     #[cfg(target_os = "macos")]
     crate::mac_menu::set_keys(&app, &keys).map_err(|e| {
         log::warn!("setting the menu's keys: {e}");
-        AppError::internal("The menu's keys couldn't be changed.")
+        AppError::internal(msg!("system.menuKeysFailed", "The menu's keys couldn't be changed."))
     })?;
     #[cfg(not(target_os = "macos"))]
     let _ = (app, keys);
@@ -278,8 +279,11 @@ mod tests {
     #[test]
     fn a_plugin_that_never_ran_has_no_log_yet() {
         let app = AppPaths::at(std::env::temp_dir().join("autoscene-missing"));
-        assert_eq!(missing(&app, &app.plugin_logs().join("dev.a.hello.log")), "It hasn't run yet, so it has no log.");
+        assert_eq!(
+            missing(&app, &app.plugin_logs().join("dev.a.hello.log")).text,
+            "It hasn't run yet, so it has no log."
+        );
         let gone = app.logs().join("autoscene.log");
-        assert_eq!(missing(&app, &gone), "That file or folder isn't there any more.");
+        assert_eq!(missing(&app, &gone).text, "That file or folder isn't there any more.");
     }
 }

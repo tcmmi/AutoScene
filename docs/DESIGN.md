@@ -317,14 +317,23 @@ The UI's words are in a catalog, not in the code, so AutoScene can speak more th
   `{{variable}}` holds, where it shows). `t()` is typed by these files: an unknown key, a missing or misspelled
   `{{variable}}` doesn't compile.
 - Namespaces follow ownership: `common` (shared words and the `fmt` templates; changed only by phase 0), `shell`,
-  `ui`, `shortcuts`, `settings`, `cast`, `project`, `library`, `media`, `player`, `pack`, `export`, `plugins`. All
-  are registered in `locales/index.ts`; a sweep group fills its own file and never edits that one, nor `common`
-  (a shared word it misses goes into its own namespace).
+  `ui`, `shortcuts`, `settings`, `cast`, `project`, `library`, `media`, `player`, `pack`, `export`, `plugins`, and
+  `backend`, which is generated (below). All are registered in `locales/index.ts`; a sweep group fills its own file
+  and never edits that one, nor `common` (a shared word it misses goes into its own namespace).
 - Other languages are JSON next to it (`locales/ro/<namespace>.json`), loaded when chosen. English starts
   synchronously, so the first paint and every test have it with no provider.
 - Components call `useTranslation(ns)`; code outside React (toasts, palette data, `lib/`) calls `t` from
   `@/lib/i18n` when it shows the words. Numbers, sizes, dates, lists and times go through `fmt` (`@/lib/i18n`):
   English reads as it always did (en-GB dates, "14,200", "1.5 KB"), another language writes them its way.
+- What Rust tells the UI travels as a `Msg`: a key, its values and the English filled in, which logs and plugin
+  pages read. It is written with `msg!("area.item", "English with {{name}}.", name = …)`, or
+  `msg!("area.item", one = "…", other = "…", count = n)` with a number for `n`, key and English side by side. A value
+  past 2^53 goes as text, as numbers are exact only up to there. `cargo xtask i18n` collects
+  them into `locales/en/backend.json`, which nobody edits and CI checks. `AppError::new` takes a `Msg`, so no command
+  fails without one; every `From<…> for AppError` goes through `ToMsg`. Words AutoScene didn't write are
+  `Msg::plain`, the same in every language. The UI says a `Msg` with `say()` (`@/lib/i18n`) and an error with
+  `errorMessage()`, never `.message`, which stays English: a plugin page's code hears that, through
+  `englishMessage()`. Rust keeps a `Msg` as far as the screen; `e.message` is for logs and plugin pages.
 - The language is a setting (`AppSettings.language`). Automatic takes the first language on the system's list that
   AutoScene speaks, English when it speaks none (`app/src-tauri/src/locale.rs`). A language joins `SPOKEN` there and
   `OFFERED` in `lib/i18n.ts` together, when its catalog is complete; Settings shows no choice until there is one.

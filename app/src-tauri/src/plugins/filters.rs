@@ -36,7 +36,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use as_api::{PackFilterState, PackSpec};
-use as_core::{CancelToken, CharacterId, FrameIdx, JobId, MediaId, ProjectId};
+use as_core::{CancelToken, CharacterId, FrameIdx, JobId, MediaId, Msg, ProjectId, msg};
 use as_jobs::{JobCtx, JobError, JobResult, JobRunner};
 use as_plugin::protocol::{CharacterContext, EpisodeContext, FaceBox, ProjectContext, ShotContext, ShotsContext};
 use as_plugin::runtime::{self, RunSpec};
@@ -86,7 +86,8 @@ pub struct Chain {
 impl Chain {
     /// The check of the filter `key` (`<pluginId>/<filterId>`).
     fn of(key: &str, project: ProjectId, character: CharacterId) -> AppResult<Self> {
-        let unknown = || AppError::new(ErrorCode::Invalid, "That isn't a plugin's shot filter.");
+        let unknown =
+            || AppError::new(ErrorCode::Invalid, msg!("plugin.notAFilter", "That isn't a plugin's shot filter."));
         let (plugin, filter) = key.split_once('/').ok_or_else(unknown)?;
         let plugin = PluginId::parse(plugin).map_err(|_| unknown())?;
         Ok(Self { plugin, filter: filter.to_owned(), project, character })
@@ -218,9 +219,13 @@ impl Source {
 /// Why an export of the pack `spec` makes waits: a filter it turns on is
 /// checking its shots. A failed check doesn't hold it up: the shots it
 /// didn't judge are in the pack, as the grid shows them.
-pub fn export_waits(filters: &PluginFilters, spec: &PackSpec) -> Option<String> {
+pub fn export_waits(filters: &PluginFilters, spec: &PackSpec) -> Option<Msg> {
     let checking = |f: &&PluginFilter| f.state == PackFilterState::Checking && spec.plugin_filters.contains(&f.key);
-    filters.0.iter().find(checking).map(|f| format!("The pack waits for “{}” to check its shots.", f.title))
+    filters
+        .0
+        .iter()
+        .find(checking)
+        .map(|f| msg!("pack.waitsForFilter", "The pack waits for “{{title}}” to check its shots.", title = &f.title))
 }
 
 /// What a check reads and writes of a project: the library's projects
@@ -339,7 +344,8 @@ pub fn queue_check(
     let p = ck.host.store.get(&chain.plugin)?;
     let m = runnable(&p, ck.lib.allows_unreviewed_plugins()?)?;
     let Some(f) = m.shot_filters.iter().find(|f| f.id == chain.filter) else {
-        return Err(AppError::new(ErrorCode::NotFound, format!("{} has no such filter.", m.name)));
+        let gone = msg!("plugin.noSuchFilter", "{{name}} has no such filter.", name = &m.name);
+        return Err(AppError::new(ErrorCode::NotFound, gone));
     };
     if ck.host.is_queued(&ck.jobs, &chain.run()) {
         return Ok(true);
@@ -1111,7 +1117,7 @@ mod tests {
         let on = spec();
         let waits = |state| export_waits(&PluginFilters(vec![filter(SPEAKS, state)]), &on);
         assert_eq!(
-            waits(PackFilterState::Checking).as_deref(),
+            waits(PackFilterState::Checking).map(|m| m.text).as_deref(),
             Some("The pack waits for “Speaks” to check its shots.")
         );
         // Failed: the shots it didn't judge are in, as the grid shows them.

@@ -6,7 +6,7 @@ use as_api::{
     AnalysisStage, FrameMap, JobInfo, JobKind, JobState, MediaItem, MediaStatus, ProxyState, Relink, RelinkSummary,
     Segment, StageState,
 };
-use as_core::{MediaId, ProjectId};
+use as_core::{MediaId, Msg, ProjectId, msg};
 use as_jobs::JobRunner;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -182,7 +182,7 @@ pub(crate) async fn stop_jobs(
     state: &AppState,
     of: impl Fn(&JobInfo) -> bool + Clone + Send + 'static,
     busy: impl Fn() -> bool,
-    still: &str,
+    still: Msg,
 ) -> AppResult<()> {
     let until = std::time::Instant::now() + STOP_WAIT;
     loop {
@@ -217,7 +217,7 @@ async fn stop_work_on(state: &AppState, media: &[MediaId]) -> AppResult<Vec<Medi
     let ids = media.to_vec();
     let of = move |j: &JobInfo| j.media_id.is_some_and(|m| ids.contains(&m));
     let analysing = || media.iter().any(|m| state.analysis.lock().running.contains(m));
-    let still = "The work on this episode is still stopping. Try again in a moment.";
+    let still = msg!("episode.stillStopping", "The work on this episode is still stopping. Try again in a moment.");
     stop_jobs(state, of, analysing, still).await?;
     Ok(interrupted)
 }
@@ -332,7 +332,8 @@ pub async fn media_prepare_preview(
     })
     .await?;
     if m.status != MediaStatus::Ready || m.proxy == ProxyState::NotNeeded {
-        return Err(AppError::new(ErrorCode::Invalid, "This file doesn't need a separate preview."));
+        let refused = msg!("episode.noPreviewNeeded", "This file doesn't need a separate preview.");
+        return Err(AppError::new(ErrorCode::Invalid, refused));
     }
     // One cancelled is only stopping: a new build replaces it.
     if !under_way(&state.jobs, JobKind::Proxy, media_id) {
@@ -413,7 +414,8 @@ pub async fn media_frame_map(
     // database names anywhere else isn't opened to the webview.
     if map.is_proxy && !paths::is_within(Path::new(&map.src), &project.proxies_dir()) {
         log::warn!("refused a preview outside its project's previews folder: {}", paths::name(Path::new(&map.src)));
-        return Err(AppError::new(ErrorCode::NotReady, "This episode's preview can't be shown. Prepare it again."));
+        let refused = msg!("episode.previewRefused", "This episode's preview can't be shown. Prepare it again.");
+        return Err(AppError::new(ErrorCode::NotReady, refused));
     }
     allow_asset(&app, Path::new(&map.src));
     Ok(map)
@@ -484,7 +486,8 @@ pub async fn media_analyze(
         let p = lib.project(project_id)?;
         let m = p.media(media_id)?;
         if m.status != MediaStatus::Ready {
-            return Err(AppError::new(ErrorCode::NotReady, format!("{} isn't indexed yet.", m.file_name)));
+            let waits = msg!("episode.notIndexed", "{{name}} isn't indexed yet.", name = &m.file_name);
+            return Err(AppError::new(ErrorCode::NotReady, waits));
         }
         Ok((p, m))
     })

@@ -38,6 +38,8 @@ use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;
 use tauri_specta::Event;
 
+use as_core::msg;
+
 use crate::error::{AppError, AppResult, ErrorCode};
 
 /// Simulated downloads pretend to be this big, over this long.
@@ -127,8 +129,9 @@ fn read_override(path: &std::path::Path, allowed: bool) -> LocalConfig {
     }
 }
 
+/// What the updater said, in its words; the catalog may frame them.
 fn update_err(e: impl std::fmt::Display) -> AppError {
-    AppError::new(ErrorCode::Update, e.to_string())
+    AppError::new(ErrorCode::Update, msg!("update.failed", "{{why}}", why = e.to_string()))
 }
 
 fn updater_for(app: &AppHandle, cfg: &LocalConfig) -> AppResult<tauri_plugin_updater::Updater> {
@@ -201,11 +204,10 @@ pub async fn update_install(app: AppHandle) -> AppResult<()> {
     if cfg.simulate.is_some() {
         return simulate_install(&app).await;
     }
-    let update = updater_for(&app, &cfg)?
-        .check()
-        .await
-        .map_err(update_err)?
-        .ok_or_else(|| update_err("That update is no longer available."))?;
+    let update =
+        updater_for(&app, &cfg)?.check().await.map_err(update_err)?.ok_or_else(|| {
+            AppError::new(ErrorCode::Update, msg!("update.gone", "That update is no longer available."))
+        })?;
 
     let progress_app = app.clone();
     let (on_chunk, on_finish) = download_progress(Instant::now, move |downloaded, total| {

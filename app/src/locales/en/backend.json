@@ -1,0 +1,72 @@
+{
+  "accel": {
+    "noticesFailed": "NVIDIA's notices couldn't be opened.",
+    "removeFailed": "NVIDIA's files couldn't be removed."
+  },
+  "episode": {
+    "noPreviewNeeded": "This file doesn't need a separate preview.",
+    "notIndexed": "{{name}} isn't indexed yet.",
+    "previewRefused": "This episode's preview can't be shown. Prepare it again.",
+    "stillStopping": "The work on this episode is still stopping. Try again in a moment."
+  },
+  "export": {
+    "listExtension": "Save it as a .{{ext}} file.",
+    "unknownPreset": "Unknown export preset."
+  },
+  "file": {
+    "badLocation": "AutoScene can't use that location. Choose a file or folder on this computer or on a network share.",
+    "badName": "That name can't be used for a file.",
+    "cantShow": "That file or folder couldn't be shown.",
+    "diskFull": "The disk is full.",
+    "generic": "A file couldn't be read or written. Details are in the log.",
+    "gone": "That file or folder isn't there any more.",
+    "inUse": "The file is open in another program. Close it there and try again.",
+    "missing": "A file or folder AutoScene needs isn't there any more.",
+    "notOurs": "AutoScene only shows its own files and folders.",
+    "permission": "AutoScene doesn't have permission to use that file or folder.",
+    "readOnly": "That drive is read-only.",
+    "tooBig": "The file is too big for that disk."
+  },
+  "internal": "Something went wrong. Details are in the log.",
+  "media": {
+    "toolsMissing": "AutoScene's video tools are missing. Reinstall AutoScene.",
+    "toolsTooOld": "AutoScene's video tools are out of date. Reinstall AutoScene."
+  },
+  "pack": {
+    "waitsForFilter": "The pack waits for “{{title}}” to check its shots."
+  },
+  "plugin": {
+    "beingUpdated": "{{name}} is being updated.",
+    "eventRunsItself": "An event runs by itself, once it is turned on.",
+    "filterRunsInBuilder": "A shot filter checks shots from the scenepack builder.",
+    "hostFailed": "Plugins couldn't start. Details are in the log.",
+    "linkFailed": "AutoScene couldn't open the link.",
+    "noLogYet": "It hasn't run yet, so it has no log.",
+    "noSource": "Its plugin.json names no source.",
+    "noSuchFilter": "{{name}} has no such filter.",
+    "noSuchPackAction": "{{name}} has no such pack action.",
+    "notAFilter": "That isn't a plugin's shot filter.",
+    "notAPackAction": "That isn't a plugin's pack action.",
+    "notInstalled": "It wasn't installed.",
+    "packActionRunsInBuilder": "A pack action saves a scenepack from its builder.",
+    "pageNeedsProject": "Open a project to see this page.",
+    "pageNotProjects": "This page isn't a project's.",
+    "reviewClosed": "This review was closed. Open the plugin again.",
+    "reviewExpired": "This plugin waited too long to be installed. Open it again.",
+    "saveNameTooLong": "That file name is too long. Choose a shorter one.",
+    "saveRunnable": "A plugin can't save a program, a script or a shortcut."
+  },
+  "project": {
+    "stillStopping": "The work on this project is still stopping. Try again in a moment."
+  },
+  "system": {
+    "clipboardFailed": "Couldn't copy to the clipboard.",
+    "gpuCheckFailed": "Couldn't check the graphics cards.",
+    "logsFailed": "The logs folder couldn't be opened.",
+    "menuKeysFailed": "The menu's keys couldn't be changed."
+  },
+  "update": {
+    "failed": "{{why}}",
+    "gone": "That update is no longer available."
+  }
+}

@@ -14,9 +14,12 @@
 //! - `pin-accel <version> [--work DIR]` — pin the NVIDIA files "NVIDIA
 //!   acceleration" downloads, into `crates/as-infer/accel.toml`, refusing a
 //!   library NVIDIA didn't sign (see `accel_pin.rs`; Windows only).
+//! - `i18n` — write `app/src/locales/en/backend.json` from every `msg!` (see
+//!   `i18n.rs`).
 
 mod accel_pin;
 mod fixtures;
+mod i18n;
 mod sidecars;
 mod uv;
 mod wasm_guests;
@@ -69,6 +72,7 @@ fn main() -> Result<()> {
                 flag(&rest, "--out").map(PathBuf::from).unwrap_or_else(|| as_testkit::fixtures_dir().join("wasm"));
             wasm_guests::build(&out).context("building the test plugins")
         }
+        "i18n" => i18n::generate(&workspace_root()).context("writing the backend catalog"),
         "" | "help" | "--help" => {
             println!("cargo xtask fixtures [--out DIR] [--ffmpeg PATH]");
             println!("cargo xtask fetch-sidecars [--root DIR]");
@@ -76,6 +80,7 @@ fn main() -> Result<()> {
             println!("cargo xtask pin-uv <version>");
             println!("cargo xtask wasm-guests [--out DIR]");
             println!("cargo xtask pin-accel <version> [--work DIR]");
+            println!("cargo xtask i18n");
             Ok(())
         }
         other => bail!("unknown task '{other}' (try `cargo xtask help`)"),

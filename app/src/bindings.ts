@@ -692,13 +692,15 @@ export type AniListSuggestions = {
 };
 
 /**
- *  Error returned by every command. Serialised as `{ code, message }` and
- *  thrown on the TypeScript side, so UI code can branch on `code` and show
- *  `message` verbatim.
+ *  Error returned by every command. Serialised as `{ code, message, msg }`
+ *  and thrown on the TypeScript side, so UI code can branch on `code` and say
+ *  `msg` in its language. `message` is its English: what the log gets, and
+ *  what a plugin page gets from the bridge.
  */
 export type AppError = {
 	code: ErrorCode,
 	message: string,
+	msg: Msg,
 };
 
 /**
@@ -1611,7 +1613,7 @@ export type MediaToolsStatus = {
 	ready: boolean,
 	version: string | null,
 	path: string | null,
-	error: string | null,
+	error: Msg | null,
 };
 
 /**  A native menu item was chosen (macOS). Payload is the item id, e.g. `view:cast`. */
@@ -1648,6 +1650,20 @@ export type ModelInfo = {
 	/**  Downloaded and verified. */
 	installed: boolean,
 };
+
+/**  Words for the person, in any language the UI speaks. */
+export type Msg = {
+	/**  Key in the UI's `backend` catalog; empty for words AutoScene didn't write (a plugin's). */
+	key: string,
+	args?: { [key in string]: MsgArg },
+	/**  The English, filled in: logs, plugins, and a key the UI doesn't know. */
+	text: string,
+};
+
+/**  A value of a [`Msg`]. A nested one is said first: "Can't write to {{path}}: {{why}}". */
+export type MsgArg = 
+/**  Exact up to 2^53, as in the UI's numbers: pass a larger one as text. */
+number | null | string | Msg;
 
 export type NewProject = {
 	title: string,

@@ -4,6 +4,8 @@
 //
 // Every namespace is registered here once, empty until its sweep group fills
 // `en/<ns>.ts`, so the groups never edit this file (docs/DESIGN.md, Copy).
+// `backend` is what Rust says: generated from its `msg!`s (`cargo xtask i18n`).
+import backend from "./en/backend.json"
 import cast from "./en/cast"
 import common from "./en/common"
 import exportNs from "./en/export"
@@ -32,6 +34,7 @@ export const en = {
   pack,
   export: exportNs,
   plugins,
+  backend,
 } as const
 
 export type Namespace = keyof typeof en

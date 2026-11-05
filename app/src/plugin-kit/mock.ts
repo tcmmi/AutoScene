@@ -6,7 +6,7 @@
  * has (files, the network, a service, runs) answers through `answer`, or
  * says the mock doesn't have it.
  */
-import { callFailure, type PageInit } from "./bridge-types"
+import { callFailure, type PageInit, type PageLocale } from "./bridge-types"
 import type { CallCode, HostMethod, PageExport, PageProject, PageScope, Permission, SettingValue } from "./protocol"
 import type { HostLink, Params, Result } from "./sdk"
 
@@ -27,6 +27,8 @@ export interface MockHost {
   exports?: PageExport[]
   /** Its plugin runs a service. */
   service?: boolean
+  /** The language AutoScene speaks (`"en"` when left out). The mock never changes it, so a page's `onLocaleChange` never fires here: AutoScene reloads an open page on a switch, and the page reads the new language when it connects. */
+  locale?: PageLocale
   /** Answers for any method, in place of the mock's own. */
   answer?: { [M in HostMethod]?: (params: Params<M>) => Result<M> | Promise<Result<M>> }
 }
@@ -174,7 +176,7 @@ export function createMock(host: MockHost, win: Window): HostLink {
     hosts,
     service: host.service ?? false,
     protocol: 2,
-    app: { version: "mock", platform: "windows" },
+    app: { version: "mock", platform: "windows", locale: host.locale ?? "en" },
   }
   return {
     init,

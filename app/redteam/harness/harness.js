@@ -202,7 +202,7 @@ function bind(host) {
       hosts: [],
       service: false,
       protocol: 2,
-      app: { version: setup.version, platform: setup.platform },
+      app: { version: setup.version, platform: setup.platform, locale: "en" },
     },
   }
   const send = () => {

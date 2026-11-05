@@ -21,6 +21,9 @@ export type Init = { type: "autoscene:init"; v: 1; init: PageInit }
 /** How a page should look. Only AutoScene's dark theme for now. */
 export type PageTheme = { v: 1; scheme: "dark" }
 
+/** The language AutoScene speaks, as a page is told it: the languages it has, whatever the person chose or the system said. */
+export type PageLocale = "en" | "ro"
+
 /** What a page is told when it connects. */
 export type PageInit = {
   plugin: { id: string; name: string; version: string }
@@ -38,7 +41,7 @@ export type PageInit = {
   service: boolean
   /** The protocol its plugin speaks (`engines.protocol`). */
   protocol: number
-  app: { version: string; platform: "windows" | "macos" | "linux" }
+  app: { version: string; platform: "windows" | "macos" | "linux"; locale: PageLocale }
 }
 
 /** A key the page didn't take, for AutoScene's own shortcuts. */
@@ -80,6 +83,8 @@ export type HostToFrame =
   | { t: "closed"; reason: string }
   | { t: "ping"; n: number }
   | { t: "theme"; theme: PageTheme }
+  /** The person changed AutoScene's language. */
+  | { t: "locale"; locale: PageLocale }
 
 /** What either side holds to. The host checks again, and Rust after it. */
 export const LIMITS = {

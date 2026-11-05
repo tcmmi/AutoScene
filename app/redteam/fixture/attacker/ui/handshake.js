@@ -17,7 +17,7 @@
       hosts: [],
       service: false,
       protocol: 2,
-      app: { version: "0.0.0", platform: "windows" },
+      app: { version: "0.0.0", platform: "windows", locale: "en" },
     },
   })
   const stolen = []

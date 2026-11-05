@@ -13,6 +13,7 @@ import {
   createHost,
   inputElsewhere,
   pageCaller,
+  pageLocale,
   pageMessage,
   replayKey,
   showToast,
@@ -52,7 +53,7 @@ const INIT: PageInit = {
   hosts: [],
   service: false,
   protocol: 2,
-  app: { version: "1.0.3-BETA", platform: "windows" },
+  app: { version: "1.0.3-BETA", platform: "windows", locale: "en" },
 }
 const READY = { type: "autoscene:ready", v: 1 }
 
@@ -177,6 +178,43 @@ describe("the bridge to a plugin page", () => {
     c.message({ source: frame, data: READY })
     const later = hearing(channels[1].port2)
     await vi.waitFor(() => expect(later).toEqual([{ t: "service", state: "ready" }]))
+    c.close()
+  })
+
+  it("the page is told the language, and a switch reaches the page that is open and no other", async () => {
+    expect(["en", "ro", "ro-RO", "en-XA", "de", undefined].map(pageLocale)).toEqual(["en", "ro", "ro", "en", "en", "en"])
+
+    // The language is read when the page says ready, not when the connector was made.
+    let language: "en" | "ro" = "en"
+    const frame = frameWindow()
+    const c = createConnector({
+      frame: () => frame,
+      init: () => ({ ...INIT, app: { ...INIT.app, locale: language } }),
+      deps: deps(),
+      limits: QUIET,
+      channel,
+    })
+    // A switch before any page is there tells nobody; the page that comes finds it in its init.
+    language = "ro"
+    c.send({ t: "locale", locale: "ro" })
+    c.message({ source: frame, data: READY })
+    expect(frame.postMessage.mock.calls[0][0].init.app.locale).toBe("ro")
+    const first = hearing(channels[0].port2)
+    await after(20)
+    expect(first).toEqual([])
+
+    c.send({ t: "locale", locale: "en" })
+    await vi.waitFor(() => expect(first).toEqual([{ t: "locale", locale: "en" }]))
+
+    // The frame loads again: its old document is cut off and hears nothing more of it, the new one does.
+    language = "en"
+    c.load()
+    c.message({ source: frame, data: READY })
+    expect(frame.postMessage.mock.calls[1][0].init.app.locale).toBe("en")
+    const later = hearing(channels[1].port2)
+    c.send({ t: "locale", locale: "ro" })
+    await vi.waitFor(() => expect(later).toEqual([{ t: "locale", locale: "ro" }]))
+    expect(first).toEqual([{ t: "locale", locale: "en" }])
     c.close()
   })
 

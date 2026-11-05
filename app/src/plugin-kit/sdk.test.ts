@@ -17,7 +17,7 @@ const INIT: PageInit = {
   hosts: [],
   service: false,
   protocol: 2,
-  app: { version: "1.1.0", platform: "windows" },
+  app: { version: "1.1.0", platform: "windows", locale: "en" },
 }
 
 let cleanups: (() => void)[] = []
@@ -216,6 +216,74 @@ describe("the SDK", () => {
     await vi.waitFor(() => expect(said).toHaveLength(2))
     expect(said[1]).toEqual({ state: "stopped", message: "Example stopped." })
     stop()
+  })
+
+  it("the page knows AutoScene's language from init, and hears each change once", async () => {
+    const { page, host } = await connected()
+    expect(page.app).toEqual({ version: "1.1.0", platform: "windows", locale: "en" })
+    const heardBy = vi.fn<(locale: string) => void>()
+    // What `page.app.locale` says while the callback runs: the new language already, not the one before.
+    const readInside: string[] = []
+    page.onLocaleChange(() => readInside.push(page.app.locale))
+    const stop = page.onLocaleChange(heardBy)
+    const say = async (locale: string) => {
+      host.postMessage({ t: "locale", locale })
+      await new Promise((r) => setTimeout(r, 10))
+    }
+
+    await say("ro")
+    expect(heardBy.mock.calls).toEqual([["ro"]])
+    expect(readInside).toEqual(["ro"])
+    expect(page.app.locale).toBe("ro")
+    // The language it has already says nothing new; a message that isn't a language says nothing at all.
+    await say("ro")
+    await say("")
+    await say(7 as unknown as string)
+    expect(heardBy).toHaveBeenCalledTimes(1)
+    expect(page.app.locale).toBe("ro")
+
+    await say("en")
+    expect(heardBy.mock.calls).toEqual([["ro"], ["en"]])
+    expect(page.app.locale).toBe("en")
+
+    // Stopped, it hears no more; one that listens late hears no change that came before.
+    stop()
+    const late = vi.fn()
+    page.onLocaleChange(late)
+    await say("ro")
+    expect(heardBy).toHaveBeenCalledTimes(2)
+    expect(late.mock.calls).toEqual([["ro"]])
+    expect(page.app.locale).toBe("ro")
+  })
+
+  it("a page that connects after the change starts in the new language, and a closed one hears nothing", async () => {
+    const frame = framed()
+    const page = connect({ win: frame.win, timeoutMs: 1000 })
+    const { port1: host, port2 } = new MessageChannel()
+    cleanups.push(() => host.close())
+    // Told "ro" in its init, as the host reads the language when the page says ready.
+    frame.post({ type: "autoscene:init", v: 1, init: { ...INIT, app: { ...INIT.app, locale: "ro" } } }, [port2])
+    const connectedPage = await page
+    expect(connectedPage.app.locale).toBe("ro")
+    const heardBy = vi.fn()
+    connectedPage.onLocaleChange(heardBy)
+    host.postMessage({ t: "closed", reason: "The plugin was turned off." })
+    await new Promise((r) => setTimeout(r, 10))
+    host.postMessage({ t: "locale", locale: "en" })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(heardBy).not.toHaveBeenCalled()
+    expect(connectedPage.app.locale).toBe("ro")
+  })
+
+  it("the mock tells the language it was given, English by default", async () => {
+    // Windows of their own: a page is one per window, and the mock's tests below use the real one.
+    const own = () => {
+      const win = { document } as unknown as Window
+      Object.defineProperty(win, "parent", { value: win })
+      return win
+    }
+    expect((await connect({ mock: { locale: "ro" }, win: own() })).app.locale).toBe("ro")
+    expect((await connect({ mock: {}, win: own() })).app.locale).toBe("en")
   })
 
   it("the mock answers like the host when there is no parent", async () => {

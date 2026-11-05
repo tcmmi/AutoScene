@@ -26,6 +26,8 @@ export type PageTheme = {
     v: 1;
     scheme: "dark";
 };
+/** The language AutoScene speaks, as a page is told it: the languages it has, whatever the person chose or the system said. */
+export type PageLocale = "en" | "ro";
 /** What a page is told when it connects. */
 export type PageInit = {
     plugin: {
@@ -54,6 +56,7 @@ export type PageInit = {
     app: {
         version: string;
         platform: "windows" | "macos" | "linux";
+        locale: PageLocale;
     };
 };
 /** A key the page didn't take, for AutoScene's own shortcuts. */
@@ -129,6 +132,11 @@ export type HostToFrame = {
 } | {
     t: "theme";
     theme: PageTheme;
+}
+/** The person changed AutoScene's language. */
+ | {
+    t: "locale";
+    locale: PageLocale;
 };
 /** What either side holds to. The host checks again, and Rust after it. */
 export declare const LIMITS: {

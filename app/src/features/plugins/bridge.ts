@@ -30,6 +30,7 @@ import {
   type HostToFrame,
   type Init,
   type PageInit,
+  type PageLocale,
 } from "@/plugin-kit/bridge-types"
 import frame from "@/plugin-kit/frame.json"
 import { type CallCode, type HostMethod, MAX_PARAMS } from "@/plugin-kit/protocol"
@@ -310,6 +311,14 @@ export function createConnector(o: {
       readys = 0
     },
   }
+}
+
+/**
+ * The language a page is told for the UI's: Romanian, else English. The
+ * development pseudo-locale (`en-XA`) is English text, so it tells English.
+ */
+export function pageLocale(language: string | undefined): PageLocale {
+  return language === "ro" || language?.startsWith("ro-") ? "ro" : "en"
 }
 
 /** What Rust told an open page, as the page hears it on its port. */

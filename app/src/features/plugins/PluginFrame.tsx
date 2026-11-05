@@ -6,12 +6,12 @@ import { AppWindow, Warning } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { ContextArea, type MenuContent } from "@/components/ui/context-area"
 import { EmptyState } from "@/components/ui/empty-state"
-import { say } from "@/lib/i18n"
+import { i18n, say } from "@/lib/i18n"
 import { commands, errorMessage, events } from "@/lib/ipc"
 import { isMac, isTauri, isWindows } from "@/lib/platform"
 import { useAppInfo } from "@/lib/queries"
-import type { PageInit } from "@/plugin-kit/bridge-types"
-import { FRAME, createConnector, inputElsewhere, pageCaller, pageMessage, replayKey, replayMenu, showToast } from "./bridge"
+import type { PageInit, PageLocale } from "@/plugin-kit/bridge-types"
+import { FRAME, createConnector, inputElsewhere, pageCaller, pageLocale, pageMessage, replayKey, replayMenu, showToast } from "./bridge"
 
 /** What covers the frame: the page hangs, it was closed, it sent too much, or it couldn't open. */
 type Cover = { kind: "quiet" } | { kind: "closed"; reason: string } | { kind: "overflow" } | { kind: "failed"; message: string }
@@ -104,7 +104,7 @@ export function PluginFrame({
     if (!mount) return
     const c = createConnector({
       frame: () => ref.current?.contentWindow,
-      init: () => pageInit(mount, known.current, version.current),
+      init: () => pageInit(mount, known.current, version.current, pageLocale(i18n.language)),
       deps: {
         call: pageCaller(mount.session),
         effect: (e) => {
@@ -138,12 +138,28 @@ export function PluginFrame({
       if (p.event.type === "closed") setCover({ kind: "closed", reason: say(p.event.reason) })
     }
     for (const p of early.current.splice(0)) tell.current(p)
+    // The language it was told, or last heard: a switch that changes nothing for a page (English to the
+    // pseudo-locale) tells it nothing. A page that connects later reads the language from its `init`.
+    let spoken = pageLocale(i18n.language)
+    // A switch re-keys the routed tree (LanguageRoot), so this frame is about to go and its replacement reads the
+    // language from its `init`. The send waits for that: a page that is going must not be told, and removing its
+    // iframe does not stop a message already posted to its port (a sandboxed frame answered it in Edge 156).
+    let alive = true
+    const onLanguage = () => {
+      const now = pageLocale(i18n.language)
+      if (now === spoken) return
+      spoken = now
+      window.setTimeout(() => alive && c.send({ t: "locale", locale: now }), 0)
+    }
+    i18n.on("languageChanged", onLanguage)
     const beats =
       isTauri && !isWindows
         ? window.setInterval(() => void commands.pluginPageHeartbeat(mount.session).catch(() => undefined), 2000)
         : undefined
     return () => {
       window.removeEventListener("message", onMessage)
+      alive = false
+      i18n.off("languageChanged", onLanguage)
       tell.current = null
       window.clearInterval(beats)
       c.close()
@@ -202,7 +218,7 @@ function mayTakeFocus(at: Element | null, frame: HTMLIFrameElement): boolean {
 }
 
 /** What a page is told as it connects. */
-function pageInit(m: PageMount, path: string, version: string): PageInit {
+function pageInit(m: PageMount, path: string, version: string, locale: PageLocale): PageInit {
   return {
     plugin: { id: m.plugin.id, name: m.plugin.name, version: m.plugin.version },
     page: { id: m.page.id, title: m.page.title, scope: m.page.scope },
@@ -213,7 +229,7 @@ function pageInit(m: PageMount, path: string, version: string): PageInit {
     hosts: m.hosts,
     service: m.service,
     protocol: m.protocol,
-    app: { version, platform: isMac ? "macos" : isWindows ? "windows" : "linux" },
+    app: { version, platform: isMac ? "macos" : isWindows ? "windows" : "linux", locale },
   }
 }
 

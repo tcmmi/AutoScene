@@ -5,6 +5,7 @@ import type { PageMount, PluginPageEvent } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
 import { ContextMenuItem } from "@/components/ui/context-menu"
 import { events } from "@/lib/ipc"
+import { i18n, LanguageRoot } from "@/lib/i18n"
 import { inLanguage, plain } from "@/test/i18n"
 import { replayMenu } from "./bridge"
 import { PluginFrame } from "./PluginFrame"
@@ -165,6 +166,93 @@ describe("a plugin page's frame", () => {
     port!.start()
     await waitFor(() => expect(heard).toEqual([{ t: "service", state: "ready" }]))
     port!.close()
+  })
+
+  it("the page is told AutoScene's language as it connects, and each switch after", async () => {
+    await inLanguage("ro")
+    pluginPageOpen.mockResolvedValue(mount())
+    render(frame(""))
+    const iframe = (await screen.findByLabelText("Main")) as HTMLIFrameElement
+    let init: { init: { app: { locale: string } } } | null = null
+    let port: MessagePort | null = null
+    vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation((m: unknown, _o: unknown, transfer?: unknown) => {
+      init = m as typeof init
+      port = (transfer as MessagePort[])[0]
+    })
+    // Its connector listens once the frame's effects have run: the page says ready until it is heard (once counts).
+    await waitFor(() => {
+      const ready = new MessageEvent("message", { data: { type: "autoscene:ready", v: 1 } })
+      Object.defineProperty(ready, "source", { value: iframe.contentWindow })
+      window.dispatchEvent(ready)
+      expect(init).not.toBeNull()
+    })
+    expect(init!.init.app.locale).toBe("ro")
+    const heard: unknown[] = []
+    port!.addEventListener("message", (e: MessageEvent<{ t: string }>) => void (e.data.t !== "ping" && heard.push(e.data)))
+    port!.start()
+
+    await act(() => inLanguage("en"))
+    await waitFor(() => expect(heard).toEqual([{ t: "locale", locale: "en" }]))
+    // Into the pseudo-locale: still English for a page, so nothing new to tell.
+    await act(() => inLanguage("en-XA"))
+    await act(() => inLanguage("ro"))
+    await waitFor(() => expect(heard).toEqual([{ t: "locale", locale: "en" }, { t: "locale", locale: "ro" }]))
+    port!.close()
+  })
+
+  it("a frame that a switch replaces is not told, and the new one starts in the new language", async () => {
+    pluginPageOpen.mockResolvedValue(mount())
+    render(<LanguageRoot>{frame("")}</LanguageRoot>)
+    // The page's side of a connect: its init and its port, as the connector answers `ready`.
+    const connect = async (iframe: HTMLIFrameElement) => {
+      let init: { init: { app: { locale: string } } } | null = null
+      let port: MessagePort | null = null
+      vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation((m: unknown, _o: unknown, transfer?: unknown) => {
+        init = m as typeof init
+        port = (transfer as MessagePort[])[0]
+      })
+      await waitFor(() => {
+        const ready = new MessageEvent("message", { data: { type: "autoscene:ready", v: 1 } })
+        Object.defineProperty(ready, "source", { value: iframe.contentWindow })
+        window.dispatchEvent(ready)
+        expect(init).not.toBeNull()
+      })
+      const heard: unknown[] = []
+      port!.addEventListener("message", (e: MessageEvent<{ t: string }>) => void (e.data.t !== "ping" && heard.push(e.data)))
+      port!.start()
+      return { init: init!, port: port!, heard }
+    }
+    const old = await connect((await screen.findByLabelText("Main")) as HTMLIFrameElement)
+    expect(old.init.init.app.locale).toBe("en")
+
+    await act(() => inLanguage("ro"))
+    // The routed tree is keyed by the language: a new frame, a new session.
+    await waitFor(() => expect(pluginPageOpen).toHaveBeenCalledTimes(2))
+    let fresh!: HTMLIFrameElement
+    await waitFor(() => {
+      fresh = screen.getByLabelText("Main") as HTMLIFrameElement
+      expect(fresh.isConnected).toBe(true)
+    })
+    const next = await connect(fresh)
+    expect(next.init.init.app.locale).toBe("ro")
+    // Neither frame hears a switch that was theirs to start over for.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(old.heard).toEqual([])
+    expect(next.heard).toEqual([])
+    old.port.close()
+    next.port.close()
+  })
+
+  it("a frame that is gone stops listening for the language", async () => {
+    const listeners = () => (i18n as unknown as { observers: Record<string, Map<unknown, number>> }).observers.languageChanged?.size ?? 0
+    const before = listeners()
+    pluginPageOpen.mockResolvedValue(mount())
+    const { unmount } = render(frame(""))
+    await screen.findByLabelText("Main")
+    // The frame's effects have run once its connector exists: its listener is one more.
+    await waitFor(() => expect(listeners()).toBeGreaterThan(before))
+    unmount()
+    expect(listeners()).toBe(before)
   })
 
   it("a page that was closed says why in the UI's language", async () => {

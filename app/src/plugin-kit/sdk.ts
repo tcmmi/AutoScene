@@ -28,6 +28,7 @@ import {
   type HostToFrame,
   type Init,
   type PageInit,
+  type PageLocale,
   type Ready,
   type ServiceState,
 } from "./bridge-types"
@@ -62,7 +63,7 @@ import type {
 
 export type * from "./protocol"
 export type { MockHost } from "./mock"
-export type { CallFailure, PageInit, ServiceState, ServiceStatus } from "./bridge-types"
+export type { CallFailure, PageInit, PageLocale, ServiceState, ServiceStatus } from "./bridge-types"
 
 /** The params of a method that takes none. */
 type Empty = Record<string, never>
@@ -129,6 +130,13 @@ export interface Page {
   readonly path: string
   /** What its calls may use. */
   readonly permissions: Permission[]
+  /**
+   * AutoScene as the page found it: its version, the platform, and the language it speaks now
+   * (`"en"` or `"ro"`). A page that wants to match AutoScene's language reads it; nothing in the page
+   * changes by itself. AutoScene reloads an open page when the person switches language, and the
+   * next one reads the new language here.
+   */
+  readonly app: { readonly version: string; readonly platform: "windows" | "macos" | "linux"; readonly locale: PageLocale }
   /** Any host method, as it is: the helpers below are made of it. */
   call<M extends HostMethod>(method: M, params: Params<M>): Promise<Result<M>>
   project: { get(): Promise<PageProject> }
@@ -161,6 +169,12 @@ export interface Page {
     openExternal(url: string): Promise<boolean>
   }
   onRoute(cb: (path: string) => void): () => void
+  /**
+   * A host told the open page that AutoScene's language changed: each change once, never the language it
+   * has now, and `app.locale` is the new one when `cb` runs. AutoScene itself reloads the page on a switch
+   * instead, so this fires only under a host that keeps pages open.
+   */
+  onLocaleChange(cb: (locale: PageLocale) => void): () => void
   onClose(cb: (reason: string) => void): () => void
 }
 
@@ -358,10 +372,18 @@ function pageOver(link: HostLink, win: Window): Page {
   const routes = new Set<(path: string) => void>()
   const closes = new Set<(reason: string) => void>()
   const settings = new Set<() => void>()
+  const locales = new Set<(locale: PageLocale) => void>()
+  let locale = init.app.locale
   const states = new Set<(s: ServiceState) => void>()
   // The last state the host told: a page that listens late hears it too.
   let service: ServiceState | null = null
   const events = new Map<string, Set<(data: unknown) => void>>()
+  // Once per change: what isn't a language, or is the one the page has, says nothing new.
+  const hear = (now: unknown) => {
+    if (typeof now !== "string" || now === "" || now === locale) return
+    locale = now as PageLocale
+    locales.forEach((cb) => cb(locale))
+  }
   const theme = (scheme: string) => {
     win.document.documentElement.dataset.scheme = scheme
   }
@@ -384,6 +406,8 @@ function pageOver(link: HostLink, win: Window): Page {
         return closes.forEach((cb) => cb(m.reason))
       case "theme":
         return theme(m.theme.scheme)
+      case "locale":
+        return hear(m.locale)
     }
   })
   const call = <M extends HostMethod>(method: M, params: Params<M>) => link.call(method, params) as Promise<Result<M>>
@@ -395,6 +419,13 @@ function pageOver(link: HostLink, win: Window): Page {
       return path
     },
     permissions: init.permissions,
+    app: {
+      version: init.app.version,
+      platform: init.app.platform,
+      get locale() {
+        return locale
+      },
+    },
     call,
     project: { get: () => call("project.get", {}) },
     exports: {
@@ -445,6 +476,7 @@ function pageOver(link: HostLink, win: Window): Page {
       openExternal: async (url) => (await call("ui.openExternal", { url })).opened,
     },
     onRoute: (cb) => listen(routes, cb),
+    onLocaleChange: (cb) => listen(locales, cb),
     onClose: (cb) => listen(closes, cb),
   }
 }

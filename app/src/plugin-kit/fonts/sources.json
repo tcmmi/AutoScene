@@ -1,0 +1,17 @@
+{
+  "tools": {
+    "fonttools": "4.64.0",
+    "brotli": "1.2.1"
+  },
+  "fontsource": {
+    "@fontsource-variable/geist-mono": "5.3.0",
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource/instrument-serif": "5.3.0"
+  },
+  "sha256": {
+    "inter-ro-opsz-normal.woff2": "81cd07553dff6d65bea7cd9ff7bf8fa61c7a547da5a5d5369295a0a9def34225",
+    "instrument-serif-ro-400-normal.woff2": "62bebbd01fd4c5dbda7149176588a18a6eaeed9c1f49a010fbe04c89c6dca345",
+    "instrument-serif-ro-400-italic.woff2": "043e3d7e21a74122ca3be4c477e1f0165e07ccbd9f155c147f023238ad15e5cd",
+    "geist-mono-ro-wght-normal.woff2": "d2a55f9382349bc412eec56f78817a5bf8a255d17cf50452be590c4bdfbe3c91"
+  }
+}

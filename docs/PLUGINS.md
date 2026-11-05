@@ -1645,6 +1645,7 @@ The page it gives:
 | `projectId` | The project it is open in; `null` for a page of its own. |
 | `path`, `onRoute(cb)` | The path inside the page, and each change Back or Forward makes. |
 | `permissions` | What its calls may use: what the person agreed to and its `plugin.json` still asks for. |
+| `app`, `onLocaleChange(cb)` | AutoScene's `version`, the `platform` (`windows`, `macos` or `linux`) and `locale`: the language it speaks, `"en"` or `"ro"`. `onLocaleChange` calls `cb(locale)` when a host tells an open page that it changed, once per change; AutoScene reloads the page on a switch instead. See [Language](#language). |
 | `call(method, params)` | Any host method, as it is. The helpers below are made of it. |
 | `project.get()`, `exports.list()`, `exports.get(exportId)` | The project and its exports. |
 | `files.resolve(ref)`, `files.save(f)`, `files.open(f?)` | `save` gives whether it saved, `open` the file or `null`. |
@@ -1674,7 +1675,8 @@ so the editor checks the script against the SDK, in plain JavaScript.
 **`theme.css`** holds AutoScene's dark theme (`color-scheme: dark`; a page
 gets no light one), its colour tokens as CSS variables (`--bg-canvas`,
 `--bg-panel`, `--fg-1` to `--fg-3`, `--accent`, `--danger`, `--ok`, …), its
-fonts (inlined: a page loads no font from anywhere else), and these
+fonts (inlined: a page loads no font from anywhere else; Latin, and the
+Romanian letters ă, ș and ț), and these
 classes:
 
 | Class | What |
@@ -1694,6 +1696,36 @@ A `<select>`, a checkbox or a range in a page is the browser's own.
 Under reduced motion, AutoScene's theme plays every animation once and at
 once, so a loop stands still. `.as-skeleton` fades slowly instead. Give a
 looping indicator of your own a still look, such as a "Working…" label.
+
+### Language
+
+`page.app.locale` is the language AutoScene speaks now: `"en"` or
+`"ro"` (Romanian), whatever the person chose in Settings or the system
+said. It is there as soon as `connect()` resolves. AutoScene reloads its
+screens when the person switches language, an open page with them, so the
+next time the page opens it reads the new language and starts over; a page's
+state in memory does not survive a switch. `page.onLocaleChange(cb)` calls
+`cb(locale)` when a host tells an open page that the language changed, once
+per change (never for the language the page has, and `page.app.locale` is
+already the new one when `cb` runs); AutoScene itself does not do that today.
+A page may match the language or not; nothing in the page changes by itself, and AutoScene never
+translates what the plugin wrote: its page titles, settings, messages and
+errors stay as the plugin wrote them. More languages may come, so a page
+that picks its words by `locale` should have a fallback.
+
+```js
+const words = { en: { go: "Start" }, ro: { go: "Pornește" } }
+AutoScene.connect().then((page) => {
+  const show = () => (button.textContent = (words[page.app.locale] ?? words.en).go)
+  show()
+  page.onLocaleChange(show)
+})
+```
+
+`theme.css` has the letters Romanian needs outside Latin-1 (ă, ș, ț; â and î are
+in Latin-1) in all its fonts, besides the Latin ones. Opened outside AutoScene,
+the mock tells `"en"`, or the `locale` that `connect({ mock })` gets; it never
+changes.
 
 ## Services
 
@@ -2797,8 +2829,8 @@ a plugin's folder would let anyone sign as you, so `asp pack` refuses one.
   `AutoScene.connect({ mock })` then answers from an in-memory host instead,
   as AutoScene would, with the same refusals for what the plugin may not
   use. `mock` names what the page sees: `permissions`, `hosts`,
-  `settings`, `secrets`, `project`, `exports`, `projectId`, `service`, and
-  `answer` (an answer of your own for any method). The page needs
+  `settings`, `secrets`, `project`, `exports`, `projectId`, `service`,
+  `locale`, and `answer` (an answer of your own for any method). The page needs
   `/_as/sdk.js` and `/_as/theme.css` beside it there: `npm run build:kit`
   in a checkout of AutoScene's repository writes them to `app/dist/_as/`.
 - **The app's own CSP applies only in a built app. The page's CSP applies

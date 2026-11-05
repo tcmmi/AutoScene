@@ -18,12 +18,12 @@
  * Kept apart from the app: nothing here imports React, Radix, Tauri or the
  * app's modules (`.oxlintrc.json`), since the build is a page's script.
  */
-import { type FrameToHost, type HostToFrame, type PageInit, type ServiceState } from "./bridge-types";
+import { type FrameToHost, type HostToFrame, type PageInit, type PageLocale, type ServiceState } from "./bridge-types";
 import { type MockHost } from "./mock";
 import type { ActionsRun, CopyText, ExportRef, FileRef, HostMethod, Navigate, NetRequest, NetResponse, OpenExternal, OpenFile, OpenedFile, PageExport, PageExportSummary, PageProject, Permission, ProjectRef, ResolvedFile, SaveFile, SecretsGet, ServiceRequestParams, SettingValue, StateKey, StateSet, Toast } from "./protocol";
 export type * from "./protocol";
 export type { MockHost } from "./mock";
-export type { CallFailure, PageInit, ServiceState, ServiceStatus } from "./bridge-types";
+export type { CallFailure, PageInit, PageLocale, ServiceState, ServiceStatus } from "./bridge-types";
 /** The params of a method that takes none. */
 type Empty = Record<string, never>;
 /** Fails to compile unless `T` types exactly the methods AutoScene has. */
@@ -161,6 +161,17 @@ export interface Page {
     readonly path: string;
     /** What its calls may use. */
     readonly permissions: Permission[];
+    /**
+     * AutoScene as the page found it: its version, the platform, and the language it speaks now
+     * (`"en"` or `"ro"`). A page that wants to match AutoScene's language reads it; nothing in the page
+     * changes by itself. AutoScene reloads an open page when the person switches language, and the
+     * next one reads the new language here.
+     */
+    readonly app: {
+        readonly version: string;
+        readonly platform: "windows" | "macos" | "linux";
+        readonly locale: PageLocale;
+    };
     /** Any host method, as it is: the helpers below are made of it. */
     call<M extends HostMethod>(method: M, params: Params<M>): Promise<Result<M>>;
     project: {
@@ -217,6 +228,12 @@ export interface Page {
         openExternal(url: string): Promise<boolean>;
     };
     onRoute(cb: (path: string) => void): () => void;
+    /**
+     * A host told the open page that AutoScene's language changed: each change once, never the language it
+     * has now, and `app.locale` is the new one when `cb` runs. AutoScene itself reloads the page on a switch
+     * instead, so this fires only under a host that keeps pages open.
+     */
+    onLocaleChange(cb: (locale: PageLocale) => void): () => void;
     onClose(cb: (reason: string) => void): () => void;
 }
 /**

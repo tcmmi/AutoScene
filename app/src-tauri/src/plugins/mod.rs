@@ -109,8 +109,8 @@ use as_plugin::wasm;
 use as_plugin::{
     ActionContext, ActionKind, Approval, Caller, CommandSpec, EventKind, Extra, Grants, HostCalls, HostMethod,
     Installed, Launch, Manifest, OsKeyring, PackActionSpec, PageSpec, Permission, PluginError, PluginId, PluginResult,
-    Record, Resource, Resources, RunSpec, RuntimeChange, RuntimeKind, SettingSpec, ShotFilterSpec, Source, Store, Ticket,
-    Trigger, Trust, Widens, package, runtime,
+    Record, Resource, Resources, RunSpec, RuntimeChange, RuntimeKind, SettingSpec, ShotFilterSpec, Source, Store,
+    Ticket, Trigger, Trust, Widens, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -3284,9 +3284,7 @@ mod tests {
             as_plugin::manifest::parse_for_any_app(m.to_string().as_bytes()).unwrap().manifest
         };
         let filter = |id: &str| serde_json::json!({"id": id, "title": id, "reason": "Left out"});
-        let action = |id: &str| {
-            serde_json::json!({"id": id, "title": id, "file": {"name": "{character}.xml", "extensions": ["xml"]}})
-        };
+        let action = |id: &str| serde_json::json!({"id": id, "title": id, "file": {"name": "{character}.xml", "extensions": ["xml"]}});
         let mut had = plugin("dev.a.post", Trust::Pinned, false);
         had.manifest = Some(contributing(serde_json::json!([filter("speaks")]), serde_json::json!([action("xml")])));
         let more = contributing(

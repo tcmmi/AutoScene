@@ -205,8 +205,11 @@ impl Caps {
 
         // Not knowing is no "no": every build AutoScene takes has them, and an
         // export of one that hasn't says so itself.
-        let sw_encoders =
-            SW_ENCODERS.iter().filter(|n| enc_list.is_none() || present.contains(*n)).map(|n| (*n).to_string()).collect();
+        let sw_encoders = SW_ENCODERS
+            .iter()
+            .filter(|n| enc_list.is_none() || present.contains(*n))
+            .map(|n| (*n).to_string())
+            .collect();
         let nvenc_lossless = if hw_encoders.iter().any(|e| e.name == "hevc_nvenc") {
             NVENC_LOSSLESS.iter().filter(|&&fmt| checks.smoke_lossless(fmt)).map(|&fmt| fmt.to_string()).collect()
         } else {
@@ -348,8 +351,11 @@ mod tests {
     fn a_list_that_overran_once_is_read_the_second_time() {
         let dir = tempfile::tempdir().unwrap();
         let tools = Tools::cold(dir.path());
-        let waits =
-            Waits { list: Duration::from_secs(10), list_again: Duration::from_secs(30), smoke: Duration::from_secs(30) };
+        let waits = Waits {
+            list: Duration::from_secs(10),
+            list_again: Duration::from_secs(30),
+            smoke: Duration::from_secs(30),
+        };
         let caps = Caps::detect_within(&tools, waits);
         let names: Vec<_> = caps.hw_encoders.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["h264_nvenc", "hevc_nvenc", "h264_amf"], "{caps:?}");

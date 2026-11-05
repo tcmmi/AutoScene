@@ -330,7 +330,8 @@ impl Part {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let part = path.with_file_name(format!("{name}.part-{tail}"));
         let note = notes.join(&id);
-        let noted = std::fs::create_dir_all(notes).and_then(|()| std::fs::write(&note, part.to_string_lossy().as_bytes()));
+        let noted =
+            std::fs::create_dir_all(notes).and_then(|()| std::fs::write(&note, part.to_string_lossy().as_bytes()));
         if let Err(e) = noted {
             log::warn!("noting a pack action's unfinished {}: {e}", paths::name(&part));
         }

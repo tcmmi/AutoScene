@@ -1,5 +1,7 @@
 import { type RefObject, useLayoutEffect, useState } from "react"
+import { fmt } from "@/lib/i18n"
 import type { TimecodeDisplayMode } from "./timecode-mode"
+import { percentText, readoutWords } from "./words"
 
 /**
  * How much the transport row under the picture shows, from 1 (everything)
@@ -37,9 +39,6 @@ export function coarser(tier: Tier): Tier {
   return tier >= 4 ? 4 : ((tier + 1) as Tier)
 }
 
-/** A frame number as the player writes it ("172,799"). */
-const count = (n: number) => n.toLocaleString("en-GB")
-
 /**
  * The most characters the readout can show in `mode` for an episode whose
  * last frame is `last`: its width stays the same while the episode plays.
@@ -51,15 +50,15 @@ export function readoutChars(mode: TimecodeDisplayMode, last: number, tc: (f: nu
     case "remaining":
       return tc(last).length + 1
     case "frames":
-      return count(last).length
+      return fmt.count(last).length
     case "percent":
-      return "100.0 %".length
+      return percentText(100).length
   }
 }
 
-/** The most characters of the frame counter ("this frame / the last frame"; " f" after it in percent mode). */
+/** The most characters of the frame counter ("this frame / the last frame"; the frame unit after it in percent mode: " f"). */
 export function counterChars(mode: TimecodeDisplayMode, last: number): number {
-  return `${count(last)} / ${count(last)}`.length + (mode === "percent" ? 2 : 0)
+  return `${fmt.count(last)} / ${fmt.count(last)}`.length + (mode === "percent" ? 1 + readoutWords().frameUnit.length : 0)
 }
 
 /**

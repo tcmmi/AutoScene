@@ -1,4 +1,5 @@
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { CaretLeft, CaretRight, SidebarSimple } from "@/components/icons"
 import type { MediaItem } from "@/bindings"
 import { Badge } from "@/components/ui/badge"
@@ -14,6 +15,7 @@ import { NotReady } from "./NotReady"
 import { ReadyPlayer } from "./ReadyPlayer"
 
 export function PlayerPage() {
+  const { t } = useTranslation("player")
   const { pid, mid } = useParams({ from: "/p/$pid/timeline/$mid" })
   const { f: openAt } = useSearch({ from: "/p/$pid/timeline/$mid" })
   const mediaQuery = useMediaList(pid)
@@ -36,21 +38,21 @@ export function PlayerPage() {
       menu={
         <>
           <ContextMenuItem disabled={!prev} onSelect={() => watch(prev)}>
-            <CaretLeft /> Previous episode
+            <CaretLeft /> {t("page.previousEpisode")}
           </ContextMenuItem>
           <ContextMenuItem disabled={!next} onSelect={() => watch(next)}>
-            <CaretRight /> Next episode
+            <CaretRight /> {t("page.nextEpisode")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={toggleInspector}>
-            <SidebarSimple mirrored /> {inspector ? "Hide details" : "Show details"}
+            <SidebarSimple mirrored /> {inspector ? t("page.hideDetails") : t("page.showDetails")}
           </ContextMenuItem>
         </>
       }
     >
       <div className="flex h-full min-h-0 flex-col bg-inset">
         <TopBar
-          back={{ label: project?.kind === "movie" ? "Files" : "Episodes", to: `/p/${pid}/episodes` }}
+          back={{ label: project?.kind === "movie" ? t("page.files") : t("page.episodes"), to: `/p/${pid}/episodes` }}
           title={
             <Tooltip label={m?.fileName} side="bottom" delay={600} disabled={!m}>
               <span className="flex min-w-0 items-baseline gap-2.5">
@@ -62,9 +64,9 @@ export function PlayerPage() {
           className="border-white/[0.05] bg-black/50"
         >
           {map.data?.isProxy && (
-            <Tooltip label="Playing a preview copy; exports always cut from the original file.">
+            <Tooltip label={t("page.previewTip")}>
               <span>
-                <Badge tone="outline">Preview</Badge>
+                <Badge tone="outline">{t("page.preview")}</Badge>
               </span>
             </Tooltip>
           )}
@@ -72,12 +74,12 @@ export function PlayerPage() {
             <EpisodeNav pid={pid} target={prev} dir="prev" />
             <EpisodeNav pid={pid} target={next} dir="next" />
           </div>
-          <Tooltip label={inspector ? "Hide details" : "Show details"}>
+          <Tooltip label={inspector ? t("page.hideDetails") : t("page.showDetails")}>
             <Button
               size="icon-sm"
               variant={inspector ? "secondary" : "ghost"}
               aria-pressed={inspector}
-              aria-label="Details"
+              aria-label={t("page.details")}
               aria-controls={inspector ? "player-details" : undefined}
               onClick={toggleInspector}
             >
@@ -110,7 +112,8 @@ export function PlayerPage() {
 }
 
 function EpisodeNav({ pid, target, dir }: { pid: string; target?: MediaItem; dir: "prev" | "next" }) {
-  const label = dir === "prev" ? "Previous episode" : "Next episode"
+  const { t } = useTranslation("player")
+  const label = dir === "prev" ? t("page.previousEpisode") : t("page.nextEpisode")
   const icon = dir === "prev" ? <CaretLeft /> : <CaretRight />
   if (!target) {
     return (
@@ -120,7 +123,13 @@ function EpisodeNav({ pid, target, dir }: { pid: string; target?: MediaItem; dir
     )
   }
   return (
-    <Tooltip label={`${label}: ${mediaTitle(target)}`}>
+    <Tooltip
+      label={
+        dir === "prev"
+          ? t("page.previousEpisodeTitled", { title: mediaTitle(target) })
+          : t("page.nextEpisodeTitled", { title: mediaTitle(target) })
+      }
+    >
       <Button size="icon-sm" variant="secondary" asChild>
         <Link to="/p/$pid/timeline/$mid" params={{ pid, mid: target.id }} aria-label={label}>
           {icon}

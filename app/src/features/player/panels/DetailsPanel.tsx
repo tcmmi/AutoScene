@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Keyboard } from "@/components/icons"
 import type { MediaItem, Rational, Segment } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -10,11 +11,6 @@ import { type PlayerTab, playerTabOf, useUi } from "@/state/ui"
 import type { FrameStore } from "../frame-store"
 import { CastTab } from "./CastTab"
 import { FileTab } from "./FileTab"
-
-const TABS: { value: PlayerTab; label: string }[] = [
-  { value: "cast", label: "Cast" },
-  { value: "file", label: "File" },
-]
 
 /**
  * The player's details: one panel beside the picture with two tabs, Cast
@@ -62,6 +58,11 @@ export function DetailsPanel({
   /** Open the Player keys dialog. */
   onKeys: () => void
 }) {
+  const { t } = useTranslation("player")
+  const tabs: { value: PlayerTab; label: string }[] = [
+    { value: "cast", label: t("details.cast") },
+    { value: "file", label: t("details.file") },
+  ]
   const tab = playerTabOf(useUi((s) => s.playerTab))
   const setTab = useUi((s) => s.setPlayerTab)
   // Closed at some point since the player mounted: opening it now fades it in.
@@ -71,7 +72,7 @@ export function DetailsPanel({
   return (
     <aside
       id="player-details"
-      aria-label="Details"
+      aria-label={t("page.details")}
       className={cn(
         "flex w-[320px] shrink-0 flex-col border-l border-white/[0.06] bg-canvas",
         wasClosed && "motion-safe:animate-fade-in",
@@ -79,14 +80,14 @@ export function DetailsPanel({
     >
       <div className="flex shrink-0 items-center gap-2 px-4 pt-3 pb-2">
         <Segmented
-          aria-label="Details sections"
+          aria-label={t("details.sections")}
           className="flex flex-1 [&>*]:flex-1 [&>*]:justify-center"
           value={tab}
           onChange={setTab}
-          options={TABS}
+          options={tabs}
         />
-        <Tooltip label="Player keys">
-          <Button size="icon-sm" variant="ghost" aria-label="Player keys" onClick={onKeys}>
+        <Tooltip label={t("keys.title")}>
+          <Button size="icon-sm" variant="ghost" aria-label={t("keys.title")} onClick={onKeys}>
             <Keyboard />
           </Button>
         </Tooltip>

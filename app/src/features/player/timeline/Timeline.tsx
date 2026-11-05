@@ -1,5 +1,6 @@
 import type * as React from "react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { Trans, useTranslation } from "react-i18next"
 import {
   ArrowLineLeft,
   ArrowLineRight,
@@ -18,6 +19,7 @@ import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "@/components/ui/context-menu"
 import { Tooltip } from "@/components/ui/tooltip"
 import type { FrameClock } from "@/lib/frame-clock"
+import { fmt } from "@/lib/i18n"
 import { assetUrl } from "@/lib/media"
 import { copyText } from "@/lib/os"
 import { type Lane, nextAppearance } from "@/lib/presence"
@@ -25,7 +27,7 @@ import { segmentIndexAt, shotNumbers } from "@/lib/segments"
 import { PLAYER_SHORTCUTS, useShortcutKeys, useShortcuts } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
 import { type FrameStore, useFrame, useFrameSelector } from "../frame-store"
-import { SEGMENT_LABEL } from "../labels"
+import { characterName, segmentLabel, timelineWords } from "../words"
 import { drawSegments, drawSpans, prepare } from "./draw"
 import { visibleLanes } from "./lanes"
 import { type Counting, ticks } from "./ticks"
@@ -94,6 +96,7 @@ export function Timeline({
   onFocus: (characterId: string | null) => void
   onOpenCharacter: (characterId: string) => void
 }) {
+  const { t } = useTranslation("player")
   const length = clock.rel(clock.frames)
   // Never closer than about a second of frames.
   const minSpan = Math.min(length, clock.duration(0) * 24)
@@ -213,13 +216,13 @@ export function Timeline({
   const zoomMenu = (
     <>
       <ContextMenuItem disabled={view.span <= minSpan + 1e-9} onSelect={() => zoom(ZOOM_STEP)} shortcut={keys("player.zoomIn")}>
-        <MagnifyingGlassPlus /> Zoom in
+        <MagnifyingGlassPlus /> {t("timeline.zoomIn")}
       </ContextMenuItem>
       <ContextMenuItem disabled={!zoomed} onSelect={() => zoom(1 / ZOOM_STEP)} shortcut={keys("player.zoomOut")}>
-        <MagnifyingGlassMinus /> Zoom out
+        <MagnifyingGlassMinus /> {t("timeline.zoomOut")}
       </ContextMenuItem>
       <ContextMenuItem disabled={!zoomed} onSelect={() => setView(fit(length))} shortcut={keys("player.zoomFit")}>
-        <ArrowsOutLineHorizontal /> The whole episode
+        <ArrowsOutLineHorizontal /> {t("timeline.wholeEpisode")}
       </ContextMenuItem>
     </>
   )
@@ -230,13 +233,13 @@ export function Timeline({
         <Row
           label={
             <span className="flex items-center gap-0.5">
-              <ZoomButton label="Zoom out" keys={keys("player.zoomOut")} onClick={() => zoom(1 / ZOOM_STEP)} disabled={!zoomed}>
+              <ZoomButton label={t("timeline.zoomOut")} keys={keys("player.zoomOut")} onClick={() => zoom(1 / ZOOM_STEP)} disabled={!zoomed}>
                 <MagnifyingGlassMinus />
               </ZoomButton>
-              <ZoomButton label="Zoom in" keys={keys("player.zoomIn")} onClick={() => zoom(ZOOM_STEP)} disabled={view.span <= minSpan + 1e-9}>
+              <ZoomButton label={t("timeline.zoomIn")} keys={keys("player.zoomIn")} onClick={() => zoom(ZOOM_STEP)} disabled={view.span <= minSpan + 1e-9}>
                 <MagnifyingGlassPlus />
               </ZoomButton>
-              <ZoomButton label="The whole episode" keys={keys("player.zoomFit")} onClick={() => setView(fit(length))} disabled={!zoomed}>
+              <ZoomButton label={t("timeline.wholeEpisode")} keys={keys("player.zoomFit")} onClick={() => setView(fit(length))} disabled={!zoomed}>
                 <ArrowsOutLineHorizontal />
               </ZoomButton>
             </span>
@@ -264,12 +267,12 @@ export function Timeline({
           />
         </Row>
         {segments.length > 0 && (
-          <Row label="Shots">
+          <Row label={t("timeline.shots")}>
             <Shots axis={axis} store={store} segments={segments} tc={tc} onSeek={onSeek} onScrub={onScrub} onMarkShot={onMarkRange} />
           </Row>
         )}
         {lanes.length > 0 && (
-          <div className="mt-1 flex flex-col gap-1" role="group" aria-label="Characters on screen">
+          <div className="mt-1 flex flex-col gap-1" role="group" aria-label={t("timeline.characters")}>
             {visibleLanes(lanes, focus).map((lane) => (
               <LaneRow
                 key={lane.character.id}
@@ -443,7 +446,7 @@ function Overview({
       onLostPointerCapture={release}
       role="scrollbar"
       aria-orientation="horizontal"
-      aria-label="Part of the episode in view"
+      aria-label={timelineWords().inView}
       aria-valuemin={0}
       aria-valuemax={Math.round(length)}
       aria-valuenow={Math.round(view.t0)}
@@ -528,6 +531,8 @@ function Scrub({
   const from = x(inFrame ?? 0)
   const to = x((outFrame ?? last) + 1)
   const clip = (a: number) => Math.min(Math.max(a, 0), width)
+  // Said once per language: the playhead's row draws on every frame.
+  const words = timelineWords()
   const menu = menuAt != null && (
     <>
       <ContextMenuLabel className="timecode">{tc(menuAt)}</ContextMenuLabel>
@@ -537,16 +542,16 @@ function Scrub({
           onSeek(menuAt)
         }}
       >
-        <Crosshair /> Go here
+        <Crosshair /> {words.goHere}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => onMarkIn(menuAt)}>
-        <ArrowLineRight /> Mark in here
+        <ArrowLineRight /> {words.markInHere}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => onMarkOut(menuAt)}>
-        <ArrowLineLeft /> Mark out here
+        <ArrowLineLeft /> {words.markOutHere}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => void copyText(tc(menuAt), "timecode")}>
-        <Copy /> Copy this timecode
+        <Copy /> {words.copyTimecode}
       </ContextMenuItem>
     </>
   )
@@ -556,7 +561,7 @@ function Scrub({
         ref={ref}
         role="slider"
         tabIndex={0}
-        aria-label="Playhead"
+        aria-label={words.playhead}
         aria-valuemin={0}
         aria-valuemax={last}
         aria-valuenow={frame}
@@ -679,6 +684,7 @@ function Shots({
   onScrub: () => void
   onMarkShot: (s: Segment) => void
 }) {
+  const { t } = useTranslation("player")
   const ref = useRef<HTMLDivElement>(null)
   // Where the pointer is on the track (its offset and the track's width), not
   // what is under it: a zoom, a scroll or a page turn moves the shots under a
@@ -708,8 +714,9 @@ function Shots({
   const cur = current >= 0 ? segments[current] : null
   const hoverIndex = pointer ? segmentAt(pointer) : -1
   const hovered = hoverIndex >= 0 ? segments[hoverIndex] : null
-  const seconds = (s: Segment) => (axis.t(s.end) - axis.t(s.start)).toFixed(1)
-  const name = (i: number) => (segments[i].kind === "shot" ? `Shot ${numbers[i] + 1}` : SEGMENT_LABEL[segments[i].kind])
+  const seconds = (s: Segment) => fmt.decimal(axis.t(s.end) - axis.t(s.start), 1)
+  const name = (i: number) =>
+    segments[i].kind === "shot" ? t("shot.number", { number: numbers[i] + 1 }) : segmentLabel(segments[i].kind)
   const ms = menuShot >= 0 ? segments[menuShot] : undefined
   const menu = ms && (
     <>
@@ -722,15 +729,15 @@ function Shots({
           onSeek(ms.start)
         }}
       >
-        <Crosshair /> {ms.kind === "shot" ? "Go to the shot" : "Go there"}
+        <Crosshair /> {ms.kind === "shot" ? t("shot.goTo") : t("shot.goThere")}
       </ContextMenuItem>
       {ms.kind === "shot" && (
         <ContextMenuItem onSelect={() => onMarkShot(ms)}>
-          <FilmStrip /> Mark it as the clip
+          <FilmStrip /> {t("timeline.markAppearance")}
         </ContextMenuItem>
       )}
       <ContextMenuItem onSelect={() => void copyText(`${tc(ms.start)} - ${tc(ms.end - 1)}`, "timecodes")}>
-        <Copy /> Copy its timecodes
+        <Copy /> {t("shot.copyTimecodes")}
       </ContextMenuItem>
     </>
   )
@@ -740,7 +747,7 @@ function Shots({
         ref={ref}
         className={cn("relative h-[16px] rounded-md select-none", hovered && "cursor-pointer")}
         role="group"
-        aria-label="Shots"
+        aria-label={t("timeline.shots")}
         onPointerMove={(e) => setPointer(place(e.clientX))}
         onPointerLeave={() => setPointer(null)}
         onClick={(e) => {
@@ -763,7 +770,10 @@ function Shots({
             <span className="text-fg-1">{name(hoverIndex)}</span>
             <span className="timecode text-fg-3">
               {" "}
-              · {tc(hovered.start)} · {seconds(hovered)} s{hovered.tiny ? " · tiny" : ""}
+              ·{" "}
+              {hovered.tiny
+                ? t("timeline.shotDetailTiny", { start: tc(hovered.start), seconds: seconds(hovered) })
+                : t("timeline.shotDetail", { start: tc(hovered.start), seconds: seconds(hovered) })}
             </span>
           </Tip>
         )}
@@ -813,12 +823,14 @@ function LaneRow({
   onFocus: (characterId: string | null) => void
   onOpen: (characterId: string) => void
 }) {
+  const { t } = useTranslation("player")
   const ref = useRef<HTMLDivElement>(null)
   // Where the pointer is on the track, as in Shots: what is under it comes from
   // the view as it is now.
   const [pointer, setPointer] = useState<{ x: number; w: number } | null>(null)
   const [menuSpan, setMenuSpan] = useState<Presence | null>(null)
   const c = lane.character
+  const name = characterName(c)
   const { view } = axis
   const draw = useCallback(
     (ctx: CanvasRenderingContext2D, w: number, h: number) => drawSpans(ctx, w, h, view, lane.spans, focused, axis.t),
@@ -851,22 +863,24 @@ function LaneRow({
   const menu = (
     <>
       <ContextMenuLabel>
-        {c.label}
-        {menuSpan && (
-          <>
-            {" "}
-            · <span className="timecode">{tc(menuSpan.start)}</span>
-            {menuSpan.body ? " · no face" : ""}
-          </>
+        {menuSpan ? (
+          <Trans
+            t={t}
+            i18nKey={menuSpan.body ? "timeline.appearanceNoFace" : "timeline.appearance"}
+            values={{ name, start: tc(menuSpan.start) }}
+            components={{ b: <span />, x: <span className="timecode" /> }}
+          />
+        ) : (
+          name
         )}
       </ContextMenuLabel>
       {menuSpan && (
         <>
           <ContextMenuItem onSelect={() => go(menuSpan.start)}>
-            <Crosshair /> Go to this appearance
+            <Crosshair /> {t("timeline.goToAppearance")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => onMarkRange(menuSpan)}>
-            <FilmStrip /> Mark it as the clip
+            <FilmStrip /> {t("timeline.markAppearance")}
           </ContextMenuItem>
         </>
       )}
@@ -876,14 +890,14 @@ function LaneRow({
           if (f != null) go(f)
         }}
       >
-        <SkipForward /> Next appearance
+        <SkipForward /> {t("timeline.nextAppearance")}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={() => onFocus(focused ? null : c.id)}>
-        <UserFocus /> {focused ? "Stop highlighting" : "Highlight"}
+        <UserFocus /> {focused ? t("timeline.stopHighlighting") : t("timeline.highlight")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => onOpen(c.id)}>
-        <User /> Open in the cast
+        <User /> {t("timeline.openInCast")}
       </ContextMenuItem>
     </>
   )
@@ -902,7 +916,7 @@ function LaneRow({
               focused ? "text-accent" : c.name ? "text-fg-2 group-hover:text-fg-1" : "text-fg-3 group-hover:text-fg-2",
             )}
           >
-            {c.label}
+            {name}
           </span>
         </span>
         <div
@@ -921,11 +935,13 @@ function LaneRow({
           <HeadLine axis={axis} store={store} />
           {hover && (
             <Tip x={hover.x}>
-              <span className="text-fg-1">{c.label}</span>
-              <span className="timecode text-fg-3">
-                {" "}
-                · {tc(hover.span.start)}
-                {hover.span.body ? " · no face" : ""}
+              <span className="text-fg-3">
+                <Trans
+                  t={t}
+                  i18nKey={hover.span.body ? "timeline.appearanceNoFace" : "timeline.appearance"}
+                  values={{ name, start: tc(hover.span.start) }}
+                  components={{ b: <span className="text-fg-1" />, x: <span className="timecode" /> }}
+                />
               </span>
             </Tip>
           )}

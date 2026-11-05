@@ -1,4 +1,5 @@
 import { useRef } from "react"
+import { useTranslation } from "react-i18next"
 import { Keyboard } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
@@ -12,6 +13,7 @@ import { PLAYER_SHORTCUTS, capGroups, useKeymap } from "@/lib/shortcuts"
  * the playhead stays where it is, and the keys can be tried right after.
  */
 export function PlayerKeysDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation("player")
   const { goSettings } = useAppActions()
   const km = useKeymap()
   const content = useRef<HTMLDivElement>(null)
@@ -20,7 +22,7 @@ export function PlayerKeysDialog({ open, onOpenChange }: { open: boolean; onOpen
       {/* The list scrolls when the window is short (1024×640); the title and "Change keys…" stay. */}
       <DialogContent
         ref={content}
-        title="Player keys"
+        title={t("keys.title")}
         // Nothing to fill in or choose: the dialog itself takes the focus, so
         // no button is ringed on opening; Tab still reaches them, Esc closes.
         onOpenAutoFocus={(e) => {
@@ -57,7 +59,7 @@ export function PlayerKeysDialog({ open, onOpenChange }: { open: boolean; onOpen
               goSettings("shortcuts")
             }}
           >
-            <Keyboard /> Change keys…
+            <Keyboard /> {t("keys.change")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -67,5 +69,6 @@ export function PlayerKeysDialog({ open, onOpenChange }: { open: boolean; onOpen
 
 /** A key the person took away. */
 function NoKey() {
-  return <span className="text-xs text-fg-3">No key</span>
+  const { t } = useTranslation("player")
+  return <span className="text-xs text-fg-3">{t("keys.noKey")}</span>
 }

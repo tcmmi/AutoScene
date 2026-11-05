@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
+import { Trans, useTranslation } from "react-i18next"
 import { ArrowCounterClockwise, ArrowLeft, CircleNotch, Clock, MagnifyingGlass, X } from "@/components/icons"
 import { toast } from "sonner"
 import type { FrameCount, JobInfo, MediaItem } from "@/bindings"
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { locateFile } from "@/features/project/relink"
 import { formatCount, formatEta, formatPace, formatPercent, formatProgress } from "@/lib/format"
+import { say } from "@/lib/i18n"
 import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { cancelJob, cancelLabel } from "@/lib/jobs"
 import { assetUrl } from "@/lib/media"
@@ -33,6 +35,7 @@ export function NotReady({
   listError: unknown
   onRetryList: () => void
 }) {
+  const { t } = useTranslation(["player", "common"])
   const needsPreview = m?.status === "ready" && isAppError(error) && error.code === "not_ready"
   // The job playback waits for — its indexing or its preview — not an
   // analysis running meanwhile: its progress shows, and Cancel stops it.
@@ -44,30 +47,32 @@ export function NotReady({
   // (there is no place to show before): it lights the room, as a poster would.
   const still = useIndexingStill(pid, m?.id, indexing && job.state === "running" && job.frames != null)
   const backdrop = still ?? (m?.poster ? assetUrl(m.posterSmall ?? m.poster) : null)
-  let title = "Loading…"
+  let title: string = t("notReady.loading")
   let body: React.ReactNode = null
   if (listError) {
-    title = "This episode couldn't be loaded"
+    title = t("notReady.listFailed")
     body = errorMessage(listError)
   } else if (gone) {
-    title = "This episode isn't in the project any more"
-    body = "It may have been removed from the project."
+    title = t("notReady.goneTitle")
+    body = t("notReady.goneBody")
   } else if (m?.status === "queued" || m?.status === "indexing") {
-    title = "Indexing"
-    body = "Every frame is being indexed so cuts land exactly. Playback starts when it's done."
+    title = t("notReady.indexingTitle")
+    body = t("notReady.indexingBody")
   } else if (m?.status === "failed") {
-    title = "This file couldn't be indexed"
-    body = m.error
+    title = t("notReady.indexFailed")
+    body = m.error == null ? null : say(m.error)
   } else if (m?.status === "missing") {
-    title = "File not found"
-    body = `${m.path} isn't there any more. Moved it? Show AutoScene where it is: its analysis and your decisions stay.`
+    title = t("notReady.missingTitle")
+    body = t("notReady.missingBody", { path: m.path })
   } else if (needsPreview) {
-    title = job ? "Preparing preview" : m?.proxy === "failed" ? "Preview failed" : "Preview not prepared"
-    body = job
-      ? "This format needs a lightweight preview copy for frame-accurate playback. Exports still cut from the original."
-      : errorMessage(error)
+    title = job
+      ? t("notReady.previewing")
+      : m?.proxy === "failed"
+        ? t("notReady.previewFailed")
+        : t("notReady.previewMissing")
+    body = job ? t("notReady.previewBody") : errorMessage(error)
   } else if (error) {
-    title = "Can't play this file"
+    title = t("notReady.cantPlay")
     body = errorMessage(error)
   }
   const retryable = m?.status === "failed"
@@ -96,7 +101,7 @@ export function NotReady({
               <FramesRead job={job} frames={job.frames} />
             ) : (
               <div className="mt-2 flex justify-between gap-2 text-xs text-fg-3">
-                <span className="truncate">{job.state === "queued" ? "Waiting…" : (job.stage ?? "")}</span>
+                <span className="truncate">{job.state === "queued" ? t("common:state.waiting") : say(job.stage ?? "")}</span>
                 <span className="timecode shrink-0">{formatProgress(job.progress, job.etaMs)}</span>
               </div>
             )}
@@ -113,24 +118,24 @@ export function NotReady({
             variant="primary"
             onClick={() => void commands.mediaPreparePreview(pid, m!.id).catch((e) => toast.error(errorMessage(e)))}
           >
-            <ArrowCounterClockwise /> Prepare preview
+            <ArrowCounterClockwise /> {t("notReady.preparePreview")}
           </Button>
         )}
         {listError ? (
           <Button className="mt-6" variant="primary" onClick={onRetryList}>
-            <ArrowCounterClockwise /> Try again
+            <ArrowCounterClockwise /> {t("common:action.tryAgain")}
           </Button>
         ) : null}
         {gone && (
           <Button className="mt-6" variant="primary" asChild>
             <Link to="/p/$pid/episodes" params={{ pid }}>
-              <ArrowLeft /> Back to the episodes
+              <ArrowLeft /> {t("notReady.backToEpisodes")}
             </Link>
           </Button>
         )}
         {m?.status === "missing" && (
           <Button className="mt-6" variant="primary" onClick={() => void locateFile(pid, m)}>
-            <MagnifyingGlass /> Locate file…
+            <MagnifyingGlass /> {t("notReady.locate")}
           </Button>
         )}
         {!job && retryable && (
@@ -139,7 +144,7 @@ export function NotReady({
             variant="primary"
             onClick={() => void commands.mediaRetry(pid, m.id).catch((e) => toast.error(errorMessage(e)))}
           >
-            <ArrowCounterClockwise /> Try again
+            <ArrowCounterClockwise /> {t("common:action.tryAgain")}
           </Button>
         )}
       </div>
@@ -162,39 +167,42 @@ function Busy({ waiting }: { waiting: boolean }) {
  * first burst says little about either.
  */
 function FramesRead({ job, frames }: { job: JobInfo; frames: FrameCount }) {
+  const { t } = useTranslation(["player", "common"])
   const { done, total, rate, perSec } = frames
   return (
     <div className="mt-2 flex flex-col gap-1 text-xs text-fg-3">
       <div className="flex justify-between gap-2">
         <span className="truncate">
-          <span className="timecode text-fg-2">{formatCount(done)}</span>
           {/* The file's own count can be off: past it, only what was read is told. */}
           {total != null && total >= done ? (
-            <>
-              {" of about "}
-              <span className="timecode">{formatCount(total)}</span>
-              {" frames"}
-            </>
+            <Trans
+              t={t}
+              i18nKey="notReady.framesOfAbout"
+              count={total}
+              values={{ done: formatCount(done) }}
+              components={{ x: <span className="timecode text-fg-2" />, mono: <span className="timecode" /> }}
+            />
           ) : (
-            " frames"
+            <Trans t={t} i18nKey="notReady.framesRead" count={done} components={{ x: <span className="timecode text-fg-2" /> }} />
           )}
         </span>
         <span className="timecode shrink-0">{formatPercent(job.progress)}</span>
       </div>
       <div className="flex h-4 justify-between gap-2">
         {perSec == null ? (
-          <span className="truncate">Measuring speed…</span>
+          <span className="truncate">{t("notReady.measuring")}</span>
         ) : (
           <span className="truncate">
-            <span className="timecode">{formatPace(perSec)}</span>
-            {" fps"}
             {rate && perSec > 0 ? (
-              <>
-                {" · "}
-                <span className="timecode">{formatPace(perSec / rate)}×</span>
-                {" real time"}
-              </>
-            ) : null}
+              <Trans
+                t={t}
+                i18nKey="notReady.paceReal"
+                values={{ pace: formatPace(perSec), speed: formatPace(perSec / rate) }}
+                components={{ mono: <span className="timecode" /> }}
+              />
+            ) : (
+              <Trans t={t} i18nKey="notReady.pace" values={{ pace: formatPace(perSec) }} components={{ mono: <span className="timecode" /> }} />
+            )}
           </span>
         )}
         <span className="timecode shrink-0">{perSec == null ? "" : formatEta(job.etaMs)}</span>

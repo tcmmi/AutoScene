@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import {
   ArrowLineLeft,
   ArrowLineRight,
@@ -41,6 +42,7 @@ import type { ShuttleKey } from "./shuttle"
 import { Timeline } from "./timeline/Timeline"
 import { Transport } from "./Transport"
 import { usePlayer } from "./use-player"
+import { oneSidedNotice } from "./words"
 
 const NO_SEGMENTS: Segment[] = []
 /** What the shuttle's three keys do, in their order (`player.shuttle`). */
@@ -67,6 +69,7 @@ export function ReadyPlayer({
   /** The details panel is open. */
   inspector: boolean
 }) {
+  const { t } = useTranslation("player")
   const clock = useMemo(() => new FrameClock(map), [map])
   const navigate = useNavigate()
   const { videoRef, store, rate, seek, step, toggle, pause, shuttle } = usePlayer(clock)
@@ -126,21 +129,16 @@ export function ReadyPlayer({
     start,
     end,
     name: null,
-    summary: `${m.label ? `${m.label} · ` : ""}${tc(start)} – ${tc(end - 1)} · ${formatDuration(seconds)} (${length} frames)`,
+    summary: `${m.label ? `${m.label} · ` : ""}${t("clip.summary", { start: tc(start), end: tc(end - 1), duration: formatDuration(seconds), length, count: length })}`,
   }
   // One mark alone runs the clip to the episode's edge: say so before an
   // export of most of an episode starts (with the key that marks the other).
   const keys = useShortcutKeys()
-  const markWith = (slot: number, otherwise: string) => {
+  const markKeys = (slot: number) => {
     const k = keys("player.mark", slot)
-    return k.length > 0 ? `press ${keysText(k)}` : otherwise
+    return k.length > 0 ? keysText(k) : null
   }
-  const oneSided =
-    inFrame != null && outFrame == null
-      ? `Only an in point is marked, so the clip runs to the end of the episode. To end it sooner, close this and ${markWith(1, "mark the out point")} where it should stop.`
-      : outFrame != null && inFrame == null
-        ? `Only an out point is marked, so the clip starts at the beginning of the episode. To start it later, close this and ${markWith(0, "mark the in point")} where it should begin.`
-        : undefined
+  const oneSided = oneSidedNotice(inFrame, outFrame, markKeys)
   const canExport = hasMarks && length > 0
   const openExport = () => {
     pause()
@@ -269,31 +267,31 @@ export function ReadyPlayer({
   const playerMenu = (
     <>
       <ContextMenuItem onSelect={toggle} shortcut={keys("player.playPause")}>
-        {playing ? <Pause /> : <Play />} {playing ? "Pause" : "Play"}
+        {playing ? <Pause /> : <Play />} {playing ? t("transport.pause") : t("transport.play")}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={() => markIn()} shortcut={keys("player.mark", 0)}>
-        <ArrowLineRight /> Mark in
+        <ArrowLineRight /> {t("transport.markIn")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => markOut()} shortcut={keys("player.mark", 1)}>
-        <ArrowLineLeft /> Mark out
+        <ArrowLineLeft /> {t("transport.markOut")}
       </ContextMenuItem>
       {shots.length > 0 && (
         <ContextMenuItem onSelect={() => markShot()} shortcut={keys("player.markShot")}>
-          <FilmStrip /> Mark the shot as the clip
+          <FilmStrip /> {t("shot.markAsClip")}
         </ContextMenuItem>
       )}
       {hasMarks && (
         <ContextMenuItem onSelect={clear} shortcut={keys("player.clearMarks")}>
-          <X /> Clear in and out
+          <X /> {t("transport.clearMarks")}
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
       <ContextMenuItem disabled={!canExport} onSelect={openExport} shortcut={keys("player.export")}>
-        <Scissors /> Export clip…
+        <Scissors /> {t("menu.exportClip")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={copyTimecodes}>
-        <Copy /> {hasMarks ? "Copy in and out" : "Copy timecode"}
+        <Copy /> {hasMarks ? t("menu.copyInOut") : t("menu.copyTimecode")}
       </ContextMenuItem>
       <ContextMenuItem
         onSelect={() => {
@@ -302,20 +300,20 @@ export function ReadyPlayer({
         }}
         shortcut={keys("player.goTo")}
       >
-        <Clock /> Go to a timecode…
+        <Clock /> {t("menu.goToTimecode")}
       </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={toggleMute} shortcut={keys("player.mute")}>
-        {muted ? <SpeakerHigh /> : <SpeakerSlash />} {muted ? "Unmute" : "Mute"}
+        {muted ? <SpeakerHigh /> : <SpeakerSlash />} {muted ? t("transport.unmute") : t("transport.mute")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => useUi.getState().toggleInspector()}>
-        <SidebarSimple mirrored /> {inspector ? "Hide details" : "Show details"}
+        <SidebarSimple mirrored /> {inspector ? t("page.hideDetails") : t("page.showDetails")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={() => setKeysOpen(true)}>
-        <Keyboard /> Player keys…
+        <Keyboard /> {t("menu.playerKeys")}
       </ContextMenuItem>
       <ContextMenuItem onSelect={showFile}>
-        <FolderOpen /> Show in folder
+        <FolderOpen /> {t("file.showInFolder")}
       </ContextMenuItem>
     </>
   )

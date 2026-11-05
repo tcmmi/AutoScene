@@ -293,6 +293,22 @@ describe("the Cast tab's analysis block", () => {
     expect(within(cast()).getByText("The file ends early.")).toBeTruthy()
   })
 
+  it("draws the retry icon on Try again and the find icon on the other buttons", async () => {
+    const icon = (media: Partial<MediaItem>) => {
+      show(props({ media: episode(media), segments: SEGMENTS }))
+      const button = within(cast()).getAllByRole("button").find((b) => /Find|Try again|Continue/.test(b.textContent ?? ""))!
+      const svg = button.querySelector("svg")!.innerHTML
+      cleanup()
+      return svg
+    }
+    const retry = icon({ faces: "failed", facesError: null })
+    const find = icon({ faces: "pending" })
+    expect(retry).not.toBe("")
+    expect(find).not.toBe("")
+    expect(retry).not.toBe(find)
+    expect(icon({ faces: "stopped" })).toBe(find)
+  })
+
   it("offers to continue finding shots that were stopped", async () => {
     await press({ shots: "stopped", faces: "pending" }, "Continue")
     expect(within(cast()).getByText("Finding shots was stopped.")).toBeTruthy()

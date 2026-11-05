@@ -79,6 +79,7 @@
               "AutoSceneMark",
               "Banner",
               "Card",
+              "ConfirmDialog",
               "DialogContent",
               "SheetContent",
               "EmptyState",

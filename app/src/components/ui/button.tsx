@@ -1,6 +1,8 @@
 import * as React from "react"
 import { Slot } from "radix-ui"
 import { cva, type VariantProps } from "class-variance-authority"
+import * as icons from "@/components/icons"
+import { CircleNotch } from "@/components/icons"
 import { cn } from "@/lib/utils"
 
 /**
@@ -15,7 +17,7 @@ const buttonVariants = cva(
   [
     "inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap rounded-full font-medium",
     "transition-[background-color,border-color,color,box-shadow,transform] duration-[var(--dur-fast)] ease-out",
-    "disabled:pointer-events-none disabled:opacity-40 active:scale-[0.97]",
+    "disabled:pointer-events-none disabled:opacity-40 aria-busy:pointer-events-none active:scale-[0.97]",
     "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   ],
   {
@@ -42,21 +44,73 @@ const buttonVariants = cva(
         "icon-lg": "size-11 [&_svg]:size-5",
       },
     },
+    compoundVariants: [
+      // A menu opened from a ghost icon: it stays lit while the menu is up.
+      {
+        variant: "ghost",
+        size: ["icon", "icon-sm", "icon-lg"],
+        class: "data-[state=open]:bg-hover data-[state=open]:text-fg-1",
+      },
+    ],
     defaultVariants: { variant: "secondary", size: "md" },
   },
 )
 
 // No `title`: the browser's tooltip isn't the app's (wrap in `Tooltip`).
 export type ButtonProps = Omit<React.ComponentProps<"button">, "title"> &
-  VariantProps<typeof buttonVariants> & { asChild?: boolean }
+  VariantProps<typeof buttonVariants> & { asChild?: boolean; busy?: boolean }
 
-export function Button({ className, variant, size, asChild, type = "button", ...props }: ButtonProps) {
+const ICONS = new Set<unknown>(Object.values(icons))
+
+/** A leading icon: one of the app's own (`components/icons`) or a bare `<svg>`. A ring, a badge or a key hint is not one. */
+function isIcon(child: unknown): child is React.ReactElement<{ className?: string }> {
+  return React.isValidElement(child) && (child.type === "svg" || ICONS.has(child.type))
+}
+
+/**
+ * What a busy button shows, at the width it had: the spinner takes the first
+ * icon's place, at its size. Without one, the label stays in the layout and
+ * for screen readers, out of sight, with the spinner over it.
+ */
+function busyChildren(children: React.ReactNode) {
+  const kids = React.Children.toArray(children)
+  const first = kids.findIndex((kid) => typeof kid !== "string" || kid.trim() !== "")
+  const icon = kids[first]
+  if (isIcon(icon)) {
+    kids[first] = <CircleNotch key={icon.key} aria-hidden className={cn("animate-spin", icon.props.className)} />
+    return kids
+  }
+  return (
+    <>
+      <span className="inline-flex items-center gap-2 opacity-0">{children}</span>
+      <span className="absolute inset-0 flex items-center justify-center">
+        <CircleNotch aria-hidden className="animate-spin" />
+      </span>
+    </>
+  )
+}
+
+/**
+ * `busy` says its action is running: a spinner (see `busyChildren`), and
+ * clicks do nothing until it ends (it stays focusable, and lit so the spinner reads). Not with `asChild`: a link has no running
+ * action, and its children aren't the button's to change.
+ */
+export function Button({ className, variant, size, asChild, type = "button", busy, disabled, children, onClick, ...props }: ButtonProps) {
   const Comp = asChild ? Slot.Root : "button"
+  const working = busy && !asChild
   return (
     <Comp
       type={asChild ? undefined : type}
-      className={cn(buttonVariants({ variant, size }), className)}
+      disabled={disabled}
+      aria-busy={working || undefined}
+      aria-disabled={working || undefined}
+      // Busy is not `disabled`: a focused button that gets disabled drops
+      // focus to the page, and the keyboard loses its place.
+      onClick={working ? (e: React.MouseEvent) => e.preventDefault() : onClick}
+      className={cn(buttonVariants({ variant, size }), working && "relative", className)}
       {...props}
-    />
+    >
+      {working ? busyChildren(children) : children}
+    </Comp>
   )
 }

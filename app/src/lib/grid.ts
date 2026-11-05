@@ -1,3 +1,6 @@
+/** The grid of big cards: a library's projects, the plugins. */
+export const CARD_GRID = "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-8"
+
 /** Columns that fit `width` with at least `min` px each, and the width each gets. */
 export function gridColumns(width: number, min: number, gap: number): { columns: number; itemWidth: number } {
   const columns = Math.max(1, Math.floor((width + gap) / (min + gap)))

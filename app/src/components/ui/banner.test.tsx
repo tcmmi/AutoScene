@@ -43,4 +43,13 @@ describe("Banner", () => {
     expect(red.querySelector("p.text-sm")?.textContent).toBe("Why.")
     expect(screen.getByRole("button", { name: "Do" })).toBeTruthy()
   })
+
+  it("is calm when nothing is wrong: no gold, no red, and the icon sits back", () => {
+    const { container } = render(<Banner tone="neutral" icon={<i />} title="Not reviewed" className="mb-8" />)
+    const root = screen.getByRole("status")
+    expect(classes(root)).toEqual(
+      "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border border-hairline bg-hover px-5 py-4 mb-8".split(" ").sort(),
+    )
+    expect(container.querySelector("span[aria-hidden]")?.className).toContain("text-fg-2")
+  })
 })

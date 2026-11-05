@@ -27,7 +27,7 @@ hex values or Tailwind palette colours (`amber-500`, `zinc-800`…) in component
 | **Accent** | `--accent` | `#E0B45C` — the logo gold, brightened for dark screens |
 | Errors, destructive | `--danger` | `#EF5F57` |
 | Verified, done | `--ok` | `#5FC58F` (export checks only) |
-| Over pictures | `--scrim-media`, `--fg-on-media`, `Badge tone="media"` | black scrims, white text, glass chips |
+| Over pictures | `--scrim-media`, `--fg-on-media`, `Badge tone="media"`, `tone="picture"` | black scrims, white text, glass chips; on a card's picture the small dark chip (`size="sm"`) |
 
 Rules:
 
@@ -74,6 +74,9 @@ Rules:
 - Progress glides linearly at the pace of its updates and never runs backwards (a new stage starts its bar at once).
   A gap under a second and a half doesn't turn it into a sweep. Waiting work stands still: an empty bar, a ring with
   no arc, a clock instead of a spinner. Under reduced motion, busy things fade instead of moving.
+- A button whose action runs says so with `busy`: the spinner takes its first icon's place, or stands over the label
+  when it has none, and the button keeps its width. `ConfirmDialog` asks before something goes and can't be left while
+  it runs.
 
 ## Window & navigation
 
@@ -151,7 +154,8 @@ Rules:
   dialog waits for it.
 - **Project overview:** the hero, then shelves (`Section` + `Shelf`) of the cast as portraits and the episodes as
   stills. Files that can't be found show as a gold banner with Locate folder… here and on Episodes (the shared
-  `Banner`, `components/ui/banner.tsx`: gold for what the person can fix, red for what is wrong or was taken away).
+  `Banner`, `components/ui/banner.tsx`: gold for what the person can fix, red for what is wrong or was taken away,
+  `neutral` for how things stand when neither is true).
 - **Cast:** portrait cards (3:4), Everyone else, hidden characters folded away; Review as the white pill. From six
   characters a row under the title finds someone: a search, All · Named · To review, and the order. Ctrl/⌘-click
   selects cards, Shift-click every one between; a glass bar at the bottom hides them (a toast takes them back).

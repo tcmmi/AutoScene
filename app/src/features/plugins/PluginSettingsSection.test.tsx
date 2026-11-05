@@ -344,6 +344,26 @@ describe("a plugin's settings", () => {
     expect(((await screen.findByLabelText("Token", { selector: "input" })) as HTMLInputElement).value).toBe("")
   })
 
+  it("holds the secret dialog while it saves", async () => {
+    const user = userEvent.setup()
+    show({ settings: [secret("token", "Token")] })
+    await screen.findByText("Not set")
+    let done!: (p: PluginInfo) => void
+    vi.mocked(commands.pluginSecretSet).mockReturnValueOnce(new Promise((resolve) => (done = resolve)))
+    await user.click(screen.getByRole("button", { name: "Set Token" }))
+    await user.type(await screen.findByLabelText("Token", { selector: "input" }), "hunter2")
+    const save = screen.getByRole("button", { name: "Save" })
+    await user.click(save)
+    // Save shows it works; Esc, the x and Cancel do nothing until it is done.
+    await waitFor(() => expect(save.getAttribute("aria-busy")).toBe("true"))
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull()
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    expect(screen.getByRole("dialog")).toBeTruthy()
+    done({ ...state.plugin!, secretsSet: ["token"] })
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+
   it("refuses a secret too long for the keychain, never cutting it short", async () => {
     const user = userEvent.setup()
     show({ settings: [secret("token", "Token")] })
@@ -353,7 +373,12 @@ describe("a plugin's settings", () => {
     await user.paste("x".repeat(1025))
     // All of it stays in the field, and it says why it can't be saved.
     expect(field.value).toHaveLength(1025)
-    expect(screen.getByText("A secret can be at most 1024 characters.")).toBeTruthy()
+    const problem = screen.getByText("A secret can be at most 1024 characters.")
+    expect(problem).toBeTruthy()
+    // A screen reader hears why: the field names the line, which is announced when it comes.
+    expect(field.getAttribute("aria-invalid")).toBe("true")
+    expect(field.getAttribute("aria-describedby")).toBe(problem.id)
+    expect(problem.getAttribute("aria-live")).toBe("polite")
     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
     fireEvent.submit(field.form!)
@@ -361,6 +386,7 @@ describe("a plugin's settings", () => {
     // One shorter goes.
     await user.keyboard("{Backspace}")
     expect(screen.queryByText("A secret can be at most 1024 characters.")).toBeNull()
+    expect(field.hasAttribute("aria-describedby")).toBe(false)
     expect(save.disabled).toBe(false)
   })
 
@@ -391,8 +417,13 @@ describe("a plugin's settings", () => {
     await user.click(screen.getByRole("button", { name: "Remove Token" }))
     const confirm = await screen.findByRole("button", { name: "Remove" })
     await user.click(confirm)
-    expect((confirm as HTMLButtonElement).disabled).toBe(true)
+    expect(confirm.getAttribute("aria-busy")).toBe("true")
     fireEvent.click(confirm)
+    // The dialog holds while it goes: Cancel waits, Esc does nothing and the × is gone.
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull()
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    expect(screen.getByText("Remove Token?")).toBeTruthy()
     done({ ...state.plugin!, secretsSet: ["webhook"] })
     await waitFor(() => expect(screen.queryByText("Remove Token?")).toBeNull())
     expect(commands.pluginSecretClear).toHaveBeenCalledExactlyOnceWith("dev.a.hello", "token")

@@ -1,16 +1,16 @@
 import { Link } from "@tanstack/react-router"
 import type { CatalogPlugin } from "@/bindings"
-import { ArrowsClockwise, CircleNotch, Copy, DotsThree, DownloadSimple, SlidersHorizontal } from "@/components/icons"
+import { ArrowsClockwise, Copy, DownloadSimple, SlidersHorizontal } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { CardMenuButton } from "@/components/ui/card-menu-button"
 import { ContextArea } from "@/components/ui/context-area"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent } from "@/components/ui/dropdown-menu"
 import { type MenuKit, contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { TruncatedText } from "@/components/ui/tooltip"
 import { useAppActions } from "@/lib/actions"
 import { copyText } from "@/lib/os"
 import { usePlugins } from "@/lib/queries"
-import { cn } from "@/lib/utils"
 import { getsPlugin, usePluginReview } from "@/state/plugin-review"
 import { getFromCatalog, updatePlugin } from "./catalog-actions"
 import { catalogAsks, catalogDownloads, catalogNewHosts } from "./catalog-items"
@@ -76,15 +76,7 @@ export function CatalogCard({ p }: { p: CatalogPlugin }) {
             </button>
           )}
           <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={`${p.name} options`}
-              className={cn(
-                "absolute top-3 right-3 flex size-8 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white opacity-0 backdrop-blur-md transition-opacity",
-                "group-hover/art:opacity-100 hover:bg-black/60 focus-visible:opacity-100 data-[state=open]:opacity-100",
-              )}
-            >
-              <DotsThree className="size-5" weight="bold" />
-            </DropdownMenuTrigger>
+            <CardMenuButton over="picture" aria-label={`${p.name} options`} />
             <DropdownMenuContent>
               <CatalogItems kit={dropdownKit} p={p} act={act} />
             </DropdownMenuContent>
@@ -136,14 +128,8 @@ function Offer({
     case "install":
     case "update":
       return (
-        <Button size="sm" disabled={getting} onClick={act}>
-          {getting ? (
-            <CircleNotch className="animate-spin" />
-          ) : offer === "install" ? (
-            <DownloadSimple />
-          ) : (
-            <ArrowsClockwise />
-          )}
+        <Button size="sm" busy={getting} onClick={act}>
+          {offer === "install" ? <DownloadSimple /> : <ArrowsClockwise />}
           {offer === "install" ? "Install…" : "Update…"}
         </Button>
       )

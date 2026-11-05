@@ -153,6 +153,19 @@ describe("Browse", () => {
     expect(names()).toEqual(["Poster Maker", "Discord Notify"])
   })
 
+  it("a catalog it couldn't read says so, offers Try again and where the fault is written", async () => {
+    const user = userEvent.setup()
+    const gone = { code: "io", message: "The catalog can't be read." }
+    // Read twice (the query tries once more) before it says so.
+    vi.mocked(commands.catalogList).mockRejectedValueOnce(gone).mockRejectedValueOnce(gone)
+    show()
+    expect(await screen.findByText("Couldn't read the plugin catalog", undefined, { timeout: 5000 })).toBeTruthy()
+    expect(screen.getByText("The catalog can't be read.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Open logs" })).toBeTruthy()
+    await user.click(screen.getByRole("button", { name: "Try again" }))
+    expect(await card("Poster Maker")).toBeTruthy()
+  })
+
   it("marks the catalog plugins that run in a sandbox, and no others", async () => {
     show()
     expect(within(await card("Discord Notify")).getByText("Sandboxed")).toBeTruthy()
@@ -177,7 +190,7 @@ describe("Browse", () => {
     expect(commands.catalogGet).toHaveBeenCalledWith("dev.autoscene.poster-maker")
     // While it comes, the dialog says so, and the button waits.
     expect(await screen.findByRole("dialog", { name: "Getting Poster Maker…" })).toBeTruthy()
-    expect(button.disabled).toBe(true)
+    expect(button.getAttribute("aria-busy")).toBe("true")
 
     got(catalogReview(installed))
     const dialog = await screen.findByRole("dialog", { name: "Install Poster Maker?" })

@@ -6,13 +6,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ErrorState } from "@/components/ui/error-state"
 import { type MenuKit, contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { TopBar } from "@/components/ui/topbar"
 import { NotFound } from "@/features/not-found"
 import { WithdrawnNotice } from "@/features/plugins/WithdrawnBanner"
 import { ProjectNav } from "@/features/project/ProjectNav"
 import { useAppActions } from "@/lib/actions"
-import { errorMessage } from "@/lib/ipc"
 import { reveal } from "@/lib/os"
 import { entryCount, goBackTo, placesBefore, whileOpen } from "@/lib/places"
 import { usePlugins, useProject } from "@/lib/queries"
@@ -34,11 +34,11 @@ type PageParams = { plugin?: string; page?: string; _splat?: string; pid?: strin
  */
 export function PluginPageView() {
   const { plugin, page, _splat, pid } = useParams({ strict: false }) as PageParams
-  const { data: plugins, isPending, error } = usePlugins()
+  const { data: plugins, isPending, error, isFetching, refetch } = usePlugins()
   if (!isPluginId(plugin) || !isPageId(page)) return <NotFound />
   if (isPending) return null
   // A failed refetch keeps the list from before: an open page stays, as on the Plugins page.
-  if (error && plugins === undefined) return <Unread error={error} />
+  if (error && plugins === undefined) return <Unread error={error} retrying={isFetching} onRetry={() => void refetch()} />
   const p = plugins?.find((x) => x.id === plugin)
   const pg = p?.pages.find((x) => x.id === page)
   if (!p || !pg || (pg.scope === "project") !== (pid != null)) return <NotFound />
@@ -79,11 +79,10 @@ function PluginPage({
     <div className="flex h-full flex-col">
       <TopBar back={back} title={<PageTitle p={p} pg={pg} />} nav={pid != null ? <ProjectNav pid={pid} /> : undefined}>
         <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label={`${pg.title} options`}
-            className="flex size-8 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-white/[0.08] hover:text-fg-1 data-[state=open]:bg-white/[0.08]"
-          >
-            <DotsThree className="size-5" weight="bold" />
+          <DropdownMenuTrigger asChild>
+            <Button size="icon-sm" variant="ghost" aria-label={`${pg.title} options`} className="[&_svg]:size-5">
+              <DotsThree weight="bold" />
+            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>{items(dropdownKit)}</DropdownMenuContent>
         </DropdownMenu>
@@ -155,14 +154,15 @@ function PageItems({ kit, p, onReload, onClose }: { kit: MenuKit; p: PluginInfo;
 }
 
 /** A page whose plugins couldn't be read: why, and where to look. */
-function Unread({ error }: { error: unknown }) {
+function Unread({ error, retrying, onRetry }: { error: unknown; retrying: boolean; onRetry: () => void }) {
   const { goPlugins } = useAppActions()
   return (
-    <EmptyState
+    <ErrorState
+      error={error}
       icon={<AppWindow />}
-      tone="danger"
       title="Couldn't read the plugins"
-      description={errorMessage(error)}
+      retrying={retrying}
+      onRetry={onRetry}
       actions={<Button onClick={goPlugins}>Go to Plugins</Button>}
       className="h-full"
     />

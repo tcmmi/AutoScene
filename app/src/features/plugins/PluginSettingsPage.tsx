@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
-import { toast } from "sonner"
 import type { PluginInfo } from "@/bindings"
 import { DotsThree } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
@@ -13,13 +12,12 @@ import { Page } from "@/components/ui/page"
 import { Switch } from "@/components/ui/switch"
 import { TopBar } from "@/components/ui/topbar"
 import { useAmbientOf } from "@/lib/ambient"
-import { commands, errorMessage } from "@/lib/ipc"
 import { usePluginBanner, usePlugins } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { useLoadAgain } from "./load-again"
 import { PluginSettingsSection } from "./PluginSettingsSection"
-import { keepPlugin } from "./plugin-actions"
-import { pluginPicture, reviewedPackage, trustLabel } from "./plugin-items"
+import { setPluginEnabled } from "./plugin-actions"
+import { authorLine, pluginPicture, trustLabel } from "./plugin-items"
 import { PluginItems } from "./plugin-menu"
 import { UninstallDialog } from "./UninstallDialog"
 
@@ -83,14 +81,7 @@ export function PluginHero({ p }: { p: PluginInfo }) {
   // AutoScene took it back: it doesn't run, whatever its switch said.
   const withdrawn = p.withdrawn != null
   const dim = !p.enabled || withdrawn
-  const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
-  const setEnabled = async (on: boolean) => {
-    try {
-      keepPlugin(await commands.pluginSetEnabled(p.id, on))
-    } catch (e) {
-      toast.error(on ? "Couldn't turn the plugin on" : "Couldn't turn the plugin off", { description: errorMessage(e) })
-    }
-  }
+  const by = authorLine(p)
   return (
     <>
       <ContextArea menu={<PluginItems kit={contextKit} p={p} settings={false} onLoadAgain={loadAgain} onUninstall={uninstall} />}>
@@ -141,7 +132,7 @@ export function PluginHero({ p }: { p: PluginInfo }) {
             <div className="flex shrink-0 items-center gap-3 pb-1">
               <label className="flex items-center gap-3 text-sm font-medium text-white/80">
                 Turned on
-                <Switch checked={p.enabled && !withdrawn} disabled={withdrawn} onCheckedChange={(on) => void setEnabled(on)} />
+                <Switch checked={p.enabled && !withdrawn} disabled={withdrawn} onCheckedChange={(on) => void setPluginEnabled(p, on)} />
               </label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

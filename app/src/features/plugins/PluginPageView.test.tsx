@@ -17,7 +17,7 @@ import { pluginInfo } from "@/test/plugins"
 import { PluginPageView } from "./PluginPageView"
 
 const { list, pluginPageOpen, pluginPageClose, pluginPageCall } = vi.hoisted(() => ({
-  list: { plugins: [] as PluginInfo[], error: null as unknown },
+  list: { plugins: [] as PluginInfo[], error: null as unknown, fetching: false, refetch: vi.fn() },
   pluginPageOpen: vi.fn(),
   pluginPageClose: vi.fn(async () => null),
   pluginPageCall: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock("@/components/ui/page", () => ({
   ),
 }))
 vi.mock("@/lib/queries", () => ({
-  usePlugins: () => ({ data: list.plugins, isPending: false, error: list.error }),
+  usePlugins: () => ({ data: list.plugins, isPending: false, error: list.error, isFetching: list.fetching, refetch: list.refetch }),
   useProject: () => ({ data: { id: "p1", title: "Show", kind: "series" } }),
   useAppInfo: () => ({ data: { version: "1.0.3-BETA" } }),
   useCatalog: () => ({ data: undefined }),
@@ -335,6 +335,21 @@ describe("a plugin's page", () => {
     expect(await screen.findByText("Couldn't read the plugins")).toBeTruthy()
     expect(screen.getByText("Plugins couldn't start.")).toBeTruthy()
     expect(screen.getByRole("button", { name: "Go to Plugins" })).toBeTruthy()
+    // An internal fault is written in the logs, which are one click away.
+    expect(screen.getByRole("button", { name: "Open logs" })).toBeTruthy()
+    // It can be tried again, and says it is trying while it does.
+    const again = screen.getByRole("button", { name: "Try again" })
+    fireEvent.click(again)
+    expect(list.refetch).toHaveBeenCalledTimes(1)
+    expect(again.getAttribute("aria-busy")).toBeNull()
+  })
+
+  it("a page whose plugins are being read again says so on Try again", async () => {
+    list.plugins = undefined as unknown as PluginInfo[]
+    list.error = { code: "internal", message: "Plugins couldn't start." }
+    list.fetching = true
+    show("/x/dev.a.page/main")
+    expect((await screen.findByRole("button", { name: "Try again" })).getAttribute("aria-busy")).toBe("true")
   })
 
   it("a failed refetch while the plugins are cached leaves the page open", async () => {

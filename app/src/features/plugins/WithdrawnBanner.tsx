@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { PluginInfo } from "@/bindings"
-import { ArrowsClockwise, CircleNotch, ShieldWarning, Trash } from "@/components/icons"
+import { ArrowsClockwise, ShieldWarning, Trash } from "@/components/icons"
 import { Banner } from "@/components/ui/banner"
 import { Button } from "@/components/ui/button"
 import { useCatalog } from "@/lib/queries"
@@ -33,8 +33,8 @@ export function WithdrawnBanner({ p, onUninstall, className }: { p: PluginInfo; 
       actions={
         <>
           {update && (
-            <Button variant="secondary" disabled={getting} onClick={() => void updatePlugin(update)}>
-              {getting ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />} Update…
+            <Button variant="secondary" busy={getting} onClick={() => void updatePlugin(update)}>
+              <ArrowsClockwise /> Update…
             </Button>
           )}
           <Button variant="danger" onClick={onUninstall}>

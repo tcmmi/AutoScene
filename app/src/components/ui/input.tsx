@@ -31,7 +31,8 @@ export function Input({ className, ...props }: Omit<React.ComponentProps<"input"
  * Label + control + optional hint, stacked. An `error` takes the hint's place,
  * in red. With `errorId` its line is always there (empty and out of sight
  * without an error), so a screen reader reads an error that comes later; the
- * control names it with `aria-describedby` while it shows.
+ * control names it with `aria-describedby` while it shows. `hideLabel` keeps
+ * the label for a screen reader only, where a title above already names the control.
  */
 export function Field({
   label,
@@ -39,6 +40,7 @@ export function Field({
   error,
   errorId,
   htmlFor,
+  hideLabel,
   className,
   children,
 }: {
@@ -47,12 +49,13 @@ export function Field({
   error?: React.ReactNode
   errorId?: string
   htmlFor?: string
+  hideLabel?: boolean
   className?: string
   children: React.ReactNode
 }) {
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <label htmlFor={htmlFor} className="text-sm font-medium text-fg-2">
+      <label htmlFor={htmlFor} className={hideLabel ? "sr-only" : "text-sm font-medium text-fg-2"}>
         {label}
       </label>
       {children}

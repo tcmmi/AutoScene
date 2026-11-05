@@ -1,22 +1,21 @@
 import { Link } from "@tanstack/react-router"
-import { toast } from "sonner"
 import type { CatalogPlugin, PluginInfo } from "@/bindings"
-import { ArrowsClockwise, CircleNotch, DotsThree } from "@/components/icons"
+import { ArrowsClockwise } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ContextArea } from "@/components/ui/context-area"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { CardMenuButton } from "@/components/ui/card-menu-button"
+import { DropdownMenu, DropdownMenuContent } from "@/components/ui/dropdown-menu"
 import { contextKit, dropdownKit } from "@/components/ui/menu-actions"
 import { Switch } from "@/components/ui/switch"
 import { TruncatedText } from "@/components/ui/tooltip"
-import { commands, errorMessage } from "@/lib/ipc"
 import { usePluginBanner } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { getsPlugin, usePluginReview } from "@/state/plugin-review"
 import { updatePlugin } from "./catalog-actions"
-import { keepPlugin } from "./plugin-actions"
+import { setPluginEnabled } from "./plugin-actions"
 import { PluginArt } from "./PluginArt"
-import { reviewedPackage, trustLabel } from "./plugin-items"
+import { authorLine, trustLabel } from "./plugin-items"
 import { PluginItems } from "./plugin-menu"
 
 /** Why a plugin AutoScene hasn't reviewed doesn't run, on its card. */
@@ -52,23 +51,15 @@ export function PluginCard({
   const trust = trustLabel(p)
   // AutoScene took it back: it doesn't run, whatever its switch said.
   const withdrawn = p.withdrawn != null
-  const by = p.author && (reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`)
-  const facts = [by, `version ${p.version}`].filter(Boolean).join(" · ")
+  const facts = [authorLine(p), `version ${p.version}`].filter(Boolean).join(" · ")
   // The backend's reason sends people to Plugins, where the card already is:
   // the card's own words point at the setting under the cards instead.
   const blocked = p.broken == null && p.enabled && p.blockedReason != null ? NOT_ALLOWED : null
-  const setEnabled = async (on: boolean) => {
-    try {
-      keepPlugin(await commands.pluginSetEnabled(p.id, on))
-    } catch (e) {
-      toast.error(on ? "Couldn't turn the plugin on" : "Couldn't turn the plugin off", { description: errorMessage(e) })
-    }
-  }
   return (
     <ContextArea menu={<PluginItems kit={contextKit} p={p} onLoadAgain={onLoadAgain} onUninstall={onUninstall} onUpdate={onUpdate} />}>
       <div role="group" aria-label={p.name}>
         {/* The art and its ⋯ rise together; the caption stays. */}
-        <div className="group/art relative transition-transform duration-[var(--dur-med)] ease-out hover:-translate-y-1 has-[a:focus-visible]:-translate-y-1">
+        <div className="group/art relative transition-transform duration-[var(--dur-med)] ease-out hover:-translate-y-1 has-[:focus-visible]:-translate-y-1">
           <Link to="/plugins/$id" params={{ id: p.id }} className="block rounded-2xl">
             <PluginArt
               name={p.name}
@@ -82,15 +73,7 @@ export function PluginCard({
             />
           </Link>
           <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={`${p.name} options`}
-              className={cn(
-                "absolute top-3 right-3 flex size-8 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white opacity-0 backdrop-blur-md transition-opacity",
-                "group-hover/art:opacity-100 hover:bg-black/60 focus-visible:opacity-100 data-[state=open]:opacity-100",
-              )}
-            >
-              <DotsThree className="size-5" weight="bold" />
-            </DropdownMenuTrigger>
+            <CardMenuButton over="picture" aria-label={`${p.name} options`} />
             <DropdownMenuContent>
               <PluginItems kit={dropdownKit} p={p} onLoadAgain={onLoadAgain} onUninstall={onUninstall} onUpdate={onUpdate} />
             </DropdownMenuContent>
@@ -109,15 +92,15 @@ export function PluginCard({
             )}
           </div>
           {update && (
-            <Button size="sm" className="ml-auto" disabled={getting} onClick={onUpdate}>
-              {getting ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />} Update…
+            <Button size="sm" className="ml-auto" busy={getting} onClick={onUpdate}>
+              <ArrowsClockwise /> Update…
             </Button>
           )}
           <Switch
             aria-label={`Enable ${p.name}`}
             checked={p.enabled && !withdrawn}
             disabled={withdrawn}
-            onCheckedChange={(on) => void setEnabled(on)}
+            onCheckedChange={(on) => void setPluginEnabled(p, on)}
           />
         </div>
         <TruncatedText className="mt-1.5 pl-0.5 text-sm text-fg-2">{facts}</TruncatedText>

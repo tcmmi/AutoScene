@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { useNavigate, useSearch } from "@tanstack/react-router"
 import type { PluginInfo } from "@/bindings"
-import { ArrowCounterClockwise, ArrowsClockwise, CircleNotch, FolderOpen, MagnifyingGlass, Plus, PuzzlePiece, X } from "@/components/icons"
+import { ArrowsClockwise, FolderOpen, MagnifyingGlass, Plus, PuzzlePiece } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Input } from "@/components/ui/input"
+import { ErrorState } from "@/components/ui/error-state"
 import { Page } from "@/components/ui/page"
+import { SearchField } from "@/components/ui/search-field"
 import { Segmented } from "@/components/ui/segmented"
 import { Section } from "@/components/ui/shelf"
 import { Switch } from "@/components/ui/switch"
@@ -18,21 +19,19 @@ import { InstallItems } from "@/features/plugins/InstallItems"
 import { usePluginInstall } from "@/features/plugins/install-plugin"
 import { useLoadAgain } from "@/features/plugins/load-again"
 import { PluginCard } from "@/features/plugins/PluginCard"
+import { PluginSkeletons } from "@/features/plugins/PluginSkeletons"
 import { allowUnreviewed } from "@/features/plugins/plugin-actions"
 import { FIND_FROM, pluginMatches } from "@/features/plugins/plugin-items"
 import { UninstallDialog } from "@/features/plugins/UninstallDialog"
 import { WithdrawnBanner } from "@/features/plugins/WithdrawnBanner"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
-import { errorMessage } from "@/lib/ipc"
+import { CARD_GRID } from "@/lib/grid"
 import { useCatalog, usePlugins, useSettings } from "@/lib/queries"
 
 const ALLOW = "Allow plugins that AutoScene has not reviewed"
 
 /** How many withdrawn plugins get a banner each: the rest are counted. */
 const BANNERS = 3
-
-/** The grid of a project's library, for plugins. */
-const GRID = "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-8"
 
 type View = "installed" | "browse"
 
@@ -87,13 +86,13 @@ export function PluginsPage() {
 
   // Browse installs from each card: the file is the other way, so it sits back.
   const installButton = (
-    <Button size="lg" disabled={checking != null} onClick={install}>
-      {checking === "file" ? <CircleNotch className="animate-spin" /> : <Plus weight="bold" />} Install from a file…
+    <Button size="lg" busy={checking === "file"} disabled={checking === "folder"} onClick={install}>
+      <Plus weight="bold" /> Install from a file…
     </Button>
   )
   const folderButton = allowed && (
-    <Button variant="ghost" size="lg" disabled={checking != null} onClick={loadFolder}>
-      {checking === "folder" ? <CircleNotch className="animate-spin" /> : <FolderOpen />} Load a folder…
+    <Button variant="ghost" size="lg" busy={checking === "folder"} disabled={checking === "file"} onClick={loadFolder}>
+      <FolderOpen /> Load a folder…
     </Button>
   )
   const card = (p: PluginInfo) => (
@@ -139,29 +138,7 @@ export function PluginsPage() {
             ]}
           />
           {(view === "browse" || any) && finding && (
-            <div role="search" className="relative w-64">
-              <MagnifyingGlass className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-fg-3" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && query) setQuery("")
-                }}
-                placeholder="Find a plugin"
-                aria-label="Find a plugin"
-                className="h-9 w-64 rounded-full pr-9 pl-10 text-sm"
-              />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  aria-label="Clear the search"
-                  className="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-fg-3 transition-colors hover:bg-hover hover:text-fg-1"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
+            <SearchField value={query} onChange={setQuery} label="Find a plugin" />
           )}
         </div>
       </header>
@@ -183,23 +160,15 @@ export function PluginsPage() {
         {view === "browse" ? (
           <BrowseView query={query} onClear={() => setQuery("")} />
         ) : error && plugins === undefined ? (
-          <EmptyState
+          <ErrorState
+            error={error}
             icon={<PuzzlePiece />}
-            tone="danger"
             title="Couldn't read the plugins"
-            description={errorMessage(error)}
-            actions={
-              <Button disabled={isFetching} onClick={() => void refetch()}>
-                {isFetching ? <CircleNotch className="animate-spin" /> : <ArrowCounterClockwise />} Try again
-              </Button>
-            }
+            retrying={isFetching}
+            onRetry={() => void refetch()}
           />
         ) : plugins === undefined ? (
-          <div className={GRID}>
-            {Array.from({ length: 3 }, (_, i) => (
-              <div key={i} className="skeleton aspect-[2/1] rounded-2xl" />
-            ))}
-          </div>
+          <PluginSkeletons />
         ) : !any ? (
           <EmptyState
             icon={<PuzzlePiece />}
@@ -227,7 +196,7 @@ export function PluginsPage() {
             actions={<Button onClick={() => setQuery("")}>Clear the search</Button>}
           />
         ) : updating.length === 0 ? (
-          <div className={GRID}>{rest.map(card)}</div>
+          <div className={CARD_GRID}>{rest.map(card)}</div>
         ) : (
           <>
             <Section
@@ -236,17 +205,17 @@ export function PluginsPage() {
               className="px-0"
               action={
                 quiet.length > 0 && (
-                  <Button size="sm" disabled={updatingAll} onClick={() => void updateAll(quiet)}>
-                    {updatingAll ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />} Update all ({quiet.length.toLocaleString("en-GB")})
+                  <Button size="sm" busy={updatingAll} onClick={() => void updateAll(quiet)}>
+                    <ArrowsClockwise /> Update all ({quiet.length.toLocaleString("en-GB")})
                   </Button>
                 )
               }
             >
-              <div className={GRID}>{updating.map(card)}</div>
+              <div className={CARD_GRID}>{updating.map(card)}</div>
             </Section>
             {rest.length > 0 && (
               <Section title="Installed" count={rest.length.toLocaleString("en-GB")} className="mt-12 px-0">
-                <div className={GRID}>{rest.map(card)}</div>
+                <div className={CARD_GRID}>{rest.map(card)}</div>
               </Section>
             )}
           </>

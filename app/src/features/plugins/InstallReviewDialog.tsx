@@ -2,7 +2,7 @@ import type * as React from "react"
 import { useId, useState } from "react"
 import { toast } from "sonner"
 import type { EventKind, PageSpec, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, ReviewCatalog } from "@/bindings"
-import { CircleNotch, ShieldCheck } from "@/components/icons"
+import { ShieldCheck } from "@/components/icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
@@ -286,10 +286,10 @@ function ReviewForm({
         </Button>
         <Button
           variant={review.needsUnreviewed ? "danger" : "primary"}
-          disabled={busy || !allowed || !confirmed}
+          busy={busy}
+          disabled={!allowed || !confirmed}
           onClick={() => void install()}
         >
-          {busy && <CircleNotch className="animate-spin" />}
           {verb}
         </Button>
       </DialogFooter>

@@ -557,9 +557,19 @@ describe("PluginsPage", () => {
     show()
     expect(await screen.findByText("Couldn't read the plugins", undefined, { timeout: 5000 })).toBeTruthy()
     expect(screen.getByText("The plugins folder can't be read.")).toBeTruthy()
+    // The folder is AutoScene's own: where the fault is written is offered too.
+    expect(screen.getByRole("button", { name: "Open logs" })).toBeTruthy()
     await user.click(screen.getByRole("button", { name: "Try again" }))
     expect(await card("One")).toBeTruthy()
     expect(screen.queryByText("Couldn't read the plugins")).toBeNull()
+  })
+
+  it("lifts a card when the keyboard reaches its art or its ⋯, as the catalog's cards do", async () => {
+    state.plugins = [pluginInfo({ id: "dev.a.one", name: "One" })]
+    show()
+    const lift = (await card("One")).querySelector('[class~="group/art"]')!
+    expect(lift.className).toContain("has-[:focus-visible]:-translate-y-1")
+    expect(lift.className).not.toContain("has-[a:focus-visible]")
   })
 
   it("leaves the question about unreviewed plugins to AutoScene's own dialog", async () => {
@@ -605,7 +615,8 @@ describe("PluginsPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Uninstall" }))
     await waitFor(() => expect((within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true))
     fireEvent.keyDown(dialog, { key: "Escape" })
-    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }))
+    // The × is gone while it runs.
+    expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull()
     expect(screen.getByRole("dialog")).toBeTruthy()
     done(null)
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
@@ -660,11 +671,16 @@ describe("PluginsPage", () => {
     const install = screen.getByRole("button", { name: /Install from a file/ })
     act(() => useInstallFlow.setState({ checking: "file", busy: true }))
     // The one install flow: this page shows what the tile started.
-    expect((install as HTMLButtonElement).disabled).toBe(true)
+    expect(install.getAttribute("aria-busy")).toBe("true")
     expect((load as HTMLButtonElement).disabled).toBe(true)
     expect(install.querySelector(".animate-spin")).not.toBeNull()
     act(() => useInstallFlow.setState({ checking: null, busy: false }))
-    expect((install as HTMLButtonElement).disabled).toBe(false)
+    expect(install.getAttribute("aria-busy")).toBeNull()
+    expect((load as HTMLButtonElement).disabled).toBe(false)
+    // A folder being read holds the file button, as a file holds the folder one.
+    act(() => useInstallFlow.setState({ checking: "folder", busy: true }))
+    expect((install as HTMLButtonElement).disabled).toBe(true)
+    expect(load.getAttribute("aria-busy")).toBe("true")
   })
 
   it("marks sandboxed plugins", async () => {
@@ -1089,11 +1105,11 @@ describe("PluginsPage", () => {
     fireEvent.click(all)
     const getting = await screen.findByRole("dialog", { name: "Getting Quiet 1…" })
     // While it runs, it waits: a second click asks for nothing.
-    expect(all.disabled).toBe(true)
+    expect(all.getAttribute("aria-busy")).toBe("true")
     fireEvent.click(all)
     fireEvent.click(within(getting).getByRole("button", { name: "Cancel" }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
-    await waitFor(() => expect(all.disabled).toBe(false))
+    await waitFor(() => expect(all.getAttribute("aria-busy")).toBeNull())
     // One Cancel stops them all.
     await act(() => new Promise((done) => setTimeout(done, 20)))
     expect(screen.queryByRole("dialog")).toBeNull()
@@ -1112,8 +1128,8 @@ describe("PluginsPage", () => {
     await screen.findByRole("dialog", { name: "Getting Quiet 1…" })
     // Asked for behind the one that comes: it waits too, and is asked for once.
     act(() => void usePluginReview.getState().openReview(() => commands.catalogGet("dev.a.two"), { label: "Quiet 2", get: { pluginId: "dev.a.two", cancel: () => {} } }))
-    expect(one.disabled).toBe(true)
-    await waitFor(() => expect(second.disabled).toBe(true))
+    expect(one.getAttribute("aria-busy")).toBe("true")
+    await waitFor(() => expect(second.getAttribute("aria-busy")).toBe("true"))
     expect(await usePluginReview.getState().openReview(() => commands.catalogGet("dev.a.two"), { label: "Quiet 2", get: { pluginId: "dev.a.two", cancel: () => {} } })).toBe("skipped")
     expect(vi.mocked(commands.catalogGet).mock.calls.map(([id]) => id)).toEqual(["dev.a.one"])
   })
@@ -1190,7 +1206,7 @@ describe("a withdrawn plugin", () => {
     expect(commands.catalogGet).toHaveBeenCalledExactlyOnceWith("dev.example.leaky")
     // The button waits for the get it asked for.
     // (The dialog hides the page from the accessibility tree.)
-    expect((within(b).getByRole("button", { name: "Update…", hidden: true }) as HTMLButtonElement).disabled).toBe(true)
+    expect(within(b).getByRole("button", { name: "Update…", hidden: true }).getAttribute("aria-busy")).toBe("true")
   })
 
   it("its card gives the withdrawal before a fault of its own", async () => {

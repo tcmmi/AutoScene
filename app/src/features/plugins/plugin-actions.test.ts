@@ -3,12 +3,14 @@ import { toast } from "sonner"
 import type { PackNaming, PackSpec } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { takePackSave } from "./pack-saves"
-import { runPackAction } from "./plugin-actions"
+import { qk, queryClient } from "@/lib/queries"
+import { pluginInfo } from "@/test/plugins"
+import { runPackAction, setPluginEnabled } from "./plugin-actions"
 
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
 vi.mock("@/lib/ipc", async (importOriginal) => {
   const ipc = await importOriginal<typeof import("@/lib/ipc")>()
-  return { ...ipc, commands: { ...ipc.commands, packActionRun: vi.fn() } }
+  return { ...ipc, commands: { ...ipc.commands, packActionRun: vi.fn(), pluginSetEnabled: vi.fn() } }
 })
 
 const run = { pluginId: "dev.example.fcpxml", pluginName: "FCPXML", actionId: "fcpxml", title: "Save as FCPXML…" }
@@ -59,5 +61,25 @@ describe("saving a pack with a plugin's action", () => {
     expect(toast.error).toHaveBeenCalledExactlyOnceWith("Plugin “FCPXML”: Save as FCPXML couldn't start", {
       description: "The pack changed meanwhile. Check it and export again.",
     })
+  })
+})
+
+describe("turning a plugin on or off", () => {
+  it("keeps the plugin as the backend gave it back", async () => {
+    const one = pluginInfo({ id: "dev.a.one", name: "One", enabled: false })
+    queryClient.setQueryData(qk.plugins, [one, pluginInfo({ id: "dev.a.two", name: "Two" })])
+    vi.mocked(commands.pluginSetEnabled).mockResolvedValue({ ...one, enabled: true })
+    await setPluginEnabled(one, true)
+    expect(commands.pluginSetEnabled).toHaveBeenCalledExactlyOnceWith("dev.a.one", true)
+    expect(queryClient.getQueryData<{ id: string; enabled: boolean }[]>(qk.plugins)?.map((p) => p.enabled)).toEqual([true, true])
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it("says what it couldn't do, in its own words", async () => {
+    vi.mocked(commands.pluginSetEnabled).mockRejectedValue({ code: "io", message: "The plugin's folder is locked." })
+    await setPluginEnabled(pluginInfo({ id: "dev.a.one", name: "One" }), true)
+    expect(toast.error).toHaveBeenLastCalledWith("Couldn't turn the plugin on", { description: "The plugin's folder is locked." })
+    await setPluginEnabled(pluginInfo({ id: "dev.a.one", name: "One" }), false)
+    expect(toast.error).toHaveBeenLastCalledWith("Couldn't turn the plugin off", { description: "The plugin's folder is locked." })
   })
 })

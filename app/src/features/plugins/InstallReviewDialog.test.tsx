@@ -723,7 +723,7 @@ describe("the install review", () => {
     vi.mocked(commands.pluginInstall).mockReturnValueOnce(new Promise((resolve) => (done = resolve)))
     const onClose = show(review({ needsUnreviewed: false, plugin: { ...discord, trust: "reviewed" } }))
     fireEvent.click(install())
-    await waitFor(() => expect(install().disabled).toBe(true))
+    await waitFor(() => expect(install().getAttribute("aria-busy")).toBe("true"))
     expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull()
@@ -748,7 +748,7 @@ describe("the install review", () => {
     fireEvent.change(typed, { target: { value: "Discord Notify" } })
     fireEvent.click(install())
     // The system's dialog may still ask: until the compile starts, the review stays.
-    await waitFor(() => expect(install().disabled).toBe(true))
+    await waitFor(() => expect(install().getAttribute("aria-busy")).toBe("true"))
     act(() => usePluginReview.getState().compileStarted("another ticket"))
     expect(screen.getByRole("dialog", { name: "Install Discord Notify?" })).toBeTruthy()
 
@@ -777,7 +777,7 @@ describe("the install review", () => {
     vi.mocked(commands.pluginInstall).mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
     const onClose = show(review({ needsUnreviewed: false, plugin: { ...discord, trust: "reviewed" } }))
     fireEvent.click(install())
-    await waitFor(() => expect(install().disabled).toBe(true))
+    await waitFor(() => expect(install().getAttribute("aria-busy")).toBe("true"))
     act(() => usePluginReview.getState().compileStarted("t1"))
     await screen.findByRole("dialog", { name: "Getting Discord Notify ready…" })
     const why = "This plugin took too long to get ready, so AutoScene stopped. Nothing changed."

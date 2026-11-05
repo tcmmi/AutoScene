@@ -85,6 +85,15 @@ export async function openSource(p: Pick<PluginInfo, "id">) {
   }
 }
 
+/** Turn a plugin on or off, as its card and its screen's switch do; a toast says when it can't be. */
+export async function setPluginEnabled(p: Pick<PluginInfo, "id">, on: boolean) {
+  try {
+    keepPlugin(await commands.pluginSetEnabled(p.id, on))
+  } catch (e) {
+    toast.error(on ? "Couldn't turn the plugin on" : "Couldn't turn the plugin off", { description: errorMessage(e) })
+  }
+}
+
 /** Put `p` as the backend gave it back into the plugin list on hand. */
 export function keepPlugin(p: PluginInfo) {
   queryClient.setQueryData<PluginInfo[]>(qk.plugins, (list) => list?.map((x) => (x.id === p.id ? p : x)))

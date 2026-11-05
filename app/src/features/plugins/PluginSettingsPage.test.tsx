@@ -3,6 +3,7 @@ import { QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { AppSettings, PluginInfo } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -10,6 +11,11 @@ import { commands } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { pluginInfo } from "@/test/plugins"
 import { PluginSettingsPage } from "./PluginSettingsPage"
+
+vi.mock("sonner", async (original) => {
+  const real = await original<typeof import("sonner")>()
+  return { ...real, toast: Object.assign(vi.fn(), real.toast) }
+})
 
 const { state } = vi.hoisted(() => ({ state: { plugins: [] as PluginInfo[], allow: true } }))
 
@@ -218,8 +224,10 @@ describe("a plugin's settings", () => {
     // Its own words: the backend's send people to Plugins, where this is.
     expect(within(banner).getByText(NOT_REVIEWED)).toBeTruthy()
     expect(screen.queryByText(BLOCKED)).toBeNull()
-    // A choice of the person's, not a fault: not in red.
+    // A choice of the person's, not a fault: not in red, and with an icon like every banner.
     expect(banner.className).not.toContain("danger")
+    expect(banner.className).toContain("border-hairline")
+    expect(banner.querySelector("svg")).not.toBeNull()
     await user.click(within(banner).getByRole("button", { name: "Allow them…" }))
     // The backend asks in the system's own dialog: the page can't say yes.
     expect(commands.pluginsAllowUnreviewed).toHaveBeenCalledExactlyOnceWith(true)
@@ -247,7 +255,7 @@ describe("a plugin's settings", () => {
     await user.click(again)
     // Through its review, the one way to agree to a changed program.
     expect(commands.pluginInspectFolder).toHaveBeenCalledExactlyOnceWith("C:\\AutoScene\\plugins\\dev.a.folder")
-    await waitFor(() => expect((again as HTMLButtonElement).disabled).toBe(true))
+    await waitFor(() => expect(again.getAttribute("aria-busy")).toBe("true"))
     cleanup()
     // A package's reason says what to do; there is no button for it.
     show("dev.a.package")
@@ -299,6 +307,8 @@ describe("a plugin's settings", () => {
     show("dev.a.one")
     const title = await screen.findByText("Couldn't read the plugins", undefined, { timeout: 4000 })
     expect(title.closest(".max-w-4xl")).toBeNull()
+    expect(screen.getByRole("button", { name: "Open logs" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Go to Plugins" })).toBeTruthy()
     await user.click(screen.getByRole("button", { name: "Try again" }))
     expect(await heroName("One")).toBeTruthy()
   })
@@ -312,6 +322,7 @@ describe("a plugin's settings", () => {
     const dialog = await screen.findByRole("dialog", { name: "Uninstall One?" })
     await user.click(within(dialog).getByRole("button", { name: "Uninstall" }))
     expect(commands.pluginUninstall).toHaveBeenCalledExactlyOnceWith("dev.a.one", false)
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Uninstalled One"))
     await waitFor(() => expect(router.state.location.pathname).toBe("/plugins"))
     expect(await screen.findByText("All plugins")).toBeTruthy()
     // It never said the plugin it just removed isn't installed.

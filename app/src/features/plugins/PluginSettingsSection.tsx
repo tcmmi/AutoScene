@@ -1,13 +1,16 @@
 import type * as React from "react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useId, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
 import type { EventKind, PluginInfo, SettingKind, SettingSpec, SettingValue } from "@/bindings"
-import { AppWindow, ArrowCounterClockwise, CircleNotch, FolderOpen, GraphicsCard, PuzzlePiece, ShieldCheck } from "@/components/icons"
+import { AppWindow, ArrowCounterClockwise, FolderOpen, GraphicsCard, Prohibit, PuzzlePiece, ShieldCheck, Warning } from "@/components/icons"
+import { Banner } from "@/components/ui/banner"
 import { Button } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Input } from "@/components/ui/input"
+import { ErrorState } from "@/components/ui/error-state"
+import { Field, Input } from "@/components/ui/input"
 import { Segmented } from "@/components/ui/segmented"
 import { Select } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
@@ -18,7 +21,6 @@ import { commands, errorMessage } from "@/lib/ipc"
 import { reveal } from "@/lib/os"
 import { isMac } from "@/lib/platform"
 import { qk, queryClient, usePluginSettings, usePlugins, useSettings } from "@/lib/queries"
-import { cn } from "@/lib/utils"
 import { useLoadAgain } from "./load-again"
 import { pageLink } from "./page-items"
 import { allowUnreviewed, keepPlugin } from "./plugin-actions"
@@ -59,24 +61,29 @@ export function PluginSettingsSection({ id }: { id: string }) {
   const p = plugins?.find((x) => x.id === id)
   if (p) return <PluginSettings p={p} />
   if (isPending) return null
+  if (error)
+    return (
+      <ErrorState
+        error={error}
+        icon={<PuzzlePiece />}
+        title="Couldn't read the plugins"
+        retrying={isFetching}
+        onRetry={() => void refetch()}
+        actions={
+          <Button variant="ghost" onClick={goPlugins}>
+            Go to Plugins
+          </Button>
+        }
+        className="mt-24"
+      />
+    )
   return (
     <EmptyState
       icon={<PuzzlePiece />}
-      tone={error ? "danger" : "accent"}
-      title={error ? "Couldn't read the plugins" : "This plugin isn't installed"}
-      description={error ? errorMessage(error) : "It was uninstalled, or this link is to another one."}
-      actions={
-        <>
-          {error && (
-            <Button disabled={isFetching} onClick={() => void refetch()}>
-              {isFetching ? <CircleNotch className="animate-spin" /> : <ArrowCounterClockwise />} Try again
-            </Button>
-          )}
-          <Button variant={error ? "ghost" : undefined} onClick={goPlugins}>
-            Go to Plugins
-          </Button>
-        </>
-      }
+      tone="accent"
+      title="This plugin isn't installed"
+      description="It was uninstalled, or this link is to another one."
+      actions={<Button onClick={goPlugins}>Go to Plugins</Button>}
       className="mt-24"
     />
   )
@@ -233,29 +240,29 @@ function Fix({ p }: { p: PluginInfo }) {
   // The withdrawn banner above says why it doesn't run, and nothing here would change that.
   if (p.withdrawn != null || (p.broken == null && !blocked)) return null
   return (
-    <div
-      role="status"
-      className={cn(
-        "mb-8 flex items-center justify-between gap-4 rounded-2xl border px-5 py-4",
-        blocked ? "border-white/10 bg-white/[0.04]" : "border-danger/30 bg-danger-subtle",
-      )}
-    >
-      <p className="text-md text-fg-1">{blocked ? NOT_REVIEWED : p.broken}</p>
-      {blocked ? (
-        // The backend asks in a dialog of the system's own before it allows any.
-        <Button size="sm" variant="ghost" onClick={() => void allowUnreviewed(true)}>
-          Allow them…
-        </Button>
-      ) : (
-        p.source === "folder" &&
-        allowed && (
-          <Button size="sm" variant="ghost" disabled={checking} onClick={() => void loadAgain(p)}>
-            {checking && <CircleNotch className="animate-spin" />}
-            Load its folder again…
+    <Banner
+      tone={blocked ? "neutral" : "danger"}
+      icon={blocked ? <Prohibit weight="fill" /> : <Warning weight="fill" />}
+      title={blocked ? NOT_REVIEWED : "This plugin can't run"}
+      description={blocked ? undefined : p.broken}
+      actions={
+        blocked ? (
+          // The backend asks in a dialog of the system's own before it allows any.
+          <Button size="sm" variant="ghost" onClick={() => void allowUnreviewed(true)}>
+            Allow them…
           </Button>
+        ) : (
+          p.source === "folder" &&
+          allowed && (
+            // The icon is the menu entry's: busy, the spinner takes its place and the words stay.
+            <Button size="sm" variant="ghost" busy={checking} onClick={() => void loadAgain(p)}>
+              <ArrowCounterClockwise /> Load its folder again…
+            </Button>
+          )
         )
-      )}
-    </div>
+      }
+      className="mb-8"
+    />
   )
 }
 
@@ -478,34 +485,16 @@ function SecretSetting({ p, spec, placeholder }: { p: PluginInfo; spec: SettingS
  * once. While it goes the dialog stays, and Remove waits.
  */
 function RemoveSecretDialog({ p, spec, onDone }: { p: PluginInfo; spec: SettingSpec; onDone: () => void }) {
-  const [busy, setBusy] = useState(false)
-  const remove = async () => {
-    setBusy(true)
-    try {
-      keepPlugin(await commands.pluginSecretClear(p.id, spec.key))
-      onDone()
-    } catch (e) {
-      toast.error("Couldn't remove the secret", { description: errorMessage(e) })
-      setBusy(false)
-    }
-  }
   return (
-    <Dialog open onOpenChange={(open) => !open && !busy && onDone()}>
-      <DialogContent
-        title={`Remove ${spec.title}?`}
-        description="It goes from your system's keychain, and the plugin can't use it until you enter it again."
-      >
-        <DialogFooter>
-          <Button variant="ghost" disabled={busy} onClick={onDone}>
-            Cancel
-          </Button>
-          <Button variant="danger" disabled={busy} onClick={() => void remove()}>
-            {busy && <CircleNotch className="animate-spin" />}
-            Remove
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <ConfirmDialog
+      open
+      onOpenChange={(open) => !open && onDone()}
+      title={`Remove ${spec.title}?`}
+      description="It goes from your system's keychain, and the plugin can't use it until you enter it again."
+      answer="Remove"
+      failure="Couldn't remove the secret"
+      onConfirm={async () => keepPlugin(await commands.pluginSecretClear(p.id, spec.key))}
+    />
   )
 }
 
@@ -523,6 +512,9 @@ function SecretDialog({
 }) {
   const [value, setValue] = useState("")
   const [busy, setBusy] = useState(false)
+  const id = useId()
+  const inputId = `${id}-secret`
+  const errorId = `${id}-problem`
   const tooLong = value.length > MAX_SECRET
   const save = async () => {
     if (value === "" || tooLong) return
@@ -536,32 +528,39 @@ function SecretDialog({
     }
   }
   return (
-    <Dialog open onOpenChange={(open) => !open && onDone()}>
-      <DialogContent title={spec.title} description="Kept in your system's keychain. AutoScene never shows it again.">
+    <Dialog open onOpenChange={(open) => !open && !busy && onDone()}>
+      <DialogContent title={spec.title} description="Kept in your system's keychain. AutoScene never shows it again." hideClose={busy}>
         <form
           onSubmit={(e) => {
             e.preventDefault()
             void save()
           }}
         >
-          <Input
-            type="password"
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            aria-label={spec.title}
-            aria-invalid={tooLong}
-            value={value}
-            placeholder={placeholder ?? undefined}
-            disabled={busy}
-            onChange={(e) => setValue(e.target.value)}
-          />
-          {tooLong && <p className="mt-2 text-sm text-danger">A secret can be at most {MAX_SECRET} characters.</p>}
+          {/* The dialog's title is its label, so the field's is for a screen reader only. */}
+          <Field
+            label={spec.title}
+            hideLabel
+            htmlFor={inputId}
+            error={tooLong ? `A secret can be at most ${MAX_SECRET} characters.` : undefined}
+            errorId={errorId}
+          >
+            <Input
+              id={inputId}
+              type="password"
+              autoFocus
+              aria-invalid={tooLong}
+              aria-describedby={tooLong ? errorId : undefined}
+              value={value}
+              placeholder={placeholder ?? undefined}
+              disabled={busy}
+              onChange={(e) => setValue(e.target.value)}
+            />
+          </Field>
           <DialogFooter>
             <Button variant="ghost" onClick={onDone} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={busy || value === "" || tooLong}>
+            <Button type="submit" variant="primary" busy={busy} disabled={value === "" || tooLong}>
               Save
             </Button>
           </DialogFooter>

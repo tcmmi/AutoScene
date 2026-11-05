@@ -56,6 +56,12 @@ describe("a catalog card", () => {
     expect(await screen.findByText("Downloads 312 MB at its first start")).toBeTruthy()
   })
 
+  it("a plugin being fetched shows Install at work", async () => {
+    usePluginReview.setState({ getting: { pluginId: model.id } as never })
+    show(model)
+    expect((await screen.findByRole("button", { name: "Install…" })).getAttribute("aria-busy")).toBe("true")
+  })
+
   it("a plugin that names none says nothing of downloads", async () => {
     show(catalogPlugin({ id: "dev.a.plain", name: "Plain" }))
     await screen.findByText("By AutoScene · version 1.0.0")

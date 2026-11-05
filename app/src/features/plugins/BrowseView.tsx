@@ -1,20 +1,19 @@
-import { ArrowCounterClockwise, ArrowsClockwise, CircleNotch, DownloadSimple, MagnifyingGlass, PuzzlePiece, Warning } from "@/components/icons"
+import { ArrowCounterClockwise, ArrowsClockwise, DownloadSimple, MagnifyingGlass, PuzzlePiece, Warning } from "@/components/icons"
 import { Banner } from "@/components/ui/banner"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ErrorState } from "@/components/ui/error-state"
 import { Switch } from "@/components/ui/switch"
 import { SettingRow, SettingsGroup } from "@/features/settings/primitives"
 import { useAppActions } from "@/lib/actions"
-import { errorMessage } from "@/lib/ipc"
+import { CARD_GRID } from "@/lib/grid"
 import { useCatalog, useSettings } from "@/lib/queries"
 import { CatalogCard } from "./CatalogCard"
 import { checkCatalog, setDailyChecks, useCatalogCheck } from "./catalog-actions"
 import { catalogMatches, stuckSince } from "./catalog-items"
+import { PluginSkeletons } from "./PluginSkeletons"
 
 const DAILY = "Check the plugin catalog every day"
-
-/** The grid of a project's library, as Installed has it. */
-const GRID = "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-x-6 gap-y-8"
 
 /**
  * Browse: what AutoScene's catalog offers, each plugin as a card, found by
@@ -29,26 +28,15 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
 
   if (error && view === undefined)
     return (
-      <EmptyState
+      <ErrorState
+        error={error}
         icon={<PuzzlePiece />}
-        tone="danger"
         title="Couldn't read the plugin catalog"
-        description={errorMessage(error)}
-        actions={
-          <Button disabled={isFetching} onClick={() => void refetch()}>
-            {isFetching ? <CircleNotch className="animate-spin" /> : <ArrowCounterClockwise />} Try again
-          </Button>
-        }
+        retrying={isFetching}
+        onRetry={() => void refetch()}
       />
     )
-  if (view === undefined)
-    return (
-      <div className={GRID}>
-        {Array.from({ length: 3 }, (_, i) => (
-          <div key={i} className="skeleton aspect-[2/1] rounded-2xl" />
-        ))}
-      </div>
-    )
+  if (view === undefined) return <PluginSkeletons />
   const { status } = view
   if (status.needsNewerApp)
     return (
@@ -84,8 +72,8 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
           title="The plugin catalog is out of date"
           description={`${since ? `AutoScene couldn't check it since ${since}.` : "AutoScene couldn't check it yet."} Plugins can't be installed from it until it can.`}
           actions={
-            <Button disabled={checking} onClick={() => void checkCatalog()}>
-              {checking ? <CircleNotch className="animate-spin" /> : <ArrowCounterClockwise />} Try again
+            <Button busy={checking} onClick={() => void checkCatalog()}>
+              <ArrowCounterClockwise /> Try again
             </Button>
           }
           className="mb-10 max-w-4xl"
@@ -105,8 +93,8 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
               )
             }
           >
-            <Button size="sm" disabled={checking} onClick={() => void checkCatalog()}>
-              {checking ? <CircleNotch className="animate-spin" /> : <ArrowsClockwise />} Check now
+            <Button size="sm" busy={checking} onClick={() => void checkCatalog()}>
+              <ArrowsClockwise /> Check now
             </Button>
           </SettingRow>
           <SettingRow
@@ -132,7 +120,7 @@ export function BrowseView({ query, onClear }: { query: string; onClear: () => v
           actions={<Button onClick={onClear}>Clear the search</Button>}
         />
       ) : (
-        <div className={GRID}>
+        <div className={CARD_GRID}>
           {shown.map((p) => (
             <CatalogCard key={p.id} p={p} />
           ))}

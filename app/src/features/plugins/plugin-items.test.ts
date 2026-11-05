@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { pluginInfo } from "@/test/plugins"
-import { checkedWhen, downloadSize, firstTime, joinWords, limitsLine, nextTime, packActionItems, permissionLabel, pluginMatches, pluginPicture, pluginsLit, resourceLine, trustLabel, withdrawnLine } from "./plugin-items"
+import { authorLine, checkedWhen, downloadSize, firstTime, joinWords, limitsLine, nextTime, packActionItems, permissionLabel, pluginMatches, pluginPicture, pluginsLit, resourceLine, trustLabel, withdrawnLine } from "./plugin-items"
 
 describe("finding a plugin", () => {
   const p = pluginInfo({ id: "dev.example.discord-notify", name: "Discord Notify", author: "Example Dev", description: "Posts each export's clip list." })
@@ -176,5 +176,17 @@ describe("the pack actions of the plugins", () => {
 
   it("lists none before the plugins are known", () => {
     expect(packActionItems(undefined)).toEqual([])
+  })
+})
+
+describe("who a plugin is by", () => {
+  it("is AutoScene's word for a reviewed package, the plugin's own for any other", () => {
+    expect(authorLine(pluginInfo({ id: "dev.a.one", name: "One", author: "Example Dev", source: "package", trust: "reviewed" }))).toBe("By Example Dev")
+    expect(authorLine(pluginInfo({ id: "dev.a.one", name: "One", author: "Example Dev", source: "package", trust: "unreviewed" }))).toBe("Says it is by Example Dev")
+    expect(authorLine(pluginInfo({ id: "dev.a.one", name: "One", author: "Example Dev", source: "folder", trust: "reviewed" }))).toBe("Says it is by Example Dev")
+  })
+
+  it("says nothing without an author", () => {
+    expect(authorLine(pluginInfo({ id: "dev.a.one", name: "One", author: "" }))).toBeNull()
   })
 })

@@ -97,6 +97,12 @@ export function reviewedPackage(p: Pick<PluginInfo, "trust" | "source">): boolea
   return p.source === "package" && p.trust === "reviewed"
 }
 
+/** Who a plugin is by, as its card and its screen say it: "By" for a reviewed package, else what it says of itself. None without an author. */
+export function authorLine(p: Pick<PluginInfo, "trust" | "source" | "author">): string | null {
+  if (!p.author) return null
+  return reviewedPackage(p) ? `By ${p.author}` : `Says it is by ${p.author}`
+}
+
 /**
  * The menu entry that opens a plugin's source, none when its plugin.json
  * names none. Only a reviewed package's is its source: AutoScene's review

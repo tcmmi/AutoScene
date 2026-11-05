@@ -1,6 +1,7 @@
+import { useTranslation } from "react-i18next"
 import { UserFocus } from "@/components/icons"
 import { Progress } from "@/components/ui/progress"
-import { plural, useProjectAnalysis } from "@/features/cast/cast"
+import { useProjectAnalysis } from "@/features/cast/cast"
 import { formatPercent } from "@/lib/format"
 import { useMediaList } from "@/lib/queries"
 import { cn } from "@/lib/utils"
@@ -8,6 +9,7 @@ import { jobBar } from "@/state/activity"
 
 /** What the analysis of a project is doing right now (nothing when idle). */
 export function AnalysisStatus({ pid, className }: { pid: string; className?: string }) {
+  const { t } = useTranslation("project")
   const jobs = useProjectAnalysis(pid)
   const { data: media } = useMediaList(pid)
   const job = jobs.find((j) => j.state === "running") ?? jobs[0]
@@ -36,13 +38,13 @@ export function AnalysisStatus({ pid, className }: { pid: string; className?: st
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="truncate font-medium text-fg-1">
-            {job.state === "queued" ? "Waiting to analyse" : (job.stage ?? "Analysing")}
+            {job.state === "queued" ? t("analysis.waiting") : (job.stage ?? t("analysis.running"))}
             {m && <span className="font-normal text-fg-2"> · {m.label || m.fileName}</span>}
           </span>
           <span className="timecode shrink-0 text-xs text-fg-2">{formatPercent(job.progress)}</span>
         </div>
         <Progress className="mt-2" value={jobBar(job)} />
-        {waiting > 0 && <div className="mt-1.5 text-xs text-fg-3">{plural(waiting, "more episode")} queued</div>}
+        {waiting > 0 && <div className="mt-1.5 text-xs text-fg-3">{t("analysis.moreQueued", { count: waiting })}</div>}
       </div>
     </div>
   )

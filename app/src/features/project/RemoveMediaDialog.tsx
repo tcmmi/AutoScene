@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import type { MediaItem } from "@/bindings"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { commands } from "@/lib/ipc"
@@ -24,16 +25,13 @@ export function RemoveMediaDialog({
   return media && <RemoveForm projectId={projectId} media={media} onDone={() => onOpenChange(false)} />
 }
 
-const WHAT_GOES =
-  "Its shots and faces go, and with them your decisions about those faces. Characters you haven't named who appear only here leave the cast."
-const NOTHING_YET = "Nothing has been found in it yet."
-
 /** Whether shots or faces of the episode are stored, so removing it loses them. */
 function hasAnalysis(m: MediaItem): boolean {
   return m.shotCount != null || m.faceCount != null || m.shots === "ready" || m.faces === "ready"
 }
 
 function RemoveForm({ projectId, media: m, onDone }: { projectId: string; media: MediaItem; onDone: () => void }) {
+  const { t } = useTranslation("project")
   // Said once, as it opens: a job ending meanwhile never moves the dialog
   // under the pointer, and the removal stops what runs then anyway.
   const [stops] = useState(() => stopsFirst(unfinishedJobs((j) => j.mediaId === m.id).map((j) => j.kind)))
@@ -47,10 +45,10 @@ function RemoveForm({ projectId, media: m, onDone }: { projectId: string; media:
     <ConfirmDialog
       open
       onOpenChange={(open) => !open && onDone()}
-      title={`Remove “${name}”?`}
-      description={`${found ? WHAT_GOES : NOTHING_YET} The video file itself isn't touched.${stops ? ` ${stops}` : ""}`}
-      answer="Remove from project"
-      failure="Couldn't remove it"
+      title={t("remove.title", { name })}
+      description={`${found ? t("remove.descriptionFound") : t("remove.descriptionNothing")}${stops ? ` ${stops}` : ""}`}
+      answer={t("remove.answer")}
+      failure={t("remove.failed")}
       onConfirm={() => commands.mediaRemove(projectId, m.id)}
     />
   )

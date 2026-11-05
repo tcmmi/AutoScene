@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { FileX, FilmStrip, Play, Warning, X } from "@/components/icons"
 import type { MediaItem } from "@/bindings"
 import { Artwork } from "@/components/ui/artwork"
@@ -7,7 +8,7 @@ import { ContextArea } from "@/components/ui/context-area"
 import { contextKit } from "@/components/ui/menu-actions"
 import { ProgressRing } from "@/components/ui/progress"
 import { Tooltip } from "@/components/ui/tooltip"
-import { formatDuration, formatEta } from "@/lib/format"
+import { formatDuration, formatEta, formatPercent } from "@/lib/format"
 import { cancelJob, cancelLabel } from "@/lib/jobs"
 import { releaseTitle } from "@/lib/media"
 import { cn } from "@/lib/utils"
@@ -28,6 +29,7 @@ export function EpisodeCard({
   onRemove: () => void
   className?: string
 }) {
+  const { t } = useTranslation(["project", "common"])
   const job = useMediaJob(m.id)
   const working = job && job.state === "running"
   const eta = formatEta(job?.etaMs)
@@ -58,12 +60,12 @@ export function EpisodeCard({
               ) : null}
               {m.status === "missing" && (
                 <Badge tone="danger" className="absolute right-2.5 top-2.5 bg-black/60 backdrop-blur-md">
-                  <FileX /> Missing
+                  <FileX /> {t("episode.missing")}
                 </Badge>
               )}
               {m.status === "failed" && (
                 <Badge tone="danger" className="absolute right-2.5 top-2.5 bg-black/60 backdrop-blur-md">
-                  <Warning /> Failed
+                  <Warning /> {t("episode.failed")}
                 </Badge>
               )}
               {!broken && !working && m.status === "ready" && (
@@ -75,8 +77,12 @@ export function EpisodeCard({
             <div className="mt-3 px-0.5">
               <div className="truncate text-md font-medium text-fg-1">{releaseTitle(m.fileName)}</div>
               <div className="mt-0.5 truncate text-sm text-fg-3">
-                {working ? (job.stage ?? "Working…") : m.shotCount != null ? `${m.shotCount.toLocaleString("en-GB")} shots` : "Not analysed yet"}
-                {m.faceCount ? ` · ${m.faceCount.toLocaleString("en-GB")} faces` : ""}
+                {working
+                  ? (job.stage ?? t("common:state.working"))
+                  : m.shotCount != null
+                    ? t("episode.shots", { count: m.shotCount })
+                    : t("episode.notAnalysed")}
+                {m.faceCount ? ` · ${t("episode.faces", { count: m.faceCount })}` : ""}
               </div>
             </div>
           </Link>
@@ -88,9 +94,9 @@ export function EpisodeCard({
           <div className="pointer-events-none absolute inset-x-0 top-0 flex aspect-video items-center justify-center p-3 transition-transform duration-[var(--dur-med)] ease-out group-hover:-translate-y-1">
             <div className="relative">
               <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/60 px-3.5 py-1.5 shadow-2xl backdrop-blur-md">
-                <ProgressRing value={job.progress} aria-label={job.stage ?? "Working"} />
+                <ProgressRing value={job.progress} aria-label={job.stage ?? t("episode.working")} />
                 <span className="timecode text-xs font-semibold tracking-wider text-fg-1">
-                  {job.progress != null ? `${Math.round(job.progress * 100)}%` : "Working…"}
+                  {job.progress != null ? formatPercent(job.progress) : t("common:state.working")}
                 </span>
                 {eta && <span className="tabular text-xs text-fg-2">· {eta}</span>}
               </div>

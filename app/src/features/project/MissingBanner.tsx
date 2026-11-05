@@ -1,9 +1,9 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { FolderOpen, Warning } from "@/components/icons"
 import type { MediaItem } from "@/bindings"
 import { Banner } from "@/components/ui/banner"
 import { Button } from "@/components/ui/button"
-import { plural } from "@/features/cast/cast"
 import { locateFolder } from "./relink"
 
 /**
@@ -22,17 +22,17 @@ export function MissingBanner({
   movie?: boolean
   className?: string
 }) {
+  const { t } = useTranslation("project")
   const missing = media?.filter((m) => m.status === "missing").length ?? 0
   // Looking probes a few files per episode: one search at a time.
   const [looking, setLooking] = useState(false)
   if (missing === 0) return null
-  const what = movie ? plural(missing, "file") : plural(missing, "episode")
   return (
     <Banner
       tone="accent"
       icon={<Warning weight="fill" />}
-      title={`${what} can't be found`}
-      description="Moved, renamed or on a drive that isn't connected? Their analysis and your decisions wait for them."
+      title={movie ? t("missing.files", { count: missing }) : t("missing.episodes", { count: missing })}
+      description={t("missing.description")}
       actions={
         <Button
           variant="secondary"
@@ -42,7 +42,7 @@ export function MissingBanner({
             void locateFolder(pid, missing, movie).finally(() => setLooking(false))
           }}
         >
-          <FolderOpen /> Locate folder…
+          <FolderOpen /> {t("missing.locateFolder")}
         </Button>
       }
       className={className}

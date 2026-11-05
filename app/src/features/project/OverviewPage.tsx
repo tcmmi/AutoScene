@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { CaretRight, DotsThree, FilePlus, FolderOpen, FolderPlus, Package, PencilSimple, Plus } from "@/components/icons"
 import type { MediaItem, ProjectSummary } from "@/bindings"
 import { Button } from "@/components/ui/button"
@@ -18,7 +19,7 @@ import { Section, Shelf } from "@/components/ui/shelf"
 import { TopBar } from "@/components/ui/topbar"
 import { AniListNames } from "@/features/cast/AniListNames"
 import { CharacterCard } from "@/features/cast/CharacterCard"
-import { plural, splitHidden } from "@/features/cast/cast"
+import { splitHidden } from "@/features/cast/cast"
 import { PickCharacter } from "@/features/cast/PickCharacter"
 import { ProjectDetailsDialog } from "@/features/library/ProjectDialogs"
 import { useAmbient } from "@/lib/ambient"
@@ -36,6 +37,7 @@ import { RemoveMediaDialog } from "./RemoveMediaDialog"
 
 /** A project's front page: its picture and title, its cast, its episodes. */
 export function OverviewPage() {
+  const { t } = useTranslation("project")
   const { pid } = useParams({ from: "/p/$pid/" })
   const projectQuery = useProject(pid)
   const mediaQuery = useMediaList(pid)
@@ -70,20 +72,20 @@ export function OverviewPage() {
           <ContextMenuItem
             onSelect={() => (shown.length > 0 ? setChoosing(true) : void navigate({ to: "/p/$pid/cast", params: { pid } }))}
           >
-            <Package /> Build a scenepack…
+            <Package /> {t("overview.buildPackMenu")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void pickFolder().then((p) => (p ? addToProject(pid, [p]) : undefined))}>
-            <FolderPlus /> Add {movie ? "a folder" : "episodes"}…
+            <FolderPlus /> {movie ? t("overview.addFolderMenu") : t("overview.addEpisodesMenu")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void pickVideoFiles().then((p) => addToProject(pid, p))}>
-            <FilePlus /> Add files…
+            <FilePlus /> {t("menu.addFiles")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => project && setRenaming(project)}>
-            <PencilSimple /> Edit details…
+            <PencilSimple /> {t("menu.editDetails")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => project && reveal(project.dir)}>
-            <FolderOpen /> Show project folder
+            <FolderOpen /> {t("menu.showProjectFolder")}
           </ContextMenuItem>
         </>
       }
@@ -95,40 +97,40 @@ export function OverviewPage() {
             <p className="mt-4 text-lg text-white/75">
               {projectFacts(project)}
               {project.durationSec ? ` · ${formatDuration(project.durationSec)}` : ""}
-              {shown.length > 0 ? ` · ${plural(shown.length, "character")}` : ""}
+              {shown.length > 0 ? ` · ${t("overview.characters", { count: shown.length })}` : ""}
             </p>
           )}
           <div className="mt-7 flex flex-wrap items-center gap-3">
             {shown.length > 0 ? (
               <Button size="lg" variant="primary" onClick={() => setChoosing(true)}>
-                <Package weight="bold" /> Build a scenepack
+                <Package weight="bold" /> {t("overview.buildPack")}
               </Button>
             ) : (
               <Button size="lg" variant="primary" asChild>
                 <Link to="/p/$pid/cast" params={{ pid }}>
-                  <Package weight="bold" /> Build a scenepack
+                  <Package weight="bold" /> {t("overview.buildPack")}
                 </Link>
               </Button>
             )}
             <Button size="lg" variant="glass" onClick={() => void pickFolder().then((p) => (p ? addToProject(pid, [p]) : undefined))}>
-              <FolderPlus /> Add {movie ? "a folder" : "episodes"}
+              <FolderPlus /> {movie ? t("overview.addFolder") : t("overview.addEpisodes")}
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="icon-lg" variant="glass" aria-label="More">
+                <Button size="icon-lg" variant="glass" aria-label={t("overview.more")}>
                   <DotsThree weight="bold" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 <DropdownMenuItem onSelect={() => void pickVideoFiles().then((p) => addToProject(pid, p))}>
-                  <FilePlus /> Add files…
+                  <FilePlus /> {t("menu.addFiles")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => project && setRenaming(project)}>
-                  <PencilSimple /> Edit details…
+                  <PencilSimple /> {t("menu.editDetails")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={() => project && reveal(project.dir)}>
-                  <FolderOpen /> Show project folder
+                  <FolderOpen /> {t("menu.showProjectFolder")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -141,11 +143,14 @@ export function OverviewPage() {
         <MissingBanner pid={pid} media={media} movie={movie} className="mx-10" />
         <AniListNames pid={pid} cast={cast} className="mx-10" />
         <Section
-          title="Cast"
+          title={t("overview.cast")}
           count={shown.length || undefined}
           action={
             shown.length > 0 && (
-              <SeeAll to={`/p/${pid}/cast`} label={cast && cast.unsure > 0 ? `${plural(cast.unsure, "face")} to review` : "All characters"} />
+              <SeeAll
+                to={`/p/${pid}/cast`}
+                label={cast && cast.unsure > 0 ? t("overview.facesToReview", { count: cast.unsure }) : t("overview.allCharacters")}
+              />
             )
           }
         >
@@ -158,16 +163,16 @@ export function OverviewPage() {
           ) : (
             <Placeholder>
               {(media?.length ?? 0) === 0
-                ? "Add episodes, and the characters appear here as they are analysed."
-                : "Characters appear here as soon as the first episode's faces are analysed."}
+                ? t("overview.castEmptyNoEpisodes")
+                : t("overview.castEmpty")}
             </Placeholder>
           )}
         </Section>
 
         <Section
-          title={movie ? "Files" : "Episodes"}
+          title={movie ? t("overview.files") : t("overview.episodes")}
           count={media?.length || undefined}
-          action={(media?.length ?? 0) > 0 && <SeeAll to={`/p/${pid}/episodes`} label="Details" />}
+          action={(media?.length ?? 0) > 0 && <SeeAll to={`/p/${pid}/episodes`} label={t("overview.details")} />}
         >
           {(media?.length ?? 0) > 0 ? (
             <Shelf>
@@ -188,7 +193,7 @@ export function OverviewPage() {
               className="flex h-40 w-full max-w-md flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 text-fg-3 transition-colors hover:border-white/30 hover:text-fg-1"
             >
               <Plus weight="bold" className="size-5" />
-              <span className="text-md font-medium">Add {movie ? "a folder" : "a season folder"}</span>
+              <span className="text-md font-medium">{movie ? t("overview.addMovieFolder") : t("overview.addSeasonFolder")}</span>
             </button>
           )}
         </Section>
@@ -199,8 +204,8 @@ export function OverviewPage() {
         pid={pid}
         open={choosing}
         onOpenChange={setChoosing}
-        title="Whose scenepack?"
-        description="Their shots are picked in the next step."
+        title={t("overview.whoseTitle")}
+        description={t("overview.whoseDescription")}
         onPick={(p) => {
           setChoosing(false)
           if (p.kind === "existing") void navigate({ to: "/p/$pid/cast/$cid/pack", params: { pid, cid: p.id } })

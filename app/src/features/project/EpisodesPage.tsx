@@ -1,6 +1,7 @@
 import type * as React from "react"
 import { useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import {
   DotsThree,
   FilePlus,
@@ -50,6 +51,7 @@ import { StatusCell } from "./StatusCell"
 
 /** Every file of a project with its format, audio track and analysis state. */
 export function EpisodesPage() {
+  const { t } = useTranslation("project")
   const { pid } = useParams({ from: "/p/$pid/episodes" })
   const projectQuery = useProject(pid)
   const mediaQuery = useMediaList(pid)
@@ -80,21 +82,21 @@ export function EpisodesPage() {
       menu={
         <>
           <ContextMenuItem onSelect={() => void pickFolder().then((p) => (p ? addToProject(pid, [p]) : undefined))}>
-            <FolderPlus /> Add folder…
+            <FolderPlus /> {t("menu.addFolder")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => void pickVideoFiles().then((p) => addToProject(pid, p))}>
-            <FilePlus /> Add files…
+            <FilePlus /> {t("menu.addFiles")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => project && reveal(project.dir)}>
-            <FolderOpen /> Show project folder
+            <FolderOpen /> {t("menu.showProjectFolder")}
           </ContextMenuItem>
         </>
       }
     >
       <header className="flex flex-wrap items-end justify-between gap-6 px-10 pt-10 pb-8">
         <div>
-          <h1 className="display text-5xl text-fg-1">{movie ? "Files" : "Episodes"}</h1>
+          <h1 className="display text-5xl text-fg-1">{movie ? t("episodes.titleFiles") : t("episodes.title")}</h1>
           {project && (
             <p className="mt-2 text-md text-fg-2">
               {projectFacts(project)}
@@ -104,14 +106,14 @@ export function EpisodesPage() {
         </div>
         <div className="flex items-center gap-2.5">
           <Button size="lg" variant="secondary" onClick={() => void pickVideoFiles().then((p) => addToProject(pid, p))}>
-            <FilePlus /> Add files
+            <FilePlus /> {t("add.files")}
           </Button>
           <Button
             size="lg"
             variant="primary"
             onClick={() => void pickFolder().then((p) => (p ? addToProject(pid, [p]) : undefined))}
           >
-            <FolderPlus /> Add folder
+            <FolderPlus /> {t("add.folder")}
           </Button>
         </div>
       </header>
@@ -121,8 +123,8 @@ export function EpisodesPage() {
         {!isPending && media?.length === 0 ? (
           <EmptyState
             icon={<FolderPlus />}
-            title="No videos yet"
-            description="Drop a season folder or video files anywhere in this window, or add them here."
+            title={t("episodes.emptyTitle")}
+            description={t("episodes.emptyDescription")}
           />
         ) : (
           // Details fold away as the window narrows; picture, name and state always stay.
@@ -191,6 +193,7 @@ export function EpisodeRow({
   onOpen: () => void
   onRemove: () => void
 }) {
+  const { t } = useTranslation("project")
   const v = m.info?.video
   const ready = m.status === "ready"
   const audio = m.info?.audio ?? []
@@ -199,7 +202,7 @@ export function EpisodeRow({
   const setAudio = (value: string) => {
     commands
       .mediaSetAudio(projectId, m.id, Number(value))
-      .catch((e) => toast.error("Couldn't change the audio track", { description: errorMessage(e) }))
+      .catch((e) => toast.error(t("episodes.audioFailed"), { description: errorMessage(e) }))
   }
 
   // Whether the press now being clicked began on a control or in a menu a control opened.
@@ -226,7 +229,7 @@ export function EpisodeRow({
               : undefined
           }
           tabIndex={ready ? 0 : undefined}
-          aria-label={ready ? `Open ${m.label ? `${m.label} ` : ""}${releaseTitle(m.fileName)}` : undefined}
+          aria-label={ready ? t("episodes.open", { name: `${m.label ? `${m.label} ` : ""}${releaseTitle(m.fileName)}` }) : undefined}
           onKeyDown={(e) => {
             if (ready && e.key === "Enter" && e.target === e.currentTarget) onOpen()
           }}
@@ -290,14 +293,14 @@ export function EpisodeRow({
             {audio.length > 1 ? (
               <Select
                 size="sm"
-                aria-label="Audio track"
+                aria-label={t("episodes.audioTrack")}
                 className="w-full"
                 value={String(currentAudio(m))}
                 onChange={setAudio}
                 options={audio.map(audioOption)}
               />
             ) : (
-              <span className="block truncate text-sm text-fg-3">{!m.info ? "–" : audio[0] ? audioLabel(audio[0]) : "No audio"}</span>
+              <span className="block truncate text-sm text-fg-3">{!m.info ? "–" : audio[0] ? audioLabel(audio[0]) : t("episodes.noAudio")}</span>
             )}
           </div>
 
@@ -308,7 +311,7 @@ export function EpisodeRow({
           <div>
             <DropdownMenu>
               <DropdownMenuTrigger
-                aria-label={`${m.fileName} options`}
+                aria-label={t("episodes.options", { name: m.fileName })}
                 className="flex size-9 items-center justify-center rounded-full text-fg-3 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-white/[0.08] hover:text-fg-1 focus-visible:opacity-100 data-[state=open]:opacity-100"
               >
                 <DotsThree className="size-5" weight="bold" />

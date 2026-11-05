@@ -1,29 +1,36 @@
+import { Trans, useTranslation } from "react-i18next"
 import { ArrowCounterClockwise, Check, Clock, FileX, Scissors, User, UserFocus, Warning, X } from "@/components/icons"
 import { toast } from "sonner"
 import type { JobInfo, MediaItem } from "@/bindings"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip } from "@/components/ui/tooltip"
 import { formatEta, formatPercent } from "@/lib/format"
+import { t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { cancelJob, cancelLabel } from "@/lib/jobs"
 import { useProject, useSettings } from "@/lib/queries"
 import { useMediaJob } from "@/state/activity"
 
+// The number of shots and faces is set in the timecode face.
+const MONO = { mono: <span className="timecode" /> }
+
 function runningLabel(job: JobInfo): string {
-  if (job.kind === "proxy") return "Preparing preview"
-  if (job.kind === "analyze") return job.stage ?? "Analysing"
-  return job.stage ?? "Indexing"
+  if (job.kind === "proxy") return t("project:status.preparingPreview")
+  if (job.kind === "analyze") return job.stage ?? t("project:status.analysing")
+  return job.stage ?? t("project:status.indexing")
 }
 
 function queuedLabel(m: MediaItem, job?: JobInfo): string {
-  if (m.status !== "ready") return "Queued"
-  if (job?.kind === "proxy") return "Preview queued"
-  if (job?.kind === "analyze") return "Analysis queued"
-  return "Queued"
+  if (m.status !== "ready") return t("project:status.queued")
+  if (job?.kind === "proxy") return t("project:status.previewQueued")
+  if (job?.kind === "analyze") return t("project:status.analysisQueued")
+  return t("project:status.queued")
 }
 
 /** Indexing, preview and analysis state of one media, with live progress from its job. */
 export function StatusCell({ media: m, projectId }: { media: MediaItem; projectId: string }) {
+  // Subscribes this cell to the language: the helpers above say their words with the global `t`.
+  useTranslation("project")
   const job = useMediaJob(m.id)
   // People are found by their bodies too (the setting; never with Fast
   // Scan, never in anime, whose characters are found whole).
@@ -31,12 +38,12 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
   const { data: project } = useProject(projectId)
   const people = (settings?.findBodies ?? false) && !(project?.fastScan ?? false) && project?.content !== "anime"
   const retry = () => {
-    commands.mediaRetry(projectId, m.id).catch((err) => toast.error("Couldn't retry", { description: errorMessage(err) }))
+    commands.mediaRetry(projectId, m.id).catch((err) => toast.error(t("project:status.retryFailed"), { description: errorMessage(err) }))
   }
   const analyze = () => {
     commands
       .mediaAnalyze(projectId, m.id, null)
-      .catch((err) => toast.error("Couldn't start the analysis", { description: errorMessage(err) }))
+      .catch((err) => toast.error(t("project:actions.analysisFailed"), { description: errorMessage(err) }))
   }
   // The job whose state is shown here, never another one of the media's.
   const cancel = (job: JobInfo) => () => {
@@ -47,7 +54,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
     return (
       <Tooltip label={m.path}>
         <span className="inline-flex items-center gap-1.5 text-sm text-danger">
-          <FileX className="size-3.5" /> File missing
+          <FileX className="size-3.5" /> {t("project:status.fileMissing")}
         </span>
       </Tooltip>
     )
@@ -55,13 +62,13 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
   if (m.status === "failed") {
     return (
       <span className="inline-flex items-center gap-2 text-sm">
-        <Tooltip label={m.error ?? "Indexing failed"}>
+        <Tooltip label={m.error ?? t("project:status.indexingFailed")}>
           <span className="inline-flex items-center gap-1.5 text-danger">
-            <Warning className="size-3.5" /> Failed
+            <Warning className="size-3.5" /> {t("project:status.failed")}
           </span>
         </Tooltip>
         <button onClick={retry} className="inline-flex items-center gap-1 rounded-xs px-1 text-fg-3 hover:text-fg-1">
-          <ArrowCounterClockwise className="size-3" /> Retry
+          <ArrowCounterClockwise className="size-3" /> {t("common:action.retry")}
         </button>
       </span>
     )
@@ -102,7 +109,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
             onClick={cancel(job)}
             className="inline-flex items-center gap-1 rounded-xs px-1 text-fg-3 hover:text-fg-1"
           >
-            <X className="size-3" /> Cancel
+            <X className="size-3" /> {t("common:action.cancel")}
           </button>
         )}
       </span>
@@ -111,13 +118,13 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
   if (m.shots === "failed") {
     return (
       <span className="inline-flex items-center gap-2 text-sm">
-        <Tooltip label={m.shotsError ?? "Shot detection failed"}>
+        <Tooltip label={m.shotsError ?? t("project:status.shotsFailed")}>
           <span className="inline-flex items-center gap-1.5 text-danger">
-            <Warning className="size-3.5" /> Analysis failed
+            <Warning className="size-3.5" /> {t("project:status.analysisFailed")}
           </span>
         </Tooltip>
         <button onClick={analyze} className="inline-flex items-center gap-1 rounded-xs px-1 text-fg-3 hover:text-fg-1">
-          <ArrowCounterClockwise className="size-3" /> Retry
+          <ArrowCounterClockwise className="size-3" /> {t("common:action.retry")}
         </button>
       </span>
     )
@@ -126,17 +133,17 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
     return (
       <span className="inline-flex items-center gap-2 text-sm">
         <span className="inline-flex items-center gap-1.5 text-fg-2">
-          <Check className="size-3.5 text-fg-3" /> {m.shots === "stopped" ? "Stopped" : "Indexed"}
+          <Check className="size-3.5 text-fg-3" /> {m.shots === "stopped" ? t("project:status.stopped") : t("project:status.indexed")}
         </span>
         <button onClick={analyze} className="inline-flex items-center gap-1 rounded-xs px-1 text-fg-3 hover:text-fg-1">
-          <Scissors className="size-3" /> {m.shots === "stopped" ? "Continue" : "Find shots"}
+          <Scissors className="size-3" /> {m.shots === "stopped" ? t("project:status.continue") : t("project:status.findShots")}
         </button>
       </span>
     )
   }
   const shots = (
     <span className="inline-flex items-center gap-1.5 text-fg-2">
-      <Check className="size-3.5 text-fg-3" /> <span className="timecode">{(m.shotCount ?? 0).toLocaleString("en-GB")}</span> shots
+      <Check className="size-3.5 text-fg-3" /> <Trans ns="project" i18nKey="status.shots" count={m.shotCount ?? 0} components={MONO} />
     </span>
   )
   if (m.faces === "ready") {
@@ -144,7 +151,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
       <span className="inline-flex flex-col text-sm">
         {shots}
         <span className="pl-5 text-xs text-fg-3">
-          <span className="timecode">{(m.faceCount ?? 0).toLocaleString("en-GB")}</span> faces
+          <Trans ns="project" i18nKey="status.faces" count={m.faceCount ?? 0} components={MONO} />
         </span>
         {people && m.bodies && m.bodies !== "ready" && <PeopleLine media={m} onContinue={analyze} />}
       </span>
@@ -155,13 +162,13 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
       <span className="inline-flex flex-col gap-0.5 text-sm">
         {shots}
         <span className="inline-flex items-center gap-2 pl-5 text-xs">
-          <Tooltip label={m.facesError ?? "Finding characters failed"}>
+          <Tooltip label={m.facesError ?? t("project:status.charactersFailedWhy")}>
             <span className="inline-flex items-center gap-1 text-danger">
-              <Warning className="size-3" /> Characters failed
+              <Warning className="size-3" /> {t("project:status.charactersFailed")}
             </span>
           </Tooltip>
           <button onClick={analyze} className="inline-flex items-center gap-1 rounded-xs px-1 text-fg-3 hover:text-fg-1">
-            <ArrowCounterClockwise className="size-3" /> Retry
+            <ArrowCounterClockwise className="size-3" /> {t("common:action.retry")}
           </button>
         </span>
       </span>
@@ -171,7 +178,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
     <span className="inline-flex flex-col gap-0.5 text-sm">
       {shots}
       <button onClick={analyze} className="inline-flex items-center gap-1 rounded-xs pl-5 text-left text-xs text-fg-3 hover:text-fg-1">
-        <UserFocus className="size-3" /> {m.faces === "stopped" ? "Stopped · continue" : "Find characters"}
+        <UserFocus className="size-3" /> {m.faces === "stopped" ? t("project:status.stoppedContinue") : t("project:status.findCharacters")}
       </button>
     </span>
   )
@@ -183,19 +190,20 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
  * from where it was.
  */
 function PeopleLine({ media: m, onContinue }: { media: MediaItem; onContinue: () => void }) {
+  useTranslation("project")
   const failed = m.bodies === "failed"
   return (
     <span className="inline-flex items-center gap-2 pl-5 text-xs">
       {failed && (
-        <Tooltip label={m.bodiesError ?? "Finding people failed"}>
+        <Tooltip label={m.bodiesError ?? t("project:status.peopleFailedWhy")}>
           <span className="inline-flex items-center gap-1 text-danger">
-            <Warning className="size-3" /> People failed
+            <Warning className="size-3" /> {t("project:status.peopleFailed")}
           </span>
         </Tooltip>
       )}
       <button onClick={onContinue} className="inline-flex items-center gap-1 rounded-xs px-1 text-fg-3 hover:text-fg-1">
         {failed ? <ArrowCounterClockwise className="size-3" /> : <User className="size-3" />}
-        {failed ? "Retry" : m.bodies === "stopped" ? "People stopped · continue" : "Find people"}
+        {failed ? t("common:action.retry") : m.bodies === "stopped" ? t("project:status.peopleStoppedContinue") : t("project:status.findPeople")}
       </button>
     </span>
   )

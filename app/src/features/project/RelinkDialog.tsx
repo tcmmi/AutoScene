@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { baseName, mediaTitle } from "@/lib/media"
@@ -7,6 +8,7 @@ import { relinkAnyway } from "./relink"
 
 /** Asks before a file that doesn't look like the missing episode takes its place. */
 export function RelinkDialog() {
+  const { t } = useTranslation(["project", "common"])
   const question = useRelink((s) => s.question)
   const close = useRelink((s) => s.close)
   const [busy, setBusy] = useState(false)
@@ -14,12 +16,12 @@ export function RelinkDialog() {
     <Dialog open={question != null} onOpenChange={(o) => !o && !busy && close()}>
       {question && (
         <DialogContent
-          title={`Use “${baseName(question.path)}” for ${mediaTitle(question.media)}?`}
-          description={`It doesn't look like the same episode. ${question.reason} If you use it anyway, it's analysed again, and your decisions go back onto the faces that look like theirs.`}
+          title={t("relink.questionTitle", { file: baseName(question.path), episode: mediaTitle(question.media) })}
+          description={t("relink.questionDescription", { reason: question.reason })}
         >
           <DialogFooter>
             <Button variant="ghost" disabled={busy} onClick={close}>
-              Cancel
+              {t("common:action.cancel")}
             </Button>
             <Button
               variant="primary"
@@ -33,7 +35,7 @@ export function RelinkDialog() {
                 })
               }}
             >
-              Use it anyway
+              {t("relink.useAnyway")}
             </Button>
           </DialogFooter>
         </DialogContent>

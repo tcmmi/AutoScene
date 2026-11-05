@@ -1,4 +1,5 @@
 import { ArrowCounterClockwise, Copy, FolderOpen, MagnifyingGlass, Play, Scissors, Trash, UserFocus, X } from "@/components/icons"
+import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import type { MediaItem } from "@/bindings"
 import type { MenuKit } from "@/components/ui/menu-actions"
@@ -32,6 +33,7 @@ export function EpisodeItems({
   /** The key that opens it where it is shown (Enter on a focused row). */
   openShortcut?: string[]
 }) {
+  const { t } = useTranslation("project")
   const { Item, Separator } = kit
   // Its unfinished jobs by kind (it can have several at once): each item
   // stops the one it names.
@@ -50,21 +52,21 @@ export function EpisodeItems({
   const redo = (stage: "shots" | "faces") =>
     void commands
       .mediaAnalyze(projectId, m.id, stage)
-      .catch((e) => toast.error("Couldn't start the analysis", { description: errorMessage(e) }))
+      .catch((e) => toast.error(t("actions.analysisFailed"), { description: errorMessage(e) }))
   return (
     <>
       <Item disabled={!ready} onSelect={onOpen} shortcut={openShortcut}>
-        <Play /> Open
+        <Play /> {t("actions.open")}
       </Item>
       <Item onSelect={() => reveal(m.path)}>
-        <FolderOpen /> Show in folder
+        <FolderOpen /> {t("menu.showInFolder")}
       </Item>
-      <Item onSelect={() => void copyText(m.path, "file path")}>
-        <Copy /> Copy file path
+      <Item onSelect={() => void copyText(m.path, t("copied.filePath"))}>
+        <Copy /> {t("menu.copyFilePath")}
       </Item>
       {m.status === "missing" && (
         <Item onSelect={() => void locateFile(projectId, m)}>
-          <MagnifyingGlass /> Locate file…
+          <MagnifyingGlass /> {t("actions.locateFile")}
         </Item>
       )}
       {m.status === "failed" && (
@@ -72,10 +74,10 @@ export function EpisodeItems({
           onSelect={() =>
             void commands
               .mediaRetry(projectId, m.id)
-              .catch((e) => toast.error("Couldn't index it again", { description: errorMessage(e) }))
+              .catch((e) => toast.error(t("actions.retryIndexFailed"), { description: errorMessage(e) }))
           }
         >
-          <ArrowCounterClockwise /> Index again
+          <ArrowCounterClockwise /> {t("actions.indexAgain")}
         </Item>
       )}
       {working.map((j) => (
@@ -85,17 +87,17 @@ export function EpisodeItems({
       ))}
       {ready && (
         <Item disabled={findingShots} onSelect={() => redo("shots")}>
-          <Scissors /> Find shots again
+          <Scissors /> {t("actions.findShotsAgain")}
         </Item>
       )}
       {ready && m.shots === "ready" && (
         <Item disabled={findingFaces} onSelect={() => redo("faces")}>
-          <UserFocus /> Find characters again
+          <UserFocus /> {t("actions.findCharactersAgain")}
         </Item>
       )}
       <Separator />
       <Item destructive onSelect={onRemove}>
-        <Trash /> Remove from project…
+        <Trash /> {t("actions.removeFromProject")}
       </Item>
     </>
   )

@@ -1,7 +1,7 @@
 import { toast } from "sonner"
 import type { MediaItem, Relink, RelinkSummary } from "@/bindings"
-import { plural } from "@/features/cast/cast"
 import { commands, errorMessage } from "@/lib/ipc"
+import { t } from "@/lib/i18n"
 import { mediaTitle, pickFolder, pickVideoFile } from "@/lib/media"
 import { useRelink } from "@/state/relink"
 
@@ -11,14 +11,14 @@ import { useRelink } from "@/state/relink"
  * first (`RelinkDialog`).
  */
 export async function locateFile(pid: string, m: MediaItem) {
-  const path = await pickVideoFile(`Where is ${mediaTitle(m)} now?`)
+  const path = await pickVideoFile(t("project:relink.whereIs", { title: mediaTitle(m) }))
   if (!path) return
   try {
     const r = await commands.mediaRelink(pid, m.id, path, false)
     if (r.kind === "different") useRelink.getState().ask({ pid, media: m, path, reason: r.reason })
     else relinked(r, mediaTitle(m))
   } catch (e) {
-    toast.error("Couldn't use that file", { description: errorMessage(e) })
+    toast.error(t("project:relink.couldntUse"), { description: errorMessage(e) })
   }
 }
 
@@ -26,19 +26,15 @@ export async function locateFile(pid: string, m: MediaItem) {
 export async function relinkAnyway(pid: string, m: MediaItem, path: string) {
   try {
     await commands.mediaRelink(pid, m.id, path, true)
-    toast(`Using it for ${mediaTitle(m)}`, {
-      description: "It's analysed again; your decisions go back onto the faces that look like theirs.",
-    })
+    toast(t("project:relink.using", { title: mediaTitle(m) }), { description: t("project:relink.usingDescription") })
   } catch (e) {
-    toast.error("Couldn't use that file", { description: errorMessage(e) })
+    toast.error(t("project:relink.couldntUse"), { description: errorMessage(e) })
   }
 }
 
 function relinked(r: Relink, title: string) {
-  toast(
-    r.kind === "same" ? `Found ${title}` : `Found ${title} — indexing it again`,
-    r.kind === "same" ? undefined : { description: "Its analysis stays if its frames are the same." },
-  )
+  if (r.kind === "same") toast(t("project:relink.found", { title }))
+  else toast(t("project:relink.foundAgain", { title }), { description: t("project:relink.foundAgainDescription") })
 }
 
 /**
@@ -46,7 +42,7 @@ function relinked(r: Relink, title: string) {
  * Resolves once done; `false` when nothing was looked for.
  */
 export async function locateFolder(pid: string, missing: number, movie = false): Promise<boolean> {
-  const dir = await pickFolder(movie ? "Where are the files now?" : "Where are the episodes now?")
+  const dir = await pickFolder(movie ? t("project:relink.whereAreFiles") : t("project:relink.whereAreEpisodes"))
   if (!dir) return false
   try {
     const s = await commands.mediaRelinkFolder(pid, dir)
@@ -54,19 +50,23 @@ export async function locateFolder(pid: string, missing: number, movie = false):
     if (s.same + s.reindex === 0) toast.error(title, { description })
     else toast(title, { description })
   } catch (e) {
-    toast.error("Couldn't look in that folder", { description: errorMessage(e) })
+    toast.error(t("project:relink.couldntLook"), { description: errorMessage(e) })
   }
   return true
 }
 
 export function folderResult(s: RelinkSummary, missing: number, movie = false): { title: string; description?: string } {
-  const what = movie ? "file" : "episode"
+  // The keys are `relink.folder.{episodes,files}.*`: both kinds have the same set (language.test.tsx), and a key scan only sees them here.
+  const words = movie ? "files" : "episodes"
   const found = s.same + s.reindex
-  const checking = s.reindex > 0 ? `${plural(s.reindex, "is another copy", "are other copies")}, indexed again.` : undefined
-  if (found === 0) return { title: "None of them are in that folder", description: `Pick the folder the ${what}s are in now.` }
-  if (s.missing === 0) {
-    return { title: found === 1 ? `Found the ${what}` : `Found all ${found} ${what}s`, description: checking }
+  const checking = s.reindex > 0 ? t("project:relink.folder.copies", { count: s.reindex }) : undefined
+  if (found === 0) {
+    return { title: t(`project:relink.folder.${words}.noneTitle`), description: t(`project:relink.folder.${words}.noneDescription`) }
   }
-  const still = `${plural(s.missing, what)} still can't be found.`
-  return { title: `Found ${found} of ${missing} ${what}s`, description: checking ? `${checking} ${still}` : still }
+  if (s.missing === 0) return { title: t(`project:relink.folder.${words}.foundAll`, { count: found }), description: checking }
+  const still = t(`project:relink.folder.${words}.stillMissing`, { count: s.missing })
+  return {
+    title: t(`project:relink.folder.${words}.foundSome`, { found, count: missing }),
+    description: checking ? `${checking} ${still}` : still,
+  }
 }

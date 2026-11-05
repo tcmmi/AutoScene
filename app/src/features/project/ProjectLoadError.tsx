@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import { useTranslation } from "react-i18next"
 import { Compass } from "@/components/icons"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -11,16 +12,17 @@ import { errorMessage, isAppError } from "@/lib/ipc"
  * anything else can be tried again.
  */
 export function ProjectLoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const { t } = useTranslation("project")
   if (isAppError(error) && error.code === "not_found") {
     return (
       <EmptyState
         icon={<Compass />}
-        title="This project isn't here any more"
+        title={t("loadError.goneTitle")}
         description={errorMessage(error)}
         className="h-full"
         actions={
           <Button asChild>
-            <Link to="/">Back to Library</Link>
+            <Link to="/">{t("loadError.backToLibrary")}</Link>
           </Button>
         }
       />

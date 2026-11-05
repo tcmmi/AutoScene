@@ -1,5 +1,7 @@
 import { useId, useState } from "react"
 import { useNavigate, useParams } from "@tanstack/react-router"
+import type { TFunction } from "i18next"
+import { useTranslation } from "react-i18next"
 import {
   CaretDown,
   Check,
@@ -44,6 +46,7 @@ import { ProjectLoadError } from "./ProjectLoadError"
 import { ProjectNav } from "./ProjectNav"
 
 export function ExportsPage() {
+  const { t } = useTranslation("project")
   const { pid } = useParams({ from: "/p/$pid/exports" })
   const projectQuery = useProject(pid)
   const exportsQuery = useExports(pid)
@@ -71,23 +74,23 @@ export function ExportsPage() {
             void commands
               .exportDefaultDir(pid)
               .then(reveal)
-              .catch((e) => toast.error("Couldn't show it", { description: errorMessage(e) }))
+              .catch((e) => toast.error(t("exports.showFolderFailed"), { description: errorMessage(e) }))
           }
         >
-          <FolderOpen /> Show the exports folder
+          <FolderOpen /> {t("exports.showExportsFolder")}
         </ContextMenuItem>
       }
     >
       <header className="px-10 pt-10 pb-8">
-        <h1 className="display text-5xl text-fg-1">Exports</h1>
-        <p className="mt-2 text-md text-fg-2">Every clip is cut frame-exact and checked against the source, frame by frame.</p>
+        <h1 className="display text-5xl text-fg-1">{t("exports.title")}</h1>
+        <p className="mt-2 text-md text-fg-2">{t("exports.subtitle")}</p>
       </header>
       <div className="flex flex-col gap-5 px-10 pb-16">
         {exports?.length === 0 && (
           <EmptyState
             icon={<Package />}
-            title="No exports yet"
-            description="Open an episode, mark in and out, and export the clip. Finished exports are listed here."
+            title={t("exports.emptyTitle")}
+            description={t("exports.emptyDescription")}
           />
         )}
         {exports?.map((ex) => <ExportCard key={ex.id} pid={pid} ex={ex} media={byId} />)}
@@ -100,6 +103,7 @@ export function ExportsPage() {
 const FOLD_OVER = 4
 
 function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media: Map<string, MediaItem> }) {
+  const { t } = useTranslation("project")
   // A plugin's run on this export names it too, but isn't its job.
   const job = useActivity((s) => s.order.map((id) => s.jobs[id]).find((j) => j.kind === "export" && j.exportId === ex.id))
   const done = ex.items.filter((i) => i.status === "done").length
@@ -137,16 +141,16 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
             </div>
             <p className="mt-0.5 text-sm text-fg-3">
               {ex.label && `${ex.preset.name} · `}
-              {formatDateTime(ex.createdAt)} · {done} of {ex.items.length} {ex.items.length === 1 ? "clip" : "clips"}
-              {file && " in one file"}
+              {formatDateTime(ex.createdAt)} ·{" "}
+              {file ? t("exports.clipsDoneInOneFile", { done, count: ex.items.length }) : t("exports.clipsDone", { done, count: ex.items.length })}
             </p>
           </div>
           <Button variant="secondary" onClick={() => reveal(ex.outDir)}>
-            <FolderOpen /> Show folder
+            <FolderOpen /> {t("menu.showFolder")}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label={`${ex.label ?? ex.preset.name} options`}
+              aria-label={t("exports.options", { name: ex.label ?? ex.preset.name })}
               className="flex size-9 items-center justify-center rounded-full text-fg-2 transition-colors hover:bg-white/[0.08] hover:text-fg-1 data-[state=open]:bg-white/[0.08]"
             >
               <DotsThree className="size-5" weight="bold" />
@@ -175,7 +179,11 @@ function ExportCard({ pid, ex, media }: { pid: string; ex: ExportSummary; media:
           >
             <CaretDown weight="bold" className={cn("size-3.5 transition-transform duration-[var(--dur-fast)]", !open && "-rotate-90")} />
             <span>
-              {open ? "Hide clips" : `Show ${listed.length > 0 ? "all " : ""}${ex.items.length} clips`}
+              {open
+                ? t("exports.hideClips")
+                : listed.length > 0
+                  ? t("exports.showAllClips", { count: ex.items.length })
+                  : t("exports.showClips", { count: ex.items.length })}
               {seconds != null && <span className="font-normal text-fg-3"> · {formatDuration(seconds)}</span>}
             </span>
           </button>
@@ -206,21 +214,22 @@ function ExportItems({
   running: boolean
   actions: ExportActionItem[]
 }) {
+  const { t } = useTranslation("project")
   const { Item, Separator } = kit
   return (
     <>
       <Item onSelect={() => reveal(ex.outDir)}>
-        <FolderOpen /> Show folder
+        <FolderOpen /> {t("menu.showFolder")}
       </Item>
-      <Item onSelect={() => void copyText(ex.outDir, "folder path")}>
-        <Copy /> Copy folder path
+      <Item onSelect={() => void copyText(ex.outDir, t("copied.folderPath"))}>
+        <Copy /> {t("menu.copyFolderPath")}
       </Item>
       <Separator />
-      <Item disabled={!listable} onSelect={() => void saveList(pid, ex, "edl")}>
-        <FileText /> Save EDL…
+      <Item disabled={!listable} onSelect={() => void saveList(pid, ex, "edl", t)}>
+        <FileText /> {t("exports.saveEdl")}
       </Item>
-      <Item disabled={!listable} onSelect={() => void saveList(pid, ex, "csv")}>
-        <Table /> Save cut list (CSV)…
+      <Item disabled={!listable} onSelect={() => void saveList(pid, ex, "csv", t)}>
+        <Table /> {t("exports.saveCutList")}
       </Item>
       {actions.length > 0 && <Separator />}
       {/* Plugins run on what the export made, once it is made. */}
@@ -234,14 +243,16 @@ function ExportItems({
   )
 }
 
+// The file dialog's filter: format names, which stay as they are.
 const LISTS = {
-  edl: { title: "Save EDL", noun: "EDL", filter: { name: "EDL", extensions: ["edl"] } },
-  csv: { title: "Save cut list", noun: "cut list", filter: { name: "CSV", extensions: ["csv"] } },
-} satisfies Record<ListFormat, { title: string; noun: string; filter: { name: string; extensions: string[] } }>
+  edl: { filter: { name: "EDL", extensions: ["edl"] } },
+  csv: { filter: { name: "CSV", extensions: ["csv"] } },
+} satisfies Record<ListFormat, { filter: { name: string; extensions: string[] } }>
 
 /** Save an export's clips as an EDL or a cut list, beside its files unless the person picks another place. */
-async function saveList(pid: string, ex: ExportSummary, format: ListFormat) {
-  const { title, noun, filter } = LISTS[format]
+async function saveList(pid: string, ex: ExportSummary, format: ListFormat, t: TFunction<"project">) {
+  const { filter } = LISTS[format]
+  const title = format === "edl" ? t("exports.saveEdlTitle") : t("exports.saveCutListTitle")
   const name = (ex.merged?.name ?? ex.label ?? ex.preset.name).replace(/[\\/:*?"<>|]+/g, " ").trim() || "AutoScene"
   const dir = ex.outDir.replace(/[\\/]+$/, "")
   const sep = dir.includes("\\") ? "\\" : "/"
@@ -249,15 +260,15 @@ async function saveList(pid: string, ex: ExportSummary, format: ListFormat) {
     const path = await pickSaveFile(title, `${dir}${sep}${name}.${filter.extensions[0]}`, filter)
     if (!path) return
     const saved = await commands.exportSaveList(pid, ex.id, format, path)
-    const leftOut =
-      saved.leftOut === 1
-        ? "1 clip was left out: its episode was removed."
-        : saved.leftOut > 1
-          ? `${saved.leftOut} clips were left out: their episodes were removed.`
-          : undefined
-    toast(`Saved the ${noun}`, { description: leftOut, action: { label: "Show in folder", onClick: () => reveal(saved.path) } })
+    const leftOut = saved.leftOut > 0 ? t("exports.leftOut", { count: saved.leftOut }) : undefined
+    toast(format === "edl" ? t("exports.savedEdl") : t("exports.savedCutList"), {
+      description: leftOut,
+      action: { label: t("menu.showInFolder"), onClick: () => reveal(saved.path) },
+    })
   } catch (e) {
-    toast.error(`Couldn't save the ${noun}`, { description: errorMessage(e) })
+    toast.error(format === "edl" ? t("exports.saveEdlFailed") : t("exports.saveCutListFailed"), {
+      description: errorMessage(e),
+    })
   }
 }
 
@@ -285,48 +296,50 @@ function exportStatus(ex: ExportSummary, job: JobInfo | undefined): ExportStatus
 }
 
 function ExportStatusBadge({ ex, status, unverified }: { ex: ExportSummary; status: ExportStatus; unverified: number }) {
+  const { t } = useTranslation("project")
   // Gold while it runs; waiting isn't working.
-  if (status === "queued") return <Badge>Queued</Badge>
-  if (status === "running") return <Badge tone="accent">Exporting</Badge>
-  if (status === "cancelled") return <Badge>Cancelled</Badge>
-  if (status === "failed" && ex.merged?.error) return <Badge tone="danger">File not made</Badge>
-  if (status === "failed") return <Badge tone="danger">Some clips failed</Badge>
-  if (unverified > 0) return <Badge tone="accent">{unverified} unverified</Badge>
+  if (status === "queued") return <Badge>{t("exports.queued")}</Badge>
+  if (status === "running") return <Badge tone="accent">{t("exports.exporting")}</Badge>
+  if (status === "cancelled") return <Badge>{t("exports.cancelled")}</Badge>
+  if (status === "failed" && ex.merged?.error) return <Badge tone="danger">{t("exports.fileNotMade")}</Badge>
+  if (status === "failed") return <Badge tone="danger">{t("exports.someFailed")}</Badge>
+  if (unverified > 0) return <Badge tone="accent">{t("exports.unverified", { count: unverified })}</Badge>
   return null
 }
 
 /** The one file an export joins its clips into: there once every clip is rendered. */
 function FileRow({ ex, status: ofExport, file }: { ex: ExportSummary; status: ExportStatus; file: MergedFile }) {
+  const { t } = useTranslation("project")
   const status: ExportStatus = file.path ? "done" : file.error || ofExport === "done" ? "failed" : ofExport
   const chapters = ex.items.filter((i) => i.path != null && i.path === file.path).length
   const rendered = ex.items.every((i) => i.status !== "queued" && i.status !== "running")
   const what =
     status === "done"
-      ? `${chapters} ${chapters === 1 ? "chapter" : "chapters"}${file.bytes ? ` · ${formatBytes(file.bytes)}` : ""}`
+      ? `${t("exports.file.chapters", { count: chapters })}${file.bytes ? ` · ${formatBytes(file.bytes)}` : ""}`
       : status === "cancelled"
-        ? "Not made"
+        ? t("exports.file.notMade")
         : status === "failed"
-          ? "Couldn't be made"
+          ? t("exports.file.couldntBeMade")
           : rendered
-            ? "Joining the clips…"
-            : "Made once every clip is rendered"
+            ? t("exports.file.joining")
+            : t("exports.file.waiting")
   return (
     <ContextArea
       menu={
         <>
           {file.path && (
             <ContextMenuItem onSelect={() => reveal(file.path!)}>
-              <FolderOpen /> Show in folder
+              <FolderOpen /> {t("menu.showInFolder")}
             </ContextMenuItem>
           )}
           {file.path && (
-            <ContextMenuItem onSelect={() => void copyText(file.path!, "file path")}>
-              <Copy /> Copy file path
+            <ContextMenuItem onSelect={() => void copyText(file.path!, t("copied.filePath"))}>
+              <Copy /> {t("menu.copyFilePath")}
             </ContextMenuItem>
           )}
           {file.error && (
-            <ContextMenuItem onSelect={() => void copyText(file.error!, "error")}>
-              <Copy /> Copy the error
+            <ContextMenuItem onSelect={() => void copyText(file.error!, t("copied.error"))}>
+              <Copy /> {t("menu.copyError")}
             </ContextMenuItem>
           )}
         </>
@@ -346,7 +359,7 @@ function FileRow({ ex, status: ofExport, file }: { ex: ExportSummary; status: Ex
         </div>
         {file.path && (
           <Button size="sm" variant="secondary" onClick={() => reveal(file.path!)}>
-            <FolderOpen /> Show
+            <FolderOpen /> {t("exports.file.show")}
           </Button>
         )}
       </div>
@@ -355,6 +368,7 @@ function FileRow({ ex, status: ofExport, file }: { ex: ExportSummary; status: Ex
 }
 
 function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: ExportItem; media?: MediaItem; ownFile: boolean }) {
+  const { t } = useTranslation("project")
   const navigate = useNavigate()
   const fps = m?.fps
   const tc = (f: number) => (fps ? timecode(f, fps, isDropFrameRate(fps)) : String(f))
@@ -366,27 +380,27 @@ function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: Expo
             disabled={!m}
             onSelect={() => void navigate({ to: "/p/$pid/timeline/$mid", params: { pid, mid: it.mediaId }, search: { f: it.start } })}
           >
-            <Play /> Watch the source
+            <Play /> {t("exports.clip.watchSource")}
           </ContextMenuItem>
           <ContextMenuSeparator />
           {ownFile && it.path && (
             <ContextMenuItem onSelect={() => reveal(it.path!)}>
-              <FolderOpen /> Show in folder
+              <FolderOpen /> {t("menu.showInFolder")}
             </ContextMenuItem>
           )}
           {it.path && (
-            <ContextMenuItem onSelect={() => void copyText(it.path!, "file path")}>
-              <Copy /> Copy file path
+            <ContextMenuItem onSelect={() => void copyText(it.path!, t("copied.filePath"))}>
+              <Copy /> {t("menu.copyFilePath")}
             </ContextMenuItem>
           )}
           {fps && (
-            <ContextMenuItem onSelect={() => void copyText(`${tc(it.start)} - ${tc(it.end - 1)}`, "timecodes")}>
-              <Copy /> Copy timecodes
+            <ContextMenuItem onSelect={() => void copyText(`${tc(it.start)} - ${tc(it.end - 1)}`, t("copied.timecodes"))}>
+              <Copy /> {t("exports.clip.copyTimecodes")}
             </ContextMenuItem>
           )}
           {it.error && (
-            <ContextMenuItem onSelect={() => void copyText(it.error!, "error")}>
-              <Copy /> Copy the error
+            <ContextMenuItem onSelect={() => void copyText(it.error!, t("copied.error"))}>
+              <Copy /> {t("menu.copyError")}
             </ContextMenuItem>
           )}
         </>
@@ -404,14 +418,14 @@ function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: Expo
           )}
           <div className="timecode mt-0.5 truncate text-xs text-fg-3">
             {m?.label ? `${m.label} · ` : ""}
-            {tc(it.start)} – {tc(it.end - 1)} · {it.end - it.start} frames
+            {tc(it.start)} – {tc(it.end - 1)} · {t("exports.clip.frames", { count: it.end - it.start })}
             {it.bytes ? ` · ${formatBytes(it.bytes)}` : ""}
           </div>
           {it.error && <div className="mt-0.5 truncate text-sm text-danger">{it.error}</div>}
         </div>
         {ownFile && it.path && it.status === "done" && (
           <Button size="sm" variant="ghost" className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" onClick={() => reveal(it.path!)}>
-            <FolderOpen /> Show
+            <FolderOpen /> {t("exports.clip.show")}
           </Button>
         )}
       </li>
@@ -420,17 +434,18 @@ function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: Expo
 }
 
 function ItemIcon({ item: it }: { item: Pick<ExportItem, "status" | "verified"> }) {
+  const { t } = useTranslation("project")
   const box = "flex size-8 shrink-0 items-center justify-center rounded-full [&_svg]:size-4"
   switch (it.status) {
     case "done":
       return it.verified ? (
-        <Tooltip label="Verified: every frame matches the source">
+        <Tooltip label={t("exports.verified")}>
           <span className={`${box} bg-ok/15 text-ok`}>
             <Check weight="bold" />
           </span>
         </Tooltip>
       ) : (
-        <Tooltip label="Exported, but the frames couldn't be verified">
+        <Tooltip label={t("exports.unverifiedWhy")}>
           <span className={`${box} bg-accent-subtle text-accent`}>
             <ShieldWarning />
           </span>

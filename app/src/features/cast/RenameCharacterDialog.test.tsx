@@ -9,6 +9,7 @@ describe("RenameCharacterDialog", () => {
     id: "char-1",
     name: "Old Name",
     label: "Old Name",
+    number: 1,
     hidden: false,
     tracks: 5,
     shots: 12,

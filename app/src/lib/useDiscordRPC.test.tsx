@@ -26,7 +26,7 @@ vi.mock("@/lib/ipc", async (original) => ({
     discordView: vi.fn(async () => null),
     projectGet: vi.fn(async (id: string) => ({ id, title: `Title of ${id}`, kind: id === "film" ? "movie" : "series" })),
     mediaList: vi.fn(async () => [{ id: "m1", label: "S01E01", fileName: "pilot.mkv" }]),
-    castGet: vi.fn(async () => ({ characters: [{ id: "c1", label: "Walter" }] })),
+    castGet: vi.fn(async () => ({ characters: [{ id: "c1", label: "Walter", number: 1 }] })),
   },
 }))
 

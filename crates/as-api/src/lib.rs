@@ -689,6 +689,10 @@ pub struct Character {
     /// The name, or "Character N" (numbered in the order characters were
     /// found; a number is never reused).
     pub label: String,
+    /// The N of "Character N": the order characters were found in. A number
+    /// is never reused, and a named character keeps its number, so the UI can
+    /// name an unnamed one in its own language.
+    pub number: u32,
     pub hidden: bool,
     /// Face tracks (auto and pinned).
     pub tracks: u32,

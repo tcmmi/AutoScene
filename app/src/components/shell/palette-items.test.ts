@@ -17,7 +17,7 @@ describe("palette entries", () => {
 
   it("lists the cast without hidden characters, and episodes with what is wrong", () => {
     const character = (id: string, hidden: boolean, name: string | null) =>
-      ({ id, label: name ?? "Character 7", name, hidden, screenSec: 90, shots: 4, coverSmall: null }) as never
+      ({ id, label: name ?? "Character 7", number: 7, name, hidden, screenSec: 90, shots: 4, coverSmall: null }) as never
     const cast = { characters: [character("a", false, "Walter"), character("b", true, "Extra"), character("c", false, null)] }
     expect(characterEntries(cast as unknown as Cast).map((c) => [c.id, c.hint, c.keywords])).toEqual([
       ["a", "2 min · 4 shots", []],

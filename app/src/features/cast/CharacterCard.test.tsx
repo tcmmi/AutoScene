@@ -20,6 +20,7 @@ const walter: Character = {
   id: "walter",
   name: "Walter",
   label: "Walter",
+  number: 1,
   hidden: false,
   tracks: 3,
   shots: 3,

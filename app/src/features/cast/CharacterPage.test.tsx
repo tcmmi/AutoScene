@@ -10,7 +10,7 @@ import { CharacterPage } from "./CharacterPage"
 
 const hoisted = vi.hoisted(() => ({ navigate: vi.fn() }))
 
-const walter = { id: "walter", label: "Walter", name: "Walter", hidden: false, shots: 6, tracks: 6, media: 1, waiting: 0 } as unknown as Character
+const walter = { id: "walter", label: "Walter", number: 1, name: "Walter", hidden: false, shots: 6, tracks: 6, media: 1, waiting: 0 } as unknown as Character
 const media = [{ id: "e1", label: "E01", fps: { num: 24, den: 1 } } as MediaItem]
 const shot = (start: number): CharacterShot => ({
   mediaId: "e1",

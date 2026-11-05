@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { castEdit } from "./cast"
 import { ReviewPage } from "./ReviewPage"
 
-const walter = { id: "walter", label: "Walter", name: "Walter", hidden: false } as Character
+const walter = { id: "walter", label: "Walter", number: 1, name: "Walter", hidden: false } as Character
 const face = { id: 7, mediaId: "m", start: 24, end: 48, thumb: "t.jpg", characterId: "walter", assign: "unsure", score: 0.5 } as FaceTrackItem
 
 vi.mock("@tanstack/react-router", () => ({

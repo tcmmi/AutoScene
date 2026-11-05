@@ -1424,6 +1424,7 @@ impl Project {
             .map(|c| Character {
                 id: c.id,
                 label: c.name.clone().unwrap_or_else(|| format!("Character {}", c.number)),
+                number: c.number,
                 name: c.name,
                 hidden: c.hidden,
                 tracks: c.tracks,
@@ -1677,6 +1678,70 @@ pub(crate) mod tests {
         // A short glimpse inside a long track: most of the shorter one is shared.
         let glimpse = seen(1, 0, 30, 33, 0.18);
         assert_eq!(same_face((r(&glimpse), &glimpse.dets), (r(&whole), &whole.dets)), Some(3));
+    }
+
+    #[test]
+    fn a_character_carries_the_number_its_label_is_made_from() {
+        let frames = 900;
+        let (_dir, project, id) = project_with_media(frames);
+        // Different lengths, so the cast lists them by screen time (2, 3, 1),
+        // which is not the order of their numbers.
+        let found = [
+            seen(1, 0, 0, 90, 0.1),
+            seen(2, 200, 200, 380, 0.5),
+            seen(3, 400, 400, 535, 0.8),
+            seen(4, 600, 600, 660, 0.3),
+        ];
+        project.store_face_chunk(id, 0, frames, &tracks::encode(&found), &[], &[]).unwrap();
+        project.finish_faces(id).unwrap();
+        let mut ids = vec![];
+        for (track, name) in
+            project.cast_tracks(TrackFilter::Unassigned).unwrap().iter().zip([None, Some("Walter"), None])
+        {
+            let edit = CastEdit::NewCharacter { tracks: vec![track.id], name: name.map(Into::into) };
+            ids.push(project.cast_edit(&edit).unwrap().unwrap());
+        }
+        let numbers = |p: &Project| -> Vec<(CharacterId, u32, String)> {
+            let mut all: Vec<_> = p.cast().unwrap().characters.into_iter().map(|c| (c.id, c.number, c.label)).collect();
+            all.sort_by_key(|(_, n, _)| *n);
+            all
+        };
+        let listed = |p: &Project| p.cast().unwrap().characters.iter().map(|c| c.number).collect::<Vec<_>>();
+
+        // Each character has its own number, and an unnamed one's label is that number.
+        // The number is the character's own, not its place in the list.
+        let before = numbers(&project);
+        assert_eq!(before.iter().map(|c| c.1).collect::<Vec<_>>(), [1, 2, 3]);
+        assert_eq!(listed(&project), [2, 3, 1]);
+        for (_, number, label) in before.iter().filter(|c| c.0 != ids[1]) {
+            assert_eq!(label, &format!("Character {number}"));
+        }
+
+        // A name doesn't take the number away, and removing it gives the label back.
+        let walter = before.iter().find(|c| c.0 == ids[1]).unwrap();
+        assert_eq!(walter.2, "Walter");
+        let unnamed = before.iter().find(|c| c.0 == ids[0]).unwrap();
+        project.cast_edit(&CastEdit::Rename { character_id: ids[0], name: Some("Jesse".into()) }).unwrap();
+        let after = numbers(&project);
+        let jesse = after.iter().find(|c| c.0 == ids[0]).unwrap();
+        assert_eq!((jesse.1, jesse.2.as_str()), (unnamed.1, "Jesse"));
+        assert_eq!(after.iter().find(|c| c.0 == walter.0).unwrap().1, walter.1);
+        project.cast_edit(&CastEdit::Rename { character_id: ids[0], name: None }).unwrap();
+        assert_eq!(numbers(&project), before);
+
+        // A number is never reused: merge the middle one away and the others keep
+        // theirs (1 and 3, not 1 and 2), and the next new character gets 4.
+        project.cast_edit(&CastEdit::Merge { from: ids[1], into: ids[2] }).unwrap();
+        let merged = numbers(&project);
+        assert_eq!(merged.iter().map(|c| (c.0, c.1)).collect::<Vec<_>>(), [(ids[0], 1), (ids[2], 3)]);
+        let last = project.cast_tracks(TrackFilter::Unassigned).unwrap();
+        assert_eq!(last.len(), 1);
+        let fresh =
+            project.cast_edit(&CastEdit::NewCharacter { tracks: vec![last[0].id], name: None }).unwrap().unwrap();
+        let end = numbers(&project);
+        let fresh = end.iter().find(|c| c.0 == fresh).unwrap();
+        assert_eq!((fresh.1, fresh.2.as_str()), (4, "Character 4"));
+        assert_eq!(end.iter().find(|c| c.0 == ids[0]).unwrap().1, 1);
     }
 
     #[test]

@@ -49,7 +49,7 @@ vi.mock("@/lib/ipc", () => ({
 }))
 vi.mock("@/lib/media", () => ({ pickFolder: vi.fn() }))
 
-const walter = { id: "c", label: "Walter" } as Character
+const walter = { id: "c", label: "Walter", number: 1 } as Character
 
 /** A pack of three shots, as `usePack` hands it over. */
 function pack(naming: PackNaming): Pack {

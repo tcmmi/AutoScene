@@ -112,6 +112,9 @@ function get(projectId: string): ProjectCast {
 
 const assigned = (t: Track) => !t.notFace && (t.assign === "auto" || t.assign === "pinned")
 
+/** A character's name, or "Character N" (the one place the mock makes the English label). */
+const labelOf = (p: Person) => p.name ?? `Character ${p.number}`
+
 function character(c: ProjectCast, p: Person, fps = 24): Character {
   const mine = c.tracks.filter((t) => assigned(t) && t.characterId === p.id)
   const best = [...mine].sort((a, b) => (b.quality ?? 0) - (a.quality ?? 0))[0]
@@ -119,7 +122,8 @@ function character(c: ProjectCast, p: Person, fps = 24): Character {
   return {
     id: p.id,
     name: p.name,
-    label: p.name ?? `Character ${p.number}`,
+    label: labelOf(p),
+    number: p.number,
     hidden: p.hidden,
     tracks: mine.length,
     shots: new Set(mine.map((t) => `${t.mediaId}:${t.start}`)).size,
@@ -368,6 +372,6 @@ export function othersInShot(projectId: string, characterId: string, mediaId: st
 /** A character's name, or "Character N". */
 export function characterLabel(projectId: string, characterId: string): string {
   const p = get(projectId).people.find((x) => x.id === characterId)
-  return p?.name ?? `Character ${p?.number ?? "?"}`
+  return p ? labelOf(p) : "Character ?"
 }
 

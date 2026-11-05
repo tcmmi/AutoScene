@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest"
 import type { Character, Presence } from "@/bindings"
 import { charactersIn, lanesOf } from "./presence"
 
+let characters = 0
 const who = (id: string, hidden = false): Character => ({
   id,
   name: null,
   label: id,
+  number: ++characters,
   hidden,
   tracks: 0,
   shots: 0,

@@ -30,7 +30,7 @@ afterEach(() => {
 })
 
 const seg = (start: number, end: number): Segment => ({ start, end, kind: "shot", tiny: false })
-const character = { id: "c1", name: "Walter", label: "Walter", hidden: false } as unknown as Character
+const character = { id: "c1", name: "Walter", label: "Walter", number: 1, hidden: false } as unknown as Character
 const appearance = (start: number, end: number) => ({ characterId: "c1", trackId: 1, start, end, body: false }) as unknown as Presence
 
 /** An episode of `frames` frames at 24 fps, on tracks W px wide. */

@@ -2513,7 +2513,8 @@ Sign from the first version on.
 
 A package with the id of an installed plugin replaces it after its review.
 The review shows the version installed, and marks "New" the permissions,
-hosts and pages the update adds, a program where the version before ran
+hosts, pages, scenepack filters and ⋯ entries the update adds, a program
+where the version before ran
 none ("The installed version runs no program."), and a service where it
 had none ("Now keeps its program running while its page is open.").
 
@@ -2564,15 +2565,16 @@ is open.
   from: the repository, the commit and the folder.
 - **Update…** shows on an installed plugin while the catalog offers a newer
   version. An update never goes back to an older version. One that asks
-  for nothing new (no permission, host, page, program, service, or host its
-  large files come from, nothing outside the sandbox it ran in, no higher
-  limits in it, and no uv to get first) of a reviewed package installs in
-  one click, and says so in a toast; one that asks for more opens its
-  review, which marks each new thing New. **Update all** installs, in turn, the updates that ask for
-  no new permission, host, host for large files, program or service, and
-  don't leave the sandbox; at the first whose review asks for more (a page,
-  higher limits, uv, or what its catalog entry didn't say), it stops with
-  that review open.
+  for nothing new (no permission, host, page, scenepack filter or ⋯ entry,
+  program, service, or host its large files come from, nothing outside the
+  sandbox it ran in, no higher limits in it, and no uv to get first) of a
+  reviewed package installs in one click, and says so in a toast; one that
+  asks for more opens its review, which marks each new thing New. **Update
+  all** installs, in turn, the updates that ask for no new permission, host,
+  host for large files, program or service, and don't leave the sandbox; at
+  the first whose review asks for more (a page, a scenepack filter or ⋯
+  entry, higher limits, uv, or what its catalog entry didn't say), it stops
+  with that review open.
 - **Out of date**: the catalog AutoScene holds ran out (it lives at most 31
   days) and it couldn't get a newer one. Nothing installs or updates from
   it, and Browse says since when it couldn't check. Installed plugins keep

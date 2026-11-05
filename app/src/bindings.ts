@@ -2041,6 +2041,8 @@ export type PluginInfo = {
 	commands: CommandSpec[],
 	/**  What it saves a character's scenepack as, from the pack's ⋯ menu. */
 	packActions: PackActionSpec[],
+	/**  The filters it adds to a character's scenepack. */
+	shotFilters: ShotFilterSpec[],
 	settings: SettingSpec[],
 	/**  What it may run on by itself, once the person turns it on. */
 	events: PluginEvent[],
@@ -2174,6 +2176,10 @@ export type PluginUpdate = {
 	addedHosts: string[],
 	/**  The ids of the pages it adds. */
 	addedPages: string[],
+	/**  The ids of the scenepack filters it adds. */
+	addedShotFilters: string[],
+	/**  The ids of the entries it adds to a scenepack's ⋯ menu. */
+	addedPackActions: string[],
 	/**
 	 *  It runs a program, and the installed version, as the person agreed
 	 *  to it, runs none: from now on it runs with their user rights.
@@ -2455,6 +2461,33 @@ export type Shortcuts = {
 	 *  (`player.frame.1` is the next frame); an empty list leaves it without a key.
 	 */
 	keys?: { [key in string]: KeyBinding[] },
+};
+
+/**
+ *  A filter a plugin adds to the scenepack builder (manifest version 2): a
+ *  chip that leaves out the shots its program says no to, one episode of a
+ *  character at a time ([`crate::protocol::ShotsContext`]). Each shot it
+ *  leaves out says why with `reason`, the manifest's own words: a plugin
+ *  writes nothing onto a shot's card.
+ */
+export type ShotFilterSpec = {
+	id: string,
+	/**  The chip's label, at most 24 characters. */
+	title: string,
+	description: string | null,
+	/**  The pill of a shot it leaves out ("No speech"), at most 24 characters. */
+	reason: string,
+	/**
+	 *  The keys of the plugin's settings its verdicts depend on: those it
+	 *  names, or every one when it names none. A change of one of them
+	 *  asks for its verdicts again; a change of another doesn't.
+	 */
+	settings: string[],
+	/**
+	 *  Raised by the author when a version judges shots differently: its
+	 *  verdicts are asked for again. A new version alone keeps them.
+	 */
+	revision: number,
 };
 
 /**

@@ -90,6 +90,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     exportActions: [],
     commands: [],
     packActions: [],
+    shotFilters: [],
     settings: [],
     events: [],
     runtime: "process",
@@ -587,6 +588,8 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
         addedPermissions: p.permissions.filter((x: Permission) => !previous.permissions.includes(x)),
         addedHosts: p.networkHosts.filter((h) => !previous.networkHosts.includes(h)),
         addedPages: p.pages.filter((x) => !previous.pages.some((y) => y.id === x.id)).map((x) => x.id),
+        addedShotFilters: p.shotFilters.filter((x) => !previous.shotFilters.some((y) => y.id === x.id)).map((x) => x.id),
+        addedPackActions: p.packActions.filter((x) => !previous.packActions.some((y) => y.id === x.id)).map((x) => x.id),
         startsProgram: previous.runtime === "none" && p.runtime !== "none",
         becomesService: previous.runtime !== "service" && p.runtime === "service",
         // Hosts its files come from that the installed version's plugin.json doesn't name, downloaded or not.

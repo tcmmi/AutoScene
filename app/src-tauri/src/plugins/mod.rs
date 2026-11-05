@@ -109,8 +109,8 @@ use as_plugin::wasm;
 use as_plugin::{
     ActionContext, ActionKind, Approval, Caller, CommandSpec, EventKind, Extra, Grants, HostCalls, HostMethod,
     Installed, Launch, Manifest, OsKeyring, PackActionSpec, PageSpec, Permission, PluginError, PluginId, PluginResult,
-    Record, Resource, Resources, RunSpec, RuntimeChange, RuntimeKind, SettingSpec, Source, Store, Ticket, Trigger,
-    Trust, Widens, package, runtime,
+    Record, Resource, Resources, RunSpec, RuntimeChange, RuntimeKind, SettingSpec, ShotFilterSpec, Source, Store, Ticket,
+    Trigger, Trust, Widens, package, runtime,
 };
 use as_project::{Library, Project, ProjectError, ProjectResult};
 use parking_lot::{Condvar, Mutex};
@@ -412,6 +412,8 @@ pub struct PluginInfo {
     pub commands: Vec<CommandSpec>,
     /// What it saves a character's scenepack as, from the pack's ⋯ menu.
     pub pack_actions: Vec<PackActionSpec>,
+    /// The filters it adds to a character's scenepack.
+    pub shot_filters: Vec<ShotFilterSpec>,
     pub settings: Vec<SettingSpec>,
     /// What it may run on by itself, once the person turns it on.
     pub events: Vec<PluginEvent>,
@@ -567,6 +569,10 @@ pub struct PluginUpdate {
     pub added_hosts: Vec<String>,
     /// The ids of the pages it adds.
     pub added_pages: Vec<String>,
+    /// The ids of the scenepack filters it adds.
+    pub added_shot_filters: Vec<String>,
+    /// The ids of the entries it adds to a scenepack's ⋯ menu.
+    pub added_pack_actions: Vec<String>,
     /// It runs a program, and the installed version, as the person agreed
     /// to it, runs none: from now on it runs with their user rights.
     pub starts_program: bool,
@@ -1326,6 +1332,7 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
             .collect(),
         commands: m.map(|m| m.commands.clone()).unwrap_or_default(),
         pack_actions: m.map(|m| m.pack_actions.clone()).unwrap_or_default(),
+        shot_filters: m.map(|m| m.shot_filters.clone()).unwrap_or_default(),
         settings: m.map(|m| m.settings.clone()).unwrap_or_default(),
         events: events
             .iter()
@@ -1592,7 +1599,10 @@ fn as_installed(t: &Ticket, before: Option<&Installed>) -> Installed {
 /// which is `before` as it is now (none when its row is gone; its manifest
 /// none when it is broken).
 fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> PluginUpdate {
-    let pages_before = before.and_then(|b| b.manifest.as_ref()).map_or(&[][..], |b| &b.pages);
+    let was = before.and_then(|b| b.manifest.as_ref());
+    let pages_before = was.map_or(&[][..], |b| &b.pages);
+    let filters_before = was.map_or(&[][..], |b| &b.shot_filters);
+    let actions_before = was.map_or(&[][..], |b| &b.pack_actions);
     // Where its files came from, by the plugin.json its lock fixes: none
     // known when it can't be read, so each host is said to be new.
     let fetched_from = before.and_then(|b| b.manifest.as_ref()).map(Manifest::resource_hosts).unwrap_or_default();
@@ -1618,6 +1628,18 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
             .iter()
             .filter(|p| !pages_before.iter().any(|b| b.id == p.id))
             .map(|p| p.id.clone())
+            .collect(),
+        added_shot_filters: m
+            .shot_filters
+            .iter()
+            .filter(|f| !filters_before.iter().any(|b| b.id == f.id))
+            .map(|f| f.id.clone())
+            .collect(),
+        added_pack_actions: m
+            .pack_actions
+            .iter()
+            .filter(|a| !actions_before.iter().any(|b| b.id == a.id))
+            .map(|a| a.id.clone())
             .collect(),
         starts_program: widens.runtime.starts_program,
         becomes_service: widens.runtime.becomes_service,
@@ -3207,7 +3229,7 @@ mod tests {
         let mut previous = plugin("dev.a.post", Trust::Pinned, false).record;
         previous.permissions = vec![Permission::ExportsRead];
         previous.network_hosts = vec!["discord.com".into()];
-        let manifest = serde_json::json!({
+        let wider = serde_json::json!({
             "manifestVersion": 1,
             "id": "dev.a.post",
             "version": "1.1.0",
@@ -3219,7 +3241,7 @@ mod tests {
             "permissions": ["exports:read", "network"],
             "network": {"hosts": ["discord.com", "example.com"]}
         });
-        let m = as_plugin::manifest::parse_for_any_app(manifest.to_string().as_bytes()).unwrap().manifest;
+        let m = as_plugin::manifest::parse_for_any_app(wider.to_string().as_bytes()).unwrap().manifest;
         let u = update(&previous, None, &m);
         assert_eq!(
             (u.from_version.as_str(), u.trust_before, u.source_before),
@@ -3247,6 +3269,43 @@ mod tests {
         ]));
         assert_eq!(update(&previous, Some(&before), &after).added_pages, ["clips"]);
         assert_eq!(update(&previous, None, &after).added_pages, ["main", "clips"]);
+
+        // The scenepack's filters and ⋯ entries it adds: those the installed
+        // version hasn't, under the same permissions; all, when that is unknown.
+        let contributing = |filters: serde_json::Value, actions: serde_json::Value| {
+            let mut m = manifest("dev.a.post", false);
+            m["manifestVersion"] = serde_json::json!(2);
+            m["engines"]["protocol"] = serde_json::json!(2);
+            m["permissions"] = serde_json::json!(["project:read"]);
+            m["contributes"]["shotFilters"] = filters;
+            m["contributes"]["packActions"] = actions;
+            as_plugin::manifest::parse_for_any_app(m.to_string().as_bytes()).unwrap().manifest
+        };
+        let filter = |id: &str| serde_json::json!({"id": id, "title": id, "reason": "Left out"});
+        let action = |id: &str| {
+            serde_json::json!({"id": id, "title": id, "file": {"name": "{character}.xml", "extensions": ["xml"]}})
+        };
+        let mut had = plugin("dev.a.post", Trust::Pinned, false);
+        had.manifest = Some(contributing(serde_json::json!([filter("speaks")]), serde_json::json!([action("xml")])));
+        let more = contributing(
+            serde_json::json!([filter("speaks"), filter("loud")]),
+            serde_json::json!([action("xml"), action("edl")]),
+        );
+        let u = update(&previous, Some(&had), &more);
+        assert_eq!((u.added_shot_filters, u.added_pack_actions), (vec!["loud".to_owned()], vec!["edl".to_owned()]));
+        let u = update(&previous, None, &more);
+        assert_eq!(u.added_shot_filters, ["speaks", "loud"]);
+        assert_eq!(u.added_pack_actions, ["xml", "edl"]);
+        // The review lists them by the plugin's info.
+        let tmp = std::env::temp_dir().join(format!("autoscene-plugin-review-{}", std::process::id()));
+        let (lib, host) = host_in(&tmp);
+        had.manifest = Some(more);
+        let shown = info(&had, &host.store, false);
+        let titles: Vec<_> = shown.shot_filters.iter().map(|f| f.title.as_str()).collect();
+        assert_eq!(titles, ["speaks", "loud"]);
+        assert_eq!(shown.pack_actions.len(), 2);
+        drop((host, lib));
+        std::fs::remove_dir_all(&tmp).unwrap();
 
         // A plugin the person agreed to as one that runs no program, which
         // now runs one: said, by what they agreed to, not by its manifest.

@@ -163,6 +163,8 @@ describe("the install review", () => {
       addedPermissions: [],
       addedHosts: [],
       addedPages: [],
+      addedShotFilters: [],
+      addedPackActions: [],
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
@@ -215,6 +217,8 @@ describe("the install review", () => {
           addedPermissions: ["network"],
           addedHosts: ["cdn.example.com"],
           addedPages: [],
+          addedShotFilters: [],
+          addedPackActions: [],
           startsProgram: false,
           becomesService: false,
           leavesSandbox: false,
@@ -300,6 +304,8 @@ describe("the install review", () => {
       addedPermissions: [],
       addedHosts: [],
       addedPages: ["clips"],
+      addedShotFilters: [],
+      addedPackActions: [],
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
@@ -339,6 +345,8 @@ describe("the install review", () => {
       addedPermissions: [],
       addedHosts: [],
       addedPages: [],
+      addedShotFilters: [],
+      addedPackActions: [],
       startsProgram: false,
       becomesService: true,
       leavesSandbox: false,
@@ -383,6 +391,8 @@ describe("the install review", () => {
       addedPermissions: [],
       addedHosts: [],
       addedPages: [],
+      addedShotFilters: [],
+      addedPackActions: [],
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
@@ -441,6 +451,54 @@ describe("the install review", () => {
     expect(screen.getAllByText("Can run after every export, also one that failed:")).toHaveLength(1)
   })
 
+  it("names what it adds to a scenepack", () => {
+    const filter = { id: "speaks", title: "Speaks", description: null, reason: "No speech", settings: [], revision: 1 }
+    const action = { id: "fcpxml", title: "Save as FCPXML…", file: { name: "{character}.fcpxml", extensions: ["fcpxml"] } }
+    const plugin = { ...discord, exportActions: [], shotFilters: [filter], packActions: [action] }
+    show(review({ plugin }))
+    expect(screen.getByText("A scenepack filter:").parentElement?.textContent).toContain("Speaks")
+    expect(screen.getByText("A scenepack's ⋯ menu:").parentElement?.textContent).toContain("Save as FCPXML…")
+    expect(screen.queryByText("Nothing to list.")).toBeNull()
+    expect(screen.queryByText("New")).toBeNull()
+  })
+
+  it("marks the scenepack filters and ⋯ entries an update adds", () => {
+    const filter = (id: string, title: string) => ({ id, title, description: null, reason: "Left out", settings: [], revision: 1 })
+    const action = (id: string, title: string) => ({ id, title, file: { name: "{character}.xml", extensions: ["xml"] } })
+    const plugin = {
+      ...discord,
+      exportActions: [],
+      shotFilters: [filter("speaks", "Speaks"), filter("loud", "Loud")],
+      packActions: [action("xml", "Save as XML…"), action("edl", "Save as EDL…")],
+    }
+    const update: PluginUpdate = {
+      fromVersion: "0.3.0",
+      trustBefore: "unreviewed",
+      sourceBefore: "package",
+      addedPermissions: [],
+      addedHosts: [],
+      addedPages: [],
+      addedShotFilters: ["loud"],
+      addedPackActions: ["edl"],
+      startsProgram: false,
+      becomesService: false,
+      leavesSandbox: false,
+      raisedLimits: false,
+      addedResourceHosts: [],
+    }
+    show(review({ plugin, update }))
+    const row = (name: string) => screen.getByText(name).closest("li")
+    expect(within(row("Loud") as HTMLElement).getByText("New")).toBeTruthy()
+    expect(within(row("Save as EDL…") as HTMLElement).getByText("New")).toBeTruthy()
+    expect(within(row("Speaks") as HTMLElement).queryByText("New")).toBeNull()
+    expect(within(row("Save as XML…") as HTMLElement).queryByText("New")).toBeNull()
+  })
+
+  it("says so when it adds nothing to list", () => {
+    show(review({ plugin: { ...discord, exportActions: [] } }))
+    expect(screen.getByText("Nothing to list.")).toBeTruthy()
+  })
+
   it("never says a first signature shows who made it", () => {
     const signed = { ...discord, trust: "pinned" as const, author: "AutoScene", authorKeyId: "4B2D9C1E0F3A7E51" }
     show(review({ plugin: signed }))
@@ -460,6 +518,8 @@ describe("the install review", () => {
       addedPermissions: [],
       addedHosts: [],
       addedPages: [],
+      addedShotFilters: [],
+      addedPackActions: [],
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
@@ -517,6 +577,8 @@ describe("the install review", () => {
       addedPermissions: [],
       addedHosts: ["hooks.example.com"],
       addedPages: [],
+      addedShotFilters: [],
+      addedPackActions: [],
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
@@ -569,6 +631,8 @@ describe("the install review", () => {
       addedPermissions: [],
       addedHosts: [],
       addedPages: [],
+      addedShotFilters: [],
+      addedPackActions: [],
       startsProgram: false,
       becomesService: false,
       leavesSandbox: false,
@@ -592,6 +656,8 @@ describe("the install review", () => {
       addedPermissions: [],
       addedHosts: [],
       addedPages: [],
+      addedShotFilters: [],
+      addedPackActions: [],
       startsProgram: false,
       becomesService: false,
       leavesSandbox: true,

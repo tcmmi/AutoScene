@@ -25,6 +25,8 @@ export function oneClick(r: PluginReview): boolean {
     u.addedHosts.length === 0 &&
     u.addedResourceHosts.length === 0 &&
     u.addedPages.length === 0 &&
+    u.addedShotFilters.length === 0 &&
+    u.addedPackActions.length === 0 &&
     !u.startsProgram &&
     !u.becomesService &&
     !u.leavesSandbox &&

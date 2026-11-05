@@ -233,7 +233,7 @@ function ReviewForm({
 
         <Permissions review={review} />
         <Runs review={review} />
-        <Adds p={p} addedPages={review.update?.addedPages ?? []} />
+        <Adds p={p} update={review.update} />
 
         {p.warnings.length > 0 && (
           <section>
@@ -502,21 +502,36 @@ const EVENT_ADDS: Record<EventKind, string> = {
 }
 
 /**
- * The pages (and where they show), menu entries, palette commands, what may
- * run by itself (once turned on) and settings it adds, with the pages an
- * update adds marked, and the secrets it keeps.
+ * The pages (and where they show), menu entries, palette commands, scenepack
+ * filters and ⋯ entries, what may run by itself (once turned on) and settings
+ * it adds, with the pages, filters and ⋯ entries an update adds marked, and the
+ * secrets it keeps.
  */
-function Adds({ p, addedPages }: { p: PluginInfo; addedPages: string[] }) {
+function Adds({ p, update }: { p: PluginInfo; update: PluginUpdate | null | undefined }) {
   const adds = [
     ...p.pages.map((page) => ({
       key: `page-${page.id}`,
       where: "A page",
       what: page.title,
       after: pagePlace(page),
-      added: addedPages.includes(page.id),
+      added: update?.addedPages.includes(page.id) ?? false,
     })),
     ...p.exportActions.map((a) => ({ key: `action-${a.id}`, where: "Each export's menu", what: a.title, after: "", added: false })),
     ...p.commands.map((c) => ({ key: `command-${c.id}`, where: "Command palette", what: c.title, after: "", added: false })),
+    ...p.shotFilters.map((f) => ({
+      key: `filter-${f.id}`,
+      where: "A scenepack filter",
+      what: f.title,
+      after: "",
+      added: update?.addedShotFilters.includes(f.id) ?? false,
+    })),
+    ...p.packActions.map((a) => ({
+      key: `pack-${a.id}`,
+      where: "A scenepack's ⋯ menu",
+      what: a.title,
+      after: "",
+      added: update?.addedPackActions.includes(a.id) ?? false,
+    })),
     ...p.exportActions
       .filter((a) => a.afterFailed)
       .map((a) => ({
@@ -557,7 +572,7 @@ function Adds({ p, addedPages }: { p: PluginInfo; addedPages: string[] }) {
         {secrets.map((s) => (
           <li key={`secret-${s.key}`}>Keeps {s.title} in your system's keychain</li>
         ))}
-        {adds.length === 0 && p.settings.length === 0 && <li className="text-fg-2">No menu entries, commands or settings.</li>}
+        {adds.length === 0 && p.settings.length === 0 && <li className="text-fg-2">Nothing to list.</li>}
       </ul>
     </section>
   )

@@ -6,7 +6,9 @@ current, then gives the Romanian glossary and style, which a translator follows 
 
 **Romanian is offered and is still a draft.** It is on `OFFERED` in `app/src/lib/i18n.ts` and in `SPOKEN`
 (`app/src-tauri/src/locale.rs`), so Settings → General → App language chooses it and Automatic takes it from the
-system. Every message stays `draft` in `ro/meta.json` until moongetsu has checked it.
+system. Every message stays `draft` in `ro/meta.json` until moongetsu has checked it. An owner decision, open: whether
+a release may ship this draft, and Automatic land on it, before his review. The plan is that it ships after his
+review, and nothing in code or CI holds a release back.
 
 ## What is where
 

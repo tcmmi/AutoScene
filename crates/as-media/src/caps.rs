@@ -390,7 +390,9 @@ mod tests {
         let caps = Caps::detect_within(&tools, waits);
         let names: Vec<_> = caps.hw_encoders.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["h264_nvenc", "hevc_nvenc"], "{caps:?}");
-        assert_eq!(caps.decode.as_ref().map(|d| d.hwaccel.as_str()), Some("cuda"));
+        // A Mac is never asked for CUDA: its decoder is VideoToolbox's.
+        let cuda = (!cfg!(target_os = "macos")).then_some("cuda");
+        assert_eq!(caps.decode.as_ref().map(|d| d.hwaccel.as_str()), cuda);
         assert_eq!(caps.nvenc_lossless, NVENC_LOSSLESS);
     }
 
@@ -421,8 +423,10 @@ mod tests {
         let caps = Caps::detect_within(&tools, WAITS);
         assert_eq!(caps.hw_encoders.len(), 3, "{caps:?}");
         assert_eq!(caps.nvenc_lossless.len(), NVENC_LOSSLESS.len());
-        // Three encoders, the decoder and the four lossless layouts.
-        assert_eq!(std::fs::read_to_string(&runs).unwrap().lines().count(), 8);
+        // Three encoders, the decoder (not on a Mac, where this ffmpeg's CUDA
+        // isn't asked for) and the four lossless layouts.
+        let checks = if cfg!(target_os = "macos") { 7 } else { 8 };
+        assert_eq!(std::fs::read_to_string(&runs).unwrap().lines().count(), checks);
         assert!(!overlaps.exists(), "two NVIDIA checks ran at once");
     }
 

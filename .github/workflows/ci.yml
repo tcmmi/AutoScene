@@ -53,8 +53,9 @@ jobs:
       # The WebAssembly plugins the sandbox tests run (crates/as-plugin/tests/wasm.rs).
       - name: Build the test plugins
         run: cargo xtask wasm-guests
-      # asp's tests run the tool, which builds only with its feature.
-      - run: cargo test --workspace --features as-plugin/cli
+      # asp's tests run the tool, which builds only with its feature. One
+      # failing crate doesn't hide what the others would say.
+      - run: cargo test --workspace --features as-plugin/cli --no-fail-fast
         env:
           AUTOSCENE_REQUIRE_FIXTURES: "1"
       # Core ML (as-vision's tests/coreml.rs) needs SCRFD, ArcFace and CCIP,

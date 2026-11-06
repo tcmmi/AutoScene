@@ -160,6 +160,8 @@ fn a_service_answers_requests_by_id() {
     let s = Served::new("serve");
     let service = s.start().unwrap();
     assert!(service.is_running());
+    // The event comes just after start answers, from the service's own thread.
+    wait_for(|| !s.events().is_empty());
     assert_eq!(s.events(), [ServiceEvent::Ready]);
     // Its first line, in its data folder, in its mode.
     let serve: Value = serde_json::from_str(&s.text("serve.json")).unwrap();

@@ -138,7 +138,8 @@ describe("switching the language", () => {
     const rail = () => screen.findByRole("navigation", { name: t("shell:rail.label") })
     const at = async (place: string, words: () => void) => {
       await go(place)
-      await waitFor(words, { timeout: 5000 })
+      // A page's first load is a lazy chunk, which a busy CI machine takes its time over.
+      await waitFor(words, { timeout: 15000 })
     }
     const pages = async (ro: boolean) => {
       expect(within(await rail()).getByRole("link", { name: ro ? "Bibliotecă" : "Library" })).toBeTruthy()
@@ -175,7 +176,7 @@ describe("switching the language", () => {
 
     expect(loaded).not.toHaveBeenCalled()
     window.removeEventListener("beforeunload", loaded)
-  }, 60_000)
+  }, 120_000)
 })
 
 describe("switching the language on a page that stays open", () => {

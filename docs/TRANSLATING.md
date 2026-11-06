@@ -39,7 +39,8 @@ message's key without the plural suffix: a message with `_one`, `_few` and `_oth
   the order `one`, `other`, then a plain text beside them, joined by line breaks, run through FNV-1a
   (`messageHash` in `locales/check.ts`). Any edit to any of the English texts changes it.
 
-`locales.test.ts` refuses a catalog that breaks the rules below. Each failure names the key and what is wrong.
+`locales.test.ts` refuses a catalog that breaks the rules below. Each failure names the key and what is wrong. Run
+it from `app/` with `npx vitest run src/locales`; `npm test` runs every test of the app.
 
 - A language has every message of the English and no other (a stale one excepted), in every namespace, `backend`
   and `native` included.
@@ -91,10 +92,26 @@ The review goes in three steps, all run from `app/`. We never comment on GitHub 
 
 ### Looking at a language
 
-`?lang=pseudo` on the mock (`npm run dev:mock`, then add it to the address) shows every catalog string accented
-and 35 % longer, in brackets: anything shown plain is still written into the code, and anything cut off will be
-cut off in Romanian too. `?lang=ro` shows the Romanian catalog while developing, whatever Settings says; a language
-on `OFFERED` is chosen in Settings → General → App language.
+From `app/`, `npm run dev:mock` serves the app with made-up data at `http://localhost:5173/`. A switch goes in the
+address **before the `#`**: after it, as in `/#/?lang=ro`, the app stays English and says nothing.
+
+- `http://localhost:5173/?lang=pseudo#/` shows every catalog string accented and 35 % longer, in brackets: anything
+  shown plain is still written into the code, and anything cut off will be cut off in Romanian too.
+- `http://localhost:5173/?lang=ro#/` shows the Romanian catalog while developing, whatever Settings says. A language
+  on `OFFERED` is chosen in Settings → General → App language.
+
+Some screens need the mock to be in a certain state. Switches join with `&`, as in
+`http://localhost:5173/?lang=ro&mockMachine=gtx#/`.
+
+| Switch | Shows |
+|---|---|
+| `mockMachine=gtx` | the Fast Scan notice, once: the browser remembers it (`autoscene.fastScanNotice.shown`). Also `integrated`, `processor`, `linux`, `apple-base`, `apple-pro`, `unknown`, `two-gpus`, `hybrid`, `no-dxgi` |
+| `mockEmpty=1` | an empty library, as at the first start |
+| `mockOpened=1` | the install review of a plugin package AutoScene was opened with |
+| `mockFail=cast_get,media_list` | the error screens: those commands fail as a broken project does |
+| `mockCatalog=withdrawn` | the plugin catalog in that state. Also `expired`, `offline`, `unset`, `newer`, `full` |
+| `mockHardware=missing` | Settings with a chosen graphics card that isn't connected any more |
+| `mockAccel=failed` | the NVIDIA acceleration row in that state. Also `available`, `downloading`, `no-room`, `removing`, `on`, `off`, `driver`, `stopped`, `update-licence`, `update-stopped`, `half` |
 
 ### Where AutoScene's language ends
 
@@ -125,7 +142,7 @@ on `OFFERED` is chosen in Settings → General → App language.
 2. Add its entries to `<code>/meta.json`, every one a `draft` with the hash of its English.
 3. Write its glossary and style on this page, as the Romanian has, before the first message is translated.
 4. Add the language to `LANGUAGES` in `lib/i18n.ts` and to the loaders in `locales/index.ts`, and run
-   `locales.test.ts`.
+   `npx vitest run src/locales`.
 5. Offer it: `OFFERED` and `LANGUAGE_NAMES` (`lib/i18n.ts`, its own name) and `SPOKEN` together, `UiLanguage` and
    `Lang` (`as-api`), `native.json` in `CATALOGS` (`native_text.rs`) and the language in `Info.plist`.
 
@@ -445,7 +462,7 @@ A value can't be inflected, and a character's gender is unknown.
 ### Letters
 
 - **Comma below only:** ș U+0219, ț U+021B, Ș U+0218, Ț U+021A. Never the cedilla forms U+015F, U+0163, U+015E, U+0162.
-  The catalog test refuses the two lower-case ones; a text pasted from an old source is the usual cause.
+  The catalog test refuses all four; a text pasted from an old source is the usual cause.
 - ă, â, î as DOOM3: `â` inside a word (`când`, `România`), `î` at its start and end and after a prefix (`încarcă`,
   `reîncarcă`, `neîncărcat`); `sunt`, never `sînt`.
 

@@ -14,6 +14,14 @@ describe("the Romanian", () => {
     expect(uses).toEqual(["pack:size.mediumCloseUp.label"])
   })
 
+  it("says what each word means here, not a word next to it", () => {
+    const all = [...messages.values()].flatMap((forms) => [...forms.values()]).join("\n")
+    // "pe loc" is at once; "de epocă" is vintage; "Mulțumiri" is thanks, on a legal notices file.
+    for (const wrong of ["actualizează pe loc", "Certificatul de epocă", "Mulțumiri", "mulțumirile", "cele dintre.", "distribuția: {{series}}"]) {
+      expect(all).not.toContain(wrong)
+    }
+  })
+
   it("sets a job's title apart from the verb that stops it: the title is a clause of its own", () => {
     // "Anulează Se indexează E04" is broken Romanian, read aloud on every running job.
     for (const key of ["shell:activity.cancelJob", "shell:activity.stopJob"]) expect(text(key)).toMatch(/^\p{L}+: \{\{title\}\}$/u)

@@ -262,7 +262,7 @@
     "hasNames_few": "{{source}} are nume pentru {{count}} personaje",
     "hasNames_other": "{{source}} are nume pentru {{count}} de personaje",
     "seesOne": "{{source}} vede o singură persoană în două personaje",
-    "fromCast": "Din distribuția: {{series}}. Dă clic pe unul greșit ca să îl excluzi.",
+    "fromCast": "Din distribuția serialului {{series}}. Dă clic pe unul greșit ca să îl excluzi.",
     "fromCastUnknown": "Din distribuția serialului. Dă clic pe unul greșit ca să îl excluzi.",
     "wrongFilm": "Film greșit…",
     "wrongSeries": "Serial greșit…",

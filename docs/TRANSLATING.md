@@ -319,7 +319,8 @@ altul`, never `planuri apropiate`, which an editor reads as medium close-ups.
 | Details | Detalii | |
 | About | Despre | |
 | What's new, Release notes | Noutăți, Note de lansare | |
-| Contributors, Acknowledgements | Contribuitori, Mulțumiri | |
+| Contributors | Contribuitori | |
+| Acknowledgements (NVIDIA's notices file) | Mențiuni legale | a legal file, and `backend` says `mențiunile legale` of it; not `Mulțumiri`, which is thanks |
 | the rail | bara laterală | also macOS "Sidebar" |
 | Command palette | paleta de comenzi | |
 | shortcut, keymap | comandă rapidă (comenzi rapide), taste | |
@@ -356,6 +357,7 @@ macOS menu titles, as nouns: `Fișier`, `Editare`, `Afișare`, `Fereastră`, `Aj
 | signed | semnat | |
 | withdrawn, to withdraw | retras, a retrage | |
 | catalog | catalog | |
+| epoch (of the catalog), epoch certificate | **perioadă**, certificatul perioadei | **[check]** the time a catalog's signing key serves. Not `epocă`: "de epocă" is vintage |
 | permission | permisiune (permisiuni) | |
 | sandbox, sandboxed | **mediu izolat**, izolat | **[check]** |
 | run (noun), to run | rulare (rulări), a rula | |
@@ -533,3 +535,8 @@ look at in Romanian screenshots.
 8. **Shot sizes** and the badges GP, PP, PA, PM, PG.
 9. **Fast Scan = Scanare rapidă.** It is a feature, not a product, so it is translated.
 10. **sandbox = mediu izolat**, **Live action = Cu actori reali**, and the frame unit `c`.
+11. **epoch = perioadă**, in `backend:catalog.certificate*`: a word for a technical idea, with no settled Romanian.
+12. **"oprește ținut"** in `shortcuts:player.shuttle.name`: "stop held", the K key held down, is hard to parse. Only a
+    native speaker can say what reads better in that short a space.
+13. **The tab `Răsfoiește`** (`plugins:page.browse`) is an imperative beside the noun `Instalate`, against the table of
+    forms: tabs are nouns. `Catalog` would fit it, but the glossary's verb for Browse is this one, so it is your call.

@@ -14,7 +14,7 @@
     },
     "cast": {
       "title": "Distribuție",
-      "description": "Pe pagina Distribuție. {{mod}}-clic selectează și un personaj, iar Shift-clic, toate cele dintre."
+      "description": "Pe pagina Distribuție. {{mod}}-clic selectează și un personaj, iar Shift-clic, toate personajele dintre ele."
     },
     "faces": {
       "title": "Fețele unui personaj",

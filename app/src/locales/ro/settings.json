@@ -190,7 +190,7 @@
   },
   "updates": {
     "title": "Actualizări",
-    "description": "AutoScene se actualizează pe loc. Proiectele și modelele se păstrează.",
+    "description": "AutoScene se actualizează singur. Proiectele și modelele se păstrează.",
     "check": "Caută actualizări",
     "checkingLine": "Se verifică…",
     "autoLine": "Verifică automat la pornire și o dată la câteva ore.",
@@ -240,8 +240,8 @@
       },
       "nvidiaDescription": "Fișierele proprii NVIDIA, descărcate din Setări → General.",
       "nvidiaLicence": "Licența NVIDIA",
-      "notices": "Mulțumiri",
-      "noticesFailed": "Nu s-au putut deschide mulțumirile"
+      "notices": "Mențiuni legale",
+      "noticesFailed": "Nu s-au putut deschide mențiunile legale"
     },
     "models": {
       "title": "Modele AI",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import native from "./en/native.json"
 import { en } from "./index"
-import { type Bundle, catalogProblems, type Meta, messageHash, messagesOf, pluralProblems, translationProblems } from "./check"
+import { type Bundle, catalogProblems, type Meta, messageHash, messagesOf, pluralProblems, sameEnglishProblems, translationProblems } from "./check"
 
 // Every language but English: its namespaces and its meta (docs/TRANSLATING.md).
 const files = import.meta.glob<Record<string, unknown>>(["./*/*.json", "!./en/*", "!./*/meta.json"], { eager: true, import: "default" })
@@ -19,6 +19,14 @@ for (const [file, meta] of Object.entries(metas)) {
 // `native` is what Rust draws itself: it is no namespace of the UI, but a language has it too.
 const english = { ...en, native } as unknown as Bundle
 const msgs = (words: Record<string, string>) => new Map(Object.entries(words))
+
+/** English lines that are two things, so a language may say them two ways. */
+const TWO_THINGS = new Set([
+  "Export", // the button's verb, the section's noun
+  "{{why}}", // a plugin's reason, framed by AutoScene's words; an update's, as it came
+  "Left out", // of one shot; of the shots a menu shows
+  "Installed", // of one plugin; of the plugins a tab shows
+])
 
 describe("the catalogs", () => {
   it("has Romanian next to English", () => {
@@ -46,6 +54,10 @@ describe("the catalogs", () => {
         // Keys, plural forms, `{{variables, formats}}`, `$t()` references, tags and forbidden letters, against the
         // English; and a meta entry made from the English as it is now.
         expect(translationProblems(lang, english, bundle, meta)).toEqual([])
+      })
+
+      it("says one English line one way, the plugin's permissions and trust lines first", () => {
+        expect(sameEnglishProblems(english, bundle, TWO_THINGS)).toEqual([])
       })
 
       it("has a state for every message, and none for a message it doesn't have, but stale ones", () => {
@@ -135,6 +147,17 @@ describe("what the checks refuse", () => {
     expect(problems({ ...RO, hide: "Ascunde ș ț Ș Ț" })).toEqual([])
     // Only Romanian is held to it.
     expect(translationProblems("tr", E, { cast: { ...RO, hide: "Gizle ş" } }, metaFor())).toEqual([])
+  })
+
+  it("name one English line said two ways, form by form, unless it is two things", () => {
+    const en: Bundle = { a: { one: "Export", n_one: "{{count}} clips", n_other: "{{count}} clips" }, b: { two: "Export", n_other: "{{count}} clips", n_one: "{{count}} clips" } }
+    const same = { n_one: "{{count}} clip", n_few: "{{count}} clipuri", n_other: "{{count}} de clipuri" }
+    const words = (one: string, two: string, other = same): Bundle => ({ a: { one, ...same }, b: { two, ...other } })
+    expect(sameEnglishProblems(en, words("Exportă", "Exportă"), new Set())).toEqual([])
+    expect(sameEnglishProblems(en, words("Exportă", "Export"), new Set())).toEqual(['"Export": Exportă / Export'])
+    expect(sameEnglishProblems(en, words("Exportă", "Export"), new Set(["Export"]))).toEqual([])
+    // The same English in two forms is no drift, the same form said two ways is.
+    expect(sameEnglishProblems(en, words("x", "x", { ...same, n_other: "{{count}} clipuri" }), new Set())).toEqual(['"{{count}} clips": {{count}} de clipuri / {{count}} clipuri'])
   })
 
   it("compare the hash of the English each entry was made from", () => {

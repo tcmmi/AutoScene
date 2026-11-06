@@ -453,7 +453,7 @@
     "timedOut_few": "Pluginul {{name}} a rulat mai mult de {{count}} minute și a fost oprit.",
     "timedOut_other": "Pluginul {{name}} a rulat mai mult de {{count}} de minute și a fost oprit.",
     "tooNew": "Acest plugin are nevoie de o versiune mai nouă de AutoScene.",
-    "turnedOff": "Pluginul {{name}} este dezactivat.",
+    "turnedOff": "Pluginul „{{name}}” este dezactivat.",
     "uninstalledWhileWaiting": "Acest plugin a fost dezinstalat cât timp actualizarea aștepta. Deschide-l din nou.",
     "updateAsksMore": "Această actualizare cere mai mult decât ai acceptat. Deschide-o din nou.",
     "uvMissing": "Acest plugin are nevoie de uv, iar AutoScene nu l-a putut obține.",

@@ -142,7 +142,7 @@
   },
   "shots": {
     "loadFailed": "Nu s-au putut încărca planurile",
-    "waiting": "Episodul se analizează din nou; planurile revin când se termină.",
+    "waiting": "Episodul se analizează din nou; planurile revin când se termină analiza.",
     "none": "Încă nu există planuri.",
     "summary_one": "{{count}} plan · {{length}} în total · treci cu mouse-ul ca să derulezi",
     "summary_few": "{{count}} planuri · {{length}} în total · treci cu mouse-ul ca să derulezi",

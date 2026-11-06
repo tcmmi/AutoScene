@@ -133,7 +133,7 @@
     "failed": "A eșuat",
     "cancelled": "Anulat",
     "waiting": "În așteptare",
-    "working": "Se lucrează…",
+    "working": "Se lucrează",
     "stopJob": "Oprește: {{title}}",
     "cancelJob": "Anulează: {{title}}",
     "stopFailed": "Nu s-a putut opri sarcina",

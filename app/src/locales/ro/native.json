@@ -107,8 +107,8 @@
       "version": "Versiune: {{version}}",
       "versionOver": "Versiune: {{version}} (este instalată {{installed}})",
       "by": "Autor: {{author}}",
-      "saysSigned": "Spune că autorul este: {{author}}\nSemnat cu cheia {{key}}",
-      "saysUnsigned": "Spune că autorul este: {{author}}\nNesemnat",
+      "saysSigned": "Autor declarat: {{author}}\nSemnat cu cheia {{key}}",
+      "saysUnsigned": "Autor declarat: {{author}}\nNesemnat",
       "folder": "Folder: {{path}}"
     },
     "permission": {
@@ -121,7 +121,7 @@
         "exportsRead": "Poate citi fișierele din folderul exportului",
         "exportsWrite": "Poate citi, schimba și șterge fișiere din folderul exportului",
         "projectRead": "Poate citi folderul proiectului",
-        "networkNoSite": "Poate folosi rețeaua, dar nu numește niciun site: orice cerere este refuzată.",
+        "networkNoSite": "Poate folosi rețeaua, dar nu indică niciun site: orice cerere este refuzată.",
         "network": "Poate comunica cu aceste site-uri, doar prin https:",
         "networkSites": "Poate comunica cu aceste site-uri, doar prin https: {{sites}}"
       }

@@ -183,7 +183,7 @@
     "eyebrow": "Scenepack",
     "header": "{{shots}} în {{episodes}} · în scenepack intră cele luminoase",
     "gone": {
-      "title": "Personajul nu mai este în distribuție",
+      "title": "Acest personaj nu mai este în distribuție",
       "description": "Este posibil să fi fost unit cu alt personaj.",
       "back": "Înapoi la distribuție"
     },

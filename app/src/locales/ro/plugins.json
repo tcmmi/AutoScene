@@ -81,11 +81,11 @@
       "exportsRead": "Poate citi clipurile exportate",
       "exportsWrite": "Poate schimba sau adăuga fișiere lângă clipurile exportate",
       "projectRead": "Poate citi proiectul: episoadele și personajele",
-      "network": "Poate comunica cu internetul"
+      "network": "Poate comunica prin internet"
     },
     "walled": {
       "exportsRead": "Poate citi fișierele din folderul exportului",
-      "exportsWrite": "Poate citi, schimba și șterge fișierele din folderul exportului",
+      "exportsWrite": "Poate citi, schimba și șterge fișiere din folderul exportului",
       "projectRead": "Poate citi folderul proiectului",
       "network": "Poate comunica cu aceste site-uri, doar prin https:",
       "networkNone": "Poate folosi rețeaua, dar nu indică niciun site: orice cerere este refuzată."
@@ -233,7 +233,7 @@
     "installNamed": "Instalează {{name}}…",
     "settingsNamed": "Setări: {{name}}",
     "checkFailed": "Nu s-a putut verifica catalogul de pluginuri",
-    "needsNewerApp": "Acest catalog necesită un AutoScene mai nou.",
+    "needsNewerApp": "Acest catalog are nevoie de o versiune mai nouă de AutoScene.",
     "noCatalog": "Această versiune de AutoScene nu are catalog de pluginuri.",
     "upToDate": "Pluginurile sunt la zi",
     "updates_one": "{{count}} actualizare de plugin",
@@ -325,7 +325,7 @@
       "removeAnswer": "Elimină",
       "removeFailed": "Nu s-a putut elimina secretul",
       "dialogDescription": "Se păstrează în seiful sistemului. AutoScene nu îl mai arată niciodată.",
-      "tooLong": "Caractere într-un secret: cel mult {{max}}.",
+      "tooLong": "Numărul maxim de caractere pentru un secret: {{max}}.",
       "saveFailed": "Nu s-a putut salva secretul",
       "save": "Salvează"
     }
@@ -386,7 +386,7 @@
       "pagesMayUse": "Ce pot folosi paginile",
       "saysItDoes": "Ce spune că face",
       "notEnforced": "Ce spune că face (AutoScene nu impune)",
-      "userRights": "Rulează cu drepturile tale de utilizator: poate citi, schimba și trimite orice poți și tu.",
+      "userRights": "Pluginul rulează cu drepturile tale de utilizator: poate citi, schimba și trimite orice poți și tu.",
       "newHosts": "Nou: {{hosts}}",
       "none": "Nu indică nicio permisiune.",
       "gpu": "Poate folosi placa video: rulările așteaptă cât timp rulează o analiză"

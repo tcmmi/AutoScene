@@ -124,6 +124,28 @@ export function pluralProblems(lang: string, bundle: Bundle): string[] {
   return problems
 }
 
+/**
+ * One English line said two ways, as `"English": one / other`: the rule of one thing, one word
+ * (docs/TRANSLATING.md). Plural forms are held to their own form. `allowed` holds the English lines that are
+ * two things in two places: a verb and a noun, a word that agrees with what it stands beside.
+ */
+export function sameEnglishProblems(english: Bundle, bundle: Bundle, allowed: ReadonlySet<string>): string[] {
+  const translated = messagesOf(bundle)
+  const said = new Map<string, Set<string>>()
+  for (const [key, forms] of messagesOf(english)) {
+    for (const [form, text] of forms) {
+      const translation = translated.get(key)?.get(form)
+      if (translation === undefined || allowed.has(text)) continue
+      const id = JSON.stringify([form, text])
+      if (!said.has(id)) said.set(id, new Set())
+      said.get(id)?.add(translation)
+    }
+  }
+  return [...said]
+    .filter(([, translations]) => translations.size > 1)
+    .map(([id, translations]) => `${JSON.stringify(JSON.parse(id)[1])}: ${[...translations].join(" / ")}`)
+}
+
 /** Letters a language never writes: Romanian has the comma below (ș ț), never the cedilla of old fonts (ş ţ). */
 const FORBIDDEN: Record<string, { letters: RegExp; why: string }> = {
   ro: { letters: /[\u015e\u015f\u0162\u0163]/, why: "cedilla, Romanian writes the comma below (ș ț Ș Ț)" },

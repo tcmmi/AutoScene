@@ -153,6 +153,8 @@ choices a Romanian editor may want otherwise; they are listed again at the end, 
 follows this page as written and never decides a term alone: a word that is missing here is reported, not invented.
 
 The rule behind all of it: **one thing, one Romanian word**, in every namespace, in `native.json` and in `backend.json`.
+The same English line reads the same everywhere, and `locales.test.ts` holds that; the few lines that are two things
+(a verb and a noun, a word that agrees with what it stands beside) are named in its `TWO_THINGS`.
 The voice is the English voice of `docs/DESIGN.md` (Copy): plain, confident, an editor's words, no marketing, no
 exclamation marks. It should read as if written in Romanian, not as English with Romanian words: move the sentence
 around, drop a possessive, split a sentence. Keep the sense, not the shape.
@@ -362,6 +364,7 @@ macOS menu titles, as nouns: `Fișier`, `Editare`, `Afișare`, `Fereastră`, `Aj
 | your system's keychain | seiful sistemului | |
 | package | pachet (pachete) | a plugin's `.asp` only; a scenepack is never a `pachet` |
 | author | autor | |
+| Says it is by | Autor declarat | one line for the review screen and the system's dialog; the plugin's own claim, never `Autor` alone |
 | host | gazdă (gazde) | |
 | site | site (site-uri) | |
 | hash, cache | hash, cache | stay |

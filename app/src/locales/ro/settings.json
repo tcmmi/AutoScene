@@ -184,7 +184,7 @@
     "slot": "{{name}}: {{keys}}. Schimbă",
     "slotNone": "{{name}}: nicio tastă. Schimbă",
     "pressKey": "Apasă o tastă",
-    "noKey": "Nicio tastă",
+    "noKey": "Fără tastă",
     "useCmd": "Folosește ⌘ în loc de Control",
     "windowsKey": "Tasta Windows este rezervată pentru Windows"
   },

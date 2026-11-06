@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ExportItem, ExportSummary, JobInfo, MediaItem } from "@/bindings"
 import { AppMenu } from "@/components/shell/AppMenu"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { t } from "@/lib/i18n"
+import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
 import { useActivity } from "@/state/activity"
 import { useRelink } from "@/state/relink"
@@ -37,6 +39,7 @@ vi.mock("@/lib/ipc", async (importOriginal) => {
     commands: {
       ...ipc.commands,
       exportSaveList,
+      clipboardWrite: vi.fn(() => Promise.resolve()),
       settingsGet: vi.fn(() => Promise.resolve({ findBodies: false })),
       projectGet: vi.fn(() => Promise.resolve({ id: "p", fastScan: false })),
     },
@@ -144,6 +147,21 @@ describe("the exports page in another language", () => {
     cleanup()
     showExports(done(Array.from({ length: 1300 }, (_, i) => ({ ...clip(i + 1), status: i < 1200 ? "done" : "failed" }) as ExportItem)))
     expect(screen.getByText(/1,200 of 1,300 clips/)).toBeTruthy()
+  })
+
+  it("says what it copied in the language, and that it couldn't", async () => {
+    // The real catalog: a kind is looked up by its id, and only a real translation shows one passed in words.
+    await inLanguage("ro")
+    showExports(done([clip(1)]))
+    const copy = async () => {
+      fireEvent.contextMenu(screen.getByRole("heading", { level: 2 }), { clientX: 40, clientY: 40 })
+      fireEvent.click(await screen.findByRole("menuitem", { name: t("project:menu.copyFolderPath") }))
+    }
+    await copy()
+    await waitFor(() => expect(toast).toHaveBeenCalledExactlyOnceWith(t("shell:copy.copied.folderPath"), { description: "C:\\Out" }))
+    vi.mocked(commands.clipboardWrite).mockRejectedValueOnce(new Error("busy"))
+    await copy()
+    await waitFor(() => expect(vi.mocked(toast.error).mock.lastCall?.[0]).toBe(t("shell:copy.failed.folderPath")))
   })
 
   it("says the one file's count and its menu in the language, and a save's toast", async () => {

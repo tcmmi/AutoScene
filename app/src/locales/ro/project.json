@@ -19,12 +19,6 @@
     "copyFolderPath": "Copiază calea folderului",
     "copyError": "Copiază eroarea"
   },
-  "copied": {
-    "filePath": "calea fișierului",
-    "folderPath": "calea folderului",
-    "error": "eroarea",
-    "timecodes": "timecode-urile"
-  },
   "add": {
     "files": "Adaugă fișiere",
     "folder": "Adaugă folder"

@@ -61,7 +61,7 @@ export function EpisodeItems({
       <Item onSelect={() => reveal(m.path)}>
         <FolderOpen /> {t("menu.showInFolder")}
       </Item>
-      <Item onSelect={() => void copyText(m.path, t("copied.filePath"))}>
+      <Item onSelect={() => void copyText(m.path, "file path")}>
         <Copy /> {t("menu.copyFilePath")}
       </Item>
       {m.status === "missing" && (

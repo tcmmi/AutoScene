@@ -2795,22 +2795,6 @@
     "state": "draft",
     "en": "30d23699"
   },
-  "project:copied.filePath": {
-    "state": "draft",
-    "en": "31226842"
-  },
-  "project:copied.folderPath": {
-    "state": "draft",
-    "en": "ef6ddf70"
-  },
-  "project:copied.error": {
-    "state": "draft",
-    "en": "21918751"
-  },
-  "project:copied.timecodes": {
-    "state": "draft",
-    "en": "db0af266"
-  },
   "project:add.files": {
     "state": "draft",
     "en": "dd45c7bb"

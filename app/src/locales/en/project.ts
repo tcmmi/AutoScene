@@ -34,13 +34,6 @@ export default {
     copyFolderPath: "Copy folder path",
     copyError: "Copy the error",
   },
-  /** What is being copied, after "Copied …" and "Couldn't copy the …" (a noun, lower case). */
-  copied: {
-    filePath: "file path",
-    folderPath: "folder path",
-    error: "error",
-    timecodes: "timecodes",
-  },
   /** The button and menu entries that add videos. A button has no `…`, a menu entry has. */
   add: {
     files: "Add files",

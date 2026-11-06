@@ -1,19 +1,21 @@
 import type * as React from "react"
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { toast } from "sonner"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { JobInfo, MediaItem } from "@/bindings"
 import type { MenuKit } from "@/components/ui/menu-actions"
+import { t } from "@/lib/i18n"
 import { commands } from "@/lib/ipc"
 import { useActivity } from "@/state/activity"
 import { EpisodeItems } from "./episode-actions"
-import { plain } from "@/test/i18n"
+import { inLanguage, plain } from "@/test/i18n"
 
 vi.mock("@/lib/ipc", () => ({
   commands: {
     mediaRetry: vi.fn(),
     mediaAnalyze: vi.fn(() => Promise.resolve(null)),
     jobCancel: vi.fn(() => Promise.resolve(null)),
+    clipboardWrite: vi.fn(() => Promise.resolve()),
   },
   errorMessage: (e: unknown) => String(e),
 }))
@@ -68,6 +70,14 @@ afterEach(() => {
 })
 
 describe("an episode's actions", () => {
+  it("says it copied the file's path in any language", async () => {
+    // The real catalog: a kind is looked up by its id, and only a real translation shows one passed in words.
+    await inLanguage("ro")
+    items(analysed)
+    fireEvent.click(screen.getByRole("button", { name: t("project:menu.copyFilePath") }))
+    await waitFor(() => expect(toast).toHaveBeenCalledExactlyOnceWith(t("shell:copy.copied.filePath"), { description: analysed.path }))
+  })
+
   it("says so when indexing a failed episode again can't start", async () => {
     vi.mocked(commands.mediaRetry).mockRejectedValue("database is locked")
     const m = { id: "m", path: "C:\\Show\\E01.mkv", status: "failed", shots: "pending" } as MediaItem

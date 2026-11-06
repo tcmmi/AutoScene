@@ -222,7 +222,7 @@ function ExportItems({
       <Item onSelect={() => reveal(ex.outDir)}>
         <FolderOpen /> {t("menu.showFolder")}
       </Item>
-      <Item onSelect={() => void copyText(ex.outDir, t("copied.folderPath"))}>
+      <Item onSelect={() => void copyText(ex.outDir, "folder path")}>
         <Copy /> {t("menu.copyFolderPath")}
       </Item>
       <Separator />
@@ -334,12 +334,12 @@ function FileRow({ ex, status: ofExport, file }: { ex: ExportSummary; status: Ex
             </ContextMenuItem>
           )}
           {file.path && (
-            <ContextMenuItem onSelect={() => void copyText(file.path!, t("copied.filePath"))}>
+            <ContextMenuItem onSelect={() => void copyText(file.path!, "file path")}>
               <Copy /> {t("menu.copyFilePath")}
             </ContextMenuItem>
           )}
           {file.error && (
-            <ContextMenuItem onSelect={() => void copyText(say(file.error!), t("copied.error"))}>
+            <ContextMenuItem onSelect={() => void copyText(say(file.error!), "error")}>
               <Copy /> {t("menu.copyError")}
             </ContextMenuItem>
           )}
@@ -390,17 +390,17 @@ function ItemRow({ pid, item: it, media: m, ownFile }: { pid: string; item: Expo
             </ContextMenuItem>
           )}
           {it.path && (
-            <ContextMenuItem onSelect={() => void copyText(it.path!, t("copied.filePath"))}>
+            <ContextMenuItem onSelect={() => void copyText(it.path!, "file path")}>
               <Copy /> {t("menu.copyFilePath")}
             </ContextMenuItem>
           )}
           {fps && (
-            <ContextMenuItem onSelect={() => void copyText(`${tc(it.start)} - ${tc(it.end - 1)}`, t("copied.timecodes"))}>
+            <ContextMenuItem onSelect={() => void copyText(`${tc(it.start)} - ${tc(it.end - 1)}`, "timecodes")}>
               <Copy /> {t("exports.clip.copyTimecodes")}
             </ContextMenuItem>
           )}
           {it.error && (
-            <ContextMenuItem onSelect={() => void copyText(say(it.error!), t("copied.error"))}>
+            <ContextMenuItem onSelect={() => void copyText(say(it.error!), "error")}>
               <Copy /> {t("menu.copyError")}
             </ContextMenuItem>
           )}

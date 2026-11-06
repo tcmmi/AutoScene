@@ -255,6 +255,9 @@ Shot sizes, with their badges **[check]**:
 | Medium shot (MS) | Plan mediu | PM |
 | Wide shot (WS) | Plan general | PG |
 
+`Plan apropiat` is the medium close-up and nothing else. Shots that sit close together in time are `planuri unul după
+altul`, never `planuri apropiate`, which an editor reads as medium close-ups.
+
 ### Glossary: series, cast, faces
 
 | English | Romanian (plural) | Note |

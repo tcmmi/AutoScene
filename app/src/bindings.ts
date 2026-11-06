@@ -1815,6 +1815,10 @@ export type PackFileSpec = {
 export type PackFilter = {
 	/**  `<pluginId>/<filterId>`, as [`PackSpec::plugin_filters`] names it. */
 	key: string,
+	/**
+	 *  The plugin's own words. Empty when no plugin has the filter now
+	 *  ([`PackFilterState::Gone`]): the UI names it in its language.
+	 */
 	title: string,
 	description: string | null,
 	/**  What a shot it leaves out says. */

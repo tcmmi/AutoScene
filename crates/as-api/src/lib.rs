@@ -1316,6 +1316,8 @@ pub struct PackPreview {
 pub struct PackFilter {
     /// `<pluginId>/<filterId>`, as [`PackSpec::plugin_filters`] names it.
     pub key: String,
+    /// The plugin's own words. Empty when no plugin has the filter now
+    /// ([`PackFilterState::Gone`]): the UI names it in its language.
     pub title: String,
     pub description: Option<String>,
     /// What a shot it leaves out says.

@@ -174,13 +174,14 @@ pub fn pack_filters(
         }
     }
     // Turned on, and no plugin has it now (uninstalled, or an update took it
-    // away): nothing of it is known but its key, which is no name to show.
+    // away): nothing of it is known but its key, which is no name to show, so
+    // the UI names it in its own language.
     // Without plugins at all, nothing can be said of it but that it is off.
     for key in &spec.plugin_filters {
         if out.iter().all(|f| f.key != *key) {
             let (plugin, filter) = key.split_once('/').unwrap_or(("", key));
             let (title, plugin, state) = match host {
-                Some(_) => ("Removed filter", "", PackFilterState::Gone),
+                Some(_) => ("", "", PackFilterState::Gone),
                 None => (filter, plugin, PackFilterState::Off),
             };
             out.push(PluginFilter {
@@ -1184,7 +1185,7 @@ mod tests {
             [(SPEAKS, PackFilterState::Off), ("dev.a.gone/loud", PackFilterState::Gone)]
         );
         // There is nothing to turn on, and its id is no name.
-        assert_eq!((off[1].title.as_str(), off[1].plugin.as_str()), ("Removed filter", ""));
+        assert_eq!((off[1].title.as_str(), off[1].plugin.as_str()), ("", ""));
         // Turned off: off too. Without plugins at all, each the spec turns on is off.
         host.store.set_enabled(&id, false).unwrap();
         assert_eq!(list(true, &gone)[0].state, PackFilterState::Off);

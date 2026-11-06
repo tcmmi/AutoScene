@@ -245,6 +245,7 @@ function PluginFilterChip({
 }) {
   const { t } = useTranslation("pack")
   const gone = f.state === "gone"
+  const title = gone ? t("filters.plugin.goneTitle") : f.title
   const off = f.state === "off"
   const checking = on && f.state === "checking"
   const failed = on && f.state === "failed" && f.checked < f.total
@@ -262,15 +263,15 @@ function PluginFilterChip({
     <Tooltip label={label} hint={hint}>
       <ToggleChip pressed={on} onClick={() => onChange(!on)} className={cn((off || gone) && "opacity-60")}>
         <PluginIcon src={icon} className="size-4" />
-        {f.title}
+        {title}
         {checking && (
           <ProgressRing
-            aria-label={t("filters.plugin.checkingAria", { title: f.title })}
+            aria-label={t("filters.plugin.checkingAria", { title })}
             className="size-3.5"
             value={f.checked > 0 && f.total > 0 ? f.checked / f.total : null}
           />
         )}
-        {failed && <Warning role="img" aria-label={t("filters.plugin.failedAria", { title: f.title })} className="size-3.5 text-danger" />}
+        {failed && <Warning role="img" aria-label={t("filters.plugin.failedAria", { title })} className="size-3.5 text-danger" />}
         {off && <span className="text-xs font-normal text-fg-3">{t("filters.plugin.pluginOff")}</span>}
       </ToggleChip>
     </Tooltip>

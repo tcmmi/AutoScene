@@ -165,6 +165,8 @@ export default {
     reset: "Reset filters",
     /** A plugin's filter as a chip. `plugin`, `title` and `what` are the plugin's own words. */
     plugin: {
+      /** On the chip of a filter no plugin has now. */
+      goneTitle: "Removed filter",
       gone: "This filter's plugin is gone, or no longer has it. Turn this filter off.",
       off: "Plugin “{{plugin}}” is off. Turn it on in Plugins, or turn this filter off.",
       says: "Plugin “{{plugin}}”: {{what}}",

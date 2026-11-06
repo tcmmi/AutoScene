@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { MediaItem, PackFilter, PackSpec } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { layerOpen } from "@/lib/layers"
+import { inLanguage } from "@/test/i18n"
 import { pluginInfo } from "@/test/plugins"
 import { PackFilters } from "./PackFilters"
 import { DEFAULT_SPEC } from "./spec"
@@ -114,7 +115,7 @@ describe("PackFilters, plugin filters", () => {
 
   it("a filter no plugin has now asks only to be turned off", () => {
     const onChange = vi.fn()
-    bar([speaks({ state: "gone", title: "Removed filter", plugin: "" })], { ...DEFAULT_SPEC, pluginFilters: [KEY] }, onChange)
+    bar([speaks({ state: "gone", title: "", plugin: "" })], { ...DEFAULT_SPEC, pluginFilters: [KEY] }, onChange)
     const removed = screen.getByRole("button", { name: /Removed filter/ })
     expect(within(removed).queryByText("Plugin off")).toBeNull()
     expect(removed.className).toContain("opacity-60")
@@ -123,6 +124,14 @@ describe("PackFilters, plugin filters", () => {
     expect(screen.queryByText(/Turn it on in Plugins/)).toBeNull()
     fireEvent.click(removed)
     expect(onChange).toHaveBeenLastCalledWith(DEFAULT_SPEC)
+  })
+
+  it("a filter no plugin has now is named in the UI's language, as its tooltip is", async () => {
+    await inLanguage("ro", { pack: { filters: { plugin: { goneTitle: "Filtru eliminat", gone: "Dezactivează filtrul." } } } })
+    bar([speaks({ state: "gone", title: "", plugin: "" })], { ...DEFAULT_SPEC, pluginFilters: [KEY] }, vi.fn())
+    const removed = screen.getByRole("button", { name: "Filtru eliminat" })
+    fireEvent.focus(removed)
+    expect(screen.getAllByText("Dezactivează filtrul.").length).toBeGreaterThan(0)
   })
 })
 

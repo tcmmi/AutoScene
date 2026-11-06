@@ -151,6 +151,7 @@
     "framesAround_other": "{{count}} de cadre înainte și după",
     "reset": "Resetează filtrele",
     "plugin": {
+      "goneTitle": "Filtru eliminat",
       "gone": "Pluginul acestui filtru nu mai există sau nu îl mai are. Dezactivează filtrul.",
       "off": "Pluginul „{{plugin}}” este dezactivat. Activează-l în Pluginuri sau dezactivează filtrul.",
       "says": "Pluginul „{{plugin}}”: {{what}}",

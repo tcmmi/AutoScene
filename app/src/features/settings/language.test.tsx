@@ -5,7 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { commands, type UiLanguage } from "@/bindings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { applySettings, fmt, i18n, LanguageRoot, t } from "@/lib/i18n"
-import { queryClient } from "@/lib/queries"
+import { qk, queryClient } from "@/lib/queries"
 import { installMockBackend } from "@/mocks/backend"
 import { router } from "@/router"
 import { useUi } from "@/state/ui"
@@ -101,6 +101,15 @@ describe("the language row", () => {
     expect((await commands.settingsGet()).language).toBe("ro")
     expect((await screen.findByRole("combobox", { name: "Limba aplicației" })).textContent).toBe("Română")
     expect(document.querySelector("[data-sonner-toast]")).toBeNull()
+  })
+
+  it("has a pack's plan made again: the names of its files are the backend's words, in the language it spoke", async () => {
+    const plan = [...qk.packPlans("p", "c"), {}, {}]
+    queryClient.setQueryData(plan, { clips: [] })
+    show()
+    await choose("App language", "Română")
+    await waitFor(() => expect(i18n.language).toBe("ro"))
+    await waitFor(() => expect(queryClient.getQueryState(plan)?.isInvalidated).toBe(true))
   })
 
   it("keeps focus on the row after the choice: the page is made again in the new language", async () => {

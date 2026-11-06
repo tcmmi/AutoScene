@@ -13,7 +13,7 @@ import { applySettings, LANGUAGE_NAMES, OFFERED, t } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { PREFERRED_AUDIO_LANGUAGES, pickFolder } from "@/lib/media"
 import { reveal } from "@/lib/os"
-import { qk, queryClient, useAppInfo, usePresets, useScanDefaults, useSettings, useUiLocale } from "@/lib/queries"
+import { isMadePack, qk, queryClient, useAppInfo, usePresets, useScanDefaults, useSettings, useUiLocale } from "@/lib/queries"
 import { PathText, SettingRow, SettingsGroup } from "../primitives"
 import { HardwareGroup } from "./HardwareGroup"
 
@@ -31,13 +31,15 @@ async function save(next: AppSettings) {
 /**
  * The language applies at once and with no toast: the screen switching says it. The whole tree is made again
  * in the new language (`LanguageRoot`), so the row the person was on is gone: the page's next mount puts focus
- * back on it, once, and Tab goes on from there, not from the top of the window.
+ * back on it, once, and Tab goes on from there, not from the top of the window. A pack made in the old language
+ * is made again: the backend wrote its files' names, and an export would write them in the new one.
  */
 let focusLanguageRow = false
 async function chooseLanguage(settings: AppSettings, language: UiLanguage) {
   await save({ ...settings, language })
   focusLanguageRow = true
   await applySettings()
+  void queryClient.invalidateQueries({ predicate: isMadePack })
   // The new tree is up by now. With none (the same language chosen again), nothing is left waiting for focus.
   setTimeout(() => (focusLanguageRow = false))
 }

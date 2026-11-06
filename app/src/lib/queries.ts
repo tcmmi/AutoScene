@@ -61,8 +61,9 @@ export const qk = {
  * A pack as the filters make it — its preview or its plan — of any
  * character in any project. It shows what the plugins do (their filters,
  * whether they are on), so what changes them (`plugins:changed`) makes
- * every one again, also those not on screen. The settings it was made with
- * are not part of it.
+ * every one again, also those not on screen, and so does a new language
+ * (`chooseLanguage`): a plan names files in the backend's. The settings it
+ * was made with are not part of it.
  */
 export const isMadePack = (q: { queryKey: readonly unknown[] }) =>
   q.queryKey[0] === "cast" && q.queryKey[2] === "pack" && (q.queryKey[4] === "preview" || q.queryKey[4] === "plan")

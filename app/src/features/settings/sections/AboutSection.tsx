@@ -29,21 +29,18 @@ const LICENSES: { name: string; license: string; url: string }[] = [
   { name: "uv", license: "MIT / Apache-2.0", url: "https://github.com/astral-sh/uv" },
 ]
 
-const BY_3 = { license: "CC BY 3.0", licenseUrl: "https://creativecommons.org/licenses/by/3.0/" }
-const BY_4 = { license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/" }
-
-/** Where the footage picker's example stills come from (cropped and scaled). */
-const STILLS: { name: string; by: string; url: string; license: string; licenseUrl: string }[] = [
-  { name: "Tears of Steel", by: "Blender Foundation", url: "https://mango.blender.org", ...BY_3 },
-  { name: "Sprite Fright", by: "Blender Studio", url: "https://studio.blender.org/films/sprite-fright/", ...BY_4 },
-  { name: "Spring", by: "Blender Studio", url: "https://studio.blender.org/films/spring/", ...BY_4 },
-  { name: "Hero", by: "Blender Studio", url: "https://studio.blender.org/films/hero/", ...BY_4 },
-  {
-    name: "Pepper&Carrot artwork (Ten Years Anniversary, Saffron)",
-    by: "David Revoy",
-    url: "https://www.peppercarrot.com",
-    ...BY_4,
-  },
+/** What the footage picker's example stills are from (cropped and scaled). */
+const STILLS: { name: string; by: string }[] = [
+  { name: "Maze Runner", by: "20th Century Studios" },
+  { name: "Stranger Things", by: "Netflix" },
+  { name: "One Piece", by: "Netflix" },
+  { name: "The Amazing Digital Circus", by: "Glitch Productions" },
+  { name: "Arcane", by: "Riot Games" },
+  { name: "Demon Slayer", by: "ufotable" },
+  { name: "The Apothecary Diaries", by: "TOHO animation, OLM" },
+  { name: "Chainsaw Man", by: "MAPPA" },
+  { name: "Deadpool & Wolverine", by: "Marvel Studios" },
+  { name: "Solo Leveling", by: "A-1 Pictures" },
 ]
 
 /** The ONNX Runtime row: its version when known, and how it computes on this system (a whole label each). */
@@ -178,18 +175,8 @@ export function AboutSection() {
         description={t("about.stills.description")}
       >
         {STILLS.map((f) => (
-          <SettingRow
-            key={f.name}
-            label={f.name}
-            description={
-              <span data-selectable>
-                {f.by} · {f.url}
-                <span className="block">{f.licenseUrl}</span>
-              </span>
-            }
-            className="min-h-12 py-2.5"
-          >
-            <span className="text-sm text-fg-3">{f.license}</span>
+          <SettingRow key={f.name} label={f.name} className="min-h-12 py-2.5">
+            <span className="text-sm text-fg-3">{f.by}</span>
           </SettingRow>
         ))}
       </SettingsGroup>

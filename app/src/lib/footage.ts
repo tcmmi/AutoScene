@@ -3,9 +3,9 @@ import { t } from "@/lib/i18n"
 
 /**
  * What a project's footage can be, with example stills for the picker's
- * hover preview (`public/footage`: cropped and scaled stills from open
- * films and artwork under Creative Commons Attribution licences — credited
- * under them and in full, with the licences, in Settings → About).
+ * hover preview (`public/footage`: cropped and scaled stills the owner
+ * chose, from films and series — named under them and, with their studios,
+ * in Settings → About).
  *
  * `label` and `blurb` are read when shown, in the language in use: this
  * list holds keys and pictures, never translated text.
@@ -17,7 +17,7 @@ export type Footage = {
   blurb: string
   /** A wide still, then two 16:9 close-ups. */
   stills: [string, string, string]
-  /** The pictures' source and licence: names, which stay as they are. */
+  /** What the pictures are from: names, which stay as they are. */
   credit: string
 }
 
@@ -33,27 +33,27 @@ const footage = (value: ContentKind, stills: Footage["stills"], credit: string):
   credit,
 })
 
-// i18n-ignore: each credit is the pictures' source and licence: names, which stay as they are
+// i18n-ignore: each credit says what the pictures are from: names, which stay as they are
 export const FOOTAGE: Footage[] = [
   footage(
     "live",
     ["/footage/live-1.webp", "/footage/live-2.webp", "/footage/live-3.webp"],
-    "Tears of Steel · Blender Foundation · CC BY 3.0",
+    "Maze Runner · Stranger Things · One Piece",
   ),
   footage(
     "animation",
     ["/footage/animation-1.webp", "/footage/animation-2.webp", "/footage/animation-3.webp"],
-    "Sprite Fright, Spring · Blender Studio · CC BY 4.0",
+    "The Amazing Digital Circus · Arcane",
   ),
   footage(
     "anime",
     ["/footage/anime-1.webp", "/footage/anime-2.webp", "/footage/anime-3.webp"],
-    "Pepper&Carrot artwork · David Revoy · Hero · Blender Studio · CC BY 4.0",
+    "Demon Slayer · The Apothecary Diaries · Chainsaw Man",
   ),
   footage(
     "mixed",
     ["/footage/mixed-1.webp", "/footage/mixed-2.webp", "/footage/mixed-3.webp"],
-    "Tears of Steel · CC BY 3.0 · Sprite Fright · CC BY 4.0 · Blender Foundation",
+    "Deadpool & Wolverine · Solo Leveling · Arcane",
   ),
 ]
 

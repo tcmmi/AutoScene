@@ -31,7 +31,7 @@ describe("FootagePicker", () => {
     const user = userEvent.setup()
     render(<Picker />)
     await user.hover(screen.getByRole("radio", { name: "Animation" }))
-    expect(await screen.findByText(/Sprite Fright, Spring/)).toBeTruthy()
+    expect(await screen.findByText(/The Amazing Digital Circus · Arcane/)).toBeTruthy()
     const stills = document.querySelectorAll('img[src^="/footage/animation-"]')
     expect(stills.length).toBe(3)
   })

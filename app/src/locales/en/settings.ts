@@ -345,7 +345,7 @@ export default {
     },
     stills: {
       title: "Example stills",
-      description: "The footage examples in a new project are stills from these open films and artwork, cropped and scaled.",
+      description: "The footage examples in a new project are stills from these films and series, cropped and scaled. They belong to their owners.",
     },
   },
 

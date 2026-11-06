@@ -202,7 +202,8 @@ fn unpack(bytes: &[u8], dir: &Path) -> Result<Vec<Pin>> {
 
 /// What Windows says of the signature of `file`.
 fn signature(file: &Path) -> Result<Signature> {
-    let script = "$s = Get-AuthenticodeSignature -LiteralPath $env:PIN_ACCEL_FILE; \
+    let script = "$ErrorActionPreference = 'Stop'; \
+                  $s = Get-AuthenticodeSignature -LiteralPath $env:PIN_ACCEL_FILE; \
                   [pscustomobject]@{ Status = [string]$s.Status; Subject = $s.SignerCertificate.Subject } \
                   | ConvertTo-Json -Compress";
     let out = powershell(script, file)?;
@@ -246,11 +247,14 @@ fn release(version: &str) -> Option<String> {
 
 /// What `script` prints about `file`, which it finds in [`FILE_VARIABLE`].
 /// The path stays out of the script's text: PowerShell ends a quoted string
-/// at more than the `'` one could escape (U+2019 too).
+/// at more than the `'` one could escape (U+2019 too). Started from PowerShell
+/// 7, this one would inherit its module folders and fail to load its own
+/// Get-AuthenticodeSignature, so it finds its modules for itself.
 fn powershell(script: &str, file: &Path) -> Result<String> {
     let out = Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .env(FILE_VARIABLE, file)
+        .env_remove("PSModulePath")
         .output()
         .context("spawning PowerShell (pin-accel runs on Windows only)")?;
     if !out.status.success() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { type Baseline, compare, groupOf, type Hit, inScope, scan } from "./scan"
+import { inScope, refused, scan } from "./scan"
 
 // The UI's own code, as text (scan.ts decides what is in scope).
 const sources = Object.fromEntries(
@@ -7,42 +7,15 @@ const sources = Object.fromEntries(
     .map(([path, code]) => [path.replace(/^\/src\//, ""), code] as const)
     .filter(([file]) => inScope(file)),
 )
-// What each sweep group still has to move into the catalog.
-const groups = Object.fromEntries(
-  Object.entries(import.meta.glob<Baseline>("./hardcoded/*.json", { import: "default", eager: true })).map(
-    ([path, baseline]) => [path.replace(/^.*\/(.+)\.json$/, "$1"), baseline] as const,
-  ),
-)
 
 const scanAll = (files: Record<string, string>) =>
   Object.fromEntries(Object.entries(files).map(([file, code]) => [file, scan(file, code)] as const))
-const where = (hits: (Hit & { file: string })[]) => hits.map((h) => `${h.file}:${h.line} ${JSON.stringify(h.text)}`)
 
 describe("words written into the code", () => {
-  it("are only those the sweep groups still have to move into the catalog", () => {
-    const merged: Baseline = Object.assign({}, ...Object.values(groups))
-    const { added, gone } = compare(scanAll(sources), merged)
+  it("are none: every word a person reads is in the catalog", () => {
     // New words go into src/locales/en/<namespace>.ts and reach the UI through t() (docs/DESIGN.md, Copy);
     // `// i18n-ignore: <why>` on the line before excuses a word that is never translated.
-    expect(where(added), "words not in the catalog").toEqual([])
-    // A baseline only shrinks: `npm run i18n -- baseline` after moving words out.
-    expect(gone.map((g) => `${g.file} ${JSON.stringify(g.text)}`), "baseline entries no longer in the code").toEqual([])
-  })
-
-  it("only shrink: no baseline lists more than it did when the guard came in", () => {
-    // `npm run i18n -- baseline` never adds; a word the code gains goes into the catalog. Raising a number
-    // here is for a change to the guard itself (`baseline --init`), never for a sweep or a feature.
-    const most: Record<string, number> = { g1: 215, g2: 211, g3: 283, g4: 190, g5: 136, g6: 171, g7: 158, g8: 299 }
-    for (const [group, baseline] of Object.entries(groups)) {
-      expect(Object.values(baseline).flat().length, `${group}.json`).toBeLessThanOrEqual(most[group] ?? 0)
-    }
-  })
-
-  it("are listed in the baseline of the group that owns their file", () => {
-    for (const [group, baseline] of Object.entries(groups)) {
-      for (const file of Object.keys(baseline)) expect(`${file} ${groupOf(file)}`).toBe(`${file} ${group}`)
-    }
-    for (const file of Object.keys(sources)) expect(groupOf(file), `${file} has no sweep group`).not.toBeNull()
+    expect(refused(scanAll(sources)).map((h) => `${h.file}:${h.line} ${JSON.stringify(h.text)}`), "words not in the catalog").toEqual([])
   })
 })
 
@@ -58,8 +31,7 @@ describe("the guard", () => {
       `  return <p aria-label="Your projects" className="text-sm px-2">Nothing here yet {"or here"}</p>`,
       `}`,
     ].join("\n")
-    const { added } = compare(hitsOf("features/x.tsx", code), {})
-    expect(added.map((h) => [h.line, h.ctx, h.text])).toEqual([
+    expect(refused(hitsOf("features/x.tsx", code)).map((h) => [h.line, h.ctx, h.text])).toEqual([
       [2, "prop:label", "Open the project"],
       [4, "toast", "Couldn't open it"],
       [4, "prop:label", "Undo"],
@@ -80,7 +52,7 @@ describe("the guard", () => {
       `  )`,
       `}`,
     ].join("\n")
-    expect(compare(hitsOf("features/x.tsx", code), {}).added.map((h) => [h.line, h.ctx, h.text])).toEqual([
+    expect(refused(hitsOf("features/x.tsx", code)).map((h) => [h.line, h.ctx, h.text])).toEqual([
       [2, "plural", "episode"],
       [2, "plural", "episodes"],
       [4, "attr:aria-label", "{x} options"],
@@ -100,7 +72,7 @@ describe("the guard", () => {
       `  return t("project:remove", { what: "the whole project", context: "male", ns: "project" })`,
       `}`,
     ].join("\n")
-    expect(compare(hitsOf("lib/x.ts", code), {}).added.map((h) => [h.line, h.ctx, h.text])).toEqual([
+    expect(refused(hitsOf("lib/x.ts", code)).map((h) => [h.line, h.ctx, h.text])).toEqual([
       [2, "toast", "Saving…"],
       [2, "toast", "Saved"],
       [2, "toast", "Couldn't save"],
@@ -111,19 +83,19 @@ describe("the guard", () => {
 
   it("refuses an OS dialog's filter name", () => {
     const code = `export const f = () => open({ filters: [{ name: "Video", extensions: ["mp4"] }] })`
-    expect(compare(hitsOf("lib/x.ts", code), {}).added.map((h) => h.text)).toEqual(["Video"])
+    expect(refused(hitsOf("lib/x.ts", code)).map((h) => h.text)).toEqual(["Video"])
   })
 
   it("refuses locale-bound formatting outside lib/i18n.ts", () => {
     const code = `export const a = (n: number) => [n.toLocaleString("en-GB"), new Intl.NumberFormat("en-GB").format(n), n.toFixed(3)]`
-    expect(compare(hitsOf("lib/x.ts", code), {}).added.map((h) => h.text)).toEqual([
+    expect(refused(hitsOf("lib/x.ts", code)).map((h) => h.text)).toEqual([
       "toLocaleString(",
       "en-GB",
       "Intl.NumberFormat(",
       "en-GB",
       "toFixed(",
     ])
-    expect(compare(hitsOf("lib/i18n.ts", code), {}).added).toEqual([])
+    expect(refused(hitsOf("lib/i18n.ts", code))).toEqual([])
   })
 
   it("lets through keys, identifiers, class lists, brand names and excused words", () => {
@@ -143,15 +115,14 @@ describe("the guard", () => {
       `  )`,
       `}`,
     ].join("\n")
-    expect(compare(hitsOf("features/x.tsx", code), {}).added).toEqual([])
+    expect(refused(hitsOf("features/x.tsx", code))).toEqual([])
   })
 
-  it("fails when a baseline lists a word the code no longer has, and counts each occurrence", () => {
+  it("reads a folder that is new like any other, and counts each occurrence", () => {
     const code = `export const A = () => <><b>Cast</b><i>Cast</i></>`
-    expect(compare(hitsOf("features/x.tsx", code), { "features/x.tsx": ["Cast", "Cast"] })).toEqual({ added: [], gone: [] })
-    expect(compare(hitsOf("features/x.tsx", code), { "features/x.tsx": ["Cast"] }).added.map((h) => h.text)).toEqual(["Cast"])
-    expect(compare(hitsOf("features/x.tsx", code), { "features/x.tsx": ["Cast", "Cast", "Exports"] }).gone).toEqual([
-      { file: "features/x.tsx", text: "Exports" },
+    expect(refused(hitsOf("newplace/x.tsx", code)).map((h) => [h.file, h.text])).toEqual([
+      ["newplace/x.tsx", "Cast"],
+      ["newplace/x.tsx", "Cast"],
     ])
   })
 })

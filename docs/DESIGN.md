@@ -316,10 +316,9 @@ The UI's words are in a catalog, not in the code, so AutoScene can speak more th
   (`_one`, `_few`, `_other`). A comment above a key is a note for the translator (button or title, what a
   `{{variable}}` holds, where it shows). `t()` is typed by these files: an unknown key, a missing or misspelled
   `{{variable}}` doesn't compile.
-- Namespaces follow ownership: `common` (shared words and the `fmt` templates; changed only by phase 0), `shell`,
+- Namespaces follow ownership: `common` (shared words and the `fmt` templates), `shell`,
   `ui`, `shortcuts`, `settings`, `cast`, `project`, `library`, `media`, `player`, `pack`, `export`, `plugins`, and
-  `backend`, which is generated (below). All are registered in `locales/index.ts`; a sweep group fills its own file
-  and never edits that one, nor `common` (a shared word it misses goes into its own namespace).
+  `backend`, which is generated (below). All are registered in `locales/index.ts`.
 - Other languages are JSON next to it (`locales/ro/<namespace>.json`), loaded when chosen. English starts
   synchronously, so the first paint and every test have it with no provider.
 - How a translation is made and kept current, and the Romanian glossary and style: [TRANSLATING.md](TRANSLATING.md).
@@ -374,17 +373,12 @@ arguments and options, the `label`/`title`/`description`/`hint`/`message`/`place
 `question`/`detail`/`action`/`crumb` of objects, OS dialog filter names, text handed to `t()` as a value, both sides
 of a `n === 1 ?`, and locale-bound formatting. Where only
 words go, one lower-case word counts too (`` `${n} shots` ``, `"faces"`). A word that is never translated gets
-`// i18n-ignore: <why>` (or `{/* i18n-ignore: … */}`) on the line before. While the sweep moves today's words,
-`locales/hardcoded/g1.json` … `g8.json` list what each group still has to move. A list only shrinks: the test fails
-on a word no list has, on an entry the code no longer has, and on a list longer than it was when the guard came in;
-each group deletes its file when done. `lib/format.ts`, `lib/ipc.ts` and `lib/i18n.ts` have no list: no word there.
+`// i18n-ignore: <why>` (or `{/* i18n-ignore: … */}`) on the line before. The test fails on any other such word in
+the code, in any folder.
 
-`npm run i18n -- count` prints the inventory. `-- baseline` shrinks the lists to what the code still has and never
-adds: a word it refuses goes into the catalog. (`-- baseline --init` rewrites them from the code; it is for a change
-to the guard itself, never for a sweep or a feature.) `-- status` shows, per group, what its list still has and what
-the guard lets through (returns, variables, call arguments, label maps); `-- unguarded <group>` lists the latter by
-line, for the group to check before it deletes its file. `-- status --compare <rev>` lists English that left the
-code since `<rev>` but is in no catalog as it was, which a reviewer checks byte for byte. `?lang=pseudo`
+`npm run i18n -- count` prints the inventory. `-- status` says how much the guard lets through (returns, variables,
+call arguments, label maps), and `-- unguarded` lists it by line. `-- status --compare <rev>` lists English that left
+the code since `<rev>` but is in no catalog as it was, which a reviewer checks byte for byte. `?lang=pseudo`
 (development and the mock) shows every catalog word accented, longer and in brackets, and the values a message gets
 plain: whatever reads plain is still in the code or is the person's data, whatever is cut off will be cut in a
 longer language.

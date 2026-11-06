@@ -9,38 +9,12 @@
 //   plural, and locale-bound formatting (`"en-GB"`, `toLocaleString(`, `toFixed(`, `Intl.*Format(`)
 //   outside lib/i18n.ts;
 // - every hit is the inventory `npm run i18n -- count` prints; `npm run i18n --
-//   unguarded <group>` lists the ones the guard lets through, for a group to
-//   look at before it calls itself done.
+//   unguarded` lists the ones the guard lets through.
 import { parseSync } from "vite"
 
 /** A path under app/src, with forward slashes. */
 export type File = string
 export type Hit = { text: string; line: number; ctx: string; guarded: boolean }
-/** What a sweep group still has to move: per file, the texts (one entry per occurrence, no line numbers). */
-export type Baseline = Record<File, string[]>
-
-// The sweep groups G1-G8 of issue 47 (one baseline each); the first match owns
-// the file. `p0` is phase 0's own code (the formatters, ipc, i18n), which has
-// no baseline: it may hold no hardcoded word at all.
-const GROUPS: [string, RegExp][] = [
-  ["p0", /^lib\/(format|ipc|i18n)\.ts$/],
-  ["g8", /^(features\/plugins\/|features\/settings\/sections\/PluginsSection\.tsx$)/],
-  ["g2", /^(lib\/(shortcuts|keymap)\.ts|features\/settings\/)/],
-  ["g3", /^features\/cast\//],
-  ["g4", /^features\/project\//],
-  ["g5", /^(features\/(library|shots)\/|lib\/(media|footage|fast-scan)\.ts)/],
-  ["g6", /^features\/player\//],
-  ["g7", /^(features\/(pack|export)\/|lib\/naming\.ts)/],
-  ["g1", /^(components\/|state\/|lib\/|router\.tsx|main\.tsx|features\/(not-found|route-error)\.tsx)/],
-]
-export const GROUP_NAMES = ["g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8"] as const
-/** The owner whose files may hold no guarded hit at all (it has no baseline). */
-export const NO_BASELINE = "p0"
-
-/** The sweep group that owns `file` (or `p0`), or null for a file no group owns yet (give it one above). */
-export function groupOf(file: File): string | null {
-  return GROUPS.find(([, re]) => re.test(file))?.[0] ?? null
-}
 
 /** Files the guard reads: the UI's own code, not tests, mocks, generated bindings, the plugin kit, the catalogs or the lint rules. */
 export function inScope(file: File): boolean {
@@ -262,7 +236,7 @@ function classify(stack: Node[], self: Node): Ctx | null {
 
 const LOCALE_CALL = /^(toLocale(Date|Time)?String|toFixed|Intl\.\w+Format)$/
 
-/** Every hit in one file's source; `guarded` marks those the test refuses unless ignored or in a baseline. */
+/** Every hit in one file's source; `guarded` marks those the test refuses (`i18n-ignore` clears it). */
 export function scan(file: File, code: string): Hit[] {
   const { program, comments } = parseSync(file, code, { lang: file.endsWith(".tsx") ? "tsx" : "ts" })
   const starts = [0]
@@ -328,44 +302,7 @@ export function scan(file: File, code: string): Hit[] {
   return hits
 }
 
-/** The guarded texts of one scan, sorted, as a baseline holds them. */
-export function guardedTexts(hits: readonly Hit[]): string[] {
-  return hits.filter((h) => h.guarded).map((h) => h.text).sort()
-}
-
-/**
- * The ratchet: a guarded hit no baseline lists is new (refused); a baseline
- * entry no longer in the code is gone (the baseline must shrink with it).
- */
-export function compare(
-  hits: Record<File, Hit[]>,
-  baseline: Baseline,
-): { added: (Hit & { file: File })[]; gone: { file: File; text: string }[] } {
-  const added: (Hit & { file: File })[] = []
-  const gone: { file: File; text: string }[] = []
-  for (const file of new Set([...Object.keys(hits), ...Object.keys(baseline)])) {
-    const left = new Map<string, number>()
-    for (const text of baseline[file] ?? []) left.set(text, (left.get(text) ?? 0) + 1)
-    for (const h of (hits[file] ?? []).filter((x) => x.guarded)) {
-      const n = left.get(h.text) ?? 0
-      if (n > 0) left.set(h.text, n - 1)
-      else added.push({ ...h, file })
-    }
-    for (const [text, n] of left) for (let i = 0; i < n; i++) gone.push({ file, text })
-  }
-  return { added, gone }
-}
-
-/** One baseline file per group: `{ g1: { "components/shell/Rail.tsx": ["Library", …] }, … }`. */
-export function baselines(hits: Record<File, Hit[]>): Record<string, Baseline> {
-  const out: Record<string, Baseline> = {}
-  for (const file of Object.keys(hits).sort()) {
-    const texts = guardedTexts(hits[file])
-    if (texts.length === 0) continue
-    const group = groupOf(file)
-    if (!group) throw new Error(`${file} belongs to no sweep group: add it to GROUPS in locales/scan.ts`)
-    if (group === NO_BASELINE) throw new Error(`${file} is phase 0's own code and may hold no hardcoded word: ${texts.join(", ")}`)
-    ;(out[group] ??= {})[file] = texts
-  }
-  return out
+/** What the guard refuses: every guarded hit of a scan, with its file. */
+export function refused(hits: Record<File, Hit[]>): (Hit & { file: File })[] {
+  return Object.entries(hits).flatMap(([file, list]) => list.filter((h) => h.guarded).map((h) => ({ ...h, file })))
 }

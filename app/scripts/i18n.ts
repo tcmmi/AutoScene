@@ -1,15 +1,10 @@
 // npm run i18n -- <command>  (Node runs this file by stripping its types)
 //
 //   count                     every hard-coded string in app/src, by folder and by context (the inventory)
-//   baseline                  shrink src/locales/hardcoded/<group>.json to what the code still has; it never
-//                             adds: a word the code gained is refused (exit 1) and goes into the catalog instead
-//   baseline --init           write every group's file from the code, additions included: only when the guard
-//                             itself changes or a join brings code from before it (phase 0), never in a sweep
-//   status [--compare <rev>]  what each group still has to move (guarded, in its baseline) and what the guard
-//                             lets through (unguarded, to look at), and the catalog's size; with --compare, the
+//   status [--compare <rev>]  how much the guard lets through, and the catalog's size; with --compare, the
 //                             English that left the code since <rev> but is in no catalog, byte for byte
-//   unguarded <group>         the group's hits the guard lets through (returns, variables, call arguments, label
-//                             maps), by file and line: check each before deleting the group's baseline
+//   unguarded                 the hits the guard lets through (returns, variables, call arguments, label maps),
+//                             by file and line
 //
 // A translation's review (docs/TRANSLATING.md); <lang> is its folder under src/locales, `ro`:
 //
@@ -20,16 +15,15 @@
 //   stale <lang> <keys>…            for English that changed and can't be translated now: moves each message's
 //                                   text from <lang>/<ns>.json into its meta entry, so the app shows English
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { Bundle, Meta } from "../src/locales/check.ts"
 import { checkList, checkTerms, markReviewed, markStale, notesOf, type Outcome, reviewRows, reviewSheet } from "../src/locales/review.ts"
-import { type Baseline, baselines, GROUP_NAMES, groupOf, type Hit, inScope, scan } from "../src/locales/scan.ts"
+import { type Hit, inScope, scan } from "../src/locales/scan.ts"
 
 const app = join(import.meta.dirname, "..")
 const src = join(app, "src")
-const hardcoded = join(src, "locales", "hardcoded")
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -44,15 +38,6 @@ function scanTree(): Record<string, Hit[]> {
   const hits: Record<string, Hit[]> = {}
   for (const file of walk(src).filter(inScope).sort()) hits[file] = scan(file, readFileSync(join(src, file), "utf8"))
   return hits
-}
-
-function readBaselines(): Record<string, Record<string, string[]>> {
-  if (!existsSync(hardcoded)) return {}
-  const out: Record<string, Record<string, string[]>> = {}
-  for (const f of readdirSync(hardcoded).filter((f) => f.endsWith(".json"))) {
-    out[f.replace(/\.json$/, "")] = JSON.parse(readFileSync(join(hardcoded, f), "utf8"))
-  }
-  return out
 }
 
 const words = (s: string) => s.replaceAll("{x}", " ").split(/\s+/).filter((w) => /[A-Za-z]/.test(w)).length
@@ -87,66 +72,6 @@ function count() {
   console.log(`contexts: ${[...contexts].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}=${v}`).join("  ")}`)
 }
 
-const total = (b: Baseline | undefined) => (b ? Object.values(b).flat().length : 0)
-const write = (path: string, b: Baseline) => writeFileSync(path, `${JSON.stringify(b, null, 2)}\n`)
-
-/** What `next` holds beyond `listed`, per occurrence. */
-function beyond(next: string[], listed: string[]): string[] {
-  const left = new Map<string, number>()
-  for (const t of listed) left.set(t, (left.get(t) ?? 0) + 1)
-  return next.filter((t) => {
-    const n = left.get(t) ?? 0
-    if (n > 0) left.set(t, n - 1)
-    return n === 0
-  })
-}
-
-function baseline(init: boolean) {
-  const next = baselines(scanTree())
-  const files = readBaselines()
-  mkdirSync(hardcoded, { recursive: true })
-  const refused: string[] = []
-  for (const group of GROUP_NAMES) {
-    const path = join(hardcoded, `${group}.json`)
-    const now = next[group] ?? {}
-    if (init) {
-      if (next[group]) {
-        write(path, now)
-        console.log(`${group}: ${total(now)} strings in ${Object.keys(now).length} files`)
-      } else if (existsSync(path)) {
-        rmSync(path)
-        console.log(`${group}: nothing left, baseline removed`)
-      }
-      continue
-    }
-    // Subtract only: keep each listed word the code still has, add nothing.
-    const listed = files[group] ?? {}
-    const kept: Baseline = {}
-    for (const [file, texts] of Object.entries(listed)) {
-      const gone = beyond(texts, now[file] ?? [])
-      const keep = beyond(texts, gone)
-      if (keep.length > 0) kept[file] = keep
-    }
-    for (const [file, texts] of Object.entries(now)) {
-      for (const text of beyond(texts, listed[file] ?? [])) refused.push(`${file}: ${JSON.stringify(text)}`)
-    }
-    if (!files[group]) continue
-    if (Object.keys(kept).length === 0) {
-      rmSync(path)
-      console.log(`${group}: nothing left, baseline removed`)
-    } else {
-      write(path, kept)
-      console.log(`${group}: ${total(kept)} strings in ${Object.keys(kept).length} files (was ${total(listed)})`)
-    }
-  }
-  if (refused.length > 0) {
-    console.error(
-      `\n${refused.length} words are in the code but in no baseline. A baseline never grows: put them in the catalog (src/locales/en, t()), or mark one that is never translated \`// i18n-ignore: <why>\`.\n  ${refused.join("\n  ")}`,
-    )
-    process.exitCode = 1
-  }
-}
-
 /** Every English leaf of the catalogs, `{{variables}}` written as `{x}`. */
 async function englishCatalog(): Promise<Set<string>> {
   const dir = join(src, "locales", "en")
@@ -179,17 +104,7 @@ function textsAt(rev: string): Map<string, string[]> {
 
 async function status(rev: string | undefined) {
   const hits = scanTree()
-  const now = baselines(hits)
-  const files = readBaselines()
-  const loose = unguardedHits(hits)
-  console.log("group    baseline   in code  unguarded")
-  for (const g of GROUP_NAMES) {
-    const listed = total(files[g])
-    const live = total(now[g])
-    const free = loose.filter((h) => h.group === g).length
-    console.log(`${g.padEnd(9)}${String(files[g] ? listed : "—").padStart(8)}${String(live).padStart(10)}${String(free).padStart(11)}`)
-  }
-  console.log("(unguarded: words the guard lets through; `npm run i18n -- unguarded <group>` lists them)")
+  console.log(`Unguarded: ${unguardedHits(hits).length} texts the guard lets through (\`npm run i18n -- unguarded\` lists them)`)
   const catalog = await englishCatalog()
   console.log(`\nEnglish catalog: ${catalog.size} distinct texts`)
   if (!rev) return
@@ -209,21 +124,15 @@ async function status(rev: string | undefined) {
   )
 }
 
-/** Hits the guard lets through (returns, variables, call arguments, label maps): a sweep group still checks each. */
-function unguardedHits(hits: Record<string, Hit[]>): (Hit & { file: string; group: string | null })[] {
-  return Object.entries(hits).flatMap(([file, list]) =>
-    list.filter((h) => !h.guarded && h.ctx !== "locale").map((h) => ({ ...h, file, group: groupOf(file) })),
-  )
+/** Hits the guard lets through (returns, variables, call arguments, label maps). */
+function unguardedHits(hits: Record<string, Hit[]>): (Hit & { file: string })[] {
+  return Object.entries(hits).flatMap(([file, list]) => list.filter((h) => !h.guarded && h.ctx !== "locale").map((h) => ({ ...h, file })))
 }
 
-function unguarded(group: string | undefined) {
-  if (!group || !(GROUP_NAMES as readonly string[]).includes(group)) {
-    console.error(`usage: npm run i18n -- unguarded <${GROUP_NAMES.join("|")}>`)
-    process.exit(1)
-  }
-  const list = unguardedHits(scanTree()).filter((h) => h.group === group)
+function unguarded() {
+  const list = unguardedHits(scanTree())
   for (const h of list) console.log(`${h.file}:${h.line}  ${h.ctx}  ${JSON.stringify(h.text)}`)
-  console.log(`\n${list.length} unguarded texts in ${group}'s files: move each that a person reads, mark the rest \`// i18n-ignore: <why>\` or leave it`)
+  console.log(`\n${list.length} unguarded texts: move each that a person reads, mark the rest \`// i18n-ignore: <why>\` or leave it`)
 }
 
 /** The English of every namespace, as the app has it. */
@@ -308,15 +217,14 @@ const flag = (name: string) => {
   return i >= 0 ? (rest[i + 1] ?? "") : undefined
 }
 if (cmd === "count") count()
-else if (cmd === "baseline") baseline(rest.includes("--init"))
 else if (cmd === "status") await status(flag("--compare"))
-else if (cmd === "unguarded") unguarded(rest[0])
+else if (cmd === "unguarded") unguarded()
 else if (cmd === "sheet") await sheet(rest[0], flag("--out"))
 else if (cmd === "reviewed") await reviewed(rest[0], rest.slice(1))
 else if (cmd === "stale") await stale(rest[0], rest.slice(1))
 else {
   console.error(
-    "usage: npm run i18n -- count | baseline [--init] | status [--compare <rev>] | unguarded <group> | sheet <lang> [--out <file>] | reviewed <lang> <ns|keys>… | stale <lang> <keys>…",
+    "usage: npm run i18n -- count | status [--compare <rev>] | unguarded | sheet <lang> [--out <file>] | reviewed <lang> <ns|keys>… | stale <lang> <keys>…",
   )
   process.exit(1)
 }

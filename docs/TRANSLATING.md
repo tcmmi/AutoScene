@@ -18,6 +18,7 @@ system. Every message stays `draft` in `ro/meta.json` until moongetsu has checke
 | `locales/ro/<namespace>.json` | Romanian, the same nesting and the same keys, with Romanian plural forms |
 | `locales/ro/meta.json` | for every Romanian message: its state and the English it was made from |
 | `locales/locales.test.ts`, `locales/check.ts` | the tests that hold all of the above together |
+| `locales/review.ts`, `scripts/i18n.ts` | the review's commands: `sheet`, `reviewed`, `stale` (Review, below) |
 
 The namespaces are `common`, `shell`, `ui`, `shortcuts`, `settings`, `cast`, `project`, `library`, `media`,
 `player`, `pack`, `export`, `plugins`, `backend` and `native`. A key is `namespace:area.item`, in lowerCamelCase,
@@ -62,23 +63,31 @@ The test fails for every message whose English changed, and says the hash it has
 
 1. **Update the Romanian** to say what the English says now, and change its `en` to the hash the test printed.
    A `draft` stays a `draft`. A `reviewed` message that changed goes back to `draft`: the reviewer saw other words.
-2. Or, when you can't translate it now, **mark it stale**: delete its text from `ro/<namespace>.json` (every
-   plural form), set `"state": "stale"`, `"en"` to the new hash and `"was"` to the old Romanian (a plural
-   message's forms written as one text, one form after another).
+2. Or, when you can't translate it now, **mark it stale**: `npm run i18n -- stale ro <keys>`, each key as
+   `namespace:area.item`, with no plural suffix. That takes its text out of `ro/<namespace>.json` (every plural
+   form), and sets `"state": "stale"`, `"en"` to the new hash and `"was"` to the old Romanian (a plural message's
+   forms written as one text, one form after another).
 
 A new English message is a failing test too ("missing"): translate it, then add its entry (`draft`, with the
 hash). A removed one fails as "not in the English" and "meta entry for a key the English hasn't": delete both.
 
-There is no command for this yet. The design's `npm run i18n -- sheet`, `stale` and `reviewed` (a review sheet
-for the reviewer, the stale move above, and flipping states) have not been written: until they are, the files
-are edited by hand and the test is the check. To fill in a hash without counting by hand, run the test and copy
-the one it prints.
+To fill in a hash without counting by hand, run the test and copy the one it prints.
 
 ### Review
 
-The reviewer reads every `draft`, notably the entries the glossary marks **[check]**, and sends fixes. A fix is
-a commit that changes the Romanian and flips the entries it checked to `reviewed`. We never comment on GitHub for
-the reviewer: the owner relays.
+The review goes in three steps, all run from `app/`. We never comment on GitHub for the reviewer: the owner relays.
+
+1. **`npm run i18n -- sheet ro`** writes `app/i18n-review-ro.md`, which git ignores; `--out <file>` puts it elsewhere.
+   The owner sends it to the reviewer. It is one Markdown table per group, of namespace, key, English, Romanian, note
+   and state, under "For moongetsu to check first" from this page. Stale messages come first, then drafts that use a
+   word the glossary marks **[check]** (their state names the word), then the other drafts, then what is reviewed.
+   The note is the comment above the English key; `backend` and `native` are JSON and have none, so theirs says
+   where the message shows. A message's plural forms share a row.
+2. The reviewer reads the drafts and sends fixes. A fix to the Romanian is an ordinary edit of `ro/<namespace>.json`.
+3. **`npm run i18n -- reviewed ro <ns|keys>`** flips what the reviewer checked to `reviewed`, in the same commit as
+   the fixes: `reviewed ro cast` for a namespace, `reviewed ro cast:title pack:shots` for single messages. A stale
+   message has nothing to stand behind, so a namespace passes over it and naming it is refused, as is a message whose
+   English changed since. When anything is refused, nothing is written.
 
 ### Looking at a language
 

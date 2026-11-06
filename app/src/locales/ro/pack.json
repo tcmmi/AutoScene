@@ -20,11 +20,26 @@
     "other": "Omis"
   },
   "size": {
-    "extremeCloseUp": { "label": "Gros-plan", "short": "GP" },
-    "closeUp": { "label": "Prim-plan", "short": "PP" },
-    "mediumCloseUp": { "label": "Plan apropiat", "short": "PA" },
-    "medium": { "label": "Plan mediu", "short": "PM" },
-    "wide": { "label": "Plan general", "short": "PG" }
+    "extremeCloseUp": {
+      "label": "Gros-plan",
+      "short": "GP"
+    },
+    "closeUp": {
+      "label": "Prim-plan",
+      "short": "PP"
+    },
+    "mediumCloseUp": {
+      "label": "Plan apropiat",
+      "short": "PA"
+    },
+    "medium": {
+      "label": "Plan mediu",
+      "short": "PM"
+    },
+    "wide": {
+      "label": "Plan general",
+      "short": "PG"
+    }
   },
   "length": {
     "any": "Orice durată",
@@ -50,12 +65,30 @@
     "waitsForPack": "Salvarea cu un plugin așteaptă scenepackul"
   },
   "namePart": {
-    "series": { "label": "Serial", "hint": "Titlul proiectului" },
-    "character": { "label": "Personaj", "hint": "Numele personajului" },
-    "episode": { "label": "Episod", "hint": "Episodul, ca S01E03, sau numele fișierului" },
-    "index": { "label": "Număr", "hint": "Locul planului în scenepack: 001, 002, …" },
-    "tc": { "label": "Timecode", "hint": "Unde începe planul, ca 00-12-03-05" },
-    "frame": { "label": "Cadru", "hint": "Cadrul de la care începe planul, ca 17357" }
+    "series": {
+      "label": "Serial",
+      "hint": "Titlul proiectului"
+    },
+    "character": {
+      "label": "Personaj",
+      "hint": "Numele personajului"
+    },
+    "episode": {
+      "label": "Episod",
+      "hint": "Episodul, ca S01E03, sau numele fișierului"
+    },
+    "index": {
+      "label": "Număr",
+      "hint": "Locul planului în scenepack: 001, 002, …"
+    },
+    "tc": {
+      "label": "Timecode",
+      "hint": "Unde începe planul, ca 00-12-03-05"
+    },
+    "frame": {
+      "label": "Cadru",
+      "hint": "Cadrul de la care începe planul, ca 17357"
+    }
   },
   "card": {
     "added": "Adăugat",

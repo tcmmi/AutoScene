@@ -11,11 +11,20 @@
 //   unguarded <group>         the group's hits the guard lets through (returns, variables, call arguments, label
 //                             maps), by file and line: check each before deleting the group's baseline
 //
-// The Romanian commands (sheet, stale, reviewed) arrive with the Romanian catalog (docs/DESIGN.md, Copy).
+// A translation's review (docs/TRANSLATING.md); <lang> is its folder under src/locales, `ro`:
+//
+//   sheet <lang> [--out <file>]     every message as a Markdown table, for the reviewer: the language, its English,
+//                                   its note and state; stale and draft first, drafts with a [check] word before
+//                                   the others. Written to app/i18n-review-<lang>.md, which git ignores
+//   reviewed <lang> <ns|keys>…      marks a namespace's messages, or `ns:key` ones, reviewed in <lang>/meta.json
+//   stale <lang> <keys>…            for English that changed and can't be translated now: moves each message's
+//                                   text from <lang>/<ns>.json into its meta entry, so the app shows English
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { pathToFileURL } from "node:url"
+import type { Bundle, Meta } from "../src/locales/check.ts"
+import { checkList, checkTerms, markReviewed, markStale, notesOf, type Outcome, reviewRows, reviewSheet } from "../src/locales/review.ts"
 import { type Baseline, baselines, GROUP_NAMES, groupOf, type Hit, inScope, scan } from "../src/locales/scan.ts"
 
 const app = join(import.meta.dirname, "..")
@@ -217,6 +226,82 @@ function unguarded(group: string | undefined) {
   console.log(`\n${list.length} unguarded texts in ${group}'s files: move each that a person reads, mark the rest \`// i18n-ignore: <why>\` or leave it`)
 }
 
+/** The English of every namespace, as the app has it. */
+async function english(): Promise<Bundle> {
+  const dir = join(src, "locales", "en")
+  const out: Bundle = {}
+  for (const f of readdirSync(dir).sort()) {
+    const ns = f.replace(/\.\w+$/, "")
+    if (f.endsWith(".ts")) out[ns] = (await import(pathToFileURL(join(dir, f)).href)).default
+    else if (f.endsWith(".json")) out[ns] = JSON.parse(readFileSync(join(dir, f), "utf8"))
+  }
+  return out
+}
+
+/** A language's folder, or the usage line and out. */
+function folderOf(lang: string | undefined): string {
+  const dir = join(src, "locales", lang ?? "")
+  if (!lang || lang === "en" || !existsSync(join(dir, "meta.json"))) {
+    console.error("usage: npm run i18n -- sheet <lang> [--out <file>] | reviewed <lang> <ns|keys>… | stale <lang> <keys>…")
+    process.exit(1)
+  }
+  return dir
+}
+
+const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, "utf8"))
+const writeJson = (path: string, value: unknown) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
+
+function translation(dir: string): { bundle: Bundle; meta: Meta } {
+  const bundle: Bundle = {}
+  for (const f of readdirSync(dir).filter((f) => f.endsWith(".json") && f !== "meta.json")) bundle[f.replace(/\.json$/, "")] = readJson(join(dir, f))
+  return { bundle, meta: readJson(join(dir, "meta.json")) }
+}
+
+async function sheet(lang: string | undefined, out: string | undefined) {
+  const dir = folderOf(lang)
+  const words = await english()
+  const { bundle, meta } = translation(dir)
+  const notes = new Map<string, string>()
+  for (const f of readdirSync(join(src, "locales", "en")).filter((f) => f.endsWith(".ts"))) {
+    const code = readFileSync(join(src, "locales", "en", f), "utf8")
+    for (const [key, note] of notesOf(f.replace(/\.ts$/, ""), code)) notes.set(key, note)
+  }
+  const doc = readFileSync(join(app, "..", "docs", "TRANSLATING.md"), "utf8")
+  const rows = reviewRows(words, bundle, meta, notes, lang === "ro" ? checkTerms(doc) : [])
+  const path = out || join(app, `i18n-review-${lang}.md`)
+  writeFileSync(path, reviewSheet(lang as string, rows, lang === "ro" ? checkList(doc) : ""))
+  console.log(`${rows.length} messages in ${path}`)
+}
+
+/** Says what a command did, or fails without having written anything. */
+function report(outcome: Outcome, did: string): boolean {
+  for (const skipped of outcome.skipped) console.log(`skipped ${skipped}`)
+  if (outcome.problems.length > 0) {
+    console.error(`Nothing changed:\n  ${outcome.problems.join("\n  ")}`)
+    process.exitCode = 1
+    return false
+  }
+  console.log(`${outcome.done.length} messages ${did}`)
+  return true
+}
+
+async function reviewed(lang: string | undefined, targets: string[]) {
+  const dir = folderOf(lang)
+  if (targets.length === 0) folderOf(undefined)
+  const { meta } = translation(dir)
+  if (report(markReviewed(await english(), meta, targets), "marked reviewed")) writeJson(join(dir, "meta.json"), meta)
+}
+
+async function stale(lang: string | undefined, keys: string[]) {
+  const dir = folderOf(lang)
+  if (keys.length === 0) folderOf(undefined)
+  const { bundle, meta } = translation(dir)
+  const outcome = markStale(await english(), bundle, meta, keys)
+  if (!report(outcome, "marked stale")) return
+  writeJson(join(dir, "meta.json"), meta)
+  for (const ns of new Set(outcome.done.map((key) => key.split(":")[0]))) writeJson(join(dir, `${ns}.json`), bundle[ns])
+}
+
 const [cmd, ...rest] = process.argv.slice(2)
 const flag = (name: string) => {
   const i = rest.indexOf(name)
@@ -226,7 +311,12 @@ if (cmd === "count") count()
 else if (cmd === "baseline") baseline(rest.includes("--init"))
 else if (cmd === "status") await status(flag("--compare"))
 else if (cmd === "unguarded") unguarded(rest[0])
+else if (cmd === "sheet") await sheet(rest[0], flag("--out"))
+else if (cmd === "reviewed") await reviewed(rest[0], rest.slice(1))
+else if (cmd === "stale") await stale(rest[0], rest.slice(1))
 else {
-  console.error("usage: npm run i18n -- count | baseline [--init] | status [--compare <rev>] | unguarded <group>")
+  console.error(
+    "usage: npm run i18n -- count | baseline [--init] | status [--compare <rev>] | unguarded <group> | sheet <lang> [--out <file>] | reviewed <lang> <ns|keys>… | stale <lang> <keys>…",
+  )
   process.exit(1)
 }

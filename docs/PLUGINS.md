@@ -2684,19 +2684,19 @@ outside the frame. See [The sandbox](#the-sandbox).
 browser engine has. The red-team app (`app/redteam`) tries each known way
 out of a page in the real webview, and measures what gets out:
 
-| What a page tries | WebView2 (Windows) |
-|---|---|
-| WebRTC (`RTCPeerConnection`) with a STUN server it names | Gets out: it gathered the computer's host candidates and sent 4 STUN datagrams to the address it named |
-| `<link rel=preconnect>` to an address | Opens a connection, sends nothing |
-| `<link rel=prefetch>` of an address | Sends nothing |
-| A navigation of its frame that the CSP blocks | Opens a connection, sends nothing |
+| What a page tries | WebView2 (Windows) | WKWebView (macOS) | WebKitGTK (Linux) |
+|---|---|---|---|
+| WebRTC (`RTCPeerConnection`) with a STUN server it names | Gets out: it gathered the computer's host candidates and sent 4 STUN datagrams to the address it named | Gets out the same way: 4 STUN datagrams | Stays in: this build has no `RTCPeerConnection`, 0 datagrams |
+| `<link rel=preconnect>` and `<link rel=prefetch>` of an address | Opens a connection, sends nothing | Opens a connection, sends nothing | Opens a connection, sends nothing |
+| A request or a navigation the CSP blocks | A blocked navigation of its frame opens a connection, sends nothing | One of the blocked requests opens a connection, sends nothing | One of the blocked requests opens a connection, sends nothing |
 
-These are the numbers of its run on Windows 11 with WebView2 (Edge 156),
-where every wall it checks held. So a page can send a little to an address
-of its choosing through WebRTC: treat what a page may read as something it
-could send. The numbers for macOS (WKWebView) and Linux (WebKitGTK) come
-from the red team's run in CI on all three systems, and go here once it has
-run.
+These are the numbers of the red team's run in CI on 2026-11-06, at commit
+`df51246`: WebView2 (Edge 156) on Windows Server 2025, WKWebView on macOS
+26, and WebKitGTK 2.50 on Ubuntu 22.04. Every wall it checks held on all
+three. So a page can send a little to an address of its choosing through
+WebRTC on Windows and macOS. Treat what a page may read as something it
+could send, on Linux too: there the engine is the system's, and another
+build may have WebRTC.
 
 **What a component may still do**: write as much as it likes in its
 folders, and send what it reads to the hosts it names (see

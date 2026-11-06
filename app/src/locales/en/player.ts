@@ -163,9 +163,9 @@ export default {
     /** The shot's length in the tooltip over it. `{{start}}` is a timecode, `{{seconds}}` the length in seconds ("2.5"). */
     shotDetail: "{{start}} · {{seconds}} s",
     shotDetailTiny: "{{start}} · {{seconds}} s · tiny",
-    /** A character's row in the menu and the tooltip: `<b>` their name, `<x>` where they appear (a timecode); the second form says that only their body shows. */
-    appearance: "<b>{{name}}</b> · <x>{{start}}</x>",
-    appearanceNoFace: "<b>{{name}}</b> · <x>{{start}}</x> · no face",
+    /** A character's row in the menu and the tooltip: `<what/>` their name, placed by the code: keep it as it is. `<x>` is where they appear (a timecode); the second form says that only their body shows. */
+    appearance: "<b><what/></b> · <x>{{start}}</x>",
+    appearanceNoFace: "<b><what/></b> · <x>{{start}}</x> · no face",
     goToAppearance: "Go to this appearance",
     markAppearance: "Mark it as the clip",
     nextAppearance: "Next appearance",

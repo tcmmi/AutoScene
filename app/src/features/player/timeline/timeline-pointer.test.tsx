@@ -34,7 +34,7 @@ const character = { id: "c1", name: "Walter", label: "Walter", number: 1, hidden
 const appearance = (start: number, end: number) => ({ characterId: "c1", trackId: 1, start, end, body: false }) as unknown as Presence
 
 /** An episode of `frames` frames at 24 fps, on tracks W px wide. */
-function mount(frames: number, segments: Segment[], spans: Presence[] = [], onSeek: (f: number) => void = () => {}) {
+function mount(frames: number, segments: Segment[], spans: Presence[] = [], onSeek: (f: number) => void = () => {}, who = character) {
   render(
     <TooltipProvider>
       <Timeline
@@ -43,7 +43,7 @@ function mount(frames: number, segments: Segment[], spans: Presence[] = [], onSe
         counting={{ count: (f) => f, frame: (n) => n }}
         store={new FrameStore()}
         segments={segments}
-        lanes={spans.length > 0 ? [{ character, spans, frames: 60 }] : []}
+        lanes={spans.length > 0 ? [{ character: who, spans, frames: 60 }] : []}
         focus={null}
         inFrame={null}
         outFrame={null}
@@ -103,6 +103,12 @@ describe("the timeline's pointer", () => {
     expect(hand(laneTrack())).toBe(false)
     fireEvent.pointerLeave(laneTrack())
     expect(hand(laneTrack())).toBe(false)
+  })
+
+  it("an appearance's readout keeps a name as it is, braces and all", () => {
+    mount(240, [seg(0, 120), seg(120, 240)], [appearance(100, 140)], undefined, { ...character, name: "{{start}}" })
+    fireEvent.pointerMove(laneTrack(), { clientX: 500 })
+    expect(laneTrack().textContent).toContain("{{start}} · 100")
   })
 
   it("after a zoom with the pointer at rest, the readout and the hand are about what is under it now", () => {

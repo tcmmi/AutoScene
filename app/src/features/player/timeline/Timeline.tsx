@@ -867,8 +867,8 @@ function LaneRow({
           <Trans
             t={t}
             i18nKey={menuSpan.body ? "timeline.appearanceNoFace" : "timeline.appearance"}
-            values={{ name, start: tc(menuSpan.start) }}
-            components={{ b: <span />, x: <span className="timecode" /> }}
+            values={{ start: tc(menuSpan.start) }}
+            components={{ b: <span />, what: <>{name}</>, x: <span className="timecode" /> }}
           />
         ) : (
           name
@@ -939,8 +939,8 @@ function LaneRow({
                 <Trans
                   t={t}
                   i18nKey={hover.span.body ? "timeline.appearanceNoFace" : "timeline.appearance"}
-                  values={{ name, start: tc(hover.span.start) }}
-                  components={{ b: <span className="text-fg-1" />, x: <span className="timecode" /> }}
+                  values={{ start: tc(hover.span.start) }}
+                  components={{ b: <span className="text-fg-1" />, what: <>{name}</>, x: <span className="timecode" /> }}
                 />
               </span>
             </Tip>

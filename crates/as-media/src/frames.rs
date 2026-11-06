@@ -456,8 +456,9 @@ mod tests {
     fn a_decode_asks_ffmpeg_for_the_device_it_was_given() {
         let on_99 = asked_of_ffmpeg(Decoder::NvdecOn(99));
         // A Mac has no CUDA, so a decode asked of it runs on the processor.
+        // The check before it asks for `-hwaccels`, so the space matters.
         if cfg!(target_os = "macos") {
-            assert!(!on_99.contains("-hwaccel"), "{on_99}");
+            assert!(on_99.contains("-filter:v") && !on_99.contains("-hwaccel "), "{on_99}");
             return;
         }
         assert!(on_99.contains("-hwaccel cuda -hwaccel_device 99 -hwaccel_output_format cuda"), "{on_99}");

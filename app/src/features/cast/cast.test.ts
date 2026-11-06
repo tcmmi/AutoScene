@@ -17,9 +17,9 @@ import {
 describe("cast wording", () => {
   it("splits main and supporting characters", () => {
     const chars: Character[] = [
-      { id: "1", label: "Hero", number: 1, name: "Patrick Jane", screenSec: 840, shots: 415, tracks: 1, media: 1, waiting: 0, unsure: 0, hidden: false, cover: null, coverSmall: null },
-      { id: "2", label: "Character 2", number: 2, name: null, screenSec: 120, shots: 50, tracks: 1, media: 1, waiting: 0, unsure: 0, hidden: false, cover: null, coverSmall: null },
-      { id: "3", label: "Character 3", number: 3, name: null, screenSec: 15, shots: 5, tracks: 1, media: 1, waiting: 0, unsure: 0, hidden: false, cover: null, coverSmall: null },
+      { id: "1", number: 1, name: "Patrick Jane", screenSec: 840, shots: 415, tracks: 1, media: 1, waiting: 0, unsure: 0, hidden: false, cover: null, coverSmall: null },
+      { id: "2", number: 2, name: null, screenSec: 120, shots: 50, tracks: 1, media: 1, waiting: 0, unsure: 0, hidden: false, cover: null, coverSmall: null },
+      { id: "3", number: 3, name: null, screenSec: 15, shots: 5, tracks: 1, media: 1, waiting: 0, unsure: 0, hidden: false, cover: null, coverSmall: null },
     ]
     const { main, supporting } = splitTiers(chars)
     expect(main.length).toBe(3)
@@ -27,7 +27,6 @@ describe("cast wording", () => {
 
     const manyChars = Array.from({ length: 15 }, (_, i) => ({
       id: `${i}`,
-      label: `Char ${i}`,
       number: i + 1,
       name: i === 0 ? "Named" : null,
       screenSec: i === 1 ? 90 : 20,
@@ -103,7 +102,6 @@ describe("finding characters", () => {
   const person = (id: string, name: string | null, number: number, shots: number, unsure = 0): Character => ({
     id,
     name,
-    label: name ?? `Character ${number}`,
     number,
     hidden: false,
     tracks: shots,

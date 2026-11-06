@@ -8,7 +8,7 @@ describe("the mock's characters", () => {
   beforeAll(() => installMockBackend())
   afterAll(() => clearMocks())
 
-  it("carry the number an unnamed one's label is made from, named or not", async () => {
+  it("carry the number an unnamed one is called by, named or not", async () => {
     const [project] = await invoke<ProjectSummary[]>("projects_list")
     const { characters } = await invoke<Cast>("cast_get", { projectId: project.id })
     expect(characters.length).toBeGreaterThan(0)
@@ -16,8 +16,6 @@ describe("the mock's characters", () => {
     expect(new Set(numbers).size).toBe(numbers.length)
     for (const c of characters) {
       expect(Number.isInteger(c.number) && c.number > 0).toBe(true)
-      if (c.name === null) expect(c.label).toBe(`Character ${c.number}`)
-      else expect(c.label).toBe(c.name)
     }
     // The cast has both kinds, so both are checked.
     expect(characters.some((c) => c.name === null)).toBe(true)
@@ -35,11 +33,11 @@ describe("the mock's characters", () => {
     // A new character takes the next number; naming it and unnaming it keeps that number.
     const first = (await edit({ op: "new_character", tracks: [(await loose())[0].id], name: null })) as string
     const find = async (id: string) => (await cast()).find((c) => c.id === id)
-    expect(await find(first)).toMatchObject({ number: top + 1, label: `Character ${top + 1}` })
+    expect(await find(first)).toMatchObject({ number: top + 1, name: null })
     await edit({ op: "rename", characterId: first, name: "Hero" })
-    expect(await find(first)).toMatchObject({ number: top + 1, label: "Hero" })
+    expect(await find(first)).toMatchObject({ number: top + 1, name: "Hero" })
     await edit({ op: "rename", characterId: first, name: null })
-    expect(await find(first)).toMatchObject({ number: top + 1, label: `Character ${top + 1}` })
+    expect(await find(first)).toMatchObject({ number: top + 1, name: null })
 
     // Merging it away leaves the others' numbers alone, and the next new one does not reuse its number.
     const [into] = (await cast()).filter((c) => c.id !== first)

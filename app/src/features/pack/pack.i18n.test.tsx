@@ -322,7 +322,7 @@ describe("the footer", () => {
 })
 
 describe("the pack's export dialog", () => {
-  const walter = { id: "c", label: "Walter", number: 1 } as Character
+  const walter = { id: "c", name: "Walter", number: 1 } as Character
   const naming: PackNaming = { template: "{series} {character} {tc}", folder: true, merge: true, file: "{series} {character} scenepack" }
   const pack = (clips: number): Pack =>
     ({
@@ -391,6 +391,19 @@ describe("the pack's export dialog", () => {
     const description = document.getElementById(screen.getByRole("dialog").getAttribute("aria-describedby") ?? "")?.textContent
     expect(description).toBe("123 de cadre într-un singur video, fiecare tăiat exact și verificat față de sursă.")
     expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Exportă 123 de cadre într-un singur fișier" })).toBeTruthy()
+  })
+
+  it("names a character nobody named in the language: its title, the folder switch, the toast", async () => {
+    const export_ = { ...ro.pack.export, started_one: "Se exportă {{count}} plan cu {{name}}" }
+    await act(() => inLanguage("ro", { ...ro, pack: { ...ro.pack, export: export_ }, cast: { unnamed: "Personajul {{n}}" } }))
+    const files = pack(1)
+    files.state = { ...files.state!, naming: { ...naming, merge: false } }
+    render(<PackExportDialog pid="p" character={{ id: "c", name: null, number: 3 } as Character} pack={files} open onOpenChange={() => {}} />, { wrapper })
+    expect(await screen.findByRole("dialog", { name: "Exportă pachetul lui Personajul 3" })).toBeTruthy()
+    expect(screen.getByText("Într-un dosar numit după Personajul 3")).toBeTruthy()
+    await screen.findByText(/Edit-grade intra codec./)
+    fireEvent.click(screen.getByRole("button", { name: "Export 1 shot" }))
+    await waitFor(() => expect(vi.mocked(toast).mock.lastCall?.[0]).toBe("Se exportă 1 plan cu Personajul 3"))
   })
 
   it("counts the episodes still being analysed with the language's plural, the character's name a value", async () => {

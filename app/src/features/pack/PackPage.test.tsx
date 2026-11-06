@@ -45,7 +45,7 @@ vi.mock("@/lib/queries", async (importOriginal) => {
   }
 })
 
-const walter = { id: "c", label: "Walter", number: 1, waiting: 0, media: 1, shots: 1, cover: null, coverSmall: null } as unknown as Character
+const walter = { id: "c", name: "Walter", number: 1, waiting: 0, media: 1, shots: 1, cover: null, coverSmall: null } as unknown as Character
 const clip = { shot: { mediaId: "m", start: 0, faceless: false }, start: 0, included: true, byRules: true, manual: null, reason: null } as unknown as PackClip
 const naming = { template: "{name}", folder: true, merge: true, file: "{character}" }
 

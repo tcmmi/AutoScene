@@ -1432,7 +1432,6 @@ impl Project {
             .into_iter()
             .map(|c| Character {
                 id: c.id,
-                label: c.name.clone().unwrap_or_else(|| format!("Character {}", c.number)),
                 number: c.number,
                 name: c.name,
                 hidden: c.hidden,
@@ -1710,30 +1709,28 @@ pub(crate) mod tests {
             let edit = CastEdit::NewCharacter { tracks: vec![track.id], name: name.map(Into::into) };
             ids.push(project.cast_edit(&edit).unwrap().unwrap());
         }
-        let numbers = |p: &Project| -> Vec<(CharacterId, u32, String)> {
-            let mut all: Vec<_> = p.cast().unwrap().characters.into_iter().map(|c| (c.id, c.number, c.label)).collect();
+        let numbers = |p: &Project| -> Vec<(CharacterId, u32, Option<String>)> {
+            let mut all: Vec<_> = p.cast().unwrap().characters.into_iter().map(|c| (c.id, c.number, c.name)).collect();
             all.sort_by_key(|(_, n, _)| *n);
             all
         };
         let listed = |p: &Project| p.cast().unwrap().characters.iter().map(|c| c.number).collect::<Vec<_>>();
 
-        // Each character has its own number, and an unnamed one's label is that number.
+        // Each character has its own number, which is all an unnamed one has to go by.
         // The number is the character's own, not its place in the list.
         let before = numbers(&project);
         assert_eq!(before.iter().map(|c| c.1).collect::<Vec<_>>(), [1, 2, 3]);
         assert_eq!(listed(&project), [2, 3, 1]);
-        for (_, number, label) in before.iter().filter(|c| c.0 != ids[1]) {
-            assert_eq!(label, &format!("Character {number}"));
-        }
+        assert!(before.iter().filter(|c| c.0 != ids[1]).all(|c| c.2.is_none()));
 
-        // A name doesn't take the number away, and removing it gives the label back.
+        // A name doesn't take the number away, and removing it leaves the number.
         let walter = before.iter().find(|c| c.0 == ids[1]).unwrap();
-        assert_eq!(walter.2, "Walter");
+        assert_eq!(walter.2.as_deref(), Some("Walter"));
         let unnamed = before.iter().find(|c| c.0 == ids[0]).unwrap();
         project.cast_edit(&CastEdit::Rename { character_id: ids[0], name: Some("Jesse".into()) }).unwrap();
         let after = numbers(&project);
         let jesse = after.iter().find(|c| c.0 == ids[0]).unwrap();
-        assert_eq!((jesse.1, jesse.2.as_str()), (unnamed.1, "Jesse"));
+        assert_eq!((jesse.1, jesse.2.as_deref()), (unnamed.1, Some("Jesse")));
         assert_eq!(after.iter().find(|c| c.0 == walter.0).unwrap().1, walter.1);
         project.cast_edit(&CastEdit::Rename { character_id: ids[0], name: None }).unwrap();
         assert_eq!(numbers(&project), before);
@@ -1749,7 +1746,7 @@ pub(crate) mod tests {
             project.cast_edit(&CastEdit::NewCharacter { tracks: vec![last[0].id], name: None }).unwrap().unwrap();
         let end = numbers(&project);
         let fresh = end.iter().find(|c| c.0 == fresh).unwrap();
-        assert_eq!((fresh.1, fresh.2.as_str()), (4, "Character 4"));
+        assert_eq!((fresh.1, fresh.2.as_deref()), (4, None));
         assert_eq!(end.iter().find(|c| c.0 == ids[0]).unwrap().1, 1);
     }
 
@@ -2908,7 +2905,7 @@ pub(crate) mod tests {
         assert_eq!(cover_start(&project), 500, "the chosen picture survived");
         // The character nobody named or touched is still the same one.
         let o = cast.characters.iter().find(|c| c.id == other.id).expect("the unnamed character survived");
-        assert_eq!((o.label.as_str(), o.tracks), (other.label.as_str(), other.tracks));
+        assert_eq!((o.number, o.name.as_deref(), o.tracks), (other.number, other.name.as_deref(), other.tracks));
         assert_eq!(cast.characters.len(), 2);
     }
 }

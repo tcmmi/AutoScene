@@ -300,7 +300,7 @@ describe("relinking in another language", () => {
 describe("the window title's crumbs in another language", () => {
   it("follow the language, with the character's name as a value", async () => {
     await ro({ crumbs: { episode: "Episod", character: "Personaj", pack: "{{name}} · Pachet de scene", everyoneElse: "Distribuție · Ceilalți", cast: "Distribuție · {{name}}" } })
-    exportsList.cast = { characters: [{ id: "c1", label: "Walter" }] }
+    exportsList.cast = { characters: [{ id: "c1", name: "Walter", number: 1 }] }
     const { container } = render(
       <>
         <MediaCrumb pid="p" mid="gone" />|<PackCrumb pid="p" cid="c1" />|<PackCrumb pid="p" cid="nobody" />|
@@ -310,6 +310,17 @@ describe("the window title's crumbs in another language", () => {
     expect(container.textContent).toBe(
       "Episod|Walter · Pachet de scene|Personaj · Pachet de scene|Distribuție · Walter|Distribuție · Ceilalți",
     )
+  })
+
+  it("name a character nobody named in the language, as the cast does", async () => {
+    await inLanguage("ro", { project: { crumbs: { pack: "{{name}} · Scenepack", cast: "Distribuție · {{name}}" } }, cast: { unnamed: "Personajul {{n}}" } })
+    exportsList.cast = { characters: [{ id: "c3", name: null, number: 3 }] }
+    const { container } = render(
+      <>
+        <PackCrumb pid="p" cid="c3" />|<CharacterCrumb pid="p" cid="c3" />
+      </>,
+    )
+    expect(container.textContent).toBe("Personajul 3 · Scenepack|Distribuție · Personajul 3")
   })
 })
 

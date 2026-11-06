@@ -122,7 +122,6 @@ function character(c: ProjectCast, p: Person, fps = 24): Character {
   return {
     id: p.id,
     name: p.name,
-    label: labelOf(p),
     number: p.number,
     hidden: p.hidden,
     tracks: mine.length,

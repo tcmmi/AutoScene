@@ -21,7 +21,7 @@ import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { TopBar } from "@/components/ui/topbar"
 import { VirtualGrid } from "@/components/ui/virtual-grid"
-import { castEdit } from "@/features/cast/cast"
+import { castEdit, characterLabel } from "@/features/cast/cast"
 import { PluginIcon } from "@/features/plugins/PluginIcon"
 import { runPackAction } from "@/features/plugins/plugin-actions"
 import { type PackActionItem, packActionItems } from "@/features/plugins/plugin-items"
@@ -62,8 +62,8 @@ function PackView({ pid, cid }: { pid: string; cid: string }) {
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media])
   const pack = usePack(pid, cid, mediaById)
 
-  const back = { label: character?.label ?? t("page.characterFallback"), to: `/p/${pid}/cast/${cid}` }
-  const toolbar = <TopBar back={back} title={character ? t("page.title", { name: character.label }) : t("page.titleBare")} />
+  const back = { label: character ? characterLabel(character) : t("page.characterFallback"), to: `/p/${pid}/cast/${cid}` }
+  const toolbar = <TopBar back={back} title={character ? t("page.title", { name: characterLabel(character) }) : t("page.titleBare")} />
 
   const failure = firstFailure(castQuery, mediaQuery, pack.saved)
   if (failure) {
@@ -205,7 +205,7 @@ export function Builder({
   )
   // Bodies that aren't them (or aren't anyone) leave the pack, and stay out after a new analysis.
   const characterId = character?.id
-  const label = character?.label
+  const label = character ? characterLabel(character) : undefined
   const onBody = useCallback(
     (bodies: number[], verdict: BodyVerdict) => {
       if (!characterId) return
@@ -374,7 +374,7 @@ export function Builder({
                   clip={c}
                   index={i}
                   media={mediaById.get(c.shot.mediaId)}
-                  name={character?.label}
+                  name={label}
                   filter={c.filter != null ? filters?.[c.filter] : undefined}
                   onToggle={toggle}
                   onOpen={open}
@@ -431,7 +431,7 @@ function Header({ character: c, shots }: { character?: Character; shots: number 
       />
       <div className="min-w-0">
         <p className="eyebrow">{t("page.eyebrow")}</p>
-        <h1 className="display truncate text-5xl leading-[1.05] text-fg-1">{c?.label ?? " "}</h1>
+        <h1 className="display truncate text-5xl leading-[1.05] text-fg-1">{c ? characterLabel(c) : " "}</h1>
         {c && (
           <p className="mt-1 text-sm text-fg-3">
             {t("page.header", { shots: t("shots", { count: shots }), episodes: t("episodes", { count: c.media }) })}

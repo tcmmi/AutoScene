@@ -11,6 +11,7 @@ import { Field, Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { OptionRow } from "@/components/ui/option-row"
 import { Switch } from "@/components/ui/switch"
+import { characterLabel } from "@/features/cast/cast"
 import { rememberPreset } from "@/features/export/export"
 import { formatBytes, presetDescription, presetName, shortFormatName } from "@/lib/format"
 import { say } from "@/lib/i18n"
@@ -140,7 +141,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
   })
   const missing =
     analysing > 0 && project
-      ? t(project.kind === "movie" ? "export.analysing.file" : "export.analysing.episode", { count: analysing, name: character.label })
+      ? t(project.kind === "movie" ? "export.analysing.file" : "export.analysing.episode", { count: analysing, name: characterLabel(character) })
       : null
 
   const start = async () => {
@@ -153,7 +154,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
       packExportStarted(pid, character.id, ex.id)
       rememberPreset(settings, presetId)
       onDone()
-      toast(t(oneFile ? "export.startedOneFile" : "export.started", { count: clips, name: character.label }), {
+      toast(t(oneFile ? "export.startedOneFile" : "export.started", { count: clips, name: characterLabel(character) }), {
         action: { label: t("export:show"), onClick: () => useUi.getState().setActivityOpen(true) },
       })
     } catch (e) {
@@ -179,7 +180,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
 
   return (
     <DialogContent
-      title={t("export.title", { name: character.label })}
+      title={t("export.title", { name: characterLabel(character) })}
       description={
         <>
           {t(oneFile ? "export.descriptionOneFile" : "export.description", { count: clips })}
@@ -289,7 +290,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
           {!oneFile && (
             <label className="mt-3 flex items-center gap-3 text-md text-fg-2">
               <Switch checked={naming.folder} onCheckedChange={(folder) => pack.setNaming({ ...naming, folder })} />
-              {t("export.folder", { name: character.label })}
+              {t("export.folder", { name: characterLabel(character) })}
             </label>
           )}
         </Field>

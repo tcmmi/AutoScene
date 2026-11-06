@@ -20,7 +20,6 @@ afterEach(cleanup)
 const person = (id: string, name: string | null, number: number, extra: Partial<Character> = {}): Character => ({
   id,
   name,
-  label: name ?? `Character ${number}`,
   number,
   hidden: false,
   tracks: 3,
@@ -149,9 +148,6 @@ describe("the order by name", () => {
     const mixed = [person("u10", null, 10), person("u2", null, 2), person("w", "Walter", 7), person("u3", null, 3)]
     const order = () => findCharacters(mixed, { ...ALL_CAST, order: "name" }).map((c) => c.id)
     expect(order()).toEqual(["w", "u2", "u3", "u10"])
-    // The backend's label is not what is sorted: with labels that sort the other way round, the order is the same.
-    const reversed = mixed.map((c) => ({ ...c, label: `Z${100 - c.number}` }))
-    expect(findCharacters(reversed, { ...ALL_CAST, order: "name" }).map((c) => c.id)).toEqual(["w", "u2", "u3", "u10"])
   })
 })
 

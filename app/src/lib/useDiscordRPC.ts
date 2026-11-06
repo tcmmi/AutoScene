@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { useParams, useRouterState } from "@tanstack/react-router"
 import type { DiscordDoing } from "@/bindings"
+import { t } from "@/lib/i18n"
 import { commands } from "@/lib/ipc"
 import { mediaTitle } from "@/lib/media"
 import { useCast, useMediaList, useProject, useSettings } from "@/lib/queries"
@@ -52,7 +53,9 @@ export function useDiscordRPC() {
   const project = (wantsProject && opened?.title) || null
   const shown = wantsEpisode ? media?.find((m) => m.id === route.mid) : undefined
   const episode = shown ? mediaTitle(shown) : null
-  const character = (wantsCharacter && cast?.characters.find((c) => c.id === route.cid)?.label) || null
+  const seen = wantsCharacter ? cast?.characters.find((c) => c.id === route.cid) : undefined
+  // Discord's lines are English, whatever AutoScene speaks (docs/TRANSLATING.md), and so is the name beside them.
+  const character = seen ? (seen.name ?? t("cast:unnamed", { n: seen.number, lng: "en" })) : null
   const percent = exporting && progress != null ? Math.round(progress * 100) : null
 
   // Again after each save: one that ended the connection on the way forgot

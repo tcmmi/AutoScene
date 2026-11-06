@@ -9,6 +9,7 @@ import { AppMenu } from "@/components/shell/AppMenu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { castEdit } from "@/features/cast/cast"
 import { queryClient } from "@/lib/queries"
+import { inLanguage } from "@/test/i18n"
 import { Builder } from "./PackPage"
 import { DEFAULT_SPEC } from "./spec"
 import type { Pack } from "./use-pack"
@@ -16,7 +17,7 @@ import type { Pack } from "./use-pack"
 // What the page passes to its parts (the header's counts, the toasts, the card's menu, the footer's format) is
 // looked at here, rendered: the catalog's English alone would not show a wrong value or a wrong branch.
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }))
-vi.mock("@/features/cast/cast", () => ({ castEdit: vi.fn(() => Promise.resolve({})) }))
+vi.mock("@/features/cast/cast", async (importOriginal) => ({ ...(await importOriginal<object>()), castEdit: vi.fn(() => Promise.resolve({})) }))
 // The grid lists its items plainly, so the cards (and their menus) are the real ones.
 vi.mock("@/components/ui/virtual-grid", () => ({
   VirtualGrid: ({ items, renderItem }: { items: unknown[]; renderItem: (item: unknown, i: number) => React.ReactNode }) => (
@@ -54,8 +55,7 @@ vi.mock("@/lib/queries", async (importOriginal) => {
   }
 })
 
-const walter = { id: "c", label: "Walter", number: 1, waiting: 0, media: 3, shots: 12, cover: null, coverSmall: null } as unknown as Character
-const nameless = { ...walter, label: null } as unknown as Character
+const walter = { id: "c", name: "Walter", number: 1, waiting: 0, media: 3, shots: 12, cover: null, coverSmall: null } as unknown as Character
 const naming = { template: "{name}", folder: true, merge: true, file: "{character}" }
 const clip = (more: Partial<PackClip> = {}, shot: Partial<PackClip["shot"]> = {}): PackClip =>
   ({
@@ -93,14 +93,14 @@ function pack(clips: PackClip[], taken = clips.filter((c) => c.included).length)
   } as unknown as Pack
 }
 
-async function show(it: Pack, character: Character = walter) {
+async function show(it: Pack, character: Character | null = walter) {
   const root = createRootRoute({
     component: () => (
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AppMenu>
             <div>
-              <Builder pid="p" cid="c" character={character} media={[]} mediaById={new Map<string, MediaItem>()} pack={it} toolbar={null} />
+              <Builder pid="p" cid="c" character={character ?? undefined} media={[]} mediaById={new Map<string, MediaItem>()} pack={it} toolbar={null} />
             </div>
           </AppMenu>
         </TooltipProvider>
@@ -159,7 +159,7 @@ describe("the pack page passes its words the right values", () => {
 
 describe("a body's menu names whose pack it is", () => {
   const faceless = () => clip({ included: false, reason: "faceless" }, { faceless: true, bodies: [7] })
-  const notThem = async (character: Character) => {
+  const notThem = async (character: Character | null) => {
     await show(pack([faceless()]), character)
     fireEvent.contextMenu(screen.getAllByRole("button").find((b) => b.hasAttribute("aria-pressed"))!)
     return await screen.findByRole("menu")
@@ -173,10 +173,16 @@ describe("a body's menu names whose pack it is", () => {
     await waitFor(() => expect(vi.mocked(toast).mock.lastCall?.[0]).toBe("Not Walter: out of the pack"))
   })
 
-  it("says Not them when it does not, and the toast says so too", async () => {
-    const menu = await notThem(nameless)
+  it("calls a character nobody named what the cast calls it, in the heading and the menu, in the language", async () => {
+    await inLanguage("ro", { cast: { unnamed: "Personajul {{n}}" } })
+    const menu = await notThem({ ...walter, name: null, number: 3 })
+    expect(document.querySelector("h1")?.textContent).toBe("Personajul 3")
+    expect(within(menu).getByRole("menuitem", { name: "Not Personajul 3" })).toBeTruthy()
+  })
+
+  it("says Not them while it doesn't know whose pack it is", async () => {
+    const menu = await notThem(null)
     expect(within(menu).queryByRole("menuitem", { name: /Not Walter/ })).toBeNull()
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Not them" }))
-    await waitFor(() => expect(vi.mocked(toast).mock.lastCall?.[0]).toBe("Not them: out of the pack"))
+    expect(within(menu).getByRole("menuitem", { name: "Not them" })).toBeTruthy()
   })
 })

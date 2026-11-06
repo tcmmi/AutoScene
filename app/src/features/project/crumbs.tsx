@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next"
+import { characterLabel } from "@/features/cast/cast"
 import { mediaTitle } from "@/lib/media"
 import { useCast, useMediaList, useProject } from "@/lib/queries"
 
@@ -20,7 +21,7 @@ export function PackCrumb({ pid, cid }: { pid: string; cid: string }) {
   const { t } = useTranslation("project")
   const { data } = useCast(pid)
   const c = data?.characters.find((x) => x.id === cid)
-  return <>{t("crumbs.pack", { name: c?.label ?? t("crumbs.character") })}</>
+  return <>{t("crumbs.pack", { name: c ? characterLabel(c) : t("crumbs.character") })}</>
 }
 
 export function CharacterCrumb({ pid, cid }: { pid: string; cid: string }) {
@@ -28,5 +29,5 @@ export function CharacterCrumb({ pid, cid }: { pid: string; cid: string }) {
   const { data } = useCast(pid)
   if (cid === "unassigned") return <>{t("crumbs.everyoneElse")}</>
   const c = data?.characters.find((x) => x.id === cid)
-  return <>{t("crumbs.cast", { name: c?.label ?? t("crumbs.character") })}</>
+  return <>{t("crumbs.cast", { name: c ? characterLabel(c) : t("crumbs.character") })}</>
 }

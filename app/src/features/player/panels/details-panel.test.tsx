@@ -83,7 +83,6 @@ let characters = 0
 const character = (id: string): Character => ({
   id,
   name: id,
-  label: id,
   number: ++characters,
   hidden: false,
   tracks: 1,

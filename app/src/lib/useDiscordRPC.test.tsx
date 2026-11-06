@@ -2,10 +2,11 @@ import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { AppSettings, DiscordRpcSettings, JobInfo, ProjectSummary } from "@/bindings"
+import type { AppSettings, Cast, DiscordRpcSettings, JobInfo, ProjectSummary } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
 import { useActivity } from "@/state/activity"
+import { inLanguage } from "@/test/i18n"
 import { useDiscordRPC } from "./useDiscordRPC"
 
 const { state } = vi.hoisted(() => ({
@@ -26,7 +27,7 @@ vi.mock("@/lib/ipc", async (original) => ({
     discordView: vi.fn(async () => null),
     projectGet: vi.fn(async (id: string) => ({ id, title: `Title of ${id}`, kind: id === "film" ? "movie" : "series" })),
     mediaList: vi.fn(async () => [{ id: "m1", label: "S01E01", fileName: "pilot.mkv" }]),
-    castGet: vi.fn(async () => ({ characters: [{ id: "c1", label: "Walter", number: 1 }] })),
+    castGet: vi.fn(async () => ({ characters: [{ id: "c1", name: "Walter", number: 1 }] })),
   },
 }))
 
@@ -136,6 +137,13 @@ describe("what the window tells the app for Discord", () => {
     const told = vi.mocked(commands.discordView).mock.calls.length
     switched({ enabled: true })
     await waitFor(() => expect(commands.discordView).toHaveBeenCalledTimes(told + 1))
+  })
+
+  it("a character nobody named goes out as English's Character 3, whatever AutoScene speaks", async () => {
+    vi.mocked(commands.castGet).mockResolvedValueOnce({ characters: [{ id: "c3", name: null, number: 3 }] } as unknown as Cast)
+    await inLanguage("ro", { cast: { unnamed: "Personajul {{n}}" } })
+    at({ pid: "p1", cid: "c3" }, { enabled: true, showProject: false, showEpisode: false, showCharacter: true }, "/p/p1/cast/c3/pack")
+    await waitFor(() => expect(lastView()?.character).toBe("Character 3"))
   })
 
   it("each place sends only the names that belong to it", async () => {

@@ -6,7 +6,6 @@ let characters = 0
 const who = (id: string, hidden = false): Character => ({
   id,
   name: null,
-  label: id,
   number: ++characters,
   hidden,
   tracks: 0,

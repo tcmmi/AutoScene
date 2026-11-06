@@ -982,14 +982,9 @@ export type Character = {
 	/**  Given by the user; `None` until then. */
 	name: string | null,
 	/**
-	 *  The name, or "Character N" (numbered in the order characters were
-	 *  found; a number is never reused).
-	 */
-	label: string,
-	/**
 	 *  The N of "Character N": the order characters were found in. A number
-	 *  is never reused, and a named character keeps its number, so the UI can
-	 *  name an unnamed one in its own language.
+	 *  is never reused, and a named character keeps its number. There is no
+	 *  ready label here: the UI names an unnamed one in its own language.
 	 */
 	number: number,
 	hidden: boolean,

@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { inLanguage } from "@/test/i18n"
 import { ReviewPage } from "./ReviewPage"
 
-const unnamed = { id: "c2", label: "Character 2", number: 2, name: null, hidden: false } as Character
+const unnamed = { id: "c2", number: 2, name: null, hidden: false } as Character
 const face = { id: 7, mediaId: "m", start: 24, end: 48, thumb: "t.jpg", characterId: "c2", assign: "unsure", score: 0.5 } as FaceTrackItem
 const cast = { characters: [unnamed] }
 

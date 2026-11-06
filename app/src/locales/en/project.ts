@@ -115,7 +115,9 @@ export default {
     /** A banner: `count` files of a movie. */
     files_one: "{{count}} file can't be found",
     files_other: "{{count}} files can't be found",
-    description: "Moved, renamed or on a drive that isn't connected? Their analysis and your decisions wait for them.",
+    /** The banner's second line, for `count` episodes or files. English says it one way; a language that agrees with the number has its forms. */
+    description_one: "Moved, renamed or on a drive that isn't connected? Their analysis and your decisions wait for them.",
+    description_other: "Moved, renamed or on a drive that isn't connected? Their analysis and your decisions wait for them.",
     /** Asks for the folder they are in now. */
     locateFolder: "Locate folder…",
   },

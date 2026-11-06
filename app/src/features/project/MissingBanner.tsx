@@ -32,7 +32,7 @@ export function MissingBanner({
       tone="accent"
       icon={<Warning weight="fill" />}
       title={movie ? t("missing.files", { count: missing }) : t("missing.episodes", { count: missing })}
-      description={t("missing.description")}
+      description={t("missing.description", { count: missing })}
       actions={
         <Button
           variant="secondary"

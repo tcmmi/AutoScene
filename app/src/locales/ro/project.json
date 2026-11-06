@@ -75,7 +75,9 @@
     "files_one": "{{count}} fișier nu poate fi găsit",
     "files_few": "{{count}} fișiere nu pot fi găsite",
     "files_other": "{{count}} de fișiere nu pot fi găsite",
-    "description": "Mutate, redenumite sau pe o unitate care nu este conectată? Analiza și deciziile tale le așteaptă.",
+    "description_one": "Mutat, redenumit sau pe o unitate care nu este conectată? Analiza și deciziile tale îl așteaptă.",
+    "description_few": "Mutate, redenumite sau pe o unitate care nu este conectată? Analiza și deciziile tale le așteaptă.",
+    "description_other": "Mutate, redenumite sau pe o unitate care nu este conectată? Analiza și deciziile tale le așteaptă.",
     "locateFolder": "Indică folderul…"
   },
   "loadError": {

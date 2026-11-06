@@ -342,6 +342,29 @@ describe("the window title's crumbs in another language", () => {
   })
 })
 
+describe("the missing banner's second line", () => {
+  const lost = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `m${i}`, status: "missing" }) as MediaItem)
+  const line = async (n: number) => {
+    render(<MissingBanner pid="p" media={lost(n)} />)
+    const text = (await screen.findByRole("button", { name: /./ })).closest("div")?.parentElement?.textContent
+    cleanup()
+    return text
+  }
+
+  it("agrees with how many are lost, in a language where the words change with the number", async () => {
+    await ro({ missing: { description_one: "Mutat? Îl așteaptă.", description_few: "Mutate? Le așteaptă.", description_other: "Mutate? Le așteaptă." } })
+    expect(await line(1)).toContain("Mutat? Îl așteaptă.")
+    expect(await line(3)).toContain("Mutate? Le așteaptă.")
+    expect(await line(20)).toContain("Mutate? Le așteaptă.")
+  })
+
+  it("reads as it always did in English, for one and for many", async () => {
+    const english = "Moved, renamed or on a drive that isn't connected? Their analysis and your decisions wait for them."
+    expect(await line(1)).toContain(english)
+    expect(await line(3)).toContain(english)
+  })
+})
+
 describe("the relink catalog", () => {
   it("has the same keys for episodes and for files: relink.ts picks them with a template, no key scan sees them", () => {
     const { episodes, files } = en.relink.folder

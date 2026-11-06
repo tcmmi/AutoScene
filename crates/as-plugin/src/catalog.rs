@@ -1899,13 +1899,14 @@ mod tests {
     #[test]
     fn the_catalog_keys_are_minisign_keys_one_of_each_role() {
         // Each compiled key reads (builtin panics otherwise).
-        assert_eq!(CatalogKeys::builtin().is_empty(), CATALOG_KEYS.is_empty());
-        // Empty until the catalog opens; then one online and one offline key.
-        if !CATALOG_KEYS.is_empty() {
-            let roles: Vec<KeyRole> = CATALOG_KEYS.iter().map(|(role, _)| *role).collect();
-            assert_eq!(roles.len(), 2);
-            assert!(roles.contains(&KeyRole::Online) && roles.contains(&KeyRole::Offline));
-            assert_ne!(key_id(CATALOG_KEYS[0].1).unwrap(), key_id(CATALOG_KEYS[1].1).unwrap());
+        assert!(!CatalogKeys::builtin().is_empty());
+        // One online and one offline key, and neither is the updater's.
+        let roles: Vec<KeyRole> = CATALOG_KEYS.iter().map(|(role, _)| *role).collect();
+        assert_eq!(roles.len(), 2);
+        assert!(roles.contains(&KeyRole::Online) && roles.contains(&KeyRole::Offline));
+        assert_ne!(key_id(CATALOG_KEYS[0].1).unwrap(), key_id(CATALOG_KEYS[1].1).unwrap());
+        for (_, key) in CATALOG_KEYS {
+            assert_ne!(key_id(key).unwrap(), "C991120292F2AC69");
         }
         let urls = [
             "https://tcmmi.github.io/autoscene-plugins/",

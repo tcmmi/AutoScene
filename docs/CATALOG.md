@@ -14,12 +14,6 @@ what the catalog means for a plugin and how to submit one. The code is
 `app/src-tauri/src/plugins/catalog.rs` (fetching, the schedule, getting
 packages) and `asp catalog` in `crates/as-plugin/src/bin/asp.rs`.
 
-**The catalog isn't open yet.** This AutoScene has no catalog keys
-compiled in (`CATALOG_KEYS` is empty), so it checks no index: Browse says
-"The plugin catalog isn't open yet", and every plugin is Pinned or
-Unreviewed. Everything below already works with a catalog of one's own
-(see [A catalog of one's own](#a-catalog-of-ones-own)).
-
 ## Where it is
 
 The catalog's repository on GitHub, `tcmmi/autoscene-plugins`, builds each
@@ -259,7 +253,8 @@ Two kinds of key sign the catalog (`KeyRole` in `keys.rs`):
 
 A key's id is the 16 hex digits minisign shows for it. The keys AutoScene
 trusts are compiled in (`CATALOG_KEYS`), each with its role: they are not
-the app updater's key. Either role's key may sign an index.
+the app updater's key. Either role's key may sign an index. Today the
+online key is `D4981D67EE85DFEB` and the offline key `19056778632A8D04`.
 
 **Epochs.** Epoch 1 needs no certificate: its online keys are the compiled
 ones. An index of a later epoch carries the offline key's certificate of

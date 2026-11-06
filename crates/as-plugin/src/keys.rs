@@ -15,9 +15,12 @@ pub enum KeyRole {
 }
 
 /// The AutoScene plugin catalog's keys, each the base64 line of a minisign
-/// `.pub` file. Not the updater key. Empty until the catalog opens (then one
-/// of each role).
-pub const CATALOG_KEYS: &[(KeyRole, &str)] = &[];
+/// `.pub` file: one of each role, neither of them the updater key. The online
+/// key's id is D4981D67EE85DFEB, the offline key's 19056778632A8D04.
+pub const CATALOG_KEYS: &[(KeyRole, &str)] = &[
+    (KeyRole::Online, "RWTr34XuZx2Y1EC4xJmF5jkyQ7favqCFgdBeav6I22NYzoSiYiKWZ7VZ"),
+    (KeyRole::Offline, "RWQEjSpjeGcFGXOSAX058tqkv9V30qyZB6Io+nfi6EczptMVWPTEEbF0"),
+];
 
 /// Where the index is published, tried in turn; the newest that checks out
 /// wins. `index.json` and `index.json.minisig` are appended to each.

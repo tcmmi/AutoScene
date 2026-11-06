@@ -2499,9 +2499,7 @@ Who signed a package's `files.lock` decides how far AutoScene trusts it.
 A key a package brings along never makes it Reviewed: only the catalog
 does, and it signs its list, never a package. A package the catalog lists
 is Reviewed whether or not its author signed it, and is pinned to the
-author key the catalog names (or keeps its pin when it names none). **The
-catalog isn't open yet**: this AutoScene holds none of its keys, so every
-plugin is Pinned or Unreviewed for now.
+author key the catalog names (or keeps its pin when it names none).
 
 A plugin AutoScene hasn't reviewed (Pinned, Unreviewed, or loaded from a
 folder) needs **Plugins → Allow plugins that AutoScene has not
@@ -2590,11 +2588,6 @@ reviewed, which AutoScene fetches and checks by its signature. Each
 version in it was built by the catalog's CI from public source on GitHub,
 at a fixed commit, and read by a person. How it is made, signed and
 checked is in [CATALOG.md](CATALOG.md).
-
-**The catalog isn't open yet.** This AutoScene holds none of its keys:
-**Browse** says "The plugin catalog isn't open yet", and plugins install
-from their `.asp` file. The rest of this section is what it does once it
-is open.
 
 - **Browse** (Plugins → Browse) shows each plugin the catalog lists, its
   newest version this AutoScene runs on this computer, as a card: "Reviewed

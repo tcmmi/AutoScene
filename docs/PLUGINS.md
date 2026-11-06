@@ -789,7 +789,7 @@ The first line on the plugin's stdin is the run:
     "version": "1.0.0",
     "dataDir": "C:\\Users\\you\\AppData\\Local\\AutoScene\\plugin-data\\dev.autoscene.hello-export"
   },
-  "app": { "version": "1.0.3-BETA", "platform": "windows-x86_64" },
+  "app": { "version": "1.0.4-BETA", "platform": "windows-x86_64" },
   "tools": {
     "ffmpeg": "C:\\…\\ffmpeg\\ffmpeg.exe",
     "ffprobe": "C:\\…\\ffmpeg\\ffprobe.exe",
@@ -1212,7 +1212,7 @@ Activity then shows nothing until the end.
 To try a plugin without AutoScene, give it a run line yourself:
 
 ```bash
-echo '{"type":"run","protocol":1,"runId":"test","plugin":{"id":"dev.me.test","version":"0.1.0","dataDir":"."},"app":{"version":"1.0.3","platform":"linux-x86_64"},"tools":{"ffmpeg":"ffmpeg","ffprobe":"ffprobe","ffmpegVersion":"9.0"},"settings":{},"action":{"kind":"command","id":"hello","trigger":"palette"},"project":null,"export":null}' | uv run --script --locked main.py
+echo '{"type":"run","protocol":1,"runId":"test","plugin":{"id":"dev.me.test","version":"0.1.0","dataDir":"."},"app":{"version":"1.0.4","platform":"linux-x86_64"},"tools":{"ffmpeg":"ffmpeg","ffprobe":"ffprobe","ffmpegVersion":"9.0"},"settings":{},"action":{"kind":"command","id":"hello","trigger":"palette"},"project":null,"export":null}' | uv run --script --locked main.py
 ```
 
 For protocol 2, `asp init` writes `autoscene.py` beside the program: a
@@ -1999,7 +1999,7 @@ keeps for a device (`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to
 **`engines.autoscene`** is a version requirement as Cargo writes it, with
 commas between its parts: `">=1.0.0, <2"`. `">=1.0.0 <2"`, without the
 comma, is refused. A pre-release of AutoScene counts as its release:
-1.0.3-BETA meets `>=1.0.0` and `>=1.0.3`. A plugin made for a later
+1.0.4-BETA meets `>=1.0.0` and `>=1.0.4`. A plugin made for a later
 AutoScene is refused with "This plugin needs a newer AutoScene.", and one
 made only for earlier versions with "This plugin only works with an older
 AutoScene."
@@ -2636,8 +2636,9 @@ plugin and what is accepted. In short:
   `repository`. A pull request to the catalog names the commit.
 - **Built by the catalog.** No binaries are taken. The build kinds are
   `uv-script` (every program is a uv script with its lock), `cargo` (every
-  program is one its CI builds with `cargo build --locked --release`) and
-  `files` (a plugin that runs no program).
+  program is one its CI builds with `cargo build --locked --release`),
+  `files` (a plugin that runs no program), `wasm-rust` and `wasm-python` (a
+  WebAssembly component, `runtime.type` `wasm`, that its CI builds).
 - **What CI checks.** It builds the package from the commit, runs `asp
   pack` and `asp verify` on it, refuses files that may run and that it
   didn't build, and checks large files by their size and hash. The pull

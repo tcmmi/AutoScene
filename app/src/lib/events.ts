@@ -201,14 +201,13 @@ function notifyFinished(job: JobInfo) {
 /** What a job that failed says went wrong, if it says. */
 const errorOf = (job: JobInfo) => (job.error ? say(job.error) : undefined)
 
-/** A failed job's title: indexing and analysing say that they couldn't, by their key; the others name their work, and a title that lost its name its English. */
+/** A failed job's title: indexing and analysing say that they couldn't, by their key, and their English when they lost their name; the others name their work, with a name or without (the upkeep jobs). */
 function failedTitle(title: Msg): string {
+  if (title.key !== "job.indexing" && title.key !== "job.analysing") return say(title)
   const name = title.args?.name
   if (name == null) return title.text
   const named = { name: typeof name === "object" ? say(name) : name }
-  if (title.key === "job.indexing") return t("shell:jobFailed.indexing", named)
-  if (title.key === "job.analysing") return t("shell:jobFailed.analysing", named)
-  return say(title)
+  return title.key === "job.indexing" ? t("shell:jobFailed.indexing", named) : t("shell:jobFailed.analysing", named)
 }
 
 /**

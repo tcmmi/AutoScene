@@ -154,6 +154,12 @@ describe("a job that fails", () => {
     expect(nameless).toBe("Indexing it")
   })
 
+  it("says a title with no name in the language: the upkeep jobs have none", async () => {
+    await inLanguage("ro", { backend: { job: { groupingCharacters: "Se grupează personajele" } } })
+    failed("g", "regroup", { key: "job.groupingCharacters", text: "Grouping characters" })
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Se grupează personajele", { description: "No video." })
+  })
+
   it("says all of it in the language", async () => {
     await inLanguage("ro", {
       shell: { jobFailed: { indexing: "{{name}} nu a putut fi indexat" } },

@@ -3,6 +3,8 @@
 //! may migrate it).
 //!
 //! `cargo run --release -p as-project --example rescan_bench -- <project_copy_dir> [labels.tsv]`
+//! `READ=<ort_dir>,<models_dir>,<ffmpeg_dir>` also reads the owner's pins and
+//! Everyone else from the source files (full pass's models) and compares.
 //!
 //! Pins: every face the owner confirmed, asked about blind (no pin, on no one,
 //! its shot held out). Machine pins are mostly easy faces, so hard ones
@@ -12,12 +14,19 @@
 //! included.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
+use as_analysis::FaceParams;
+use as_analysis::rescan::{LiveFinder, RescanParams, SIDE, read_faces};
 use as_analysis::tracks::dets_from_bytes;
 use as_api::TrackAssign;
-use as_identity::{CharKey, Verdict};
+use as_core::CancelToken;
+use as_identity::{CharKey, Read, Verdict};
+use as_infer::Runtime;
+use as_media::{Source, Tools};
 use as_project::{Project, RescanCast};
+use as_vision::{ArcFace, Scrfd};
 
 #[derive(Default)]
 struct Tally {
@@ -60,8 +69,8 @@ impl Tally {
     }
 }
 
-/// The owner's pins, asked about blind.
-fn pins(cast: &RescanCast) {
+/// The owner's pins, asked about blind, with `reads` where there are any.
+fn pins(cast: &RescanCast, reads: &[Read], what: &str) {
     let core = cast.params.core_quality;
     let pinned: Vec<usize> = (0..cast.tracks.len()).filter(|&i| cast.tracks[i].pin.is_some()).collect();
     let truth: HashMap<usize, CharKey> = pinned.iter().map(|&i| (i, cast.tracks[i].pin.unwrap())).collect();
@@ -77,13 +86,13 @@ fn pins(cast: &RescanCast) {
         blind.tracks[i].pin = None;
     }
     let (mut hard, mut easy) = (Tally::default(), Tally::default());
-    for j in blind.judge(&subjects, &[]) {
+    for j in blind.judge(&subjects, reads) {
         let c = truth[&j.track];
         let tally = if cast.tracks[j.track].quality < core { &mut hard } else { &mut easy };
         tally.add(j.verdict, |k| k == c);
     }
-    hard.print("pins, hard (quality < core)");
-    easy.print("pins, clear");
+    hard.print(&format!("{what} pins, hard (quality < core)"));
+    easy.print(&format!("{what} pins, clear"));
 }
 
 /// One line of a labels file.
@@ -217,6 +226,88 @@ fn labelled(cast: &RescanCast, labels: &[Label]) {
     println!("assigned: wrong+raised {caught}, wrong+missed {missed}, right+raised {alarm}, right+quiet {quiet}");
 }
 
+/// Read `subjects` from their source files.
+fn read(project: &Project, cast: &RescanCast, subjects: &[usize], dirs: &str) -> Vec<Read> {
+    let d: Vec<&str> = dirs.split(',').collect();
+    let (ort, models, ffmpeg) = (Path::new(d[0]), Path::new(d[1]), Path::new(d[2]));
+    let tools = Tools::locate(Some(ffmpeg)).unwrap();
+    let rt = Runtime::load(ort, true).unwrap();
+    let mut detector = Scrfd::load(&rt, &models.join("scrfd_10g.onnx"), (SIDE, SIDE), 1).unwrap();
+    let mut embedder = ArcFace::load(&rt, &models.join("arcface_glintr100.onnx"), 32).unwrap();
+    println!("detector on {:?}", detector.device());
+    let mut finder = LiveFinder { detector: &mut detector, embedder: &mut embedder, params: FaceParams::default() };
+    let params = RescanParams::default();
+    let cancel = CancelToken::new();
+    let (mut out, mut unseen, mut looks, mut found) = (Vec::new(), 0u32, 0u32, 0u32);
+    let mut moved: Vec<f32> = Vec::new();
+    let mut better = 0u32;
+    let started = Instant::now();
+    let mut media: Vec<_> = subjects.iter().map(|&i| cast.rows[cast.row_of[i]].media_id).collect();
+    media.sort_unstable();
+    media.dedup();
+    for m in media {
+        let Ok(src) = project.rescan_source(m) else {
+            println!("source of {m} can't be read");
+            continue;
+        };
+        let faces = cast.faces_of(m, subjects, &src.shots);
+        let source = Source { path: &src.path, info: &src.info, index: &src.index };
+        let progress = |f: f64| eprintln!("{:6.1} s  {:.1} %", started.elapsed().as_secs_f64(), f * 100.0);
+        read_faces(&tools, source, &faces, &mut finder, &params, &cancel, progress, |r| {
+            let i = r.id as usize;
+            looks += r.tried;
+            found += r.found;
+            match r.embedding {
+                Some(embedding) => {
+                    let old = &cast.tracks[i].embedding;
+                    moved.push(embedding.iter().zip(old).map(|(a, b)| a * b).sum());
+                    better += u32::from(r.quality > cast.tracks[i].quality);
+                    out.push(Read { track: i, embedding, quality: r.quality });
+                }
+                None => unseen += 1,
+            }
+            Ok(())
+        })
+        .unwrap();
+    }
+    let secs = started.elapsed().as_secs_f64();
+    moved.sort_by(f32::total_cmp);
+    let at = |q: f64| moved.get((moved.len() as f64 * q) as usize).copied().unwrap_or(0.0);
+    println!(
+        "read {} of {} faces in {secs:.1} s ({:.1} s per 100); looks {looks}, found {found}; quality up on {better}; cos(old, new) p10 {:.2} p50 {:.2} p90 {:.2}; nothing on {unseen}",
+        out.len(),
+        subjects.len(),
+        secs * 100.0 / subjects.len().max(1) as f64,
+        at(0.1),
+        at(0.5),
+        at(0.9),
+    );
+    out
+}
+
+/// What Everyone else turns into, as stored and as read.
+fn everyone_else(cast: &RescanCast, reads: &[Read]) {
+    let none: Vec<usize> =
+        (0..cast.tracks.len()).filter(|&i| cast.rows[cast.row_of[i]].assign == TrackAssign::None).collect();
+    let count = |reads: &[Read]| {
+        let mut c: HashMap<&'static str, u32> = HashMap::new();
+        for j in cast.judge(&none, reads) {
+            let k = match j.verdict {
+                Verdict::Newly(_) => "newly",
+                Verdict::Maybe(_) => "maybe",
+                Verdict::Between(..) => "between",
+                _ => "nobody",
+            };
+            *c.entry(k).or_default() += 1;
+        }
+        let mut c: Vec<_> = c.into_iter().collect();
+        c.sort();
+        c
+    };
+    println!("everyone else as stored {:?}", count(&[]));
+    println!("everyone else as read   {:?}", count(reads));
+}
+
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     assert!(!a.is_empty(), "usage: rescan_bench <project_copy_dir> [labels.tsv]");
@@ -234,7 +325,18 @@ fn main() {
         on(TrackAssign::Pinned),
         matches!(cast.space, Some(as_identity::Space::Fitted(_))),
     );
-    pins(&cast);
+    pins(&cast, &[], "stored");
+    if let Ok(dirs) = std::env::var("READ") {
+        let wanted: Vec<usize> = (0..cast.tracks.len())
+            .filter(|&i| cast.rows[cast.row_of[i]].assign == TrackAssign::None || cast.tracks[i].pin.is_some())
+            .collect();
+        // `LIMIT=<n>`: every n-th of them, for a quick look.
+        let every = std::env::var("LIMIT").map_or(1, |v| v.parse::<usize>().unwrap());
+        let wanted: Vec<usize> = wanted.into_iter().step_by(every).collect();
+        let reads = read(&project, &cast, &wanted, &dirs);
+        pins(&cast, &reads, "read");
+        everyone_else(&cast, &reads);
+    }
     if let Some(l) = a.get(1) {
         labelled(&cast, &read_labels(l));
     }

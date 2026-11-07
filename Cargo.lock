@@ -370,6 +370,7 @@ dependencies = [
  "as-media",
  "as-models",
  "as-testkit",
+ "as-vision",
  "parking_lot",
  "regex",
  "rusqlite",

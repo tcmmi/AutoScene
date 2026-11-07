@@ -88,6 +88,33 @@ pub fn decode_samples(
     decode_raw(tools, src, from, step, &[], &chain, (w * h * 3) as usize, cancel, on_frame).map(|(n, _)| n)
 }
 
+/// Decode the frames from the first of `picks` (sorted, each once) to the
+/// last, as [`decode_samples`] would, and hand `picks` to `on_frame`: for a
+/// few frames close together, not a film. Every frame between is decoded and
+/// dropped here: ffmpeg's `select` would drop them sooner, but holds back what
+/// it let through for as long as it goes on decoding, and it would go on to
+/// the end of the file. Returns the number of frames delivered.
+pub fn decode_picks(
+    tools: &Tools,
+    src: Source,
+    picks: &[FrameIdx],
+    size: (u32, u32),
+    cancel: &CancelToken,
+    mut on_frame: impl FnMut(FrameIdx, &[u8]) -> MediaResult<()>,
+) -> MediaResult<u32> {
+    let Some(&from) = picks.first() else { return Ok(0) };
+    assert!(picks.is_sorted_by(|a, b| a < b), "picks in order, each once");
+    let mut next = 0;
+    decode_samples(tools, src, from, 1, size, cancel, |f, rgb| {
+        if f == picks[next] {
+            on_frame(f, rgb)?;
+            next += 1;
+        }
+        Ok(next < picks.len())
+    })?;
+    Ok(next as u32)
+}
+
 /// Decode one picture file — a JPEG, PNG or WebP such as a character
 /// portrait (ffmpeg opens them as a one-frame video) — to upright,
 /// square-pixel RGB24 at its own size, scaled down to fit [`MAX_SIDE`] if

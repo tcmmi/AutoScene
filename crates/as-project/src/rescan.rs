@@ -1,10 +1,16 @@
 //! Rescan: a second look at faces. What it finds are suggestions; only the
 //! person's answers change the cast.
 
-use as_api::TrackAssign;
-use as_core::CharacterId;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use as_analysis::rescan::RescanFace;
+use as_analysis::tracks;
+use as_api::{SegmentKind, TrackAssign};
+use as_core::{CharacterId, FrameIndex, FrameRange, MediaId};
 use as_db::IdentityTrack;
 use as_identity::{CharKey, Judged, Params, Question, Read, Space, TrackIn, judge};
+use as_media::MediaInfo;
 
 use crate::cast::IdentityInput;
 use crate::{Project, ProjectResult};
@@ -43,7 +49,51 @@ impl RescanCast {
     }
 }
 
+/// What it takes to read a media's faces again.
+pub struct RescanSource {
+    pub path: PathBuf,
+    pub info: MediaInfo,
+    pub index: Arc<FrameIndex>,
+    /// Its shots, in order.
+    pub shots: Vec<FrameRange>,
+}
+
+impl RescanCast {
+    /// `tracks` (indexes into [`Self::tracks`]) of `media` as the reader takes
+    /// them; `id` is the index. A track outside every shot keeps to itself.
+    pub fn faces_of(&self, media: MediaId, tracks: &[usize], shots: &[FrameRange]) -> Vec<RescanFace> {
+        tracks
+            .iter()
+            .filter_map(|&i| {
+                let r = &self.rows[self.row_of[i]];
+                (r.media_id == media).then(|| RescanFace {
+                    id: i as u32,
+                    shot: shots
+                        .iter()
+                        .find(|s| s.contains(r.start))
+                        .copied()
+                        .unwrap_or_else(|| FrameRange::new(r.start, r.end)),
+                    quality: r.quality,
+                    dets: tracks::dets_from_bytes(&r.det_bytes).unwrap_or_default(),
+                })
+            })
+            .collect()
+    }
+}
+
 impl Project {
+    /// Where a media's frames are, or why they can't be read.
+    pub fn rescan_source(&self, media: MediaId) -> ProjectResult<RescanSource> {
+        let (m, info, index) = self.ready_source(media)?;
+        let shots = self
+            .segments(media)?
+            .into_iter()
+            .filter(|s| s.kind == SegmentKind::Shot)
+            .map(|s| FrameRange::new(s.start, s.end))
+            .collect();
+        Ok(RescanSource { path: PathBuf::from(m.path), info, index, shots })
+    }
+
     /// The cast as [`RescanCast`] needs it; reads only.
     pub fn rescan_cast(&self) -> ProjectResult<RescanCast> {
         let rows = self.db().identity_tracks()?;

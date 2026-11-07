@@ -32,5 +32,6 @@ ureq.workspace = true
 
 [dev-dependencies]
 as-testkit.workspace = true
+as-vision.workspace = true
 rusqlite.workspace = true
 tempfile.workspace = true

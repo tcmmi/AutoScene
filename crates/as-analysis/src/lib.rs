@@ -12,6 +12,7 @@ pub mod fusion;
 pub mod link;
 pub mod pipeline;
 pub mod portrait;
+pub mod rescan;
 pub mod signals;
 pub mod sprites;
 pub mod tracker;

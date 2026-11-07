@@ -2,28 +2,69 @@
 //! once. Nothing changes by asking: a verdict is a suggestion, and only the
 //! person's answer moves a face.
 //!
-//! A face is compared with what a character looks like *without* the faces
-//! around it. Its own shot and the others dealt to the same fold are held
-//! out of every character's table of looks, so a face can't vouch for
-//! itself, and neither can the rest of the shot it came with. Far-apart
-//! prototypes would otherwise let two stray faces of one wrong group confirm
-//! each other, so a character also needs faces from more than one shot that
-//! resemble this one.
+//! A face is compared with every shot of every character, not with a summary
+//! of them: a look a character has in a few shots only (a disguise, a costume)
+//! would drown in any average. What a character scores is how alike the faces
+//! of its best few shots are, so one stray face can't carry it: a person's
+//! rare look still shows in several shots, a chance likeness in one.
 //!
-//! The bars are the cast's own, in the space it was grouped in.
+//! A face that defines a character is held out of it, with the rest of its
+//! shot: a face can't vouch for itself.
+//!
+//! The bars are the cast's own, in the space it was grouped in, raised by
+//! [`Tuning::lift`]: the closest faces of a person lie nearer than the middle of
+//! their looks that grouping compares with.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::{CharKey, Params, Space, TrackIn, in_space, overlaps, proto, session_dim};
 
-/// Shots are dealt into this many folds; a face is judged against the rest.
-const FOLDS: usize = 5;
 /// With fewer faces than this left after holding out, a character can't say
 /// a face is theirs.
 const MIN_ANCHORS: usize = 3;
 /// ... or from fewer shots than this; also how many shots of a character
 /// must resemble a face for it to be suggested.
 const MIN_SHOTS: usize = 2;
+
+/// How a verdict is reached; set on real casts (`rescan_bench`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tuning {
+    /// A character scores the mean of its this many best shots.
+    pub shots: usize,
+    /// How far above the cast's bars a clear verdict lies.
+    pub lift: f32,
+    /// How far above its `unsure` bar a guess lies.
+    pub lift_unsure: f32,
+    /// The lead a clear verdict needs, as a share of the cast's margin.
+    pub margin: f32,
+    /// A character on screen within `near` frames of the face is likelier: a
+    /// scene keeps its people, also when one of them turns away. Added to
+    /// their score, in full right beside the face, fading to nothing at `near`.
+    pub near_bonus: f32,
+    pub near: u32,
+    /// A sharper reading counts from this share of the stored face's quality:
+    /// one that came out much worse than what the pass saw is no sharper.
+    pub read_floor: f32,
+}
+
+impl Tuning {
+    /// As measured for faces compared in `space`. Set on the Miraculous film
+    /// (fitted space: looks are close, the scene says much) and on Breaking
+    /// Bad's labels (actors: looks say much, and a stranger in the scene is
+    /// still a stranger).
+    pub fn of(space: &Space) -> Self {
+        match space {
+            Space::Fitted(_) => Self::default(),
+            Space::Faces => Self { lift: 0.05, lift_unsure: 0.1, near_bonus: 0.05, ..Self::default() },
+        }
+    }
+}
+
+impl Default for Tuning {
+    fn default() -> Self {
+        Self { shots: 2, lift: 0.05, lift_unsure: -0.05, margin: 1.0, near_bonus: 0.15, near: 480, read_floor: 0.5 }
+    }
+}
 
 /// A sharper reading of a face: its embedding (unit length, of the cast's
 /// embedder) in place of the stored one.
@@ -79,25 +120,26 @@ pub struct Judged {
     pub scores: Vec<(f32, CharKey)>,
 }
 
-/// One character as seen from one fold: what is left of it.
-struct Held {
-    anchors: Vec<usize>,
-    protos: Vec<Vec<f32>>,
-    thin: bool,
-}
-
 /// Who each of `q.subjects` is. Faces are compared in `space` (`None`:
 /// unknown, fitted again as [`crate::identify`] does); nothing is decided.
 pub fn judge(q: &Question, p: &Params, space: Option<&Space>) -> Vec<Judged> {
+    judge_tuned(q, p, space, &Tuning::default())
+}
+
+/// [`judge`] with `tuning` (for the bench).
+pub fn judge_tuned(q: &Question, p: &Params, space: Option<&Space>, tuning: &Tuning) -> Vec<Judged> {
     let Some(dim) = session_dim(q.tracks) else { return Vec::new() };
     let usable = |i: usize| q.tracks.get(i).is_some_and(|t| t.embedding.len() == dim);
     let (faces, p, space) = in_space(q.tracks, p, space);
     let tracks: &[TrackIn] = &faces;
+    let (assign, unsure) = (p.assign + tuning.lift, p.unsure + tuning.lift_unsure);
+    let margin = p.margin * tuning.margin;
 
     // Sharper readings, in the same space as everything else.
     let mut read: HashMap<usize, Vec<f32>> = HashMap::new();
     for r in q.reads {
-        if usable(r.track) && r.embedding.len() == dim && r.embedding.iter().all(|x| x.is_finite()) {
+        let sharper = usable(r.track) && r.quality >= q.tracks[r.track].quality * tuning.read_floor;
+        if sharper && r.embedding.len() == dim && r.embedding.iter().all(|x| x.is_finite()) {
             let e = match &space {
                 Space::Fitted(f) => f.embed(&r.embedding),
                 Space::Faces => r.embedding.clone(),
@@ -116,36 +158,8 @@ pub fn judge(q: &Question, p: &Params, space: Option<&Space>) -> Vec<Judged> {
         })
         .collect();
     let index: HashMap<CharKey, usize> = chars.iter().enumerate().map(|(ci, (k, _))| (*k, ci)).collect();
-
-    // The shots in order, dealt in turn: a character's shots spread evenly.
     let shot = |i: usize| (tracks[i].media, q.shots[i]);
-    let mut all: Vec<(u32, u32)> =
-        chars.iter().flat_map(|(_, g)| g.iter()).chain(q.subjects).map(|&i| shot(i)).collect();
-    all.sort_unstable();
-    all.dedup();
-    let fold_of: HashMap<(u32, u32), usize> = all.iter().enumerate().map(|(n, s)| (*s, n % FOLDS)).collect();
-
-    let folds: HashSet<usize> = q.subjects.iter().filter(|&&i| usable(i)).map(|&i| fold_of[&shot(i)]).collect();
-    let table: HashMap<usize, Vec<Held>> = folds
-        .into_iter()
-        .map(|f| {
-            let held = chars
-                .iter()
-                .map(|(_, g)| {
-                    let anchors: Vec<usize> = g.iter().copied().filter(|&i| fold_of[&shot(i)] != f).collect();
-                    let looks: Vec<(&[f32], f32)> = anchors
-                        .iter()
-                        .map(|&i| (tracks[i].embedding.as_slice(), tracks[i].quality.max(0.05)))
-                        .collect();
-                    let protos = proto::prototypes(&looks, p.prototypes, p.table_dedup_cos);
-                    let shots: HashSet<(u32, u32)> = anchors.iter().map(|&i| shot(i)).collect();
-                    let thin = anchors.len() < MIN_ANCHORS || shots.len() < MIN_SHOTS;
-                    Held { anchors, protos, thin }
-                })
-                .collect();
-            (f, held)
-        })
-        .collect();
+    let anchor: HashSet<usize> = chars.iter().flat_map(|(_, g)| g.iter().copied()).collect();
 
     // Who is on screen when: every face on a character counts, whether it
     // defines them or was placed there.
@@ -158,50 +172,95 @@ pub fn judge(q: &Question, p: &Params, space: Option<&Space>) -> Vec<Judged> {
     }
 
     let embedding = |i: usize| read.get(&i).map_or(tracks[i].embedding.as_slice(), Vec::as_slice);
-    let mut asked: Vec<(usize, Vec<(f32, usize)>)> = q
-        .subjects
-        .iter()
-        .filter(|&&i| usable(i))
-        .map(|&i| {
-            let held = &table[&fold_of[&shot(i)]];
-            let e = embedding(i);
-            let mut scores: Vec<(f32, usize)> = (0..chars.len())
-                .filter(|&ci| !held[ci].protos.is_empty() && !tracks[i].forbid.contains(&chars[ci].0))
-                .map(|ci| (proto::similarity(e, &held[ci].protos), ci))
+    // What a face makes of a character: its score, how many shots look like
+    // it, and whether enough of the character is left to go by.
+    let compare = |i: usize, e: &[f32], g: &[usize]| -> Sight {
+        let held_out = anchor.contains(&i);
+        let mut best: HashMap<(u32, u32), f32> = HashMap::new();
+        let (mut left, mut gap) = (0, u32::MAX);
+        for &j in g {
+            if j == i || (held_out && shot(j) == shot(i)) {
+                continue;
+            }
+            left += 1;
+            let (a, b) = (&tracks[i], &tracks[j]);
+            // On screen at the same time speaks against, not for: that is
+            // someone else in the picture.
+            if a.media == b.media && (a.start >= b.end || b.start >= a.end) {
+                gap = gap.min(a.start.saturating_sub(b.end).max(b.start.saturating_sub(a.end)));
+            }
+            let s = proto::dot(e, &tracks[j].embedding);
+            let b = best.entry(shot(j)).or_insert(f32::NEG_INFINITY);
+            *b = b.max(s);
+        }
+        let mut shots: Vec<f32> = best.into_values().collect();
+        shots.sort_by(|a, b| b.total_cmp(a));
+        let n = tuning.shots.min(shots.len());
+        let bonus = tuning.near_bonus * (1.0 - gap as f32 / tuning.near.max(1) as f32).max(0.0);
+        let score =
+            if n == 0 { f32::NEG_INFINITY } else { shots[..n].iter().sum::<f32>() / tuning.shots as f32 + bonus };
+        Sight {
+            score,
+            looks: score - bonus,
+            in_scene: bonus > 0.0,
+            alike: shots.iter().filter(|&&s| s + bonus >= unsure).count(),
+            thin: left < MIN_ANCHORS || shots.len() < MIN_SHOTS,
+        }
+    };
+    let look = |i: usize| -> Asked {
+        let e = embedding(i);
+        let sights: Vec<Sight> = chars.iter().map(|(_, g)| compare(i, e, g)).collect();
+        let mut scores: Vec<(f32, usize)> = (0..chars.len())
+            .filter(|&ci| sights[ci].score.is_finite() && !tracks[i].forbid.contains(&chars[ci].0))
+            .map(|ci| (sights[ci].score, ci))
+            .collect();
+        scores.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+        (i, sights, scores)
+    };
+    let subjects: Vec<usize> = q.subjects.iter().copied().filter(|&i| usable(i)).collect();
+    // Every face against every shot: on all cores for a big series.
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
+    let mut asked: Vec<Asked> = if subjects.len() < 64 || threads < 2 {
+        subjects.iter().map(|&i| look(i)).collect()
+    } else {
+        let part = subjects.len().div_ceil(threads);
+        std::thread::scope(|s| {
+            let look = &look;
+            let parts: Vec<_> = subjects
+                .chunks(part)
+                .map(|c| s.spawn(move || c.iter().map(|&i| look(i)).collect::<Vec<_>>()))
                 .collect();
-            scores.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
-            (i, scores)
+            parts.into_iter().flat_map(|h| h.join().expect("comparing never panics")).collect()
         })
-        .collect();
+    };
     let top = |s: &[(f32, usize)]| s.first().map_or(f32::NEG_INFINITY, |x| x.0);
-    asked.sort_by(|a, b| top(&b.1).total_cmp(&top(&a.1)).then(a.0.cmp(&b.0)));
+    asked.sort_by(|a, b| top(&b.2).total_cmp(&top(&a.2)).then(a.0.cmp(&b.0)));
 
     let key = |ci: usize| chars[ci].0;
     let mut out = Vec::with_capacity(asked.len());
-    for (i, scores) in asked {
+    for (i, sights, scores) in asked {
         let t = &tracks[i];
-        let held = &table[&fold_of[&shot(i)]];
-        let e = embedding(i);
         let here = t.presence();
         // As in `place`: a character on screen in these frames can't be this
         // face too. Its own spans don't count against it.
         let taken =
             |ci: usize| screen[ci].get(&t.media).is_some_and(|v| v.iter().any(|(j, s)| *j != i && overlaps(&here, s)));
         // Whether more than one shot of a character looks like this face.
-        let backed = |ci: usize| {
-            let alike = held[ci].anchors.iter().filter(|&&j| proto::dot(e, &tracks[j].embedding) >= p.unsure);
-            alike.map(|&j| shot(j)).collect::<HashSet<_>>().len() >= MIN_SHOTS
+        let backed = |ci: usize| sights[ci].alike >= MIN_SHOTS;
+        let clear = |s: f32, ci: usize, next: f32| {
+            sights[ci].looks >= assign && s - next >= margin && !sights[ci].thin && backed(ci)
         };
-        let clear =
-            |s: f32, ci: usize, next: f32| s >= p.assign && s - next >= p.margin && !held[ci].thin && backed(ci);
-        let close = |s: f32, ci: usize| s >= p.unsure && backed(ci);
+        // In the scene, one shot that looks like it is enough for a guess.
+        let close = |s: f32, ci: usize| s >= unsure && (backed(ci) || (sights[ci].in_scene && sights[ci].alike > 0));
 
-        let beside = scores.first().is_some_and(|&(_, ci)| taken(ci));
+        // Who it looks most like, the scene aside.
+        let lookalike = scores.iter().max_by(|a, b| sights[a.1].looks.total_cmp(&sights[b.1].looks));
+        let beside = lookalike.is_some_and(|&(_, ci)| taken(ci));
         let free: Vec<(f32, usize)> = scores.iter().copied().filter(|&(_, ci)| !taken(ci)).collect();
         let second = free.get(1).copied();
         let next = second.map_or(-1.0, |x| x.0);
         // The runner-up, when it is as good a candidate as the first.
-        let rival = |s1: f32| second.filter(|&(s2, c2)| close(s2, c2) && s1 - s2 < p.margin).map(|x| x.1);
+        let rival = |s1: f32| second.filter(|&(s2, c2)| close(s2, c2) && s1 - s2 < margin).map(|x| x.1);
         let own = q.now[i].and_then(|k| index.get(&k).copied());
 
         let verdict = match (own, free.first().copied()) {
@@ -221,19 +280,19 @@ pub fn judge(q: &Question, p: &Params, space: Option<&Space>) -> Vec<Judged> {
             }
             (Some(o), Some((s1, c1))) => {
                 let own_score = scores.iter().find(|x| x.1 == o).map_or(f32::NEG_INFINITY, |x| x.0);
-                if held[o].thin {
+                if sights[o].thin {
                     if c1 != o && clear(s1, c1, next) { Verdict::Elsewhere(key(c1)) } else { Verdict::Thin }
                 } else if c1 == o {
                     match rival(s1) {
-                        _ if s1 < p.unsure => Verdict::Doubt,
+                        _ if s1 < unsure => Verdict::Doubt,
                         Some(c2) => Verdict::Between(key(o), key(c2)),
                         None => Verdict::Right,
                     }
                 } else if clear(s1, c1, next) {
                     Verdict::Elsewhere(key(c1))
-                } else if own_score >= p.unsure && close(s1, c1) {
+                } else if own_score >= unsure && close(s1, c1) {
                     Verdict::Between(key(o), key(c1))
-                } else if own_score >= p.unsure {
+                } else if own_score >= unsure {
                     Verdict::Right
                 } else {
                     Verdict::Doubt
@@ -256,6 +315,24 @@ pub fn judge(q: &Question, p: &Params, space: Option<&Space>) -> Vec<Judged> {
         out.push(Judged { track: i, verdict, scores });
     }
     out
+}
+
+/// A face, what it makes of each character, and who it may be, best first.
+type Asked = (usize, Vec<Sight>, Vec<(f32, usize)>);
+
+/// What a face makes of one character.
+#[derive(Clone, Copy, Debug)]
+struct Sight {
+    /// How likely they are, the scene included.
+    score: f32,
+    /// How alike they look, nothing else: all a clear verdict goes by.
+    looks: f32,
+    /// They are on screen around it.
+    in_scene: bool,
+    /// Shots of theirs that look like it.
+    alike: usize,
+    /// Too little of them is left to go by.
+    thin: bool,
 }
 
 /// How alike two groups of faces are: each face's best match in the other
@@ -354,7 +431,8 @@ mod tests {
         let (tracks, members, now) = c;
         let shots: Vec<u32> = tracks.iter().map(|t| t.start).collect();
         let q = Question { tracks, shots: &shots, members, now, subjects, reads };
-        judge(&q, &params(), Some(&Space::Faces))
+        let t = Tuning { lift: 0.0, lift_unsure: 0.0, near_bonus: 0.0, ..Tuning::default() };
+        judge_tuned(&q, &params(), Some(&Space::Faces), &t)
     }
 
     fn verdict_of(j: &[Judged], track: usize) -> Verdict {
@@ -448,6 +526,54 @@ mod tests {
         let b = with(&mut c, face(5, 8000), Some(2));
         c.1.push((2, vec![a, b]));
         assert_eq!(ask(&c, &[b], &[])[0].verdict, Verdict::Thin);
+    }
+
+    #[test]
+    fn a_rare_look_counts_as_much_as_a_common_one() {
+        // Ten shots of one look, two of a disguise: neither averages the other away.
+        let mut c = cast();
+        for at in [7000, 7100] {
+            let i = with(&mut c, face(4, at), Some(0));
+            c.1[0].1.push(i);
+        }
+        let i = with(&mut c, face(4, 9000), None);
+        assert_eq!(ask(&c, &[i], &[])[0].verdict, Verdict::Newly(0));
+    }
+
+    #[test]
+    fn a_reading_much_worse_than_the_face_is_no_reading() {
+        let mut c = cast();
+        let i = with(&mut c, face(0, 5000), None);
+        let read = Read { track: i, embedding: unit(5), quality: 0.05 };
+        assert_eq!(ask(&c, &[i], &[read])[0].verdict, Verdict::Newly(0));
+    }
+
+    #[test]
+    fn the_scene_makes_a_guess_never_a_clear_answer() {
+        let (tracks, members, now) = {
+            let mut c = cast();
+            let mut t = face(5, 860);
+            t.embedding = vec![0f32; DIM];
+            t.embedding[0] = 0.44;
+            t.embedding[5] = (1.0f32 - 0.44 * 0.44).sqrt();
+            with(&mut c, t, None);
+            c
+        };
+        let i = tracks.len() - 1;
+        let shots: Vec<u32> = tracks.iter().map(|t| t.start).collect();
+        let q = Question { tracks: &tracks, shots: &shots, members: &members, now: &now, subjects: &[i], reads: &[] };
+        let t = Tuning { lift: 0.0, lift_unsure: 0.0, near_bonus: 0.2, near: 480, ..Tuning::default() };
+        assert_eq!(judge_tuned(&q, &params(), Some(&Space::Faces), &t)[0].verdict, Verdict::Maybe(0));
+    }
+
+    #[test]
+    fn someone_on_screen_at_the_same_time_gets_no_help_from_the_scene() {
+        let mut c = cast();
+        let mut t = face(0, 0);
+        t.end = 40;
+        let i = with(&mut c, t, None);
+        let j = ask(&c, &[i], &[]);
+        assert_eq!(j[0].verdict, Verdict::Nobody);
     }
 
     #[test]

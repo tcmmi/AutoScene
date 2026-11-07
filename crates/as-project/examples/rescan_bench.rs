@@ -357,6 +357,49 @@ fn read(project: &Project, cast: &RescanCast, subjects: &[usize], dirs: &str) ->
     out
 }
 
+/// Readings as lines of track id, quality and the embedding.
+fn save_reads(cast: &RescanCast, reads: &[Read]) -> String {
+    reads
+        .iter()
+        .map(|r| {
+            let e: Vec<String> = r.embedding.iter().map(f32::to_string).collect();
+            format!("{}\t{}\t{}\n", cast.rows[cast.row_of[r.track]].id, r.quality, e.join(","))
+        })
+        .collect()
+}
+
+fn load_reads(cast: &RescanCast, text: &str) -> Vec<Read> {
+    let at: HashMap<i64, usize> = cast.row_of.iter().enumerate().map(|(i, &r)| (cast.rows[r].id, i)).collect();
+    text.lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            let track = *at.get(&f[0].parse::<i64>().ok()?)?;
+            Some(Read {
+                track,
+                quality: f[1].parse().ok()?,
+                embedding: f[2].split(',').map(|x| x.parse().unwrap()).collect(),
+            })
+        })
+        .collect()
+}
+
+/// Faces asked about by `WATCH=<track ids>`.
+fn watch(cast: &RescanCast, reads: &[Read]) {
+    let Ok(ids) = std::env::var("WATCH") else { return };
+    let ids: Vec<i64> = ids.split(',').map(|x| x.parse().unwrap()).collect();
+    let watch: Vec<usize> = (0..cast.tracks.len()).filter(|&i| ids.contains(&cast.rows[cast.row_of[i]].id)).collect();
+    let name = |k: CharKey| cast.characters[k as usize].to_string()[28..].to_string();
+    for j in cast.judge(&watch, reads) {
+        let top: Vec<String> = j.scores.iter().take(4).map(|(s, k)| format!("{} {s:.3}", name(*k))).collect();
+        let said = match j.verdict {
+            Verdict::Newly(k) | Verdict::Maybe(k) | Verdict::Elsewhere(k) => name(k),
+            Verdict::Between(a, b) => format!("{} {}", name(a), name(b)),
+            _ => String::new(),
+        };
+        println!("track {} {:?} -> {said} {top:?}", cast.rows[cast.row_of[j.track]].id, j.verdict);
+    }
+}
+
 /// What Everyone else turns into, as stored and as read.
 fn everyone_else(cast: &RescanCast, reads: &[Read]) {
     let none: Vec<usize> =
@@ -385,7 +428,13 @@ fn main() {
     assert!(!a.is_empty(), "usage: rescan_bench <project_copy_dir> [labels.tsv]");
     let project = Project::open_copy(PathBuf::from(&a[0])).unwrap();
     let started = std::time::Instant::now();
-    let cast = project.rescan_cast().unwrap();
+    let mut cast = project.rescan_cast().unwrap();
+    // `TUNE=<near>,<bonus>,<lift>,<lift_unsure>` tries other settings.
+    if let Ok(v) = std::env::var("TUNE") {
+        let v: Vec<f32> = v.split(',').map(|x| x.parse().unwrap()).collect();
+        cast.tuning =
+            as_identity::Tuning { near: v[0] as u32, near_bonus: v[1], lift: v[2], lift_unsure: v[3], ..cast.tuning };
+    }
     let on = |a: TrackAssign| cast.row_of.iter().filter(|&&r| cast.rows[r].assign == a).count();
     println!(
         "{} tracks, {} characters; none {}, unsure {}, auto {}, pinned {}; fitted {}",
@@ -406,8 +455,18 @@ fn main() {
         // `LIMIT=<n>`: every n-th of them, for a quick look.
         let every = std::env::var("LIMIT").map_or(1, |v| v.parse::<usize>().unwrap());
         let wanted: Vec<usize> = wanted.into_iter().step_by(every).collect();
-        let reads = read(&project, &cast, &wanted, &dirs);
+        // Reading takes minutes: what was read waits in `reads.tsv` beside the copy.
+        let saved = Path::new(&a[0]).join("reads.tsv");
+        let reads = match std::fs::read_to_string(&saved) {
+            Ok(text) => load_reads(&cast, &text),
+            Err(_) => {
+                let reads = read(&project, &cast, &wanted, &dirs);
+                std::fs::write(&saved, save_reads(&cast, &reads)).unwrap();
+                reads
+            }
+        };
         pins(&cast, &reads, "read");
+        watch(&cast, &reads);
         everyone_else(&cast, &reads);
     }
     if let Some(l) = a.get(1) {

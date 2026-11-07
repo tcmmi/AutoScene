@@ -156,6 +156,17 @@ right, 6 wrong; on Breaking Bad no stranger got a clear match, but none of the
 17 faces on the wrong character was noticed, and a "maybe" is right less than
 half the time. Those stay suggestions for the person.
 
+A summary of a character hides its rare looks (Wang Fu's disguise, 13 of his
+34 tracks, went unrecognised), so every face is now compared with every shot:
+a character scores the mean of its 2 best shots. A character on screen around
+the face (fading over 480 frames, never one on screen at the same time) gets
+a bonus that can make a guess but never a clear answer: looks alone do that.
+A reading far below the stored face's quality is dropped. Miraculous, 74 hard
+and 226 clear pins asked blind: clear 33 right 1 wrong and 176 right 2 wrong,
+guesses 22 right 2 wrong and 31 right 4 wrong. Everyone else: 32 clear. Actors
+need stricter bars (`Tuning::of`): on Breaking Bad's stored faces 1 stranger
+of 106 in Everyone else gets a guess, and none a clear answer.
+
 Two groups, clearest 8 faces each (`likeness`): one person split by looks
 0.33-0.79 (median about 0.65) in live action, people seen together 0.06 at the
 median, 0.27 at most on Breaking Bad, 0.57 on The Blacklist.

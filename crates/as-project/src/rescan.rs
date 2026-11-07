@@ -13,7 +13,9 @@ use as_api::{
 };
 use as_core::{CharacterId, FrameIndex, FrameRange, MediaId};
 use as_db::{IdentityTrack, RescanFaceRow};
-use as_identity::{CharKey, Judged, Params, Question, Read, Space, TrackIn, Verdict, cast_space, in_cast_space, judge};
+use as_identity::{
+    CharKey, Judged, Params, Question, Read, Space, TrackIn, Tuning, Verdict, cast_space, in_cast_space, judge_tuned,
+};
 use as_media::MediaInfo;
 
 use crate::cast::{IdentityInput, NAME_ANCHORS, anchors, embedder_of};
@@ -48,6 +50,7 @@ pub struct RescanCast {
     /// The space faces are compared in, and the bars of it.
     pub space: Space,
     pub bars: Params,
+    pub tuning: Tuning,
 }
 
 /// Clearest faces of each character the "same person?" check reads.
@@ -117,7 +120,7 @@ impl RescanCast {
             subjects,
             reads,
         };
-        judge(&q, &self.params, Some(&self.space))
+        judge_tuned(&q, &self.params, Some(&self.space), &self.tuning)
     }
 
     fn row(&self, i: usize) -> &IdentityTrack {
@@ -254,7 +257,9 @@ impl RescanCast {
                     continue;
                 }
             };
-            let sharp = read.filter(|r| !r.embedding.is_empty());
+            // A reading the judge passed over isn't what the face takes on.
+            let floor = self.tracks[j.track].quality * self.tuning.read_floor;
+            let sharp = read.filter(|r| !r.embedding.is_empty() && r.quality >= floor);
             rows.push(RescanFaceRow {
                 track_id: self.row(j.track).id,
                 verdict,
@@ -335,6 +340,7 @@ impl Project {
             characters: cast.existing,
             rows,
             params,
+            tuning: Tuning::of(&space),
             space,
             bars,
         })

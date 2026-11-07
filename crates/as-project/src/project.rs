@@ -249,6 +249,12 @@ impl Project {
         Ok(p)
     }
 
+    /// A project on its own, outside any library: for dev tools working on a
+    /// copy. It keeps the rest of the program's rules; bodies stay off.
+    pub fn open_copy(dir: PathBuf) -> ProjectResult<Self> {
+        Self::open(ProjectId::new(), dir, Arc::new(AtomicBool::new(false)))
+    }
+
     fn ensure_dirs(&self) -> ProjectResult<()> {
         for d in [self.thumbs_dir(), self.proxies_dir(), self.tmp_dir()] {
             std::fs::create_dir_all(d)?;

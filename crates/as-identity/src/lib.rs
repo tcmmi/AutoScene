@@ -29,13 +29,16 @@
 mod adapt;
 mod ahc;
 pub mod bodies;
+mod judge;
 pub mod metrics;
 mod proto;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 pub use adapt::{Fit, FitStats, MIN_STRANGERS, Space, fit};
 pub use ahc::cluster;
+pub use judge::{Judged, Question, Read, Verdict, judge};
 
 /// A character as the caller knows it (index into its own list).
 pub type CharKey = u32;
@@ -721,6 +724,17 @@ pub fn reassign(tracks: &[TrackIn], members: &[(CharKey, Vec<usize>)], p: &Param
 }
 
 fn reassign_run(tracks: &[TrackIn], members: &[(CharKey, Vec<usize>)], p: &Params, space: Option<&Space>) -> Outcome {
+    let (faces, params, space) = in_space(tracks, p, space);
+    let out = reassign_in(&faces, members, &params);
+    match space {
+        Space::Fitted(_) => Outcome { space, ..out },
+        Space::Faces => out,
+    }
+}
+
+/// `tracks` as the cast compares them: in `space` (`None`: unknown, fitted
+/// again as [`identify`] does), with the bars of that space.
+fn in_space<'a>(tracks: &'a [TrackIn], p: &Params, space: Option<&Space>) -> (Cow<'a, [TrackIn]>, Params, Space) {
     // A space fitted on another embedder's faces can't place these.
     let space = match (space, tracks.first()) {
         (Some(Space::Fitted(f)), Some(t)) if f.mean.len() != t.embedding.len() => {
@@ -734,10 +748,8 @@ fn reassign_run(tracks: &[TrackIn], members: &[(CharKey, Vec<usize>)], p: &Param
         None => p.adapt.then(|| fit(tracks, p)).flatten().map(|(f, _)| Space::Fitted(f)),
     };
     match fitted {
-        Some(Space::Fitted(f)) => {
-            Outcome { space: Space::Fitted(f.clone()), ..reassign_in(&f.tracks(tracks), members, &f.params(p)) }
-        }
-        _ => reassign_in(tracks, members, &p.fitted(tracks)),
+        Some(Space::Fitted(f)) => (Cow::Owned(f.tracks(tracks)), f.params(p), Space::Fitted(f)),
+        _ => (Cow::Borrowed(tracks), p.fitted(tracks), Space::Faces),
     }
 }
 

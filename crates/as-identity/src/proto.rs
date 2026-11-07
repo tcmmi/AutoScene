@@ -7,7 +7,7 @@ fn normalize(v: &mut [f32]) {
     v.iter_mut().for_each(|x| *x /= n);
 }
 
-fn dot(a: &[f32], b: &[f32]) -> f32 {
+pub(crate) fn dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 

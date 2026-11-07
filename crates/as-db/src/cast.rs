@@ -36,6 +36,8 @@ pub struct IdentityTrack {
     pub media_id: MediaId,
     pub start: FrameIdx,
     pub end: FrameIdx,
+    /// First frame of its shot.
+    pub shot: FrameIdx,
     pub quality: f32,
     /// Its median face height, a fraction of the frame's.
     pub face_h: f32,
@@ -807,7 +809,7 @@ impl ProjectDb {
             }
             let mut st = c.prepare(
                 "SELECT id, media_id, start, end, quality, length(dets) / 32, emb, character_id, assign, dets, score,
-                        via_body, face_h, COALESCE(rival, 0)
+                        via_body, face_h, COALESCE(rival, 0), shot
                    FROM tracks WHERE not_face = 0 AND media_id IN (SELECT id FROM media WHERE faces = 'ready')
                   ORDER BY media_id, start, id",
             )?;
@@ -820,6 +822,7 @@ impl ProjectDb {
                     media_id: parse_id(&r.get::<_, String>(1)?)?,
                     start: r.get(2)?,
                     end: r.get(3)?,
+                    shot: r.get(14)?,
                     quality: r.get::<_, f64>(4)? as f32,
                     face_h: r.get::<_, f64>(12)? as f32,
                     rival: r.get::<_, f64>(13)? as f32,

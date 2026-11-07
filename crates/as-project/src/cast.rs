@@ -385,7 +385,7 @@ pub(crate) struct IdentityInput {
     /// Per input track, its row (rows without a readable embedding are left out).
     pub(crate) rows: Vec<usize>,
     /// Existing characters; a character's key is its index here.
-    existing: Vec<CharacterId>,
+    pub(crate) existing: Vec<CharacterId>,
     pub(crate) key: HashMap<CharacterId, CharKey>,
     /// Each media's number in `tracks`.
     pub(crate) media: HashMap<MediaId, u32>,
@@ -394,7 +394,7 @@ pub(crate) struct IdentityInput {
 impl IdentityInput {
     /// `grids`: how each media's faces were looked for where it isn't
     /// [`full_grid`].
-    fn new(rows: &[IdentityTrack], existing: Vec<CharacterId>, grids: &HashMap<MediaId, Grid>) -> Self {
+    pub(crate) fn new(rows: &[IdentityTrack], existing: Vec<CharacterId>, grids: &HashMap<MediaId, Grid>) -> Self {
         let full = full_grid();
         let key: HashMap<CharacterId, CharKey> = existing.iter().enumerate().map(|(i, c)| (*c, i as CharKey)).collect();
         let mut media: HashMap<MediaId, u32> = HashMap::new();
@@ -436,6 +436,25 @@ impl IdentityInput {
             kept.push(row);
         }
         Self { tracks, rows: kept, existing, key, media }
+    }
+}
+
+impl IdentityInput {
+    /// What defines each character: its pins and the tracks clustered into it.
+    pub(crate) fn members(&self, rows: &[IdentityTrack]) -> Vec<(CharKey, Vec<usize>)> {
+        let mut members: Vec<(CharKey, Vec<usize>)> =
+            (0..self.existing.len()).map(|k| (k as CharKey, Vec::new())).collect();
+        for (i, &row) in self.rows.iter().enumerate() {
+            let r = &rows[row];
+            // A clustered track has a score of exactly 1, like a pin; a face
+            // named by its body is never one.
+            let member =
+                r.assign == TrackAssign::Pinned || (r.assign == TrackAssign::Auto && r.score >= 1.0 && !r.via_body);
+            if let (true, Some(k)) = (member, r.character_id.and_then(|c| self.key.get(&c))) {
+                members[*k as usize].1.push(i);
+            }
+        }
+        members
     }
 }
 
@@ -1245,7 +1264,7 @@ impl Project {
     /// The grouping's parameters for this project's footage, and for the
     /// embedder its faces come from: SFace (Fast Scan) sees faces otherwise,
     /// the anime embedder gets its own bars (`Params::anime`).
-    fn identity_params(&self) -> ProjectResult<Params> {
+    pub(crate) fn identity_params(&self) -> ProjectResult<Params> {
         let base = if self.content()? == ContentKind::Anime {
             Params::anime()
         } else if self.faces_found_fast()? {
@@ -1266,7 +1285,7 @@ impl Project {
 
     /// How the media Fast Scan or the anime pass found faces in were looked
     /// at (see [`Grid`]).
-    fn grids(&self) -> ProjectResult<HashMap<MediaId, Grid>> {
+    pub(crate) fn grids(&self) -> ProjectResult<HashMap<MediaId, Grid>> {
         let mut out = HashMap::new();
         for (id, model) in self.db().ready_faces_models()? {
             let Some(model) = model else { continue };
@@ -1299,26 +1318,20 @@ impl Project {
         )))
     }
 
+    /// The space the cast was grouped in (unknown: `None`).
+    pub(crate) fn grouped_space(&self) -> ProjectResult<Option<Space>> {
+        Ok(self.db().meta(GROUPED_IN)?.and_then(|h| unhex(&h)).and_then(|b| Space::from_bytes(&b)))
+    }
+
     fn reassign_once(&self) -> ProjectResult<bool> {
         let rev = self.db().cast_rev()?;
         let rows: Vec<IdentityTrack> = self.db().identity_tracks()?;
         let cast =
             IdentityInput::new(&rows, self.db().characters()?.into_iter().map(|c| c.id).collect(), &self.grids()?);
-        let mut members: Vec<(CharKey, Vec<usize>)> =
-            (0..cast.existing.len()).map(|k| (k as CharKey, Vec::new())).collect();
-        for (i, &row) in cast.rows.iter().enumerate() {
-            let r = &rows[row];
-            // A clustered track has a score of exactly 1, like a pin; a face
-            // named by its body is never one.
-            let member =
-                r.assign == TrackAssign::Pinned || (r.assign == TrackAssign::Auto && r.score >= 1.0 && !r.via_body);
-            if let (true, Some(k)) = (member, r.character_id.and_then(|c| cast.key.get(&c))) {
-                members[*k as usize].1.push(i);
-            }
-        }
+        let members = cast.members(&rows);
         let started = std::time::Instant::now();
         // In the space the cast was grouped in (unknown: fitted again).
-        let space = self.db().meta(GROUPED_IN)?.and_then(|h| unhex(&h)).and_then(|b| Space::from_bytes(&b));
+        let space = self.grouped_space()?;
         let out = as_identity::reassign(&cast.tracks, &members, &self.identity_params()?, space.as_ref());
         let people = self.people_outcome(&rows, &cast, &out)?;
         if self.store_identity(rev, &rows, &cast, &out, people, &[])?.is_none() {

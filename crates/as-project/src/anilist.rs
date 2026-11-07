@@ -1312,8 +1312,10 @@ impl Project {
 /// quality-weighted mean of its own faces) may suggest the name. CCIP reads
 /// hair, eyes and colours first, so portrait art lands high on everyone who
 /// shares them: the bar only keeps out the plainly unlike, [`LOOK_ALIKES`]
-/// decides. Provisional until E5's bench tunes it.
-const SUGGEST_MIN_COS: f32 = 0.70;
+/// decides. CCIP b36 reads 0.66 where CCIP-24 read 0.70 (the same share
+/// of pairs, bench/anime DECISIONS row 6). Provisional until E5's bench
+/// tunes it.
+const SUGGEST_MIN_COS: f32 = 0.66;
 
 /// Portraits within this of the best one are the character's look-alikes
 /// (a father, a brother, a younger self score as high as the person
@@ -2461,7 +2463,7 @@ mod tests {
         assert_eq!(best_portrait(&same, &[Supporting, Supporting, Supporting], &apart(), &same), None);
         assert_eq!(best_portrait(&[0.90, 0.88], &[Main, Main], &apart(), &[0.90, 0.88]), None);
         // The bigger part names only at the bar itself.
-        let low = [0.72, SUGGEST_MIN_COS - 0.05];
+        let low = [SUGGEST_MIN_COS + 0.02, SUGGEST_MIN_COS - 0.05];
         assert_eq!(best_portrait(&low, &[Supporting, Main], &apart(), &low), None);
         // Under the bar, nothing at all, or a spoilt score: no name from it.
         assert_eq!(best_portrait(&[SUGGEST_MIN_COS - 0.01], &[Main], &apart(), &[1.0]), None);

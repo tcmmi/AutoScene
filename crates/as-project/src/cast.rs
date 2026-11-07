@@ -48,8 +48,10 @@ type NewFace = (i64, FrameRange, Vec<FaceDet>, Option<Vec<f32>>);
 const REANCHOR_MIN_COS: f32 = 0.4;
 /// The same for anime characters (CCIP vectors; same-character pairs sit
 /// higher than same-face ArcFace ones, so a shared bar would re-anchor a
-/// decision onto lookalikes).
-const REANCHOR_MIN_COS_ANIME: f32 = 0.62;
+/// decision onto lookalikes). CCIP b36's cosines run lower than CCIP-24's:
+/// 0.56 lets through the same share of pairs as 0.62 did (all track pairs
+/// of Bass X Machina, bench/anime DECISIONS row 6).
+const REANCHOR_MIN_COS_ANIME: f32 = 0.56;
 
 /// An anime head's face height as a share of the head's (what
 /// `face_height` reports on anime tracks). Provisional — the anime
@@ -193,6 +195,12 @@ fn faces_key(embedder: &str, animated: bool, fast: bool) -> String {
     } else {
         embedder.to_owned()
     }
+}
+
+/// Are these faces anime heads: found by the anime embedder, or the one
+/// before it, which they stay until the anime pass finds them again?
+pub(crate) fn anime_embedder(embedder: &str) -> bool {
+    embedder == as_models::ids::ANIME_CCIP || embedder == as_models::ids::ANIME_CCIP_OLD
 }
 
 /// How a media's faces were looked for, for when they are on screen
@@ -1086,7 +1094,7 @@ impl Project {
                 // The bar is the embedder's: same-character CCIP cosines sit
                 // well above same-face ArcFace ones.
                 let min_cos = match model.as_deref().map(embedder_of) {
-                    Some(m) if m == as_models::ids::ANIME_CCIP => REANCHOR_MIN_COS_ANIME,
+                    Some(m) if anime_embedder(m) => REANCHOR_MIN_COS_ANIME,
                     _ => REANCHOR_MIN_COS,
                 };
                 let looks = |emb: &Option<Vec<f32>>| match (&face, emb) {
@@ -1266,13 +1274,28 @@ impl Project {
     /// the anime embedder gets its own bars (`Params::anime`).
     pub(crate) fn identity_params(&self) -> ProjectResult<Params> {
         let base = if self.content()? == ContentKind::Anime {
-            Params::anime()
+            // Until the anime pass finds them again, faces of the embedder
+            // before b36 keep the bars they were grouped with.
+            let (old, all) = self.old_anime_faces()?;
+            if old > 0 && old == all { Params::anime_ccip24() } else { Params::anime() }
         } else if self.faces_found_fast()? {
             Params::sface()
         } else {
             Params::default()
         };
         Ok(Params { animated: self.content()? == ContentKind::Animation, ..base })
+    }
+
+    /// Media with faces CCIP-24 found (the anime embedder before b36), and
+    /// media with faces at all. Their vectors can't be compared with b36's:
+    /// the next face pass finds them again.
+    pub fn old_anime_faces(&self) -> ProjectResult<(usize, usize)> {
+        let models = self.db().ready_faces_models()?;
+        let old = models
+            .iter()
+            .filter(|(_, m)| m.as_deref().map(embedder_of) == Some(as_models::ids::ANIME_CCIP_OLD))
+            .count();
+        Ok((old, models.iter().filter(|(_, m)| m.is_some()).count()))
     }
 
     /// Whether the faces found so far come from Fast Scan. Faces of the two
@@ -1291,8 +1314,8 @@ impl Project {
             let Some(model) = model else { continue };
             if found_fast(&model) {
                 let fps = self.db().media(id)?.and_then(|m| m.fps).map_or(24.0, |r| r.to_f64());
-                out.insert(id, fast_grid(fps, embedder_of(&model) == as_models::ids::ANIME_CCIP));
-            } else if embedder_of(&model) == as_models::ids::ANIME_CCIP {
+                out.insert(id, fast_grid(fps, anime_embedder(embedder_of(&model))));
+            } else if anime_embedder(embedder_of(&model)) {
                 out.insert(id, anime_grid());
             }
         }
@@ -2443,6 +2466,10 @@ pub(crate) mod tests {
         assert_eq!(faces_key(ccip, true, false), faces_key(ccip, false, false));
         // Fast Scan on anime is recorded after it; elsewhere its embedder says so.
         assert_eq!(faces_key(ccip, false, true), format!("{}{FAST}", faces_key(ccip, false, false)));
+        // Faces the anime embedder before b36 found stay anime heads.
+        let old = format!("{}{ANIME}", as_models::ids::ANIME_CCIP_OLD);
+        assert_eq!(embedder_of(&old), as_models::ids::ANIME_CCIP_OLD);
+        assert!(anime_embedder(embedder_of(&old)) && anime_embedder(embedder_of(&faces_key(ccip, false, true))));
         assert!(found_fast(&faces_key(ccip, false, true)) && !found_fast(&faces_key(ccip, false, false)));
         assert_eq!(faces_key(as_models::ids::SFACE, false, true), as_models::ids::SFACE);
         assert!(found_fast(as_models::ids::SFACE) && !found_fast(&faces_key(MODEL, true, true)));

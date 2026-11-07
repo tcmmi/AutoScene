@@ -9,5 +9,5 @@ export const PURPOSE = {
   "person-reid-0277": "about.models.purpose.personLook",
   "anime-head-v2m": "about.models.purpose.animeHead",
   "anime-person-v1m": "about.models.purpose.animePerson",
-  "anime-ccip-caformer24": "about.models.purpose.animeIdentity",
+  "anime-ccip-b36": "about.models.purpose.animeIdentity",
 } as const

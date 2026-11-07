@@ -11,7 +11,7 @@ use as_api::{
     CastEdit, ContentKind, RescanAnswer, RescanFace, RescanLikeness, RescanPair, RescanRequest, RescanResults,
     RescanTally, RescanVerdict, SegmentKind, TrackAssign, TrackFilter,
 };
-use as_core::{CharacterId, FrameIndex, FrameRange, MediaId};
+use as_core::{CharacterId, FrameIndex, FrameRange, MediaId, msg};
 use as_db::{IdentityTrack, RescanFaceRow};
 use as_identity::{
     CharKey, Judged, Params, Question, Read, Space, TrackIn, Tuning, Verdict, cast_space, in_cast_space, judge_tuned,
@@ -19,7 +19,7 @@ use as_identity::{
 use as_media::MediaInfo;
 
 use crate::cast::{IdentityInput, NAME_ANCHORS, anchors, embedder_of};
-use crate::{Project, ProjectResult};
+use crate::{Project, ProjectError, ProjectResult};
 
 /// Where the last rescan's tally is kept.
 const TALLY: &str = "rescan_tally";
@@ -295,6 +295,15 @@ impl Project {
             .collect();
         let models = self.db().ready_faces_models()?;
         let model = models.iter().find(|(id, _)| *id == media).and_then(|(_, m)| m.as_deref()).unwrap_or_default();
+        // Faces of the anime embedder before b36: the pass reads with b36,
+        // whose vectors can't be compared with theirs. The next face pass
+        // finds them again.
+        if embedder_of(model) == as_models::ids::ANIME_CCIP_OLD {
+            return Err(ProjectError::NotReady(msg!(
+                "analysis.facesNotFound",
+                "The faces of this media aren't found yet."
+            )));
+        }
         let (fast, anime) =
             (embedder_of(model) == as_models::ids::SFACE, embedder_of(model) == as_models::ids::ANIME_CCIP);
         Ok(RescanSource { path: PathBuf::from(m.path), info, index, shots, fast, anime })

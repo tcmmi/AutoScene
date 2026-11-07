@@ -1322,8 +1322,8 @@ fn decisions_place_faces_in_the_space_the_cast_was_grouped_in() {
 #[test]
 fn the_anime_preset_carries_ccips_bars() {
     let p = Params::anime();
-    assert_eq!((p.link, p.copy_link), (0.55, 0.70));
-    assert_eq!((p.core_quality, p.strangers_alone, p.strangers_style), (0.50, 0.02, 0.25));
+    assert_eq!((p.link, p.copy_link), (0.45, 0.70));
+    assert_eq!((p.core_quality, p.strangers_alone, p.strangers_style), (0.20, 0.02, 0.25));
     assert_eq!((p.table_dedup_cos, p.merge_top, p.cl_cap), (0.88, 4, 0.25));
     assert!(!p.animated && p.adapt);
     // The rest stays the live-action pass's.

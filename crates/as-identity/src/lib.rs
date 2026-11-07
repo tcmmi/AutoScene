@@ -57,8 +57,9 @@ pub const VERSION: u32 = 4;
 /// with [`Params::anime`]). `identify` groups them the same way — its
 /// outcome and the stored [`Space`] are dimension-agnostic — so a cast of
 /// either kind regroups on the same bumps. Kept apart so an anime-only
-/// change can bump alone.
-pub const ANIME_VERSION: u32 = VERSION;
+/// change can bump alone: +1, CCIP b36 and its bars (`link` 0.45,
+/// `core_quality` 0.20).
+pub const ANIME_VERSION: u32 = VERSION + 1;
 
 #[derive(Clone, Debug)]
 pub struct TrackIn {
@@ -228,7 +229,7 @@ impl Params {
 
     /// For an anime embedder (CCIP's 768-d faces) on anime footage: it
     /// learned drawn faces, yet the characters of one show still look much
-    /// alike to it, so the bars sit far above ArcFace's. Its strangers —
+    /// alike to it, so the bars sit above ArcFace's. Its strangers —
     /// up to `strangers_alone` alike it stands alone like actors, fully
     /// a style from `strangers_style` on — decide how far the bars and
     /// the space are fitted (`animated` stays off: this embedder knows
@@ -237,9 +238,9 @@ impl Params {
     /// (`merge_top`).
     pub fn anime() -> Self {
         Self {
-            link: 0.55,
+            link: 0.45,
             copy_link: 0.70,
-            core_quality: 0.50,
+            core_quality: 0.20,
             strangers_alone: 0.02,
             strangers_style: 0.25,
             table_dedup_cos: 0.88,
@@ -247,6 +248,14 @@ impl Params {
             cl_cap: 0.25,
             ..Self::default()
         }
+    }
+
+    /// [`Params::anime`] for faces CCIP-24 found, the anime embedder before
+    /// b36, until the anime pass finds them again: the bars it was grouped
+    /// with (its cosines run higher than b36's, so b36's bars would merge
+    /// too much).
+    pub fn anime_ccip24() -> Self {
+        Self { link: 0.55, core_quality: 0.50, ..Self::anime() }
     }
 }
 

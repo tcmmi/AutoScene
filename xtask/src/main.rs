@@ -117,8 +117,8 @@ mod tests {
         let ids = |m: Vec<&as_models::Model>| m.into_iter().map(|m| m.id.clone()).collect::<Vec<_>>();
         assert_eq!(models(None).unwrap().len(), as_models::manifest().len());
         // What CI's macOS job fetches for the Core ML tests (ci.yml).
-        let only = models(Some("scrfd-10g, arcface-glintr100,anime-ccip-caformer24")).unwrap();
-        assert_eq!(ids(only), ["scrfd-10g", "arcface-glintr100", "anime-ccip-caformer24"]);
+        let only = models(Some("scrfd-10g, arcface-glintr100,anime-ccip-b36")).unwrap();
+        assert_eq!(ids(only), ["scrfd-10g", "arcface-glintr100", "anime-ccip-b36"]);
         assert!(models(Some("scrfd-10g,arcface")).is_err(), "an id not in the manifest");
         assert!(models(Some(" , ")).is_err(), "no id at all");
     }

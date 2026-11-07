@@ -265,7 +265,10 @@ pub mod ids {
     /// whose characters another one found are found again, as ARCFACE is).
     pub const ANIME_HEAD: &str = "anime-head-v2m";
     pub const ANIME_PERSON: &str = "anime-person-v1m";
-    pub const ANIME_CCIP: &str = "anime-ccip-caformer24";
+    pub const ANIME_CCIP: &str = "anime-ccip-b36";
+    /// The anime embedder before it: faces it found are still anime heads,
+    /// until the anime pass finds them again.
+    pub const ANIME_CCIP_OLD: &str = "anime-ccip-caformer24";
     /// What the anime character pass needs.
     pub const ANIME: [&str; 3] = [ANIME_HEAD, ANIME_PERSON, ANIME_CCIP];
 }

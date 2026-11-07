@@ -5,7 +5,7 @@
 
 # Files of models a better one replaced: removed from the models folder at
 # launch (`ModelStore::prune`). Nothing else there is ever deleted.
-retired = ["arcface_w600k_r50.onnx"]
+retired = ["arcface_w600k_r50.onnx", "anime_ccip_caformer24.onnx"]
 
 [[model]]
 id = "transnetv2"
@@ -132,13 +132,13 @@ source = "deepghs anime_person_detection person_detect_v1.1_m (YOLOv8m, 9.53k GF
 # metadata_props: none — the graph carries no license or author stamps
 # (pytorch 1.13.1 export, opset 14).
 [[model]]
-id = "anime-ccip-caformer24"
-file = "anime_ccip_caformer24.onnx"
+id = "anime-ccip-b36"
+file = "anime_ccip_b36.onnx"
 purpose = "Character identity embeddings (anime), 768-d CCIP vectors"
-url = "https://huggingface.co/deepghs/ccip_onnx/resolve/eb2acdd29af1703388d3d0c04221add322bc9110/ccip-caformer-24-randaug-pruned/model_feat.onnx"
-sha256 = "4ea118d16496274f4f6e08d3afc768cc592389e8f7f32f8732ce2215c228ac5f"
-size = 150248245
+url = "https://huggingface.co/deepghs/ccip_onnx/resolve/eb2acdd29af1703388d3d0c04221add322bc9110/ccip-caformer_b36-24/model_feat.onnx"
+sha256 = "c1e7333a55c2ad9e03cd340c635e96c9c1d86f0836fa7eae65720e7c9c94ee51"
+size = 383591416
 license = "OpenRAIL"
 card = "https://huggingface.co/deepghs/ccip_onnx"
 terms = "The CCIP family ships under the Open Responsible AI License (OpenRAIL): use restrictions apply (no unlawful, harmful or rights-infringing use); commercial use is allowed under its terms."
-source = "deepghs ccip_onnx ccip-caformer-24-randaug-pruned (CAFormer-24, character-image embedding)"
+source = "deepghs ccip_onnx ccip-caformer_b36-24 (CAFormer-B36, character-image embedding)"

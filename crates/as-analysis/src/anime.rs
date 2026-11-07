@@ -10,7 +10,7 @@
 //! silhouette carry much of who the character is. The models are deepghs'
 //! (Hugging Face, pinned in `bench/anime/models.tsv`): `anime_head_detection`
 //! (`head_detect_v2.0_s` and kin) finds heads through
-//! [`as_vision::yolo::Yolo`], and `ccip_onnx` (`ccip-caformer-24-randaug-pruned`)
+//! [`as_vision::yolo::Yolo`], and `ccip_onnx` (`ccip-caformer_b36-24`)
 //! embeds square crops around them through [`as_vision::ccip::Ccip`]. A
 //! person detector (`anime_person_detection`) may run as a second source at
 //! a bigger input: the head a person box implies ([`person_head`]) is added
@@ -117,8 +117,8 @@ impl Params {
             union_cover: 0.5,
             thumb_size: 160,
             thumb_context: 1.7,
-            norm_floor: 110.0,
-            norm_full: 170.0,
+            norm_floor: 200.0,
+            norm_full: 400.0,
             full_height: 0.12,
             min_track_quality: 0.05,
             sprite_cells: 8,
@@ -129,12 +129,12 @@ impl Params {
 
     /// How much a detection says about identity, 0..=1: its CCIP norm and
     /// the head's size, as the face pass reads ArcFace norms and face size.
-    /// CCIP's raw lengths run about 150-200 on clear heads (the baked
-    /// parity crops of `crates/as-vision/fixtures/anime` measure 157-197)
-    /// where ArcFace's run ~14-22 on clear faces — about 7.7 times as
-    /// long — so the defaults scale the face pass's bars by that. The bench
-    /// decides whether norm earns its place (rule Q0) and where the bars
-    /// truly fall (`identity_bench norms`).
+    /// CCIP b36's raw lengths are about twice CCIP-24's (290-550 by
+    /// `identity_bench norms` on Bass X Machina E01-02). A gentler 200-400
+    /// scale grouped best on the real pass (bench/anime DECISIONS row 6:
+    /// mean F 0.788 with `core_quality` 0.20, against 0.733 at 290-550),
+    /// so most clear heads reach full quality and only small, weak ones
+    /// count less.
     pub fn quality(&self, norm: f32, height: f32) -> f32 {
         let n = ((norm - self.norm_floor) / (self.norm_full - self.norm_floor)).clamp(0.0, 1.0);
         let s = (height / self.full_height).clamp(0.0, 1.0).sqrt();
@@ -896,10 +896,10 @@ mod tests {
     #[test]
     fn quality_follows_norm_and_size() {
         let p = Params::anime();
-        assert_eq!(p.quality(50.0, 0.3), 0.0);
-        assert_eq!(p.quality(200.0, 0.3), 1.0);
-        assert!((p.quality(140.0, 0.3) - 0.5).abs() < 1e-6);
-        assert!((p.quality(200.0, 0.03) - 0.5).abs() < 1e-6);
+        assert_eq!(p.quality(150.0, 0.3), 0.0);
+        assert_eq!(p.quality(450.0, 0.3), 1.0);
+        assert!((p.quality(300.0, 0.3) - 0.5).abs() < 1e-6);
+        assert!((p.quality(450.0, 0.03) - 0.5).abs() < 1e-6);
     }
 
     #[test]
@@ -916,7 +916,7 @@ mod tests {
                 p.norm_floor,
                 p.norm_full
             ),
-            (6, 0.5, 1.9, 0.35, 0.3, 0.5, 110.0, 170.0)
+            (6, 0.5, 1.9, 0.35, 0.3, 0.5, 200.0, 400.0)
         );
     }
 }

@@ -33,7 +33,7 @@ CLIP_MEAN = np.array([0.48145466, 0.4578275, 0.40821073], np.float32)
 CLIP_STD = np.array([0.26862954, 0.26130258, 0.27577711], np.float32)
 SIDE = 384
 DET_VARIANTS = ["anime_head_detection/head_detect_v2.0_s", "anime_person_detection/person_detect_v1.3_s"]
-CCIP = "ccip_onnx/ccip-caformer-24-randaug-pruned/model_feat.onnx"
+CCIP = "ccip_onnx/ccip-caformer_b36-24/model_feat.onnx"
 
 
 def sha256(path: Path) -> str:

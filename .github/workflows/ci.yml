@@ -71,7 +71,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          cargo xtask fetch-models --only scrfd-10g,arcface-glintr100,anime-ccip-caformer24 --dir "$AUTOSCENE_MODELS_DIR"
+          cargo xtask fetch-models --only scrfd-10g,arcface-glintr100,anime-ccip-b36 --dir "$AUTOSCENE_MODELS_DIR"
           cargo test -p as-vision --test coreml
         env:
           AUTOSCENE_MODELS_DIR: ${{ runner.temp }}/coreml-models

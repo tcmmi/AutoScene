@@ -5,7 +5,7 @@
 //! bb.index/bb.info.json/bb.path/bb.segments.tsv> <out_prefix> [resume]`
 //! `<models_dir>` is the bench layout `tools/anime-bench/models.py` fetches:
 //! `anime_head_detection/head_detect_v2.0_s/model.onnx`,
-//! `ccip_onnx/ccip-caformer-24-randaug-pruned/model_feat.onnx` and
+//! `ccip_onnx/ccip-caformer_b36-24/model_feat.onnx` and
 //! `anime_person_detection/person_detect_v1.3_s/model.onnx`.
 //! Writes `<out_prefix>.tracks` (as_analysis::tracks::encode of all tracks),
 //! `<out_prefix>.chunks` (one `start end tracks sprites` line per chunk),
@@ -103,7 +103,7 @@ fn main() {
     }
     let model = |var: &str, default: &str| std::env::var(var).map_or_else(|_| models.join(default), PathBuf::from);
     let head_model = model("HEAD", "anime_head_detection/head_detect_v2.0_s/model.onnx");
-    let ccip_model = model("CCIP", "ccip_onnx/ccip-caformer-24-randaug-pruned/model_feat.onnx");
+    let ccip_model = model("CCIP", "ccip_onnx/ccip-caformer_b36-24/model_feat.onnx");
     let person_model = std::env::var("PERSON").ok().map(|v| {
         if v == "1" { models.join("anime_person_detection/person_detect_v1.3_s/model.onnx") } else { PathBuf::from(v) }
     });

@@ -1,4 +1,4 @@
-//! CCIP (`ccip-caformer-24-randaug-pruned` from deepghs, a CLIP-style
+//! CCIP (`ccip-caformer_b36-24` from deepghs, a CLIP-style
 //! caformer): a 768-d character embedding of a square crop — the look of a
 //! drawn character points the same way in every frame and still, so cosine
 //! similarity is the character score.

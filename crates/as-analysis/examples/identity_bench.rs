@@ -1630,10 +1630,16 @@ fn norms(reference: &[FaceTrack], other: &[FaceTrack], floor: f32, full: f32) {
     );
 }
 
-/// Default parameters (SFace's with `SFACE=1`), with experiments from the
-/// environment.
+/// Default parameters (SFace's with `SFACE=1`, anime's with `ANIME=1`), with
+/// experiments from the environment.
 fn env_params() -> Params {
-    let mut p = if std::env::var_os("SFACE").is_some() { Params::sface() } else { Params::default() };
+    let mut p = if std::env::var_os("SFACE").is_some() {
+        Params::sface()
+    } else if std::env::var_os("ANIME").is_some() {
+        Params::anime()
+    } else {
+        Params::default()
+    };
     let var = |k: &str| std::env::var(k).ok().map(|v| v.parse::<f32>().unwrap());
     if let Some(v) = var("CALIBRATE_FROM") {
         p.calibrate_from = v as usize;

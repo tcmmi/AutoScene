@@ -25,6 +25,26 @@ struct Media {
 }
 
 fn setup(idle_exit: Option<Duration>) -> Option<(Engine, Media)> {
+    setup_with(move |ort| launch(ort, Choice::Auto, idle_exit))
+}
+
+/// [`setup`] for a test that kills the engine at a job's first chunk: see
+/// [`killable`].
+fn setup_killable() -> Option<(Engine, Media)> {
+    setup_with(killable)
+}
+
+/// An engine that waits at each job's first chunk (a debug build's
+/// `AUTOSCENE_TEST_PAUSE_AT_FIRST_CHUNK`) until the test's kill lands,
+/// however fast the GPU and however slow the kill: a job it isn't killed
+/// in waits the full 30 s there.
+fn killable(ort: PathBuf) -> Launch {
+    let mut launch = launch(ort, Choice::Auto, None);
+    launch.env.push(("AUTOSCENE_TEST_PAUSE_AT_FIRST_CHUNK".into(), "30000".into()));
+    launch
+}
+
+fn setup_with(launch: impl FnOnce(PathBuf) -> Launch) -> Option<(Engine, Media)> {
     let (ort, media) = media()?;
     let store = as_models::ModelStore::new(models_dir());
     if store.installed(as_models::ids::TRANSNET).unwrap().is_none() {
@@ -32,7 +52,7 @@ fn setup(idle_exit: Option<Duration>) -> Option<(Engine, Media)> {
         eprintln!("TransNetV2 missing; run `cargo xtask fetch-models` (skipping)");
         return None;
     }
-    Some((Engine::new(launch(ort, Choice::Auto, idle_exit)), media))
+    Some((Engine::new(launch(ort)), media))
 }
 
 /// The runtime and the fixture a job needs, for a test that runs without models.
@@ -90,32 +110,32 @@ fn collect(
 /// after a driver crash) differs in the last digits, which the app notes.
 #[test]
 fn a_killed_engine_resumes_with_identical_signals() {
-    let Some((engine, m)) = setup(None) else { return };
-    let (r, full) = collect(&engine, &m, 0, &CancelToken::new(), |_| {});
+    let Some((plain, m)) = setup(None) else { return };
+    let (r, full) = collect(&plain, &m, 0, &CancelToken::new(), |_| {});
     r.unwrap();
     assert_eq!(full.keys().copied().collect::<Vec<_>>(), (0..m.frames).step_by(100).collect::<Vec<_>>());
     let total: usize = full.values().map(|b| as_analysis::signals::decode(b).unwrap().len()).sum();
     assert_eq!(total as u32, m.frames, "one signal per frame");
 
     // The same job, but the engine process is killed hard after its first
-    // chunk (any later and a fast GPU may already have sent everything).
-    let first_pid = engine.pid().expect("engine running");
-    let mut killed = false;
+    // chunk (it waits there for the kill: see `killable`).
+    let engine = Engine::new(killable(ort_dir().expect("the runtime the first run used")));
+    let mut first_pid = None;
     let (r, resumed) = collect(&engine, &m, 0, &CancelToken::new(), |start| {
-        if start == 0 && !killed {
-            killed = true;
-            kill_hard(engine.pid().unwrap());
+        if start == 0 && first_pid.is_none() {
+            first_pid = engine.pid();
+            kill_hard(first_pid.unwrap());
         }
     });
     r.unwrap();
-    assert!(killed);
-    assert_ne!(engine.pid(), Some(first_pid), "a fresh engine finished the job");
+    assert!(first_pid.is_some(), "killed at the first chunk");
+    assert_ne!(engine.pid(), first_pid, "a fresh engine finished the job");
     assert_eq!(resumed, full, "signals after a hard kill match an uninterrupted run");
 }
 
 #[test]
 fn every_engine_on_a_job_says_where_its_models_run() {
-    let Some((engine, m)) = setup(None) else { return };
+    let Some((engine, m)) = setup_killable() else { return };
     let mut seen = Vec::new();
     let mut killed = false;
     engine
@@ -315,7 +335,7 @@ fn an_idle_engine_exits_and_the_next_job_starts_a_new_one() {
 
 #[test]
 fn face_chunks_tile_the_media_even_across_a_kill() {
-    let Some((engine, m)) = setup(None) else { return };
+    let Some((engine, m)) = setup_killable() else { return };
     let store = as_models::ModelStore::new(models_dir());
     if as_models::ids::FACES.iter().any(|id| store.installed(id).unwrap().is_none()) {
         assert!(!models_required(), "face models missing (run `cargo xtask fetch-models`)");

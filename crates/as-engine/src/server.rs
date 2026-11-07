@@ -124,10 +124,31 @@ impl Out {
     fn send(&self, reply: &Reply) {
         let mut line = serde_json::to_string(reply).expect("replies always serialise");
         line.push('\n');
-        let mut w = self.w.lock();
-        // A broken pipe means the app is gone; the reader thread ends the loop.
-        let _ = w.write_all(line.as_bytes()).and_then(|()| w.flush());
+        {
+            let mut w = self.w.lock();
+            // A broken pipe means the app is gone; the reader thread ends the loop.
+            let _ = w.write_all(line.as_bytes()).and_then(|()| w.flush());
+        }
+        if let Some(ms) = pause_at_first_chunk()
+            && matches!(reply, Reply::ShotChunk { start: 0, .. } | Reply::FaceChunk { start: 0, .. })
+        {
+            std::thread::sleep(Duration::from_millis(ms));
+        }
     }
+}
+
+/// How long a debug build's engine waits after a job's first chunk when a
+/// test asks (`AUTOSCENE_TEST_PAUSE_AT_FIRST_CHUNK`, in milliseconds): a
+/// test that kills the engine mid-job then kills it there however fast the
+/// machine is (a small fixture is otherwise done before the kill lands).
+fn pause_at_first_chunk() -> Option<u64> {
+    static PAUSE: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    *PAUSE.get_or_init(|| {
+        if !cfg!(debug_assertions) {
+            return None;
+        }
+        std::env::var("AUTOSCENE_TEST_PAUSE_AT_FIRST_CHUNK").ok()?.parse().ok()
+    })
 }
 
 /// Tell the app where job `id`'s models run (each model's id and device),

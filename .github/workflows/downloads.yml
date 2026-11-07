@@ -1,0 +1,63 @@
+name: Download count
+
+# The README's downloads badge. GitHub counts every file of a release, and the
+# app fetches latest.json from the newest release each time it checks for an
+# update, so the plain total is mostly update checks. This counts only the
+# installers (a Windows update downloads the installer too) and the Mac and
+# Linux update bundles, and publishes the number as a shields.io endpoint at
+# https://tcmmi.github.io/AutoScene/downloads.json (GitHub Pages, source:
+# GitHub Actions). Left out: latest.json, .sig files and SHA256SUMS.
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  count:
+    name: Count and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}downloads.json
+    steps:
+      - name: Count downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          n=$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft | not) | .assets[]
+              | select(.name | test("[.](exe|msi|dmg|AppImage|deb|rpm)$|[.](app|AppImage)[.]tar[.]gz$|[.](nsis|msi)[.]zip$"))
+              | .download_count' | awk '{ s += $1 } END { print s + 0 }')
+          # 1234 → 1.2k, 1234567 → 1.2M, as shields.io writes its own counts.
+          msg=$(awk -v n="$n" 'BEGIN {
+            if (n >= 1e6) printf "%.1fM", n / 1e6
+            else if (n >= 1e3) printf "%.1fk", n / 1e3
+            else printf "%d", n }' | sed 's/\.0\([kM]\)$/\1/')
+          echo "Downloads: $n ($msg)" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p site
+          printf '{"schemaVersion":1,"label":"downloads","message":"%s","color":"e0b45c","cacheSeconds":3600}\n' "$msg" > site/downloads.json
+          # The site's front page only points at the repository.
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>AutoScene</title>' \
+            '<meta http-equiv="refresh" content="0; url=https://github.com/tcmmi/AutoScene">' \
+            '<a href="https://github.com/tcmmi/AutoScene">AutoScene on GitHub</a>' > site/index.html
+          cat site/downloads.json
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5.0.1

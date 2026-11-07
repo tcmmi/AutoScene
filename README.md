@@ -10,7 +10,7 @@ Drop in a season or a film. AutoScene finds every shot and everyone in it,<br />
 then hands you each character's scenes as clips ready for your edit.
 
 [![Latest release](https://img.shields.io/github/v/release/tcmmi/AutoScene?include_prereleases&style=flat-square&color=e0b45c&label=release)](https://github.com/tcmmi/AutoScene/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/tcmmi/AutoScene/total?style=flat-square&color=e0b45c)](https://github.com/tcmmi/AutoScene/releases)
+[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Ftcmmi.github.io%2FAutoScene%2Fdownloads.json&style=flat-square)](https://github.com/tcmmi/AutoScene/releases)
 [![Windows, macOS, Linux](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-202025?style=flat-square)](#download)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-e0b45c?style=flat-square)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/autoscene)

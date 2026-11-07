@@ -196,7 +196,11 @@ pub fn judge_tuned(q: &Question, p: &Params, space: Option<&Space>, tuning: &Tun
         let mut shots: Vec<f32> = best.into_values().collect();
         shots.sort_by(|a, b| b.total_cmp(a));
         let n = tuning.shots.min(shots.len());
-        let bonus = tuning.near_bonus * (1.0 - gap as f32 / tuning.near.max(1) as f32).max(0.0);
+        // Only a face too unclear to tell: a sharp one that doesn't look like
+        // them isn't them, however close by they are.
+        let unclear = q.tracks[i].quality < p.core_quality;
+        let near = if unclear { tuning.near_bonus } else { 0.0 };
+        let bonus = near * (1.0 - gap as f32 / tuning.near.max(1) as f32).max(0.0);
         let score =
             if n == 0 { f32::NEG_INFINITY } else { shots[..n].iter().sum::<f32>() / tuning.shots as f32 + bonus };
         Sight {
@@ -569,6 +573,7 @@ mod tests {
             t.embedding = vec![0f32; DIM];
             t.embedding[0] = 0.44;
             t.embedding[5] = (1.0f32 - 0.44 * 0.44).sqrt();
+            t.quality = 0.2;
             with(&mut c, t, None);
             c
         };
@@ -577,6 +582,21 @@ mod tests {
         let q = Question { tracks: &tracks, shots: &shots, members: &members, now: &now, subjects: &[i], reads: &[] };
         let t = Tuning { lift: 0.0, lift_unsure: 0.0, near_bonus: 0.2, near: 480, ..Tuning::default() };
         assert_eq!(judge_tuned(&q, &params(), Some(&Space::Faces), &t)[0].verdict, Verdict::Maybe(0));
+    }
+
+    #[test]
+    fn the_scene_doesnt_help_a_sharp_face_that_looks_like_no_one() {
+        let mut c = cast();
+        let mut t = face(5, 860);
+        t.embedding = vec![0f32; DIM];
+        t.embedding[0] = 0.25;
+        t.embedding[5] = (1.0f32 - 0.25 * 0.25).sqrt();
+        let i = with(&mut c, t, None);
+        let (tracks, members, now) = &c;
+        let shots: Vec<u32> = tracks.iter().map(|t| t.start).collect();
+        let q = Question { tracks, shots: &shots, members, now, subjects: &[i], reads: &[] };
+        let t = Tuning { lift: 0.0, lift_unsure: 0.0, near_bonus: 0.2, near: 480, ..Tuning::default() };
+        assert_eq!(judge_tuned(&q, &params(), Some(&Space::Faces), &t)[0].verdict, Verdict::Nobody);
     }
 
     #[test]

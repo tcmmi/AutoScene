@@ -161,6 +161,8 @@ A summary of a character hides its rare looks (Wang Fu's disguise, 13 of his
 a character scores the mean of its 2 best shots. A character on screen around
 the face (fading over 480 frames, never one on screen at the same time) gets
 a bonus that can make a guess but never a clear answer: looks alone do that.
+Only a face too unclear to tell gets it; a sharp face that looks like no one
+is no one, whoever is close by.
 A reading far below the stored face's quality is dropped. Miraculous, 74 hard
 and 226 clear pins asked blind: clear 33 right 1 wrong and 176 right 2 wrong,
 guesses 22 right 2 wrong and 31 right 4 wrong. Everyone else: 32 clear. Actors

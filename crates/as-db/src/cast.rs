@@ -1218,6 +1218,11 @@ impl ProjectDb {
     /// A face the user said isn't `into` doesn't follow; a face only its
     /// body named follows as it is (never a pin). `into` takes `from`'s name
     /// if it has none.
+    /// Pin `anchors` to `c`, as naming a character does: only what is still its own.
+    pub fn pin_character_anchors(&self, c: CharacterId, anchors: &[i64]) -> DbResult<()> {
+        self.0.write(|tx| pin_anchors(tx, c, anchors))
+    }
+
     pub fn merge_characters(&self, from: CharacterId, into: CharacterId) -> DbResult<()> {
         if from == into {
             return Ok(());
@@ -1236,6 +1241,19 @@ impl ProjectDb {
             )?;
             tx.execute("UPDATE tracks SET character_id = ?2 WHERE character_id = ?1", [&f, &i])?;
             tx.execute("UPDATE OR IGNORE track_forbids SET character_id = ?2 WHERE character_id = ?1", [&f, &i])?;
+            // What Rescan said of them is said of `into` now; a question
+            // about the two is answered by this.
+            tx.execute("UPDATE rescan_faces SET target = ?2 WHERE target = ?1", [&f, &i])?;
+            tx.execute("UPDATE rescan_faces SET other = ?2 WHERE other = ?1", [&f, &i])?;
+            tx.execute("UPDATE rescan_faces SET other = NULL WHERE other = target", [])?;
+            tx.execute("DELETE FROM rescan_pairs WHERE a = ?1 OR b = ?1", [&f])?;
+            tx.execute(
+                "INSERT OR IGNORE INTO character_apart (a, b)
+                 SELECT MIN(x, ?2), MAX(x, ?2) FROM (
+                   SELECT b AS x FROM character_apart WHERE a = ?1 UNION SELECT a FROM character_apart WHERE b = ?1
+                 ) WHERE x <> ?2",
+                [&f, &i],
+            )?;
             // A picture still waiting for `from` was chosen for `from`: `into`
             // keeps its own.
             tx.execute("DELETE FROM track_edits WHERE kind = 'cover' AND character_id = ?1", [&f])?;

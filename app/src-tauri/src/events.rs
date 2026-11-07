@@ -92,6 +92,20 @@ pub struct CastChanged {
     pub project_id: ProjectId,
 }
 
+/// Rescan got further: `looked` are the faces read just now, `done` of
+/// `total`. `results`: what it keeps for the person changed. Nothing of the
+/// cast changes with it.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "rescan:changed")]
+#[serde(rename_all = "camelCase")]
+pub struct RescanChanged {
+    pub project_id: ProjectId,
+    pub looked: Vec<u32>,
+    pub done: u32,
+    pub total: u32,
+    pub results: bool,
+}
+
 /// A project's AniList look-up began or ended: its names are asked for again
 /// (the cast itself is unchanged).
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]

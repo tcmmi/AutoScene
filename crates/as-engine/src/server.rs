@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use as_analysis::rescan::{self, FaceRead, HeadFinder, LiveFinder, RescanFace, RescanParams};
 use as_analysis::{
     AnalysisError, BodyModels, DETECT_BATCH, FaceChunk, FaceParams, Faces, FastModels, FastParams, Look, PERSON_INPUT,
     PeopleParams, Search, anime, bodies, detect_looks, face_tracks, fast, fast_face_tracks, frame_sizes, shot_signals,
@@ -29,7 +30,7 @@ use as_models::{ModelStore, ids};
 use as_vision::{ArcFace, Ccip, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo, YuNet};
 use parking_lot::Mutex;
 
-use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, ShotsJob, Sprite};
+use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, RescanJob, ShotsJob, Sprite};
 
 /// Faces per embedding call.
 const EMBED_BATCH: usize = 32;
@@ -78,6 +79,7 @@ fn may_use_accel(id: &str, live: bool) -> bool {
 pub fn job_may_use_accel(req: &Request) -> bool {
     match req {
         Request::Faces(j) => j.anime || (LIVE_ON_ACCEL && !j.fast),
+        Request::Rescan(j) => j.anime || (LIVE_ON_ACCEL && !j.fast),
         Request::Embed(_) => true,
         Request::Shots(_) | Request::Cancel { .. } | Request::Shutdown => false,
     }
@@ -238,6 +240,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
             Request::Shots(j) => run_shots(&tools, &rt, &mut models, *j, &cancel, &out),
             Request::Faces(j) => run_faces(&tools, &rt, &mut models, *j, &cancel, &out),
             Request::Embed(j) => run_embed(&tools, &rt, &mut models, *j, &cancel, &out),
+            Request::Rescan(j) => run_rescan(&tools, &rt, &mut models, *j, &cancel, &out),
             Request::Cancel { .. } | Request::Shutdown => Ok(()),
         });
         let result = run.unwrap_or_else(|panic| {
@@ -322,7 +325,7 @@ fn read_requests(
             continue;
         }
         match serde_json::from_str::<Request>(&line) {
-            Ok(job @ (Request::Shots(_) | Request::Faces(_) | Request::Embed(_))) => {
+            Ok(job @ (Request::Shots(_) | Request::Faces(_) | Request::Embed(_) | Request::Rescan(_))) => {
                 let id = job.id().expect("a job");
                 let cancel = CancelToken::new();
                 if early.remove(&id) {
@@ -720,6 +723,82 @@ fn run_faces(
     let secs = started.elapsed().as_secs_f64();
     tracing::info!(id, frames, tracks = found, people, secs, fps = frames as f64 / secs.max(1e-3), "{what} found");
     Ok(())
+}
+
+/// Read faces again at the source's own resolution, with the models that
+/// found them. What the engine finds goes back as it is found.
+fn run_rescan(
+    tools: &Tools,
+    rt: &Runtime,
+    models: &mut Models,
+    job: RescanJob,
+    cancel: &CancelToken,
+    out: &Out,
+) -> Result<(), AnalysisError> {
+    let index = FrameIndex::from_bytes(&job.index.0).map_err(|e| AnalysisError::Internal(e.to_string()))?;
+    let id = job.id;
+    let faces: Vec<RescanFace> = job
+        .faces
+        .iter()
+        .map(|f| {
+            Ok(RescanFace {
+                id: f.id,
+                shot: FrameRange::new(f.shot.0, f.shot.1),
+                quality: f.quality,
+                dets: tracks::dets_from_bytes(&f.dets.0)
+                    .ok_or_else(|| AnalysisError::Internal("unreadable detections".into()))?,
+            })
+        })
+        .collect::<Result<_, AnalysisError>>()?;
+    let src = Source { path: Path::new(&job.path), info: &job.info, index: &index };
+    let progress = |fraction| out.send(&Reply::Progress { id, fraction });
+    let read = |r: FaceRead| {
+        let embedding = r.embedding.as_deref().map(tracks::embedding_to_bytes).unwrap_or_default();
+        out.send(&Reply::FaceRead {
+            id,
+            track: r.id,
+            embedding: Blob(embedding),
+            quality: r.quality,
+            tried: r.tried,
+            found: r.found,
+        });
+        Ok(())
+    };
+    let looks = [Look { size: (rescan::SIDE, rescan::SIDE), shrink: 1, fallback: false }];
+    if job.anime {
+        models.load_ccip(rt)?;
+        let embedder = models.anime_ccip.as_mut().expect("loaded");
+        send_devices(out, id, rt, &[(as_models::ids::ANIME_CCIP, embedder.device())]);
+        let params = anime::Params::anime();
+        let p = RescanParams::anime(&params);
+        rescan::read_faces(tools, src, &faces, &mut HeadFinder { embedder, params }, &p, cancel, progress, read)
+    } else if job.fast {
+        models.load_fast(rt, (rescan::SIDE, rescan::SIDE))?;
+        let (detector, embedder) = (models.yunet.as_mut().expect("loaded"), models.sface.as_mut().expect("loaded"));
+        send_devices(
+            out,
+            id,
+            rt,
+            &[(as_models::ids::YUNET, detector.device()), (as_models::ids::SFACE, embedder.device())],
+        );
+        let p = RescanParams { batch: FAST_EMBED_BATCH, ..RescanParams::default() };
+        rescan::read_faces(tools, src, &faces, &mut FastModels { detector, embedder }, &p, cancel, progress, read)
+    } else {
+        models.load_faces(rt, &looks)?;
+        if LIVE_ON_ACCEL && models.unsplit_live() {
+            models.load_faces(rt, &looks)?;
+        }
+        let Models { scrfd, arcface, .. } = models;
+        let (detector, embedder) = (&mut scrfd[0], arcface.as_mut().expect("loaded"));
+        send_devices(
+            out,
+            id,
+            rt,
+            &[(as_models::ids::SCRFD, detector.device()), (as_models::ids::ARCFACE, embedder.device())],
+        );
+        let mut finder = LiveFinder { detector, embedder, params: FaceParams::default() };
+        rescan::read_faces(tools, src, &faces, &mut finder, &RescanParams::default(), cancel, progress, read)
+    }
 }
 
 /// Where Fast Scan decodes: where the analysis runs. NVDEC on the NVIDIA card

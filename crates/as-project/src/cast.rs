@@ -32,7 +32,7 @@ pub const FACE_CHUNK: u32 = 2400;
 pub const PORTRAIT: (u32, u32) = (450, 600);
 /// Tracks pinned when a character is named, so it keeps its identity (see
 /// [`anchors`]).
-const NAME_ANCHORS: usize = 5;
+pub(crate) const NAME_ANCHORS: usize = 5;
 /// Clusterings in a row that may find the cast changed by the user before
 /// one is stored.
 const CLUSTER_ATTEMPTS: usize = 8;
@@ -235,7 +235,7 @@ pub fn face_models(embedder: &str) -> &'static [&'static str] {
 }
 
 /// The embedder of a [`faces_key`].
-fn embedder_of(key: &str) -> &str {
+pub(crate) fn embedder_of(key: &str) -> &str {
     let key = key.strip_suffix(FAST).unwrap_or(key);
     key.strip_suffix(SCALES).or_else(|| key.strip_suffix(ANIME)).unwrap_or(key)
 }
@@ -484,7 +484,7 @@ pub(crate) fn track_id(id: i64) -> u32 {
 /// never one: pinned, it would stay theirs and draw that person's other
 /// faces to them. Blurry faces placed with the character neither set the
 /// bar nor are chosen.
-fn anchors(faces: &[OwnFace], n: usize, p: &Params) -> Vec<i64> {
+pub(crate) fn anchors(faces: &[OwnFace], n: usize, p: &Params) -> Vec<i64> {
     let readable: Vec<(&OwnFace, Vec<f32>)> = faces
         .iter()
         .filter_map(|f| {
@@ -1466,7 +1466,7 @@ impl Project {
         Ok(Cast { characters, unassigned, unsure, media_done, media_total, unplaced })
     }
 
-    fn track_item(&self, r: TrackRow) -> FaceTrackItem {
+    pub(crate) fn track_item(&self, r: TrackRow) -> FaceTrackItem {
         FaceTrackItem {
             id: track_id(r.id),
             media_id: r.media_id,

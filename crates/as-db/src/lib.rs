@@ -13,6 +13,7 @@ mod cast;
 mod library;
 mod pack;
 mod project;
+mod rescan;
 
 pub use bodies::{BodyEdit, BodyEditKind, BodyRow, BodySource, BodyUpdate, IdentityBody, NewBody, PackBodyRow};
 pub use cast::{
@@ -23,6 +24,7 @@ pub use pack::PackRow;
 pub use project::{
     IngestRecord, NewExportItem, NewMedia, ProjectDb, ProjectStats, Relinked, VERDICTS_PREFIX, episode_label,
 };
+pub use rescan::RescanFaceRow;
 
 use std::path::Path;
 

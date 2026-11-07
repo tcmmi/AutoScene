@@ -1,7 +1,9 @@
 //! The cast: characters found across a project's media, their face tracks,
 //! and the user's decisions about them.
 
-use as_api::{Cast, CastEdit, FaceTrackItem, Presence, ShotGroup, TrackFilter};
+use as_api::{
+    Cast, CastEdit, FaceTrackItem, Presence, RescanAnswer, RescanRequest, RescanResults, ShotGroup, TrackFilter,
+};
 use as_core::{CancelToken, CharacterId, MediaId, ProjectId};
 use tauri::{AppHandle, State};
 
@@ -38,6 +40,64 @@ pub async fn cast_tracks(
     .await?;
     allow_asset_tree(&app, &faces);
     Ok(tracks)
+}
+
+/// Read faces again and say who they are. Changes nothing: what it finds
+/// waits in [`rescan_results`] for the person's answer.
+#[tauri::command]
+#[specta::specta]
+pub async fn cast_rescan(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    request: RescanRequest,
+) -> AppResult<()> {
+    let lib = state.library.clone();
+    blocking(move || {
+        let p = lib.project(project_id)?;
+        work::queue_rescan(&app, &p, request);
+        Ok(())
+    })
+    .await
+}
+
+/// What Rescan is waiting to hear about.
+#[tauri::command]
+#[specta::specta]
+pub async fn rescan_results(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+) -> AppResult<RescanResults> {
+    let lib = state.library.clone();
+    let (results, faces) = blocking(move || {
+        let p = lib.project(project_id)?;
+        Ok((p.rescan_results()?, p.faces_dir()))
+    })
+    .await?;
+    allow_asset_tree(&app, &faces);
+    Ok(results)
+}
+
+/// The person's answer to a suggestion: a decision like any other.
+#[tauri::command]
+#[specta::specta]
+pub async fn rescan_answer(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: ProjectId,
+    answer: RescanAnswer,
+) -> AppResult<()> {
+    let lib = state.library.clone();
+    blocking(move || {
+        let p = lib.project(project_id)?;
+        for edit in p.rescan_answer(&answer)? {
+            work::cast_edited(&app, &p, &edit);
+        }
+        work::rescan_changed(&app, &p);
+        Ok(())
+    })
+    .await
 }
 
 /// Apply a decision about the cast. Returns the character it created, if any.

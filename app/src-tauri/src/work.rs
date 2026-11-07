@@ -10,17 +10,19 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use as_api::{
-    AnalysisStage, CastEdit, ExportSummary, JobInfo, JobKind, JobState, MediaItem, MediaStatus, ProxyState, StageState,
+    AnalysisStage, CastEdit, ExportSummary, JobInfo, JobKind, JobState, MediaItem, MediaStatus, ProxyState,
+    RescanRequest, StageState,
 };
 use as_core::{CancelToken, ExportId, MediaId, Msg, ProjectId, ToMsg, msg};
-use as_engine::{Devices, EngineError, FacesEvent, FacesInput, ShotsEvent};
+use as_engine::protocol::{Blob, RescanFaceIn};
+use as_engine::{Devices, EngineError, FacesEvent, FacesInput, RescanEvent, RescanInput, ShotsEvent};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_models::ModelError;
-use as_project::{Pass, Portrait, Project, ProjectError, StoppedStage};
+use as_project::{DoneRead, Pass, Portrait, Project, ProjectError, RescanCast, StoppedStage};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
-use crate::events::{AnalysisChanged, CastChanged, ExportChanged, LibraryChanged, PortraitsChanged};
+use crate::events::{AnalysisChanged, CastChanged, ExportChanged, LibraryChanged, PortraitsChanged, RescanChanged};
 use crate::state::{AnalysisRuns, AppState};
 
 pub(crate) fn job_error(e: ProjectError) -> JobError {
@@ -1001,6 +1003,130 @@ pub fn queue_regroup(app: &AppHandle, project: &Arc<Project>) {
         }
         Ok(())
     });
+}
+
+/// How often the UI hears which faces Rescan read.
+const RESCAN_SHOWN_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// What Rescan keeps for the person changed.
+pub fn rescan_changed(app: &AppHandle, project: &Arc<Project>) {
+    let _ = RescanChanged { project_id: project.id, looked: Vec::new(), done: 0, total: 0, results: true }.emit(app);
+}
+
+/// Read faces again and say who they are, on the analysis worker (it needs
+/// the engine). Nothing of the cast changes: what it finds waits for the
+/// person's answer. Stopped, it says what it can of the faces it read.
+pub fn queue_rescan(app: &AppHandle, project: &Arc<Project>, request: RescanRequest) {
+    let state = app.state::<AppState>();
+    let spec = JobSpec {
+        kind: JobKind::Rescan,
+        class: Class::Analysis,
+        title: msg!("job.rescanning", "Rescanning faces"),
+        subtitle: project.title().ok(),
+        project_id: Some(project.id),
+        media_id: None,
+        export_id: None,
+    };
+    let (app, project) = (app.clone(), project.clone());
+    state.jobs.submit(spec, move |ctx| {
+        let state = app.state::<AppState>();
+        let _awake = crate::keep_awake::hold();
+        run_rescan(&app, &state, &project, &request, ctx).map_err(JobError::from)
+    });
+}
+
+fn run_rescan(
+    app: &AppHandle,
+    state: &AppState,
+    project: &Arc<Project>,
+    request: &RescanRequest,
+    ctx: &JobCtx,
+) -> Result<(), StageError> {
+    let reading = msg!("job.stage.rescanning", "Reading faces again");
+    ctx.stage(&reading);
+    let cast = project.rescan_cast().map_err(stage_error)?;
+    let subjects = cast.subjects(request);
+    let unclear = cast.unclear(&subjects);
+    if !unclear.is_empty() {
+        install_models(state, as_project::face_models(project.face_embedder()), ctx)?;
+    }
+    let (reads, unread, stopped) = read_again(app, state, project, &cast, &unclear, &reading, ctx)?;
+    // Stopped: the faces it got to, nothing about the others.
+    let asked: Vec<usize> = if stopped { reads.iter().map(|r| r.track).collect() } else { subjects };
+    let tally = project.rescan_keep(&cast, &asked, &reads, unread).map_err(stage_error)?;
+    log::info!("rescan: {tally:?}");
+    rescan_changed(app, project);
+    if stopped {
+        return Err(StageError::Cancelled);
+    }
+    Ok(())
+}
+
+/// Read `tracks` from their files. What was read, how many faces can't be
+/// read as their file is missing, and whether it was stopped part way.
+fn read_again(
+    app: &AppHandle,
+    state: &AppState,
+    project: &Arc<Project>,
+    cast: &RescanCast,
+    tracks: &[usize],
+    reading: &Msg,
+    ctx: &JobCtx,
+) -> Result<(Vec<DoneRead>, u32, bool), StageError> {
+    let total = tracks.len() as u32;
+    let (mut reads, mut unread) = (Vec::with_capacity(tracks.len()), 0u32);
+    let (mut looked, mut told) = (Vec::new(), std::time::Instant::now());
+    for media in cast.media_of(tracks) {
+        let src = match project.rescan_source(media) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("rescan: {}", e.detail());
+                unread += cast.faces_of(media, tracks, &[]).len() as u32;
+                continue;
+            }
+        };
+        let faces = cast
+            .faces_of(media, tracks, &src.shots)
+            .into_iter()
+            .map(|f| RescanFaceIn {
+                id: f.id,
+                shot: (f.shot.start, f.shot.end),
+                quality: f.quality,
+                dets: Blob(cast.rows[cast.row_of[f.id as usize]].det_bytes.clone()),
+            })
+            .collect();
+        let job = RescanInput {
+            path: src.path.clone(),
+            info: src.info.clone(),
+            index: src.index.to_bytes(),
+            faces,
+            fast: src.fast,
+            anime: src.anime,
+        };
+        let read = state.engine.rescan(job, &ctx.cancel, |e| {
+            if let RescanEvent::Read { track, embedding, quality, tried, found } = e {
+                let track = track as usize;
+                reads.push(DoneRead { track, embedding, quality, tried, found });
+                looked.push(cast.rows[cast.row_of[track]].id as u32);
+                let done = reads.len() as u32 + unread;
+                ctx.progress(reading, f64::from(done) / f64::from(total.max(1)));
+                if told.elapsed() >= RESCAN_SHOWN_EVERY {
+                    let looked = std::mem::take(&mut looked);
+                    let _ = RescanChanged { project_id: project.id, looked, done, total, results: false }.emit(app);
+                    told = std::time::Instant::now();
+                }
+            }
+            Ok(())
+        });
+        match read {
+            Ok(()) => {}
+            Err(EngineError::Cancelled) => return Ok((reads, unread, true)),
+            Err(e) => return Err(engine_error(e)),
+        }
+    }
+    let done = reads.len() as u32 + unread;
+    let _ = RescanChanged { project_id: project.id, looked, done, total, results: false }.emit(app);
+    Ok((reads, unread, false))
 }
 
 /// How often the UI hears of new portraits while they are being made.

@@ -41,6 +41,9 @@ pub enum Request {
     /// embedder (`as_vision::ccip`) for matching against grouped
     /// characters; `Reply::Embedding` then `Done`.
     Embed(Box<EmbedJob>),
+    /// Read faces again at the source's own resolution; `Reply::FaceRead`
+    /// for each, in no order, then `Done`.
+    Rescan(Box<RescanJob>),
     /// Stop job `id` as soon as possible (it then fails with `cancelled`).
     Cancel { id: u64 },
     /// Finish the current job's cancellation and exit.
@@ -102,6 +105,32 @@ pub struct EmbedJob {
     pub path: PathBuf,
 }
 
+/// A face to read again.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RescanFaceIn {
+    pub id: u32,
+    pub shot: (u32, u32),
+    pub quality: f32,
+    /// `as_analysis::tracks::dets_to_bytes`.
+    pub dets: Blob,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RescanJob {
+    pub id: u64,
+    pub path: PathBuf,
+    pub info: MediaInfo,
+    /// `FrameIndex::to_bytes`.
+    pub index: Blob,
+    pub faces: Vec<RescanFaceIn>,
+    /// The faces were found by Fast Scan (YuNet, SFace) ...
+    #[serde(default)]
+    pub fast: bool,
+    /// ... or are anime heads (CCIP): read by what found them.
+    #[serde(default)]
+    pub anime: bool,
+}
+
 /// A shot's sprite (`as_analysis::ShotSprite`).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Sprite {
@@ -117,6 +146,7 @@ impl Request {
             Self::Shots(j) => Some(j.id),
             Self::Faces(j) => Some(j.id),
             Self::Embed(j) => Some(j.id),
+            Self::Rescan(j) => Some(j.id),
             Self::Cancel { .. } | Self::Shutdown => None,
         }
     }
@@ -189,6 +219,16 @@ pub enum Reply {
     Embedding {
         id: u64,
         embedding: Vec<f32>,
+    },
+    /// A face read again (`Rescan`): `embedding` is little-endian f16
+    /// (`as_analysis::tracks::embedding_to_bytes`), empty when no look read it.
+    FaceRead {
+        id: u64,
+        track: u32,
+        embedding: Blob,
+        quality: f32,
+        tried: u32,
+        found: u32,
     },
     Done {
         id: u64,

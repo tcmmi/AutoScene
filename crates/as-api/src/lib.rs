@@ -877,6 +877,122 @@ pub enum TrackFilter {
     Unassigned,
 }
 
+/// What Rescan says of a face. A suggestion: only the person's answer moves it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RescanVerdict {
+    /// It is on one character and clearly `target`.
+    Elsewhere,
+    /// It is on no one and clearly `target`.
+    Newly,
+    /// It is on no one and may be `target`.
+    Maybe,
+    /// It could be `target` or `other`.
+    Between,
+    /// It looks too little like the character it is on.
+    Doubt,
+    /// No look found a face in it.
+    NoFace,
+}
+
+/// A face Rescan has something to say about.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanFace {
+    pub face: FaceTrackItem,
+    pub verdict: RescanVerdict,
+    pub target: Option<CharacterId>,
+    pub other: Option<CharacterId>,
+    /// How much it resembles `target`, and `other` or the next best.
+    pub score: f32,
+    pub score2: f32,
+    /// It was read again from the source; its stored face was clear otherwise.
+    pub read: bool,
+}
+
+/// How sure the second check is that two characters are one person.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RescanLikeness {
+    Likely,
+    Maybe,
+}
+
+/// "Are these two one person?", with what speaks for it.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanPair {
+    pub a: CharacterId,
+    pub b: CharacterId,
+    pub likeness: RescanLikeness,
+    /// How alike their clearest faces are, read from the source.
+    pub main: f32,
+    /// The same asked of a second model; `None`: there is none for this footage.
+    pub second: Option<f32>,
+    /// Frames they were both found in.
+    pub together: u32,
+    /// Each one's clearest faces.
+    pub a_faces: Vec<FaceTrackItem>,
+    pub b_faces: Vec<FaceTrackItem>,
+}
+
+/// How the last rescan went.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanTally {
+    /// Faces asked about.
+    pub looked: u32,
+    /// Of those, read again from the source.
+    pub read: u32,
+    /// Faces that stay as they are.
+    pub right: u32,
+    /// Faces that look like no one.
+    pub nobody: u32,
+    /// Faces whose file can't be found.
+    pub unread: u32,
+}
+
+/// What Rescan is waiting to hear about.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanResults {
+    pub faces: Vec<RescanFace>,
+    pub pairs: Vec<RescanPair>,
+    pub tally: RescanTally,
+}
+
+/// What to rescan.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RescanRequest {
+    /// These faces ...
+    pub tracks: Vec<u32>,
+    /// ... and every face of these characters that isn't confirmed ...
+    pub characters: Vec<CharacterId>,
+    /// ... and Everyone else.
+    pub everyone_else: bool,
+}
+
+/// The person's answer to a suggestion.
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(tag = "op", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum RescanAnswer {
+    /// These faces are this character.
+    Accept { tracks: Vec<u32>, character_id: CharacterId },
+    /// These faces aren't this character.
+    NotThem { tracks: Vec<u32>, character_id: CharacterId },
+    /// Leave these faces as they are.
+    Dismiss { tracks: Vec<u32> },
+    /// These aren't faces.
+    NotAFace { tracks: Vec<u32> },
+    /// These two are one person.
+    SamePerson { from: CharacterId, into: CharacterId },
+    /// These two are two people.
+    TwoPeople { a: CharacterId, b: CharacterId },
+    /// Leave everything as it is.
+    LeaveAll,
+}
+
 /// A user decision about face tracks.
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(tag = "op", rename_all = "snake_case", rename_all_fields = "camelCase")]
@@ -1458,6 +1574,9 @@ pub enum JobKind {
     Regroup,
     /// A plugin's action (an export action or a palette command).
     Plugin,
+    /// Faces read again at the source's own quality; what it finds waits for
+    /// the person's answer.
+    Rescan,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]

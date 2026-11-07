@@ -14,14 +14,14 @@
 use as_core::{CancelToken, FrameIdx, FrameRange};
 use as_media::frames::{MAX_SIDE, decode_picks, sample_size};
 use as_media::{MediaError, Source};
-use as_vision::arcface;
 use as_vision::image::resize_region;
 use as_vision::scrfd::iou;
 use as_vision::{ArcFace, Scrfd};
+use as_vision::{Ccip, arcface, ccip};
 
 use crate::fast::{FastParams, Finder, Spot};
 use crate::tracker::TrackerParams;
-use crate::{AnalysisError, FaceDet, FaceParams};
+use crate::{AnalysisError, AnimeParams, FaceDet, FaceParams};
 
 /// The side of the square a crop is searched in: the size the detector is
 /// loaded for.
@@ -376,6 +376,45 @@ impl Finder for LiveFinder<'_> {
 
     fn tracker(&self, p: &FastParams, fps: f64) -> TrackerParams {
         p.tracker(fps)
+    }
+}
+
+/// The anime embedder as a [`Finder`]: heads have no landmarks to find, the
+/// crop is the head (read it with [`RescanParams::anime`]).
+pub struct HeadFinder<'a> {
+    pub embedder: &'a mut Ccip,
+    pub params: AnimeParams,
+}
+
+impl Finder for HeadFinder<'_> {
+    fn frame_size(&self) -> (usize, usize) {
+        (SIDE, SIDE)
+    }
+
+    fn find(&mut self, rgb: &[u8], _: &FastParams) -> Result<Vec<Spot>, AnalysisError> {
+        let side = SIDE as f32;
+        let crop = ccip::crop(rgb, SIDE, SIDE, 0.0, 0.0, side);
+        Ok(vec![Spot { bbox: [0.0, 0.0, side, side], score: 1.0, crop }])
+    }
+
+    fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<(Vec<f32>, f32)>, AnalysisError> {
+        Ok(self.embedder.embed(crops)?.into_iter().map(|e| (e.v, e.norm)).collect())
+    }
+
+    fn quality(&self, _: &FastParams, norm: f32, height: f32, _: f32) -> f32 {
+        self.params.quality(norm, height / self.params.crop_scale)
+    }
+
+    fn tracker(&self, p: &FastParams, fps: f64) -> TrackerParams {
+        p.tracker(fps)
+    }
+}
+
+impl RescanParams {
+    /// Drawn heads: the crop is what the anime pass embeds, and only the
+    /// track's own frames count.
+    pub fn anime(p: &AnimeParams) -> Self {
+        Self { own_frames: true, crop_scale: p.crop_scale, min_iou: 0.0, ..Self::default() }
     }
 }
 

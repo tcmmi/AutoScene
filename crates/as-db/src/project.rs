@@ -316,6 +316,33 @@ const STEPS: &[M<'static>] = &[
         "ALTER TABLE track_edits ADD COLUMN dormant INTEGER NOT NULL DEFAULT 0;
          ALTER TABLE track_edits ADD COLUMN must_match INTEGER NOT NULL DEFAULT 0;",
     ),
+    // 16: what Rescan found, kept apart from the cast until the person
+    // answers, and who the person said are two people.
+    M::up(
+        "CREATE TABLE rescan_faces (
+           track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+           verdict TEXT NOT NULL,
+           target TEXT REFERENCES characters(id) ON DELETE CASCADE,
+           other TEXT REFERENCES characters(id) ON DELETE SET NULL,
+           score REAL NOT NULL, score2 REAL NOT NULL, looks INTEGER NOT NULL,
+           read_quality REAL, emb BLOB, dismissed INTEGER NOT NULL DEFAULT 0
+         ) STRICT;
+         CREATE INDEX rescan_faces_target ON rescan_faces(target);
+         CREATE INDEX rescan_faces_other ON rescan_faces(other);
+         CREATE TABLE rescan_pairs (
+           a TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+           b TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+           main_sim REAL NOT NULL, second_sim REAL, together INTEGER NOT NULL, verdict TEXT NOT NULL,
+           PRIMARY KEY (a, b), CHECK (a < b)
+         ) STRICT;
+         CREATE INDEX rescan_pairs_b ON rescan_pairs(b);
+         CREATE TABLE character_apart (
+           a TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+           b TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+           PRIMARY KEY (a, b), CHECK (a < b)
+         ) STRICT;
+         CREATE INDEX character_apart_b ON character_apart(b);",
+    ),
 ];
 const MIGRATIONS: Migrations<'static> = Migrations::from_slice(STEPS);
 

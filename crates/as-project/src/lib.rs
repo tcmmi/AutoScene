@@ -8,7 +8,7 @@
 mod analysis;
 pub mod anilist;
 mod bodies;
-mod cast;
+pub(crate) mod cast;
 mod error;
 pub mod fandom;
 mod library;
@@ -29,5 +29,5 @@ pub use error::{ProjectError, ProjectResult};
 pub use library::Library;
 pub use pack::{CheckShot, CutEpisode, FilterCheck, PackCut, PackSizing};
 pub use project::{Project, Recovery, RelinkedFolder};
-pub use rescan::{RescanCast, RescanSource};
+pub use rescan::{DoneRead, RescanCast, RescanSource};
 pub use verdicts::{PluginFilter, PluginFilters, basis};

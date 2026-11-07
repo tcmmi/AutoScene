@@ -40,7 +40,7 @@ use as_media::frames::Decoder;
 use parking_lot::Mutex;
 use thiserror::Error;
 
-use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, ShotsJob, said};
+use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, RescanFaceIn, RescanJob, ShotsJob, said};
 
 #[derive(Debug, Error)]
 pub enum EngineError {
@@ -217,6 +217,33 @@ pub enum FacesEvent {
         tracks: Vec<u8>,
         sprites: Vec<as_analysis::ShotSprite>,
         bodies: Vec<u8>,
+    },
+}
+
+/// What a rescan reads.
+#[derive(Clone, Debug)]
+pub struct RescanInput {
+    pub path: PathBuf,
+    pub info: MediaInfo,
+    /// `FrameIndex::to_bytes`.
+    pub index: Vec<u8>,
+    pub faces: Vec<RescanFaceIn>,
+    pub fast: bool,
+    pub anime: bool,
+}
+
+/// What a rescan reports.
+#[derive(Clone, Debug)]
+pub enum RescanEvent {
+    Progress(f64),
+    /// `embedding`: `as_analysis::tracks::embedding_to_bytes`, empty when no
+    /// look read the face.
+    Read {
+        track: u32,
+        embedding: Vec<u8>,
+        quality: f32,
+        tried: u32,
+        found: u32,
     },
 }
 
@@ -628,6 +655,41 @@ impl Engine {
                     on(FacesEvent::Chunk { start, end, tracks: tracks.0, sprites, bodies: bodies.0 })?;
                     resume.set(end);
                     Ok(())
+                }
+                _ => Ok(()),
+            },
+        )
+    }
+
+    /// Read faces again at the source's own resolution. Blocks until the job
+    /// ends; a crashed engine goes on with the faces not read yet.
+    pub fn rescan(
+        &self,
+        job: RescanInput,
+        cancel: &CancelToken,
+        mut on: impl FnMut(RescanEvent) -> Result<(), String>,
+    ) -> Result<(), EngineError> {
+        let done = std::cell::RefCell::new(std::collections::HashSet::new());
+        let index = Blob(job.index);
+        self.with_retries(
+            cancel,
+            |id| {
+                let done = done.borrow();
+                Request::Rescan(Box::new(RescanJob {
+                    id,
+                    path: job.path.clone(),
+                    info: job.info.clone(),
+                    index: index.clone(),
+                    faces: job.faces.iter().filter(|f| !done.contains(&f.id)).cloned().collect(),
+                    fast: job.fast,
+                    anime: job.anime,
+                }))
+            },
+            |reply| match reply {
+                Reply::Progress { fraction, .. } => on(RescanEvent::Progress(fraction)),
+                Reply::FaceRead { track, embedding, quality, tried, found, .. } => {
+                    done.borrow_mut().insert(track);
+                    on(RescanEvent::Read { track, embedding: embedding.0, quality, tried, found })
                 }
                 _ => Ok(()),
             },

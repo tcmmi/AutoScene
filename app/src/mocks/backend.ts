@@ -16,6 +16,9 @@ import { isFinished } from "@/state/activity"
 import { catalogAtStart, catalogCancel, catalogGet, catalogList, catalogRefresh } from "./catalog"
 import {
   castEdit,
+  rescanAnswer,
+  rescanResults,
+  rescanRun,
   castGet,
   castPortrait,
   castTracks,
@@ -73,6 +76,7 @@ import {
   stopCompile,
   uninstallPlugin,
 } from "./plugins"
+import type { RescanAnswer, RescanRequest } from "@/bindings"
 import type { PagePlaces } from "./plugins"
 import type {
   ActionKind,
@@ -1458,6 +1462,29 @@ const handlers: Record<string, Handler> = {
     const created = castEdit(String(find(projectId).id), edit as CastEdit)
     void emit("cast:changed", { projectId })
     return created
+  },
+  cast_rescan: ({ projectId, request }) => {
+    const p = find(projectId)
+    const asked = request as RescanRequest
+    const total = 18
+    let tick = 0
+    const job = startJob("rescan", said("job.rescanning", "Rescanning faces"), p, 3000, { stage: said("job.stage.rescanning", "Reading faces again") }, () => {
+      clearInterval(timer)
+      rescanRun(String(p.id), asked)
+      void emit("rescan:changed", { projectId, looked: [], done: 0, total: 0, results: true })
+    })
+    const timer = setInterval(() => {
+      tick = Math.min(tick + 3, total)
+      void emit("rescan:changed", { projectId, looked: [], done: tick, total, results: false })
+      if (!job) clearInterval(timer)
+    }, 400)
+    return null
+  },
+  rescan_results: ({ projectId }) => rescanResults(String(find(projectId).id)),
+  rescan_answer: ({ projectId, answer }) => {
+    rescanAnswer(String(find(projectId).id), answer as RescanAnswer)
+    void emit("cast:changed", { projectId })
+    return null
   },
   cast_portrait: ({ projectId, trackId }) => castPortrait(String(find(projectId).id), Number(trackId)),
   media_presence: ({ projectId, mediaId }) => mediaPresence(String(find(projectId).id), String(mediaId)),

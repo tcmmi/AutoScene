@@ -147,11 +147,12 @@ pub fn judge(q: &Question, p: &Params, space: Option<&Space>) -> Vec<Judged> {
         })
         .collect();
 
-    // Who is on screen when: every face of a character counts.
+    // Who is on screen when: every face on a character counts, whether it
+    // defines them or was placed there.
     type Screen = HashMap<u32, Vec<(usize, Vec<(u32, u32)>)>>;
     let mut screen: Vec<Screen> = vec![HashMap::new(); chars.len()];
-    for (ci, (_, g)) in chars.iter().enumerate() {
-        for &i in g {
+    for (i, now) in q.now.iter().enumerate() {
+        if let Some(&ci) = now.and_then(|k| index.get(&k).copied()).as_ref().filter(|_| usable(i)) {
             screen[ci].entry(tracks[i].media).or_default().push((i, tracks[i].presence()));
         }
     }
@@ -284,20 +285,19 @@ pub fn frames_together(tracks: &[TrackIn], a: &[usize], b: &[usize]) -> u32 {
     both.len() as u32
 }
 
-/// `faces` (embeddings as tracks keep them) as the cast compares them, with
-/// the bars of that space. `tracks` give the bars when `space` is unknown.
-pub fn in_cast_space(
-    faces: &[Vec<f32>],
-    tracks: &[TrackIn],
-    p: &Params,
-    space: Option<&Space>,
-) -> (Vec<Vec<f32>>, Params) {
+/// The space the cast compares faces in and the bars of it: `space`, or
+/// fitted to `tracks` when it is unknown. Worked out once for a whole job.
+pub fn cast_space(tracks: &[TrackIn], p: &Params, space: Option<&Space>) -> (Space, Params) {
     let (_, p, space) = in_space(tracks, p, space);
-    let out = match &space {
+    (space, p)
+}
+
+/// `faces` (embeddings as tracks keep them) in `space`.
+pub fn in_cast_space(faces: &[Vec<f32>], space: &Space) -> Vec<Vec<f32>> {
+    match space {
         Space::Fitted(f) => faces.iter().map(|e| f.embed(e)).collect(),
         Space::Faces => faces.to_vec(),
-    };
-    (out, p)
+    }
 }
 
 #[cfg(test)]
@@ -455,6 +455,15 @@ mod tests {
         let mut c = cast();
         // In the same frames as the first character's first face.
         let i = with(&mut c, face(0, 0), None);
+        assert_eq!(ask(&c, &[i], &[])[0].verdict, Verdict::Nobody);
+    }
+
+    #[test]
+    fn a_face_placed_on_a_character_counts_as_them_on_screen() {
+        let mut c = cast();
+        // On the first character without defining them, in frames of its own.
+        with(&mut c, face(0, 5000), Some(0));
+        let i = with(&mut c, face(0, 5000), None);
         assert_eq!(ask(&c, &[i], &[])[0].verdict, Verdict::Nobody);
     }
 

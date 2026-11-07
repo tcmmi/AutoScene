@@ -13,7 +13,7 @@ use as_api::{
 };
 use as_core::{CharacterId, FrameIndex, FrameRange, MediaId};
 use as_db::{IdentityTrack, RescanFaceRow};
-use as_identity::{CharKey, Judged, Params, Question, Read, Space, TrackIn, Verdict, in_cast_space, judge};
+use as_identity::{CharKey, Judged, Params, Question, Read, Space, TrackIn, Verdict, cast_space, in_cast_space, judge};
 use as_media::MediaInfo;
 
 use crate::cast::{IdentityInput, NAME_ANCHORS, anchors, embedder_of};
@@ -45,14 +45,17 @@ pub struct RescanCast {
     /// A character's key is its index here.
     pub characters: Vec<CharacterId>,
     pub params: Params,
-    pub space: Option<Space>,
+    /// The space faces are compared in, and the bars of it.
+    pub space: Space,
+    pub bars: Params,
 }
 
 /// Clearest faces of each character the "same person?" check reads.
 pub const PAIR_READS: usize = 8;
 /// How alike a second model must find two characters to back the first: at
-/// its own bar for one person (`Params::sface`'s link).
-const SECOND_AGREES: f32 = 0.40;
+/// its own bar for one person (`Params::sface`'s link, `Params::default`'s).
+const SFACE_AGREES: f32 = 0.40;
+const ARCFACE_AGREES: f32 = 0.30;
 
 /// Two characters to compare, and the clearest faces of each.
 #[derive(Clone, Debug, PartialEq)]
@@ -94,12 +97,12 @@ pub struct RescanSource {
 /// model disagrees. Measured on five casts (clearest faces, stored): one
 /// person split by looks 0.33-0.79, people seen together up to 0.27 (0.57 at
 /// worst) in live action.
-fn likeness_of(alike: f32, second: Option<f32>, p: &Params) -> Option<RescanLikeness> {
+fn likeness_of(alike: f32, second_agrees: Option<bool>, p: &Params) -> Option<RescanLikeness> {
     if alike < p.link {
         return None;
     }
     let sure = alike >= (p.link + p.copy_link) / 2.0;
-    Some(if sure && second.is_none_or(|s| s >= SECOND_AGREES) { RescanLikeness::Likely } else { RescanLikeness::Maybe })
+    Some(if sure && second_agrees != Some(false) { RescanLikeness::Likely } else { RescanLikeness::Maybe })
 }
 
 impl RescanCast {
@@ -114,7 +117,7 @@ impl RescanCast {
             subjects,
             reads,
         };
-        judge(&q, &self.params, self.space.as_ref())
+        judge(&q, &self.params, Some(&self.space))
     }
 
     fn row(&self, i: usize) -> &IdentityTrack {
@@ -199,19 +202,20 @@ impl RescanCast {
     /// How alike the clearest faces of each side are, by their `reads`
     /// (`read`: track to embedding, as the cast keeps them) and their stored
     /// faces where there is no reading.
-    fn alike(&self, p: &PairToCheck, read: &HashMap<usize, Vec<f32>>, stored: bool) -> f32 {
+    fn alike(&self, p: &PairToCheck, read: &HashMap<usize, Vec<f32>>, stored: bool) -> Option<f32> {
         let faces = |g: &[usize]| -> Vec<Vec<f32>> {
             g.iter()
                 .filter_map(|i| read.get(i).cloned().or_else(|| stored.then(|| self.tracks[*i].embedding.clone())))
                 .collect()
         };
         let (a, b) = (faces(&p.a_faces), faces(&p.b_faces));
-        if !stored {
-            return as_identity::likeness(&a, &b);
+        if a.is_empty() || b.is_empty() {
+            return None;
         }
-        let (a, _) = in_cast_space(&a, &self.tracks, &self.params, self.space.as_ref());
-        let (b, _) = in_cast_space(&b, &self.tracks, &self.params, self.space.as_ref());
-        as_identity::likeness(&a, &b)
+        if !stored {
+            return Some(as_identity::likeness(&a, &b));
+        }
+        Some(as_identity::likeness(&in_cast_space(&a, &self.space), &in_cast_space(&b, &self.space)))
     }
 
     /// Whether the pass itself had little faith in this face.
@@ -298,6 +302,11 @@ impl Project {
         })
     }
 
+    /// How alike [`Self::second_model`] must find two faces to call them one.
+    fn second_bar(&self) -> f32 {
+        if self.face_embedder() == as_models::ids::SFACE { ARCFACE_AGREES } else { SFACE_AGREES }
+    }
+
     /// The cast as [`RescanCast`] needs it; reads only.
     pub fn rescan_cast(&self) -> ProjectResult<RescanCast> {
         let rows = self.db().identity_tracks()?;
@@ -316,7 +325,7 @@ impl Project {
             })
             .collect();
         let params = self.identity_params()?;
-        let space = self.grouped_space()?;
+        let (space, bars) = cast_space(&cast.tracks, &params, self.grouped_space()?.as_ref());
         Ok(RescanCast {
             row_of: cast.rows,
             tracks: cast.tracks,
@@ -327,6 +336,7 @@ impl Project {
             rows,
             params,
             space,
+            bars,
         })
     }
 
@@ -376,11 +386,10 @@ impl Project {
             }
         }
         let chosen: Vec<CharKey> = request.characters.iter().filter_map(|c| key(*c)).collect();
-        let (_, bars) = in_cast_space(&[], &cast.tracks, &cast.params, cast.space.as_ref());
         for (n, &a) in chosen.iter().enumerate() {
             for &b in &chosen[n + 1..] {
                 let Some(p) = cast.pair(a, b) else { continue };
-                if cast.alike(&p, &HashMap::new(), true) >= bars.link {
+                if cast.alike(&p, &HashMap::new(), true).is_some_and(|s| s >= cast.bars.link) {
                     add(a, b);
                 }
             }
@@ -411,13 +420,16 @@ impl Project {
             reads.iter().filter_map(|r| Some((r.track, tracks::embedding_from_bytes(&r.embedding)?))).collect()
         };
         let (main, second) = (vectors(main), second.map(vectors));
-        let (_, bars) = in_cast_space(&[], &cast.tracks, &cast.params, cast.space.as_ref());
+        let agrees = self.second_bar();
         let mut kept = 0;
         for p in pairs {
-            let alike = cast.alike(p, &main, true);
-            let other = second.as_ref().map(|s| cast.alike(p, s, false));
-            if let Some(likeness) = likeness_of(alike, other, &bars) {
-                let (a, b) = (cast.characters[p.a as usize], cast.characters[p.b as usize]);
+            let (a, b) = (cast.characters[p.a as usize], cast.characters[p.b as usize]);
+            // What was asked before no longer stands, whatever comes now.
+            self.db().drop_rescan_pair(a, b)?;
+            let Some(alike) = cast.alike(p, &main, true) else { continue };
+            // Too few faces read for it to have an opinion: it has none.
+            let other = second.as_ref().and_then(|s| cast.alike(p, s, false));
+            if let Some(likeness) = likeness_of(alike, other.map(|s| s >= agrees), &cast.bars) {
                 self.db().put_rescan_pair(a, b, alike, other, p.together, likeness)?;
                 kept += 1;
             }
@@ -456,7 +468,7 @@ impl Project {
                 b,
                 likeness,
                 main,
-                second,
+                second_agrees: second.map(|s| s >= self.second_bar()),
                 together,
                 a_faces: clearest(a)?,
                 b_faces: clearest(b)?,
@@ -476,10 +488,10 @@ impl Project {
         };
         match answer {
             RescanAnswer::Accept { tracks, character_id } => {
-                // Its sharper reading first: the faces placed after this
-                // decision go by it.
+                let made = edit(CastEdit::Assign { tracks: tracks.clone(), character_id: *character_id })?;
+                // Faces are placed after this returns: they go by its sharper reading.
                 self.db().adopt_reads(&ids(tracks))?;
-                edit(CastEdit::Assign { tracks: tracks.clone(), character_id: *character_id })
+                Ok(made)
             }
             RescanAnswer::NotThem { tracks, character_id } => {
                 self.db().dismiss_rescan_faces(&ids(tracks))?;
@@ -677,8 +689,8 @@ mod tests {
         assert_eq!(likeness_of(0.2, None, &p), None);
         assert_eq!(likeness_of(0.35, None, &p), Some(RescanLikeness::Maybe));
         assert_eq!(likeness_of(0.7, None, &p), Some(RescanLikeness::Likely));
-        assert_eq!(likeness_of(0.7, Some(0.6), &p), Some(RescanLikeness::Likely));
-        assert_eq!(likeness_of(0.7, Some(0.1), &p), Some(RescanLikeness::Maybe));
+        assert_eq!(likeness_of(0.7, Some(true), &p), Some(RescanLikeness::Likely));
+        assert_eq!(likeness_of(0.7, Some(false), &p), Some(RescanLikeness::Maybe));
     }
 
     #[test]

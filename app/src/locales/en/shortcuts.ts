@@ -102,6 +102,7 @@ export default {
   faces: {
     selectAll: { name: "Select every face" },
     clearSelection: { name: "Clear the selection" },
+    rescan: { name: "Rescan the selected faces" },
   },
 
   shots: {

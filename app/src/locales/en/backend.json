@@ -219,10 +219,12 @@
     "groupingCharacters": "Grouping characters",
     "indexing": "Indexing {{name}}",
     "preparingPreview": "Preparing preview of {{name}}",
+    "rescanning": "Rescanning faces",
     "sharpeningPortraits": "Sharpening portraits",
     "sharpeningPosters": "Sharpening posters",
     "stage": {
       "clip": "Clip {{n, number}} of {{total, number}}",
+      "comparingCharacters": "Comparing characters",
       "creatingPoster": "Creating poster",
       "downloadingModel": "Downloading AI model",
       "findingCharacters": "Finding characters",
@@ -236,7 +238,8 @@
       "poster": "Poster {{n, number}} of {{total, number}}",
       "preparingPreview": "Preparing preview",
       "readingFile": "Reading file",
-      "rendering": "Rendering"
+      "rendering": "Rendering",
+      "rescanning": "Reading faces again"
     },
     "unexpectedError": "unexpected error"
   },

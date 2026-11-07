@@ -4,7 +4,7 @@
 use as_core::CharacterId;
 use rusqlite::{OptionalExtension, params};
 
-use crate::cast::parse_id;
+use crate::cast::{bump_rev, parse_id};
 use crate::project::ProjectDb;
 use crate::{DbResult, enum_from_sql, enum_to_sql};
 
@@ -76,7 +76,8 @@ impl ProjectDb {
                 "SELECT r.track_id, r.verdict, r.target, r.other, r.score, r.score2, r.looks, r.read_quality, r.emb
                    FROM rescan_faces r JOIN tracks t ON t.id = r.track_id
                   WHERE r.dismissed = 0 AND t.not_face = 0
-                    AND (t.assign <> 'pinned' OR r.verdict = 'doubt')
+                    AND t.assign <> 'pinned'
+                    AND NOT (r.verdict = 'between' AND r.other IS NULL)
                     AND NOT (r.verdict IN ('elsewhere', 'newly') AND t.assign = 'auto' AND t.character_id = r.target)
                     AND NOT EXISTS (SELECT 1 FROM track_forbids f WHERE f.track_id = r.track_id AND f.character_id = r.target)
                   ORDER BY r.target, r.score DESC, r.track_id",
@@ -137,7 +138,7 @@ impl ProjectDb {
                 adopt.execute([id])?;
                 done.execute([id])?;
             }
-            Ok(())
+            bump_rev(tx)
         })
     }
 
@@ -158,6 +159,15 @@ impl ProjectDb {
                 .query_row("SELECT 1 FROM character_apart WHERE a = ?1 AND b = ?2", [&a, &b], |_| Ok(()))
                 .optional()?;
             Ok(hit.is_some())
+        })
+    }
+
+    /// The question about these two goes (it may be asked anew).
+    pub fn drop_rescan_pair(&self, a: CharacterId, b: CharacterId) -> DbResult<()> {
+        let (a, b) = ordered(a, b);
+        self.0.write(|tx| {
+            tx.execute("DELETE FROM rescan_pairs WHERE a = ?1 AND b = ?2", [&a, &b])?;
+            Ok(())
         })
     }
 

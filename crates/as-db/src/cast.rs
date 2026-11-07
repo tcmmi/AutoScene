@@ -1220,7 +1220,10 @@ impl ProjectDb {
     /// if it has none.
     /// Pin `anchors` to `c`, as naming a character does: only what is still its own.
     pub fn pin_character_anchors(&self, c: CharacterId, anchors: &[i64]) -> DbResult<()> {
-        self.0.write(|tx| pin_anchors(tx, c, anchors))
+        self.0.write(|tx| {
+            pin_anchors(tx, c, anchors)?;
+            bump_rev(tx)
+        })
     }
 
     pub fn merge_characters(&self, from: CharacterId, into: CharacterId) -> DbResult<()> {
@@ -1245,7 +1248,7 @@ impl ProjectDb {
             // about the two is answered by this.
             tx.execute("UPDATE rescan_faces SET target = ?2 WHERE target = ?1", [&f, &i])?;
             tx.execute("UPDATE rescan_faces SET other = ?2 WHERE other = ?1", [&f, &i])?;
-            tx.execute("UPDATE rescan_faces SET other = NULL WHERE other = target", [])?;
+            tx.execute("UPDATE rescan_faces SET other = NULL, verdict = 'maybe' WHERE other = target", [])?;
             tx.execute("DELETE FROM rescan_pairs WHERE a = ?1 OR b = ?1", [&f])?;
             tx.execute(
                 "INSERT OR IGNORE INTO character_apart (a, b)

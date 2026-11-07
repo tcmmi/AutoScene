@@ -75,7 +75,8 @@
     "showInCast_other": "Arată {{count}} de personaje în distribuție",
     "hid_one": "{{count}} personaj ascuns",
     "hid_few": "{{count}} personaje ascunse",
-    "hid_other": "{{count}} de personaje ascunse"
+    "hid_other": "{{count}} de personaje ascunse",
+    "withEveryoneElse": "Cu Ceilalți"
   },
   "card": {
     "refinding": "Se caută din nou…",
@@ -106,7 +107,11 @@
     "watchHint": "Dă dublu clic ca să vezi",
     "watchOrPlayHint": "Dă dublu clic ca să vezi · Space redă aici",
     "thisFace": "Această față",
-    "ariaIn": "Față în {{where}}"
+    "ariaIn": "Față în {{where}}",
+    "rescan": "Rescanează",
+    "rescanTip": "Citește din nou aceste fețe la calitate maximă",
+    "rescanConfirmed": "Ai confirmat tu aceste fețe",
+    "selectUnclear": "Selectează fețele neclare"
   },
   "everyoneElse": {
     "title": "Ceilalți",
@@ -273,5 +278,100 @@
     "giveFailed": "Numele nu au fost atribuite",
     "dismissFailed": "Numele așteaptă în continuare",
     "rejectFailed": "Serialul nu a fost respins"
+  },
+  "rescan": {
+    "title": "Rescanează",
+    "heading": "Ce a găsit rescanarea",
+    "nothingYet": "Nu s-a schimbat nimic încă. Fiecare răspuns îți aparține.",
+    "startFailed": "Rescanarea nu a putut porni",
+    "finished": "Rescanare terminată",
+    "show": "Arată",
+    "left_one": "{{count}} sugestie rămasă",
+    "left_few": "{{count}} sugestii rămase",
+    "left_other": "{{count}} de sugestii rămase",
+    "leaveRest": "Lasă restul",
+    "leaveTitle": "Lași totul așa cum este?",
+    "leaveAbout": "Fețele rămân unde sunt. Le poți rescana oricând.",
+    "acceptClear_one": "Acceptă {{count}} potrivire clară",
+    "acceptClear_few": "Acceptă {{count}} potriviri clare",
+    "acceptClear_other": "Acceptă {{count}} de potriviri clare",
+    "acceptTitle_one": "Accepți {{count}} față?",
+    "acceptTitle_few": "Accepți {{count}} fețe?",
+    "acceptTitle_other": "Accepți {{count}} de fețe?",
+    "acceptAbout": "Fiecare față merge la personajul arătat. Alte fețe neconfirmate le pot urma.",
+    "acceptAnswer": "Acceptă",
+    "bar": {
+      "waiting": "Rescanarea așteaptă analiza",
+      "starting": "Se pregătește rescanarea",
+      "reading": "Se rescanează {{done}} din {{total}}",
+      "stop": "Oprește"
+    },
+    "waiting": {
+      "title_one": "Rescanarea are {{count}} sugestie pentru tine",
+      "title_few": "Rescanarea are {{count}} sugestii pentru tine",
+      "title_other": "Rescanarea are {{count}} de sugestii pentru tine",
+      "about": "Nimic nu se schimbă până nu spui tu.",
+      "open": "Vezi-le"
+    },
+    "tally": {
+      "looked_one": "{{count}} față analizată",
+      "looked_few": "{{count}} fețe analizate",
+      "looked_other": "{{count}} de fețe analizate",
+      "read_one": "{{count}} citită la calitate maximă",
+      "read_few": "{{count}} citite la calitate maximă",
+      "read_other": "{{count}} citite la calitate maximă",
+      "right_one": "{{count}} deja corectă",
+      "right_few": "{{count}} deja corecte",
+      "right_other": "{{count}} deja corecte",
+      "unread_one": "{{count}} nu a putut fi citită",
+      "unread_few": "{{count}} nu au putut fi citite",
+      "unread_other": "{{count}} nu au putut fi citite"
+    },
+    "section": {
+      "pairs": "Aceeași persoană?",
+      "faces": "Fețe care seamănă cu cineva",
+      "between": "Ar putea fi oricare",
+      "doubts": "S-ar putea să nu fie ei",
+      "noFace": "Poate nu sunt fețe"
+    },
+    "lane": {
+      "lookLike_one": "{{count}} față seamănă cu {{name}}",
+      "lookLike_few": "{{count}} fețe seamănă cu {{name}}",
+      "lookLike_other": "{{count}} de fețe seamănă cu {{name}}",
+      "doubt_one": "{{count}} față seamănă puțin cu {{name}}",
+      "doubt_few": "{{count}} fețe seamănă puțin cu {{name}}",
+      "doubt_other": "{{count}} de fețe seamănă puțin cu {{name}}",
+      "noFace_one": "Nicio față găsită în {{count}} dintre acestea",
+      "noFace_few": "Nicio față găsită în aceste {{count}}",
+      "noFace_other": "Nicio față găsită în aceste {{count}}",
+      "maybe": "Poate",
+      "onNow": "Acum la {{name}}",
+      "leave": "Lasă-le",
+      "keep": "Las-o așa",
+      "noneAreFaces": "Niciuna nu e față"
+    },
+    "choice": {
+      "neither": "Niciunul"
+    },
+    "pair": {
+      "likely": "Probabil o singură persoană",
+      "maybe": "Ar putea fi o singură persoană",
+      "question": "Sunt aceștia doi aceeași persoană?",
+      "facesMatch": "Fețele lor cele mai clare se potrivesc",
+      "facesClose": "Fețele lor cele mai clare sunt apropiate",
+      "oneCheck": "O singură verificare: niciun al doilea model nu cunoaște acest material",
+      "secondAgrees": "Un al doilea model este de acord",
+      "secondDoubts": "Un al doilea model are îndoieli",
+      "neverTogether": "Niciodată în același cadru",
+      "together_one": "În același cadru de {{count}} dată",
+      "together_few": "În același cadru de {{count}} ori",
+      "together_other": "În același cadru de {{count}} de ori",
+      "same": "Aceeași persoană",
+      "apart": "Două persoane"
+    },
+    "done": {
+      "title": "Nu mai e nimic de decis",
+      "about": "Selectează fețe sau personaje și alege Rescanează pentru o privire mai atentă."
+    }
   }
 }

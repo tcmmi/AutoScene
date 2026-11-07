@@ -26,6 +26,8 @@ let groups: ShotGroup[] | undefined
 /** The history entry the page is on: Back comes to the same one, a new visit to a new one. */
 let entry = 0
 
+vi.mock("./RescanWaiting", () => ({ RescanWaiting: () => null }))
+vi.mock("./RescanBar", () => ({ RescanBar: () => null }))
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   useParams: () => ({ pid: "p", cid: "walter" }),

@@ -1089,17 +1089,18 @@ fn same_person(
         return Err(StageError::Cancelled);
     }
     // Faces of 3D animation and anime have no second model that knows them.
-    let other = match project.second_model() {
-        Some(model) if install_models(state, &[model], ctx).is_ok() => {
-            match read_again(app, state, project, cast, &faces, &comparing, true, ctx) {
-                Ok((_, _, true)) => return Err(StageError::Cancelled),
-                Ok((reads, _, false)) => Some(reads),
-                Err(StageError::Cancelled) => return Err(StageError::Cancelled),
-                // No second opinion is no failure.
-                Err(_) => None,
-            }
+    let second = |model| {
+        install_models(state, &[model], ctx)?;
+        match read_again(app, state, project, cast, &faces, &comparing, true, ctx)? {
+            (_, _, true) => Err(StageError::Cancelled),
+            (reads, _, false) => Ok(reads),
         }
-        _ => None,
+    };
+    let other = match project.second_model().map(second) {
+        Some(Ok(reads)) => Some(reads),
+        Some(Err(StageError::Cancelled)) => return Err(StageError::Cancelled),
+        // No second opinion is no failure.
+        Some(Err(_)) | None => None,
     };
     let kept = project.rescan_keep_pairs(cast, &pairs, &main, other.as_deref()).map_err(stage_error)?;
     log::info!("rescan: {kept} of {} pairs may be one person", pairs.len());
@@ -1122,6 +1123,7 @@ fn read_again(
 ) -> Result<(Vec<DoneRead>, u32, bool), StageError> {
     let total = tracks.len() as u32;
     let (mut reads, mut unread) = (Vec::with_capacity(tracks.len()), 0u32);
+    let mut failed = None;
     let (mut looked, mut told) = (Vec::new(), std::time::Instant::now());
     for media in cast.media_of(tracks) {
         let src = match project.rescan_source(media) {
@@ -1169,10 +1171,18 @@ fn read_again(
         match read {
             Ok(()) => {}
             Err(EngineError::Cancelled) => return Ok((reads, unread, true)),
-            Err(e) => return Err(engine_error(e)),
+            // A file that can't be read doesn't cost what was read of the others.
+            Err(e) => {
+                log::warn!("rescan: {}", e.detail());
+                failed = Some(e);
+            }
         }
     }
-    let done = reads.len() as u32 + unread;
+    if let (Some(e), true) = (failed, reads.is_empty()) {
+        return Err(engine_error(e));
+    }
+    unread = total - reads.len() as u32;
+    let done = total;
     let _ = RescanChanged { project_id: project.id, looked, done, total, results: false }.emit(app);
     Ok((reads, unread, false))
 }

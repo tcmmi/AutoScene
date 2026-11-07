@@ -8678,5 +8678,265 @@
   "native:file.packLabel": {
     "state": "draft",
     "en": "22f36f58"
+  },
+  "cast:faces.rescan": {
+    "state": "draft",
+    "en": "50e15249"
+  },
+  "cast:faces.rescanTip": {
+    "state": "draft",
+    "en": "6b510da3"
+  },
+  "cast:faces.rescanConfirmed": {
+    "state": "draft",
+    "en": "136ff9a9"
+  },
+  "cast:faces.selectUnclear": {
+    "state": "draft",
+    "en": "35e6209f"
+  },
+  "cast:selection.withEveryoneElse": {
+    "state": "draft",
+    "en": "5d31cc87"
+  },
+  "cast:rescan.title": {
+    "state": "draft",
+    "en": "50e15249"
+  },
+  "cast:rescan.heading": {
+    "state": "draft",
+    "en": "5ec43485"
+  },
+  "cast:rescan.nothingYet": {
+    "state": "draft",
+    "en": "c8fb18bf"
+  },
+  "cast:rescan.startFailed": {
+    "state": "draft",
+    "en": "d5a4c845"
+  },
+  "cast:rescan.finished": {
+    "state": "draft",
+    "en": "160aa3e5"
+  },
+  "cast:rescan.show": {
+    "state": "draft",
+    "en": "29742e5c"
+  },
+  "cast:rescan.left": {
+    "state": "draft",
+    "en": "c9f57276"
+  },
+  "cast:rescan.leaveRest": {
+    "state": "draft",
+    "en": "45f3ed73"
+  },
+  "cast:rescan.leaveTitle": {
+    "state": "draft",
+    "en": "84fdc92d"
+  },
+  "cast:rescan.leaveAbout": {
+    "state": "draft",
+    "en": "c5233962"
+  },
+  "cast:rescan.acceptClear": {
+    "state": "draft",
+    "en": "10b825ef"
+  },
+  "cast:rescan.acceptTitle": {
+    "state": "draft",
+    "en": "cebca3c8"
+  },
+  "cast:rescan.acceptAbout": {
+    "state": "draft",
+    "en": "8fb72b83"
+  },
+  "cast:rescan.acceptAnswer": {
+    "state": "draft",
+    "en": "50b26149"
+  },
+  "cast:rescan.bar.waiting": {
+    "state": "draft",
+    "en": "696734b3"
+  },
+  "cast:rescan.bar.starting": {
+    "state": "draft",
+    "en": "10ff3dc3"
+  },
+  "cast:rescan.bar.reading": {
+    "state": "draft",
+    "en": "66d1b4dc"
+  },
+  "cast:rescan.bar.stop": {
+    "state": "draft",
+    "en": "4b7f7705"
+  },
+  "cast:rescan.waiting.title": {
+    "state": "draft",
+    "en": "672d8f82"
+  },
+  "cast:rescan.waiting.about": {
+    "state": "draft",
+    "en": "17593f0f"
+  },
+  "cast:rescan.waiting.open": {
+    "state": "draft",
+    "en": "0c8c10e2"
+  },
+  "cast:rescan.tally.looked": {
+    "state": "draft",
+    "en": "fcc35bfe"
+  },
+  "cast:rescan.tally.read": {
+    "state": "draft",
+    "en": "5538aaed"
+  },
+  "cast:rescan.tally.right": {
+    "state": "draft",
+    "en": "14edf961"
+  },
+  "cast:rescan.tally.unread": {
+    "state": "draft",
+    "en": "ca08010d"
+  },
+  "cast:rescan.section.pairs": {
+    "state": "draft",
+    "en": "005155f1"
+  },
+  "cast:rescan.section.faces": {
+    "state": "draft",
+    "en": "13769b3c"
+  },
+  "cast:rescan.section.between": {
+    "state": "draft",
+    "en": "50bdb444"
+  },
+  "cast:rescan.section.doubts": {
+    "state": "draft",
+    "en": "4d0f9608"
+  },
+  "cast:rescan.section.noFace": {
+    "state": "draft",
+    "en": "5181f5d8"
+  },
+  "cast:rescan.lane.lookLike": {
+    "state": "draft",
+    "en": "910943e5"
+  },
+  "cast:rescan.lane.doubt": {
+    "state": "draft",
+    "en": "b0361ed5"
+  },
+  "cast:rescan.lane.noFace": {
+    "state": "draft",
+    "en": "f179e956"
+  },
+  "cast:rescan.lane.maybe": {
+    "state": "draft",
+    "en": "b338c84b"
+  },
+  "cast:rescan.lane.onNow": {
+    "state": "draft",
+    "en": "6ed6d257"
+  },
+  "cast:rescan.lane.leave": {
+    "state": "draft",
+    "en": "432d7c62"
+  },
+  "cast:rescan.lane.keep": {
+    "state": "draft",
+    "en": "4bccf144"
+  },
+  "cast:rescan.lane.noneAreFaces": {
+    "state": "draft",
+    "en": "71e8d743"
+  },
+  "cast:rescan.choice.neither": {
+    "state": "draft",
+    "en": "b0862b48"
+  },
+  "cast:rescan.pair.likely": {
+    "state": "draft",
+    "en": "84f585ea"
+  },
+  "cast:rescan.pair.maybe": {
+    "state": "draft",
+    "en": "28353e4e"
+  },
+  "cast:rescan.pair.question": {
+    "state": "draft",
+    "en": "7689e689"
+  },
+  "cast:rescan.pair.facesMatch": {
+    "state": "draft",
+    "en": "93a1fb25"
+  },
+  "cast:rescan.pair.facesClose": {
+    "state": "draft",
+    "en": "926f9126"
+  },
+  "cast:rescan.pair.oneCheck": {
+    "state": "draft",
+    "en": "c9c09312"
+  },
+  "cast:rescan.pair.secondAgrees": {
+    "state": "draft",
+    "en": "db4ea59e"
+  },
+  "cast:rescan.pair.secondDoubts": {
+    "state": "draft",
+    "en": "2d723948"
+  },
+  "cast:rescan.pair.neverTogether": {
+    "state": "draft",
+    "en": "aa97c56e"
+  },
+  "cast:rescan.pair.together": {
+    "state": "draft",
+    "en": "2fe7c420"
+  },
+  "cast:rescan.pair.same": {
+    "state": "draft",
+    "en": "0fef0cd4"
+  },
+  "cast:rescan.pair.apart": {
+    "state": "draft",
+    "en": "8b0c8c00"
+  },
+  "cast:rescan.done.title": {
+    "state": "draft",
+    "en": "2cdab490"
+  },
+  "cast:rescan.done.about": {
+    "state": "draft",
+    "en": "e07f6dc3"
+  },
+  "shell:crumb.rescan": {
+    "state": "draft",
+    "en": "d27b31e9"
+  },
+  "shell:activity.openRescan": {
+    "state": "draft",
+    "en": "5ec83b5f"
+  },
+  "shell:jobs.stops.rescan": {
+    "state": "draft",
+    "en": "165173fb"
+  },
+  "shortcuts:faces.rescan.name": {
+    "state": "draft",
+    "en": "d3df3aa9"
+  },
+  "backend:job.rescanning": {
+    "state": "draft",
+    "en": "2d064501"
+  },
+  "backend:job.stage.rescanning": {
+    "state": "draft",
+    "en": "10e38b09"
+  },
+  "backend:job.stage.comparingCharacters": {
+    "state": "draft",
+    "en": "7eb12cd9"
   }
 }

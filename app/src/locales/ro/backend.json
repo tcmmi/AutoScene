@@ -241,9 +241,12 @@
       "poster": "Afișul {{n, number}} din {{total, number}}",
       "preparingPreview": "Se pregătește previzualizarea",
       "readingFile": "Se citește fișierul",
-      "rendering": "Se randează"
+      "rendering": "Se randează",
+      "rescanning": "Se citesc din nou fețele",
+      "comparingCharacters": "Se compară personajele"
     },
-    "unexpectedError": "eroare neașteptată"
+    "unexpectedError": "eroare neașteptată",
+    "rescanning": "Se rescanează fețele"
   },
   "keychain": {
     "damaged": "un secret din seif este deteriorat.",

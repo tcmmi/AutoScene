@@ -4,6 +4,7 @@ import { takePackSave } from "@/features/plugins/pack-saves"
 import { pluginToast } from "@/features/plugins/plugin-toast"
 import { isFinished, useActivity } from "@/state/activity"
 import { usePluginReview } from "@/state/plugin-review"
+import { useRescan } from "@/state/rescan"
 import { say, t } from "./i18n"
 import { commands, events } from "./ipc"
 import { reveal } from "./os"
@@ -21,6 +22,7 @@ import { exportsQuery, isMadePack, qk, queryClient } from "./queries"
  * | media:changed    | media(pid), frameMap(pid, mid), project(pid)       |
  * | analysis:changed | segments(pid, mid)                                 |
  * | cast:changed     | cast(pid) and everything under it (tracks, presence, packs) |
+ * | rescan:changed   | the rescan store (faces read, how far); rescan(pid) when what it keeps changed |
  * | pack:changed     | pack(pid, cid): its settings (an export keeps them), and the shots a plugin's filter judged, once per episode |
  * | export:changed   | exports(pid)                                       |
  * | plugins:changed  | plugins and every plugin's settings, the catalog; every pack's preview and plan (its filters, on or off); settings when no plugin is named |
@@ -32,7 +34,7 @@ import { exportsQuery, isMadePack, qk, queryClient } from "./queries"
  * | accel:progress   | hardware: the bar of NVIDIA's download             |
  * | accel:finished   | settings; toast unless Settings is open            |
  */
-export function startEventBridge(where: { goPlugins: () => void }): () => void {
+export function startEventBridge(where: { goPlugins: () => void; goRescan?: (pid: string) => void }): () => void {
   const unlisten: Promise<() => void>[] = []
 
   unlisten.push(
@@ -47,6 +49,22 @@ export function startEventBridge(where: { goPlugins: () => void }): () => void {
         void queryClient.invalidateQueries({ queryKey: qk.exports(payload.projectId) })
       }
       notifyFinished(payload)
+      if (payload.kind === "rescan" && payload.projectId && isFinished(payload)) {
+        useRescan.getState().ended(payload.projectId)
+        const pid = payload.projectId
+        if (payload.state === "done") {
+          toast(t("cast:rescan.finished"), {
+            description: payload.subtitle ? say(payload.subtitle) : undefined,
+            action: where.goRescan && { label: t("cast:rescan.show"), onClick: () => where.goRescan?.(pid) },
+          })
+        }
+      }
+    }),
+    events.rescanChanged.listen(({ payload }) => {
+      if (payload.total > 0) {
+        useRescan.getState().progress(payload.projectId, payload.looked, payload.done, payload.total)
+      }
+      if (payload.results) void queryClient.invalidateQueries({ queryKey: qk.rescan(payload.projectId) })
     }),
     events.jobProgress.listen(({ payload }) => useActivity.getState().progress(payload)),
     events.libraryChanged.listen(({ payload }) => {

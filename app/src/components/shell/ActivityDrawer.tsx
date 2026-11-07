@@ -48,6 +48,7 @@ const KIND_ICON: Record<JobInfo["kind"], React.ReactNode> = {
   portraits: <UserFocus />,
   regroup: <Users />,
   plugin: <PuzzlePiece />,
+  rescan: <Scan />,
 }
 
 /** Global view of background work (indexing, previews, analysis, exports, plugins). */
@@ -152,6 +153,11 @@ function JobRow({ job: j }: { job: JobInfo }) {
       {pid && mid && j.kind !== "export" && (
         <ContextMenuItem onSelect={() => go(() => navigate({ to: "/p/$pid/timeline/$mid", params: { pid, mid } }))}>
           <Play /> {t("activity.openPlayer")}
+        </ContextMenuItem>
+      )}
+      {pid && j.kind === "rescan" && (
+        <ContextMenuItem onSelect={() => go(() => navigate({ to: "/p/$pid/cast/rescan", params: { pid } }))}>
+          <Scan /> {t("activity.openRescan")}
         </ContextMenuItem>
       )}
       {pid && (j.kind === "portraits" || j.kind === "regroup") && (

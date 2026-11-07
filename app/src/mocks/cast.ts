@@ -13,8 +13,7 @@ import type {
   Presence,
   Segment,
   ShotGroup,
-  TrackFilter,
-} from "@/bindings"
+  TrackFilter, RescanAnswer, RescanFace, RescanPair, RescanRequest, RescanResults } from "@/bindings"
 
 type Track = FaceTrackItem & { forbid: Set<string>; notFace: boolean; portrait: string }
 type Person = { id: string; number: number; name: string | null; hidden: boolean; cover: number | null }
@@ -180,6 +179,54 @@ export function castTracks(projectId: string, filter: TrackFilter): FaceTrackIte
     .filter(ok)
     .sort((a, b) => (b.quality ?? 0) - (a.quality ?? 0))
     .map(({ forbid: _f, notFace: _n, portrait: _p, ...t }) => t)
+}
+
+/** What a rescan found in the mock: a little of everything it can say. */
+const rescans = new Map<string, RescanResults>()
+
+export function rescanResults(projectId: string): RescanResults {
+  return rescans.get(projectId) ?? { faces: [], pairs: [], tally: { looked: 0, read: 0, right: 0, nobody: 0, unread: 0 } }
+}
+
+export function rescanRun(projectId: string, request: RescanRequest) {
+  const c = get(projectId)
+  const asked = c.tracks.filter(
+    (t) =>
+      !t.notFace &&
+      t.assign !== "pinned" &&
+      (request.tracks.includes(t.id) ||
+        (t.characterId !== null && request.characters.includes(t.characterId)) ||
+        (request.everyoneElse && t.assign === "none")),
+  )
+  const shown = c.people.filter((p) => !p.hidden)
+  const [a, b] = shown
+  const item = ({ forbid: _f, notFace: _n, portrait: _p, ...t }: Track) => t
+  const faces: RescanFace[] = asked.slice(0, 18).map((t, i) => {
+    const verdict = (["newly", "elsewhere", "maybe", "between", "newly", "doubt", "no_face"] as const)[i % 7]
+    const target = verdict === "no_face" ? null : verdict === "doubt" ? (t.characterId ?? a?.id ?? null) : (i % 2 ? b : a)?.id ?? null
+    return { face: item(t), verdict, target, other: verdict === "between" ? (b?.id ?? null) : null, score: 0.6, score2: 0.3, read: true }
+  })
+  const clearest = (id: string) => c.tracks.filter((t) => t.characterId === id && !t.notFace).slice(0, 6).map(item)
+  const pairs: RescanPair[] =
+    a && b
+      ? [{ a: a.id, b: b.id, likeness: "likely", main: 0.71, secondAgrees: true, together: 0, aFaces: clearest(a.id), bFaces: clearest(b.id) }]
+      : []
+  rescans.set(projectId, { faces, pairs, tally: { looked: asked.length, read: asked.length, right: 3, nobody: 2, unread: 0 } })
+}
+
+export function rescanAnswer(projectId: string, answer: RescanAnswer) {
+  const r = rescanResults(projectId)
+  if (answer.op === "accept") castEdit(projectId, { op: "assign", tracks: answer.tracks, characterId: answer.characterId })
+  if (answer.op === "not_a_face") castEdit(projectId, { op: "not_a_face", tracks: answer.tracks })
+  if (answer.op === "not_them") castEdit(projectId, { op: "not_them", tracks: answer.tracks, characterId: answer.characterId })
+  if (answer.op === "same_person") castEdit(projectId, { op: "merge", from: answer.from, into: answer.into })
+  const tracks = "tracks" in answer ? answer.tracks : []
+  const gone = answer.op === "same_person" || answer.op === "two_people"
+  rescans.set(projectId, {
+    ...r,
+    faces: answer.op === "leave_all" ? [] : r.faces.filter((f) => !tracks.includes(f.face.id)),
+    pairs: answer.op === "leave_all" || gone ? [] : r.pairs,
+  })
 }
 
 /** A face's portrait (the mock has them all made). */

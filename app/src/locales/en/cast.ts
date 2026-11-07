@@ -98,6 +98,8 @@ export default {
     /** Read out by a screen reader for a card that is selected. */
     selected: "Selected",
     selectAll: "Select all",
+    /** In the bar of selected characters: also rescan the faces of nobody. */
+    withEveryoneElse: "With Everyone else",
     /** Menu item and button name; the button itself says `clearShort`. */
     clear: "Clear selection",
     clearShort: "Clear",
@@ -136,6 +138,10 @@ export default {
     /** The same on a button, where the selection's count is already shown beside it. */
     moveShort: "Move to…",
     notAFace: "Not a face",
+    rescan: "Rescan",
+    rescanTip: "Read these faces again at full quality",
+    rescanConfirmed: "You confirmed these faces yourself",
+    selectUnclear: "Select unclear faces",
     useAsPicture: "Use as picture",
     /** A face's name for a screen reader. */
     aria: "Face",
@@ -157,6 +163,91 @@ export default {
     thisFace: "This face",
     /** A face in an episode, for a screen reader; `where` is the episode's label. */
     ariaIn: "Face in {{where}}",
+  },
+
+  /** A second look at faces: suggestions, until the person answers. */
+  rescan: {
+    title: "Rescan",
+    heading: "What Rescan found",
+    nothingYet: "Nothing has changed yet. Every answer is yours.",
+    startFailed: "Couldn't start Rescan",
+    finished: "Rescan finished",
+    show: "Show",
+    left_one: "{{count}} suggestion left",
+    left_other: "{{count}} suggestions left",
+    leaveRest: "Leave the rest",
+    leaveTitle: "Leave everything as it is?",
+    leaveAbout: "The faces stay where they are. You can rescan them any time.",
+    acceptClear_one: "Accept {{count}} clear match",
+    acceptClear_other: "Accept {{count}} clear matches",
+    acceptTitle_one: "Accept {{count}} face?",
+    acceptTitle_other: "Accept {{count}} faces?",
+    acceptAbout: "Each face goes to the character shown. Other unconfirmed faces may follow them.",
+    acceptAnswer: "Accept",
+    bar: {
+      waiting: "Rescan waits for the analysis",
+      starting: "Getting ready to rescan",
+      reading: "Rescanning {{done}} of {{total}}",
+      stop: "Stop",
+    },
+    waiting: {
+      title_one: "Rescan has {{count}} suggestion for you",
+      title_other: "Rescan has {{count}} suggestions for you",
+      about: "Nothing changes until you say so.",
+      open: "See them",
+    },
+    tally: {
+      looked_one: "{{count}} face looked at",
+      looked_other: "{{count}} faces looked at",
+      read_one: "{{count}} read at full quality",
+      read_other: "{{count}} read at full quality",
+      right_one: "{{count}} already right",
+      right_other: "{{count}} already right",
+      unread_one: "{{count}} couldn't be read",
+      unread_other: "{{count}} couldn't be read",
+    },
+    section: {
+      pairs: "Same person?",
+      faces: "Faces that look like someone",
+      between: "Could be either",
+      doubts: "Might not be them",
+      noFace: "Maybe not faces",
+    },
+    lane: {
+      lookLike_one: "{{count}} face looks like {{name}}",
+      lookLike_other: "{{count}} faces look like {{name}}",
+      doubt_one: "{{count}} face looks little like {{name}}",
+      doubt_other: "{{count}} faces look little like {{name}}",
+      noFace_one: "No face was found in {{count}} of these",
+      noFace_other: "No face was found in these {{count}}",
+      maybe: "Maybe",
+      onNow: "On {{name}} now",
+      leave: "Leave them",
+      keep: "Keep it as it is",
+      noneAreFaces: "None are faces",
+    },
+    choice: {
+      neither: "Neither",
+    },
+    pair: {
+      likely: "Likely one person",
+      maybe: "Might be one person",
+      question: "Are these two the same person?",
+      facesMatch: "Their clearest faces match",
+      facesClose: "Their clearest faces are close",
+      oneCheck: "One check only: no second model knows this footage",
+      secondAgrees: "A second model agrees",
+      secondDoubts: "A second model has doubts",
+      neverTogether: "Never in the same frame",
+      together_one: "In the same frame {{count}} time",
+      together_other: "In the same frame {{count}} times",
+      same: "Same person",
+      apart: "Two people",
+    },
+    done: {
+      title: "Nothing left to decide",
+      about: "Select faces or characters and choose Rescan for a closer look.",
+    },
   },
 
   /** Everyone nobody claimed. */

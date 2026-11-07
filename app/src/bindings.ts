@@ -233,6 +233,15 @@ export const commands = {
 	/**  Apply a decision about the cast. Returns the character it created, if any. */
 	castEdit: (projectId: ProjectId, edit: CastEdit) => __TAURI_INVOKE<string | null>("cast_edit", { projectId, edit }),
 	/**
+	 *  Read faces again and say who they are. Changes nothing: what it finds
+	 *  waits in [`rescan_results`] for the person's answer.
+	 */
+	castRescan: (projectId: ProjectId, request: RescanRequest) => __TAURI_INVOKE<null>("cast_rescan", { projectId, request }),
+	/**  What Rescan is waiting to hear about. */
+	rescanResults: (projectId: ProjectId) => __TAURI_INVOKE<RescanResults>("rescan_results", { projectId }),
+	/**  The person's answer to a suggestion: a decision like any other. */
+	rescanAnswer: (projectId: ProjectId, answer: RescanAnswer) => __TAURI_INVOKE<null>("rescan_answer", { projectId, answer }),
+	/**
 	 *  A face's portrait (3:4, sharp where a face is shown big), made now unless
 	 *  it exists. `None` when it can't be made now (the media is missing or being
 	 *  indexed): the thumbnail stands in.
@@ -502,6 +511,7 @@ export const events = {
 	pluginsChanged: makeEvent<PluginsChanged>("plugins:changed"),
 	pluginsOpened: makeEvent<PluginsOpened>("plugins:opened"),
 	portraitsChanged: makeEvent<PortraitsChanged>("portraits:changed"),
+	rescanChanged: makeEvent<RescanChanged>("rescan:changed"),
 	updateProgress: makeEvent<UpdateProgress>("update:progress"),
 };
 
@@ -1494,7 +1504,12 @@ export type JobKind = "ingest" | "proxy" | "export" |
  */
 "regroup" | 
 /**  A plugin's action (an export action or a palette command). */
-"plugin";
+"plugin" | 
+/**
+ *  Faces read again at the source's own quality; what it finds waits for
+ *  the person's answer.
+ */
+"rescan";
 
 /**  Throttled progress for a running job (≤ 4 Hz per job). */
 export type JobProgress = {
@@ -2452,6 +2467,114 @@ export type RelinkSummary = {
 	/**  Still missing. */
 	missing: number,
 };
+
+/**  The person's answer to a suggestion. */
+export type RescanAnswer = 
+/**  These faces are this character. */
+{ op: "accept"; tracks: number[]; characterId: CharacterId } | 
+/**  These faces aren't this character. */
+{ op: "not_them"; tracks: number[]; characterId: CharacterId } | 
+/**  Leave these faces as they are. */
+{ op: "dismiss"; tracks: number[] } | 
+/**  These aren't faces. */
+{ op: "not_a_face"; tracks: number[] } | 
+/**  These two are one person. */
+{ op: "same_person"; from: CharacterId; into: CharacterId } | 
+/**  These two are two people. */
+{ op: "two_people"; a: CharacterId; b: CharacterId } | 
+/**  Leave everything as it is. */
+{ op: "leave_all" };
+
+/**
+ *  Rescan got further: `looked` are the faces read just now, `done` of
+ *  `total`. `results`: what it keeps for the person changed. Nothing of the
+ *  cast changes with it.
+ */
+export type RescanChanged = {
+	projectId: ProjectId,
+	looked: number[],
+	done: number,
+	total: number,
+	results: boolean,
+};
+
+/**  A face Rescan has something to say about. */
+export type RescanFace = {
+	face: FaceTrackItem,
+	verdict: RescanVerdict,
+	target: CharacterId | null,
+	other: CharacterId | null,
+	/**  How much it resembles `target`, and `other` or the next best. */
+	score: number | null,
+	score2: number | null,
+	/**  It was read again from the source; its stored face was clear otherwise. */
+	read: boolean,
+};
+
+/**  How sure the second check is that two characters are one person. */
+export type RescanLikeness = "likely" | "maybe";
+
+/**  "Are these two one person?", with what speaks for it. */
+export type RescanPair = {
+	a: CharacterId,
+	b: CharacterId,
+	likeness: RescanLikeness,
+	/**  How alike their clearest faces are, read from the source. */
+	main: number | null,
+	/**  Whether a second model agrees; `None`: there is none for this footage. */
+	secondAgrees: boolean | null,
+	/**  Frames they were both found in. */
+	together: number,
+	/**  Each one's clearest faces. */
+	aFaces: FaceTrackItem[],
+	bFaces: FaceTrackItem[],
+};
+
+/**  What to rescan. */
+export type RescanRequest = {
+	/**  These faces ... */
+	tracks: number[],
+	/**  ... and every face of these characters that isn't confirmed ... */
+	characters: CharacterId[],
+	/**  ... and Everyone else. */
+	everyoneElse: boolean,
+};
+
+/**  What Rescan is waiting to hear about. */
+export type RescanResults = {
+	faces: RescanFace[],
+	pairs: RescanPair[],
+	tally: RescanTally,
+};
+
+/**  How the last rescan went. */
+export type RescanTally = {
+	/**  Faces asked about. */
+	looked: number,
+	/**  Of those, read again from the source. */
+	read: number,
+	/**  Faces that stay as they are. */
+	right: number,
+	/**  Faces that look like no one. */
+	nobody: number,
+	/**  Faces whose file can't be found. */
+	unread: number,
+};
+
+/**  What Rescan says of a face. A suggestion: only the person's answer moves it. */
+export type RescanVerdict = 
+/**  It is on one character and clearly `target`. */
+"elsewhere" | 
+/**  It is on no one and clearly `target`. */
+"newly" | 
+/**  It is on no one and may be `target`. */
+"maybe" | 
+/**  It could be `target` or `other`. */
+"between" | 
+/**  It looks too little like the character it is on. */
+"doubt" | 
+/**  No look found a face in it. */
+"no_face";
 
 /**  What AutoScene's catalog says of a plugin it reviewed. */
 export type ReviewCatalog = {

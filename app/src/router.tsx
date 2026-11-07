@@ -11,6 +11,7 @@ import { AppShell } from "@/components/shell/AppShell"
 import { NameCrumb, SettingsCrumb } from "@/components/shell/crumbs"
 import { CastPage } from "@/features/cast/CastPage"
 import { CharacterPage } from "@/features/cast/CharacterPage"
+import { RescanPage } from "@/features/cast/RescanPage"
 import { ReviewPage } from "@/features/cast/ReviewPage"
 import { LibraryPage } from "@/features/library/LibraryPage"
 import { PlayerPage } from "@/features/player/PlayerPage"
@@ -111,6 +112,13 @@ const reviewRoute = createRoute({
   component: ReviewPage,
 })
 
+const rescanRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/cast/rescan",
+  staticData: { crumb: <NameCrumb name="rescan" /> },
+  component: RescanPage,
+})
+
 const characterRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/cast/$cid",
@@ -187,6 +195,7 @@ export const routeTree = rootRoute.addChildren([
     playerRoute,
     castRoute,
     reviewRoute,
+    rescanRoute,
     characterRoute,
     packRoute,
     exportsRoute,

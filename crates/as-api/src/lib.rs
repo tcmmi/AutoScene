@@ -927,8 +927,8 @@ pub struct RescanPair {
     pub likeness: RescanLikeness,
     /// How alike their clearest faces are, read from the source.
     pub main: f32,
-    /// The same asked of a second model; `None`: there is none for this footage.
-    pub second: Option<f32>,
+    /// Whether a second model agrees; `None`: there is none for this footage.
+    pub second_agrees: Option<bool>,
     /// Frames they were both found in.
     pub together: u32,
     /// Each one's clearest faces.

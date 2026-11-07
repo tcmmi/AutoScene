@@ -163,6 +163,14 @@ Rules:
   (click to rename) and facts as chips; Build a scenepack as the white pill; shots scrub on hover. Shots close
   together stack on one card: hover scrubs them all, a click opens them in a band under the row, Enter or the Play
   button watches from the first.
+- **Rescan:** Rescan beside Move to… and Not a face (key R) and in the Cast page's selection bar, with a chip for
+  Everyone else; on Everyone else, Select unclear faces picks those a closer look can help. It starts at once: it
+  changes nothing. While it reads, a glass bar in the bottom slot shows how far (above the selection's bar when both
+  are up) and a gold line crosses each face once, when its reading lands. What it found waits behind a gold banner on
+  Cast, on a page of its own: the white pill accepts every clear match; "Same person?" shows both side by side over a
+  gold seam with what speaks for it, Same person and Two people; a lane per character holds the faces that look like
+  them, soft at first, sharp once their exact frame is there; "Could be either" puts a face between two people.
+  Nothing happens until the person answers.
 - **Scenepack:** the character's portrait and name, a glass bar that stays under the top bar (the order; Filters with
   the number that are on, plugin filters counted; the handles; a plugin's filters as chips with the plugin mark: a ring
   fills while one checks, a warning mark once its check failed, a filter of a plugin that is off is dimmed; Reset

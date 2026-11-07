@@ -153,6 +153,7 @@ export default {
     plugins: "Plugins",
     cast: "Cast",
     review: "Cast · Review",
+    rescan: "Cast · Rescan",
     exports: "Exports",
     /** `section` is the name of the Settings section. */
     settings: "Settings · {{section}}",
@@ -188,6 +189,7 @@ export default {
     showExports: "Show the exports",
     openPlayer: "Open in the player",
     openCast: "Open the cast",
+    openRescan: "Open what Rescan found",
     openProject: "Open the project",
     copyError: "Copy the error",
     copyMessage: "Copy the message",
@@ -210,6 +212,7 @@ export default {
     stops: {
       indexing: "indexing",
       analysing: "analysing",
+      rescan: "rescanning",
       preview_one: "building a preview",
       preview_other: "building previews",
       export_one: "an export",

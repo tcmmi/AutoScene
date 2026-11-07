@@ -151,6 +151,9 @@
     },
     "clearSelection": {
       "name": "Deselectează tot"
+    },
+    "rescan": {
+      "name": "Rescanează fețele selectate"
     }
   },
   "shots": {

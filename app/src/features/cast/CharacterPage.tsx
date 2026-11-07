@@ -13,6 +13,7 @@ import {
   PencilSimple,
   Play,
   Prohibit,
+  Scan,
   SelectionAll,
   User,
   UserFocus,
@@ -55,7 +56,7 @@ import { fmt } from "@/lib/i18n"
 import { assetUrl } from "@/lib/media"
 import { modKey } from "@/lib/platform"
 import { firstFailure, useCast, useCastTracks, useCharacterShots, useMediaList, useProject } from "@/lib/queries"
-import { FACES_SHORTCUTS, SHOTS_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
+import { FACES_SHORTCUTS, SHOTS_SHORTCUTS, useShortcutKeys, useShortcuts } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
 import { castEdit, characterLabel } from "./cast"
 import { CharacterItems } from "./character-actions"
@@ -64,6 +65,9 @@ import { FaceGrid } from "./FaceGrid"
 import { FacePreview } from "./FacePreview"
 import { canPlayMoment } from "./moment"
 import { PickCharacter } from "./PickCharacter"
+import { RescanBar } from "./RescanBar"
+import { RescanWaiting } from "./RescanWaiting"
+import { UNCLEAR_QUALITY, startRescan } from "./rescan"
 
 const NO_TRACKS: FaceTrackItem[] = []
 const NO_GROUPS: ShotGroup[] = []
@@ -88,6 +92,7 @@ export function CharacterPage() {
   const { t } = useTranslation(["cast", "common"])
   const { pid, cid } = useParams({ from: "/p/$pid/cast/$cid" })
   const navigate = useNavigate()
+  const keys = useShortcutKeys()
   const projectQuery = useProject(pid)
   const castQuery = useCast(pid)
   const mediaQuery = useMediaList(pid)
@@ -129,9 +134,22 @@ export function CharacterPage() {
         if (selected.size === 0) return false
         setSelected(new Set())
       },
+      rescan: () => {
+        if (!rescanSelected()) return false
+      },
     },
     { enabled: view === "faces" },
   )
+
+  // The person's own word on a face stands: confirmed faces aren't asked about.
+  const askable = list.filter((f) => selected.has(f.id) && f.assign !== "pinned").map((f) => f.id)
+  const rescanSelected = () => {
+    if (askable.length === 0) return false
+    void startRescan(pid, { tracks: askable, characters: [], everyoneElse: false })
+    setSelected(new Set())
+    return true
+  }
+  const unclear = useMemo(() => list.filter((f) => (f.quality ?? 0) < UNCLEAR_QUALITY).map((f) => f.id), [list])
 
   const open = useCallback(
     (t: { mediaId: string; start: number }) =>
@@ -192,6 +210,11 @@ export function CharacterPage() {
       <ContextMenuItem onSelect={() => void edit({ op: "not_a_face", tracks: ids })}>
         <X /> {t("faces.notAFace")}
       </ContextMenuItem>
+      {askable.length > 0 && (
+        <ContextMenuItem onSelect={() => void rescanSelected()} shortcut={keys("faces.rescan")}>
+          <Scan /> {t("faces.rescan")}
+        </ContextMenuItem>
+      )}
       {character && selected.size === 1 && (
         <ContextMenuItem onSelect={() => void edit({ op: "set_cover", characterId: character.id, track: ids[0] })}>
           <Image /> {t("faces.useAsPicture")}
@@ -230,6 +253,11 @@ export function CharacterPage() {
           <SelectionAll /> {t("character.selectEveryFace")}
         </ContextMenuItem>
       )}
+      {view === "faces" && unclear.length > 0 && (
+        <ContextMenuItem onSelect={() => setSelected(new Set(unclear))}>
+          <Scan /> {t("faces.selectUnclear")}
+        </ContextMenuItem>
+      )}
     </>
   )
   const onBody = (bodies: number[], verdict: BodyVerdict) => {
@@ -263,6 +291,7 @@ export function CharacterPage() {
       )}
 
       <section className="px-10 pt-2 pb-28">
+        <RescanWaiting pid={pid} className="mb-6" />
         <div className="mb-5 flex items-center justify-between gap-4">
           {everyone ? (
             <h2 className="text-xl font-semibold text-fg-1">{t("everyoneElse.heading")}</h2>
@@ -278,7 +307,14 @@ export function CharacterPage() {
             />
           )}
           {view === "faces" && list.length > 0 && (
-            <span className="text-sm text-fg-3">{t("character.facesHint")}</span>
+            <div className="flex items-center gap-3">
+              {everyone && unclear.length > 0 && (
+                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(unclear))}>
+                  <Scan /> {t("faces.selectUnclear")}
+                </Button>
+              )}
+              <span className="text-sm text-fg-3">{t("character.facesHint")}</span>
+            </div>
           )}
         </div>
         {view === "shots" && character ? (
@@ -314,6 +350,13 @@ export function CharacterPage() {
           <Button size="sm" variant="ghost" onClick={() => void edit({ op: "not_a_face", tracks: ids })}>
             <X /> {t("faces.notAFace")}
           </Button>
+          <Tooltip label={t("faces.rescanTip")} hint={askable.length === 0 ? t("faces.rescanConfirmed") : undefined} shortcut={keys("faces.rescan")} side="top">
+            <span>
+              <Button size="sm" variant="ghost" disabled={askable.length === 0} onClick={() => void rescanSelected()}>
+                <Scan /> {t("faces.rescan")}
+              </Button>
+            </span>
+          </Tooltip>
           {character && selected.size === 1 && (
             <Button size="sm" variant="ghost" onClick={() => void edit({ op: "set_cover", characterId: character.id, track: ids[0] })}>
               <Image /> {t("faces.useAsPicture")}
@@ -325,6 +368,8 @@ export function CharacterPage() {
           </Button>
         </div>
       )}
+
+      <RescanBar pid={pid} lifted={view === "faces" && selected.size > 0} />
 
       <PickCharacter
         pid={pid}

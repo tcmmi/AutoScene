@@ -45,6 +45,8 @@ export const qk = {
   // Under the cast: a name waits only for a character still shown and
   // unnamed. The look-up says it began and ended with `anilist:changed`.
   anilistNames: (pid: ProjectId) => ["cast", pid, "anilist"] as const,
+  // Under the cast: an edit may answer what Rescan asks.
+  rescan: (pid: ProjectId) => ["cast", pid, "rescan"] as const,
   exportDir: (pid: ProjectId) => ["exportDir", pid] as const,
   plugins: ["plugins"] as const,
   // Under the plugins: `plugins:changed` refreshes both.
@@ -164,6 +166,11 @@ export function useCast(pid: ProjectId, enabled = true) {
  *  first ask starts it for a project never looked up). */
 export function useAniListNames(pid: ProjectId, enabled: boolean) {
   return useQuery({ queryKey: qk.anilistNames(pid), queryFn: () => commands.anilistNames(pid), enabled })
+}
+
+/** What Rescan is waiting to hear about. */
+export function useRescanResults(pid: ProjectId, enabled = true) {
+  return useQuery({ queryKey: qk.rescan(pid), queryFn: () => commands.rescanResults(pid), enabled })
 }
 
 export function useCastTracks(pid: ProjectId, filter: TrackFilter, enabled = true) {

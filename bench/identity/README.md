@@ -133,6 +133,33 @@ per-track F; the faces it drops are below any usable quality.
 Characters without a visible face (bodies tracked through shots, found
 again by their clothes): see `bench/bodies`.
 
+## Rescan
+
+Rescan judges faces against every character and, for unclear ones, reads them
+again at the source's own resolution (`as_analysis::rescan`,
+`as_identity::judge`). `rescan_bench` scores it on a COPY of a project:
+
+```sh
+cargo run --release -p as-project --example rescan_bench -- <project_copy_dir> [labels.tsv]
+READ=<ort_dir>,<models_dir>,<ffmpeg_dir> cargo run --release -p as-project --example rescan_bench -- <project_copy_dir>
+```
+
+The owner's pins, asked about blind, on the Miraculous film's 4K original
+(2026-11-07): of 81 hard pins (below `core_quality`) 9 were clear and right
+from the stored faces, 26 when read again, at 0 and 2 clear and wrong; Everyone
+else went from 4 clear matches to 25. Clear faces gain nothing (173 right, 5
+wrong became 167 and 7), so only unclear ones are read. 104 s per 100 faces
+from a hard disk. **Live action is unproven:** no original was at hand.
+
+Stored faces alone, all pins and labels of five casts: 209 clear verdicts
+right, 6 wrong; on Breaking Bad no stranger got a clear match, but none of the
+17 faces on the wrong character was noticed, and a "maybe" is right less than
+half the time. Those stay suggestions for the person.
+
+Two groups, clearest 8 faces each (`likeness`): one person split by looks
+0.33-0.79 (median about 0.65) in live action, people seen together 0.06 at the
+median, 0.27 at most on Breaking Bad, 0.57 on The Blacklist.
+
 ## Fast Scan
 
 Fast Scan finds faces the way the Scener app does (YuNet, SFace, a few

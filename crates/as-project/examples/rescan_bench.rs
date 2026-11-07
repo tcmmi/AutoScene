@@ -236,7 +236,7 @@ fn groups(cast: &RescanCast) {
         g.sort_by(|&a, &b| cast.tracks[b].quality.total_cmp(&cast.tracks[a].quality));
         g.truncate(K);
         let faces: Vec<Vec<f32>> = g.iter().map(|&i| cast.tracks[i].embedding.clone()).collect();
-        as_identity::in_cast_space(&faces, &cast.tracks, &cast.params, cast.space.as_ref()).0
+        as_identity::in_cast_space(&faces, &cast.space)
     };
     let dot = |a: &[f32], b: &[f32]| -> f32 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
     let mut same = Vec::new();
@@ -294,7 +294,7 @@ fn groups(cast: &RescanCast) {
     };
     line("one person split by looks", &mut same);
     line("people seen together", &mut apart);
-    let (_, p) = as_identity::in_cast_space(&[], &cast.tracks, &cast.params, cast.space.as_ref());
+    let p = cast.bars;
     println!("bars link {:.3} copy_link {:.3} assign {:.3} unsure {:.3}", p.link, p.copy_link, p.assign, p.unsure);
 }
 
@@ -395,7 +395,7 @@ fn main() {
         on(TrackAssign::Unsure),
         on(TrackAssign::Auto),
         on(TrackAssign::Pinned),
-        matches!(cast.space, Some(as_identity::Space::Fitted(_))),
+        matches!(cast.space, as_identity::Space::Fitted(_)),
     );
     pins(&cast, &[], "stored");
     groups(&cast);

@@ -12,6 +12,8 @@ const state: { cast: Cast; project: { id: string; title: string; kind: string; c
   project: { id: "p", title: "Show", kind: "series", content: "live" },
 }
 
+vi.mock("./RescanWaiting", () => ({ RescanWaiting: () => null }))
+vi.mock("./RescanBar", () => ({ RescanBar: () => null }))
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({ pid: `p${hoisted.n}` }),
   useNavigate: () => () => {},

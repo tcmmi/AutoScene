@@ -115,7 +115,8 @@
     "cast": "Distribuție",
     "review": "Distribuție · Verificare",
     "exports": "Exporturi",
-    "settings": "Setări · {{section}}"
+    "settings": "Setări · {{section}}",
+    "rescan": "Distribuție · Rescanare"
   },
   "activity": {
     "title": "Activitate",
@@ -150,7 +151,8 @@
     "running_other": "{{n}} rulează",
     "waitingCount_one": "{{n}} în așteptare",
     "waitingCount_few": "{{n}} în așteptare",
-    "waitingCount_other": "{{n}} în așteptare"
+    "waitingCount_other": "{{n}} în așteptare",
+    "openRescan": "Deschide ce a găsit rescanarea"
   },
   "jobs": {
     "cancelIndexing": "Anulează indexarea",
@@ -168,7 +170,8 @@
       "export_other": "{{n}} de exporturi",
       "pluginRun_one": "o rulare de plugin",
       "pluginRun_few": "{{n}} rulări de plugin",
-      "pluginRun_other": "{{n}} de rulări de plugin"
+      "pluginRun_other": "{{n}} de rulări de plugin",
+      "rescan": "rescanarea"
     }
   },
   "copy": {

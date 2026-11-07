@@ -31,6 +31,7 @@ const STOPPING: [JobInfo["kind"], (n: number) => string][] = [
   ["analyze", () => t("shell:jobs.stops.analysing")],
   ["proxy", (count) => t("shell:jobs.stops.preview", { count })],
   ["export", (n) => t("shell:jobs.stops.export", { count: n, n })],
+  ["rescan", () => t("shell:jobs.stops.rescan")],
   ["plugin", (n) => t("shell:jobs.stops.pluginRun", { count: n, n })],
 ]
 

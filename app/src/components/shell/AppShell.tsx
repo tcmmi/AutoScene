@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { Outlet } from "@tanstack/react-router"
+import { Outlet, useRouter } from "@tanstack/react-router"
 import { NewProjectDialog } from "@/features/library/NewProjectDialog"
 import { InstallReviewDialog } from "@/features/plugins/InstallReviewDialog"
 import { useOpenedPackages } from "@/features/plugins/use-opened-packages"
@@ -38,11 +38,19 @@ export function AppShell() {
   useEffect(() => startUpdateSchedule(), [])
   // The bridge lives as long as the window: it asks for where to go when it needs to.
   const { goPlugins } = useAppActions()
+  const router = useRouter()
   const go = useRef(goPlugins)
   useEffect(() => {
     go.current = goPlugins
   })
-  useEffect(() => startEventBridge({ goPlugins: () => go.current() }), [])
+  useEffect(
+    () =>
+      startEventBridge({
+        goPlugins: () => go.current(),
+        goRescan: (pid) => void router.navigate({ to: "/p/$pid/cast/rescan", params: { pid } }),
+      }),
+    [router],
+  )
   useEffect(() => installBrowserGuards({ dev: import.meta.env.DEV }), [])
   const railHidden = useUi((s) => s.sidebarCollapsed)
 

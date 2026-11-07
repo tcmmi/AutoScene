@@ -91,8 +91,13 @@ pub async fn rescan_answer(
     let lib = state.library.clone();
     blocking(move || {
         let p = lib.project(project_id)?;
-        for edit in p.rescan_answer(&answer)? {
-            work::cast_edited(&app, &p, &edit);
+        let edits = p.rescan_answer(&answer)?;
+        for edit in &edits {
+            work::cast_edited(&app, &p, edit);
+        }
+        // "Two people" pins faces of both without an edit of its own.
+        if edits.is_empty() {
+            work::cast_changed(&app, &p);
         }
         work::rescan_changed(&app, &p);
         Ok(())

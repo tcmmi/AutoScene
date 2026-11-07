@@ -7,6 +7,7 @@ import { Artwork } from "@/components/ui/artwork"
 import { Badge } from "@/components/ui/badge"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
+import { ProgressRing } from "@/components/ui/progress"
 import { contextKit } from "@/components/ui/menu-actions"
 import { fmt } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -26,6 +27,7 @@ export function CharacterCard({
   onChoosePicture,
   selected = false,
   selecting = false,
+  scanning,
   onPick,
   onSelect,
   selectionMenu,
@@ -33,6 +35,8 @@ export function CharacterCard({
   pid: string
   character: Character
   className?: string
+  /** Rescan is reading their faces: how far, 0..1. */
+  scanning?: number
   onRename?: () => void
   onChoosePicture?: () => void
   selected?: boolean
@@ -79,6 +83,7 @@ export function CharacterCard({
           className={cn(
             "group block rounded-2xl transition-[transform,box-shadow] duration-[var(--dur-med)] ease-out hover:-translate-y-1 focus-visible:-translate-y-1",
             selected && "ring-2 ring-accent ring-offset-2 ring-offset-canvas",
+            scanning !== undefined && !selected && "ring-1 ring-accent-line ring-offset-2 ring-offset-canvas",
             refinding && "opacity-60",
             className,
           )}
@@ -98,6 +103,11 @@ export function CharacterCard({
               <Badge tone="media" className="absolute top-2.5 right-2.5">
                 {t("card.moreToReview", { count: c.unsure })}
               </Badge>
+            )}
+            {scanning !== undefined && !selected && !selecting && (
+              <span className="absolute top-2.5 left-2.5 flex size-7 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm">
+                <ProgressRing value={scanning} className="size-5" />
+              </span>
             )}
             {(selected || selecting) && (
               <span

@@ -6,7 +6,7 @@ import { settingsLabel } from "@/features/settings/sections"
  * `WindowTitle`). They are components, not text kept at module scope, so
  * the title follows the language.
  */
-export function NameCrumb({ name }: { name: "plugins" | "cast" | "review" | "exports" }) {
+export function NameCrumb({ name }: { name: "plugins" | "cast" | "review" | "rescan" | "exports" }) {
   const { t } = useTranslation("shell")
   return <>{t(`crumb.${name}`)}</>
 }

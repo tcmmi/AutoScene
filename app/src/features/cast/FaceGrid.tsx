@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import { Check, Play } from "@/components/icons"
 import type { FaceTrackItem, MediaItem } from "@/bindings"
 import { Badge } from "@/components/ui/badge"
+import { ScanSweep } from "@/components/ui/scan-sweep"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem } from "@/components/ui/context-menu"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -11,6 +12,7 @@ import { clickSelect } from "@/lib/grid"
 import { assetUrl } from "@/lib/media"
 import { timecode } from "@/lib/timecode"
 import { cn } from "@/lib/utils"
+import { useRescan } from "@/state/rescan"
 
 /**
  * Face tracks as a grid of thumbnails (only the rows on screen are drawn:
@@ -104,6 +106,8 @@ const Face = memo(function Face({
   onWatch: (t: FaceTrackItem) => void
 }) {
   const { t } = useTranslation("cast")
+  // Only this face redraws when Rescan reads it.
+  const swept = useRescan((s) => s.sweeping.has(track.id))
   const where = m?.fps ? `${m.label ? `${m.label} · ` : ""}${timecode(track.start, m.fps, false)}` : ""
   return (
     <Tooltip label={where} hint={t("faces.selectHint")} side="top" delay={600} disabled={!where}>
@@ -139,6 +143,7 @@ const Face = memo(function Face({
             draggable={false}
             className={cn("size-full object-cover", (track.quality ?? 0) < 0.3 && "opacity-70")}
           />
+          {swept && <ScanSweep />}
           {track.assign === "pinned" && !selected && (
             <span className="absolute top-2 left-2 size-2 rounded-full bg-white shadow-[0_0_6px_rgb(255_255_255/0.6)]" aria-label={t("faces.confirmed")} />
           )}

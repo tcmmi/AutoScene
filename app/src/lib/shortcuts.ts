@@ -141,12 +141,13 @@ export const REVIEW_SHORTCUTS = scoped<ReviewId>("review", [
   },
 ])
 
-export type FacesId = "selectAll" | "clearSelection"
+export type FacesId = "selectAll" | "clearSelection" | "rescan"
 
 /** On a character's faces. */
 export const FACES_SHORTCUTS = scoped<FacesId>("faces", [
   { id: "selectAll", slots: one(key("a", { mod: true })), fixed: true },
   { id: "clearSelection", slots: one(key("escape")), fixed: true },
+  { id: "rescan", slots: one(key("r")) },
 ])
 
 export type ShotsId = "toggle" | "watch" | "close"

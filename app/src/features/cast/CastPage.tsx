@@ -10,6 +10,7 @@ import {
   Info,
   ListBullets,
   MagnifyingGlass,
+  Scan,
   SelectionAll,
   SquaresFour,
   User,
@@ -24,6 +25,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Page } from "@/components/ui/page"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ToggleChip } from "@/components/ui/toggle-chip"
 import { TopBar } from "@/components/ui/topbar"
 import { AnalysisStatus } from "@/features/project/AnalysisStatus"
 import { ProjectLoadError } from "@/features/project/ProjectLoadError"
@@ -32,6 +34,7 @@ import { fmt } from "@/lib/i18n"
 import { modKey } from "@/lib/platform"
 import { firstFailure, useCast, useMediaList, useProject, useSettings } from "@/lib/queries"
 import { CAST_SHORTCUTS, useShortcuts } from "@/lib/shortcuts"
+import { useRescan } from "@/state/rescan"
 import { useUi } from "@/state/ui"
 import { cn } from "@/lib/utils"
 import { CharacterCard, CharacterRow } from "./CharacterCard"
@@ -41,6 +44,9 @@ import { CastFilters } from "./CastFilters"
 import { ChoosePictureDialog } from "./ChoosePictureDialog"
 import { EveryoneElseCard } from "./EveryoneElseCard"
 import { RenameCharacterDialog } from "./RenameCharacterDialog"
+import { RescanBar } from "./RescanBar"
+import { RescanWaiting } from "./RescanWaiting"
+import { startRescan } from "./rescan"
 import {
   ALL_CAST,
   type CastFind,
@@ -125,6 +131,12 @@ export function CastPage() {
     anchor.current = id
     setPicked(new Set([...selected, id]))
   }
+  const [withEveryone, setWithEveryone] = useState(false)
+  const run = useRescan((s) => s.runs[pid])
+  const rescan = () => {
+    void startRescan(pid, { tracks: [], characters: chosen.map((c) => c.id), everyoneElse: withEveryone })
+    clearSelection()
+  }
   const setHidden = async (ids: string[], hidden: boolean) => {
     clearSelection()
     const done = await setHiddenAll(pid, ids, hidden)
@@ -158,6 +170,9 @@ export function CastPage() {
           <Eye /> {t("selection.showInCast", { count: toShow.length })}
         </ContextMenuItem>
       )}
+      <ContextMenuItem onSelect={rescan}>
+        <Scan /> {t("faces.rescan")}
+      </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={selectAll} shortcut={[modKey, "A"]}>
         <SelectionAll /> {t("selection.selectAll")}
@@ -175,6 +190,7 @@ export function CastPage() {
     onChoosePicture: () => setPicturing(c),
     selected: selected.has(c.id),
     selecting: selected.size > 0,
+    scanning: run?.characters.includes(c.id) ? (run.total > 0 ? run.done / run.total : 0) : undefined,
     onPick: (e: React.MouseEvent) => pick(index, e),
     onSelect: () => selectCard(index),
     selectionMenu,
@@ -277,6 +293,7 @@ export function CastPage() {
       <div className={cn("px-10", selected.size > 0 ? "pb-28" : "pb-16")}>
         <AnalysisStatus pid={pid} className="mb-8" />
         <AniListNames pid={pid} cast={cast} className="mb-8" />
+        <RescanWaiting pid={pid} className="mb-8" />
         {unplaced && (
           <p className="mb-8 flex max-w-2xl items-start gap-2.5 rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-3 text-sm text-fg-2 [&_svg]:mt-0.5 [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-fg-1">
             <Info /> {unplaced}
@@ -442,12 +459,21 @@ export function CastPage() {
               <Eye /> {t("selection.showInCast")}
             </Button>
           )}
+          <Button size="sm" variant="ghost" onClick={rescan}>
+            <Scan /> {t("faces.rescan")}
+          </Button>
+          {(cast?.unassigned ?? 0) > 0 && (
+            <ToggleChip pressed={withEveryone} onClick={() => setWithEveryone((v) => !v)} className="ml-1">
+              {t("selection.withEveryoneElse")}
+            </ToggleChip>
+          )}
           <span className="mx-1 h-5 w-px bg-white/15" />
           <Button size="sm" variant="ghost" onClick={clearSelection} aria-label={t("selection.clear")}>
             {t("selection.clearShort")}
           </Button>
         </div>
       )}
+      <RescanBar pid={pid} lifted={selected.size > 0} />
       {cast && (
         <AniListDialog pid={pid} characters={cast.characters} open={anilistOpen} onOpenChange={setAnilistOpen} />
       )}

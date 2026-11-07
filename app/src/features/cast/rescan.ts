@@ -25,16 +25,23 @@ export async function startRescan(pid: string, request: RescanRequest): Promise<
   }
 }
 
-/** Say the person's answer; `undefined` when it failed. */
-export async function answerRescan(pid: string, answer: RescanAnswer): Promise<true | undefined> {
+/** Say the person's answer; a failure throws (a dialog stays open on it). */
+export async function sayRescan(pid: string, answer: RescanAnswer): Promise<void> {
   try {
     await commands.rescanAnswer(pid, answer)
+  } finally {
+    void queryClient.invalidateQueries({ queryKey: qk.rescan(pid) })
+  }
+}
+
+/** Say the person's answer; a toast says so and `undefined` comes back when it failed. */
+export async function answerRescan(pid: string, answer: RescanAnswer): Promise<true | undefined> {
+  try {
+    await sayRescan(pid, answer)
     return true
   } catch (e) {
     toast.error(t("cast:editFailed"), { description: errorMessage(e) })
     return undefined
-  } finally {
-    void queryClient.invalidateQueries({ queryKey: qk.rescan(pid) })
   }
 }
 

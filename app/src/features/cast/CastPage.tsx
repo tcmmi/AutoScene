@@ -135,6 +135,7 @@ export function CastPage() {
   const run = useRescan((s) => s.runs[pid])
   const rescan = () => {
     void startRescan(pid, { tracks: [], characters: chosen.map((c) => c.id), everyoneElse: withEveryone })
+    setWithEveryone(false)
     clearSelection()
   }
   const setHidden = async (ids: string[], hidden: boolean) => {

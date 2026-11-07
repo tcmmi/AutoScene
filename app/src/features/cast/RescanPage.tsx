@@ -18,7 +18,7 @@ import { ChoiceFace } from "./ChoiceFace"
 import { FaceLane } from "./FaceLane"
 import { LikenessCard } from "./LikenessCard"
 import { RescanBar } from "./RescanBar"
-import { answerRescan, clearMatches, rescanParts } from "./rescan"
+import { answerRescan, clearMatches, rescanParts, sayRescan } from "./rescan"
 
 const pairKey = (p: RescanPair) => `${p.a}:${p.b}`
 
@@ -34,6 +34,14 @@ export function RescanPage() {
   // Answered things leave at once, before the list is read again.
   const [gone, setGone] = useState<Set<number>>(new Set())
   const [goneNames, setGoneNames] = useState<Set<string>>(new Set())
+  // What comes back from the backend speaks for itself: a later rescan may
+  // ask about a face again.
+  const [readAt, setReadAt] = useState(results.dataUpdatedAt)
+  if (readAt !== results.dataUpdatedAt) {
+    setReadAt(results.dataUpdatedAt)
+    setGone(new Set())
+    setGoneNames(new Set())
+  }
   const [accepting, setAccepting] = useState(false)
   const [merging, setMerging] = useState<RescanPair | null>(null)
   const [leaving, setLeaving] = useState(false)
@@ -73,13 +81,6 @@ export function RescanPage() {
   const accept = (list: RescanFace[], who: Character) =>
     answer(list, (tracks) => answerRescan(pid, { op: "accept", tracks, characterId: who.id }))
   const dismiss = (list: RescanFace[]) => answer(list, (tracks) => answerRescan(pid, { op: "dismiss", tracks }))
-  /** Not this person: said out loud for a face on no one, left alone for one on someone. */
-  const refuse = (list: RescanFace[], who: Character) =>
-    answer(list, (tracks) =>
-      list.every((f) => f.verdict !== "elsewhere")
-        ? answerRescan(pid, { op: "not_them", tracks, characterId: who.id })
-        : answerRescan(pid, { op: "dismiss", tracks }),
-    )
   const notThem = (list: RescanFace[], who: Character) =>
     answer(list, (tracks) => answerRescan(pid, { op: "not_them", tracks, characterId: who.id }))
   const notFaces = (list: RescanFace[]) => answer(list, (tracks) => answerRescan(pid, { op: "not_a_face", tracks }))
@@ -95,10 +96,13 @@ export function RescanPage() {
     }
   }
   /** The one with more faces keeps going under their name. */
-  const mergeOrder = (p: RescanPair): [Character, Character] => {
-    const [a, b] = [byId.get(p.a)!, byId.get(p.b)!]
+  const mergeOrder = (p: RescanPair): [Character, Character] | null => {
+    const [a, b] = [byId.get(p.a), byId.get(p.b)]
+    if (!a || !b) return null
     return a.tracks >= b.tracks ? [b, a] : [a, b]
   }
+  // Either may be gone by now: a decision places faces a moment later.
+  const merged = merging && mergeOrder(merging)
 
   const left = faces.length + pairs.length
   const loading = results.isPending || castQuery.isPending
@@ -190,7 +194,7 @@ export function RescanPage() {
                       yes={t("maybe.yes", { name })}
                       no={t("character.not", { name })}
                       onYes={(f) => void accept([f], who)}
-                      onNo={(f) => void refuse([f], who)}
+                      onNo={(f) => void notThem([f], who)}
                       actions={
                         <>
                           <Button variant="ghost" onClick={() => void dismiss(list)}>
@@ -222,7 +226,12 @@ export function RescanPage() {
                         a={a}
                         b={b}
                         onPick={(who) => void accept([f], who)}
-                        onNeither={() => void dismiss([f])}
+                        onNeither={() =>
+                          void answer([f], async (tracks) => {
+                            const first = await answerRescan(pid, { op: "not_them", tracks, characterId: a.id })
+                            return first && answerRescan(pid, { op: "not_them", tracks, characterId: b.id })
+                          })
+                        }
                       />
                     )
                   })}
@@ -245,10 +254,10 @@ export function RescanPage() {
                       heading={name}
                       about={t("rescan.lane.doubt", { count: list.length, name })}
                       faces={list}
-                      yes={t("character.not", { name })}
-                      no={t("rescan.lane.keep")}
-                      onYes={(f) => void notThem([f], who)}
-                      onNo={(f) => void dismiss([f])}
+                      yes={t("maybe.yes", { name })}
+                      no={t("character.not", { name })}
+                      onYes={(f) => void dismiss([f])}
+                      onNo={(f) => void notThem([f], who)}
                       actions={
                         <Button variant="ghost" onClick={() => void dismiss(list)}>
                           {t("rescan.lane.leave")}
@@ -266,10 +275,10 @@ export function RescanPage() {
                 heading={t("rescan.section.noFace")}
                 about={t("rescan.lane.noFace", { count: parts.noFace.length })}
                 faces={parts.noFace}
-                yes={t("faces.notAFace")}
-                no={t("rescan.lane.keep")}
-                onYes={(f) => void notFaces([f])}
-                onNo={(f) => void dismiss([f])}
+                yes={t("rescan.lane.keep")}
+                no={t("faces.notAFace")}
+                onYes={(f) => void dismiss([f])}
+                onNo={(f) => void notFaces([f])}
                 actions={
                   <>
                     <Button variant="ghost" onClick={() => void dismiss(parts.noFace)}>
@@ -309,28 +318,29 @@ export function RescanPage() {
         failure={t("editFailed")}
         onConfirm={async () => {
           for (const [target, tracks] of matches) {
+            await sayRescan(pid, { op: "accept", tracks, characterId: target })
             leave(tracks)
-            await answerRescan(pid, { op: "accept", tracks, characterId: target })
           }
         }}
       />
       <ConfirmDialog
-        open={merging !== null}
+        open={merged !== null}
         onOpenChange={(open) => !open && setMerging(null)}
         title={
-          merging &&
+          merged &&
           t("pick.mergeQuestion", {
-            from: characterLabel(mergeOrder(merging)[0]),
-            into: characterLabel(mergeOrder(merging)[1]),
+            from: characterLabel(merged[0]),
+            into: characterLabel(merged[1]),
           })
         }
         description={t("pick.mergeDetail")}
         answer={t("pick.merge")}
         failure={t("editFailed")}
         onConfirm={async () => {
-          if (!merging) return
-          const [from, into] = mergeOrder(merging)
-          await settlePair(merging, () => answerRescan(pid, { op: "same_person", from: from.id, into: into.id }))
+          if (!merged || !merging) return
+          const [from, into] = merged
+          await sayRescan(pid, { op: "same_person", from: from.id, into: into.id })
+          setGoneNames((s) => new Set(s).add(pairKey(merging)))
         }}
       />
       <ConfirmDialog
@@ -340,7 +350,7 @@ export function RescanPage() {
         description={t("rescan.leaveAbout")}
         answer={t("rescan.leaveRest")}
         failure={t("editFailed")}
-        onConfirm={() => answerRescan(pid, { op: "leave_all" })}
+        onConfirm={() => sayRescan(pid, { op: "leave_all" })}
       />
     </Page>
   )

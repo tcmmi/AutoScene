@@ -1468,7 +1468,7 @@ const handlers: Record<string, Handler> = {
     const asked = request as RescanRequest
     const total = 18
     let tick = 0
-    const job = startJob("rescan", said("job.rescanning", "Rescanning faces"), p, 3000, { stage: said("job.stage.rescanning", "Reading faces again") }, () => {
+    startJob("rescan", said("job.rescanning", "Rescanning faces"), p, 3000, { stage: said("job.stage.rescanning", "Reading faces again"), cancelled: () => clearInterval(timer) }, () => {
       clearInterval(timer)
       rescanRun(String(p.id), asked)
       void emit("rescan:changed", { projectId, looked: [], done: 0, total: 0, results: true })
@@ -1476,7 +1476,7 @@ const handlers: Record<string, Handler> = {
     const timer = setInterval(() => {
       tick = Math.min(tick + 3, total)
       void emit("rescan:changed", { projectId, looked: [], done: tick, total, results: false })
-      if (!job) clearInterval(timer)
+      if (tick >= total) clearInterval(timer)
     }, 400)
     return null
   },

@@ -16,11 +16,9 @@ const SHOWN = 4
 /** The project's unfinished rescan, if any. */
 function useRescanJob(pid: string) {
   return useActivity((s) => {
-    for (const id of s.order) {
-      const j = s.jobs[id]
-      if (j?.kind === "rescan" && j.projectId === pid && (j.state === "queued" || j.state === "running")) return j
-    }
-    return undefined
+    const mine = s.order.map((id) => s.jobs[id]).filter((j) => j?.kind === "rescan" && j.projectId === pid)
+    // One that runs before one that waits behind it.
+    return mine.find((j) => j.state === "running") ?? mine.find((j) => j.state === "queued")
   })
 }
 
@@ -41,8 +39,8 @@ export function RescanBar({ pid, lifted = false }: { pid: string; lifted?: boole
   return (
     <div
       className={cn(
-        "glass-strong fixed left-1/2 z-40 flex w-max max-w-[calc(100vw-3rem)] -translate-x-1/2 animate-pop-in items-center gap-3 rounded-full py-1.5 pr-1.5 pl-4 transition-[bottom] duration-[var(--dur-med)]",
-        lifted ? "bottom-20" : "bottom-6",
+        "glass-strong fixed bottom-6 left-1/2 z-40 flex w-max max-w-[calc(100vw-3rem)] -translate-x-1/2 animate-pop-in items-center gap-3 rounded-full py-1.5 pr-1.5 pl-4 transition-transform duration-[var(--dur-med)]",
+        lifted && "-translate-y-14",
       )}
     >
       <ProgressRing value={value} waiting={waiting} className="size-5" />

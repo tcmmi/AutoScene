@@ -1050,7 +1050,7 @@ fn run_rescan(
     if !unclear.is_empty() {
         install_models(state, as_project::face_models(project.face_embedder()), ctx)?;
     }
-    let (reads, unread, stopped) = read_again(app, state, project, &cast, &unclear, &reading, ctx)?;
+    let (reads, unread, stopped) = read_again(app, state, project, &cast, &unclear, &reading, false, ctx)?;
     // Stopped: the faces it got to, nothing about the others.
     let asked: Vec<usize> = if stopped { reads.iter().map(|r| r.track).collect() } else { subjects };
     let tally = project.rescan_keep(&cast, &asked, &reads, unread).map_err(stage_error)?;
@@ -1059,11 +1059,57 @@ fn run_rescan(
     if stopped {
         return Err(StageError::Cancelled);
     }
+    same_person(app, state, project, &cast, request, ctx)?;
+    rescan_changed(app, project);
     Ok(())
 }
 
-/// Read `tracks` from their files. What was read, how many faces can't be
-/// read as their file is missing, and whether it was stopped part way.
+/// The second check: characters a face could be either of, and characters
+/// chosen together that look alike, are compared on their clearest faces read
+/// from the source, by a second model where the footage has one.
+fn same_person(
+    app: &AppHandle,
+    state: &AppState,
+    project: &Arc<Project>,
+    cast: &RescanCast,
+    request: &RescanRequest,
+    ctx: &JobCtx,
+) -> Result<(), StageError> {
+    let pairs = project.rescan_pairs_to_check(cast, request).map_err(stage_error)?;
+    if pairs.is_empty() {
+        return Ok(());
+    }
+    let comparing = msg!("job.stage.comparingCharacters", "Comparing characters");
+    ctx.stage(&comparing);
+    let mut faces: Vec<usize> = pairs.iter().flat_map(|p| p.a_faces.iter().chain(&p.b_faces).copied()).collect();
+    faces.sort_unstable();
+    faces.dedup();
+    let (main, _, stopped) = read_again(app, state, project, cast, &faces, &comparing, false, ctx)?;
+    if stopped {
+        return Err(StageError::Cancelled);
+    }
+    // Faces of 3D animation and anime have no second model that knows them.
+    let other = match project.second_model() {
+        Some(model) if install_models(state, &[model], ctx).is_ok() => {
+            match read_again(app, state, project, cast, &faces, &comparing, true, ctx) {
+                Ok((_, _, true)) => return Err(StageError::Cancelled),
+                Ok((reads, _, false)) => Some(reads),
+                Err(StageError::Cancelled) => return Err(StageError::Cancelled),
+                // No second opinion is no failure.
+                Err(_) => None,
+            }
+        }
+        _ => None,
+    };
+    let kept = project.rescan_keep_pairs(cast, &pairs, &main, other.as_deref()).map_err(stage_error)?;
+    log::info!("rescan: {kept} of {} pairs may be one person", pairs.len());
+    Ok(())
+}
+
+/// Read `tracks` from their files (`second`: by the other face model). What
+/// was read, how many faces can't be read as their file is missing, and
+/// whether it was stopped part way.
+#[allow(clippy::too_many_arguments)]
 fn read_again(
     app: &AppHandle,
     state: &AppState,
@@ -1071,6 +1117,7 @@ fn read_again(
     cast: &RescanCast,
     tracks: &[usize],
     reading: &Msg,
+    second: bool,
     ctx: &JobCtx,
 ) -> Result<(Vec<DoneRead>, u32, bool), StageError> {
     let total = tracks.len() as u32;
@@ -1102,6 +1149,7 @@ fn read_again(
             faces,
             fast: src.fast,
             anime: src.anime,
+            second,
         };
         let read = state.engine.rescan(job, &ctx.cancel, |e| {
             if let RescanEvent::Read { track, embedding, quality, tried, found } = e {

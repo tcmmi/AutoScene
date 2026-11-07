@@ -226,6 +226,78 @@ fn labelled(cast: &RescanCast, labels: &[Label]) {
     println!("assigned: wrong+raised {caught}, wrong+missed {missed}, right+raised {alarm}, right+quiet {quiet}");
 }
 
+/// How alike the clearest faces of two groups are: the two halves of a person
+/// split by their looks against people often on screen together. The clearest
+/// `K` of each side, as `same_person` asks.
+fn groups(cast: &RescanCast) {
+    const K: usize = 8;
+    let clearest = |g: &[usize]| {
+        let mut g = g.to_vec();
+        g.sort_by(|&a, &b| cast.tracks[b].quality.total_cmp(&cast.tracks[a].quality));
+        g.truncate(K);
+        let faces: Vec<Vec<f32>> = g.iter().map(|&i| cast.tracks[i].embedding.clone()).collect();
+        as_identity::in_cast_space(&faces, &cast.tracks, &cast.params, cast.space.as_ref()).0
+    };
+    let dot = |a: &[f32], b: &[f32]| -> f32 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
+    let mut same = Vec::new();
+    for (_, g) in cast.members.iter().filter(|(_, g)| g.len() >= 12) {
+        // Two looks: start from the two faces least alike, then settle.
+        let e = |i: usize| &cast.tracks[i].embedding;
+        let mut far = (g[0], g[1], 2.0f32);
+        for &a in g.iter().take(60) {
+            for &b in g.iter().take(60) {
+                if dot(e(a), e(b)) < far.2 {
+                    far = (a, b, dot(e(a), e(b)));
+                }
+            }
+        }
+        let (mut c1, mut c2) = (e(far.0).clone(), e(far.1).clone());
+        let (mut one, mut two) = (Vec::new(), Vec::new());
+        for _ in 0..6 {
+            (one, two) = g.iter().copied().partition(|&i| dot(e(i), &c1) >= dot(e(i), &c2));
+            let mean = |h: &[usize]| {
+                let mut m = vec![0f32; c1.len()];
+                h.iter().for_each(|&i| m.iter_mut().zip(e(i)).for_each(|(a, b)| *a += b));
+                let n = dot(&m, &m).sqrt().max(1e-6);
+                m.iter_mut().for_each(|x| *x /= n);
+                m
+            };
+            if one.is_empty() || two.is_empty() {
+                break;
+            }
+            (c1, c2) = (mean(&one), mean(&two));
+        }
+        if one.len() >= 3 && two.len() >= 3 {
+            same.push(as_identity::likeness(&clearest(&one), &clearest(&two)));
+        }
+    }
+    let mut apart = Vec::new();
+    for (n, (_, a)) in cast.members.iter().enumerate() {
+        for (_, b) in cast.members.iter().skip(n + 1) {
+            if a.len() >= 3 && b.len() >= 3 && as_identity::frames_together(&cast.tracks, a, b) >= 20 {
+                apart.push(as_identity::likeness(&clearest(a), &clearest(b)));
+            }
+        }
+    }
+    let line = |what: &str, v: &mut Vec<f32>| {
+        v.sort_by(f32::total_cmp);
+        let at = |q: f64| v.get(((v.len() as f64 - 1.0).max(0.0) * q) as usize).copied().unwrap_or(0.0);
+        println!(
+            "{what:32} n {:4}  min {:.3} p10 {:.3} p50 {:.3} p90 {:.3} max {:.3}",
+            v.len(),
+            at(0.0),
+            at(0.1),
+            at(0.5),
+            at(0.9),
+            at(1.0)
+        );
+    };
+    line("one person split by looks", &mut same);
+    line("people seen together", &mut apart);
+    let (_, p) = as_identity::in_cast_space(&[], &cast.tracks, &cast.params, cast.space.as_ref());
+    println!("bars link {:.3} copy_link {:.3} assign {:.3} unsure {:.3}", p.link, p.copy_link, p.assign, p.unsure);
+}
+
 /// Read `subjects` from their source files.
 fn read(project: &Project, cast: &RescanCast, subjects: &[usize], dirs: &str) -> Vec<Read> {
     let d: Vec<&str> = dirs.split(',').collect();
@@ -326,6 +398,7 @@ fn main() {
         matches!(cast.space, Some(as_identity::Space::Fitted(_))),
     );
     pins(&cast, &[], "stored");
+    groups(&cast);
     if let Ok(dirs) = std::env::var("READ") {
         let wanted: Vec<usize> = (0..cast.tracks.len())
             .filter(|&i| cast.rows[cast.row_of[i]].assign == TrackAssign::None || cast.tracks[i].pin.is_some())

@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use as_analysis::rescan::{self, FaceRead, HeadFinder, LiveFinder, RescanFace, RescanParams};
+use as_analysis::rescan::{self, FaceRead, HeadFinder, LiveFinder, RescanFace, RescanParams, SecondOpinion};
 use as_analysis::{
     AnalysisError, BodyModels, DETECT_BATCH, FaceChunk, FaceParams, Faces, FastModels, FastParams, Look, PERSON_INPUT,
     PeopleParams, Search, anime, bodies, detect_looks, face_tracks, fast, fast_face_tracks, frame_sizes, shot_signals,
@@ -774,7 +774,12 @@ fn run_rescan(
         rescan::read_faces(tools, src, &faces, &mut HeadFinder { embedder, params }, &p, cancel, progress, read)
     } else if job.fast {
         models.load_fast(rt, (rescan::SIDE, rescan::SIDE))?;
-        let (detector, embedder) = (models.yunet.as_mut().expect("loaded"), models.sface.as_mut().expect("loaded"));
+        if job.second && models.arcface.is_none() {
+            let path = models.path(ids::ARCFACE)?;
+            models.arcface = Some(ArcFace::load(models.runtime_for(rt, ids::ARCFACE), &path, EMBED_BATCH)?);
+        }
+        let Models { yunet, sface, arcface, .. } = models;
+        let (detector, embedder) = (yunet.as_mut().expect("loaded"), sface.as_mut().expect("loaded"));
         send_devices(
             out,
             id,
@@ -782,13 +787,25 @@ fn run_rescan(
             &[(as_models::ids::YUNET, detector.device()), (as_models::ids::SFACE, embedder.device())],
         );
         let p = RescanParams { batch: FAST_EMBED_BATCH, ..RescanParams::default() };
-        rescan::read_faces(tools, src, &faces, &mut FastModels { detector, embedder }, &p, cancel, progress, read)
+        let finder = FastModels { detector, embedder };
+        if job.second {
+            let other = arcface.as_mut().expect("loaded");
+            let embed = |c: &[&[u8]]| Ok(other.embed(c)?.into_iter().map(|e| (e.v, e.norm)).collect());
+            let mut finder = SecondOpinion { finder, embed };
+            return rescan::read_faces(tools, src, &faces, &mut finder, &p, cancel, progress, read);
+        }
+        let mut finder = finder;
+        rescan::read_faces(tools, src, &faces, &mut finder, &p, cancel, progress, read)
     } else {
         models.load_faces(rt, &looks)?;
         if LIVE_ON_ACCEL && models.unsplit_live() {
             models.load_faces(rt, &looks)?;
         }
-        let Models { scrfd, arcface, .. } = models;
+        if job.second && models.sface.is_none() {
+            let path = models.path(ids::SFACE)?;
+            models.sface = Some(SFace::load(models.runtime_for(rt, ids::SFACE), &path, FAST_EMBED_BATCH)?);
+        }
+        let Models { scrfd, arcface, sface, .. } = models;
         let (detector, embedder) = (&mut scrfd[0], arcface.as_mut().expect("loaded"));
         send_devices(
             out,
@@ -796,8 +813,16 @@ fn run_rescan(
             rt,
             &[(as_models::ids::SCRFD, detector.device()), (as_models::ids::ARCFACE, embedder.device())],
         );
-        let mut finder = LiveFinder { detector, embedder, params: FaceParams::default() };
-        rescan::read_faces(tools, src, &faces, &mut finder, &RescanParams::default(), cancel, progress, read)
+        let finder = LiveFinder { detector, embedder, params: FaceParams::default() };
+        let p = RescanParams::default();
+        if job.second {
+            let other = sface.as_mut().expect("loaded");
+            let embed = |c: &[&[u8]]| Ok(other.embed(c)?.into_iter().map(|e| (e.v, e.norm)).collect());
+            let mut finder = SecondOpinion { finder, embed };
+            return rescan::read_faces(tools, src, &faces, &mut finder, &p, cancel, progress, read);
+        }
+        let mut finder = finder;
+        rescan::read_faces(tools, src, &faces, &mut finder, &p, cancel, progress, read)
     }
 }
 

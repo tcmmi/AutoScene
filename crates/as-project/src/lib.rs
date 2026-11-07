@@ -29,5 +29,5 @@ pub use error::{ProjectError, ProjectResult};
 pub use library::Library;
 pub use pack::{CheckShot, CutEpisode, FilterCheck, PackCut, PackSizing};
 pub use project::{Project, Recovery, RelinkedFolder};
-pub use rescan::{DoneRead, RescanCast, RescanSource};
+pub use rescan::{DoneRead, PAIR_READS, PairToCheck, RescanCast, RescanSource};
 pub use verdicts::{PluginFilter, PluginFilters, basis};

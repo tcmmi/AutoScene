@@ -379,6 +379,36 @@ impl Finder for LiveFinder<'_> {
     }
 }
 
+/// `finder`'s faces put to another embedder: a second opinion on the same
+/// crops, from a model that learned faces its own way.
+pub struct SecondOpinion<F, E> {
+    pub finder: F,
+    pub embed: E,
+}
+
+impl<F: Finder, E: FnMut(&[&[u8]]) -> Result<Vec<(Vec<f32>, f32)>, AnalysisError>> Finder for SecondOpinion<F, E> {
+    fn frame_size(&self) -> (usize, usize) {
+        self.finder.frame_size()
+    }
+
+    fn find(&mut self, rgb: &[u8], p: &FastParams) -> Result<Vec<Spot>, AnalysisError> {
+        self.finder.find(rgb, p)
+    }
+
+    fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<(Vec<f32>, f32)>, AnalysisError> {
+        (self.embed)(crops)
+    }
+
+    /// Only the embedding counts here: every look weighs the same.
+    fn quality(&self, _: &FastParams, _: f32, _: f32, _: f32) -> f32 {
+        1.0
+    }
+
+    fn tracker(&self, p: &FastParams, fps: f64) -> TrackerParams {
+        self.finder.tracker(p, fps)
+    }
+}
+
 /// The anime embedder as a [`Finder`]: heads have no landmarks to find, the
 /// crop is the head (read it with [`RescanParams::anime`]).
 pub struct HeadFinder<'a> {

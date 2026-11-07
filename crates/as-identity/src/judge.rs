@@ -257,6 +257,49 @@ pub fn judge(q: &Question, p: &Params, space: Option<&Space>) -> Vec<Judged> {
     out
 }
 
+/// How alike two groups of faces are: each face's best match in the other
+/// group, averaged both ways. A person with several looks still finds
+/// themselves in the other group's look that fits; a mean of means wouldn't.
+pub fn likeness(a: &[Vec<f32>], b: &[Vec<f32>]) -> f32 {
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    let best = |from: &[Vec<f32>], to: &[Vec<f32>]| -> f32 {
+        let sum: f32 = from.iter().map(|e| proto::similarity(e, to)).sum();
+        sum / from.len() as f32
+    };
+    (best(a, b) + best(b, a)) / 2.0
+}
+
+/// In how many frames faces of `a` and `b` (indexes into `tracks`) were both
+/// found: two faces at once.
+pub fn frames_together(tracks: &[TrackIn], a: &[usize], b: &[usize]) -> u32 {
+    let seen: HashSet<(u32, u32)> =
+        a.iter().flat_map(|&i| tracks[i].sightings().into_iter().map(move |f| (tracks[i].media, f))).collect();
+    let both: HashSet<(u32, u32)> = b
+        .iter()
+        .flat_map(|&i| tracks[i].sightings().into_iter().map(move |f| (tracks[i].media, f)))
+        .filter(|k| seen.contains(k))
+        .collect();
+    both.len() as u32
+}
+
+/// `faces` (embeddings as tracks keep them) as the cast compares them, with
+/// the bars of that space. `tracks` give the bars when `space` is unknown.
+pub fn in_cast_space(
+    faces: &[Vec<f32>],
+    tracks: &[TrackIn],
+    p: &Params,
+    space: Option<&Space>,
+) -> (Vec<Vec<f32>>, Params) {
+    let (_, p, space) = in_space(tracks, p, space);
+    let out = match &space {
+        Space::Fitted(f) => faces.iter().map(|e| f.embed(e)).collect(),
+        Space::Faces => faces.to_vec(),
+    };
+    (out, p)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,6 +474,28 @@ mod tests {
         t.pin = Some(1);
         let i = with(&mut c, t, Some(1));
         assert_eq!(ask(&c, &[i], &[])[0].verdict, Verdict::Doubt);
+    }
+
+    #[test]
+    fn a_person_with_two_looks_finds_themselves_in_either() {
+        let (a, b, c) = (unit(0), unit(1), unit(2));
+        assert_eq!(likeness(&[a.clone(), b.clone()], &[a.clone(), b.clone()]), 1.0);
+        assert!(likeness(&[a.clone(), b], std::slice::from_ref(&a)) >= 0.5);
+        assert_eq!(likeness(&[a], &[c]), 0.0);
+        assert_eq!(likeness(&[], &[unit(0)]), 0.0);
+    }
+
+    #[test]
+    fn frames_together_counts_each_frame_once() {
+        let mut x = face(0, 100);
+        x.seen = vec![100, 103, 106];
+        let mut y = face(1, 100);
+        y.seen = vec![103, 106, 109];
+        let mut z = face(1, 100);
+        z.seen = vec![103];
+        let tracks = [x, y, z];
+        assert_eq!(frames_together(&tracks, &[0], &[1, 2]), 2);
+        assert_eq!(frames_together(&tracks, &[1], &[]), 0);
     }
 
     #[test]

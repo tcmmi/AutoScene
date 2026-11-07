@@ -230,6 +230,8 @@ pub struct RescanInput {
     pub faces: Vec<RescanFaceIn>,
     pub fast: bool,
     pub anime: bool,
+    /// Ask the other face model (see `RescanJob::second`).
+    pub second: bool,
 }
 
 /// What a rescan reports.
@@ -683,6 +685,7 @@ impl Engine {
                     faces: job.faces.iter().filter(|f| !done.contains(&f.id)).cloned().collect(),
                     fast: job.fast,
                     anime: job.anime,
+                    second: job.second,
                 }))
             },
             |reply| match reply {

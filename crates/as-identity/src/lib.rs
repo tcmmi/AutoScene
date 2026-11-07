@@ -38,7 +38,7 @@ use std::collections::{HashMap, HashSet};
 
 pub use adapt::{Fit, FitStats, MIN_STRANGERS, Space, fit};
 pub use ahc::cluster;
-pub use judge::{Judged, Question, Read, Verdict, judge};
+pub use judge::{Judged, Question, Read, Verdict, frames_together, in_cast_space, judge, likeness};
 
 /// A character as the caller knows it (index into its own list).
 pub type CharKey = u32;

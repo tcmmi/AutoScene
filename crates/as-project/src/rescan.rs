@@ -8,12 +8,12 @@ use std::sync::Arc;
 use as_analysis::rescan::RescanFace as FaceToRead;
 use as_analysis::tracks;
 use as_api::{
-    CastEdit, RescanAnswer, RescanFace, RescanPair, RescanRequest, RescanResults, RescanTally, RescanVerdict,
-    SegmentKind, TrackAssign, TrackFilter,
+    CastEdit, ContentKind, RescanAnswer, RescanFace, RescanLikeness, RescanPair, RescanRequest, RescanResults,
+    RescanTally, RescanVerdict, SegmentKind, TrackAssign, TrackFilter,
 };
 use as_core::{CharacterId, FrameIndex, FrameRange, MediaId};
 use as_db::{IdentityTrack, RescanFaceRow};
-use as_identity::{CharKey, Judged, Params, Question, Read, Space, TrackIn, Verdict, judge};
+use as_identity::{CharKey, Judged, Params, Question, Read, Space, TrackIn, Verdict, in_cast_space, judge};
 use as_media::MediaInfo;
 
 use crate::cast::{IdentityInput, NAME_ANCHORS, anchors, embedder_of};
@@ -27,6 +27,8 @@ const PAIR_FACES: usize = 6;
 /// it too: its best detection score and how long its embedding was.
 const NO_FACE_SCORE: f32 = 0.7;
 const NO_FACE_NORM: f32 = 16.0;
+/// Frames of one mirror or screen moment: a few seconds of samples.
+const MIRROR_FRAMES: u32 = 40;
 
 /// The cast as it stands, ready to be asked about faces.
 #[derive(Clone)]
@@ -44,6 +46,22 @@ pub struct RescanCast {
     pub characters: Vec<CharacterId>,
     pub params: Params,
     pub space: Option<Space>,
+}
+
+/// Clearest faces of each character the "same person?" check reads.
+pub const PAIR_READS: usize = 8;
+/// How alike a second model must find two characters to back the first: at
+/// its own bar for one person (`Params::sface`'s link).
+const SECOND_AGREES: f32 = 0.40;
+
+/// Two characters to compare, and the clearest faces of each.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PairToCheck {
+    pub a: CharKey,
+    pub b: CharKey,
+    pub a_faces: Vec<usize>,
+    pub b_faces: Vec<usize>,
+    pub together: u32,
 }
 
 /// What reading a face again gave.
@@ -69,6 +87,19 @@ pub struct RescanSource {
     /// read by what found them.
     pub fast: bool,
     pub anime: bool,
+}
+
+/// What two characters' faces say: from the link bar they may be one person,
+/// halfway to where groups count as copies they likely are, unless a second
+/// model disagrees. Measured on five casts (clearest faces, stored): one
+/// person split by looks 0.33-0.79, people seen together up to 0.27 (0.57 at
+/// worst) in live action.
+fn likeness_of(alike: f32, second: Option<f32>, p: &Params) -> Option<RescanLikeness> {
+    if alike < p.link {
+        return None;
+    }
+    let sure = alike >= (p.link + p.copy_link) / 2.0;
+    Some(if sure && second.is_none_or(|s| s >= SECOND_AGREES) { RescanLikeness::Likely } else { RescanLikeness::Maybe })
 }
 
 impl RescanCast {
@@ -142,6 +173,47 @@ impl RescanCast {
             .collect()
     }
 
+    /// The clearest faces of a character.
+    fn clearest(&self, k: CharKey) -> Vec<usize> {
+        let mut g = self.members.iter().find(|m| m.0 == k).map_or(Vec::new(), |m| m.1.clone());
+        g.sort_by(|&a, &b| self.tracks[b].quality.total_cmp(&self.tracks[a].quality).then(a.cmp(&b)));
+        g.truncate(PAIR_READS);
+        g
+    }
+
+    /// The pair `a`, `b` if it is worth asking about: faces of one person
+    /// are not found in the same frame, bar a mirror or a screen now and then.
+    fn pair(&self, a: CharKey, b: CharKey) -> Option<PairToCheck> {
+        let group = |k: CharKey| self.members.iter().find(|m| m.0 == k).map(|m| m.1.as_slice()).unwrap_or_default();
+        let (ga, gb) = (group(a), group(b));
+        let small = ga.len().min(gb.len());
+        let together = as_identity::frames_together(&self.tracks, ga, gb);
+        // Frames, not faces: a face is seen in many frames of its track.
+        let allowed = ((self.params.copy_share * small as f32) as u32).max(1) * MIRROR_FRAMES;
+        if small == 0 || together > allowed {
+            return None;
+        }
+        Some(PairToCheck { a, b, a_faces: self.clearest(a), b_faces: self.clearest(b), together })
+    }
+
+    /// How alike the clearest faces of each side are, by their `reads`
+    /// (`read`: track to embedding, as the cast keeps them) and their stored
+    /// faces where there is no reading.
+    fn alike(&self, p: &PairToCheck, read: &HashMap<usize, Vec<f32>>, stored: bool) -> f32 {
+        let faces = |g: &[usize]| -> Vec<Vec<f32>> {
+            g.iter()
+                .filter_map(|i| read.get(i).cloned().or_else(|| stored.then(|| self.tracks[*i].embedding.clone())))
+                .collect()
+        };
+        let (a, b) = (faces(&p.a_faces), faces(&p.b_faces));
+        if !stored {
+            return as_identity::likeness(&a, &b);
+        }
+        let (a, _) = in_cast_space(&a, &self.tracks, &self.params, self.space.as_ref());
+        let (b, _) = in_cast_space(&b, &self.tracks, &self.params, self.space.as_ref());
+        as_identity::likeness(&a, &b)
+    }
+
     /// Whether the pass itself had little faith in this face.
     fn barely_a_face(&self, i: usize) -> bool {
         let dets = tracks::dets_from_bytes(&self.row(i).det_bytes).unwrap_or_default();
@@ -212,6 +284,20 @@ impl Project {
         Ok(RescanSource { path: PathBuf::from(m.path), info, index, shots, fast, anime })
     }
 
+    /// The model that can give a second opinion on this project's faces: only
+    /// where the footage is what face models learned from. (On 3D animation
+    /// none tells characters apart: strangers measure 0.92-0.95 to CCIP.)
+    pub fn second_model(&self) -> Option<&'static str> {
+        if self.content().ok()? != ContentKind::Live {
+            return None;
+        }
+        Some(if self.face_embedder() == as_models::ids::SFACE {
+            as_models::ids::ARCFACE
+        } else {
+            as_models::ids::SFACE
+        })
+    }
+
     /// The cast as [`RescanCast`] needs it; reads only.
     pub fn rescan_cast(&self) -> ProjectResult<RescanCast> {
         let rows = self.db().identity_tracks()?;
@@ -272,6 +358,71 @@ impl Project {
         let json = serde_json::to_string(&tally).unwrap_or_default();
         self.db().set_meta(TALLY, &json)?;
         Ok(tally)
+    }
+
+    /// The pairs worth asking "same person?" about: characters a face could
+    /// be either of, and characters the person chose that look alike.
+    pub fn rescan_pairs_to_check(&self, cast: &RescanCast, request: &RescanRequest) -> ProjectResult<Vec<PairToCheck>> {
+        let key = |c: CharacterId| cast.characters.iter().position(|x| *x == c).map(|k| k as CharKey);
+        let mut wanted: HashSet<(CharKey, CharKey)> = HashSet::new();
+        let mut add = |a: CharKey, b: CharKey| {
+            wanted.insert((a.min(b), a.max(b)));
+        };
+        for r in self.db().rescan_faces()? {
+            if let (RescanVerdict::Between, Some(a), Some(b)) =
+                (r.verdict, r.target.and_then(key), r.other.and_then(key))
+            {
+                add(a, b);
+            }
+        }
+        let chosen: Vec<CharKey> = request.characters.iter().filter_map(|c| key(*c)).collect();
+        let (_, bars) = in_cast_space(&[], &cast.tracks, &cast.params, cast.space.as_ref());
+        for (n, &a) in chosen.iter().enumerate() {
+            for &b in &chosen[n + 1..] {
+                let Some(p) = cast.pair(a, b) else { continue };
+                if cast.alike(&p, &HashMap::new(), true) >= bars.link {
+                    add(a, b);
+                }
+            }
+        }
+        let mut pairs: Vec<(CharKey, CharKey)> = wanted.into_iter().collect();
+        pairs.sort_unstable();
+        let mut out = Vec::new();
+        for (a, b) in pairs {
+            let apart = self.db().characters_apart(cast.characters[a as usize], cast.characters[b as usize])?;
+            if !apart && let Some(p) = cast.pair(a, b) {
+                out.push(p);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Keep what the second check says of `pairs`, from what was read (`main`
+    /// the cast's own embedder, `second` the other model; `None`: there is
+    /// none here). Only what may be one person reaches the person.
+    pub fn rescan_keep_pairs(
+        &self,
+        cast: &RescanCast,
+        pairs: &[PairToCheck],
+        main: &[DoneRead],
+        second: Option<&[DoneRead]>,
+    ) -> ProjectResult<u32> {
+        let vectors = |reads: &[DoneRead]| -> HashMap<usize, Vec<f32>> {
+            reads.iter().filter_map(|r| Some((r.track, tracks::embedding_from_bytes(&r.embedding)?))).collect()
+        };
+        let (main, second) = (vectors(main), second.map(vectors));
+        let (_, bars) = in_cast_space(&[], &cast.tracks, &cast.params, cast.space.as_ref());
+        let mut kept = 0;
+        for p in pairs {
+            let alike = cast.alike(p, &main, true);
+            let other = second.as_ref().map(|s| cast.alike(p, s, false));
+            if let Some(likeness) = likeness_of(alike, other, &bars) {
+                let (a, b) = (cast.characters[p.a as usize], cast.characters[p.b as usize]);
+                self.db().put_rescan_pair(a, b, alike, other, p.together, likeness)?;
+                kept += 1;
+            }
+        }
+        Ok(kept)
     }
 
     /// What Rescan is waiting to hear about.
@@ -385,8 +536,10 @@ mod tests {
         (dir, project)
     }
 
+    type Track = (i64, Option<CharacterId>, TrackAssign, u32, Vec<u8>);
+
     /// Everything the cast is made of, as it stands.
-    fn snapshot(p: &Project) -> (i64, Vec<(i64, Option<CharacterId>, TrackAssign, u32, Vec<u8>)>, usize) {
+    fn snapshot(p: &Project) -> (i64, Vec<Track>, usize) {
         let mut rows: Vec<_> = p
             .db()
             .identity_tracks()
@@ -516,6 +669,36 @@ mod tests {
         cast.rows[1].via_body = true;
         let asked = cast.subjects(&RescanRequest { tracks: everyone, characters: Vec::new(), everyone_else: false });
         assert!(asked.iter().all(|&i| cast.row_of[i] > 1));
+    }
+
+    #[test]
+    fn a_second_model_that_disagrees_leaves_it_a_maybe() {
+        let p = Params::default();
+        assert_eq!(likeness_of(0.2, None, &p), None);
+        assert_eq!(likeness_of(0.35, None, &p), Some(RescanLikeness::Maybe));
+        assert_eq!(likeness_of(0.7, None, &p), Some(RescanLikeness::Likely));
+        assert_eq!(likeness_of(0.7, Some(0.6), &p), Some(RescanLikeness::Likely));
+        assert_eq!(likeness_of(0.7, Some(0.1), &p), Some(RescanLikeness::Maybe));
+    }
+
+    #[test]
+    fn two_groups_of_one_person_are_asked_about_and_two_people_are_not() {
+        let (_dir, p) = cast_of_two();
+        let mut cast = p.rescan_cast().unwrap();
+        let (a, b) = (cast.characters[0], cast.characters[1]);
+        let request = RescanRequest { tracks: Vec::new(), characters: vec![a, b], everyone_else: false };
+        assert!(p.rescan_pairs_to_check(&cast, &request).unwrap().is_empty(), "they look nothing alike");
+        // Now the second group looks like the first.
+        let like = cast.tracks[cast.members[0].1[0]].embedding.clone();
+        for i in cast.members[1].1.clone() {
+            cast.tracks[i].embedding = like.clone();
+        }
+        let pairs = p.rescan_pairs_to_check(&cast, &request).unwrap();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(p.rescan_keep_pairs(&cast, &pairs, &[], None).unwrap(), 1);
+        assert_eq!(p.rescan_results().unwrap().pairs[0].likeness, RescanLikeness::Likely);
+        p.rescan_answer(&RescanAnswer::TwoPeople { a, b }).unwrap();
+        assert!(p.rescan_pairs_to_check(&cast, &request).unwrap().is_empty(), "answered");
     }
 
     #[test]

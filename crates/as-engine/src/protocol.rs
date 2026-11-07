@@ -129,6 +129,10 @@ pub struct RescanJob {
     /// ... or are anime heads (CCIP): read by what found them.
     #[serde(default)]
     pub anime: bool,
+    /// Ask the other face model about the same crops: SFace for faces of the
+    /// full pass, ArcFace for Fast Scan's. Anime has no other.
+    #[serde(default)]
+    pub second: bool,
 }
 
 /// A shot's sprite (`as_analysis::ShotSprite`).

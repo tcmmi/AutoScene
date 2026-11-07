@@ -11,6 +11,12 @@
     "formatPlaceholder": "Alege un format",
     "destination": "Destinație"
   },
+  "option": {
+    "removeBars": "Elimină benzile negre",
+    "removeBarsHint": "Taie benzile din imagine.",
+    "matchLoudness": "Egalează volumul",
+    "matchLoudnessHint": "Aduce toate clipurile la același volum."
+  },
   "change": "Schimbă…",
   "pickDestination": "Exportă în",
   "about": "Circa {{size}} în total ca {{format}}.",

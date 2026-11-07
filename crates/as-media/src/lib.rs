@@ -1,6 +1,7 @@
 //! Media layer. Everything that talks to ffmpeg/ffprobe lives here, behind
 //! typed APIs that speak in frame indices rather than seconds.
 
+pub mod bars;
 pub mod caps;
 pub mod error;
 pub mod filters;
@@ -15,6 +16,7 @@ pub mod proxy;
 pub mod run;
 pub mod tools;
 
+pub use bars::{Bars, detect_bars};
 pub use caps::{Caps, CodecFamily, HwDecode, HwEncoder, Vendor};
 pub use error::{MediaError, MediaResult};
 pub use index::{IndexProgress, build_frame_index};
@@ -22,7 +24,7 @@ pub use probe::{
     AudioStream, ExactAudio, ExactFormat, HdrKind, MediaInfo, SubtitleStream, VideoStream, hdr_metadata, probe,
     probe_exact, same_source, start_timecode,
 };
-pub use run::{FfProgress, run_ffmpeg, run_ffmpeg_counting};
+pub use run::{FfProgress, run_ffmpeg, run_ffmpeg_counting, run_ffmpeg_matching};
 pub use tools::Tools;
 
 use std::path::Path;

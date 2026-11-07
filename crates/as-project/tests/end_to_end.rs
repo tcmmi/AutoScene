@@ -75,6 +75,7 @@ fn import_preview_and_export_three_episodes() {
     lib.update_settings(&AppSettings {
         library_root: tmp.path().join("Library").display().to_string(),
         export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
         audio_language: "eng".into(),
         find_bodies: false,
         fast_scan: false,
@@ -209,6 +210,7 @@ fn import_preview_and_export_three_episodes() {
             clips: clips.clone(),
             label: None,
             merge: None,
+            options: Default::default(),
         };
         let ex = project.create_export(&req, preset, &out_dir).unwrap();
         assert_eq!(ex.status, ExportStatus::Queued);
@@ -240,6 +242,7 @@ fn import_preview_and_export_three_episodes() {
         clips: clips[..1].to_vec(),
         label: None,
         merge: None,
+        options: Default::default(),
     };
     let again = project.create_export(&req, prores.clone(), &out_dir).unwrap();
     assert_eq!(again.items[0].name, "Fixture_Show_cfr24_h264_00-00-04-04_2");
@@ -257,6 +260,7 @@ fn bad_ranges_and_missing_files_are_refused() {
     lib.update_settings(&AppSettings {
         library_root: tmp.path().join("Library").display().to_string(),
         export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
         audio_language: "eng".into(),
         find_bodies: false,
         fast_scan: false,
@@ -291,6 +295,7 @@ fn bad_ranges_and_missing_files_are_refused() {
         clips: vec![ClipRequest { media_id: id, start: s, end: e, name: Some("x".into()) }],
         label: None,
         merge: None,
+        options: Default::default(),
     };
     let out = tmp.path().join("out");
     assert!(project.create_export(&req(10, 10), preset.clone(), &out).is_err(), "empty range");
@@ -328,6 +333,7 @@ fn covers_get_portraits_from_the_exact_frame() {
     lib.update_settings(&AppSettings {
         library_root: tmp.path().join("Library").display().to_string(),
         export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
         audio_language: "eng".into(),
         find_bodies: false,
         fast_scan: false,
@@ -426,6 +432,7 @@ fn a_moved_episode_keeps_its_analysis() {
     lib.update_settings(&AppSettings {
         library_root: tmp.path().join("Library").display().to_string(),
         export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
         audio_language: "eng".into(),
         find_bodies: false,
         fast_scan: false,
@@ -571,6 +578,7 @@ fn a_clip_past_a_shortened_episode_is_left_out_of_the_file() {
     lib.update_settings(&AppSettings {
         library_root: tmp.path().join("Library").display().to_string(),
         export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
         audio_language: "eng".into(),
         find_bodies: false,
         fast_scan: false,
@@ -606,6 +614,7 @@ fn a_clip_past_a_shortened_episode_is_left_out_of_the_file() {
         clips: vec![clip(0, 24), clip(500, 580)],
         label: None,
         merge: Some("Both".into()),
+        options: Default::default(),
     };
     let out = tmp.path().join("out");
     let ex = project.create_export(&req, prores, &out).unwrap();
@@ -662,6 +671,7 @@ fn a_merged_export_is_one_file_with_every_clip() {
     lib.update_settings(&AppSettings {
         library_root: tmp.path().join("Library").display().to_string(),
         export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
         audio_language: "eng".into(),
         find_bodies: false,
         fast_scan: false,
@@ -713,6 +723,7 @@ fn a_merged_export_is_one_file_with_every_clip() {
         clips: clips.clone(),
         label: Some("Walter · scenepack".into()),
         merge: Some("Joined Walter".into()),
+        options: Default::default(),
     };
     let ex = project.create_export(&req, prores.clone(), &out).unwrap();
     assert_eq!(ex.merged.as_ref().map(|f| f.name.as_str()), Some("Joined Walter"));
@@ -846,6 +857,7 @@ fn a_merged_export_the_hardware_refuses_is_made_in_software() {
     lib.update_settings(&AppSettings {
         library_root: tmp.path().join("Library").display().to_string(),
         export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
         audio_language: "eng".into(),
         find_bodies: false,
         fast_scan: false,
@@ -887,6 +899,7 @@ fn a_merged_export_the_hardware_refuses_is_made_in_software() {
         clips: vec![clip(0, 4), clip(4, 12)],
         label: None,
         merge: Some("Both".into()),
+        options: Default::default(),
     };
     let ex = project.create_export(&req, preset, &tmp.path().join("out")).unwrap();
     let ex = project.run_export(&tools, ex.id, &cancel, &|_, _| {}, &|| {}).unwrap();
@@ -915,6 +928,7 @@ fn an_export_the_drive_cant_hold_is_refused() {
     lib.update_settings(&AppSettings {
         library_root: tmp.path().join("Library").display().to_string(),
         export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
         audio_language: "eng".into(),
         find_bodies: false,
         fast_scan: false,
@@ -947,6 +961,7 @@ fn an_export_the_drive_cant_hold_is_refused() {
         clips: vec![ClipRequest { media_id: id, start: 0, end: 24, name: None }],
         label: None,
         merge: None,
+        options: Default::default(),
     };
     // A folder that isn't there yet is measured on its drive.
     let out = tmp.path().join("not").join("yet");
@@ -954,4 +969,135 @@ fn an_export_the_drive_cant_hold_is_refused() {
     let huge = |_: &Path| Ok(1_000_000);
     let refused = project.check_export_room_with(&req, &preset, &out, tools.caps(), huge).unwrap_err();
     assert_eq!(refused.msg().key, "export.noRoom");
+}
+
+/// `I` (LUFS) of a file's sound, as ffmpeg measures it.
+fn loudness_of(tools: &Tools, file: &Path) -> f64 {
+    let out = tools
+        .ffmpeg()
+        .args(["-hide_banner", "-nostats", "-i"])
+        .arg(file)
+        .args(["-map", "0:a:0", "-af", "ebur128=framelog=quiet", "-f", "null", "-"])
+        .output()
+        .unwrap();
+    let log = String::from_utf8_lossy(&out.stderr).into_owned();
+    let line = log.lines().map(str::trim).find(|l| l.starts_with("I:")).expect("a reading");
+    line[2..].split_whitespace().next().unwrap().parse().unwrap()
+}
+
+/// `width,height` of a file's picture.
+fn picture_size(tools: &Tools, file: &Path) -> String {
+    let out = tools
+        .ffprobe()
+        .args(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0"])
+        .arg(file)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).lines().next().unwrap_or_default().trim().to_string()
+}
+
+/// A letterboxed film and an episode without bars, one quiet, one loud.
+#[test]
+fn bars_come_off_and_clips_come_to_one_loudness() {
+    let Some(_truth) = load_truth() else { return };
+    let tools = Tools::locate(None).expect("ffmpeg on PATH");
+    let tmp = tempfile::tempdir().unwrap();
+    let lib = Library::open(&AppPaths::at(tmp.path().join("data"))).unwrap();
+    lib.update_settings(&AppSettings {
+        library_root: tmp.path().join("Library").display().to_string(),
+        export_preset_id: "prores-hq".into(),
+        export_options: Default::default(),
+        audio_language: "eng".into(),
+        find_bodies: false,
+        fast_scan: false,
+        anilist: false,
+        shortcuts: Default::default(),
+        allow_unreviewed_plugins: false,
+        gpu: String::new(),
+        plugin_catalog_checks: true,
+        nvidia_acceleration: true,
+        discord_rpc: Default::default(),
+        language: Default::default(),
+    })
+    .unwrap();
+    let make = |name: &str, picture: &str, volume: &str| {
+        let file = tmp.path().join(name);
+        let made = tools
+            .ffmpeg()
+            .args(["-v", "error", "-f", "lavfi", "-i", picture, "-f", "lavfi", "-i"])
+            .arg(format!("sine=f=440:d=6,volume={volume}"))
+            .args(["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "flac", "-shortest"])
+            .arg(&file)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        file.display().to_string()
+    };
+    let film = make("Film.mkv", "testsrc2=s=1280x536:r=24:d=6,pad=1280:720:0:92", "-5dB");
+    let episode = make("Episode.mkv", "testsrc2=s=1280x720:r=24:d=6", "10dB");
+    let (_, project, added) = lib
+        .create_project(&NewProject {
+            title: "Bars".into(),
+            kind: ProjectKind::Series,
+            content: ContentKind::Live,
+            files: vec![film, episode],
+        })
+        .unwrap();
+    let cancel = CancelToken::new();
+    for &id in &added {
+        project.ingest(&tools, id, "eng", &cancel, &|_, _, _| {}).unwrap();
+    }
+    let clips: Vec<ClipRequest> =
+        added.iter().map(|&media_id| ClipRequest { media_id, start: 0, end: 120, name: None }).collect();
+    let mut preset = builtin_presets().into_iter().find(|p| p.id == "h264-edit").unwrap();
+    preset.video = VideoCodec::H264 { quality: 18, gop: Gop::Editing, encoder: EncoderPref::Software };
+    let options = as_api::ExportOptions { remove_bars: true, match_loudness: true };
+    let run = |merge: Option<&str>, out: &str| {
+        let req = ExportRequest {
+            preset_id: preset.id.clone(),
+            out_dir: None,
+            clips: clips.clone(),
+            label: None,
+            merge: merge.map(String::from),
+            options,
+        };
+        let ex = project.create_export(&req, preset.clone(), &tmp.path().join(out)).unwrap();
+        project.run_export(&tools, ex.id, &cancel, &|_, _| {}, &|| {}).unwrap()
+    };
+
+    let apart = run(None, "apart");
+    assert_eq!(apart.status, ExportStatus::Done);
+    let files: Vec<&Path> = apart.items.iter().map(|i| Path::new(i.path.as_deref().unwrap())).collect();
+    assert!(apart.items.iter().all(|i| i.verified));
+    let mut sizes: Vec<String> = files.iter().map(|f| picture_size(&tools, f)).collect();
+    sizes.sort();
+    assert_eq!(sizes, ["1280,536", "1280,720"]);
+    for file in &files {
+        let lufs = loudness_of(&tools, file);
+        assert!((lufs - as_export::loudness::TARGET).abs() < 1.0, "{}: {lufs} LUFS", file.display());
+    }
+
+    // One file: the size most frames have, the other picture fitted in.
+    let merged = run(Some("Both"), "merged");
+    assert_eq!(merged.status, ExportStatus::Done);
+    let file = merged.merged.unwrap().path.expect("the file");
+    let size = picture_size(&tools, Path::new(&file));
+    assert!(size == "1280,536" || size == "1280,720", "{size}");
+    let lufs = loudness_of(&tools, Path::new(&file));
+    assert!((lufs - as_export::loudness::TARGET).abs() < 1.0, "{lufs} LUFS");
+
+    // Bit-Perfect stays the source, whatever was asked.
+    let exact = builtin_presets().into_iter().find(|p| p.id == "bit-perfect").unwrap();
+    let req = ExportRequest {
+        preset_id: exact.id.clone(),
+        out_dir: None,
+        clips: clips[..1].to_vec(),
+        label: None,
+        merge: None,
+        options,
+    };
+    let ex = project.create_export(&req, exact, &tmp.path().join("exact")).unwrap();
+    assert!(!ex.preset.remove_bars && !ex.preset.match_loudness);
+    let ex = project.run_export(&tools, ex.id, &cancel, &|_, _| {}, &|| {}).unwrap();
+    assert_eq!(picture_size(&tools, Path::new(ex.items[0].path.as_deref().unwrap())), "1280,720");
 }

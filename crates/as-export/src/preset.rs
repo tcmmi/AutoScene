@@ -153,6 +153,12 @@ pub struct ExportPreset {
     #[serde(default)]
     pub stereo: bool,
     pub builtin: bool,
+    /// Take the black bars the picture was mastered with off the clips.
+    #[serde(default)]
+    pub remove_bars: bool,
+    /// Bring every clip to the same loudness (see [`crate::loudness`]).
+    #[serde(default)]
+    pub match_loudness: bool,
 }
 
 /// The AAC bitrate of `channels` of sound for a preset's `kbps`, which is its
@@ -183,6 +189,8 @@ fn worded(name: Msg, description: Msg) -> ExportPreset {
         hdr: HdrMode::Auto,
         stereo: false,
         builtin: true,
+        remove_bars: false,
+        match_loudness: false,
     }
 }
 

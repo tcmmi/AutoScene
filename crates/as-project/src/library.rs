@@ -48,6 +48,7 @@ const KEY_CATALOG_CHECKS: &str = "plugin_catalog_checks";
 /// `0` once NVIDIA's engine is switched off; it is on unless it is.
 const KEY_NVIDIA_ACCELERATION: &str = "nvidia_acceleration";
 const KEY_DISCORD_RPC: &str = "discord_rpc";
+const KEY_EXPORT_OPTIONS: &str = "export_options";
 /// The language the person chose ([`UiLanguage::code`]); unset is Automatic.
 const KEY_UI_LANGUAGE: &str = "ui_language";
 /// Most series and films people cut are watched in their original English
@@ -196,6 +197,11 @@ impl Library {
         Ok(AppSettings {
             library_root: self.library_root()?.display().to_string(),
             export_preset_id: self.db.setting(KEY_EXPORT_PRESET)?.unwrap_or_else(|| DEFAULT_EXPORT_PRESET.into()),
+            export_options: self
+                .db
+                .setting(KEY_EXPORT_OPTIONS)?
+                .and_then(|v| serde_json::from_str(&v).ok())
+                .unwrap_or_default(),
             audio_language: self.audio_language()?,
             find_bodies: self.finds_bodies(),
             fast_scan: self.fast_scan()?,
@@ -345,6 +351,9 @@ impl Library {
         if as_export::builtin_presets().iter().any(|p| p.id == s.export_preset_id) {
             self.db.set_setting(KEY_EXPORT_PRESET, &s.export_preset_id)?;
         }
+        let options =
+            serde_json::to_string(&s.export_options).map_err(|e| ProjectError::Invalid(Msg::plain(e.to_string())))?;
+        self.db.set_setting(KEY_EXPORT_OPTIONS, &options)?;
         let language = as_media::lang::canonical(&s.audio_language).unwrap_or_default();
         self.db.set_setting(KEY_AUDIO_LANGUAGE, &language)?;
         self.db.set_setting(KEY_FIND_BODIES, if s.find_bodies { "1" } else { "0" })?;
@@ -829,6 +838,7 @@ mod tests {
         lib.update_settings(&AppSettings {
             library_root: dir.path().join("Library").display().to_string(),
             export_preset_id: "h264-edit".into(),
+            export_options: Default::default(),
             audio_language: "German".into(),
             find_bodies: false,
             fast_scan: false,
@@ -1127,6 +1137,16 @@ mod tests {
         lib.update_settings(&AppSettings { find_bodies: true, ..lib.settings().unwrap() }).unwrap();
         assert!(lib.project(film.id).unwrap().finds_bodies());
         assert!(!lib.project(anime.id).unwrap().finds_bodies());
+    }
+
+    #[test]
+    fn the_export_options_are_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lib = Library::open(&AppPaths::at(tmp.path().join("data"))).unwrap();
+        assert_eq!(lib.settings().unwrap().export_options, Default::default());
+        let chosen = as_api::ExportOptions { remove_bars: true, match_loudness: true };
+        let saved = lib.update_settings(&AppSettings { export_options: chosen, ..lib.settings().unwrap() }).unwrap();
+        assert_eq!(saved.export_options, chosen);
     }
 
     #[test]
@@ -1768,6 +1788,7 @@ mod tests {
         let bad = AppSettings {
             library_root: "relative/path".into(),
             export_preset_id: "h264-edit".into(),
+            export_options: Default::default(),
             audio_language: "eng".into(),
             find_bodies: false,
             fast_scan: false,

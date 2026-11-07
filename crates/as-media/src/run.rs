@@ -49,9 +49,24 @@ pub fn run_ffmpeg_counting<I, S>(
     tools: &Tools,
     args: I,
     cancel: &CancelToken,
-    mut on_progress: impl FnMut(&FfProgress),
+    on_progress: impl FnMut(&FfProgress),
     patterns: &'static [&'static str],
 ) -> MediaResult<usize>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    run_ffmpeg_matching(tools, args, cancel, on_progress, patterns).map(|lines| lines.len())
+}
+
+/// [`run_ffmpeg_counting`], returning those lines.
+pub fn run_ffmpeg_matching<I, S>(
+    tools: &Tools,
+    args: I,
+    cancel: &CancelToken,
+    mut on_progress: impl FnMut(&FfProgress),
+    patterns: &'static [&'static str],
+) -> MediaResult<Vec<String>>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -83,14 +98,14 @@ where
     });
     // Keep only the tail of stderr; long jobs can log a lot.
     let stderr_thread = thread::spawn(move || {
-        let (mut tail, mut matches) = (VecDeque::with_capacity(TAIL_LINES), 0);
+        let (mut tail, mut matches) = (VecDeque::with_capacity(TAIL_LINES), Vec::new());
         let mut reader = BufReader::new(stderr);
         let mut line = Vec::new();
         while reader.read_until(b'\n', &mut line).is_ok_and(|n| n > 0) {
             let text = String::from_utf8_lossy(&line).trim_end().to_string();
             line.clear();
             if !patterns.is_empty() && patterns.iter().any(|p| text.to_lowercase().contains(p)) {
-                matches += 1;
+                matches.push(text.clone());
             }
             if tail.len() == TAIL_LINES {
                 tail.pop_front();

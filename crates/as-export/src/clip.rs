@@ -26,13 +26,14 @@ use std::path::{Path, PathBuf};
 
 use as_core::paths::name;
 use as_core::{CancelToken, FrameIndex, FrameRange, Rational, Timecode, msg};
+use as_media::bars::upright_size;
 use as_media::filters::{deinterlace, export_picture_chain};
-use as_media::{Caps, CodecFamily, HdrKind, MediaInfo, Source, Tools, Vendor, run_ffmpeg};
+use as_media::{Bars, Caps, CodecFamily, HdrKind, MediaInfo, Source, Tools, Vendor, run_ffmpeg};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::lossless::{self, Colour, LosslessCodec, Reference};
-use crate::merge::{LosslessShape, MergeShape, natural_size};
+use crate::merge::{LosslessShape, MergeShape, shown_size};
 use crate::preset::{
     AudioCodec, Container, DnxProfile, EncoderPref, ExportPreset, Gop, HdrMode, ProResProfile, VideoCodec, aac_kbps,
 };
@@ -54,6 +55,24 @@ pub struct ClipJob<'a> {
     pub title: Option<String>,
     /// Render it as a part of one file made of many clips (always a MOV).
     pub part: Option<Part<'a>>,
+    pub adjust: Adjust,
+}
+
+/// What an export changes of a clip beyond its format. Bit-Perfect clips are
+/// never changed: they stay the source.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Adjust {
+    /// Black bars to take off.
+    pub crop: Option<Bars>,
+    /// Decibels to turn the sound up or down.
+    pub gain_db: f64,
+}
+
+impl Adjust {
+    /// The filter for the gain, with what comes before it in a chain.
+    fn volume(&self) -> String {
+        if self.gain_db.abs() < 0.05 { String::new() } else { format!(",volume={:.2}dB", self.gain_db) }
+    }
 }
 
 /// How a clip is rendered as a part of a merged file.
@@ -402,7 +421,7 @@ fn clip_recipe(tools: &Tools, job: &ClipJob) -> ExportResult<Recipe> {
     let ClipJob { src: Source { info, index, .. }, range, preset, .. } = job;
     let (s, e) = (range.start, range.end);
     let fps = index.nominal_fps.to_f64();
-    let size = natural_size(info, preset.max_height);
+    let size = shown_size(info, job.adjust.crop, preset.max_height);
     let enc = resolve_encoding(&preset.video, tools.caps(), fps, size, encoder_fps(info, fps))?;
 
     let hdr_in = info.video.hdr != HdrKind::None;
@@ -414,6 +433,7 @@ fn clip_recipe(tools: &Tools, job: &ClipJob) -> ExportResult<Recipe> {
     // would otherwise come out as two fields woven together).
     let mut vchain: Vec<String> = deinterlace(info).into_iter().collect();
     vchain.extend([format!("trim=start={trim_start}us:end={trim_end}us"), "setpts=PTS-STARTPTS".to_string()]);
+    vchain.extend(job.adjust.crop.and_then(|c| c.filter(upright_size(info))));
     vchain.extend(export_picture_chain(info, preset.max_height, tonemap));
     vchain.push(format!("format={}", enc.pix_fmt));
     let colour = sdr_colour(info).filter(|_| !tonemap);
@@ -430,12 +450,13 @@ fn clip_recipe(tools: &Tools, job: &ClipJob) -> ExportResult<Recipe> {
         // source has no samples (late start, dropouts) instead of pulling
         // later sound forward (see `as_media::proxy::AUDIO_GAP_FILL`).
         graph += &format!(
-            ";[0:a:{ord}]atrim=start={ts:.9}:end={te:.9},asetpts=PTS-{ts:.9}/TB,aresample={AUDIO_RATE}:{fill}:first_pts=0,apad=whole_len={samples},atrim=end_sample={samples}{downmix}[a]",
+            ";[0:a:{ord}]atrim=start={ts:.9}:end={te:.9},asetpts=PTS-{ts:.9}/TB,aresample={AUDIO_RATE}:{fill}:first_pts=0,apad=whole_len={samples},atrim=end_sample={samples}{downmix}{volume}[a]",
             fill = as_media::proxy::AUDIO_GAP_FILL,
             ts = index.t(s),
             te = index.t(e),
             // Standard ITU matrix: centre and surrounds at -3 dB, LFE dropped.
             downmix = if preset.stereo { ",aformat=channel_layouts=stereo" } else { "" },
+            volume = job.adjust.volume(),
         );
     }
     let audio_language = audio_language(info, audio.map(|(ord, _)| ord));
@@ -547,17 +568,19 @@ fn part_recipe(job: &ClipJob, part: Part) -> Recipe {
     let (trim_start, trim_end) = index.trim_us(*range);
     let mut vchain: Vec<String> = deinterlace(info).into_iter().collect();
     vchain.extend([format!("trim=start={trim_start}us:end={trim_end}us"), "setpts=PTS-STARTPTS".to_string()]);
-    vchain.extend(shape.picture(info, index));
+    vchain.extend(job.adjust.crop.and_then(|c| c.filter(upright_size(info))));
+    vchain.extend(shape.picture(info, index, job.adjust.crop));
     let mut graph = format!("[0:{}]{}[v]", info.video.index, vchain.join(","));
     if let Some(layout) = &shape.audio {
         match crate::merge::audio_stream(info, job.audio_ordinal) {
             Some(stream) => {
                 graph += &format!(
-                    ";[0:a:{ord}]atrim=start={ts:.9}:end={te:.9},asetpts=PTS-{ts:.9}/TB,aresample={AUDIO_RATE}:{fill}:first_pts=0{upmix},aformat=channel_layouts={layout},apad=whole_len={samples},atrim=end_sample={samples}[a]",
+                    ";[0:a:{ord}]atrim=start={ts:.9}:end={te:.9},asetpts=PTS-{ts:.9}/TB,aresample={AUDIO_RATE}:{fill}:first_pts=0{upmix},aformat=channel_layouts={layout},apad=whole_len={samples},atrim=end_sample={samples}{volume}[a]",
                     ord = stream.ordinal,
                     fill = as_media::proxy::AUDIO_GAP_FILL,
                     ts = index.t(s),
                     te = index.t(e),
+                    volume = job.adjust.volume(),
                     // Mono at full level on both sides, as loud as the stereo
                     // episodes next to it (a plain upmix is 3 dB quieter).
                     upmix = if stream.channels == 1 && layout != "mono" { ",pan=stereo|c0=c0|c1=c0" } else { "" },

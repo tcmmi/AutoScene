@@ -18,12 +18,12 @@ use as_export::LosslessCodec;
 use as_export::clip::PARTIAL_DIR;
 use as_export::preset::{AudioCodec, VideoCodec};
 use as_export::{
-    ClipJob, EdlError, EdlEvent, EstimateClip, ExportPreset, JoinJob, JoinPart, MergePlan, MergeSource, Part,
-    estimate_bytes, exact_format, export_clip, in_software, join_parts, lossless_merge_blocker, plan_lossless_merge,
-    plan_merge, reel_names, write_cmx3600, write_csv,
+    Adjust, ClipJob, EdlError, EdlEvent, EstimateClip, ExportPreset, JoinJob, JoinPart, MergePlan, MergeSource, Part,
+    estimate_bytes, exact_format, export_clip, in_software, join_parts, lossless_merge_blocker, loudness,
+    plan_lossless_merge, plan_merge, reel_names, write_cmx3600, write_csv,
 };
 use as_media::poster::{StillSize, extract_frame_jpegs};
-use as_media::{Caps, MediaInfo, MediaResult, Source, Tools, build_frame_index, idet, probe, proxy};
+use as_media::{Bars, Caps, MediaInfo, MediaResult, Source, Tools, build_frame_index, detect_bars, idet, probe, proxy};
 use parking_lot::Mutex;
 
 use crate::naming::{CLIP_TEMPLATE, NameParts, clip_timecode, is_drop_frame, render_name, safe_component};
@@ -1031,6 +1031,13 @@ impl Project {
             return Err(ProjectError::Invalid(msg!("export.nothing", "Nothing to export.")));
         }
         check_export_dir(out_dir)?;
+        // Kept with the export: it may run later, or start again after a restart.
+        let changes = preset.video != VideoCodec::Lossless;
+        let preset = ExportPreset {
+            remove_bars: changes && req.options.remove_bars,
+            match_loudness: changes && req.options.match_loudness && preset.audio != AudioCodec::None,
+            ..preset
+        };
         let title = self.title()?;
         let ext = preset.container.ext();
         // Names already promised to exports that haven't written their files
@@ -1222,7 +1229,13 @@ impl Project {
             .filter(|c| c.start < c.end)
             .map(|c| {
                 let (m, info, index) = &sources[&c.media_id];
-                MergeSource { info, index, range: FrameRange::new(c.start, c.end), audio_ordinal: m.audio_ordinal }
+                MergeSource {
+                    info,
+                    index,
+                    range: FrameRange::new(c.start, c.end),
+                    audio_ordinal: m.audio_ordinal,
+                    crop: None,
+                }
             })
             .collect();
         Ok(lossless_merge_blocker(&merge).map(apart_sentence))
@@ -1426,6 +1439,9 @@ impl Project {
         if let Some(file) = ex.merged.clone() {
             return self.run_merged(tools, &ex, file, cancel, progress, changed);
         }
+        let crops = self.export_crops(tools, &ex, cancel, progress);
+        let layout = ex.preset.stereo.then_some("stereo");
+        let gains = self.export_gains(tools, &ex, layout, false, cancel, progress);
         let shares = ClipShares::new(ex.items.iter().map(|i| i.end - i.start));
         let out_dir = PathBuf::from(&ex.out_dir);
         let mut failed = false;
@@ -1447,6 +1463,10 @@ impl Project {
                     out_stem: out_dir.join(stored_name(&item.name)),
                     title: Some(item.name.clone()),
                     part: None,
+                    adjust: Adjust {
+                        crop: crops.get(&item.media_id).copied(),
+                        gain_db: gains.get(&item.id).copied().unwrap_or(0.0),
+                    },
                 };
                 Ok(export_clip(tools, &job, cancel, |p| progress(&stage, Some(shares.at(i, p))))?)
             })();
@@ -1477,6 +1497,111 @@ impl Project {
         }
         self.db.set_export_status(id, if failed { ExportStatus::Failed } else { ExportStatus::Done })?;
         self.export(id)
+    }
+
+    /// The black bars of the episodes of `ex`, when it takes them off.
+    fn export_crops(
+        &self,
+        tools: &Tools,
+        ex: &ExportSummary,
+        cancel: &CancelToken,
+        progress: Progress,
+    ) -> HashMap<MediaId, Bars> {
+        let mut crops = HashMap::new();
+        if !ex.preset.remove_bars {
+            return crops;
+        }
+        progress(&msg!("job.stage.findingBars", "Looking for black bars"), Some(0.0));
+        for item in &ex.items {
+            if cancel.is_cancelled() {
+                break;
+            }
+            if !crops.contains_key(&item.media_id)
+                && let Some(bars) = self.bars_of(tools, item.media_id, cancel)
+            {
+                crops.insert(item.media_id, bars);
+            }
+        }
+        crops
+    }
+
+    /// The black bars of an episode, found once: looking takes seconds, and a
+    /// series has many. `None` when it can't be read now: the clip says why.
+    fn bars_of(&self, tools: &Tools, id: MediaId, cancel: &CancelToken) -> Option<Bars> {
+        let (m, info, index) = self.ready_source(id).ok()?;
+        let key = format!("bars:{id}");
+        // Of this file: a relinked episode is looked at again.
+        let file = format!("{}|{}", index.len(), m.path);
+        let stored = self.db.meta(&key).ok().flatten().and_then(|v| {
+            let (bars, of) = v.split_once(' ')?;
+            let bars: Vec<u32> = bars.split(',').map(str::parse).collect::<Result<_, _>>().ok()?;
+            match bars[..] {
+                [top, bottom, left, right] if of == file => Some(Bars { top, bottom, left, right }),
+                _ => None,
+            }
+        });
+        if stored.is_some() {
+            return stored;
+        }
+        let path = PathBuf::from(&m.path);
+        let src = Source { path: &path, info: &info, index: &index };
+        match detect_bars(tools, &src, cancel) {
+            Ok(b) => {
+                tracing::info!(media = %id, bars = ?b, "black bars");
+                let value = format!("{},{},{},{} {file}", b.top, b.bottom, b.left, b.right);
+                if let Err(e) = self.db.set_meta(&key, &value) {
+                    tracing::warn!(error = %e, "keeping an episode's black bars");
+                }
+                Some(b)
+            }
+            Err(e) => {
+                tracing::warn!(detail = %e.detail(), "looking for black bars");
+                None
+            }
+        }
+    }
+
+    /// The gain of each clip of `ex` by its item, when it evens out their
+    /// sound. `layout`: the channels the sound ends up in, when not its own.
+    fn export_gains(
+        &self,
+        tools: &Tools,
+        ex: &ExportSummary,
+        layout: Option<&str>,
+        merged: bool,
+        cancel: &CancelToken,
+        progress: Progress,
+    ) -> HashMap<i64, f64> {
+        if !ex.preset.match_loudness {
+            return HashMap::new();
+        }
+        let stage = &msg!("job.stage.measuringSound", "Measuring the sound");
+        let mut episodes: HashMap<MediaId, Option<(PathBuf, MediaInfo, Arc<FrameIndex>)>> = HashMap::new();
+        let mut measured = Vec::with_capacity(ex.items.len());
+        for (i, item) in ex.items.iter().enumerate() {
+            if cancel.is_cancelled() {
+                break;
+            }
+            progress(stage, Some(0.0));
+            tracing::debug!(clip = i, "measuring");
+            let episode = episodes.entry(item.media_id).or_insert_with(|| {
+                self.ready_source(item.media_id).ok().map(|(m, info, index)| (PathBuf::from(&m.path), info, index))
+            });
+            let sound = episode.as_ref().and_then(|(path, info, index)| {
+                let chosen = self.db.export_item_audio(item.id).ok().flatten();
+                let ordinal = chosen.or_else(|| info.default_audio().map(|a| a.ordinal))?;
+                let range = FrameRange::new(item.start, item.end);
+                (!range.is_empty() && range.end <= index.len())
+                    .then(|| {
+                        let src = Source { path, info, index };
+                        loudness::measure(tools, &src, range, ordinal, layout, merged, cancel).ok().flatten()
+                    })
+                    .flatten()
+            });
+            measured.push((item.id, item.media_id, sound));
+        }
+        let by_episode: Vec<_> = measured.iter().map(|&(_, media, sound)| (media, sound)).collect();
+        measured.iter().map(|m| m.0).zip(loudness::gains(&by_episode)).collect()
     }
 
     /// The preset and plan of a merged export in software, when `failed`, the
@@ -1573,6 +1698,7 @@ impl Project {
         if sources.is_empty() {
             return finish(none_left(), &[]);
         }
+        let crops = self.export_crops(tools, ex, cancel, progress);
         let merge_sources: Vec<MergeSource> = sources
             .iter()
             .map(|(item, episode, audio)| MergeSource {
@@ -1580,6 +1706,7 @@ impl Project {
                 index: &episode.2,
                 range: FrameRange::new(item.start, item.end),
                 audio_ordinal: *audio,
+                crop: crops.get(&item.media_id).copied(),
             })
             .collect();
         let planned = if ex.preset.video == VideoCodec::Lossless {
@@ -1603,6 +1730,7 @@ impl Project {
             }
         };
 
+        let gains = self.export_gains(tools, ex, plan.shape.audio.as_deref(), true, cancel, progress);
         let n = sources.len();
         let shares = ClipShares::new(sources.iter().map(|(item, ..)| item.end - item.start));
         let mut parts: Vec<JoinPart> = Vec::with_capacity(n);
@@ -1630,6 +1758,10 @@ impl Project {
                 out_stem: work.0.join(format!("part-{:05}", i + 1)),
                 title: None,
                 part: Some(Part { shape: &plan.shape, samples: timing.samples }),
+                adjust: Adjust {
+                    crop: crops.get(&item.media_id).copied(),
+                    gain_db: gains.get(&item.id).copied().unwrap_or(0.0),
+                },
             };
             let share = |p: f64| shares.at(i, p) * RENDER_SHARE;
             let rendered = export_clip(tools, &job, cancel, |p| progress(&stage, Some(share(p))));
@@ -2199,6 +2331,7 @@ mod tests {
             clips: vec![ClipRequest { media_id: m, start: 0, end: 24, name: None }],
             label: None,
             merge: None,
+            options: Default::default(),
         };
         let preset = as_export::builtin_presets().into_iter().find(|p| p.id == "h264-edit").unwrap();
         let e = project.create_export(&req, preset, Path::new("Exports")).unwrap_err();
@@ -2223,6 +2356,7 @@ mod tests {
             clips: clips.clone(),
             label: None,
             merge: merge.map(Into::into),
+            options: Default::default(),
         };
         for merge in [None, Some("Both")] {
             let ex = project.create_export(&req(merge), preset(), dir.path()).unwrap();

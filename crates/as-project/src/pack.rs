@@ -314,6 +314,7 @@ impl Project {
                 index,
                 range: FrameRange::new(clip.start, clip.end),
                 audio_ordinal: media.audio_ordinal,
+                crop: None,
             });
         }
         // Bit-Perfect joins only episodes alike; others make a file per clip.
@@ -382,6 +383,7 @@ impl Project {
             clips,
             label: Some(words.pack_label(&label)),
             merge,
+            options: req.options,
         };
         Ok((request, out_dir))
     }
@@ -1255,6 +1257,7 @@ mod tests {
             preset_id: "h264-edit".into(),
             out_dir: None,
             stamp: stamp.into(),
+            options: Default::default(),
         };
         let (request, dir) = p
             .project
@@ -1408,6 +1411,7 @@ mod tests {
             preset_id: "h264-edit".into(),
             out_dir: None,
             stamp: v.stamp.clone(),
+            options: Default::default(),
         };
 
         // One file: its name, its chapters and the label the history keeps.
@@ -1461,6 +1465,7 @@ mod tests {
             preset_id: "h264-edit".into(),
             out_dir: None,
             stamp: v.stamp.clone(),
+            options: Default::default(),
         };
         assert!(req.naming.merge && req.naming.folder, "one file by default; the folder waits for a file per clip");
         let (request, dir) =
@@ -1597,6 +1602,7 @@ mod tests {
             preset_id: "h264-edit".into(),
             out_dir: None,
             stamp: filtered(&p, &on(), &filters).stamp,
+            options: Default::default(),
         };
         let (request, _) = p.project.pack_export_request(p.walter, &req, &filters, &out, &English).unwrap();
         assert_eq!(request.clips.iter().map(|c| c.start).collect::<Vec<_>>(), [0, 290]);
@@ -1793,6 +1799,7 @@ mod tests {
             preset_id: "h264-edit".into(),
             out_dir: None,
             stamp: stamp.into(),
+            options: Default::default(),
         };
         let export = |spec: &PackSpec, naming: &PackNaming, stamp: &str, filters: &PluginFilters| {
             p.project.pack_export_request(p.walter, &req(spec, naming, stamp), filters, &out, &English).unwrap().0.clips
@@ -1879,6 +1886,7 @@ mod tests {
                 preset_id: "h264-edit".into(),
                 out_dir: None,
                 stamp: stamp.into(),
+                options: Default::default(),
             };
             let export =
                 p.project.pack_export_request(p.walter, &req, &PluginFilters::NONE, &out, &English).unwrap_err();

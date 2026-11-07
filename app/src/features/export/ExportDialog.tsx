@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { FolderOpen, Info } from "@/components/icons"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import type { ClipRequest } from "@/bindings"
+import type { ClipRequest, ExportOptions } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { TruncatedText } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
@@ -16,6 +16,7 @@ import { pickFolder } from "@/lib/media"
 import { useExportDir, usePresets, useSettings } from "@/lib/queries"
 import { useUi } from "@/state/ui"
 import { rememberPreset } from "./export"
+import { ExportOptionRows, NO_EXPORT_OPTIONS } from "./ExportOptionRows"
 
 export type ExportClip = ClipRequest & {
   /** What the user sees: "S01E03 · 00:12:03:05 – 00:12:07:11". */
@@ -67,11 +68,13 @@ function ExportForm({
   const { data: settings } = useSettings()
   const { data: defaultDir } = useExportDir(projectId)
   const [chosenPreset, setPresetId] = useState<string>()
+  const [chosenOptions, setOptions] = useState<ExportOptions>()
   const [dir, setDir] = useState<string | null>(null)
   const [name, setName] = useState("")
   const [busy, setBusy] = useState(false)
   const single = clips.length === 1
   const presetId = chosenPreset ?? settings?.exportPresetId
+  const options = chosenOptions ?? settings?.exportOptions ?? NO_EXPORT_OPTIONS
 
   const preset = presets?.find((p) => p.id === presetId)
   const outDir = dir ?? defaultDir ?? ""
@@ -96,9 +99,10 @@ function ExportForm({
         outDir: dir,
         clips: clips.map((c) => ({ mediaId: c.mediaId, start: c.start, end: c.end, name: single && name.trim() ? name.trim() : c.name })),
         label,
+        options,
       }
       await commands.exportStart(projectId, req)
-      rememberPreset(settings, presetId)
+      rememberPreset(settings, presetId, options)
       onDone()
       toast(single ? t("started", { name: name.trim() || suggested || t("theClip") }) : t("startedMany", { count: clips.length, total: clips.length }), {
         action: { label: t("show"), onClick: () => useUi.getState().setActivityOpen(true) },
@@ -164,6 +168,7 @@ function ExportForm({
             options={(presets ?? []).map((p) => ({ value: p.id, label: presetName(p) }))}
           />
         </Field>
+        <ExportOptionRows preset={preset} options={options} onChange={setOptions} />
         <Field label={t("field.destination")}>
           <div className="flex gap-2">
             <div

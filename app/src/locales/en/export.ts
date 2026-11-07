@@ -21,6 +21,16 @@ export default {
     /** The label of the folder the export goes to. */
     destination: "Destination",
   },
+  option: {
+    /** A switch: crop the black bars a film was mastered with off its clips. */
+    removeBars: "Remove black bars",
+    /** Under that switch. */
+    removeBarsHint: "Cuts off the bars built into the picture.",
+    /** A switch: bring every clip to the same loudness. */
+    matchLoudness: "Match loudness",
+    /** Under that switch. */
+    matchLoudnessHint: "Brings every clip to the same volume.",
+  },
   /** The button that picks another folder for the export. */
   change: "Change…",
   /** The title of the OS folder dialog for the export's destination. */

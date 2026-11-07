@@ -216,6 +216,7 @@ function scanDefaults(): ScanDefaults {
 let settings: AppSettings = {
   libraryRoot: ROOT,
   exportPresetId: "prores-hq",
+  exportOptions: { removeBars: false, matchLoudness: false },
   audioLanguage: "eng",
   allowUnreviewedPlugins: false,
   gpu: initialGpu,
@@ -391,6 +392,8 @@ function preset(id: string, name: string, description: string, container: "mov" 
     hdr: "auto",
     stereo: id === "h264-mobile",
     builtin: true,
+    removeBars: false,
+    matchLoudness: false,
   }
 }
 

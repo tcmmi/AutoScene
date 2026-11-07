@@ -36,3 +36,16 @@ describe("remembering the export format", () => {
     expect(queryClient.getQueryData(qk.settings)).toBeUndefined()
   })
 })
+
+describe("rememberPreset's options", () => {
+  it("saves options that changed and leaves alone what didn't", async () => {
+    const settings = { exportPresetId: "h264", exportOptions: { removeBars: false, matchLoudness: false } } as AppSettings
+    const update = vi.mocked(commands.settingsUpdate)
+    update.mockClear()
+    update.mockResolvedValue(settings)
+    rememberPreset(settings, "h264", { removeBars: false, matchLoudness: false })
+    expect(update).not.toHaveBeenCalled()
+    rememberPreset(settings, "h264", { removeBars: true, matchLoudness: false })
+    expect(update).toHaveBeenCalledWith({ ...settings, exportOptions: { removeBars: true, matchLoudness: false } })
+  })
+})

@@ -108,6 +108,7 @@ fn check(tools: &Tools, fx: &Fixture, range: FrameRange, source_md5s: &[String],
         out_stem: work.join(format!("{name}_{}_{}", range.start, range.end)),
         title: None,
         part: None,
+        adjust: Default::default(),
     };
     let out = export_clip(tools, &job, &CancelToken::new(), |_| {})
         .unwrap_or_else(|e| panic!("{name} {range:?}: {e} ({e:?})"));
@@ -298,7 +299,13 @@ fn a_joined_file_is_its_clips_exactly() {
     let clips = [(&a, FrameRange::new(140, 160)), (&b, FrameRange::new(301, 341)), (&a, FrameRange::new(575, 586))];
     let sources: Vec<MergeSource> = clips
         .iter()
-        .map(|(fx, range)| MergeSource { info: &fx.info, index: &fx.index, range: *range, audio_ordinal: None })
+        .map(|(fx, range)| MergeSource {
+            info: &fx.info,
+            index: &fx.index,
+            range: *range,
+            audio_ordinal: None,
+            crop: None,
+        })
         .collect();
     assert_eq!(lossless_merge_blocker(&sources), None);
     let exact: Vec<_> =
@@ -316,6 +323,7 @@ fn a_joined_file_is_its_clips_exactly() {
             out_stem: work.path().join(format!("part-{i}")),
             title: None,
             part: Some(Part { shape: &plan.shape, samples: timing.samples }),
+            adjust: Default::default(),
         };
         let out = export_clip(&tools, &job, &CancelToken::new(), |_| {}).unwrap();
         parts.push(JoinPart { path: out.path.into(), frames: out.frames, timing: *timing, title: format!("Shot {i}") });
@@ -350,7 +358,7 @@ fn a_joined_file_of_ffv1_parts_is_its_clips_exactly() {
     let clips = [FrameRange::new(10, 34), FrameRange::new(100, 130), FrameRange::new(150, 151)];
     let sources: Vec<MergeSource> = clips
         .iter()
-        .map(|range| MergeSource { info: &fx.info, index: &fx.index, range: *range, audio_ordinal: None })
+        .map(|range| MergeSource { info: &fx.info, index: &fx.index, range: *range, audio_ordinal: None, crop: None })
         .collect();
     let exact = vec![exact_format(&tools, &fx.path, fx.info.video.index).unwrap(); clips.len()];
     let plan = plan_lossless_merge(tools.caps(), &sources, &exact).unwrap();
@@ -367,6 +375,7 @@ fn a_joined_file_of_ffv1_parts_is_its_clips_exactly() {
             out_stem: w.join(format!("part-{i}")),
             title: None,
             part: Some(Part { shape: &plan.shape, samples: timing.samples }),
+            adjust: Default::default(),
         };
         let out = export_clip(&tools, &job, &CancelToken::new(), |_| {}).unwrap();
         parts.push(JoinPart { path: out.path.into(), frames: out.frames, timing: *timing, title: format!("Shot {i}") });
@@ -402,6 +411,7 @@ fn a_clip_never_replaces_a_file_that_came_meanwhile() {
         out_stem: stem,
         title: None,
         part: None,
+        adjust: Default::default(),
     };
     let out = export_clip(&tools, &job, &CancelToken::new(), |_| {}).unwrap();
     assert!(out.path.ends_with("Walter_2.mov"), "{}", out.path);
@@ -415,8 +425,8 @@ fn episodes_unlike_each_other_share_no_file() {
     let a = load(&tools, &fixtures_dir().join("cfr24_h264.mp4"), work.path());
     let b = load(&tools, &fixtures_dir().join("hevc10_hdr.mkv"), work.path());
     let sources = [
-        MergeSource { info: &a.info, index: &a.index, range: FrameRange::new(0, 24), audio_ordinal: None },
-        MergeSource { info: &b.info, index: &b.index, range: FrameRange::new(0, 24), audio_ordinal: None },
+        MergeSource { info: &a.info, index: &a.index, range: FrameRange::new(0, 24), audio_ordinal: None, crop: None },
+        MergeSource { info: &b.info, index: &b.index, range: FrameRange::new(0, 24), audio_ordinal: None, crop: None },
     ];
     assert!(lossless_merge_blocker(&sources).is_some());
     let exact = [

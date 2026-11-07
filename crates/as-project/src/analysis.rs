@@ -257,6 +257,7 @@ pub(crate) mod tests {
         lib.update_settings(&AppSettings {
             library_root: dir.path().join("Library").display().to_string(),
             export_preset_id: "h264-edit".into(),
+            export_options: Default::default(),
             audio_language: String::new(),
             find_bodies: false,
             fast_scan: false,

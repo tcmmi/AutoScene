@@ -120,6 +120,7 @@ fn check(tools: &Tools, fx: &Fixture, range: FrameRange, preset: &ExportPreset, 
         out_stem: work.join(format!("{}_{}_{}_{}", fx.file.replace('.', "_"), preset.id, range.start, range.end)),
         title: None,
         part: None,
+        adjust: Default::default(),
     };
     let out = export_clip(tools, &job, &CancelToken::new(), |_| {}).unwrap();
     assert!(out.verified, "{} {range:?} {}: self-verification failed", fx.file, preset.id);
@@ -233,6 +234,7 @@ fn audio_is_cut_with_the_video() {
                 out_stem: work.path().join(format!("a_{}_{}", file.replace('.', "_"), shot.start)),
                 title: None,
                 part: None,
+                adjust: Default::default(),
             };
             let out = export_clip(&tools, &job, &CancelToken::new(), |_| {}).unwrap();
             let pcm = audio_pcm(&tools, Path::new(&out.path));
@@ -265,6 +267,7 @@ fn dotted_names_get_their_own_files() {
             out_stem: work.path().join(stem),
             title: None,
             part: None,
+            adjust: Default::default(),
         };
         let out = export_clip(&tools, &job, &CancelToken::new(), |_| {}).unwrap();
         assert!(out.verified);
@@ -307,6 +310,7 @@ fn late_audio_stays_in_sync() {
             out_stem: work.path().join(format!("late_{}", p.id)),
             title: None,
             part: None,
+            adjust: Default::default(),
         };
         let out = export_clip(&tools, &job, &CancelToken::new(), |_| {}).unwrap();
         assert!(out.verified);
@@ -365,6 +369,7 @@ fn mobile_preset_mixes_surround_to_stereo() {
             out_stem: work.path().join(format!("surround_{id}")),
             title: None,
             part: None,
+            adjust: Default::default(),
         };
         let out = export_clip(&tools, &job, &CancelToken::new(), |_| {}).unwrap();
         assert!(out.verified);
@@ -489,6 +494,7 @@ fn audio_dropouts_keep_sync() {
         out_stem: work.path().join("dropout_clip"),
         title: None,
         part: None,
+        adjust: Default::default(),
     };
     let out = export_clip(&tools, &job, &CancelToken::new(), |_| {}).unwrap();
     assert!(out.verified);
@@ -546,7 +552,13 @@ struct Merged {
 fn merge(tools: &Tools, cuts: &[Cut], preset: &ExportPreset, work: &Path, name: &str) -> Merged {
     let sources: Vec<MergeSource> = cuts
         .iter()
-        .map(|(m, range, audio)| MergeSource { info: &m.info, index: &m.index, range: *range, audio_ordinal: *audio })
+        .map(|(m, range, audio)| MergeSource {
+            info: &m.info,
+            index: &m.index,
+            range: *range,
+            audio_ordinal: *audio,
+            crop: None,
+        })
         .collect();
     let plan = plan_merge(tools.caps(), preset, &sources).unwrap();
     let dir = work.join(format!("{name}-parts"));
@@ -562,6 +574,7 @@ fn merge(tools: &Tools, cuts: &[Cut], preset: &ExportPreset, work: &Path, name: 
             out_stem: dir.join(format!("part-{:05}", i + 1)),
             title: None,
             part: Some(Part { shape: &plan.shape, samples: timing.samples }),
+            adjust: Default::default(),
         };
         let out = export_clip(tools, &job, &CancelToken::new(), |_| {}).unwrap();
         assert!(out.verified, "{name}: part {} ({range:?}) failed its self-verification", i + 1);
@@ -917,6 +930,7 @@ fn cut_all(tools: &Tools, file: &Path, preset: &ExportPreset, dir: &Path) -> as_
         out_stem: dir.join(format!("clip-{}", preset.id)),
         title: None,
         part: None,
+        adjust: Default::default(),
     };
     export_clip(tools, &job, &CancelToken::new(), |_| {}).unwrap()
 }

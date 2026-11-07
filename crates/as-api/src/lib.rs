@@ -73,6 +73,17 @@ pub struct ModelInfo {
     pub installed: bool,
 }
 
+/// What an export changes of its clips beyond their format. Bit-Perfect
+/// exports change nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ExportOptions {
+    /// Take the black bars the picture was mastered with off the clips.
+    pub remove_bars: bool,
+    /// Bring every clip to the same loudness.
+    pub match_loudness: bool,
+}
+
 /// User preferences stored in `library.db`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +92,9 @@ pub struct AppSettings {
     pub library_root: String,
     /// Preset preselected in the export dialog.
     pub export_preset_id: String,
+    /// The options the export dialogs last had.
+    #[serde(default)]
+    pub export_options: ExportOptions,
     /// Audio language picked automatically for new episodes (ISO 639-2 code,
     /// e.g. `eng`); empty = use each file's default track.
     #[serde(default)]
@@ -1141,6 +1155,8 @@ pub struct ExportRequest {
     /// a chapter per clip named after it; `None`: a file per clip.
     #[serde(default)]
     pub merge: Option<String>,
+    #[serde(default)]
+    pub options: ExportOptions,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -1551,6 +1567,8 @@ pub struct PackExportRequest {
     pub out_dir: Option<String>,
     /// The preview's stamp: the export is refused if the pack changed since.
     pub stamp: String,
+    #[serde(default)]
+    pub options: ExportOptions,
 }
 
 // ---------------------------------------------------------------------------

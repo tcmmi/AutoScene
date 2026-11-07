@@ -5339,6 +5339,22 @@
     "state": "draft",
     "en": "4233d31c"
   },
+  "export:option.removeBars": {
+    "state": "draft",
+    "en": "c8a10718"
+  },
+  "export:option.removeBarsHint": {
+    "state": "draft",
+    "en": "2bb6b787"
+  },
+  "export:option.matchLoudness": {
+    "state": "draft",
+    "en": "64acebb5"
+  },
+  "export:option.matchLoudnessHint": {
+    "state": "draft",
+    "en": "0106f55f"
+  },
   "export:field.fileName": {
     "state": "draft",
     "en": "b0672212"
@@ -7335,6 +7351,10 @@
     "state": "draft",
     "en": "fbce1591"
   },
+  "backend:job.stage.findingBars": {
+    "state": "draft",
+    "en": "13193d10"
+  },
   "backend:job.stage.findingShots": {
     "state": "draft",
     "en": "10a9826b"
@@ -7350,6 +7370,10 @@
   "backend:job.stage.joining": {
     "state": "draft",
     "en": "991d3caf"
+  },
+  "backend:job.stage.measuringSound": {
+    "state": "draft",
+    "en": "bb427cd0"
   },
   "backend:job.stage.onCpu": {
     "state": "draft",

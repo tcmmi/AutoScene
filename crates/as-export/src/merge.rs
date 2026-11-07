@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use as_core::{CancelToken, FrameIndex, FrameRange, Msg, Rational, msg};
 use as_media::filters::TONEMAP_SDR_EXPORT;
 use as_media::frames::MAX_SIDE;
-use as_media::{AudioStream, Caps, ExactFormat, HdrKind, MediaError, MediaInfo, Tools, run_ffmpeg};
+use as_media::{AudioStream, Bars, Caps, ExactFormat, HdrKind, MediaError, MediaInfo, Tools, run_ffmpeg};
 use serde_json::Value;
 
 use crate::clip::{
@@ -55,6 +55,8 @@ pub struct MergeSource<'a> {
     pub range: FrameRange,
     /// The clip's audio track (`None`: the file's default).
     pub audio_ordinal: Option<u32>,
+    /// The black bars taken off it.
+    pub crop: Option<Bars>,
 }
 
 /// Colour tags of a picture.
@@ -165,7 +167,7 @@ pub struct MergePlan {
 impl MergeShape {
     /// Filters after the trim (and `setpts`) that turn a part's frames into
     /// the shape: its frame grid, colour and size, then the pixel format.
-    pub(crate) fn picture(&self, info: &MediaInfo, index: &FrameIndex) -> Vec<String> {
+    pub(crate) fn picture(&self, info: &MediaInfo, index: &FrameIndex, crop: Option<Bars>) -> Vec<String> {
         let mut f = Vec::new();
         if !index.is_vfr() {
             // Onto the clean frame grid: in coarse time bases (MKV's
@@ -177,7 +179,7 @@ impl MergeShape {
         if tonemapped {
             f.push(TONEMAP_SDR_EXPORT.to_string());
         }
-        let (w, h) = fit(natural_size(info, self.max_height), (self.width, self.height));
+        let (w, h) = fit(shown_size(info, crop, self.max_height), (self.width, self.height));
         let mut scale = format!("scale={w}:{h}:flags=bicubic");
         if self.to_bt709 && !tonemapped {
             if matrix_is_bt601(info) {
@@ -278,8 +280,8 @@ pub fn plan_merge(caps: &Caps, preset: &ExportPreset, sources: &[MergeSource]) -
     for s in sources {
         *rates.entry(s.index.nominal_fps).or_default() += frames(s);
     }
-    let (width, height) =
-        file_size(sources.iter().map(|s| (natural_size(s.info, preset.max_height), frames(s)))).expect("non-empty");
+    let (width, height) = file_size(sources.iter().map(|s| (shown_size(s.info, s.crop, preset.max_height), frames(s))))
+        .expect("non-empty");
     let fps = rates.into_iter().max_by_key(|&(r, n)| (n, r.num * 1000 / r.den.max(1))).map(|(r, _)| r).unwrap();
 
     // Every part's encoder is told its own episode's rate: the cap leaves
@@ -526,11 +528,17 @@ pub(crate) fn file_size(clips: impl IntoIterator<Item = ((u32, u32), u64)>) -> O
 /// The picture a clip of `info` shows: upright, square pixels, at most
 /// `max_height` tall and [`MAX_SIDE`] a side, in even numbers.
 pub(crate) fn natural_size(info: &MediaInfo, max_height: Option<u32>) -> (u32, u32) {
+    shown_size(info, None, max_height)
+}
+
+/// [`natural_size`], of the picture inside `crop`.
+pub(crate) fn shown_size(info: &MediaInfo, crop: Option<Bars>, max_height: Option<u32>) -> (u32, u32) {
     let v = &info.video;
     // ffmpeg turns rotated pictures upright before the filters see them.
     let quarter = matches!(v.rotation, 90 | 270);
     let (w, h, aspect) =
         if quarter { (v.height, v.width, v.pixel_aspect().recip()) } else { (v.width, v.height, v.pixel_aspect()) };
+    let (w, h) = crop.map_or((w, h), |c| c.inside((w, h)));
     let (mut w, mut h) = (f64::from(w) * aspect, f64::from(h));
     if let Some(m) = max_height.map(f64::from)
         && h > m
@@ -1110,7 +1118,8 @@ mod tests {
     fn parts_that_say_nothing_get_the_tags_they_are_taken_to_have() {
         let film = info(1920, 1080, r(1, 1), 0);
         let index = FrameIndex::cfr(r(1, 24000), r(24000, 1001), 0, 100);
-        let source = MergeSource { info: &film, index: &index, range: FrameRange::new(0, 5), audio_ordinal: None };
+        let source =
+            MergeSource { info: &film, index: &index, range: FrameRange::new(0, 5), audio_ordinal: None, crop: None };
         let tags = ColorTags::default().or_assumed(&[source]);
         assert_eq!(tags, ColorTags::bt709());
     }
@@ -1129,8 +1138,20 @@ mod tests {
             FrameIndex::cfr(r(1, 60000), r(60000, 1001), 0, 1000),
         );
         let sources = [
-            MergeSource { info: &film, index: &slow_index, range: FrameRange::new(0, 500), audio_ordinal: None },
-            MergeSource { info: &fast, index: &fast_index, range: FrameRange::new(0, 100), audio_ordinal: None },
+            MergeSource {
+                info: &film,
+                index: &slow_index,
+                range: FrameRange::new(0, 500),
+                audio_ordinal: None,
+                crop: None,
+            },
+            MergeSource {
+                info: &fast,
+                index: &fast_index,
+                range: FrameRange::new(0, 100),
+                audio_ordinal: None,
+                crop: None,
+            },
         ];
         let preset = crate::builtin_presets().into_iter().find(|p| p.id == "h264-edit").unwrap();
         let args = plan_merge(&caps, &preset, &sources).unwrap().shape.encoding.args.join(" ");
@@ -1178,7 +1199,7 @@ mod tests {
         let film = info(1920, 1080, r(1, 1), 0);
         let caps = Caps { sw_encoders: vec!["prores_ks".into()], ..Caps::default() };
         let prores = crate::builtin_presets().remove(0);
-        let sources = |range| [MergeSource { info: &film, index: &vfr, range, audio_ordinal: None }];
+        let sources = |range| [MergeSource { info: &film, index: &vfr, range, audio_ordinal: None, crop: None }];
         for range in [FrameRange::new(2, 20), FrameRange::new(8, 9), FrameRange::new(3, 3)] {
             let refused = |r: ExportResult<MergePlan>| matches!(r, Err(ExportError::BadRange(_)));
             assert!(refused(plan_merge(&caps, &prores, &sources(range))), "{range:?}");
@@ -1196,7 +1217,7 @@ mod tests {
         let args = |ranges: &[FrameRange]| {
             let sources: Vec<MergeSource> = ranges
                 .iter()
-                .map(|&range| MergeSource { info: &film, index: &index, range, audio_ordinal: None })
+                .map(|&range| MergeSource { info: &film, index: &index, range, audio_ordinal: None, crop: None })
                 .collect();
             let plan = plan_lossless_merge(&caps, &sources, &vec![exact.clone(); sources.len()]).unwrap();
             assert_eq!(plan.shape.encoding.encoder, "libx265");
@@ -1221,10 +1242,15 @@ mod tests {
         );
         let caps = Caps { sw_encoders: vec!["prores_ks".into()], ..Caps::default() };
         let index = FrameIndex::cfr(r(1, 24), r(24, 1), 0, 100);
-        let sources =
-            [MergeSource { info: &tagged, index: &index, range: FrameRange::new(0, 10), audio_ordinal: None }];
+        let sources = [MergeSource {
+            info: &tagged,
+            index: &index,
+            range: FrameRange::new(0, 10),
+            audio_ordinal: None,
+            crop: None,
+        }];
         let plan = plan_merge(&caps, &crate::builtin_presets().remove(0), &sources).unwrap();
-        let chain = plan.shape.picture(&tagged, &index).join(",");
+        let chain = plan.shape.picture(&tagged, &index, None).join(",");
         // What it does not say plainly is taken as an untagged picture is.
         assert!(
             chain.ends_with(",setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv"),
@@ -1288,7 +1314,9 @@ mod tests {
     fn the_joined_file_times_its_chapters_like_its_frames() {
         let (hd, odd) = (info(1920, 1080, r(1, 1), 0), info(1920, 803, r(1, 1), 0));
         let index = FrameIndex::cfr(r(1, 24000), r(24000, 1001), 0, 100);
-        let clip = |info| [MergeSource { info, index: &index, range: FrameRange::new(0, 10), audio_ordinal: None }];
+        let clip = |info| {
+            [MergeSource { info, index: &index, range: FrameRange::new(0, 10), audio_ordinal: None, crop: None }]
+        };
         let encoders = ["libx264", "prores_ks", "libx265", "ffv1"].map(String::from).to_vec();
         let caps = Caps { sw_encoders: encoders, ..Caps::default() };
         let exact = [ExactFormat { pix_fmt: "yuv420p".into(), ..ExactFormat::default() }];
@@ -1343,7 +1371,13 @@ mod tests {
         let plan = |infos: &[MediaInfo], preset: &ExportPreset| {
             let sources: Vec<MergeSource> = infos
                 .iter()
-                .map(|i| MergeSource { info: i, index: &index, range: FrameRange::new(0, 10), audio_ordinal: None })
+                .map(|i| MergeSource {
+                    info: i,
+                    index: &index,
+                    range: FrameRange::new(0, 10),
+                    audio_ordinal: None,
+                    crop: None,
+                })
                 .collect();
             sound_plan(preset, &sources)
         };

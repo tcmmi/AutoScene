@@ -76,7 +76,7 @@ fn real_scenepacks_against_the_estimate() {
         let frames: u64 = ranges.iter().map(|r| u64::from(r.len())).sum();
         let sources: Vec<MergeSource> = ranges
             .iter()
-            .map(|&range| MergeSource { info: &info, index: &index, range, audio_ordinal: None })
+            .map(|&range| MergeSource { info: &info, index: &index, range, audio_ordinal: None, crop: None })
             .collect();
         let clips: Vec<EstimateClip> = ranges
             .iter()
@@ -104,6 +104,7 @@ fn real_scenepacks_against_the_estimate() {
                     out_stem: dir.join(format!("part-{:05}", i + 1)),
                     title: None,
                     part: Some(Part { shape: &plan.shape, samples: timing.samples }),
+                    adjust: Default::default(),
                 };
                 let out = export_clip(&tools, &job, &cancel, |_| {}).unwrap();
                 assert!(out.verified, "{} {}: part {} failed its check", pack.name, preset.id, i + 1);

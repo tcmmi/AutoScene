@@ -13,6 +13,7 @@ const bitPerfect = {
   id: "bit-perfect",
   name: "Bit-Perfect (lossless)",
   description: "Every frame exactly as in the episode.",
+  video: { codec: "lossless" },
 } as ExportPreset
 
 vi.mock("@/lib/ipc", () => ({

@@ -54,6 +54,7 @@ fn series(dir: &Path) -> (Arc<Project>, CharacterId) {
     lib.update_settings(&AppSettings {
         library_root: dir.join("Library").display().to_string(),
         export_preset_id: "h264-edit".into(),
+        export_options: Default::default(),
         audio_language: String::new(),
         find_bodies: false,
         fast_scan: false,
@@ -347,6 +348,7 @@ fn measure(project: &Project, c: CharacterId) {
             preset_id: preset.id.clone(),
             out_dir: Some(out.display().to_string()),
             stamp: v.stamp.clone(),
+            options: Default::default(),
         };
         let what = if merge { "one file" } else { "a file per clip" };
         row(

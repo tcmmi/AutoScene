@@ -4,10 +4,11 @@ pub mod clip;
 pub mod edl;
 pub mod estimate;
 pub mod lossless;
+pub mod loudness;
 pub mod merge;
 pub mod preset;
 
-pub use clip::{ClipJob, ClipOutcome, Part, export_clip, in_software};
+pub use clip::{Adjust, ClipJob, ClipOutcome, Part, export_clip, in_software};
 pub use edl::{EdlError, EdlEvent, reel_names, write_cmx3600, write_csv};
 pub use estimate::{EstimateClip, estimate_bytes};
 pub use lossless::{LosslessCodec, exact_format};

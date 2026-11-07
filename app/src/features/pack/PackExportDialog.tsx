@@ -3,7 +3,7 @@ import { FolderOpen, Warning } from "@/components/icons"
 import { useTranslation } from "react-i18next"
 import { Toolbar } from "radix-ui"
 import { toast } from "sonner"
-import type { Character, ExportPlan } from "@/bindings"
+import type { Character, ExportOptions, ExportPlan } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TruncatedText } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
@@ -13,6 +13,7 @@ import { OptionRow } from "@/components/ui/option-row"
 import { Switch } from "@/components/ui/switch"
 import { characterLabel } from "@/features/cast/cast"
 import { rememberPreset } from "@/features/export/export"
+import { ExportOptionRows, NO_EXPORT_OPTIONS } from "@/features/export/ExportOptionRows"
 import { formatBytes, presetDescription, presetName, shortFormatName } from "@/lib/format"
 import { say } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
@@ -93,6 +94,8 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
   const { naming } = state
   const merge = naming.merge
   const presetId = chosenPreset ?? settings?.exportPresetId
+  const [chosenOptions, setOptions] = useState<ExportOptions>()
+  const options = chosenOptions ?? settings?.exportOptions ?? NO_EXPORT_OPTIONS
   const preset = presets?.find((p) => p.id === presetId)
   const clips = pack.preview.data?.totals.clips ?? 0
   const { plan, problem } = useLastAnswer(pack.plan)
@@ -149,10 +152,10 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
     if (!presetId || stamp == null) return
     setBusy(true)
     try {
-      const ex = await commands.packExport(pid, character.id, { spec: state.spec, naming, presetId, outDir: dir, stamp })
+      const ex = await commands.packExport(pid, character.id, { spec: state.spec, naming, presetId, outDir: dir, stamp, options })
       // The pack's Export button follows it from now on.
       packExportStarted(pid, character.id, ex.id)
-      rememberPreset(settings, presetId)
+      rememberPreset(settings, presetId, options)
       onDone()
       toast(t(oneFile ? "export.startedOneFile" : "export.started", { count: clips, name: characterLabel(character) }), {
         action: { label: t("export:show"), onClick: () => useUi.getState().setActivityOpen(true) },
@@ -275,6 +278,7 @@ function ExportForm({ pid, character, pack, onDone }: { pid: string; character: 
             options={(presets ?? []).map((p) => ({ value: p.id, label: presetName(p) }))}
           />
         </Field>
+        <ExportOptionRows preset={preset} options={options} onChange={setOptions} />
         <Field label={t("export:field.destination")}>
           <div className="flex gap-2">
             <div

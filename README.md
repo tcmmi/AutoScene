@@ -1,8 +1,141 @@
+<div align="center">
+
+<img src="app/public/autoscene-mark.svg" alt="AutoScene logo" width="88" height="88" />
+
 # AutoScene
 
-Frame-exact character scenepacks from series and movies. Add a season, let
-AutoScene cut it into shots and find who is on screen, then export every
-scene of the characters you choose as editing-ready clips.
+**Frame-exact character scenepacks from series and movies.**
+
+Drop in a season or a film. AutoScene finds every shot and everyone in it,<br />
+then hands you each character's scenes as clips ready for your edit.
+
+[![Latest release](https://img.shields.io/github/v/release/tcmmi/AutoScene?include_prereleases&style=flat-square&color=e0b45c&label=release)](https://github.com/tcmmi/AutoScene/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/tcmmi/AutoScene/total?style=flat-square&color=e0b45c)](https://github.com/tcmmi/AutoScene/releases)
+[![Windows, macOS, Linux](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-202025?style=flat-square)](#download)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-e0b45c?style=flat-square)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-join%20us-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/autoscene)
+<br />
+[![Rust](https://img.shields.io/badge/Rust-nightly-202025?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-3.0%20alpha-24C8DB?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react)](https://react.dev/)
+
+[**Download**](#download) • [Features](#features) • [Plugins](docs/PLUGINS.md) • [Build from source](#build-from-source) • [Discord](https://discord.gg/autoscene)
+
+---
+
+</div>
+
+<p align="center">
+  <img src="docs/readme/project.webp" alt="A project in AutoScene: Miraculous Ladybug &amp; Cat Noir, The Movie, with the 97 characters the analysis found" width="100%" />
+</p>
+
+## Features
+
+### The cast finds itself
+
+AutoScene finds the faces, follows them through every shot and groups them
+into characters on its own. You only give them names. Your names and choices
+stay, through every later analysis.
+
+<p align="center">
+  <img src="docs/readme/cast.webp" alt="The cast of Miraculous, The Movie, sorted by screen time" width="100%" />
+</p>
+
+Live action, anime and 3D animation each get their own way of telling
+characters apart. For anime and animated films and series, one setting has
+AutoScene look up the names on AniList, TVmaze and Fandom: a banner offers
+them, and one click takes them.
+
+<p align="center">
+  <img src="docs/readme/anime.webp" alt="The cast of Demon Slayer, an anime" width="49%" />
+  <img src="docs/readme/live-action.webp" alt="The cast of The Blacklist, live action, before naming" width="49%" />
+</p>
+<p align="center"><sub>Anime (<i>Demon Slayer</i>) and live action (<i>The Blacklist</i>, before naming), straight from the analysis.</sub></p>
+
+### Every shot of a character
+
+Open a character and see every shot they're in. Rest the pointer on a card to
+scrub through it. Shots that follow each other closely stack on one card.
+
+<p align="center">
+  <img src="docs/readme/character.webp" alt="Ladybug's page: 251 shots, 13 minutes on screen" width="100%" />
+</p>
+
+### A scenepack in one export
+
+Every character gets a scenepack: their shots in episode order or best
+first, with filters and your own picks on top.
+One shortcut takes, drops or flips them all, with Undo.
+
+<p align="center">
+  <img src="docs/readme/scenepack.webp" alt="Ladybug's scenepack: 251 shots, ready to export" width="100%" />
+</p>
+
+<img src="docs/readme/export.webp" alt="The export dialog of a scenepack" align="right" width="330" />
+
+- **One file or many.** One video with a chapter for each shot, or a file per
+  shot.
+- **Named your way.** Buttons add the series, character, episode and timecode
+  to file and chapter names.
+- **Formats for every editor.** ProRes 422 HQ, DNxHR HQ, H.264 (for editing,
+  all-intra for Twixtor, or mobile for CapCut and Alight Motion), 10-bit HEVC
+  that keeps HDR, and **Bit-Perfect**: lossless, every pixel exactly the
+  episode's.
+- **Checked frame by frame.** Every clip is cut frame-exact and compared with
+  the source. Frames of a fade or dissolve belong to no shot, so no clip
+  starts halfway through one.
+- **EDLs and cut lists** rebuild the cut from the episodes in your editor.
+- **Coming in the next version:** remove black bars, and bring every clip to
+  the same loudness.
+
+<br clear="right" />
+
+### Review faces in seconds
+
+When the analysis isn't sure about a face, it asks you: <kbd>Y</kbd> yes,
+<kbd>N</kbd> someone else, <kbd>X</kbd> not a face. Each answer applies to
+similar faces at once.
+
+<p align="center">
+  <img src="docs/readme/review.webp" alt="Review faces: is this the same character?" width="100%" />
+</p>
+
+### A player made for editors
+
+Frame-exact at every speed, with <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd>
+shuttle (backwards too), frame stepping, in and out points, and a zoomable
+timeline with lanes for shots and characters. Start from Premiere Pro's or
+DaVinci Resolve's keys, or set your own.
+
+<p align="center">
+  <img src="docs/readme/player.webp" alt="The player with the cast panel and the timeline's character lanes" width="100%" />
+</p>
+
+### All your shows in one place
+
+Series and films side by side, in live action, anime or animation. Episodes
+are numbered from their
+file names, and files you move or rename are found again: point AutoScene at
+the folder, and your analysis is kept.
+
+<p align="center">
+  <img src="docs/readme/library.webp" alt="The library: Miraculous, Demon Slayer, Shakira's Dai Dai and The Blacklist" width="100%" />
+</p>
+
+### And more
+
+- **Fast Scan.** Up to about three times as fast, at the cost of finding fewer
+  faces. You choose it per project.
+- **Characters without a visible face** (optional). AutoScene also follows
+  people by their body and clothes, so shots where someone faces away still
+  count for them.
+- **Plugins** from a catalog we review: export actions, scenepack filters and
+  whole pages of their own. [Write your own](docs/PLUGINS.md).
+- **Runs on your graphics card** on Windows and on the Apple chip in a Mac, and
+  picks up where it left off after a crash or a restart.
+- **A command palette** (<kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>K</kbd>) that also
+  finds characters and episodes.
+- **Updates itself**, and speaks English and Romanian.
 
 ## Download
 
@@ -38,7 +171,8 @@ AutoScene speaks English and Romanian: **Settings → General → App language**
 FFmpeg and ONNX Runtime ship with the app. The AI models (about 310 MB)
 download the first time an analysis needs them.
 
-### Graphics
+<details>
+<summary><b>Graphics: what the analysis runs on</b></summary>
 
 Analysis runs on the graphics card through DirectML on Windows (any
 DirectX 12 card) and on the Apple chip through Core ML on macOS; on Linux
@@ -60,7 +194,10 @@ badly under it, analysis goes on without it, on DirectML. A switch turns it
 off, and **Remove NVIDIA's files** deletes them and what they compiled.
 Nothing changes for anyone who doesn't download it.
 
-### Check a download
+</details>
+
+<details>
+<summary><b>Check a download</b></summary>
 
 Releases after 1.0.1 come with a signed record for every file (a build
 attestation): the workflow of this repository that built it, and the tag and
@@ -85,28 +222,7 @@ on Windows, this prints `True` for an intact download:
 (Get-FileHash .\AutoScene_<version>_x64-setup.exe).Hash -eq (-split (Select-String -Path SHA256SUMS -Pattern x64-setup.exe -SimpleMatch).Line)[0]
 ```
 
-## What it does
-
-- **A library of series and movies**, live action and anime. Episodes are
-  numbered from their file names, and moved or renamed files can be found
-  again.
-- **Frame-exact everywhere.** Every frame is indexed from the decoder itself,
-  and each export is checked against the source frames.
-- **Shots.** A shot detector finds every cut. Transition frames belong to no
-  shot, so clips never start mid-dissolve.
-- **Characters.** Faces are detected, tracked and grouped into characters
-  automatically. You name them, and you review the faces the analysis wasn't
-  sure about with one key each. Your decisions survive every later analysis:
-  they go back onto the faces it finds again. One whose face it doesn't find
-  waits for the next analysis, and the cast says how many wait. Projects made
-  as anime use their own pipeline (anime head detectors and a character
-  embedder) and, with the AniList setting on, get their names looked up on
-  AniList once the characters are found: you give them with one click.
-- **Scenepacks.** For each character you get their shots, filters and your own
-  picks, then one export: a single video with a chapter for each shot, or a
-  file per shot, named from a template.
-- **A player for editors.** It has J/K/L shuttle, frame stepping, in and out
-  points, and a zoomable timeline with shots and character lanes.
+</details>
 
 ## Build from source
 
@@ -163,3 +279,15 @@ come from InsightFace and may only be used non-commercially; Fast Scan's
 (deepghs) are MIT; its character embedder, CCIP, is under OpenRAIL, whose
 use restrictions apply. The shot detector, TransNetV2, is MIT-licensed. **Settings → About** shows each model's licence. `models/manifest.toml` lists
 the source and licence of each model.
+
+## Community
+
+- **Questions, ideas, plugins:** join us on [Discord](https://discord.gg/autoscene).
+- **Found a bug?** Open an [issue](https://github.com/tcmmi/AutoScene/issues).
+- **Found a security hole?** Report it privately, as [SECURITY.md](SECURITY.md)
+  says.
+
+## License
+
+AutoScene's code is under the [Apache License 2.0](LICENSE). The AI models
+have licences of their own (see [Models and licences](#models-and-licences)).

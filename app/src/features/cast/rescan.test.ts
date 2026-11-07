@@ -30,6 +30,12 @@ describe("what Rescan found", () => {
     expect(parts.noFace.map((f) => f.face.id)).toEqual([7])
   })
 
+  it("offers a guess with someone close behind as a choice", () => {
+    const parts = rescanParts([face(1, "maybe", "a", 0.5, "b"), face(2, "maybe", "a")])
+    expect(parts.between.map((f) => f.face.id)).toEqual([1])
+    expect(parts.lanes[0].faces.map((f) => f.face.id)).toEqual([2])
+  })
+
   it("counts only clear answers as clear matches", () => {
     const m = clearMatches([face(1, "newly", "a"), face(2, "maybe", "a"), face(3, "between", "a"), face(4, "elsewhere", "b")])
     expect([...m]).toEqual([

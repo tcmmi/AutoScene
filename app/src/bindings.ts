@@ -2567,7 +2567,7 @@ export type RescanVerdict =
 "elsewhere" | 
 /**  It is on no one and clearly `target`. */
 "newly" | 
-/**  It is on no one and may be `target`. */
+/**  It is on no one and may be `target`, or `other` close behind. */
 "maybe" | 
 /**  It could be `target` or `other`. */
 "between" | 

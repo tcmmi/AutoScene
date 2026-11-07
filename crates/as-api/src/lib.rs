@@ -885,7 +885,7 @@ pub enum RescanVerdict {
     Elsewhere,
     /// It is on no one and clearly `target`.
     Newly,
-    /// It is on no one and may be `target`.
+    /// It is on no one and may be `target`, or `other` close behind.
     Maybe,
     /// It could be `target` or `other`.
     Between,

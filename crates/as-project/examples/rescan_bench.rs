@@ -391,6 +391,11 @@ fn watch(cast: &RescanCast, reads: &[Read]) {
     let name = |k: CharKey| cast.characters[k as usize].to_string()[28..].to_string();
     for j in cast.judge(&watch, reads) {
         let top: Vec<String> = j.scores.iter().take(4).map(|(s, k)| format!("{} {s:.3}", name(*k))).collect();
+        let who = std::env::var("WHO").unwrap_or_default();
+        let rank = j.scores.iter().position(|(_, k)| name(*k) == who);
+        if let Some(n) = rank {
+            println!("  {who} rank {} score {:.3}", n + 1, j.scores[n].0);
+        }
         let said = match j.verdict {
             Verdict::Newly(k) | Verdict::Maybe(k) | Verdict::Elsewhere(k) => name(k),
             Verdict::Between(a, b) => format!("{} {}", name(a), name(b)),
@@ -455,8 +460,16 @@ fn main() {
         // `LIMIT=<n>`: every n-th of them, for a quick look.
         let every = std::env::var("LIMIT").map_or(1, |v| v.parse::<usize>().unwrap());
         let wanted: Vec<usize> = wanted.into_iter().step_by(every).collect();
+        // `ONLY=<track ids>`: just these.
+        let wanted: Vec<usize> = match std::env::var("ONLY") {
+            Ok(v) => {
+                let ids: Vec<i64> = v.split(',').map(|x| x.parse().unwrap()).collect();
+                (0..cast.tracks.len()).filter(|&i| ids.contains(&cast.rows[cast.row_of[i]].id)).collect()
+            }
+            Err(_) => wanted,
+        };
         // Reading takes minutes: what was read waits in `reads.tsv` beside the copy.
-        let saved = Path::new(&a[0]).join("reads.tsv");
+        let saved = Path::new(&a[0]).join(std::env::var("READS").unwrap_or("reads.tsv".into()));
         let reads = match std::fs::read_to_string(&saved) {
             Ok(text) => load_reads(&cast, &text),
             Err(_) => {

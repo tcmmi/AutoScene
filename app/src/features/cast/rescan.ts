@@ -65,7 +65,8 @@ export function rescanParts(faces: RescanFace[]): RescanParts {
     if (f.target) into.set(f.target, [...(into.get(f.target) ?? []), f])
   }
   for (const f of faces) {
-    if (f.verdict === "between") parts.between.push(f)
+    // A guess with someone close behind is a choice between the two.
+    if (f.verdict === "between" || (f.verdict === "maybe" && f.other)) parts.between.push(f)
     else if (f.verdict === "no_face") parts.noFace.push(f)
     else if (f.verdict === "doubt") add(doubts, f)
     else add(lanes, f)

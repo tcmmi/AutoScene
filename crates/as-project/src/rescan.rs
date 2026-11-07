@@ -29,6 +29,8 @@ const PAIR_FACES: usize = 6;
 /// it too: its best detection score and how long its embedding was.
 const NO_FACE_SCORE: f32 = 0.7;
 const NO_FACE_NORM: f32 = 16.0;
+/// How far behind a guess its runner-up may be and still be offered.
+const RUNNER_UP: f32 = 0.15;
 /// Frames of one mirror or screen moment: a few seconds of samples.
 const MIRROR_FRAMES: u32 = 40;
 
@@ -239,7 +241,12 @@ impl RescanCast {
             let (verdict, target, other, score, score2) = match j.verdict {
                 Verdict::Elsewhere(k) => (RescanVerdict::Elsewhere, Some(id(k)), None, score_of(k), next_after(k)),
                 Verdict::Newly(k) => (RescanVerdict::Newly, Some(id(k)), None, score_of(k), next_after(k)),
-                Verdict::Maybe(k) => (RescanVerdict::Maybe, Some(id(k)), None, score_of(k), next_after(k)),
+                // A guess with someone close behind offers both: the second
+                // is often who it is (a face in odd light, thrown back).
+                Verdict::Maybe(k) => {
+                    let close = j.scores.iter().find(|s| s.1 != k && s.0 >= score_of(k) - RUNNER_UP);
+                    (RescanVerdict::Maybe, Some(id(k)), close.map(|s| id(s.1)), score_of(k), next_after(k))
+                }
                 Verdict::Between(a, b) => (RescanVerdict::Between, Some(id(a)), Some(id(b)), score_of(a), score_of(b)),
                 Verdict::Doubt => {
                     let on = self.now[j.track];
@@ -717,6 +724,19 @@ mod tests {
         assert_eq!(p.rescan_results().unwrap().pairs[0].likeness, RescanLikeness::Likely);
         p.rescan_answer(&RescanAnswer::TwoPeople { a, b }).unwrap();
         assert!(p.rescan_pairs_to_check(&cast, &request).unwrap().is_empty(), "answered");
+    }
+
+    #[test]
+    fn a_guess_offers_who_is_close_behind_it() {
+        let (_dir, p) = cast_of_two();
+        let cast = p.rescan_cast().unwrap();
+        let (a, b) = (cast.members[0].0, cast.members[1].0);
+        let judged = |scores: Vec<(f32, CharKey)>| {
+            let j = Judged { track: 0, verdict: Verdict::Maybe(a), scores };
+            cast.suggestions(&[j], &HashMap::new()).0.remove(0).other
+        };
+        assert_eq!(judged(vec![(0.6, a), (0.5, b)]), Some(cast.characters[b as usize]));
+        assert_eq!(judged(vec![(0.6, a), (0.3, b)]), None);
     }
 
     #[test]

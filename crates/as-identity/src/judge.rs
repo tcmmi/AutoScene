@@ -262,10 +262,22 @@ pub fn judge_tuned(q: &Question, p: &Params, space: Option<&Space>, tuning: &Tun
         // The runner-up, when it is as good a candidate as the first.
         let rival = |s1: f32| second.filter(|&(s2, c2)| close(s2, c2) && s1 - s2 < margin).map(|x| x.1);
         let own = q.now[i].and_then(|k| index.get(&k).copied());
+        // The one it looks most like, when they are on screen already and it
+        // looks clearly like them; with who else it may be.
+        let twice = lookalike
+            .filter(|&&(_, ci)| taken(ci) && sights[ci].looks >= assign)
+            .map(|&(s0, ci)| (ci, free.first().filter(|&&(s, c)| s0 - s < margin && close(s, c)).map(|x| x.1)));
 
         let verdict = match (own, free.first().copied()) {
             (Some(_), None) => Verdict::Doubt,
             (None, None) => Verdict::Nobody,
+            // Far more like someone already in the picture than like anyone
+            // else: a second of them (a mirror, a copy, a clone) is for the
+            // person to judge, so it is put to them, never placed.
+            (None, _) if twice.is_some() => {
+                let (c0, other) = twice.expect("just looked");
+                other.map_or(Verdict::Maybe(key(c0)), |c| Verdict::Between(key(c0), key(c)))
+            }
             (None, Some((s1, c1))) => {
                 if clear(s1, c1, next) {
                     Verdict::Newly(key(c1))
@@ -573,14 +585,25 @@ mod tests {
         t.end = 40;
         let i = with(&mut c, t, None);
         let j = ask(&c, &[i], &[]);
-        assert_eq!(j[0].verdict, Verdict::Nobody);
+        assert_eq!(j[0].verdict, Verdict::Maybe(0));
     }
 
     #[test]
-    fn a_character_on_screen_beside_the_face_cant_be_it() {
+    fn someone_clearly_seen_twice_at_once_is_put_to_the_person() {
         let mut c = cast();
         // In the same frames as the first character's first face.
         let i = with(&mut c, face(0, 0), None);
+        assert_eq!(ask(&c, &[i], &[])[0].verdict, Verdict::Maybe(0));
+    }
+
+    #[test]
+    fn a_vague_likeness_to_someone_on_screen_stays_no_one() {
+        let mut c = cast();
+        let mut t = face(5, 0);
+        t.embedding = vec![0f32; DIM];
+        t.embedding[0] = 0.32;
+        t.embedding[5] = (1.0f32 - 0.32 * 0.32).sqrt();
+        let i = with(&mut c, t, None);
         assert_eq!(ask(&c, &[i], &[])[0].verdict, Verdict::Nobody);
     }
 
@@ -590,7 +613,8 @@ mod tests {
         // On the first character without defining them, in frames of its own.
         with(&mut c, face(0, 5000), Some(0));
         let i = with(&mut c, face(0, 5000), None);
-        assert_eq!(ask(&c, &[i], &[])[0].verdict, Verdict::Nobody);
+        // Put to the person at most, never placed.
+        assert_eq!(ask(&c, &[i], &[])[0].verdict, Verdict::Maybe(0));
     }
 
     #[test]

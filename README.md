@@ -1,5 +1,10 @@
 <div align="center">
 
+<img src="docs/readme/banner.webp" alt="AutoScene: pick a character, start editing. A film or a whole season goes in; every scene of your character comes out, cut to the exact frame." width="100%" />
+
+<br />
+<br />
+
 <img src="app/public/autoscene-mark.svg" alt="AutoScene logo" width="88" height="88" />
 
 # AutoScene

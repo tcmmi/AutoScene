@@ -2,9 +2,6 @@ import { useTranslation } from "react-i18next"
 import type { ExportOptions, ExportPreset } from "@/bindings"
 import { OptionRow } from "@/components/ui/option-row"
 
-/** What an export dialog starts from before the person has chosen anything. */
-export const NO_EXPORT_OPTIONS: ExportOptions = { removeBars: false, matchLoudness: false }
-
 /** What an export changes of its clips. Bit-Perfect keeps the source as it is, so it offers neither. */
 export function ExportOptionRows({
   preset,

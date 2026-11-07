@@ -22,3 +22,6 @@ export function rememberPreset(
     .then((s) => queryClient.setQueryData(qk.settings, s))
     .catch((e) => console.warn("remembering the export format:", e))
 }
+
+/** What an export dialog starts from before the person has chosen anything. */
+export const NO_EXPORT_OPTIONS: ExportOptions = { removeBars: false, matchLoudness: false }

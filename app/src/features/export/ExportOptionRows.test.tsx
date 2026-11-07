@@ -2,7 +2,8 @@ import { cleanup, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { ExportPreset } from "@/bindings"
-import { ExportOptionRows, NO_EXPORT_OPTIONS } from "./ExportOptionRows"
+import { NO_EXPORT_OPTIONS } from "./export"
+import { ExportOptionRows } from "./ExportOptionRows"
 
 const h264 = { id: "h264-edit", video: { codec: "h264" } } as unknown as ExportPreset
 const bitPerfect = { id: "bit-perfect", video: { codec: "lossless" } } as unknown as ExportPreset

@@ -47,6 +47,7 @@ impl ToMsg for MediaError {
                 "{{file}} couldn't be read. It may be damaged or in a format AutoScene can't open.",
                 file = file_name(path)
             ),
+            Self::Ffmpeg(_) if self.is_disk_full() => msg!("file.diskFull", "The disk is full."),
             Self::Ffmpeg(_) => msg!("media.failed", "The video couldn't be processed. Details are in the log."),
             Self::Verify(_) => msg!("media.frameCheck", "The result didn't pass the frame check."),
             // A frame index that can't be built or read: the video's timing is
@@ -77,11 +78,24 @@ impl MediaError {
     pub fn is_cancelled(&self) -> bool {
         matches!(self, Self::Cancelled | Self::Core(as_core::CoreError::Cancelled))
     }
+
+    /// ffmpeg stopped because the disk it writes to is full.
+    pub fn is_disk_full(&self) -> bool {
+        matches!(self, Self::Ffmpeg(tail) if tail.to_lowercase().contains("no space left on device"))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_full_disk_says_so_in_any_case_of_the_words() {
+        let full = MediaError::Ffmpeg("Error writing trailer: No space left on device".into());
+        assert!(full.is_disk_full());
+        assert_eq!(full.msg().key, "file.diskFull");
+        assert_eq!(MediaError::Ffmpeg("Invalid data".into()).msg().key, "media.failed");
+    }
 
     #[test]
     fn its_msg_says_what_its_display_says() {

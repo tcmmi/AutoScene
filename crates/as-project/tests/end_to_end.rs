@@ -10,7 +10,7 @@ use as_api::{
     AppSettings, CastEdit, ClipRequest, ContentKind, ExportRequest, ExportStatus, FrameMap, MediaStatus, NewProject,
     ProjectKind, ProxyState, Relink, RelinkSummary, TrackFilter,
 };
-use as_core::{AppPaths, CancelToken};
+use as_core::{AppPaths, CancelToken, ToMsg};
 use as_export::builtin_presets;
 use as_export::preset::{EncoderPref, Gop, VideoCodec};
 use as_media::Tools;
@@ -828,4 +828,130 @@ fn a_merged_export_is_one_file_with_every_clip() {
     let id = lib.projects().unwrap()[0].id;
     lib.project(id).unwrap();
     assert_eq!(folder_names(&out), ["Joined Walter.mov", "Joined Walter_3.mov"], "the parts are gone");
+}
+
+/// NVENC's H.264 stops at 4096 wide, which no check at start-up shows. The
+/// clips of a file share one encoder: the first that fails sends them all
+/// to software, the one that comes first in the file too.
+#[test]
+fn a_merged_export_the_hardware_refuses_is_made_in_software() {
+    let Some(_truth) = load_truth() else { return };
+    let tools = Tools::locate(None).expect("ffmpeg on PATH");
+    if tools.caps().hw_encoder(as_media::CodecFamily::H264).is_none_or(|e| e.name != "h264_nvenc") {
+        eprintln!("no NVENC on this machine");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let lib = Library::open(&AppPaths::at(tmp.path().join("data"))).unwrap();
+    lib.update_settings(&AppSettings {
+        library_root: tmp.path().join("Library").display().to_string(),
+        export_preset_id: "prores-hq".into(),
+        audio_language: "eng".into(),
+        find_bodies: false,
+        fast_scan: false,
+        anilist: false,
+        shortcuts: Default::default(),
+        allow_unreviewed_plugins: false,
+        gpu: String::new(),
+        plugin_catalog_checks: true,
+        nvidia_acceleration: true,
+        discord_rpc: Default::default(),
+        language: Default::default(),
+    })
+    .unwrap();
+    let file = tmp.path().join("Wide - 01.mp4");
+    let made = tools
+        .ffmpeg()
+        .args(["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=5120x1440:r=24:d=0.5"])
+        .args(["-c:v", "libx264", "-preset", "ultrafast"])
+        .arg(&file)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let (_, project, added) = lib
+        .create_project(&NewProject {
+            title: "Wide".into(),
+            kind: ProjectKind::Series,
+            content: ContentKind::Live,
+            files: vec![file.display().to_string()],
+        })
+        .unwrap();
+    let id = added[0];
+    let cancel = CancelToken::new();
+    project.ingest(&tools, id, "eng", &cancel, &|_, _, _| {}).unwrap();
+    let clip = |start, end| ClipRequest { media_id: id, start, end, name: None };
+    let preset = builtin_presets().into_iter().find(|p| p.id == "h264-edit").unwrap();
+    let req = ExportRequest {
+        preset_id: preset.id.clone(),
+        out_dir: None,
+        clips: vec![clip(0, 4), clip(4, 12)],
+        label: None,
+        merge: Some("Both".into()),
+    };
+    let ex = project.create_export(&req, preset, &tmp.path().join("out")).unwrap();
+    let ex = project.run_export(&tools, ex.id, &cancel, &|_, _| {}, &|| {}).unwrap();
+    assert_eq!(ex.status, ExportStatus::Done);
+    let file = ex.merged.unwrap();
+    assert_eq!(file.error, None);
+    let path = file.path.expect("the file");
+    let count = tools
+        .ffprobe()
+        .args(["-v", "error", "-count_frames", "-select_streams", "v:0"])
+        .args(["-show_entries", "stream=nb_read_frames,codec_name", "-of", "csv=p=0"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&count.stdout).trim(), "h264,12");
+    assert!(ex.items.iter().all(|i| i.status == ExportStatus::Done));
+}
+
+/// An export that can't fit is refused before it starts: nothing is queued.
+#[test]
+fn an_export_the_drive_cant_hold_is_refused() {
+    let Some(_truth) = load_truth() else { return };
+    let tools = Tools::locate(None).expect("ffmpeg on PATH");
+    let tmp = tempfile::tempdir().unwrap();
+    let lib = Library::open(&AppPaths::at(tmp.path().join("data"))).unwrap();
+    lib.update_settings(&AppSettings {
+        library_root: tmp.path().join("Library").display().to_string(),
+        export_preset_id: "prores-hq".into(),
+        audio_language: "eng".into(),
+        find_bodies: false,
+        fast_scan: false,
+        anilist: false,
+        shortcuts: Default::default(),
+        allow_unreviewed_plugins: false,
+        gpu: String::new(),
+        plugin_catalog_checks: true,
+        nvidia_acceleration: true,
+        discord_rpc: Default::default(),
+        language: Default::default(),
+    })
+    .unwrap();
+    let file = tmp.path().join("Show - 01.mp4");
+    std::fs::copy(fixtures_dir().join("cfr24_h264.mp4"), &file).unwrap();
+    let (_, project, added) = lib
+        .create_project(&NewProject {
+            title: "Room".into(),
+            kind: ProjectKind::Series,
+            content: ContentKind::Live,
+            files: vec![file.display().to_string()],
+        })
+        .unwrap();
+    let id = added[0];
+    project.ingest(&tools, id, "eng", &CancelToken::new(), &|_, _, _| {}).unwrap();
+    let preset = builtin_presets().into_iter().find(|p| p.id == "prores-hq").unwrap();
+    let req = ExportRequest {
+        preset_id: preset.id.clone(),
+        out_dir: None,
+        clips: vec![ClipRequest { media_id: id, start: 0, end: 24, name: None }],
+        label: None,
+        merge: None,
+    };
+    // A folder that isn't there yet is measured on its drive.
+    let out = tmp.path().join("not").join("yet");
+    project.check_export_room(&req, &preset, &out, tools.caps()).unwrap();
+    let huge = |_: &Path| Ok(1_000_000);
+    let refused = project.check_export_room_with(&req, &preset, &out, tools.caps(), huge).unwrap_err();
+    assert_eq!(refused.msg().key, "export.noRoom");
 }

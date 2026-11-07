@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use as_core::{CancelToken, FrameIndex, FrameRange, Msg, Rational, msg};
-use as_media::filters::TONEMAP_SDR;
+use as_media::filters::TONEMAP_SDR_EXPORT;
 use as_media::frames::MAX_SIDE;
 use as_media::{AudioStream, Caps, ExactFormat, HdrKind, MediaError, MediaInfo, Tools, run_ffmpeg};
 use serde_json::Value;
@@ -34,7 +34,7 @@ use crate::clip::{
     AUDIO_RATE, ClipOutcome, Encoding, encoder_fps, resolve_encoding, with_suffix, x265_in_order_when_short,
 };
 use crate::lossless::{self, LosslessCodec};
-use crate::preset::{AudioCodec, Container, ExportPreset, HdrMode, VideoCodec};
+use crate::preset::{AudioCodec, Container, ExportPreset, HdrMode, VideoCodec, aac_kbps};
 use crate::{ExportError, ExportResult};
 
 /// The most ticks a second the file is timed in. The concat demuxer places
@@ -75,8 +75,25 @@ impl ColorTags {
         Self {
             primaries: tag(&v.color_primaries),
             transfer: tag(&v.color_transfer),
-            space: tag(&v.color_space),
+            // A YUV file can't say `gbr`, and the option refuses it.
+            space: tag(&v.color_space).filter(|s| s != "gbr"),
             range: tag(&v.color_range),
+        }
+    }
+
+    /// These tags of SDR parts that agree on them, the ones they don't give
+    /// as [`lossless::assumed`] takes them: a file with parts that would be
+    /// taken differently stays as it is.
+    fn or_assumed(self, sources: &[MergeSource]) -> Self {
+        let Some(first) = lossless::sure_of(sources[0].info) else { return self };
+        if sources.iter().any(|s| lossless::sure_of(s.info).as_ref() != Some(&first)) {
+            return self;
+        }
+        Self {
+            primaries: self.primaries.or(Some(first.primaries)),
+            transfer: self.transfer.or(Some(first.transfer)),
+            space: self.space.or(Some(first.space)),
+            range: self.range.or(Some(first.range)),
         }
     }
 
@@ -104,6 +121,8 @@ pub struct MergeShape {
     to_bt709: bool,
     /// Channel layout of the sound (`None`: no sound in the file).
     pub audio: Option<String>,
+    /// Its channels.
+    audio_channels: u32,
     /// The sound's language, when every part with sound agrees.
     pub language: Option<String>,
     pub(crate) encoding: Encoding,
@@ -156,7 +175,7 @@ impl MergeShape {
         }
         let tonemapped = self.tonemap && info.video.hdr != HdrKind::None;
         if tonemapped {
-            f.push(TONEMAP_SDR.to_string());
+            f.push(TONEMAP_SDR_EXPORT.to_string());
         }
         let (w, h) = fit(natural_size(info, self.max_height), (self.width, self.height));
         let mut scale = format!("scale={w}:{h}:flags=bicubic");
@@ -276,6 +295,7 @@ pub fn plan_merge(caps: &Caps, preset: &ExportPreset, sources: &[MergeSource]) -
 
     let (tonemap, color, to_bt709) = colour_plan(preset, sources);
     let (audio, language) = sound_plan(preset, sources);
+    let audio_channels = audio.as_deref().map_or(2, |layout| channels_of(layout, sources));
 
     let grids: Vec<Rational> = sources.iter().map(|s| grid(s.index)).collect();
     let t = timescale(&grids);
@@ -290,6 +310,7 @@ pub fn plan_merge(caps: &Caps, preset: &ExportPreset, sources: &[MergeSource]) -
         color,
         to_bt709,
         audio,
+        audio_channels,
         language,
         encoding,
         lossless: None,
@@ -417,6 +438,8 @@ pub fn plan_lossless_merge(caps: &Caps, sources: &[MergeSource], exact: &[ExactF
         color: ColorTags::of(sources[0].info),
         to_bt709: false,
         audio: layout,
+        // Bit-Perfect sound is PCM: no bitrate to work out.
+        audio_channels: 2,
         language,
         encoding: keeper.encoding,
         lossless: Some(LosslessShape {
@@ -562,7 +585,7 @@ fn colour_plan(preset: &ExportPreset, sources: &[MergeSource]) -> (bool, ColorTa
     let tonemap = sources.iter().any(hdr);
     let tags = ColorTags::of(sources[0].info);
     if !tonemap && sources.iter().all(|s| ColorTags::of(s.info) == tags) {
-        return (false, tags, false);
+        return (false, tags.or_assumed(sources), false);
     }
     (tonemap, ColorTags::bt709(), true)
 }
@@ -598,6 +621,13 @@ fn sound_plan(preset: &ExportPreset, sources: &[MergeSource]) -> (Option<String>
         tracks.iter().map(|(a, _)| a.language.as_deref().and_then(as_media::lang::canonical)).collect();
     let language = langs[0].clone().filter(|_| langs.iter().all(|l| *l == langs[0]));
     (Some(layout), language)
+}
+
+/// How many channels the file's sound in `layout` has: as the tracks of that
+/// layout have, else stereo (what the sound falls back to).
+fn channels_of(layout: &str, sources: &[MergeSource]) -> u32 {
+    let mut tracks = sources.iter().filter_map(|s| audio_stream(s.info, s.audio_ordinal));
+    tracks.find(|a| layout_of(a) == layout).map_or(2, |a| a.channels)
 }
 
 /// The track's channel layout (when it is a plain name, see
@@ -769,7 +799,7 @@ fn join_args(
             "-c:a".into(),
             "aac".into(),
             "-b:a".into(),
-            format!("{kbps}k"),
+            format!("{}k", aac_kbps(kbps, shape.audio_channels)),
         ]),
         _ => {}
     }
@@ -1075,6 +1105,16 @@ mod tests {
         serde_json::from_value(v).unwrap()
     }
 
+    /// Frames untagged in the file stay untagged in every player's own way.
+    #[test]
+    fn parts_that_say_nothing_get_the_tags_they_are_taken_to_have() {
+        let film = info(1920, 1080, r(1, 1), 0);
+        let index = FrameIndex::cfr(r(1, 24000), r(24000, 1001), 0, 100);
+        let source = MergeSource { info: &film, index: &index, range: FrameRange::new(0, 5), audio_ordinal: None };
+        let tags = ColorTags::default().or_assumed(&[source]);
+        assert_eq!(tags, ColorTags::bt709());
+    }
+
     #[test]
     fn nvenc_is_capped_for_the_file_and_its_fastest_part() {
         use as_media::{CodecFamily, HwEncoder, Vendor};
@@ -1185,7 +1225,11 @@ mod tests {
             [MergeSource { info: &tagged, index: &index, range: FrameRange::new(0, 10), audio_ordinal: None }];
         let plan = plan_merge(&caps, &crate::builtin_presets().remove(0), &sources).unwrap();
         let chain = plan.shape.picture(&tagged, &index).join(",");
-        assert!(chain.ends_with(",setparams=color_trc=bt709"), "{chain}");
+        // What it does not say plainly is taken as an untagged picture is.
+        assert!(
+            chain.ends_with(",setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv"),
+            "{chain}"
+        );
 
         let stream = |channels: u32, layout: &str| AudioStream {
             index: 1,

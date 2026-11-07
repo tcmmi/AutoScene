@@ -18,9 +18,9 @@ use as_export::LosslessCodec;
 use as_export::clip::PARTIAL_DIR;
 use as_export::preset::{AudioCodec, VideoCodec};
 use as_export::{
-    ClipJob, EdlError, EdlEvent, EstimateClip, ExportPreset, JoinJob, JoinPart, MergeSource, Part, estimate_bytes,
-    exact_format, export_clip, join_parts, lossless_merge_blocker, plan_lossless_merge, plan_merge, reel_names,
-    write_cmx3600, write_csv,
+    ClipJob, EdlError, EdlEvent, EstimateClip, ExportPreset, JoinJob, JoinPart, MergePlan, MergeSource, Part,
+    estimate_bytes, exact_format, export_clip, in_software, join_parts, lossless_merge_blocker, plan_lossless_merge,
+    plan_merge, reel_names, write_cmx3600, write_csv,
 };
 use as_media::poster::{StillSize, extract_frame_jpegs};
 use as_media::{Caps, MediaInfo, MediaResult, Source, Tools, build_frame_index, idet, probe, proxy};
@@ -1101,6 +1101,44 @@ impl Project {
         self.export(id)
     }
 
+    /// Say no to an export that can't fit on the drive of `out_dir`, before
+    /// it starts: a long one would otherwise end hours later on a full disk.
+    pub fn check_export_room(
+        &self,
+        req: &ExportRequest,
+        preset: &ExportPreset,
+        out_dir: &Path,
+        caps: &Caps,
+    ) -> ProjectResult<()> {
+        self.check_export_room_with(req, preset, out_dir, caps, as_core::paths::free_space)
+    }
+
+    /// [`Project::check_export_room`], with `free_space` telling what a drive has.
+    pub fn check_export_room_with(
+        &self,
+        req: &ExportRequest,
+        preset: &ExportPreset,
+        out_dir: &Path,
+        caps: &Caps,
+        free_space: impl Fn(&Path) -> std::io::Result<u64>,
+    ) -> ProjectResult<()> {
+        let plan = self.export_plan(&req.clips, std::slice::from_ref(preset), caps)?;
+        let bytes = plan.sizes.first().map_or(0.0, |s| s.bytes);
+        let apart = req.merge.is_some() && self.apart_reason(preset, &req.clips)?.is_some();
+        let need = export_room(bytes, req.merge.is_some() && !apart);
+        // The folder may be made only by the export.
+        let free = out_dir.ancestors().find(|d| d.is_dir()).map(free_space);
+        match free {
+            Some(Ok(free)) if free < need => Err(ProjectError::Invalid(msg!(
+                "export.noRoom",
+                "This export needs at least {{need}}, and the drive has {{free}} free.",
+                need = gigabytes(need),
+                free = gigabytes(free),
+            ))),
+            _ => Ok(()),
+        }
+    }
+
     /// What an export of `clips` would make: the names its files get (as
     /// [`Project::create_export`] names them, before telling them apart from
     /// files already in the folder) and its size with each of `presets`, with
@@ -1374,6 +1412,16 @@ impl Project {
     ) -> ProjectResult<ExportSummary> {
         let ex = self.export(id)?;
         check_export_dir(Path::new(&ex.out_dir))?;
+        // What a report needs, with the command of every clip after it.
+        tracing::info!(
+            export = %id,
+            preset = %ex.preset.id,
+            clips = ex.items.len(),
+            ffmpeg = %tools.version,
+            os = std::env::consts::OS,
+            caps = ?tools.caps(),
+            "export starts"
+        );
         self.db.set_export_status(id, ExportStatus::Running)?;
         if let Some(file) = ex.merged.clone() {
             return self.run_merged(tools, &ex, file, cancel, progress, changed);
@@ -1429,6 +1477,33 @@ impl Project {
         }
         self.db.set_export_status(id, if failed { ExportStatus::Failed } else { ExportStatus::Done })?;
         self.export(id)
+    }
+
+    /// The preset and plan of a merged export in software, when `failed`, the
+    /// part hardware couldn't make, comes out that way: if it doesn't, the
+    /// clip is what's wrong, and the other parts are fine as they are.
+    fn without_hardware(
+        &self,
+        tools: &Tools,
+        preset: &ExportPreset,
+        sources: &[MergeSource],
+        failed: &ClipJob,
+        cancel: &CancelToken,
+    ) -> Option<(ExportPreset, MergePlan)> {
+        let software = in_software(preset, tools.caps())?;
+        let plan = plan_merge(tools.caps(), &software, sources).ok()?;
+        let at = failed.part?;
+        let mut stem = failed.out_stem.clone().into_os_string();
+        stem.push("-software");
+        let trial = ClipJob {
+            preset: &software,
+            out_stem: stem.into(),
+            part: Some(Part { shape: &plan.shape, samples: at.samples }),
+            ..failed.clone()
+        };
+        let made = export_clip(tools, &trial, cancel, |_| {}).ok()?;
+        let _ = std::fs::remove_file(made.path);
+        Some((software, plan))
     }
 
     /// Render every clip of `ex` as a part of one file, then join them, with
@@ -1517,7 +1592,7 @@ impl Project {
         } else {
             plan_merge(tools.caps(), &ex.preset, &merge_sources)
         };
-        let plan = match planned {
+        let mut plan = match planned {
             Ok(plan) => plan,
             Err(e) => {
                 let e = ProjectError::from(e);
@@ -1530,13 +1605,19 @@ impl Project {
 
         let n = sources.len();
         let shares = ClipShares::new(sources.iter().map(|(item, ..)| item.end - item.start));
-        let mut parts = Vec::with_capacity(n);
+        let mut parts: Vec<JoinPart> = Vec::with_capacity(n);
         let mut in_file = Vec::with_capacity(n);
         let mut verified = true;
-        for (i, ((item, episode, audio), timing)) in sources.iter().zip(&plan.parts).enumerate() {
+        // Set once the hardware encoder failed: the parts of a file need one
+        // encoder, so they all start again without it.
+        let mut software: Option<ExportPreset> = None;
+        let mut i = 0;
+        while i < n {
             if cancel.is_cancelled() {
                 break;
             }
+            let (item, episode, audio) = &sources[i];
+            let timing = plan.parts[i];
             let (path, info, index) = &**episode;
             let stage = clip_stage(i, n);
             self.db.update_export_part(item.id, ExportStatus::Running, None, None)?;
@@ -1545,13 +1626,34 @@ impl Project {
                 src: Source { path, info, index },
                 range: FrameRange::new(item.start, item.end),
                 audio_ordinal: *audio,
-                preset: &ex.preset,
+                preset: software.as_ref().unwrap_or(&ex.preset),
                 out_stem: work.0.join(format!("part-{:05}", i + 1)),
                 title: None,
                 part: Some(Part { shape: &plan.shape, samples: timing.samples }),
             };
             let share = |p: f64| shares.at(i, p) * RENDER_SHARE;
-            match export_clip(tools, &job, cancel, |p| progress(&stage, Some(share(p)))).map_err(ProjectError::from) {
+            let rendered = export_clip(tools, &job, cancel, |p| progress(&stage, Some(share(p))));
+            if let Err(e) = &rendered
+                && e.may_be_the_encoder()
+                && software.is_none()
+                && let Some((preset, other)) = self.without_hardware(tools, &ex.preset, &merge_sources, &job, cancel)
+            {
+                tracing::warn!(clip = %item.name, error = %e, "hardware encoding failed; starting over in software");
+                for part in parts.drain(..) {
+                    let _ = std::fs::remove_file(part.path);
+                }
+                in_file.clear();
+                verified = true;
+                plan = other;
+                software = Some(preset);
+                i = 0;
+                continue;
+            }
+            // Stopped during that try: the clip didn't fail, it wasn't finished.
+            if rendered.is_err() && cancel.is_cancelled() {
+                break;
+            }
+            match rendered.map_err(ProjectError::from) {
                 Ok(outcome) => {
                     self.db.update_export_part(item.id, ExportStatus::Done, Some(&outcome), None)?;
                     verified &= outcome.verified;
@@ -1559,7 +1661,7 @@ impl Project {
                     parts.push(JoinPart {
                         path: PathBuf::from(&outcome.path),
                         frames: outcome.frames,
-                        timing: *timing,
+                        timing,
                         title: item.name.clone(),
                     });
                 }
@@ -1571,6 +1673,7 @@ impl Project {
                 }
             }
             changed();
+            i += 1;
         }
         if cancel.is_cancelled() {
             return self.cancel_merged(id);
@@ -1703,6 +1806,18 @@ fn outside_range(start: u32, end: u32, name: &str, frames: u32) -> Msg {
 fn cant_write(folder: &Path, why: &std::io::Error) -> Msg {
     tracing::warn!(folder = %folder.display(), error = %why, "can't write to the export's folder");
     msg!("export.cantWrite", "Can't write to {{path}}: {{why}}", path = folder.display().to_string(), why = why.msg())
+}
+
+/// The least an export estimated at `bytes` takes while it runs. An estimate
+/// is the middle of what pictures cost (`as_export::estimate`), and a clean
+/// picture can take half of it: only what can't fit that way is refused. A
+/// merged export holds its parts and the joined file at once.
+fn export_room(bytes: f64, merged: bool) -> u64 {
+    (bytes * if merged { 1.0 } else { 0.5 }) as u64
+}
+
+fn gigabytes(bytes: u64) -> String {
+    format!("{:.1} GB", bytes as f64 / 1e9)
 }
 
 fn merge_work_dir(out_dir: &Path, id: ExportId) -> PathBuf {
@@ -2040,6 +2155,13 @@ mod tests {
         let gone = s(&dir.path().join("Gone.mkv"));
         assert!(same_path(&gone, &gone));
         assert!(!same_path(&gone, &s(&dir.path().join(".").join("Gone.mkv"))));
+    }
+
+    #[test]
+    fn an_export_needs_half_its_estimate_and_a_merged_one_twice_that() {
+        assert_eq!(export_room(1e9, false), 500_000_000);
+        assert_eq!(export_room(1e9, true), 1_000_000_000);
+        assert_eq!(gigabytes(3_000_000_000), "3.0 GB");
     }
 
     #[test]

@@ -142,6 +142,7 @@ pub fn queue_ingest(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) 
     let indexing = move |j: &JobInfo| j.kind == JobKind::Ingest && j.media_id == Some(media_id);
     state.jobs.submit_unless(indexing, spec, move |ctx| {
         unstarted.started();
+        let _awake = crate::keep_awake::hold();
         let state = app2.state::<AppState>();
         let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
         let language = state.library.audio_language().unwrap_or_else(|e| {
@@ -913,6 +914,7 @@ pub fn queue_proxy(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) {
     };
     let (app2, project) = (app.clone(), project.clone());
     state.jobs.submit(spec, move |ctx| {
+        let _awake = crate::keep_awake::hold();
         let state = app2.state::<AppState>();
         let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
         ctx.stage(&msg!("job.stage.preparingPreview", "Preparing preview"));
@@ -1342,6 +1344,7 @@ pub fn queue_export(app: &AppHandle, project: &Arc<Project>, export: &ExportSumm
     let (app2, project) = (app.clone(), project.clone());
     state.jobs.submit(spec, move |ctx| {
         unstarted.started();
+        let _awake = crate::keep_awake::hold();
         let state = app2.state::<AppState>();
         let notify = || {
             let _ = ExportChanged { project_id: project.id, export_id }.emit(&app2);

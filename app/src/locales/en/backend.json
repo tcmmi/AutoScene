@@ -131,6 +131,7 @@
     },
     "noneExported": "None of the clips could be exported.",
     "noneFinished": "No clip of this export has finished yet.",
+    "noRoom": "This export needs at least {{need}}, and the drive has {{free}} free.",
     "notJoined": "It couldn't be joined into the file.",
     "nothing": "Nothing to export.",
     "outside": "Frames {{start}}–{{end}} are outside {{name}}.",

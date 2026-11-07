@@ -896,3 +896,149 @@ fn merged_hardware_parts_join() {
         assert!(out.status.success() && log.trim().is_empty(), "{name}: decoding complains: {log}");
     }
 }
+
+/// `args` to ffmpeg, making `name` in `dir`.
+fn generate(tools: &Tools, dir: &Path, name: &str, args: &[&str]) -> PathBuf {
+    let out = dir.join(name);
+    let made = tools.ffmpeg().args(["-v", "error", "-y"]).args(args).arg(&out).status().unwrap();
+    assert!(made.success(), "{name}");
+    out
+}
+
+/// A clip of all of `file`, as `preset` makes it.
+fn cut_all(tools: &Tools, file: &Path, preset: &ExportPreset, dir: &Path) -> as_export::ClipOutcome {
+    let info = probe(tools, file).unwrap();
+    let index = build_frame_index(tools, file, &info, dir, &CancelToken::new(), |_| {}).unwrap();
+    let job = ClipJob {
+        src: Source { path: file, info: &info, index: &index },
+        range: FrameRange::new(0, index.len()),
+        audio_ordinal: None,
+        preset,
+        out_stem: dir.join(format!("clip-{}", preset.id)),
+        title: None,
+        part: None,
+    };
+    export_clip(tools, &job, &CancelToken::new(), |_| {}).unwrap()
+}
+
+/// `(primaries, transfer, matrix, range)` of a file, as ffprobe reads them.
+fn colour_tags(tools: &Tools, file: &Path) -> String {
+    let out = tools
+        .ffprobe()
+        .args(["-v", "error", "-select_streams", "v:0", "-of", "csv=p=0"])
+        .args(["-show_entries", "stream=color_primaries,color_transfer,color_space,color_range"])
+        .arg(file)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+fn a_clip_of_an_untagged_source_says_what_its_colour_is() {
+    let Some((tools, _)) = setup() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let src = generate(
+        &tools,
+        work.path(),
+        "untagged.mp4",
+        &["-f", "lavfi", "-i", "testsrc2=s=1280x720:r=24:d=1", "-pix_fmt", "yuv420p", "-c:v", "libx264"],
+    );
+    assert!(!colour_tags(&tools, &src).contains("bt709"), "the source says nothing");
+    let clip = cut_all(&tools, &src, &software_h264(), work.path());
+    assert!(clip.verified);
+    assert_eq!(colour_tags(&tools, Path::new(&clip.path)), "tv,bt709,bt709,bt709");
+}
+
+/// What isn't known stays unsaid: an SD rip may be BT.601 whatever its codec,
+/// and RGB is turned into YUV by a matrix no source tag speaks of.
+#[test]
+fn a_clip_says_nothing_of_a_colour_it_cant_know() {
+    let Some((tools, _)) = setup() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let lavfi = |size: &str| format!("testsrc2=s={size}:r=24:d=0.5");
+    let (sd, hd) = (lavfi("640x360"), lavfi("1280x720"));
+    let sources = [
+        ("sd.mp4", ["-f", "lavfi", "-i", &sd, "-pix_fmt", "yuv420p", "-c:v", "libx264"]),
+        ("rgb.mov", ["-f", "lavfi", "-i", &hd, "-pix_fmt", "rgb24", "-c:v", "qtrle"]),
+        ("png.mov", ["-f", "lavfi", "-i", &hd, "-pix_fmt", "rgb24", "-c:v", "png"]),
+    ];
+    for (name, args) in sources {
+        let src = generate(&tools, work.path(), name, &args);
+        let clip = cut_all(&tools, &src, &software_h264(), work.path());
+        assert!(!colour_tags(&tools, Path::new(&clip.path)).contains("bt709"), "{name}");
+    }
+}
+
+#[test]
+fn a_tone_mapped_clip_is_sdr_and_keeps_its_frames() {
+    let Some((tools, _)) = setup() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let clip = cut_all(&tools, &fixtures_dir().join("hevc10_hdr.mkv"), &software_h264(), work.path());
+    assert!(clip.verified);
+    assert_eq!(colour_tags(&tools, Path::new(&clip.path)), "tv,bt709,bt709,bt709");
+}
+
+#[test]
+fn surround_sound_gets_its_own_bitrate() {
+    let Some((tools, _)) = setup() else { return };
+    let work = tempfile::tempdir().unwrap();
+    let src = generate(
+        &tools,
+        work.path(),
+        "surround.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=24:d=4",
+            "-f",
+            "lavfi",
+            "-i",
+            "anoisesrc=d=4:c=pink:a=0.5:r=48000",
+            "-filter_complex",
+            "[1:a]pan=5.1|c0=c0|c1=c0|c2=c0|c3=c0|c4=c0|c5=c0[a]",
+            "-map",
+            "0:v",
+            "-map",
+            "[a]",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "flac",
+        ],
+    );
+    let clip = cut_all(&tools, &src, &software_h264(), work.path());
+    let out = tools
+        .ffprobe()
+        .args(["-v", "error", "-select_streams", "a:0", "-of", "csv=p=0"])
+        .args(["-show_entries", "stream=channels,bit_rate"])
+        .arg(&clip.path)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    let (channels, rate) = text.trim().split_once(',').unwrap();
+    assert_eq!(channels, "6");
+    let rate: u32 = rate.parse().unwrap();
+    assert!(rate > 400_000, "{rate} bit/s for six channels");
+}
+
+/// NVENC's H.264 stops at 4096 wide, which no check at start-up shows.
+#[test]
+fn a_picture_the_hardware_refuses_is_encoded_in_software() {
+    let Some((tools, _)) = setup() else { return };
+    let nvenc = tools.caps().hw_encoder(as_media::CodecFamily::H264).filter(|e| e.name == "h264_nvenc");
+    if nvenc.is_none() {
+        eprintln!("no NVENC on this machine");
+        return;
+    }
+    let work = tempfile::tempdir().unwrap();
+    let src = generate(
+        &tools,
+        work.path(),
+        "wide.mp4",
+        &["-f", "lavfi", "-i", "testsrc2=s=5120x1440:r=24:d=0.25", "-c:v", "libx264", "-preset", "ultrafast"],
+    );
+    let clip = cut_all(&tools, &src, &preset("h264-edit"), work.path());
+    assert_eq!(clip.encoder, "libx264");
+    assert!(clip.verified);
+}

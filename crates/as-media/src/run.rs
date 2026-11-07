@@ -59,7 +59,8 @@ where
     let mut cmd = tools.ffmpeg();
     cmd.args(["-progress", "pipe:1", "-nostats"]).args(args);
 
-    tracing::debug!(cmd = ?cmd, "ffmpeg");
+    // In release logs too: without it a report can't say what was asked for.
+    tracing::info!(cmd = ?cmd, "ffmpeg");
     let mut child = crate::proc::spawn(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()))?;
 
     let stdout = child.stdout.take().expect("piped stdout");

@@ -211,6 +211,7 @@ pub async fn pack_export(
         paths::check(dir)?;
     }
     let (lib, source, words) = (state.library.clone(), filters::Source::of(&state), state.words());
+    let tools = state.tools().ok();
     let (project, summary) = blocking(move || {
         // Not while a filter it turns on checks shots: the pack is still changing.
         let filters = source.filters(project_id, character_id, &req.spec)?;
@@ -220,6 +221,8 @@ pub async fn pack_export(
         let project = lib.project(project_id)?;
         let default_dir = lib.default_export_dir(&lib.summary(project_id)?)?;
         let (request, out_dir) = project.pack_export_request(character_id, &req, &filters, &default_dir, words)?;
+        let none = Caps::default();
+        project.check_export_room(&request, &preset, &out_dir, tools.as_deref().map_or(&none, |t| t.caps()))?;
         let summary = project.create_export(&request, preset, &out_dir)?;
         Ok((project, summary))
     })

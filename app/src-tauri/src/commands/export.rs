@@ -48,13 +48,15 @@ pub async fn export_start(
     if let Some(dir) = &chosen {
         paths::check(dir)?;
     }
-    let lib = state.library.clone();
+    let (lib, tools) = (state.library.clone(), state.tools().ok());
     let (project, summary) = blocking(move || {
         let project = lib.project(project_id)?;
         let out_dir = match chosen {
             Some(d) => d,
             None => lib.default_export_dir(&lib.summary(project_id)?)?,
         };
+        let none = Caps::default();
+        project.check_export_room(&req, &preset, &out_dir, tools.as_deref().map_or(&none, |t| t.caps()))?;
         let summary = project.create_export(&req, preset, &out_dir)?;
         Ok((project, summary))
     })

@@ -26,15 +26,15 @@ use std::path::{Path, PathBuf};
 
 use as_core::paths::name;
 use as_core::{CancelToken, FrameIndex, FrameRange, Rational, Timecode, msg};
-use as_media::filters::{deinterlace, picture_chain};
+use as_media::filters::{deinterlace, export_picture_chain};
 use as_media::{Caps, CodecFamily, HdrKind, MediaInfo, Source, Tools, Vendor, run_ffmpeg};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::lossless::{self, LosslessCodec, Reference};
+use crate::lossless::{self, Colour, LosslessCodec, Reference};
 use crate::merge::{LosslessShape, MergeShape, natural_size};
 use crate::preset::{
-    AudioCodec, Container, DnxProfile, EncoderPref, ExportPreset, Gop, HdrMode, ProResProfile, VideoCodec,
+    AudioCodec, Container, DnxProfile, EncoderPref, ExportPreset, Gop, HdrMode, ProResProfile, VideoCodec, aac_kbps,
 };
 use crate::{ExportError, ExportResult};
 
@@ -189,7 +189,7 @@ pub(crate) fn resolve_encoding(
             let hevc = matches!(codec, VideoCodec::Hevc { .. });
             let ten = matches!(codec, VideoCodec::Hevc { ten_bit: true, .. });
             let family = if hevc { CodecFamily::Hevc } else { CodecFamily::H264 };
-            let hw = (*encoder == EncoderPref::Auto).then(|| caps.hw_encoder(family)).flatten();
+            let hw = (*encoder == EncoderPref::Auto).then(|| caps.hw_encoder_for(family, ten)).flatten();
             let q = quality.to_string();
             let mut args = Vec::new();
             let (name, pix_fmt): (String, &'static str) = match hw {
@@ -206,11 +206,22 @@ pub(crate) fn resolve_encoding(
                             );
                             args.extend(["-maxrate", &max, "-bufsize", &buf, "-spatial-aq", "1"].map(String::from));
                         }
-                        Vendor::Amd => args.extend(
-                            ["-quality", "quality", "-rc", "cqp", "-qp_i", &q, "-qp_p", &q, "-qp_b", &q]
-                                .map(String::from),
-                        ),
-                        Vendor::Intel => args.extend(["-global_quality", &q, "-look_ahead", "1"].map(String::from)),
+                        Vendor::Amd => {
+                            args.extend(
+                                ["-quality", "quality", "-rc", "cqp", "-qp_i", &q, "-qp_p", &q].map(String::from),
+                            );
+                            // `hevc_amf` has no B-frame setting.
+                            if !hevc {
+                                args.extend(["-qp_b".into(), q.clone()]);
+                            }
+                        }
+                        Vendor::Intel => {
+                            args.extend(["-global_quality".into(), q.clone()]);
+                            // `hevc_qsv` has no such switch.
+                            if !hevc {
+                                args.extend(["-look_ahead", "1"].map(String::from));
+                            }
+                        }
                         Vendor::Apple => {
                             let vt = (100 - (*quality as i32) * 2).clamp(1, 100).to_string();
                             args.extend(["-q:v", &vt, "-allow_sw", "1"].map(String::from));
@@ -253,9 +264,21 @@ pub(crate) fn resolve_encoding(
     })
 }
 
-/// Colour tags for the output: keep the source's when we keep its colour,
-/// BT.709 when we tone map.
-fn color_args(info: &MediaInfo, tonemapped: bool) -> Vec<String> {
+/// The colour an SDR clip of `info` is tagged with, frames and file, every
+/// tag given: encoders read tags from the frames and leave out what they
+/// don't find there, so an untagged source would stay untagged and players
+/// and editors would each guess. `None` for HDR, whose tags aren't to be
+/// guessed, and what [`lossless::sure_of`] leaves out.
+fn sdr_colour(info: &MediaInfo) -> Option<Colour> {
+    lossless::sure_of(info).filter(|_| info.video.hdr == HdrKind::None)
+}
+
+/// Colour tags for the output: `kept` when the clip has them all, else the
+/// source's when we keep its colour, BT.709 when we tone map.
+fn color_args(info: &MediaInfo, tonemapped: bool, kept: Option<&Colour>) -> Vec<String> {
+    if let Some(c) = kept.filter(|_| !tonemapped) {
+        return c.args();
+    }
     let v = &info.video;
     let pairs: [(&str, Option<String>); 4] = if tonemapped {
         [
@@ -268,7 +291,8 @@ fn color_args(info: &MediaInfo, tonemapped: bool) -> Vec<String> {
         [
             ("-color_primaries", v.color_primaries.clone()),
             ("-color_trc", v.color_transfer.clone()),
-            ("-colorspace", v.color_space.clone()),
+            // A YUV file can't say `gbr`, and the option refuses it.
+            ("-colorspace", v.color_space.clone().filter(|s| s != "gbr")),
             ("-color_range", v.color_range.clone()),
         ]
     };
@@ -390,8 +414,10 @@ fn clip_recipe(tools: &Tools, job: &ClipJob) -> ExportResult<Recipe> {
     // would otherwise come out as two fields woven together).
     let mut vchain: Vec<String> = deinterlace(info).into_iter().collect();
     vchain.extend([format!("trim=start={trim_start}us:end={trim_end}us"), "setpts=PTS-STARTPTS".to_string()]);
-    vchain.extend(picture_chain(info, preset.max_height, tonemap));
+    vchain.extend(export_picture_chain(info, preset.max_height, tonemap));
     vchain.push(format!("format={}", enc.pix_fmt));
+    let colour = sdr_colour(info).filter(|_| !tonemap);
+    vchain.extend(colour.as_ref().map(Colour::filter));
     let mut graph = format!("[0:{}]{}[v]", info.video.index, vchain.join(","));
 
     let audio = match preset.audio {
@@ -419,10 +445,14 @@ fn clip_recipe(tools: &Tools, job: &ClipJob) -> ExportResult<Recipe> {
     let mut a: Vec<String> = vec!["-fps_mode".into(), "passthrough".into()];
     a.extend(as_media::proxy::timing_args(index));
     a.extend(enc.args.iter().cloned());
-    a.extend(color_args(info, tonemap));
-    match audio.map(|(_, c)| c) {
-        Some(AudioCodec::Pcm24) => a.extend(["-c:a", "pcm_s24le"].map(String::from)),
-        Some(AudioCodec::Aac { kbps }) => a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), format!("{kbps}k")]),
+    a.extend(color_args(info, tonemap, colour.as_ref()));
+    match audio {
+        Some((_, AudioCodec::Pcm24)) => a.extend(["-c:a", "pcm_s24le"].map(String::from)),
+        Some((ord, AudioCodec::Aac { kbps })) => {
+            let track = info.audio.iter().find(|t| t.ordinal == ord).map_or(2, |t| t.channels);
+            let channels = if preset.stereo { 2 } else { track };
+            a.extend(["-c:a".into(), "aac".into(), "-b:a".into(), format!("{}k", aac_kbps(kbps, channels))]);
+        }
         _ => {}
     }
     a.extend(["-map_metadata", "-1", "-map_chapters", "-1"].map(String::from));
@@ -561,11 +591,49 @@ fn part_recipe(job: &ClipJob, part: Part) -> Recipe {
     }
 }
 
+/// Render a clip. One a hardware encoder fails on is made again in software:
+/// drivers refuse what the short check at start-up can't show (H.264 wider
+/// than 4096 on NVENC, a session too many). A part isn't: every part of a
+/// file needs one encoder, so its export decides (see [`in_software`]).
 pub fn export_clip(
     tools: &Tools,
     job: &ClipJob,
     cancel: &CancelToken,
     mut progress: impl FnMut(f64),
+) -> ExportResult<ClipOutcome> {
+    let failed = match render_clip(tools, job, cancel, &mut progress) {
+        Err(e) if job.part.is_none() && e.may_be_the_encoder() => e,
+        done => return done,
+    };
+    let Some(software) = in_software(job.preset, tools.caps()) else { return Err(failed) };
+    tracing::warn!(error = %failed, "hardware encoding failed; encoding the clip in software");
+    let job = ClipJob { preset: &software, ..job.clone() };
+    render_clip(tools, &job, cancel, &mut progress).map_err(|e| match e {
+        ExportError::EncoderMissing(_) => failed,
+        e => e,
+    })
+}
+
+/// `preset` with software encoding, when on this machine it encodes in hardware.
+pub fn in_software(preset: &ExportPreset, caps: &Caps) -> Option<ExportPreset> {
+    let mut software = preset.clone();
+    let (encoder, family, ten_bit) = match &mut software.video {
+        VideoCodec::H264 { encoder, .. } => (encoder, CodecFamily::H264, false),
+        VideoCodec::Hevc { encoder, ten_bit, .. } => (encoder, CodecFamily::Hevc, *ten_bit),
+        _ => return None,
+    };
+    if *encoder != EncoderPref::Auto || caps.hw_encoder_for(family, ten_bit).is_none() {
+        return None;
+    }
+    *encoder = EncoderPref::Software;
+    Some(software)
+}
+
+fn render_clip(
+    tools: &Tools,
+    job: &ClipJob,
+    cancel: &CancelToken,
+    progress: &mut dyn FnMut(f64),
 ) -> ExportResult<ClipOutcome> {
     let ClipJob { src: Source { path: src, index, .. }, range, preset, .. } = job;
     if range.is_empty() || range.end > index.len() {
@@ -789,6 +857,56 @@ mod tests {
             sw_encoders: vec!["libx264".into(), "libx265".into()],
             ..Caps::default()
         }
+    }
+
+    fn preset(id: &str) -> ExportPreset {
+        builtin_presets().into_iter().find(|p| p.id == id).unwrap()
+    }
+
+    #[test]
+    fn hardware_presets_have_a_software_way_and_others_dont_need_one() {
+        let software = in_software(&preset("h264-edit"), &nvidia()).unwrap();
+        assert!(matches!(software.video, VideoCodec::H264 { encoder: EncoderPref::Software, .. }));
+        assert!(in_software(&software, &nvidia()).is_none(), "already software");
+        assert!(in_software(&preset("h264-edit"), &Caps::default()).is_none(), "no hardware here");
+        assert!(in_software(&preset("prores-hq"), &nvidia()).is_none());
+        assert!(in_software(&preset("bit-perfect"), &nvidia()).is_none());
+    }
+
+    #[test]
+    fn a_card_without_ten_bits_leaves_hevc10_to_software() {
+        let old = Caps { no_ten_bit: vec!["hevc_nvenc".into()], ..nvidia() };
+        let enc = resolve_encoding(&video("hevc10"), &old, FILM, (1920, 1080), FILM).unwrap();
+        assert_eq!(enc.encoder, "libx265");
+        assert_eq!(enc.pix_fmt, "yuv420p10le");
+        assert!(in_software(&preset("hevc10"), &old).is_none());
+    }
+
+    /// Options these encoders don't have do nothing but a warning.
+    #[test]
+    fn amd_and_intel_hevc_get_only_options_they_have() {
+        let hw = |name: &str, family, vendor| HwEncoder { name: name.into(), family, vendor };
+        let with = |e: HwEncoder| Caps { hw_encoders: vec![e], ..Caps::default() };
+        let args = |id: &str, caps: &Caps| {
+            resolve_encoding(&video(id), caps, FILM, (1920, 1080), FILM).unwrap().args.join(" ")
+        };
+        let amd = args("hevc10", &with(hw("hevc_amf", CodecFamily::Hevc, Vendor::Amd)));
+        assert!(amd.contains("-qp_p") && !amd.contains("-qp_b"), "{amd}");
+        let amd = args("h264-edit", &with(hw("h264_amf", CodecFamily::H264, Vendor::Amd)));
+        assert!(amd.contains("-qp_b"), "{amd}");
+        let intel = args("hevc10", &with(hw("hevc_qsv", CodecFamily::Hevc, Vendor::Intel)));
+        assert!(intel.contains("-global_quality") && !intel.contains("-look_ahead"), "{intel}");
+        let intel = args("h264-edit", &with(hw("h264_qsv", CodecFamily::H264, Vendor::Intel)));
+        assert!(intel.contains("-look_ahead 1"), "{intel}");
+    }
+
+    #[test]
+    fn surround_gets_more_bits_than_stereo_and_mono_fewer() {
+        assert_eq!(aac_kbps(320, 2), 320);
+        assert_eq!(aac_kbps(320, 1), 160);
+        assert_eq!(aac_kbps(320, 3), 320);
+        assert_eq!(aac_kbps(320, 6), 640);
+        assert_eq!(aac_kbps(320, 8), 853);
     }
 
     fn video(id: &str) -> VideoCodec {

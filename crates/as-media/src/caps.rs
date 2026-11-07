@@ -73,6 +73,9 @@ pub struct Caps {
     /// (`-tune lossless`; older cards lack it, or 10 bits, or 4:4:4).
     #[serde(default)]
     pub nvenc_lossless: Vec<String>,
+    /// HEVC hardware encoders that work, but not in 10 bits (older cards).
+    #[serde(default)]
+    pub no_ten_bit: Vec<String>,
 }
 
 const HW_ENCODERS: &[(&str, CodecFamily, Vendor)] = &[
@@ -215,7 +218,12 @@ impl Caps {
         } else {
             Vec::new()
         };
-        let caps = Self { decode, hw_encoders, sw_encoders, nvenc_lossless };
+        let no_ten_bit = hw_encoders
+            .iter()
+            .filter(|e| e.family == CodecFamily::Hevc && !checks.smoke_ten_bit(&e.name, e.vendor))
+            .map(|e| e.name.clone())
+            .collect();
+        let caps = Self { decode, hw_encoders, sw_encoders, nvenc_lossless, no_ten_bit };
         tracing::info!(?caps, "media capabilities");
         caps
     }
@@ -227,6 +235,11 @@ impl Caps {
     /// Best working hardware encoder for a codec family (NVIDIA first: fastest, best quality).
     pub fn hw_encoder(&self, family: CodecFamily) -> Option<&HwEncoder> {
         self.hw_encoders.iter().find(|e| e.family == family)
+    }
+
+    /// [`Caps::hw_encoder`], for pictures of 10 bits when `ten_bit` says so.
+    pub fn hw_encoder_for(&self, family: CodecFamily, ten_bit: bool) -> Option<&HwEncoder> {
+        self.hw_encoders.iter().find(|e| e.family == family && !(ten_bit && self.no_ten_bit.contains(&e.name)))
     }
 }
 
@@ -274,6 +287,13 @@ impl Checks<'_> {
         cmd.args(["-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24", "-frames:v", "3"])
             .args(["-pix_fmt", if encoder.contains("videotoolbox") { "nv12" } else { "yuv420p" }])
             .args(["-c:v", encoder, "-f", "null", "-"]);
+        self.run(&mut cmd, encoder, self.waits.smoke, Some(driver(vendor))).is_some_and(|o| o.status.success())
+    }
+
+    fn smoke_ten_bit(&self, encoder: &str, vendor: Vendor) -> bool {
+        let mut cmd = self.tools.ffmpeg();
+        cmd.args(["-v", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x240:r=24", "-frames:v", "3"])
+            .args(["-pix_fmt", "p010le", "-c:v", encoder, "-f", "null", "-"]);
         self.run(&mut cmd, encoder, self.waits.smoke, Some(driver(vendor))).is_some_and(|o| o.status.success())
     }
 

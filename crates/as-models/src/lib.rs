@@ -39,6 +39,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
+use as_core::paths::free_space;
 use as_core::{CancelToken, Msg, ToMsg, msg};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -1099,36 +1100,6 @@ impl<W: Write> Write for Hashing<W> {
     fn flush(&mut self) -> std::io::Result<()> {
         self.file.flush()
     }
-}
-
-/// The bytes the current user may still write on the drive of `dir`.
-#[cfg(windows)]
-fn free_space(dir: &Path) -> std::io::Result<u64> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let wide: Vec<u16> = dir.as_os_str().encode_wide().chain([0]).collect();
-    let mut free = 0u64;
-    // SAFETY: a NUL-terminated wide path and a valid out pointer; the totals
-    // it isn't asked for may be null.
-    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, std::ptr::null_mut(), std::ptr::null_mut()) };
-    if ok == 0 { Err(std::io::Error::last_os_error()) } else { Ok(free) }
-}
-
-/// The bytes an unprivileged user may still write on the drive of `dir`.
-#[cfg(unix)]
-#[allow(clippy::useless_conversion)] // the fields are 32 bits wide on some systems, 64 on others
-fn free_space(dir: &Path) -> std::io::Result<u64> {
-    use std::os::unix::ffi::OsStrExt;
-    let path = std::ffi::CString::new(dir.as_os_str().as_bytes())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
-    let mut st = std::mem::MaybeUninit::<libc::statvfs>::zeroed();
-    // SAFETY: a NUL-terminated path and a buffer statvfs fills on success.
-    if unsafe { libc::statvfs(path.as_ptr(), st.as_mut_ptr()) } != 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    // SAFETY: statvfs succeeded, so it filled the buffer.
-    let st = unsafe { st.assume_init() };
-    Ok(u64::from(st.f_bavail).saturating_mul(u64::from(st.f_frsize)))
 }
 
 fn hex(bytes: &[u8]) -> String {

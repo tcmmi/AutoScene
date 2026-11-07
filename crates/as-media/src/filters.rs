@@ -12,6 +12,18 @@ pub const TONEMAP_SDR: &str = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p
      sidedata=mode=delete:type=DYNAMIC_HDR_VIVID,sidedata=mode=delete:type=DOVI_RPU_BUFFER,\
      sidedata=mode=delete:type=DOVI_METADATA";
 
+/// [`TONEMAP_SDR`] for a picture that is kept: it stays at 16 bits for what
+/// comes after it, so the last step down to 8 or 10 bits dithers. Straight
+/// from `zscale` there is no dither, and a dark gradient comes out in bands
+/// (13 steps across a test ramp, 959 this way, at the same speed); `zscale`'s
+/// own dither is lost to any `scale` after it. The scan doesn't need it, and
+/// its signals would change.
+pub const TONEMAP_SDR_EXPORT: &str = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,\
+     zscale=t=bt709:m=bt709:r=tv,format=yuv444p16le,sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,\
+     sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,sidedata=mode=delete:type=DYNAMIC_HDR_PLUS,\
+     sidedata=mode=delete:type=DYNAMIC_HDR_VIVID,sidedata=mode=delete:type=DOVI_RPU_BUFFER,\
+     sidedata=mode=delete:type=DOVI_METADATA";
+
 /// Filters that turn decoded frames into what a viewer should see, without
 /// changing the number of frames:
 /// - deinterlace one-frame-per-frame (`bwdif send_frame`) for interlaced sources,
@@ -28,9 +40,18 @@ pub fn display_chain(info: &MediaInfo, height: Option<u32>, tonemap: bool) -> Ve
 /// deinterlaces before it picks frames (a deinterlacer needs the frames
 /// around the one it makes).
 pub fn picture_chain(info: &MediaInfo, height: Option<u32>, tonemap: bool) -> Vec<String> {
+    chain(info, height, tonemap.then_some(TONEMAP_SDR))
+}
+
+/// [`picture_chain`] for a clip that is kept: tone mapped with dither.
+pub fn export_picture_chain(info: &MediaInfo, height: Option<u32>, tonemap: bool) -> Vec<String> {
+    chain(info, height, tonemap.then_some(TONEMAP_SDR_EXPORT))
+}
+
+fn chain(info: &MediaInfo, height: Option<u32>, tonemap: Option<&str>) -> Vec<String> {
     let mut f = Vec::new();
-    if tonemap && info.video.hdr != HdrKind::None {
-        f.push(TONEMAP_SDR.to_string());
+    if let Some(tonemap) = tonemap.filter(|_| info.video.hdr != HdrKind::None) {
+        f.push(tonemap.to_string());
     }
     let sar = info.video.sar;
     if sar.num != sar.den {

@@ -195,11 +195,11 @@ pub(crate) fn chroma_step(pix_fmt: &str) -> (u32, u32) {
 
 /// A picture's colour, every tag given.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Colour {
-    range: String,
-    primaries: String,
-    transfer: String,
-    space: String,
+pub(crate) struct Colour {
+    pub(crate) range: String,
+    pub(crate) primaries: String,
+    pub(crate) transfer: String,
+    pub(crate) space: String,
     chroma: Option<String>,
 }
 
@@ -234,6 +234,11 @@ fn colour(exact: &ExactFormat, source_codec: &str, height: u32) -> Colour {
 /// [`keeper`] writes them), from what its probe says: alike for two sources
 /// whose copies can share a file.
 pub(crate) fn assumed_colour(info: &as_media::MediaInfo) -> String {
+    assumed(info).filter()
+}
+
+/// `info`'s colour, every tag given, from what its probe says (see [`colour`]).
+pub(crate) fn assumed(info: &as_media::MediaInfo) -> Colour {
     let v = &info.video;
     let exact = ExactFormat {
         pix_fmt: v.pix_fmt.clone(),
@@ -243,12 +248,24 @@ pub(crate) fn assumed_colour(info: &as_media::MediaInfo) -> String {
         color_space: v.color_space.clone(),
         ..ExactFormat::default()
     };
-    colour(&exact, &v.codec, v.height).filter()
+    colour(&exact, &v.codec, v.height)
+}
+
+/// [`assumed`], when a clip of `info` that is converted to YUV may say so.
+/// `None` for RGB: the conversion's matrix is another matter than what the
+/// source says. And for a small picture that names no matrix: an old SD rip
+/// is BT.601 whatever its codec, and players guess that from its size, so a
+/// tag would only overrule them.
+pub(crate) fn sure_of(info: &as_media::MediaInfo) -> Option<Colour> {
+    let v = &info.video;
+    let rgb = ["gbr", "rgb", "bgr", "argb", "abgr", "0rgb", "0bgr", "pal8"].iter().any(|p| v.pix_fmt.starts_with(p));
+    let colour = assumed(info);
+    (!rgb && colour.space != "gbr" && (v.color_space.is_some() || v.height >= 720)).then_some(colour)
 }
 
 impl Colour {
     /// Written on the frames: tags only, the pixels stay.
-    fn filter(&self) -> String {
+    pub(crate) fn filter(&self) -> String {
         format!(
             "setparams=range={}:color_primaries={}:color_trc={}:colorspace={}",
             self.range, self.primaries, self.transfer, self.space
@@ -256,7 +273,7 @@ impl Colour {
     }
 
     /// The file's tags (output options).
-    fn args(&self) -> Vec<String> {
+    pub(crate) fn args(&self) -> Vec<String> {
         let mut a: Vec<String> = [
             ("-color_range", &self.range),
             ("-color_primaries", &self.primaries),

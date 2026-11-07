@@ -17,5 +17,12 @@ tracing.workspace = true
 zstd.workspace = true
 dirs.workspace = true
 
+# The free space on a drive, before a download or an export.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 serde_json.workspace = true

@@ -131,6 +131,7 @@
     },
     "noneExported": "Niciun clip nu a putut fi exportat.",
     "noneFinished": "Niciun clip din acest export nu s-a terminat încă.",
+    "noRoom": "Acest export are nevoie de cel puțin {{need}}, iar discul are {{free}} liber.",
     "notJoined": "Clipul nu s-a putut uni în fișier.",
     "nothing": "Nu este nimic de exportat.",
     "outside": "Cadrele {{start}}–{{end}} nu sunt în {{name}}.",

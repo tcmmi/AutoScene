@@ -7,7 +7,7 @@ pub mod lossless;
 pub mod merge;
 pub mod preset;
 
-pub use clip::{ClipJob, ClipOutcome, Part, export_clip};
+pub use clip::{ClipJob, ClipOutcome, Part, export_clip, in_software};
 pub use edl::{EdlError, EdlEvent, reel_names, write_cmx3600, write_csv};
 pub use estimate::{EstimateClip, estimate_bytes};
 pub use lossless::{LosslessCodec, exact_format};
@@ -69,11 +69,26 @@ impl ExportError {
     pub fn is_cancelled(&self) -> bool {
         matches!(self, Self::Media(m) if m.is_cancelled())
     }
+
+    /// Did ffmpeg itself stop, so that another encoder could get through? A
+    /// full disk stays full.
+    pub fn may_be_the_encoder(&self) -> bool {
+        matches!(self, Self::Media(m @ as_media::MediaError::Ffmpeg(_)) if !m.is_disk_full())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_stop_of_ffmpeg_with_room_on_the_disk_may_be_the_encoder() {
+        let ffmpeg = |tail: &str| ExportError::Media(as_media::MediaError::Ffmpeg(tail.into()));
+        assert!(ffmpeg("InitializeEncoder failed: invalid param (8)").may_be_the_encoder());
+        assert!(!ffmpeg("av_interleaved_write_frame(): No space left on device").may_be_the_encoder());
+        assert!(!ExportError::Media(as_media::MediaError::Cancelled).may_be_the_encoder());
+        assert!(!ExportError::EncoderMissing("libx264".into()).may_be_the_encoder());
+    }
 
     #[test]
     fn each_error_has_its_key_and_keeps_its_words() {

@@ -155,6 +155,18 @@ pub struct ExportPreset {
     pub builtin: bool,
 }
 
+/// The AAC bitrate of `channels` of sound for a preset's `kbps`, which is its
+/// figure for stereo: surround gets two thirds of stereo's share a channel
+/// (5.1 at 320: 640, and 320 alone would leave each channel a third of what
+/// stereo has), mono half.
+pub(crate) fn aac_kbps(kbps: u32, channels: u32) -> u32 {
+    match channels {
+        0 | 2 => kbps,
+        1 => kbps / 2,
+        n => kbps.max(kbps * n / 3),
+    }
+}
+
 /// A built-in preset of these words, its English also as plain text. The
 /// rest is each preset's own.
 fn worded(name: Msg, description: Msg) -> ExportPreset {

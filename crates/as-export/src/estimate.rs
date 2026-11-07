@@ -25,7 +25,7 @@ use as_media::{AudioStream, Caps, CodecFamily, MediaInfo, Vendor};
 
 use crate::clip::{AUDIO_RATE, encoder_fps, nvenc_cq, nvenc_maxrate};
 use crate::merge::{audio_stream, file_size, natural_size};
-use crate::preset::{AudioCodec, DnxProfile, EncoderPref, ExportPreset, Gop, ProResProfile, VideoCodec};
+use crate::preset::{AudioCodec, DnxProfile, EncoderPref, ExportPreset, Gop, ProResProfile, VideoCodec, aac_kbps};
 
 /// A clip of an export, as its size is worked out.
 #[derive(Clone, Copy, Debug)]
@@ -168,8 +168,9 @@ fn video_bytes(preset: &ExportPreset, caps: &Caps, size: (u32, u32), fastest: f6
             let hevc = matches!(preset.video, VideoCodec::Hevc { .. });
             let family = if hevc { CodecFamily::Hevc } else { CodecFamily::H264 };
             // The encoder the export will use (`clip::resolve_encoding`).
-            let nvenc =
-                *encoder == EncoderPref::Auto && caps.hw_encoder(family).is_some_and(|e| e.vendor == Vendor::Nvidia);
+            let ten = matches!(preset.video, VideoCodec::Hevc { ten_bit: true, .. });
+            let nvenc = *encoder == EncoderPref::Auto
+                && caps.hw_encoder_for(family, ten).is_some_and(|e| e.vendor == Vendor::Nvidia);
             if nvenc {
                 nvenc_bits(*quality, *gop, hevc, size, fastest, clip) / 8.0
             } else {
@@ -187,7 +188,7 @@ fn audio_bytes(preset: &ExportPreset, channels: u32, seconds: f64) -> f64 {
         // Bit-Perfect is counted by `lossless_bytes`.
         AudioCodec::None | AudioCodec::Lossless => 0.0,
         AudioCodec::Pcm24 => f64::from(AUDIO_RATE) * 3.0 * f64::from(channels) * seconds,
-        AudioCodec::Aac { kbps } => f64::from(kbps) * 1000.0 / 8.0 * seconds,
+        AudioCodec::Aac { kbps } => f64::from(aac_kbps(kbps, channels)) * 1000.0 / 8.0 * seconds,
     }
 }
 
@@ -542,7 +543,8 @@ mod tests {
         assert_eq!(hundred(&pcm, &hd), 48_000.0 * 3.0 * 6.0 * 100.0);
         pcm.stereo = true;
         assert_eq!(hundred(&pcm, &hd), 48_000.0 * 3.0 * 2.0 * 100.0);
-        assert_eq!(hundred(&preset("h264-edit"), &hd), 320_000.0 / 8.0 * 100.0);
+        // Six channels: more than the stereo figure.
+        assert_eq!(hundred(&preset("h264-edit"), &hd), 640_000.0 / 8.0 * 100.0);
         // A track that isn't there: no audio.
         let mut silent = hd.clone();
         silent.audio.clear();

@@ -1,4 +1,5 @@
-//! Keep the computer from going to sleep while long work (analysis) runs.
+//! Keep the computer from going to sleep while long work (analysis, exports,
+//! indexing, previews) runs.
 //! The display may still turn off.
 
 /// Holds the PC awake until dropped. Create and drop it on the same thread

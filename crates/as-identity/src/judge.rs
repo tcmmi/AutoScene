@@ -255,7 +255,8 @@ pub fn judge_tuned(q: &Question, p: &Params, space: Option<&Space>, tuning: &Tun
 
         // Who it looks most like, the scene aside.
         let lookalike = scores.iter().max_by(|a, b| sights[a.1].looks.total_cmp(&sights[b.1].looks));
-        let beside = lookalike.is_some_and(|&(_, ci)| taken(ci));
+        // Only a real likeness: the nearest of faces it looks nothing like says nothing.
+        let beside = lookalike.is_some_and(|&(_, ci)| taken(ci) && sights[ci].looks >= unsure);
         let free: Vec<(f32, usize)> = scores.iter().copied().filter(|&(_, ci)| !taken(ci)).collect();
         let second = free.get(1).copied();
         let next = second.map_or(-1.0, |x| x.0);

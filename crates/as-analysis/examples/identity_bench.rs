@@ -43,7 +43,9 @@
 //!   with groups of two (mean faces, average linkage, faces seen together);
 //!   `overlap` the faces seen in the same frames (where, how alike);
 //!   `copresence` characters on screen together (how often, how alike);
-//!   `dets <file.tracks> <track>…` a track's detections.
+//!   `dets <file.tracks> [<track>…]` a track's detections (all tracks'
+//!   without one); `embout <file.tracks> <file>` writes the tracks'
+//!   embeddings as an `EMB_OVERRIDE` file.
 //!
 //! The anime bench (`bench/anime/README.md`, files as `FORMATS.md`): label
 //! names are gallery codes, `?e` and `n` (each someone of their own), `?u`
@@ -1692,7 +1694,13 @@ fn main() {
         "scale" => scale(&tracks, &a[2], a.get(3).map_or(10, |s| s.parse().unwrap())),
         "copresence" => copresence(&tracks, &a[2]),
         "dets" => {
-            for i in a[2..].iter().map(|s| s.parse::<usize>().unwrap()) {
+            // No track named: every track's.
+            let picked: Vec<usize> = if a.len() > 2 {
+                a[2..].iter().map(|s| s.parse().unwrap()).collect()
+            } else {
+                (0..tracks.len()).collect()
+            };
+            for i in picked {
                 let t = &tracks[i];
                 println!("track {i} {}-{} q {:.2}", t.start, t.end, t.quality);
                 for d in &t.dets {
@@ -1705,6 +1713,15 @@ fn main() {
                     );
                 }
             }
+        }
+        // The tracks' own embeddings, as an `EMB_OVERRIDE` file (to fuse
+        // them with another embedder's).
+        "embout" => {
+            let mut b = Vec::new();
+            b.extend_from_slice(&(tracks.len() as u32).to_le_bytes());
+            b.extend_from_slice(&(tracks[0].embedding.len() as u32).to_le_bytes());
+            tracks.iter().flat_map(|t| &t.embedding).for_each(|x| b.extend_from_slice(&x.to_le_bytes()));
+            std::fs::write(&a[2], b).unwrap();
         }
         "pairs" => pairs(&tracks, &a[2], a.get(3).map_or(0.5, |s| s.parse().unwrap())),
         "norms" => norms(&tracks, &read_tracks(&a[2]), a[3].parse().unwrap(), a[4].parse().unwrap()),

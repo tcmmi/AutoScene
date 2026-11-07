@@ -40,3 +40,6 @@ app/src-tauri/ffmpeg/
 app/src-tauri/ffmpeg.download/
 app/src-tauri/onnxruntime/
 app/src-tauri/onnxruntime.download/
+
+# Local Claude Code settings
+.claude/

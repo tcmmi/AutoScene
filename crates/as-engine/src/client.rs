@@ -895,6 +895,7 @@ impl Engine {
                     | Reply::Progress { id: rid, .. }
                     | Reply::ShotChunk { id: rid, .. }
                     | Reply::FaceChunk { id: rid, .. }
+                    | Reply::FaceRead { id: rid, .. }
                     | Reply::Embedding { id: rid, .. })
                         if rid == id =>
                     {

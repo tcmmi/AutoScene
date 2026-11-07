@@ -88,7 +88,7 @@ export function LikenessCard({
           </Badge>
           <h3 className="display mt-3 text-4xl leading-tight text-fg-1">{t("rescan.pair.question")}</h3>
           <ul className="mt-5 space-y-2.5">
-            <Evidence good={likely}>{likely ? t("rescan.pair.facesMatch") : t("rescan.pair.facesClose")}</Evidence>
+            <Evidence good={likely ? true : null}>{likely ? t("rescan.pair.facesMatch") : t("rescan.pair.facesClose")}</Evidence>
             {pair.secondAgrees === null ? (
               <Evidence good={null}>{t("rescan.pair.oneCheck")}</Evidence>
             ) : (

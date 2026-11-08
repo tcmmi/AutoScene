@@ -73,6 +73,11 @@ impl ArcFace {
     /// goldens ([`golden::proven`]).
     pub fn load(rt: &Runtime, model: &Path, batch: usize) -> InferResult<Self> {
         assert!(batch > 0);
+        // A bench trying another embedder in ArcFace's place (a debug build's
+        // `AUTOSCENE_BENCH_OTHER_EMBEDDER`): these goldens aren't its own.
+        if cfg!(debug_assertions) && std::env::var_os("AUTOSCENE_BENCH_OTHER_EMBEDDER").is_some() {
+            return Self::open(rt, model, batch);
+        }
         let name = model.display().to_string();
         golden::proven(rt, &name, OnCoreMl::Log, |rt| Self::open(rt, model, batch), Self::device, Self::goldens)
     }

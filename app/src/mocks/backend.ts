@@ -176,7 +176,7 @@ const SEGMENTS: Segment[] = (
 const SHOT_COUNT = SEGMENTS.filter((s) => s.kind === "shot").length
 
 const appInfo: AppInfo = {
-  version: "1.0.4-BETA",
+  version: "1.0.5-BETA",
   platform: navigator.userAgent.includes("Mac") ? "macos" : "windows",
   arch: "x86_64",
   dataDir: String.raw`C:\Users\you\AppData\Local\AutoScene`,

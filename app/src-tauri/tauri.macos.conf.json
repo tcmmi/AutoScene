@@ -35,7 +35,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "bundleVersion": "1.0.4",
+      "bundleVersion": "1.0.5",
       "signingIdentity": "-",
       "hardenedRuntime": false,
       "dmg": {

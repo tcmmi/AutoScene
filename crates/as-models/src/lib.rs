@@ -271,6 +271,12 @@ pub mod ids {
     pub const ANIME_CCIP_OLD: &str = "anime-ccip-caformer24";
     /// What the anime character pass needs.
     pub const ANIME: [&str; 3] = [ANIME_HEAD, ANIME_PERSON, ANIME_CCIP];
+    /// The Best anime scan's character embedder (Berkeley's DINOv2-L): the
+    /// pass finds and follows heads with [`ANIME`], then embeds each
+    /// track's clearest heads with it. Faces it found are keyed by it.
+    pub const ANIME_BERKELEY: &str = "anime-berkeley-dino-l";
+    /// What the Best anime scan needs.
+    pub const ANIME_BEST: [&str; 4] = [ANIME_HEAD, ANIME_PERSON, ANIME_CCIP, ANIME_BERKELEY];
 }
 
 /// A download that receives nothing for this long fails (and resumes later).

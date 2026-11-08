@@ -530,5 +530,8 @@
   "update": {
     "failed": "{{why}}",
     "gone": "Această actualizare nu mai este disponibilă."
+  },
+  "rescan": {
+    "notWithBest": "Rescanarea nu funcționează încă cu modelul anime Cel mai bun. Alege Standard în Setări → General → Personaje anime ca s-o folosești."
   }
 }

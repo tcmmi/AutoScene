@@ -701,6 +701,18 @@ export type AniListSuggestions = {
 	auto: boolean,
 };
 
+/**  How anime projects tell their characters apart (Settings → General). */
+export type AnimeModel = 
+/**
+ *  Automatic: Best where the graphics are built for AI work
+ *  ([`GraphicsClass::ForAi`]), Standard elsewhere.
+ */
+"auto" | 
+/**  CCIP alone: quicker, and the characters of a show more often split. */
+"standard" | 
+/**  CCIP follows the heads, and Berkeley's model says whose they are. */
+"best";
+
 /**
  *  Error returned by every command. Serialised as `{ code, message, msg }`
  *  and thrown on the TypeScript side, so UI code can branch on `code` and say
@@ -793,6 +805,17 @@ export type AppSettings = {
 	discordRpc?: DiscordRpcSettings,
 	/**  The language AutoScene speaks: Automatic until the person chooses one. */
 	language?: UiLanguage,
+	/**
+	 *  How anime projects (in the full scan) tell their characters apart.
+	 *  Changing what it comes to here makes anime projects find their
+	 *  characters again (the person's decisions kept).
+	 */
+	animeModel?: AnimeModel,
+	/**
+	 *  What [`AppSettings::anime_model`] comes to on this computer: the Best
+	 *  model or not. **Read only**: `settings_update` ignores it.
+	 */
+	animeBest?: boolean,
 };
 
 export type AudioCodec = { codec: "none" } | 

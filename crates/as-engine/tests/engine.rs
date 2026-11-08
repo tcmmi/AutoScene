@@ -363,7 +363,17 @@ fn face_chunks_tile_the_media_even_across_a_kill() {
     }
     face_chunks_tile(&engine, &m, FacesInput { anime: true, ..faces_input(&m, shots.clone(), false, None) });
     // Anime with Fast Scan (the same models, a few looks per shot).
-    face_chunks_tile(&engine, &m, FacesInput { anime: true, fast: true, ..faces_input(&m, shots, false, None) });
+    face_chunks_tile(
+        &engine,
+        &m,
+        FacesInput { anime: true, fast: true, ..faces_input(&m, shots.clone(), false, None) },
+    );
+    // The Best anime scan (Berkeley's model gives the tracks their identity).
+    if store.installed(as_models::ids::ANIME_BERKELEY).unwrap().is_none() {
+        eprintln!("the Best anime model is missing (skipping that part)");
+        return;
+    }
+    face_chunks_tile(&engine, &m, FacesInput { anime: true, best: true, ..faces_input(&m, shots, false, None) });
 }
 
 /// A job with Fast Scan decodes where the engine's choice says, and says so
@@ -421,39 +431,44 @@ fn a_fast_scan_job_decodes_where_the_choice_says() {
 fn face_chunks_tile(engine: &Engine, m: &Media, job: FacesInput) {
     let mut chunks: Vec<(u32, u32)> = Vec::new();
     let mut killed = false;
-    let (fast, anime) = (job.fast, job.anime);
+    let (fast, anime, best) = (job.fast, job.anime, job.best);
     let mut devices = Vec::new();
-    let r =
-        engine.faces(job, &CancelToken::new(), |e| {
-            if let FacesEvent::Devices { devices: d, resume } = &e {
-                assert_eq!(*resume, chunks.last().map_or(0, |c| c.1), "it resumes after the last chunk");
-                devices.push(d.models.iter().map(|(m, _)| m.clone()).collect::<Vec<_>>());
+    let r = engine.faces(job, &CancelToken::new(), |e| {
+        if let FacesEvent::Devices { devices: d, resume } = &e {
+            assert_eq!(*resume, chunks.last().map_or(0, |c| c.1), "it resumes after the last chunk");
+            devices.push(d.models.iter().map(|(m, _)| m.clone()).collect::<Vec<_>>());
+        }
+        if let FacesEvent::Chunk { start, end, tracks, sprites, bodies } = e {
+            // The synthetic fixture shows barcodes, not people (what an
+            // anime detector makes of them is the bench's, not this test's).
+            let found = as_analysis::tracks::decode(&tracks).expect("readable tracks");
+            assert!(anime || found.is_empty());
+            // The Best scan's tracks carry Berkeley's identity.
+            assert!(!best || found.iter().all(|t| t.embedding.len() == as_vision::berkeley::DIM), "Berkeley tracks");
+            assert!(bodies.is_empty(), "nobody was looked for");
+            // Every shot of the chunk has its sprite.
+            let starts: Vec<u32> = (start..end).step_by(50).collect();
+            assert_eq!(sprites.iter().map(|s| s.shot).collect::<Vec<_>>(), starts);
+            assert!(
+                sprites
+                    .iter()
+                    .all(|s| s.end == (s.shot + 50).min(m.frames) && s.cells == 8 && s.jpeg.starts_with(&[0xFF, 0xD8]))
+            );
+            chunks.push((start, end));
+            if chunks.len() == 1 && !killed {
+                killed = true;
+                kill_hard(engine.pid().unwrap());
             }
-            if let FacesEvent::Chunk { start, end, tracks, sprites, bodies } = e {
-                // The synthetic fixture shows barcodes, not people (what an
-                // anime detector makes of them is the bench's, not this test's).
-                let found = as_analysis::tracks::decode(&tracks).expect("readable tracks");
-                assert!(anime || found.is_empty());
-                assert!(bodies.is_empty(), "nobody was looked for");
-                // Every shot of the chunk has its sprite.
-                let starts: Vec<u32> = (start..end).step_by(50).collect();
-                assert_eq!(sprites.iter().map(|s| s.shot).collect::<Vec<_>>(), starts);
-                assert!(sprites.iter().all(|s| s.end == (s.shot + 50).min(m.frames)
-                    && s.cells == 8
-                    && s.jpeg.starts_with(&[0xFF, 0xD8])));
-                chunks.push((start, end));
-                if chunks.len() == 1 && !killed {
-                    killed = true;
-                    kill_hard(engine.pid().unwrap());
-                }
-            }
-            Ok(())
-        });
+        }
+        Ok(())
+    });
     r.unwrap();
     assert!(killed);
     // Both engines say which models they run: their detector(s) and the embedder, last.
     assert_eq!(devices.len(), 2, "{devices:?}");
-    let (detector, embedder) = if anime {
+    let (detector, embedder) = if best {
+        (as_models::ids::ANIME_HEAD, as_models::ids::ANIME_BERKELEY)
+    } else if anime {
         (as_models::ids::ANIME_HEAD, as_models::ids::ANIME_CCIP)
     } else if fast {
         (as_models::ids::YUNET, as_models::ids::SFACE)
@@ -677,6 +692,7 @@ fn faces_input(m: &Media, shots: Vec<(u32, u32)>, bodies: bool, known: Option<Ve
         animated: false,
         fast: false,
         anime: false,
+        best: false,
     }
 }
 

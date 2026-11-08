@@ -24,7 +24,7 @@ pub use analysis::{Pass, ShotsPlan};
 /// What this computer analyses on: [`Library::open_with`] takes its probe.
 pub use as_infer::computer;
 pub use bodies::BodiesPlan;
-pub use cast::{FACE_CHUNK, FacesPlan, PORTRAIT, Portrait, StoppedStage, face_models};
+pub use cast::{FACE_CHUNK, FacesPlan, PORTRAIT, Portrait, StoppedStage, anime_embedder, face_models};
 pub use error::{ProjectError, ProjectResult};
 pub use library::Library;
 pub use pack::{CheckShot, CutEpisode, FilterCheck, PackCut, PackSizing};

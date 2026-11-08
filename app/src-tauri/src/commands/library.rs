@@ -186,7 +186,11 @@ pub async fn settings_update(
     let lib = state.library.clone();
     let before = lib.finds_bodies();
     let handle = app.clone();
-    let (checked_before, saved, launch_changed) = blocking(move || {
+    let (checked_before, saved, launch_changed, anime_before) = blocking(move || {
+        // What the anime model comes to now (the graphics are read here once,
+        // off the UI thread), to tell a change by this save.
+        lib.refresh_anime_best()?;
+        let anime_before = lib.anime_best();
         // Only a new library folder is checked: every other change sends
         // back the one in use.
         if settings.library_root.trim() != lib.library_root()?.display().to_string() {
@@ -214,7 +218,7 @@ pub async fn settings_update(
         if let Some(discord) = handle.try_state::<crate::discord::Presence>() {
             discord.configure(&saved.discord_rpc);
         }
-        Ok((checked, saved, launch_changed))
+        Ok((checked, saved, launch_changed, anime_before))
     })
     .await?;
     if launch_changed {
@@ -223,6 +227,10 @@ pub async fn settings_update(
     // Finding people by their bodies changes every cast.
     if saved.find_bodies != before {
         work::bodies_setting_changed(&app, saved.find_bodies);
+    }
+    // Another anime model: anime projects find their characters again.
+    if app.state::<AppState>().library.anime_best() != anime_before {
+        work::anime_model_changed(&app);
     }
     // The daily catalog checks went on: one that is due runs now.
     if saved.plugin_catalog_checks != checked_before {

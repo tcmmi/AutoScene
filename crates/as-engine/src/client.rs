@@ -276,6 +276,8 @@ pub struct FacesInput {
     /// `as_analysis::anime` does — with `fast`, in the frames Fast Scan
     /// picks; `bodies`, `known` and `animated` don't apply.
     pub anime: bool,
+    /// The Best anime scan: Berkeley gives each track its identity.
+    pub best: bool,
 }
 
 enum Msg {
@@ -642,6 +644,7 @@ impl Engine {
                     animated: job.animated,
                     fast: job.fast,
                     anime: job.anime,
+                    best: job.best,
                 }))
             },
             |reply| match reply {

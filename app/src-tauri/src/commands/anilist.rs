@@ -125,11 +125,11 @@ fn looks(
     portraits: &[(CastMember, Vec<f32>)],
     cancel: &CancelToken,
 ) -> ProjectResult<Option<Looks>> {
-    // Anime faces are the looks, unless some were found by the embedder
-    // before b36 (until the anime pass finds them again): those can't be
-    // compared with b36's portraits, so the looks come from pictures then.
+    // Anime faces are the looks when CCIP b36 found them all, as it embeds
+    // the portraits: faces of the embedder before it, or of the Best scan,
+    // can't be compared with those, so the looks come from pictures then.
     if portraits.is_empty()
-        || (lib.name_source(project_id)?.faces_are_looks() && lib.project(project_id)?.old_anime_faces()?.0 == 0)
+        || (lib.name_source(project_id)?.faces_are_looks() && lib.project(project_id)?.faces_match_portraits()?)
     {
         return Ok(None);
     }

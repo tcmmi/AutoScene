@@ -51,6 +51,20 @@
         "on": "Activat",
         "off": "Dezactivat"
       },
+      "animeModel": {
+        "label": "Personaje anime",
+        "description": "Cum deosebesc proiectele anime personajele între ele. Cel mai bun pune mult mai multe dintre scenele fiecărui personaj pe personajul corect, folosind un al doilea model din cercetarea UC Berkeley: o descărcare unică de aproximativ 1,2 GB, iar analiza durează cam cu o cincime mai mult. Scanarea rapidă păstrează modelul Standard. Modelul său nu declară încă o licență.",
+        "aria": "Modelul pentru personajele anime",
+        "auto": "Automat",
+        "standard": "Standard",
+        "best": "Cel mai bun",
+        "hereBest": "Cel mai bun pe acest computer.",
+        "hereStandard": "Standard pe acest computer.",
+        "autoBest": "Automat alege Cel mai bun aici: placa ta video e făcută pentru lucru cu AI.",
+        "autoStandard": "Automat alege Standard aici: Cel mai bun are nevoie de o placă video făcută pentru lucru cu AI.",
+        "switched": "Proiectele anime își găsesc din nou personajele",
+        "switchedBody": "Numele și deciziile tale rămân. Rulează în fundal."
+      },
       "names": {
         "label": "Numele personajelor din AniList, TVmaze și Fandom",
         "description": "După ce personajele unui proiect sunt găsite, AutoScene le caută numele: pentru anime pe AniList, pentru seriale animate pe TVmaze, pentru filme animate pe wikiul Fandom al francizei (găsit prin Wikidata). Tu le atribui cu un clic. Către aceste servicii (API-uri și servere de imagini) se trimit titlul proiectului sau textul de căutare pe care îl scrii, plus cererile pentru distribuția și imaginile potrivite; ele îți văd adresa IP. Proiectele de animație descarcă o singură dată modelul pentru personaje anime, ca să compare imaginile. Dacă dezactivezi opțiunea, se șterg toate imaginile păstrate de la aceste servicii."
@@ -259,7 +273,8 @@
         "personLook": "Cum arată o persoană (haine, constituție), pentru a o regăsi fără față",
         "animeHead": "Detectarea capetelor (personaje anime)",
         "animePerson": "Detectarea persoanei întregi (anime), pentru capetele pe care modelul de capete le ratează",
-        "animeIdentity": "Identitatea personajelor (anime), vectori CCIP cu 768 de dimensiuni"
+        "animeIdentity": "Identitatea personajelor (anime), vectori CCIP cu 768 de dimensiuni",
+        "animeIdentityBest": "Identitatea personajelor (anime, scanarea Cel mai bun), 1024 de dimensiuni"
       }
     },
     "licenses": {

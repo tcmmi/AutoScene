@@ -282,7 +282,8 @@ The full face pass's models (SCRFD and ArcFace, with the people models)
 come from InsightFace and may only be used non-commercially; Fast Scan's
 (YuNet, SFace) are MIT and Apache-2.0. Anime's head and person detectors
 (deepghs) are MIT; its character embedder, CCIP, is under OpenRAIL, whose
-use restrictions apply. The shot detector, TransNetV2, is MIT-licensed. **Settings → About** shows each model's licence. `models/manifest.toml` lists
+use restrictions apply. The Best anime model (Settings → General → Anime characters)
+is Berkeley's fine-tuned DINOv2, whose released weights state no licence yet. The shot detector, TransNetV2, is MIT-licensed. **Settings → About** shows each model's licence. `models/manifest.toml` lists
 the source and licence of each model.
 
 ## Community

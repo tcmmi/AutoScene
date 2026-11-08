@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -65,10 +65,12 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ipc")>()),
   commands: {
     appInfo: vi.fn(() => Promise.resolve({ version: "1.1.0", platform: state.platform, arch: "x86_64", dataDir: "C:\\Data" })),
-    settingsGet: vi.fn(() => Promise.resolve({ ...state.settings, fastScan: defaults().footage[0].fast })),
+    settingsGet: vi.fn(() =>
+      Promise.resolve({ ...state.settings, fastScan: defaults().footage[0].fast, animeBest: animeBest(state.settings) }),
+    ),
     settingsUpdate: vi.fn((s: AppSettings) => {
       state.settings = s
-      return Promise.resolve({ ...s, fastScan: defaults().footage[0].fast })
+      return Promise.resolve({ ...s, fastScan: defaults().footage[0].fast, animeBest: animeBest(s) })
     }),
     exportPresets: vi.fn(() => Promise.resolve([])),
     scanDefaultsGet: vi.fn(() => Promise.resolve(defaults())),
@@ -87,8 +89,14 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   </QueryClientProvider>
 )
 
-const choice = (name: "Automatic" | "On" | "Off") => screen.getByRole("radio", { name })
-const chosen = () => screen.getAllByRole("radio").find((r) => r.getAttribute("aria-checked") === "true")?.textContent
+const group = (name: string) => within(screen.getByRole("radiogroup", { name }))
+const choice = (name: "Automatic" | "On" | "Off") => group("Fast Scan for new projects").getByRole("radio", { name })
+const chosen = (name = "Fast Scan for new projects") =>
+  group(name)
+    .getAllByRole("radio")
+    .find((r) => r.getAttribute("aria-checked") === "true")?.textContent
+/** What the anime model setting comes to on this computer, as the library works it out. */
+const animeBest = (s: AppSettings) => s.animeModel === "best" || ((s.animeModel ?? "auto") === "auto" && state.cls === "forAi")
 const show = () => render(<GeneralSection />, { wrapper })
 
 beforeEach(() => {
@@ -169,6 +177,39 @@ describe("Settings → General → Fast Scan", () => {
     fireEvent.click(choice("Automatic"))
     await waitFor(() => expect(commands.scanDefaultSet).toHaveBeenLastCalledWith("auto"))
     expect(await screen.findByText(/^Here, Automatic means Fast Scan/)).toBeTruthy()
+  })
+
+  it("the anime model says what Automatic picks here, and a switch says anime projects find their characters again", async () => {
+    Object.assign(state, { cls: "forAi" })
+    show()
+    expect(await screen.findByText("Automatic picks Best here: your graphics card is built for AI work.")).toBeTruthy()
+    expect(chosen("Model for anime characters")).toBe("Automatic")
+    // Standard switches the model here: anime projects are found again.
+    fireEvent.click(group("Model for anime characters").getByRole("radio", { name: "Standard" }))
+    await waitFor(() =>
+      expect(commands.settingsUpdate).toHaveBeenCalledWith(expect.objectContaining({ animeModel: "standard" })),
+    )
+    expect(await screen.findByText("Standard on this computer.")).toBeTruthy()
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Anime projects find their characters again", {
+        description: "Names and your decisions stay. It runs in the background.",
+      }),
+    )
+    // Best is what Automatic gave here before: back to it, the toast again; Automatic changes nothing.
+    vi.mocked(toast.success).mockClear()
+    fireEvent.click(group("Model for anime characters").getByRole("radio", { name: "Best" }))
+    expect(await screen.findByText("Best on this computer.")).toBeTruthy()
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1))
+    fireEvent.click(group("Model for anime characters").getByRole("radio", { name: "Automatic" }))
+    expect(await screen.findByText("Automatic picks Best here: your graphics card is built for AI work.")).toBeTruthy()
+    expect(toast.success).toHaveBeenCalledTimes(1)
+  })
+
+  it("on built-in graphics Automatic picks Standard", async () => {
+    show()
+    expect(
+      await screen.findByText("Automatic picks Standard here: Best needs graphics built for AI work."),
+    ).toBeTruthy()
   })
 
   it("a failed choice says so", async () => {

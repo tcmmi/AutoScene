@@ -75,6 +75,27 @@ export default {
         on: "On",
         off: "Off",
       },
+      animeModel: {
+        label: "Anime characters",
+        /** A line saying what Automatic means on this computer follows it. */
+        description:
+          "How anime projects tell their characters apart. Best puts far more of each character's scenes on the right character, using a second model from UC Berkeley's research: a one-time download of about 1.2 GB, and analysis takes about a fifth longer. Fast Scan keeps the Standard model. Its model states no licence yet.",
+        /** The accessible name of the three-way choice. */
+        aria: "Model for anime characters",
+        /** The three choices of the pill switch: short words. */
+        auto: "Automatic",
+        standard: "Standard",
+        best: "Best",
+        /** What the choice comes to here, under the description. */
+        hereBest: "Best on this computer.",
+        hereStandard: "Standard on this computer.",
+        /** Why Automatic chose: the graphics card. */
+        autoBest: "Automatic picks Best here: your graphics card is built for AI work.",
+        autoStandard: "Automatic picks Standard here: Best needs graphics built for AI work.",
+        /** Toast after a change that switches the model: anime projects are analysed again. */
+        switched: "Anime projects find their characters again",
+        switchedBody: "Names and your decisions stay. It runs in the background.",
+      },
       names: {
         /** Label of the switch and its accessible name. */
         label: "Character names from AniList, TVmaze and Fandom",
@@ -337,6 +358,7 @@ export default {
         animeHead: "Head detection (anime characters)",
         animePerson: "Whole-person detection (anime), to catch heads the head model misses",
         animeIdentity: "Character identity embeddings (anime), 768-d CCIP vectors",
+        animeIdentityBest: "Character identity embeddings (anime, Best scan), 1024-d",
       },
     },
     licenses: {

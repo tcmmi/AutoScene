@@ -66,6 +66,8 @@ fn series(dir: &Path) -> (Arc<Project>, CharacterId) {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     let files: Vec<String> = (1..=EPISODES)

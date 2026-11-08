@@ -52,6 +52,10 @@ const REANCHOR_MIN_COS: f32 = 0.4;
 /// 0.56 lets through the same share of pairs as 0.62 did (all track pairs
 /// of Bass X Machina, bench/anime DECISIONS row 6).
 const REANCHOR_MIN_COS_ANIME: f32 = 0.56;
+/// The same for the Best anime model (Berkeley's vectors): different
+/// characters sit far apart there, and 0.15 lets through the share of
+/// pairs 0.56 does with CCIP b36 (0.13 and 0.17 on Bass X Machina E01, E02).
+const REANCHOR_MIN_COS_BEST: f32 = 0.15;
 
 /// An anime head's face height as a share of the head's (what
 /// `face_height` reports on anime tracks). Provisional — the anime
@@ -168,6 +172,8 @@ pub struct FacesPlan {
     /// and embeds them with CCIP — with `fast`, in the frames Fast Scan
     /// picks; `animated` doesn't apply.
     pub anime: bool,
+    /// The Best anime scan: Berkeley's model gives each track its identity.
+    pub best: bool,
 }
 
 /// How 3D animation's faces are searched for (`as_analysis::FaceParams::
@@ -188,7 +194,7 @@ const FAST: &str = "+fast";
 /// frames. Faces found one way are found again (their decisions kept) when
 /// the footage moves to or from 3D animation, or Fast Scan is switched.
 fn faces_key(embedder: &str, animated: bool, fast: bool) -> String {
-    if embedder == as_models::ids::ANIME_CCIP {
+    if anime_embedder(embedder) {
         format!("{embedder}{ANIME}{}", if fast { FAST } else { "" })
     } else if animated {
         format!("{embedder}{SCALES}")
@@ -197,10 +203,11 @@ fn faces_key(embedder: &str, animated: bool, fast: bool) -> String {
     }
 }
 
-/// Are these faces anime heads: found by the anime embedder, or the one
-/// before it, which they stay until the anime pass finds them again?
-pub(crate) fn anime_embedder(embedder: &str) -> bool {
-    embedder == as_models::ids::ANIME_CCIP || embedder == as_models::ids::ANIME_CCIP_OLD
+/// Are these faces anime heads: found by an anime embedder (CCIP, or the
+/// Best scan's Berkeley), or the one before them, which they stay until the
+/// anime pass finds them again?
+pub fn anime_embedder(embedder: &str) -> bool {
+    [as_models::ids::ANIME_CCIP, as_models::ids::ANIME_BERKELEY, as_models::ids::ANIME_CCIP_OLD].contains(&embedder)
 }
 
 /// How a media's faces were looked for, for when they are on screen
@@ -237,6 +244,8 @@ pub fn face_models(embedder: &str) -> &'static [&'static str] {
         &as_models::ids::FAST_FACES
     } else if embedder == as_models::ids::ANIME_CCIP {
         &as_models::ids::ANIME
+    } else if embedder == as_models::ids::ANIME_BERKELEY {
+        &as_models::ids::ANIME_BEST
     } else {
         &as_models::ids::FACES
     }
@@ -847,9 +856,11 @@ impl Project {
 
     /// The embedder this project's faces are to be found with (its key in
     /// [`faces_key`]): Fast Scan's, the full pass's, or — anime — the
-    /// anime character embedder (CCIP).
+    /// anime character embedder: CCIP, or Berkeley's with the Best model
+    /// (not in Fast Scan, which keeps CCIP).
     pub fn face_embedder(&self) -> &'static str {
         match self.content() {
+            Ok(ContentKind::Anime) if self.anime_best() && !self.fast_scan() => as_models::ids::ANIME_BERKELEY,
             Ok(ContentKind::Anime) => as_models::ids::ANIME_CCIP,
             _ if self.fast_scan() => as_models::ids::SFACE,
             _ => as_models::ids::ARCFACE,
@@ -941,7 +952,8 @@ impl Project {
             chunk: FACE_CHUNK,
             animated,
             fast: found_fast(&key),
-            anime: model == as_models::ids::ANIME_CCIP,
+            anime: anime_embedder(model),
+            best: model == as_models::ids::ANIME_BERKELEY,
         })
     }
 
@@ -1094,6 +1106,7 @@ impl Project {
                 // The bar is the embedder's: same-character CCIP cosines sit
                 // well above same-face ArcFace ones.
                 let min_cos = match model.as_deref().map(embedder_of) {
+                    Some(m) if m == as_models::ids::ANIME_BERKELEY => REANCHOR_MIN_COS_BEST,
                     Some(m) if anime_embedder(m) => REANCHOR_MIN_COS_ANIME,
                     _ => REANCHOR_MIN_COS,
                 };
@@ -1296,6 +1309,14 @@ impl Project {
             .filter(|(_, m)| m.as_deref().map(embedder_of) == Some(as_models::ids::ANIME_CCIP_OLD))
             .count();
         Ok((old, models.iter().filter(|(_, m)| m.is_some()).count()))
+    }
+
+    /// Whether every face found so far is a CCIP one (b36), the space AniList
+    /// and Fandom portraits are embedded in: then the faces are the
+    /// characters' looks, else their pictures are embedded for them.
+    pub fn faces_match_portraits(&self) -> ProjectResult<bool> {
+        let models = self.db().ready_faces_models()?;
+        Ok(models.iter().filter_map(|(_, m)| m.as_deref()).all(|m| embedder_of(m) == as_models::ids::ANIME_CCIP))
     }
 
     /// Whether the faces found so far come from Fast Scan. Faces of the two
@@ -2454,7 +2475,13 @@ pub(crate) mod tests {
 
     #[test]
     fn faces_keys_round_trip_to_their_embedder() {
-        for embedder in [as_models::ids::SFACE, as_models::ids::ARCFACE, as_models::ids::ANIME_CCIP, MODEL] {
+        for embedder in [
+            as_models::ids::SFACE,
+            as_models::ids::ARCFACE,
+            as_models::ids::ANIME_CCIP,
+            as_models::ids::ANIME_BERKELEY,
+            MODEL,
+        ] {
             for (animated, fast) in [(false, false), (true, false), (false, true), (true, true)] {
                 let key = faces_key(embedder, animated, fast);
                 assert_eq!(embedder_of(&key), embedder, "{embedder} animated={animated} fast={fast}");

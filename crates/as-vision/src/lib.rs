@@ -2,9 +2,10 @@
 //! face detection and ArcFace identity embeddings — or, for Fast Scan,
 //! YuNet and SFace — and people: their detectors and an appearance
 //! embedding for finding them again. For anime stills: deepghs's YOLO
-//! detectors and the CCIP character embedding.
+//! detectors, the CCIP character embedding and Berkeley's.
 
 pub mod arcface;
+pub mod berkeley;
 pub mod ccip;
 pub mod golden;
 pub mod image;
@@ -17,6 +18,7 @@ pub mod yolo;
 pub mod yunet;
 
 pub use arcface::{ArcFace, Embedding};
+pub use berkeley::Berkeley;
 pub use ccip::Ccip;
 pub use person::{Fit, Norm, PersonBox, PpDet};
 pub use reid::PersonReid;

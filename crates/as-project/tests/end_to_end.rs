@@ -87,6 +87,8 @@ fn import_preview_and_export_three_episodes() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
 
@@ -272,6 +274,8 @@ fn bad_ranges_and_missing_files_are_refused() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     // A copy we can delete to simulate a disconnected drive.
@@ -345,6 +349,8 @@ fn covers_get_portraits_from_the_exact_frame() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     // A copy we can delete to simulate a disconnected drive.
@@ -444,6 +450,8 @@ fn a_moved_episode_keeps_its_analysis() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     let file = tmp.path().join("Show - 01.mp4");
@@ -590,6 +598,8 @@ fn a_clip_past_a_shortened_episode_is_left_out_of_the_file() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     // Variable frame rate: a part's length comes from its frames' own times.
@@ -683,6 +693,8 @@ fn a_merged_export_is_one_file_with_every_clip() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     // Copies, so one can go missing.
@@ -869,6 +881,8 @@ fn a_merged_export_the_hardware_refuses_is_made_in_software() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     let file = tmp.path().join("Wide - 01.mp4");
@@ -940,6 +954,8 @@ fn an_export_the_drive_cant_hold_is_refused() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     let file = tmp.path().join("Show - 01.mp4");
@@ -1018,6 +1034,8 @@ fn bars_come_off_and_clips_come_to_one_loudness() {
         nvidia_acceleration: true,
         discord_rpc: Default::default(),
         language: Default::default(),
+        anime_model: Default::default(),
+        anime_best: false,
     })
     .unwrap();
     let make = |name: &str, picture: &str, volume: &str| {

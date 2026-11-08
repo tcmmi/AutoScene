@@ -142,3 +142,19 @@ license = "OpenRAIL"
 card = "https://huggingface.co/deepghs/ccip_onnx"
 terms = "The CCIP family ships under the Open Responsible AI License (OpenRAIL): use restrictions apply (no unlawful, harmful or rights-infringing use); commercial use is allowed under its terms."
 source = "deepghs ccip_onnx ccip-caformer_b36-24 (CAFormer-B36, character-image embedding)"
+
+# Exported by tools/model-prep/berkeley.py from dino_vitl14_crop25.FINAL.pth
+# (sha256 6e6264c41a1bc50080bc63af343cdc8cdce03fb3edcb0149fb65dbdce3a3626b,
+# yosemite.ischool.berkeley.edu/filmanalytics/animation/models) and DINOv2's
+# own network definition; parity with PyTorch: cosine 1.0000000.
+[[model]]
+id = "anime-berkeley-dino-l"
+file = "anime_berkeley_dino_l.onnx"
+purpose = "Character identity embeddings (anime, Best scan), 1024-d"
+url = "https://github.com/tcmmi/AutoScene/releases/download/models-2026-11/anime_berkeley_dino_l.onnx"
+sha256 = "ec3a4cfad56b270ca8dafbe374de8ff588231f9b52c388ba2264a30a8331d3a5"
+size = 1217731943
+license = "unknown"
+card = "https://github.com/bamman-group/animated-gender-representation"
+terms = "The repository's code is MIT-licensed; the released weights state no licence (trained on iCartoonFace and WIDER Face)."
+source = "Bamman et al. 2026, DINOv2 ViT-L/14 fine-tuned for animated characters (dino_vitl14_crop25.FINAL)"

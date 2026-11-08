@@ -183,8 +183,16 @@ fn taps(origin: f32, side: f32, n: usize) -> Vec<(i64, Vec<f32>)> {
 /// when downscaling, black outside the frame.
 pub fn crop(rgb: &[u8], w: usize, h: usize, x: f32, y: f32, side: f32) -> Vec<u8> {
     assert!(w > 0 && h > 0 && side > 0.0 && rgb.len() == w * h * 3, "CCIP crop of {w}×{h}, side {side}");
-    let mut out = vec![0u8; CROP_BYTES];
-    let (xt, yt) = (taps(x, side, CROP), taps(y, side, CROP));
+    resample(rgb, w, h, [x, y, side, side], CROP)
+}
+
+/// The `n`×`n` RGB24 picture of the `rect` (x, y, width, height; source
+/// pixels, may reach outside the frame, which counts as black) of a `w`×`h`
+/// RGB24 frame, resized as [`crop`] does along each axis on its own.
+pub(crate) fn resample(rgb: &[u8], w: usize, h: usize, rect: [f32; 4], n: usize) -> Vec<u8> {
+    let [x, y, rw, rh] = rect;
+    let mut out = vec![0u8; n * n * 3];
+    let (xt, yt) = (taps(x, rw, n), taps(y, rh, n));
     // The source rows the vertical taps reach inside the frame, resampled
     // across once; taps outside the frame count as black (their weights
     // still normalise).
@@ -193,8 +201,8 @@ pub fn crop(rgb: &[u8], w: usize, h: usize, x: f32, y: f32, side: f32) -> Vec<u8
     if r0 >= r1 {
         return out;
     }
-    let mut rows = vec![0f32; (r1 - r0) as usize * CROP * 3];
-    for (sy, dst) in (r0..r1).zip(rows.as_chunks_mut::<{ CROP * 3 }>().0) {
+    let mut rows = vec![0f32; (r1 - r0) as usize * n * 3];
+    for (sy, dst) in (r0..r1).zip(rows.chunks_exact_mut(n * 3)) {
         let src = &rgb[sy as usize * w * 3..(sy as usize + 1) * w * 3];
         for ((first, ws), o) in xt.iter().zip(dst.as_chunks_mut::<3>().0) {
             for (k, &wt) in ws.iter().enumerate() {
@@ -208,13 +216,13 @@ pub fn crop(rgb: &[u8], w: usize, h: usize, x: f32, y: f32, side: f32) -> Vec<u8
             }
         }
     }
-    for ((first, ws), line) in yt.iter().zip(out.as_chunks_mut::<{ CROP * 3 }>().0) {
+    for ((first, ws), line) in yt.iter().zip(out.chunks_exact_mut(n * 3)) {
         for (u, o) in line.as_chunks_mut::<3>().0.iter_mut().enumerate() {
             let mut acc = [0f32; 3];
             for (k, &wt) in ws.iter().enumerate() {
                 let sy = first + k as i64;
                 if sy >= r0 && sy < r1 {
-                    let p = ((sy - r0) as usize * CROP + u) * 3;
+                    let p = ((sy - r0) as usize * n + u) * 3;
                     acc[0] += wt * rows[p];
                     acc[1] += wt * rows[p + 1];
                     acc[2] += wt * rows[p + 2];

@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { FolderOpen } from "@/components/icons"
 import { toast } from "sonner"
 import { useTranslation } from "react-i18next"
-import type { AppSettings, ScanChoice, UiLanguage } from "@/bindings"
+import type { AnimeModel, AppSettings, ScanChoice, UiLanguage } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { Select } from "@/components/ui/select"
@@ -51,6 +51,25 @@ async function chooseScan(choice: ScanChoice) {
     void queryClient.invalidateQueries({ queryKey: qk.settings })
   } catch (e) {
     toast.error(t("settings:saveFailed"), { description: errorMessage(e) })
+  }
+}
+
+/** The three anime models; the word is the catalog's (settings:general.characters.animeModel.<word>). */
+const ANIME_CHOICES = [
+  { value: "auto", word: "auto" },
+  { value: "standard", word: "standard" },
+  { value: "best", word: "best" },
+] as const satisfies { value: AnimeModel; word: string }[]
+
+/** Choose the anime model; when that changes what it comes to here, say anime projects find their characters again. */
+async function chooseAnime(settings: AppSettings, choice: AnimeModel) {
+  const before = settings.animeBest ?? false
+  await save({ ...settings, animeModel: choice })
+  const after = queryClient.getQueryData<AppSettings>(qk.settings)?.animeBest ?? before
+  if (after !== before) {
+    toast.success(t("settings:general.characters.animeModel.switched"), {
+      description: t("settings:general.characters.animeModel.switchedBody"),
+    })
   }
 }
 
@@ -168,6 +187,29 @@ export function GeneralSection() {
             disabled={!scan}
             onChange={(choice) => choice && void chooseScan(choice)}
             options={SCAN_CHOICES.map((c) => ({ value: c.value, label: t(`general.characters.fastScan.${c.word}`) }))}
+          />
+        </SettingRow>
+        <SettingRow
+          label={t("general.characters.animeModel.label")}
+          description={
+            <span className="block text-pretty">
+              {t("general.characters.animeModel.description")}
+              {settings && (
+                <span aria-live="polite" className="mt-2 block text-fg-1">
+                  {(settings.animeModel ?? "auto") === "auto"
+                    ? t(`general.characters.animeModel.${settings.animeBest ? "autoBest" : "autoStandard"}`)
+                    : t(`general.characters.animeModel.${settings.animeBest ? "hereBest" : "hereStandard"}`)}
+                </span>
+              )}
+            </span>
+          }
+        >
+          <Segmented<AnimeModel | "">
+            aria-label={t("general.characters.animeModel.aria")}
+            value={settings?.animeModel ?? (settings ? "auto" : "")}
+            disabled={!settings}
+            onChange={(choice) => choice && settings && void chooseAnime(settings, choice)}
+            options={ANIME_CHOICES.map((c) => ({ value: c.value, label: t(`general.characters.animeModel.${c.word}`) }))}
           />
         </SettingRow>
         <SettingRow

@@ -269,6 +269,8 @@ pub(crate) mod tests {
             nvidia_acceleration: true,
             discord_rpc: Default::default(),
             language: Default::default(),
+            anime_model: Default::default(),
+            anime_best: false,
         })
         .unwrap();
         let files: Vec<String> = names

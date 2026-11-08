@@ -149,6 +149,29 @@ pub struct AppSettings {
     /// The language AutoScene speaks: Automatic until the person chooses one.
     #[serde(default)]
     pub language: UiLanguage,
+    /// How anime projects (in the full scan) tell their characters apart.
+    /// Changing what it comes to here makes anime projects find their
+    /// characters again (the person's decisions kept).
+    #[serde(default)]
+    pub anime_model: AnimeModel,
+    /// What [`AppSettings::anime_model`] comes to on this computer: the Best
+    /// model or not. **Read only**: `settings_update` ignores it.
+    #[serde(default)]
+    pub anime_best: bool,
+}
+
+/// How anime projects tell their characters apart (Settings → General).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum AnimeModel {
+    /// Automatic: Best where the graphics are built for AI work
+    /// ([`GraphicsClass::ForAi`]), Standard elsewhere.
+    #[default]
+    Auto,
+    /// CCIP alone: quicker, and the characters of a show more often split.
+    Standard,
+    /// CCIP follows the heads, and Berkeley's model says whose they are.
+    Best,
 }
 
 fn yes() -> bool {

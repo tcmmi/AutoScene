@@ -513,6 +513,9 @@
     "size": "Its picture is {{width}}×{{height}} instead of {{wasWidth}}×{{wasHeight}}.",
     "start": "It starts at another moment."
   },
+  "rescan": {
+    "notWithBest": "Rescan doesn't work with the Best anime model yet. Choose Standard in Settings → General → Anime characters to use it."
+  },
   "system": {
     "clipboardFailed": "Couldn't copy to the clipboard.",
     "gpuCheckFailed": "Couldn't check the graphics cards.",

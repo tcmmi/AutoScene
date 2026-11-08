@@ -243,8 +243,13 @@ function uiLocale() {
 }
 /** A graphics card chosen while an analysis runs applies from the next one (`?mockHardware=busy`). */
 let gpuPending = false
-/** As the library answers it, `fastScan` says what live action starts with here. */
-const followFastScan = () => void (settings = { ...settings, fastScan: startsFast("live") })
+/** As the library answers it, `fastScan` says what live action starts with here, and `animeBest` what the anime model comes to. */
+const followFastScan = () =>
+  void (settings = {
+    ...settings,
+    fastScan: startsFast("live"),
+    animeBest: settings.animeModel === "best" || ((settings.animeModel ?? "auto") === "auto" && machine().class === "forAi"),
+  })
 followFastScan()
 
 /** Whether plugins AutoScene hasn't reviewed may run (changed only by `plugins_allow_unreviewed`). */

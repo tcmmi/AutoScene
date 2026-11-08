@@ -144,7 +144,11 @@ fn main() {
     std::fs::create_dir_all(&sprites).unwrap();
     let (mut sprite_count, mut sprite_bytes) = (0usize, 0usize);
     let src = Source { path: &path, info: &info, index: &index };
-    let models = Anime { heads: &mut heads, persons: persons.as_mut(), ccip: &mut ccip };
+    // `BERKELEY=<model.onnx>`: the Best scan (each track's identity from its
+    // clearest heads, embedded with Berkeley's model).
+    let mut berkeley =
+        std::env::var("BERKELEY").ok().map(|m| as_vision::Berkeley::load(&rt, Path::new(&m), 8).unwrap());
+    let models = Anime { heads: &mut heads, persons: persons.as_mut(), ccip: &mut ccip, berkeley: berkeley.as_mut() };
     let cancel = CancelToken::new();
     let progress = |p| eprint!("\r{:5.1}% {:5.0}s", 100.0 * p, t0.elapsed().as_secs_f64());
     let on_chunk = |c: as_analysis::FaceChunk| {

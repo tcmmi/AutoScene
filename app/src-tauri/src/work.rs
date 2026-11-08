@@ -10,8 +10,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
 use as_api::{
-    AnalysisStage, CastEdit, ExportSummary, JobInfo, JobKind, JobState, MediaItem, MediaStatus, ProxyState,
-    RescanRequest, StageState,
+    AnalysisStage, CastEdit, ContentKind, ExportSummary, JobInfo, JobKind, JobState, MediaItem, MediaStatus,
+    ProxyState, RescanRequest, StageState,
 };
 use as_core::{CancelToken, ExportId, MediaId, Msg, ProjectId, ToMsg, msg};
 use as_engine::protocol::{Blob, RescanFaceIn};
@@ -641,7 +641,7 @@ fn run_faces(
     // they can't be downloaded now, the people pass finds them later.
     // Neither the fast pass nor the anime pass look for anyone by their body.
     let mut people = model != as_models::ids::SFACE
-        && model != as_models::ids::ANIME_CCIP
+        && !as_project::anime_embedder(model)
         && project.finds_bodies()
         && match install_models(state, &as_models::ids::BODIES, ctx) {
             Ok(()) => true,
@@ -669,6 +669,7 @@ fn run_faces(
             animated: plan.animated,
             fast: plan.fast,
             anime: plan.anime,
+            best: plan.best,
         };
         let mut stage = finding.clone();
         let found = state.engine.faces(job, &ctx.cancel, |e| match e {
@@ -751,6 +752,7 @@ fn run_bodies(
             animated: false,
             fast: false,
             anime: false,
+            best: false,
         };
         let mut stage = finding.clone();
         state
@@ -776,6 +778,26 @@ fn run_bodies(
     log::info!("people found");
     cast_changed(app, project);
     Ok(())
+}
+
+/// The anime model setting came to another model here: every anime
+/// project's characters are found again with it (their decisions kept).
+pub fn anime_model_changed(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let Ok(projects) = state.library.projects() else { return };
+        for summary in projects.into_iter().filter(|p| p.content == ContentKind::Anime) {
+            match state.library.project(summary.id) {
+                Ok(project) => {
+                    // A pass under way keeps the model it began with: it starts again.
+                    restart_outdated_passes(&app, &project);
+                    queue_outdated_faces(&app, &project);
+                }
+                Err(e) => log::warn!("project '{}' unavailable: {}", summary.title, e.detail()),
+            }
+        }
+    });
 }
 
 /// The setting to find people by their bodies changed: every project

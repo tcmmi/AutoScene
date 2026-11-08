@@ -96,6 +96,11 @@ pub struct FacesJob {
     /// Fast Scan picks; `bodies`, `known` and `animated` don't apply.
     #[serde(default)]
     pub anime: bool,
+    /// The Best anime scan (not with `fast`): each track's identity is
+    /// Berkeley's embedding of its clearest heads (`as_analysis::anime::
+    /// Anime::berkeley`).
+    #[serde(default)]
+    pub best: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -454,11 +459,12 @@ pub(crate) mod tests {
             animated: false,
             fast: false,
             anime: true,
+            best: true,
         };
         let line = serde_json::to_string(&Request::Faces(Box::new(job))).unwrap();
-        assert!(line.contains(r#""anime":true"#), "{line}");
+        assert!(line.contains(r#""anime":true"#) && line.contains(r#""best":true"#), "{line}");
         match serde_json::from_str::<Request>(&line).unwrap() {
-            Request::Faces(j) => assert!(j.anime && j.id == 4),
+            Request::Faces(j) => assert!(j.anime && j.best && j.id == 4),
             other => panic!("{other:?}"),
         }
     }

@@ -298,11 +298,23 @@ impl Project {
         // Faces of the anime embedder before b36: the pass reads with b36,
         // whose vectors can't be compared with theirs. The next face pass
         // finds them again.
-        if embedder_of(model) == as_models::ids::ANIME_CCIP_OLD {
-            return Err(ProjectError::NotReady(msg!(
-                "analysis.facesNotFound",
-                "The faces of this media aren't found yet."
-            )));
+        // Faces of the anime embedder before b36: the next face pass finds
+        // them again. The Best anime scan's: Rescan reads with CCIP alone,
+        // which can't be compared with them.
+        match embedder_of(model) {
+            m if m == as_models::ids::ANIME_CCIP_OLD => {
+                return Err(ProjectError::NotReady(msg!(
+                    "analysis.facesNotFound",
+                    "The faces of this media aren't found yet."
+                )));
+            }
+            m if m == as_models::ids::ANIME_BERKELEY => {
+                return Err(ProjectError::NotReady(msg!(
+                    "rescan.notWithBest",
+                    "Rescan doesn't work with the Best anime model yet. Choose Standard in Settings → General → Anime characters to use it."
+                )));
+            }
+            _ => {}
         }
         let (fast, anime) =
             (embedder_of(model) == as_models::ids::SFACE, embedder_of(model) == as_models::ids::ANIME_CCIP);

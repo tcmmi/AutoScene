@@ -8966,5 +8966,61 @@
   "backend:job.stage.comparingCharacters": {
     "state": "draft",
     "en": "7eb12cd9"
+  },
+  "settings:general.characters.animeModel.label": {
+    "state": "draft",
+    "en": "d73d69c1"
+  },
+  "settings:general.characters.animeModel.description": {
+    "state": "draft",
+    "en": "c3dd6f3a"
+  },
+  "settings:general.characters.animeModel.aria": {
+    "state": "draft",
+    "en": "9349f58b"
+  },
+  "settings:general.characters.animeModel.auto": {
+    "state": "draft",
+    "en": "616a6784"
+  },
+  "settings:general.characters.animeModel.standard": {
+    "state": "draft",
+    "en": "0016ab68"
+  },
+  "settings:general.characters.animeModel.best": {
+    "state": "draft",
+    "en": "035f1f67"
+  },
+  "settings:general.characters.animeModel.hereBest": {
+    "state": "draft",
+    "en": "afbd13c1"
+  },
+  "settings:general.characters.animeModel.hereStandard": {
+    "state": "draft",
+    "en": "1c924226"
+  },
+  "settings:general.characters.animeModel.autoBest": {
+    "state": "draft",
+    "en": "06b9f86c"
+  },
+  "settings:general.characters.animeModel.autoStandard": {
+    "state": "draft",
+    "en": "edaa8157"
+  },
+  "settings:general.characters.animeModel.switched": {
+    "state": "draft",
+    "en": "eddb7dba"
+  },
+  "settings:general.characters.animeModel.switchedBody": {
+    "state": "draft",
+    "en": "3bcaec34"
+  },
+  "backend:rescan.notWithBest": {
+    "state": "draft",
+    "en": "3bc0d80b"
+  },
+  "settings:about.models.purpose.animeIdentityBest": {
+    "state": "draft",
+    "en": "8116eb4c"
   }
 }

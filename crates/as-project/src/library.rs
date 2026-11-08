@@ -4,12 +4,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use as_api::{
-    AppSettings, ContentKind, ImportCandidate, NewProject, ProjectKind, ProjectSummary, ScanChoice, ScanDefaults,
-    Shortcuts, UiLanguage, now_ms,
+    AnimeModel, AppSettings, ContentKind, ImportCandidate, NewProject, ProjectKind, ProjectSummary, ScanChoice,
+    ScanDefaults, Shortcuts, UiLanguage, now_ms,
 };
 use as_core::{AppPaths, CancelToken, MediaId, Msg, ProjectId, ToMsg, msg};
 use as_db::{LibraryDb, NewMedia, ProjectDb};
-use as_infer::computer::{self, Choice, Computer, Machine};
+use as_infer::computer::{self, Choice, Class, Computer, Machine};
 use parking_lot::Mutex;
 
 use crate::anilist::{AniList, Names, PictureKey};
@@ -38,6 +38,8 @@ const KEY_LEGACY_FAST_SCAN: &str = "fast_scan";
 const KEY_SCAN_NOTICE: &str = "scan_notice";
 const NOTICE_DONE: &str = "done";
 const KEY_ANILIST: &str = "anilist";
+/// [`AnimeModel`]: absent is Automatic.
+const KEY_ANIME_MODEL: &str = "anime_model";
 /// The keyboard shortcuts the person changed, as JSON.
 const KEY_SHORTCUTS: &str = "shortcuts";
 const KEY_ALLOW_UNREVIEWED: &str = "allow_unreviewed_plugins";
@@ -89,6 +91,9 @@ pub struct Library {
     gpu: Mutex<String>,
     /// Whether NVIDIA's engine is switched on ([`KEY_NVIDIA_ACCELERATION`]).
     nvidia_acceleration: AtomicBool,
+    /// What the anime model setting ([`KEY_ANIME_MODEL`]) comes to on this
+    /// computer, shared with every open project ([`Library::refresh_anime_best`]).
+    anime_best: Arc<AtomicBool>,
 }
 
 impl Library {
@@ -116,7 +121,7 @@ impl Library {
         let anilist = AniList::new(paths.anilist());
         let tvmaze = TvMaze::new(paths.tvmaze());
         let fandom = Fandom::new(paths.fandom());
-        Ok(Self {
+        let lib = Self {
             db,
             open: Mutex::default(),
             opening: Mutex::default(),
@@ -131,7 +136,9 @@ impl Library {
             probe,
             gpu,
             nvidia_acceleration,
-        })
+            anime_best: Arc::default(),
+        };
+        Ok(lib)
     }
 
     /// This library asking `anilist` instead (recorded answers).
@@ -213,6 +220,8 @@ impl Library {
             nvidia_acceleration: self.nvidia_acceleration(),
             discord_rpc: self.discord_rpc()?,
             language: self.ui_language()?,
+            anime_model: self.anime_model()?,
+            anime_best: self.resolve_anime_best()?,
         })
     }
 
@@ -283,6 +292,39 @@ impl Library {
     /// follows the card the analysis uses.
     pub fn computer(&self) -> Computer {
         computer::choose(self.machine(), &Choice::from_setting(&self.gpu()))
+    }
+
+    /// How anime projects tell their characters apart: Automatic unless the
+    /// person chose (a value a newer app stored reads as Automatic).
+    pub fn anime_model(&self) -> ProjectResult<AnimeModel> {
+        Ok(match self.db.setting(KEY_ANIME_MODEL)?.as_deref() {
+            Some("standard") => AnimeModel::Standard,
+            Some("best") => AnimeModel::Best,
+            _ => AnimeModel::Auto,
+        })
+    }
+
+    /// Work out what the anime model setting comes to on this computer (the
+    /// graphics the analysis runs on decide Automatic) and share it with the
+    /// open projects. Returns whether it changed: anime projects then find
+    /// their characters again (`work::queue_outdated_faces`).
+    pub fn refresh_anime_best(&self) -> ProjectResult<bool> {
+        let best = self.resolve_anime_best()?;
+        Ok(self.anime_best.swap(best, Ordering::Relaxed) != best)
+    }
+
+    /// What the anime model setting comes to on this computer.
+    fn resolve_anime_best(&self) -> ProjectResult<bool> {
+        Ok(match self.anime_model()? {
+            AnimeModel::Best => true,
+            AnimeModel::Standard => false,
+            AnimeModel::Auto => self.computer().class == Class::ForAi,
+        })
+    }
+
+    /// Whether anime projects are found with the Best model now.
+    pub fn anime_best(&self) -> bool {
+        self.anime_best.load(Ordering::Relaxed)
     }
 
     /// What the person chose for new projects: Automatic unless they chose
@@ -377,6 +419,14 @@ impl Library {
             }
         }
         self.set_nvidia_acceleration(s.nvidia_acceleration)?;
+        let anime = match s.anime_model {
+            AnimeModel::Auto => None,
+            AnimeModel::Standard => Some("standard"),
+            AnimeModel::Best => Some("best"),
+        };
+        self.db.write_settings(&[(KEY_ANIME_MODEL, anime)])?;
+        // The graphics or the choice may have changed what it comes to.
+        self.refresh_anime_best()?;
         self.db.set_setting(KEY_ANILIST, if s.anilist { "1" } else { "0" })?;
         self.anilist_on.store(s.anilist, Ordering::Relaxed);
         let discord =
@@ -486,6 +536,8 @@ impl Library {
             fast_scan: fast,
         };
         let project = Arc::new(Project::create(&summary, self.find_bodies.clone())?);
+        self.refresh_anime_best()?;
+        project.share_anime_best(self.anime_best.clone());
         self.db.insert_project(&summary)?;
         self.open.lock().insert(summary.id, project.clone());
         let added = self.add_found(&project, found)?;
@@ -520,6 +572,8 @@ impl Library {
             )));
         }
         let project = Arc::new(Project::open(id, dir, self.find_bodies.clone())?);
+        self.refresh_anime_best()?;
+        project.share_anime_best(self.anime_best.clone());
         let mut open = self.open.lock();
         // Removed from the library while it opened: not kept open.
         if self.db.project(id)?.is_none() {
@@ -850,6 +904,8 @@ mod tests {
             nvidia_acceleration: true,
             discord_rpc: Default::default(),
             language: Default::default(),
+            anime_model: Default::default(),
+            anime_best: false,
         })
         .unwrap();
         assert_eq!(lib.audio_language().unwrap(), "deu", "stored as an ISO 639-2 code");
@@ -1303,6 +1359,41 @@ mod tests {
         let stale = AppSettings { fast_scan: true, ..lib.settings().unwrap() };
         assert!(!lib.update_settings(&stale).unwrap().fast_scan);
         assert_eq!(lib.scan_defaults().unwrap().choice, ScanChoice::Full);
+    }
+
+    #[test]
+    fn the_anime_model_follows_the_graphics_on_automatic_and_the_choice_otherwise() {
+        let embedder = |lib: &Library, id| lib.project(id).unwrap().face_embedder();
+        // An RTX card is built for AI work: Automatic is Best there.
+        let (dir, lib) = lib_on(rtx);
+        let (anime, ..) = lib.create_project(&new_project(ContentKind::Anime)).unwrap();
+        let (live, ..) = lib.create_project(&new_project(ContentKind::Live)).unwrap();
+        let s = lib.settings().unwrap();
+        assert!(s.anime_model == AnimeModel::Auto && s.anime_best && lib.anime_best());
+        assert_eq!(embedder(&lib, anime.id), as_models::ids::ANIME_BERKELEY);
+        assert_eq!(embedder(&lib, live.id), as_models::ids::ARCFACE, "live action keeps its own");
+        // Fast Scan keeps CCIP, Best or not.
+        lib.set_project_fast_scan(anime.id, true).unwrap();
+        assert_eq!(embedder(&lib, anime.id), as_models::ids::ANIME_CCIP);
+        lib.set_project_fast_scan(anime.id, false).unwrap();
+        // Standard, chosen: CCIP at once in the open project, and kept.
+        let saved = lib.update_settings(&AppSettings { anime_model: AnimeModel::Standard, ..s.clone() }).unwrap();
+        assert!(!saved.anime_best && !lib.anime_best());
+        assert_eq!(embedder(&lib, anime.id), as_models::ids::ANIME_CCIP);
+        drop(lib);
+        let lib = Library::open_with(&AppPaths::at(dir.path().join("data")), rtx).unwrap();
+        assert_eq!(lib.settings().unwrap().anime_model, AnimeModel::Standard);
+        assert_eq!(embedder(&lib, anime.id), as_models::ids::ANIME_CCIP);
+        // Built-in graphics: Automatic is Standard, Best only when chosen.
+        let (_dir, lib) = lib_on(built_in_graphics);
+        let (anime, ..) = lib.create_project(&new_project(ContentKind::Anime)).unwrap();
+        // (Automatic gives anime Fast Scan on these graphics; the full scan here.)
+        lib.set_project_fast_scan(anime.id, false).unwrap();
+        assert!(!lib.settings().unwrap().anime_best);
+        assert_eq!(embedder(&lib, anime.id), as_models::ids::ANIME_CCIP);
+        let s = lib.settings().unwrap();
+        assert!(lib.update_settings(&AppSettings { anime_model: AnimeModel::Best, ..s }).unwrap().anime_best);
+        assert_eq!(embedder(&lib, anime.id), as_models::ids::ANIME_BERKELEY);
     }
 
     #[test]
@@ -1800,6 +1891,8 @@ mod tests {
             nvidia_acceleration: true,
             discord_rpc: Default::default(),
             language: Default::default(),
+            anime_model: Default::default(),
+            anime_best: false,
         };
         assert!(matches!(lib.update_settings(&bad), Err(ProjectError::Invalid(_))));
         assert_eq!(lib.settings().unwrap().export_preset_id, "h264-edit");

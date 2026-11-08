@@ -37,10 +37,12 @@
 //! so `bodies` of a chunk is always empty. Errors are `AnalysisError` like
 //! the face pass's (inference failures ride in its `Infer` variant).
 
+use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TryRecvError};
 
 use as_core::{CancelToken, FrameIdx, FrameRange};
 use as_media::{MediaInfo, Source, Tools};
+use as_vision::berkeley::{self, Berkeley};
 use as_vision::ccip::{self, Ccip};
 use as_vision::image;
 use as_vision::scrfd::iou;
@@ -155,7 +157,22 @@ pub struct Anime<'a> {
     pub heads: &'a mut Yolo,
     pub persons: Option<&'a mut Yolo>,
     pub ccip: &'a mut Ccip,
+    /// The Best scan: each track's identity is Berkeley's embedding of its
+    /// clearest heads ([`BEST_HEADS`]) instead of CCIP's, which still links
+    /// the heads into tracks and says how clear each one is.
+    pub berkeley: Option<&'a mut Berkeley>,
 }
+
+/// Heads of a track the Best scan embeds with Berkeley: its clearest ones
+/// (quality, then size). Four, as the bench measured it (bench/anime
+/// DECISIONS row 7); a track's look changes little within a shot.
+pub const BEST_HEADS: usize = 4;
+
+/// Berkeley crops a shot keeps at most until it is tracked (150 KB each:
+/// about 150 MB). Past it the least clear heads let theirs go; only a shot
+/// far longer than a scene reaches it (an episode whose cuts weren't found),
+/// and a track all of whose heads went then matches no one.
+const MAX_WIDE_PER_SHOT: usize = 1024;
 
 /// The size a media's samples are decoded at — the frame size the detectors
 /// are loaded for (their `frame`; each model's `input` is the variant's own).
@@ -274,8 +291,18 @@ fn one_head(a: &[f32; 4], b: &[f32; 4], share: f32) -> bool {
 struct Found {
     det: FaceDet,
     crop: Vec<u8>,
+    /// Berkeley's crop of the head (the Best scan only), kept until its
+    /// shot's tracks are made.
+    wide: Vec<u8>,
     thumb: Vec<u8>,
     embedding: Option<Vec<f32>>,
+}
+
+/// Berkeley crops of a shot's heads, by frame and box.
+type Wide = HashMap<(FrameIdx, [u32; 4]), Vec<u8>>;
+
+fn wide_key(d: &FaceDet) -> (FrameIdx, [u32; 4]) {
+    (d.frame, d.bbox.map(f32::to_bits))
 }
 
 /// Samples of one shot.
@@ -372,12 +399,18 @@ fn embed(shots: &mut [&mut ShotWork], ccip: &mut Ccip, params: &Params) -> Resul
 }
 
 /// Track the heads of an embedded shot.
-fn track(shot: &mut ShotWork, tracker: &TrackerParams) -> Vec<FaceTrack> {
+fn track(shot: &mut ShotWork, tracker: &TrackerParams, wide: &mut Wide) -> Vec<FaceTrack> {
     let samples = std::mem::take(&mut shot.samples)
         .into_iter()
         .map(|(f, found)| {
             let obs = found
                 .into_iter()
+                .map(|mut x| {
+                    if !x.wide.is_empty() {
+                        wide.insert(wide_key(&x.det), std::mem::take(&mut x.wide));
+                    }
+                    x
+                })
                 .map(|x| Observation {
                     det: x.det,
                     embedding: x.embedding.expect("embedded before tracking"),
@@ -390,12 +423,62 @@ fn track(shot: &mut ShotWork, tracker: &TrackerParams) -> Vec<FaceTrack> {
     track_shot(shot.range, samples, tracker)
 }
 
+/// Keep a shot's [`MAX_WIDE_PER_SHOT`] clearest Berkeley crops (heads
+/// already embedded, so their quality is known).
+fn cap_wide(shot: &mut ShotWork) {
+    let mut kept: Vec<&mut Found> = shot
+        .samples
+        .iter_mut()
+        .flat_map(|(_, f)| f.iter_mut())
+        .filter(|f| !f.wide.is_empty() && f.embedding.is_some())
+        .collect();
+    if kept.len() <= MAX_WIDE_PER_SHOT {
+        return;
+    }
+    kept.sort_by(|a, b| b.det.quality.total_cmp(&a.det.quality));
+    for f in kept.into_iter().skip(MAX_WIDE_PER_SHOT) {
+        f.wide = Vec::new();
+    }
+}
+
+/// The Best scan's identity of each track: Berkeley's embeddings of its
+/// [`BEST_HEADS`] clearest heads, weighted by their quality. A track none of
+/// whose heads has a crop gets no direction (it matches no one).
+fn identify(tracks: &mut [FaceTrack], wide: &Wide, berkeley: &mut Berkeley) -> Result<(), AnalysisError> {
+    let mut crops: Vec<&[u8]> = Vec::new();
+    let mut owner: Vec<(usize, f32)> = Vec::new();
+    for (i, t) in tracks.iter().enumerate() {
+        let mut dets: Vec<&FaceDet> = t.dets.iter().collect();
+        let height = |d: &FaceDet| d.bbox[3] - d.bbox[1];
+        dets.sort_by(|a, b| b.quality.total_cmp(&a.quality).then(height(b).total_cmp(&height(a))));
+        for d in dets.into_iter().take(BEST_HEADS) {
+            if let Some(c) = wide.get(&wide_key(d)) {
+                crops.push(c);
+                owner.push((i, d.quality.max(1e-3)));
+            }
+        }
+    }
+    let embs = if crops.is_empty() { Vec::new() } else { berkeley.embed(&crops)? };
+    let mut sums = vec![vec![0f32; berkeley::DIM]; tracks.len()];
+    for ((i, q), e) in owner.iter().zip(embs) {
+        for (s, v) in sums[*i].iter_mut().zip(&e.v) {
+            *s += q * v;
+        }
+    }
+    for (t, s) in tracks.iter_mut().zip(sums) {
+        let len = s.iter().map(|x| x * x).sum::<f32>().sqrt();
+        t.embedding = if len > 0.0 { s.iter().map(|x| x / len).collect() } else { s };
+    }
+    Ok(())
+}
+
 /// One anime pass in progress: samples in shots go to the detector threads
 /// in batches and come back — in frame order — into shots and chunks.
 struct Pass<'a, C> {
     params: &'a Params,
     tracker: TrackerParams,
     ccip: &'a mut Ccip,
+    berkeley: Option<&'a mut Berkeley>,
     /// Shots from the resume point on.
     shots: &'a [FrameRange],
     /// Decoded frame size.
@@ -540,6 +623,7 @@ impl<C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, C> {
                     quality: 0.0,
                 },
                 crop: head_crop(rgb, w, h, d.bbox, p.crop_scale),
+                wide: if self.berkeley.is_some() { berkeley::crop(rgb, w, h, d.bbox) } else { Vec::new() },
                 thumb: image::jpeg(&thumb, p.thumb_size, p.thumb_size, 85),
                 embedding: None,
             });
@@ -551,7 +635,7 @@ impl<C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, C> {
         // Embed in full batches as heads pile up; track finished shots.
         if self.pending_crops >= self.ccip.batch() * 4 {
             self.embed_heads(true)?;
-            self.finish_shots();
+            self.finish_shots()?;
         }
         Ok(())
     }
@@ -562,26 +646,38 @@ impl<C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, C> {
         let mut refs: Vec<&mut ShotWork> =
             self.done_shots.iter_mut().chain(self.current.iter_mut().filter(|_| current)).collect();
         embed(&mut refs, self.ccip, self.params)?;
+        if self.berkeley.is_some() {
+            for shot in refs.iter_mut() {
+                cap_wide(shot);
+            }
+        }
         self.pending_crops = 0;
         Ok(())
     }
 
     /// Track the heads of the finished (embedded) shots and finish their
-    /// sprites.
-    fn finish_shots(&mut self) {
+    /// sprites; the Best scan gives their tracks Berkeley's identity.
+    fn finish_shots(&mut self) -> Result<(), AnalysisError> {
+        let mut wide = Wide::new();
+        let mut tracks = Vec::new();
         for mut s in std::mem::take(&mut self.done_shots) {
             if let Some(sprite) = s.sprite.take() {
                 self.sprites_in_chunk.push(sprite.finish(self.params.sprite_quality));
             }
-            self.tracks_in_chunk.extend(track(&mut s, &self.tracker));
+            tracks.extend(track(&mut s, &self.tracker, &mut wide));
         }
+        if let Some(b) = self.berkeley.as_deref_mut() {
+            identify(&mut tracks, &wide, b)?;
+        }
+        self.tracks_in_chunk.extend(tracks);
+        Ok(())
     }
 
     /// Hand out the chunk that ends at `end` (a shot start, or the end):
     /// every shot before it is finished.
     fn close_chunk(&mut self, end: FrameIdx) -> Result<(), AnalysisError> {
         self.embed_heads(false)?;
-        self.finish_shots();
+        self.finish_shots()?;
         (self.on_chunk)(FaceChunk {
             start: self.chunk_start,
             end,
@@ -659,7 +755,7 @@ pub fn face_tracks(
     let shots = &shots[shots.partition_point(|s| s.end <= resume)..];
     debug_assert!(shots.first().is_none_or(|s| s.start >= resume), "resume points are shot starts");
     let batch = anime.heads.batch();
-    let Anime { heads, persons, ccip } = anime;
+    let Anime { heads, persons, ccip, berkeley } = anime;
     std::thread::scope(|scope| {
         // One batch waits while a detector works on the next. Heads first,
         // then people, then back here.
@@ -711,6 +807,7 @@ pub fn face_tracks(
             params,
             tracker,
             ccip,
+            berkeley,
             shots,
             size,
             batch,

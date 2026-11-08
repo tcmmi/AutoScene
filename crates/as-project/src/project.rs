@@ -144,6 +144,11 @@ pub struct Project {
     find_bodies: Arc<AtomicBool>,
     /// Its faces are found with Fast Scan (meta [`SCAN`]).
     fast_scan: AtomicBool,
+    /// The library's setting, as it comes out on this computer: anime is
+    /// found with the Best model ([`Project::face_embedder`]). Shared once
+    /// opened (`Library::project`); a project nobody shared it with keeps
+    /// the Standard model.
+    anime_best: std::sync::OnceLock<Arc<AtomicBool>>,
 }
 
 /// A media whose frames are being read for its index: its file, and how far
@@ -202,6 +207,7 @@ impl Project {
             portraits: Mutex::default(),
             find_bodies,
             fast_scan: AtomicBool::new(s.fast_scan),
+            anime_best: std::sync::OnceLock::new(),
         };
         p.ensure_dirs()?;
         Ok(p)
@@ -223,6 +229,7 @@ impl Project {
             portraits: Mutex::default(),
             find_bodies,
             fast_scan,
+            anime_best: std::sync::OnceLock::new(),
         };
         p.ensure_dirs()?;
         // Exports can't resume mid-way (M1): close them out. No export runs
@@ -276,6 +283,17 @@ impl Project {
         self.find_bodies.load(Ordering::Relaxed)
             && !self.fast_scan()
             && !matches!(self.content(), Ok(ContentKind::Anime))
+    }
+
+    /// Follow the library's anime model setting (see [`Project::anime_best`]).
+    pub(crate) fn share_anime_best(&self, best: Arc<AtomicBool>) {
+        let _ = self.anime_best.set(best);
+    }
+
+    /// Whether anime is found with the Best model here (not with Fast Scan,
+    /// which keeps CCIP alone).
+    pub fn anime_best(&self) -> bool {
+        self.anime_best.get().is_some_and(|b| b.load(Ordering::Relaxed))
     }
 
     /// Whether this project's faces are found with Fast Scan (the way the

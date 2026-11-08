@@ -27,7 +27,7 @@ use as_infer::{Device, InferError, Runtime};
 use as_media::frames::Decoder;
 use as_media::{Source, Tools, frames};
 use as_models::{ModelStore, ids};
-use as_vision::{ArcFace, Ccip, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo, YuNet};
+use as_vision::{ArcFace, Berkeley, Ccip, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo, YuNet};
 use parking_lot::Mutex;
 
 use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, RescanJob, ShotsJob, Sprite};
@@ -44,6 +44,9 @@ const FAST_EMBED_BATCH: usize = 16;
 /// Crops per CCIP call (a 384² crop is ~12× a face's): one session embeds
 /// heads and implied heads alike.
 pub const CCIP_BATCH: usize = 4;
+/// Crops per Berkeley inference: the Best scan embeds a few heads per
+/// track, a shot's worth at a time.
+const BERKELEY_BATCH: usize = 8;
 /// The anime head detector's letterboxed input (the bench's first-config
 /// variant).
 const ANIME_HEAD_INPUT: (usize, usize) = (640, 640);
@@ -238,6 +241,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
         anime_heads: None,
         anime_persons: None,
         anime_ccip: None,
+        anime_berkeley: None,
     };
     loop {
         let next = match cfg.idle_exit {
@@ -406,6 +410,8 @@ struct Models {
     anime_heads: Option<Yolo>,
     anime_persons: Option<Yolo>,
     anime_ccip: Option<Ccip>,
+    /// The Best anime scan's character embedder.
+    anime_berkeley: Option<Berkeley>,
 }
 
 /// Which family of models a job keeps loaded; the other family's sessions
@@ -428,6 +434,7 @@ impl Models {
         (self.persons, self.person_reid) = (None, None);
         (self.yunet, self.sface) = (None, None);
         (self.anime_heads, self.anime_persons, self.anime_ccip) = (None, None, None);
+        self.anime_berkeley = None;
     }
 
     /// Drop the sessions of the other family (TransNet — the shot
@@ -436,6 +443,7 @@ impl Models {
         match family {
             Family::Live => {
                 (self.anime_heads, self.anime_persons, self.anime_ccip) = (None, None, None);
+                self.anime_berkeley = None;
             }
             Family::Anime => {
                 self.scrfd.clear();
@@ -575,6 +583,18 @@ impl Models {
             let path = self.path(ids::ANIME_PERSON)?;
             self.anime_persons =
                 Some(Yolo::load(self.runtime_for(rt, ids::ANIME_PERSON), &path, size, ANIME_PERSON_INPUT, batch)?);
+        }
+        Ok(())
+    }
+
+    /// The Best anime scan's character embedder (Berkeley), loaded with the
+    /// anime models and dropped with them.
+    fn load_berkeley(&mut self, rt: &Runtime) -> Result<(), AnalysisError> {
+        self.keep(Family::Anime);
+        if self.anime_berkeley.is_none() {
+            let path = self.path(ids::ANIME_BERKELEY)?;
+            self.anime_berkeley =
+                Some(Berkeley::load(self.runtime_for(rt, ids::ANIME_BERKELEY), &path, BERKELEY_BATCH)?);
         }
         Ok(())
     }
@@ -968,11 +988,16 @@ fn run_anime_faces(
         None => (anime::frame_size(&job.info, &params), DETECT_BATCH),
     };
     models.load_anime(rt, size, batch)?;
+    let best = job.best && !job.fast;
+    if best {
+        models.load_berkeley(rt)?;
+    }
     let (heads, persons, ccip) = (
         models.anime_heads.as_mut().expect("loaded"),
         models.anime_persons.as_mut().expect("loaded"),
         models.anime_ccip.as_mut().expect("loaded"),
     );
+    let berkeley = if best { models.anime_berkeley.as_mut() } else { None };
     let device = heads.device();
     if persons.device() != device || ccip.device() != device {
         tracing::warn!(
@@ -990,7 +1015,10 @@ fn run_anime_faces(
             (as_models::ids::ANIME_HEAD, device),
             (as_models::ids::ANIME_PERSON, persons.device()),
             (as_models::ids::ANIME_CCIP, ccip.device()),
-        ],
+        ]
+        .into_iter()
+        .chain(berkeley.as_ref().map(|b| (as_models::ids::ANIME_BERKELEY, b.device())))
+        .collect::<Vec<_>>(),
     );
     let index = FrameIndex::from_bytes(&job.index.0).map_err(|e| AnalysisError::Internal(e.to_string()))?;
     let shots: Vec<FrameRange> = job.shots.iter().map(|&(s, e)| FrameRange::new(s, e)).collect();
@@ -1001,7 +1029,7 @@ fn run_anime_faces(
     tracing::info!(id, ?file, resume = job.resume, ?device, fast, ?decoder, "finding characters (anime)");
     let mut found = 0usize;
     let src = Source { path: Path::new(&job.path), info: &job.info, index: &index };
-    let anime = anime::Anime { heads, persons: Some(persons), ccip };
+    let anime = anime::Anime { heads, persons: Some(persons), ccip, berkeley };
     let progress = |fraction| out.send(&Reply::Progress { id, fraction });
     let on_chunk = |c: FaceChunk| {
         found += c.tracks.len();
@@ -1099,8 +1127,9 @@ mod tests {
         for id in live {
             assert!(!may_use_accel(id, false) && may_use_accel(id, true), "{id}");
         }
-        // Never: a node it can't take, and Fast Scan's models.
-        let never = [ids::TRANSNET, ids::YUNET, ids::SFACE];
+        // Never: a node it can't take, Fast Scan's models, and the Best anime
+        // model (not yet checked on NVIDIA's engine).
+        let never = [ids::TRANSNET, ids::YUNET, ids::SFACE, ids::ANIME_BERKELEY];
         for id in never {
             assert!(!may_use_accel(id, false) && !may_use_accel(id, true), "{id}");
         }
@@ -1127,6 +1156,7 @@ mod tests {
                 animated: false,
                 fast,
                 anime,
+                best: false,
             }))
         };
         // Anime, also with Fast Scan, and the anime embedder for AniList art.

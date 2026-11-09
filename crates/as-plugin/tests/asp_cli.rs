@@ -1974,50 +1974,6 @@ fn the_example_plugins_pack_and_parse() {
     }
 }
 
-/// AutoScene's own plugin Reel In (`plugins/reel-in`) packs as it is, with
-/// no warning, and reads as its engines say: made for the AutoScene that
-/// has sources, so it is read for that one, not this crate's version.
-#[test]
-fn reel_in_packs_and_parses() {
-    let tmp = tempfile::tempdir().unwrap();
-    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/reel-in");
-    let out = tmp.path().join("reel-in.asp");
-    // Its one word: this crate, an AutoScene before sources, won't install it.
-    let here = env!("CARGO_PKG_VERSION");
-    let warned = asp(&["pack", text(&folder), text(&out)]).warnings();
-    if Version::parse(here).unwrap() < Version::new(1, 0, 6) {
-        let older = format!("warning: AutoScene {here} won't install it: its engines.autoscene is \">=1.0.6, <2\".
-");
-        assert_eq!(warned, older);
-    } else {
-        assert_eq!(warned, "");
-    }
-    let into = tmp.path().join("reel-in");
-    let lock = package::unpack(&out, &into).unwrap().lock;
-    let parsed = manifest::parse_for_any_app(&fs::read(into.join("plugin.json")).unwrap()).unwrap();
-    assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
-    let m = parsed.manifest;
-    assert_eq!((m.id.as_str(), m.runtime.kind), ("dev.autoscene.reel-in", RuntimeKind::Process));
-    assert_eq!((m.manifest_version, m.engines.protocol), (2, 2));
-    // It needs the AutoScene with sources: one without them would skip its source.
-    let first = Version::parse("1.0.6").unwrap();
-    assert!(m.requirement_met(&first).is_ok());
-    assert!(m.requirement_met(&Version::parse("1.0.5").unwrap()).is_err());
-    assert_eq!(m.sources[0].link_hosts, ["youtube.com", "youtu.be", "tiktok.com"]);
-    assert_eq!(m.sources[0].settings, ["quality"]);
-    // A uv script with its lock, on every platform.
-    let script = fs::read_to_string(into.join("main.py")).unwrap();
-    let uv_lock = fs::read_to_string(into.join("main.py.lock")).unwrap();
-    assert_eq!(lock_has(&uv_lock), script_wants(&script), "lock it again");
-    assert_eq!(m.launches().len(), 6);
-    for (platform, launch) in m.launches() {
-        let launch = launch.unwrap();
-        assert_eq!(launch, Launch::UvScript { script: "main.py".into() }, "on {platform}");
-        package::check_launch(&lock, &launch, platform).unwrap();
-    }
-    assert_eq!(asp(&["verify", text(&out)]).ok(), "dev.autoscene.reel-in 1.0.0: Unreviewed\n");
-}
-
 /// The WebAssembly examples are built against the world this AutoScene
 /// serves: each `wit/plugin.wit` is the crate's, byte for byte.
 #[test]

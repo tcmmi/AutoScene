@@ -425,7 +425,7 @@ const fcpxml = plugin({
 })
 
 /**
- * The source plugin (plugins/reel-in has the real one): YouTube and TikTok
+ * The source plugin (tcmmi/AS-Reel-In has the real one): YouTube and TikTok
  * links become downloads into the project, in the quality its setting says.
  */
 const reelIn = plugin({

@@ -53,6 +53,10 @@ It can add:
 - **Pack actions** (version 2): entries in a scenepack's ⋯ menu. The
   program saves the pack, as the grid shows it, as one file the person
   places, before anything is rendered (see [Pack actions](#pack-actions)).
+- **Sources** (version 2): links the person adds in New project, or with a
+  project's **Add links…**, become downloads. The program fetches each
+  link's videos into a folder AutoScene names, and each one joins the
+  project as soon as it is finished (see [Sources](#sources)).
 - **Settings**: on the plugin's own screen under Plugins (its settings),
   which AutoScene draws and saves. Each run gets the values. A **secret** setting (version
   2), such as a token, is kept in the system's keychain instead (see
@@ -420,6 +424,44 @@ start with `=`. A format a spreadsheet opens, such as CSV, puts a `'` before
 a cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return, as
 AutoScene's own cut list does and `bright-shots` does. Otherwise the
 spreadsheet runs the cell as a formula.
+
+### Sources
+
+A source takes links of the hosts it names. While a plugin that is on has
+one, New project shows **Add links…** beside Add folder… and Add files…,
+and so does each project (Overview and Episodes). The person pastes links;
+AutoScene reads them (`https://`, the host in lower case, no `#…` part),
+says which plugin takes each and why it can't take another ("No plugin
+takes links from vimeo.com."), and shows the settings the source names
+beside them, such as a quality.
+
+1. In New project, the links wait until the project is made; in a project
+   they are queued at once. One run per link, at most 100 links at once.
+   The same link in the same project waits once.
+2. Downloads have a lane of their own: one runs at a time, beside the other
+   plugins' runs, so a long download never holds up a shot filter or an
+   export action. A plugin still runs one run at a time. In Activity a run
+   is "Downloading youtube.com/watch?v=…", with the plugin's name under it.
+3. The run line's `source` names the link, `outDir` and `partDir` (see
+   [the run line](#the-run-line)). `outDir` is
+   `<library>/Downloads/<project title>`, beside the project's own folder:
+   removing a project, with its folder or without, leaves the videos.
+4. The program writes a `file` line for each video once it is whole in
+   `outDir`. AutoScene checks it and adds it to the project at once, as
+   **Add files…** would, so it is indexed and analysed while the next one
+   comes. Videos that arrive one by one can each end an
+   `analysisFinished` batch (see [Runs by itself](#runs-by-itself)).
+5. A run that ends well says nothing: its episodes show it. A run that
+   fails says why in a toast; one that added no video fails with
+   "<name> added no video from <link>." What the program says when it
+   ends goes to the log.
+
+`partDir` goes when the run ends, however it ends, and after a crash at
+the next start. Links still waiting when AutoScene quits are kept and
+queued again at the next start; a link the person stops is not.
+
+The settings a run gets are those of when it starts: a quality changed
+while links wait counts for those that haven't started.
 
 ## WebAssembly plugins
 
@@ -1986,6 +2028,7 @@ did, and with `"manifestVersion": 2` it reads the same, but for one warning
 | `"afterFailed": true` on an export action | Ignored, with the warning `Ignored contributes.exportActions[0].afterFailed: it needs "manifestVersion": 2.` | Read; it needs protocol 2. |
 | `contributes.shotFilters` | Skipped, with the warning `Skipped contributes.shotFilters: shot filters need "manifestVersion": 2.` | Read; it needs protocol 2 and `project:read` (see [contributes](#contributes)). |
 | `contributes.packActions` | Skipped, with the warning `Skipped contributes.packActions: pack actions need "manifestVersion": 2.` | Read; it needs protocol 2 and `project:read` (see [contributes](#contributes)). |
+| `contributes.sources` | Skipped, with the warning `Skipped contributes.sources: sources need "manifestVersion": 2.` | Read; it needs protocol 2 and `network` (see [contributes](#contributes)). |
 | A setting of the type `secret` | Skipped, with the warning `Skipped the setting "<key>": secret settings need "manifestVersion": 2.` | Read, when something can ask for it (see [Secret settings](#secret-settings)). |
 | `"runtime": { "type": "service" }` | Refused: `The plugin's runtime.type "service" needs "manifestVersion": 2.` | Read; it needs protocol 2. |
 | `"runtime": { "type": "none" }` | Refused, as `service` is. | Read. |
@@ -2172,6 +2215,9 @@ and refuses a WebAssembly plugin (see [Network](#network)).
   ],
   "packActions": [
     { "id": "fcpxml", "title": "Save as FCPXML…", "file": { "name": "{character}.fcpxml", "extensions": ["fcpxml"] } }
+  ],
+  "sources": [
+    { "id": "links", "title": "YouTube and TikTok", "linkHosts": ["youtube.com", "youtu.be", "tiktok.com"], "settings": ["quality"] }
   ]
 }
 ```
@@ -2217,6 +2263,17 @@ and refuses a WebAssembly plugin (see [Network](#network)).
   ending in one of them, with the characters a package's
   [paths](#paths) may have, so no space; `{character}` stands for the
   character's name, which may have any.
+
+- **`sources`** (version 2, at most 4): links of its hosts become downloads
+  into a project (see [Sources](#sources)). `title` (at most 40
+  characters) says what it fetches from; `linkHosts` lists 1 to 16
+  lowercase public host names, and a link counts for its host or a
+  subdomain (`www.youtube.com` for `youtube.com`); `settings` names keys of
+  the plugin's `select` and `boolean` settings that AutoScene shows beside
+  the links. A source needs a program of protocol 2 that asks for
+  `network`, of runtime `process` or `service`; a WebAssembly plugin can't
+  have one. The review lists it with its hosts, and an update that adds a
+  source or a host is never one click.
 
 Shot filters and pack actions need a program of protocol 2 that asks for
 `project:read`, of runtime `process` or `service`. Anything else refuses the

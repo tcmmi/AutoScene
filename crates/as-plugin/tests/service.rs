@@ -264,6 +264,8 @@ fn a_slow_start_reports_progress_then_ready() {
     let started = Instant::now();
     let service = s.start().unwrap();
     assert!(started.elapsed() >= Duration::from_millis(300), "{:?}", started.elapsed());
+    // Ready comes just after start answers, from the service's own thread.
+    wait_for(|| s.events().last() == Some(&ServiceEvent::Ready));
     assert_eq!(
         s.events(),
         [
@@ -284,9 +286,10 @@ fn a_flood_of_progress_reaches_the_host_ten_times_a_second_at_most() {
     let s = Served::new("serve-progress-flood");
     let started = Instant::now();
     let service = s.start().unwrap();
+    // Ready comes just after start answers, from the service's own thread.
+    wait_for(|| s.events().last() == Some(&ServiceEvent::Ready));
     let took = started.elapsed();
     let events = s.events();
-    assert_eq!(events.last(), Some(&ServiceEvent::Ready));
     let stages: Vec<&str> = events
         .iter()
         .filter_map(|e| match e {

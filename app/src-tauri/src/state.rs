@@ -31,8 +31,14 @@ use crate::plugins::PluginHost;
 /// upkeep (one still at a time) runs beside all of them; and so do plugins,
 /// one run at a time (one that uses the GPU waits its turn as analysis). A
 /// class missing here has no worker: its jobs would wait forever.
-const LIMITS: &[(Class, usize)] =
-    &[(Class::Media, 2), (Class::Export, 1), (Class::Analysis, 1), (Class::Upkeep, 1), (Class::Plugin, 1), (Class::Download, 1)];
+const LIMITS: &[(Class, usize)] = &[
+    (Class::Media, 2),
+    (Class::Export, 1),
+    (Class::Analysis, 1),
+    (Class::Upkeep, 1),
+    (Class::Plugin, 1),
+    (Class::Download, 1),
+];
 
 /// Which media an analysis job is working on, and the restarts asked for
 /// meanwhile. Both change under one lock, so a restart is either handed to
@@ -284,7 +290,8 @@ const PLUGIN_SHUTDOWN_GRACE: Duration =
 fn end_jobs(jobs: &JobRunner, grace: Duration, plugin_grace: Duration) {
     let deadline = Instant::now() + plugin_grace;
     jobs.shutdown(grace);
-    let plugin_runs = |j: &JobInfo| j.kind == JobKind::Plugin && j.state == JobState::Running;
+    let plugin_runs =
+        |j: &JobInfo| matches!(j.kind, JobKind::Plugin | JobKind::Download) && j.state == JobState::Running;
     while jobs.is_active(plugin_runs) && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(20));
     }

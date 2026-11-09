@@ -478,6 +478,14 @@ impl Library {
         Ok(self.library_root()?.join("Exports").join(safe_component(&project.title, " ", 80)))
     }
 
+    /// Where videos a plugin fetches from links for a project go:
+    /// `<library>/Downloads/<Title>`. Beside the project's own folder, never
+    /// in it: removing a project with its folder leaves them, as it leaves
+    /// every source.
+    pub fn default_download_dir(&self, project: &ProjectSummary) -> ProjectResult<PathBuf> {
+        Ok(self.library_root()?.join("Downloads").join(safe_component(&project.title, " ", 80)))
+    }
+
     // -- projects -----------------------------------------------------------
 
     pub fn projects(&self) -> ProjectResult<Vec<ProjectSummary>> {

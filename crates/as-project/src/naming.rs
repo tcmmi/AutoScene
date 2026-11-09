@@ -552,6 +552,22 @@ mod tests {
     }
 
     #[test]
+    fn downloaded_video_names() {
+        // What a source names a video: its title and its id in brackets,
+        // which says nothing of an episode.
+        assert_eq!(ep("Sprite Fright [_cMxraX_5RE].mkv"), (None, None));
+        assert_eq!(ep("Charge - Blender Open Movie [UXqq0ZvbOnk].webm"), (None, None));
+        assert_eq!(ep("Agent 327 Operation Barbershop [mN0zPOpADL4].mp4"), (None, None));
+        assert_eq!(ep("Spring [WhWc3b3KhnY].mkv"), (None, None));
+        assert_eq!(ep("blender dance #animation #blender [7329641234567890123].mp4"), (None, None));
+        // A playlist's videos: numbered in the playlist's order, whatever their titles.
+        assert_eq!(ep("E003 - Caminandes 3 Llamigos [SkVqJ1SGeL0].mkv"), (None, Some(3)));
+        assert_eq!(ep("E012 - Making of [abc].mkv"), (None, Some(12)));
+        // A title that says its episode keeps its word.
+        assert_eq!(ep("Show S01E04 The Heist [x1y2z3].mkv"), (Some(1), Some(4)));
+    }
+
+    #[test]
     fn numbers_that_are_not_episodes() {
         assert_eq!(ep("Blade Runner 2049 (2017) 2160p HDR.mkv"), (None, None));
         assert_eq!(ep("Movie.1920x1080.x264.mkv"), (None, None));

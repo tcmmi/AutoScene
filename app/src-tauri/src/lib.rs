@@ -112,6 +112,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::pack::pack_export,
             commands::pack::pack_filter_check,
             commands::pack::pack_action_run,
+            commands::sources::source_links_read,
+            commands::sources::source_links_queue,
             commands::plugins::plugins_list,
             commands::plugins::plugin_banner,
             commands::plugins::plugin_open_source,
@@ -393,6 +395,10 @@ pub fn run() {
                 // release this build pins when an older one is here.
                 accel::upkeep(&handle);
                 work::recover_all(&handle);
+                // Links a quit left to fetch, queued again.
+                if let Ok(sv) = plugins::sources::Sourcing::of(&handle) {
+                    plugins::sources::resume(&sv);
+                }
                 if let Ok(tools) = handle.state::<state::AppState>().tools() {
                     let _ = tools.caps();
                 }

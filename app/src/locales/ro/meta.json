@@ -9038,5 +9038,37 @@
   "backend:plugin.wasmNoSource": {
     "state": "draft",
     "en": "72757579"
+  },
+  "backend:plugin.downloadFolderFailed": {
+    "state": "draft",
+    "en": "bae555bf"
+  },
+  "backend:plugin.downloading": {
+    "state": "draft",
+    "en": "04093719"
+  },
+  "backend:plugin.linkTooLong": {
+    "state": "draft",
+    "en": "08c3353e"
+  },
+  "backend:plugin.noSourceForHost": {
+    "state": "draft",
+    "en": "463dbfac"
+  },
+  "backend:plugin.noSuchSource": {
+    "state": "draft",
+    "en": "2bfece65"
+  },
+  "backend:plugin.notALink": {
+    "state": "draft",
+    "en": "5bd63712"
+  },
+  "backend:plugin.sourceAddedNothing": {
+    "state": "draft",
+    "en": "28a6344a"
+  },
+  "backend:plugin.tooManyLinks": {
+    "state": "draft",
+    "en": "d3f3b194"
   }
 }

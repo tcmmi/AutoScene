@@ -314,6 +314,16 @@ export const commands = {
 	 *  filter it turns on checks shots, or when it takes nothing.
 	 */
 	packActionRun: (projectId: ProjectId, characterId: CharacterId, action: string, spec: PackSpec, naming: PackNaming, stamp: string) => __TAURI_INVOKE<PackActionStart>("pack_action_run", { projectId, characterId, action, spec, naming, stamp }),
+	/**
+	 *  Reads pasted `text` as links: each cleaned, and the plugin that takes
+	 *  it, or why none does.
+	 */
+	sourceLinksRead: (text: string) => __TAURI_INVOKE<LinkItem[]>("source_links_read", { text }),
+	/**
+	 *  Queues a download for each of `links` into the project `project_id`:
+	 *  each video joins it as soon as it is fetched.
+	 */
+	sourceLinksQueue: (projectId: ProjectId, links: string[]) => __TAURI_INVOKE<LinksQueued>("source_links_queue", { projectId, links }),
 	/**  Every installed plugin, by id (also the broken ones). */
 	pluginsList: () => __TAURI_INVOKE<PluginInfo[]>("plugins_list"),
 	/**
@@ -1596,6 +1606,39 @@ export type LibraryChanged = {
 	projectId: ProjectId | null,
 };
 
+/**  A link of a pasted text, as AutoScene reads it. */
+export type LinkItem = {
+	/**  What was pasted. */
+	text: string,
+	/**  The link, cleaned; empty when it isn't one. */
+	link: string,
+	/**  The link, short, to show: its host without `www.` and its path. */
+	short: string,
+	/**  The plugin and source that take it, when one does. */
+	pluginId: string | null,
+	sourceId: string | null,
+	/**
+	 *  What that source fetches from, as its plugin.json says ("YouTube and
+	 *  TikTok"), and the plugin's name.
+	 */
+	sourceTitle: string | null,
+	pluginName: string | null,
+	/**  Why it can't be added, when it can't. */
+	refused: Msg | null,
+};
+
+/**  What queueing links did. */
+export type LinksQueued = {
+	/**  How many runs were queued. */
+	queued: number,
+	/**  How many were waiting or running already. */
+	waiting: number,
+	/**  Links that couldn't be queued, with why. */
+	refused: LinkItem[],
+	/**  Where their videos go. */
+	outDir: string,
+};
+
 /**  What an export's clips are saved as for other apps. */
 export type ListFormat = 
 /**
@@ -2230,6 +2273,8 @@ export type PluginInfo = {
 	commands: CommandSpec[],
 	/**  What it saves a character's scenepack as, from the pack's ⋯ menu. */
 	packActions: PackActionSpec[],
+	/**  Where it fetches videos from by their links (New project, Add links…). */
+	sources: SourceSpec[],
 	/**  The filters it adds to a character's scenepack. */
 	shotFilters: ShotFilterSpec[],
 	settings: SettingSpec[],
@@ -2369,6 +2414,13 @@ export type PluginUpdate = {
 	addedShotFilters: string[],
 	/**  The ids of the entries it adds to a scenepack's ⋯ menu. */
 	addedPackActions: string[],
+	/**  The ids of the sources it adds (Add links…). */
+	addedSources: string[],
+	/**
+	 *  The hosts its sources take links from that the installed version's
+	 *  didn't.
+	 */
+	addedLinkHosts: string[],
 	/**
 	 *  It runs a program, and the installed version, as the person agreed
 	 *  to it, runs none: from now on it runs with their user rights.
@@ -2798,6 +2850,30 @@ export type ShotGroup = {
 
 /**  How big a face is in a shot, from its height in the frame. */
 export type ShotSize = "extreme_close_up" | "close_up" | "medium_close_up" | "medium" | "wide";
+
+/**
+ *  A source a plugin adds (manifest version 2): links the person pastes in
+ *  New project or a project's Add links…, of the hosts it names, become
+ *  runs of its program, one per link, which fetch the videos into a folder
+ *  AutoScene names; each finished video joins the project
+ *  ([`crate::protocol::SourceContext`]).
+ */
+export type SourceSpec = {
+	id: string,
+	/**  What it fetches from ("YouTube and TikTok"), at most 40 characters. */
+	title: string,
+	description: string | null,
+	/**
+	 *  The hosts it takes links from: a link's host is one of them or ends
+	 *  in `.` and one of them. 1 to 16 lowercase public host names.
+	 */
+	linkHosts: string[],
+	/**
+	 *  The keys of its `select` and `boolean` settings that AutoScene shows
+	 *  beside the links (a quality, say), in this order.
+	 */
+	settings: string[],
+};
 
 /**  Progress of one analysis stage of a media. */
 export type StageState = 

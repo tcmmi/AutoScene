@@ -506,7 +506,15 @@
     "wrongPlatform": "Acest plugin nu este făcut pentru acest calculator.",
     "sourceNeedsProject": "O sursă adaugă videoclipuri într-un proiect din linkuri.",
     "sourceRunsOnLinks": "O sursă rulează pe linkurile pe care le adaugi cu Adaugă linkuri….",
-    "wasmNoSource": "Un plugin WebAssembly nu poate descărca videoclipuri din linkuri."
+    "wasmNoSource": "Un plugin WebAssembly nu poate descărca videoclipuri din linkuri.",
+    "downloadFolderFailed": "AutoScene nu a putut crea dosarul pentru videoclipuri: {{why}}",
+    "downloading": "Se descarcă {{link}}",
+    "linkTooLong": "Linkul este prea lung.",
+    "noSourceForHost": "Niciun plugin nu acceptă linkuri de pe {{host}}.",
+    "noSuchSource": "{{name}} nu mai acceptă linkuri.",
+    "notALink": "Acesta nu este un link web.",
+    "sourceAddedNothing": "{{name}} nu a adăugat niciun videoclip din {{link}}.",
+    "tooManyLinks": "Cel mult {{max}} linkuri odată."
   },
   "project": {
     "alreadyInProject": "Acest fișier este deja în proiect, ca {{name}}.",

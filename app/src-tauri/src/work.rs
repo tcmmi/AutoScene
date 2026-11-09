@@ -122,6 +122,26 @@ impl<F: FnOnce()> Drop for Unstarted<F> {
 }
 
 /// Index a media (probe, frame index, poster). Queues its preview proxy if it needs one.
+/// Adds `files` (videos, or folders of them) to the project `project_id`,
+/// as its type parses them, and starts indexing those it didn't have: how
+/// many were new. Blocks on the library: call it off the main thread.
+pub fn add_files(
+    app: &AppHandle,
+    lib: &as_project::Library,
+    project_id: as_core::ProjectId,
+    files: &[String],
+) -> as_project::ProjectResult<u32> {
+    let project = lib.project(project_id)?;
+    let kind = lib.summary(project_id)?.kind;
+    let added = lib.add_media(&project, files, kind)?;
+    for &id in &added {
+        queue_ingest(app, &project, id);
+    }
+    library_changed(app, &project);
+    crate::events::emit_media_changed(app, project_id, None);
+    Ok(added.len() as u32)
+}
+
 pub fn queue_ingest(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) {
     let state = app.state::<AppState>();
     let Ok(m) = project.media(media_id) else { return };

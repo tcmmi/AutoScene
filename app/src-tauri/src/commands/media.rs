@@ -53,19 +53,7 @@ pub async fn media_add(
 ) -> AppResult<u32> {
     paths::check_all(&files)?;
     let lib = state.library.clone();
-    let (project, added) = blocking(move || {
-        let p = lib.project(project_id)?;
-        let kind = lib.summary(project_id)?.kind;
-        let added = lib.add_media(&p, &files, kind)?;
-        Ok((p, added))
-    })
-    .await?;
-    for &id in &added {
-        work::queue_ingest(&app, &project, id);
-    }
-    work::library_changed(&app, &project);
-    crate::events::emit_media_changed(&app, project_id, None);
-    Ok(added.len() as u32)
+    blocking(move || Ok(work::add_files(&app, &lib, project_id, &files)?)).await
 }
 
 #[tauri::command]

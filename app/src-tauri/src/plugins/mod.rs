@@ -90,6 +90,7 @@ pub mod opened;
 pub mod pack_actions;
 pub mod pages;
 pub mod services;
+pub mod sources;
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -419,6 +420,8 @@ pub struct PluginInfo {
     pub commands: Vec<CommandSpec>,
     /// What it saves a character's scenepack as, from the pack's ⋯ menu.
     pub pack_actions: Vec<PackActionSpec>,
+    /// Where it fetches videos from by their links (New project, Add links…).
+    pub sources: Vec<as_plugin::SourceSpec>,
     /// The filters it adds to a character's scenepack.
     pub shot_filters: Vec<ShotFilterSpec>,
     pub settings: Vec<SettingSpec>,
@@ -580,6 +583,11 @@ pub struct PluginUpdate {
     pub added_shot_filters: Vec<String>,
     /// The ids of the entries it adds to a scenepack's ⋯ menu.
     pub added_pack_actions: Vec<String>,
+    /// The ids of the sources it adds (Add links…).
+    pub added_sources: Vec<String>,
+    /// The hosts its sources take links from that the installed version's
+    /// didn't.
+    pub added_link_hosts: Vec<String>,
     /// It runs a program, and the installed version, as the person agreed
     /// to it, runs none: from now on it runs with their user rights.
     pub starts_program: bool,
@@ -615,6 +623,7 @@ pub fn open(app: &AppHandle, library: &Library, paths: &AppPaths) -> Option<Arc<
     match Store::open(paths, library.shared_db(), version, Arc::new(OsKeyring)) {
         Ok(store) => {
             // Before the window opens: from then on a run's note is its own.
+            sources::remove_left_parts(store.parts_dir());
             pack_actions::remove_left_parts(store.parts_dir());
             // This very executable compiles plugins, as it is the engine:
             // without it, installing a WebAssembly plugin fails and says so.
@@ -978,12 +987,15 @@ impl PluginHost {
     /// [`services::QUIT_GRACE`] and the system's grace after it, and none
     /// starts any more (a page still open asks in vain).
     pub fn shutdown(&self) {
+        // A download stopped by the quit keeps its link for the next start.
+        sources::set_quitting(true);
         self.services.stop_all(services::QUIT_GRACE);
     }
 
     /// AutoScene didn't quit after [`PluginHost::shutdown`] after all: its
     /// pages' services start again when they ask.
     pub fn resume(&self) {
+        sources::set_quitting(false);
         self.services.resume();
     }
 
@@ -1334,6 +1346,7 @@ pub fn info(p: &Installed, store: &Store, allow_unreviewed: bool) -> PluginInfo 
             .collect(),
         commands: m.map(|m| m.commands.clone()).unwrap_or_default(),
         pack_actions: m.map(|m| m.pack_actions.clone()).unwrap_or_default(),
+        sources: m.map(|m| m.sources.clone()).unwrap_or_default(),
         shot_filters: m.map(|m| m.shot_filters.clone()).unwrap_or_default(),
         settings: m.map(|m| m.settings.clone()).unwrap_or_default(),
         events: events
@@ -1607,6 +1620,9 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
     let pages_before = was.map_or(&[][..], |b| &b.pages);
     let filters_before = was.map_or(&[][..], |b| &b.shot_filters);
     let actions_before = was.map_or(&[][..], |b| &b.pack_actions);
+    let sources_before = was.map_or(&[][..], |b| &b.sources);
+    let link_hosts_before: HashSet<&str> =
+        sources_before.iter().flat_map(|s| s.link_hosts.iter().map(String::as_str)).collect();
     // Where its files came from, by the plugin.json its lock fixes: none
     // known when it can't be read, so each host is said to be new.
     let fetched_from = before.and_then(|b| b.manifest.as_ref()).map(Manifest::resource_hosts).unwrap_or_default();
@@ -1645,6 +1661,21 @@ fn update(previous: &Record, before: Option<&Installed>, m: &Manifest) -> Plugin
             .filter(|a| !actions_before.iter().any(|b| b.id == a.id))
             .map(|a| a.id.clone())
             .collect(),
+        added_sources: m
+            .sources
+            .iter()
+            .filter(|s| !sources_before.iter().any(|b| b.id == s.id))
+            .map(|s| s.id.clone())
+            .collect(),
+        added_link_hosts: {
+            let mut hosts: Vec<String> = Vec::new();
+            for h in m.sources.iter().flat_map(|s| &s.link_hosts) {
+                if !link_hosts_before.contains(h.as_str()) && !hosts.contains(h) {
+                    hosts.push(h.clone());
+                }
+            }
+            hosts
+        },
         starts_program: widens.runtime.starts_program,
         becomes_service: widens.runtime.becomes_service,
         leaves_sandbox: widens.runtime.leaves_sandbox,

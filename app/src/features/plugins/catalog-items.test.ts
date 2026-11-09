@@ -17,6 +17,8 @@ describe("catalog items", () => {
     expect(oneClick(catalogReview(mine, { addedPages: ["poster"] }))).toBe(false)
     expect(oneClick(catalogReview(mine, { addedShotFilters: ["speaks"] }))).toBe(false)
     expect(oneClick(catalogReview(mine, { addedPackActions: ["fcpxml"] }))).toBe(false)
+    expect(oneClick(catalogReview(mine, { addedSources: ["links"] }))).toBe(false)
+    expect(oneClick(catalogReview(mine, { addedLinkHosts: ["tiktok.com"] }))).toBe(false)
     expect(oneClick(catalogReview(mine, { startsProgram: true }))).toBe(false)
     expect(oneClick(catalogReview(mine, { becomesService: true }))).toBe(false)
     expect(oneClick(catalogReview(mine, { leavesSandbox: true }))).toBe(false)

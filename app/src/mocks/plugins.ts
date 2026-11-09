@@ -92,6 +92,7 @@ function plugin(o: Pick<MockPlugin, "id" | "name" | "version" | "description" | 
     exportActions: [],
     commands: [],
     packActions: [],
+    sources: [],
     shotFilters: [],
     settings: [],
     events: [],
@@ -592,6 +593,10 @@ function review(p: MockPlugin, allow: boolean, catalog: ReviewCatalog | null = n
         addedPages: p.pages.filter((x) => !previous.pages.some((y) => y.id === x.id)).map((x) => x.id),
         addedShotFilters: p.shotFilters.filter((x) => !previous.shotFilters.some((y) => y.id === x.id)).map((x) => x.id),
         addedPackActions: p.packActions.filter((x) => !previous.packActions.some((y) => y.id === x.id)).map((x) => x.id),
+        addedSources: p.sources.filter((x) => !previous.sources.some((y) => y.id === x.id)).map((x) => x.id),
+        addedLinkHosts: [...new Set(p.sources.flatMap((x) => x.linkHosts))].filter(
+          (h) => !previous.sources.some((y) => y.linkHosts.includes(h)),
+        ),
         startsProgram: previous.runtime === "none" && p.runtime !== "none",
         becomesService: previous.runtime !== "service" && p.runtime === "service",
         // Hosts its files come from that the installed version's plugin.json doesn't name, downloaded or not.

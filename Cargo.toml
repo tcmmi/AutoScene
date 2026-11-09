@@ -48,7 +48,7 @@ specta = { version = "=2.0.0-rc.25", features = ["derive", "serde_json", "uuid"]
 specta-serde = "=0.0.12"
 specta-util = "=0.0.12"
 dirs = "7.0"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 rusqlite_migration = "2.6"
 libc = "=0.2.191"
 semver = "=1.0.28"
@@ -125,5 +125,8 @@ codegen-units = 4
 strip = "debuginfo"
 
 # tauri-specta only supports Tauri 2 upstream; this copy is ported to Tauri 3 (see vendor/tauri-specta/AUTOSCENE.md).
+# rusqlite_migration 2.6.0 asks for rusqlite 0.40, whose SQLite has CVE-2026-119375; this copy takes 0.41
+# (see vendor/rusqlite_migration/AUTOSCENE.md).
 [patch.crates-io]
 tauri-specta = { path = "vendor/tauri-specta" }
+rusqlite_migration = { path = "vendor/rusqlite_migration" }

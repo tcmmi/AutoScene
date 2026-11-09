@@ -9022,5 +9022,21 @@
   "settings:about.models.purpose.animeIdentityBest": {
     "state": "draft",
     "en": "8116eb4c"
+  },
+  "backend:plugin.sourceNeedsProject": {
+    "state": "draft",
+    "en": "3c813859"
+  },
+  "backend:plugin.sourceRunsOnLinks": {
+    "state": "draft",
+    "en": "d512c4a3"
+  },
+  "backend:plugin.warn.sourcesNeedV2": {
+    "state": "draft",
+    "en": "2c4ed6d0"
+  },
+  "backend:plugin.wasmNoSource": {
+    "state": "draft",
+    "en": "72757579"
   }
 }

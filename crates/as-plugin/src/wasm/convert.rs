@@ -147,6 +147,12 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
                 "A WebAssembly plugin can't save a scenepack."
             )));
         }
+        ActionKind::Source => {
+            return Err(PluginError::Invalid(msg!(
+                "plugin.wasmNoSource",
+                "A WebAssembly plugin can't fetch videos from links."
+            )));
+        }
     };
     let trigger = match message.action.trigger {
         Trigger::Menu => wit::Trigger::Menu,
@@ -155,6 +161,12 @@ pub(crate) fn request(message: &RunMessage, mounts: &Mounts, grants: &Grants) ->
         Trigger::Page => wit::Trigger::Page,
         Trigger::Event => return Err(no_event()),
         Trigger::Pack => return Err(no_filter()),
+        Trigger::Links => {
+            return Err(PluginError::Invalid(msg!(
+                "plugin.wasmNoSource",
+                "A WebAssembly plugin can't fetch videos from links."
+            )));
+        }
     };
     let in_export = |path: &str| mounts.export.as_deref().and_then(|root| guest_path(root, "/export", path));
     Ok(Request::Run(wit::RunRequest {
@@ -278,6 +290,7 @@ mod tests {
             shots: None,
             output: None,
             pack: None,
+            source: None,
         }
     }
 

@@ -300,6 +300,7 @@ impl Run {
             shots: None,
             output: None,
             pack: None,
+            source: None,
         };
         WasmSpec {
             name: "Test Guest".into(),

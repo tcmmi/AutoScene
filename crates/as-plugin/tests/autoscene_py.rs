@@ -66,6 +66,10 @@ elif p.mode == "run" and p.first["action"]["id"] == "judge":
     p.verdict("m1:0", False)
     p.verdict("m1:24", True)
     p.result()
+elif p.mode == "run" and p.first["action"]["id"] == "fetch":
+    p.file("/v/Sprite Fright [x].mkv", "Sprite Fright")
+    p.file("/v/b.mkv")
+    p.result()
 elif p.mode == "run":
     try:
         p.call("settings.get")
@@ -257,6 +261,7 @@ fn run(kind: ActionKind, id: &str, trigger: Trigger) -> RunMessage {
         shots: None,
         output: None,
         pack: None,
+        source: None,
     }
 }
 
@@ -358,6 +363,16 @@ fn the_python_helper_speaks_protocol_2() {
     p.send(HostMessage::Run(Box::new(run(ActionKind::ShotFilter, "judge", Trigger::Pack))));
     assert_eq!(p.message(), PluginMessage::Verdict { shot: "m1:0".into(), keep: false });
     assert_eq!(p.message(), PluginMessage::Verdict { shot: "m1:24".into(), keep: true });
+    assert_eq!(p.message(), PluginMessage::Result { message: None });
+    assert!(p.end().success());
+
+    // A source's files.
+    let mut p = Program::start(python, dir.path(), "plugin.py");
+    p.send(HostMessage::Run(Box::new(run(ActionKind::Source, "fetch", Trigger::Links))));
+    let file =
+        |path: &str, title: Option<&str>| PluginMessage::File { path: path.into(), title: title.map(Into::into) };
+    assert_eq!(p.message(), file("/v/Sprite Fright [x].mkv", Some("Sprite Fright")));
+    assert_eq!(p.message(), file("/v/b.mkv", None));
     assert_eq!(p.message(), PluginMessage::Result { message: None });
     assert!(p.end().success());
 

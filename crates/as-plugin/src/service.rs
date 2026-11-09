@@ -593,6 +593,10 @@ impl Serving {
             Msg::Plugin(PluginMessage::Verdict { shot, keep }) => {
                 self.talk.log.line("verdict", &format!("{} {keep}: not a shot filter's run, ignored", shown(&shot)));
             }
+            // A source's file counts in a source's run alone.
+            Msg::Plugin(PluginMessage::File { path, .. }) => {
+                self.talk.log.line("file", &format!("{}: not a source's run, ignored", shown(&path)));
+            }
             Msg::Service(ServiceMessage::Ready) => match self.ready.take() {
                 Some(ready) => {
                     // What it said of its start before is over.

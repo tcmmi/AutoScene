@@ -1697,7 +1697,9 @@ fn takes(p: &Installed, trigger: Trigger) -> PluginResult<()> {
         Trigger::Page => {
             as_plugin::calls::check(HostMethod::ActionsRun, &Caller::Page { project: None }, &Grants::of(p)?)
         }
-        Trigger::Menu | Trigger::AfterExport | Trigger::Palette | Trigger::Event | Trigger::Pack => Ok(()),
+        Trigger::Menu | Trigger::AfterExport | Trigger::Palette | Trigger::Event | Trigger::Pack | Trigger::Links => {
+            Ok(())
+        }
     }
 }
 
@@ -1764,6 +1766,14 @@ fn action_title(
                 return refused(msg!("plugin.eventNeedsProject", "An event runs in the project where it happened."));
             }
             Ok(e.title.clone())
+        }
+        // Only links the person adds start one (see sources).
+        ActionKind::Source => {
+            let s = m.sources.iter().find(|s| s.id == action).ok_or_else(no_such)?;
+            if project_id.is_none() || export_id.is_some() {
+                return refused(msg!("plugin.sourceNeedsProject", "A source adds videos to a project from links."));
+            }
+            Ok(s.title.clone())
         }
     }
 }

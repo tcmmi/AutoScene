@@ -33,6 +33,11 @@
 //! would cut) and the path of the one file it writes ([`RunMessage::output`]),
 //! which takes the place the person chose once the run ends well.
 //!
+//! And sources: a run of `kind: "source"` gets one link the person added and
+//! the folder its videos go to ([`SourceContext`]), and names each video it
+//! finished there ([`PluginMessage::File`]), which AutoScene adds to the
+//! project at once.
+//!
 //! Fields added later are `#[serde(default)]` when read and left out while
 //! empty when written, so an older plugin's lines still read and an older
 //! plugin's run line stays as it was.
@@ -207,6 +212,26 @@ pub struct RunMessage {
     /// only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pack: Option<PackContext>,
+    /// The link a source fetches, and where its videos go (protocol 2,
+    /// `kind: "source"` only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceContext>,
+}
+
+/// What a source's run fetches: one link the person added, and the folders
+/// AutoScene made for it. The run names each video it finished with a
+/// [`PluginMessage::File`]; AutoScene adds it to the run's project.
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceContext {
+    /// The link, as AutoScene normalised it: `https://`, its host in lower
+    /// case, no fragment.
+    pub link: String,
+    /// Where its finished videos go. A file outside it isn't added.
+    pub out_dir: String,
+    /// A folder inside `out_dir`, on the same drive, for what isn't finished
+    /// yet: AutoScene removes it when the run ends, however it ends.
+    pub part_dir: String,
 }
 
 /// What a pack action's run saves: a character's scenepack as the grid shows
@@ -401,6 +426,9 @@ pub enum ActionKind {
     /// An entry of a scenepack's menu (protocol 2), which saves
     /// [`RunMessage::pack`] as [`RunMessage::output`].
     PackAction,
+    /// A source (protocol 2): it fetches the videos of
+    /// [`RunMessage::source`]'s link into its folder, for the run's project.
+    Source,
 }
 
 /// What started a run.
@@ -423,6 +451,9 @@ pub enum Trigger {
     /// A scenepack shown with one of the plugin's shot filters on, whose
     /// shots lack its verdicts.
     Pack,
+    /// Links the person added, in New project or in a project, that one of
+    /// the plugin's sources takes.
+    Links,
 }
 
 /// What happened, for a run of an event.
@@ -530,6 +561,15 @@ pub enum PluginMessage {
     /// whether the pack keeps it. Outside a shot filter's run, or for a
     /// shot the run wasn't sent, it goes to the log and counts for nothing.
     Verdict { shot: String, keep: bool },
+    /// A source's word that it finished a video (protocol 2): the file, in
+    /// its run's `outDir`, and what the video is called. AutoScene checks
+    /// the file and adds it to the run's project. Outside a source's run it
+    /// goes to the log and counts for nothing.
+    File {
+        path: String,
+        #[serde(default)]
+        title: Option<String>,
+    },
 }
 
 impl PluginMessage {
@@ -812,6 +852,7 @@ mod tests {
             shots: None,
             output: None,
             pack: None,
+            source: None,
         }
     }
 
@@ -1143,6 +1184,8 @@ mod tests {
         assert_eq!(serde_json::to_string(&ActionKind::ShotFilter).unwrap(), r#""shotFilter""#);
         assert_eq!(serde_json::to_string(&Trigger::Pack).unwrap(), r#""pack""#);
         assert_eq!(serde_json::to_string(&ActionKind::PackAction).unwrap(), r#""packAction""#);
+        assert_eq!(serde_json::to_string(&ActionKind::Source).unwrap(), r#""source""#);
+        assert_eq!(serde_json::to_string(&Trigger::Links).unwrap(), r#""links""#);
         assert_eq!(serde_json::from_str::<Trigger>(r#""menu""#).unwrap(), Trigger::Menu);
         assert_eq!(serde_json::from_str::<ActionKind>(r#""command""#).unwrap(), ActionKind::Command);
     }
@@ -1326,6 +1369,59 @@ mod tests {
         // Any other run line has neither.
         let other = HostMessage::Run(Box::new(run())).line();
         assert!(!other.contains("output") && !other.contains("pack"), "{other}");
+    }
+
+    #[test]
+    fn a_source_run_line_and_its_file_lines_read_as_the_guide_shows() {
+        // A source's run: the project its videos go to, the link and the
+        // folders AutoScene made for them.
+        let mut message = run();
+        message.protocol = 2;
+        message.action = ActionContext { kind: ActionKind::Source, id: "links".into(), trigger: Trigger::Links };
+        message.project =
+            Some(ProjectContext { id: "p1".into(), title: "Sprite Fright".into(), folder: "D:\\SF.autoscene".into() });
+        message.source = Some(SourceContext {
+            link: "https://www.youtube.com/watch?v=_cMxraX_5RE".into(),
+            out_dir: "D:\\AutoScene Library\\Downloads\\Sprite Fright".into(),
+            part_dir: "D:\\AutoScene Library\\Downloads\\Sprite Fright\\.autoscene-part-1a2b3c4d".into(),
+        });
+        let line = HostMessage::Run(Box::new(message)).line();
+        assert!(
+            line.ends_with(
+                &[
+                    r#""action":{"kind":"source","id":"links","trigger":"links"},"#,
+                    r#""project":{"id":"p1","title":"Sprite Fright","folder":"D:\\SF.autoscene"},"export":null,"#,
+                    r#""source":{"link":"https://www.youtube.com/watch?v=_cMxraX_5RE","#,
+                    r#""outDir":"D:\\AutoScene Library\\Downloads\\Sprite Fright","#,
+                    r#""partDir":"D:\\AutoScene Library\\Downloads\\Sprite Fright\\.autoscene-part-1a2b3c4d"}}"#,
+                ]
+                .concat()
+            ),
+            "{line}"
+        );
+        shows_what_differs("A run of a source", &["action", "export", "project", "source"], &line);
+        // Any other run line has none.
+        assert!(!HostMessage::Run(Box::new(run())).line().contains("source"));
+
+        // The line it writes for each finished video, with or without its
+        // title; one that names no file is no message.
+        let read = |line: &str| PluginMessage::read(line);
+        let shown = r#"{"type":"file","path":"D:\\AutoScene Library\\Downloads\\Sprite Fright\\Sprite Fright [_cMxraX_5RE].mkv","title":"Sprite Fright"}"#;
+        assert_eq!(
+            read(shown),
+            Some(PluginMessage::File {
+                path: "D:\\AutoScene Library\\Downloads\\Sprite Fright\\Sprite Fright [_cMxraX_5RE].mkv".into(),
+                title: Some("Sprite Fright".into()),
+            })
+        );
+        assert_eq!(
+            read(r#"{"type":"file","path":"/v/a.mkv","later":1}"#),
+            Some(PluginMessage::File { path: "/v/a.mkv".into(), title: None })
+        );
+        for line in [r#"{"type":"file"}"#, r#"{"type":"file","path":3}"#, r#"{"type":"file","title":"x"}"#] {
+            assert_eq!(read(line), None, "{line}");
+        }
+        assert!(include_str!("../../../docs/PLUGINS.md").contains(shown));
     }
 
     #[test]

@@ -975,6 +975,33 @@ after its last, as an export would cut them (see [Frames and
 time](#frames-and-time)). The line of a long pack is long (about 130 bytes
 per clip): read it whole.
 
+A run of a source has `kind` `source` and `trigger` `links`. It runs in the
+project the person adds the link to, on no export, and ends with `source`:
+
+```json
+{
+  "action": { "kind": "source", "id": "links", "trigger": "links" },
+  "project": { "id": "p1", "title": "Sprite Fright", "folder": "D:\\SF.autoscene" },
+  "export": null,
+  "source": {
+    "link": "https://www.youtube.com/watch?v=_cMxraX_5RE",
+    "outDir": "D:\\AutoScene Library\\Downloads\\Sprite Fright",
+    "partDir": "D:\\AutoScene Library\\Downloads\\Sprite Fright\\.autoscene-part-1a2b3c4d"
+  }
+}
+```
+
+`source.link` is one link the person added, as AutoScene cleaned it:
+`https://`, its host in lower case, no `#…` part. One run fetches one link;
+a link to a playlist may give many videos. `outDir` is where its finished
+videos go, and `partDir` a folder in it, on the same drive, for what isn't
+finished: AutoScene made both, and removes `partDir` when the run ends,
+however it ends. Write each video's parts in `partDir` and move it to
+`outDir` once it is whole, so the move is a rename and a stopped run leaves
+nothing half done where the person looks. Then write a `file` line for it
+(see [What the plugin writes](#what-the-plugin-writes)): AutoScene adds it to
+the project at once, so it is analysed while the next one comes.
+
 A later AutoScene may add fields: ignore the ones you don't know.
 
 #### Frames and time
@@ -1016,6 +1043,7 @@ read to end.
 {"type":"result","message":"Posted 12 clips."}
 {"type":"error","message":"Discord doesn't know that webhook.","detail":"HTTP Error 404: Not Found"}
 {"type":"verdict","shot":"m1:1200","keep":false}
+{"type":"file","path":"D:\\AutoScene Library\\Downloads\\Sprite Fright\\Sprite Fright [_cMxraX_5RE].mkv","title":"Sprite Fright"}
 ```
 
 - **`progress`**: `fraction` is how far the run is, from 0 to 1 (left out
@@ -1035,6 +1063,13 @@ read to end.
 - **`verdict`**: a shot filter's word on a shot (protocol 2). `shot` is the
   shot's `key` in the run line; `keep` is `false` to leave it out of the pack
   (see [Shot filters](#shot-filters)).
+- **`file`**: a source's word that it finished a video (protocol 2). `path`
+  is the file, in the run's `outDir`; `title`, optional, what the video is
+  called. AutoScene adds the file to the run's project once it checks out:
+  inside `outDir` and not in `partDir`, a plain file (no link), of a kind of
+  video AutoScene imports, not empty. One that doesn't goes to the log, and
+  the run goes on. At most 1000 files count in one run. A file the project
+  has already is no error. See [Sources](#sources).
 
 Texts lose control characters and the invisible characters that hide or turn
 text, and their line breaks and runs of spaces become single spaces.

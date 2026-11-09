@@ -65,6 +65,38 @@ fn main() {
                 _ => send(json!({"type": "result", "message": format!("Saved {} clips.", clips.len())})),
             }
         }
+        // A source: writes a part in partDir, moves it to outDir as
+        // "<title>.mkv", says so, and also names a file outside outDir and
+        // one in partDir; with "fail", it then says it failed; with "hang",
+        // it waits for the cancel line after its first file.
+        "source" => {
+            read_run();
+            let run: Value = serde_json::from_str(&first).expect("run line");
+            let src = &run["source"];
+            let (out, part) = (src["outDir"].as_str().expect("outDir"), src["partDir"].as_str().expect("partDir"));
+            let link = src["link"].as_str().unwrap_or("");
+            let title = link.rsplit('=').next().unwrap_or("video");
+            let partial = std::path::Path::new(part).join(format!("{title}.mkv.part"));
+            fs::write(&partial, b"not a real video").expect("part");
+            let done = std::path::Path::new(out).join(format!("{title}.mkv"));
+            fs::rename(&partial, &done).expect("move");
+            send(json!({"type": "progress", "fraction": 0.5, "stage": format!("Fetching {title}")}));
+            send(json!({"type": "file", "path": done.to_string_lossy(), "title": title}));
+            let stray = std::path::Path::new(part).join("stray.mkv");
+            fs::write(&stray, b"x").expect("stray");
+            send(json!({"type": "file", "path": stray.to_string_lossy()}));
+            send(
+                json!({"type": "file", "path": std::path::Path::new(out).join("..").join("outside.mkv").to_string_lossy()}),
+            );
+            match args.get(1).map(String::as_str) {
+                Some("fail") => send(json!({"type": "error", "message": "That video is private."})),
+                Some("hang") => {
+                    let mut line = String::new();
+                    let _ = std::io::stdin().read_line(&mut line);
+                }
+                _ => send(json!({"type": "result", "message": "Fetched 1 video."})),
+            }
+        }
         "echo" => {
             read_run();
             fs::write("run.json", &first).expect("run.json");

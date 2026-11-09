@@ -144,6 +144,7 @@ fn message(root: &Path, action: &str) -> RunMessage {
         shots: None,
         output: None,
         pack: None,
+        source: None,
     }
 }
 

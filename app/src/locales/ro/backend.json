@@ -496,13 +496,17 @@
       "serviceNeverStarts": "Serviciul nu pornește niciodată: un serviciu rulează cât timp una dintre pagini este deschisă, iar pluginul nu are niciuna.",
       "settingKind": "S-a omis setarea „{{key}}” de tip „{{kind}}”: această versiune de AutoScene nu știe ce este.",
       "shotFiltersNeedV2": "S-a omis contributes.shotFilters: filtrele de planuri au nevoie de \"manifestVersion\": 2.",
-      "skippedUnknown": "S-a omis {{path}}: această versiune de AutoScene nu știe ce este."
+      "skippedUnknown": "S-a omis {{path}}: această versiune de AutoScene nu știe ce este.",
+      "sourcesNeedV2": "Am omis contributes.sources: sursele au nevoie de \"manifestVersion\": 2."
     },
     "wasmCantRun": "Pluginurile WebAssembly nu pot rula pe acest calculator: {{why}}",
     "wasmNoFilter": "Un plugin WebAssembly nu poate filtra planuri.",
     "wasmNoPack": "Un plugin WebAssembly nu poate salva un scenepack.",
     "withdrawn": "AutoScene a retras pluginul {{name}}. {{reason}}",
-    "wrongPlatform": "Acest plugin nu este făcut pentru acest calculator."
+    "wrongPlatform": "Acest plugin nu este făcut pentru acest calculator.",
+    "sourceNeedsProject": "O sursă adaugă videoclipuri într-un proiect din linkuri.",
+    "sourceRunsOnLinks": "O sursă rulează pe linkurile pe care le adaugi cu Adaugă linkuri….",
+    "wasmNoSource": "Un plugin WebAssembly nu poate descărca videoclipuri din linkuri."
   },
   "project": {
     "alreadyInProject": "Acest fișier este deja în proiect, ca {{name}}.",

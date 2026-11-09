@@ -1374,6 +1374,7 @@ impl Store {
             protocol: m.engines.protocol,
             calls: None,
             verdicts: None,
+            files: None,
             message,
         })
     }
@@ -1459,6 +1460,7 @@ impl Store {
             shots: None,
             output: None,
             pack: None,
+            source: None,
         })
     }
 

@@ -134,6 +134,10 @@ class Plugin:
         """Says whether the pack keeps `shot`, a key of the run's shots (a shot filter's only)."""
         self._send({"type": "verdict", "shot": shot, "keep": keep})
 
+    def file(self, path: str, title: str | None = None) -> None:
+        """Says the video at `path`, in the run's outDir, is finished (a source's only)."""
+        self._send({"type": "file", "path": str(path), "title": title})
+
     def emit(self, event: str, data=None) -> None:
         """Tells the plugin's open pages `event` (a service's only)."""
         self._send({"type": "emit", "event": event, "data": data})

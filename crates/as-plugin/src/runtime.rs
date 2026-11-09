@@ -150,6 +150,10 @@ pub struct RunSpec {
     /// and `kind: "shotFilter"`); without it, every verdict line goes to
     /// the log.
     pub verdicts: Option<VerdictSink>,
+    /// Where a source's run hands the videos it finished (with
+    /// `message.source` and `kind: "source"`); without it, every file line
+    /// goes to the log.
+    pub files: Option<FileSink>,
     pub message: RunMessage,
 }
 
@@ -157,6 +161,11 @@ pub struct RunSpec {
 /// (`<mediaId>:<start>`) and whether the pack keeps it. A later word on the
 /// same shot comes too, and counts instead.
 pub type VerdictSink = Box<dyn FnMut(&str, bool) + Send>;
+
+/// What a source's run said it finished: the file's path as the plugin wrote
+/// it, and its title, cleaned (at most [`MAX_STAGE_CHARS`]), if it gave one.
+/// The host checks the file: the plugin's word is only where to look.
+pub type FileSink = Box<dyn FnMut(&str, Option<&str>) + Send>;
 
 /// A shot filter's run: the keys of the shots it was sent, and where their
 /// verdicts go.
@@ -203,6 +212,7 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: Report) -> PluginResult<
         protocol,
         calls,
         verdicts,
+        files,
         mut message,
     } = spec;
     // Only a shot filter's run is sent shots, and only its verdicts count.
@@ -212,6 +222,8 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: Report) -> PluginResult<
         }
         _ => None,
     };
+    // Only a source's run names the files it finished.
+    let files = files.filter(|_| message.action.kind == ActionKind::Source && message.source.is_some());
     let mut cmd = command(&name, &dir, &launch, || uv)?;
     let id = message.plugin.id.clone();
     let (data_dir, resources) = prepare(&mut cmd, (&data_dir, resources.as_deref()), &ffmpeg, &ffprobe, &id, protocol)?;
@@ -240,7 +252,7 @@ pub fn run(spec: RunSpec, cancel: &CancelToken, report: Report) -> PluginResult<
 
     let shown = sanitize(&name, MAX_STAGE_CHARS);
     let talk = Talk::new(log, to_plugin, load, calls, MAX_CALL_LINE_BYTES, "This run was cancelled.");
-    let mut heard = Heard { name: &shown, report, outcome: None, talk, judging };
+    let mut heard = Heard { name: &shown, report, outcome: None, talk, judging, files };
     heard.talk.send(HostMessage::Run(Box::new(message)).line());
     let mut cancel_at: Option<Instant> = None;
     // The tree's status when the run had to end it, else None once it ended.
@@ -623,6 +635,8 @@ struct Heard<'a> {
     talk: Talk,
     /// What it judges, when it is a shot filter's run.
     judging: Option<Judging>,
+    /// Where the videos it finished go, when it is a source's run.
+    files: Option<FileSink>,
 }
 
 impl Heard<'_> {
@@ -661,6 +675,13 @@ impl Heard<'_> {
                 None => {
                     self.talk.log.line("verdict", &format!("{} {keep}: not a shot filter's run, ignored", shown(&shot)))
                 }
+            },
+            Msg::Plugin(PluginMessage::File { path, title }) => match &mut self.files {
+                Some(sink) => {
+                    let title = title.map(|t| sanitize(&t, MAX_STAGE_CHARS)).filter(|t| !t.is_empty());
+                    sink(&path, title.as_deref());
+                }
+                None => self.talk.log.line("file", &format!("{}: not a source's run, ignored", shown(&path))),
             },
             // A service's alone: a run's readers never send them.
             _ => {}
@@ -1446,7 +1467,7 @@ mod tests {
         let log = PluginLog::open(&log_path, "run-1", "post").unwrap();
         let calls = Some(Calls::new(host.clone(), tx));
         let talk = Talk::new(log, to_plugin, load.clone(), calls, MAX_CALL_LINE_BYTES, "This run was cancelled.");
-        let mut heard = Heard { name: "Test Plugin", report: &report, outcome: None, talk, judging: None };
+        let mut heard = Heard { name: "Test Plugin", report: &report, outcome: None, talk, judging: None, files: None };
         let ended = heard.talk.calls.as_ref().unwrap().ended.clone();
         // Its program ended; a process it left holds its stdout and writes a call.
         heard.talk.end_calls();

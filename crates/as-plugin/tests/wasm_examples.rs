@@ -133,6 +133,7 @@ impl Run {
             shots: None,
             output: None,
             pack: None,
+            source: None,
         };
         if let Some(episodes) = self.event {
             message.action = ActionContext { kind: ActionKind::Event, id: self.action.into(), trigger: Trigger::Event };

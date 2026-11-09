@@ -79,16 +79,16 @@ pub use keys::KeyRole;
 pub use manifest::{
     ActionSpec, Author, CommandSpec, Engines, EventKind, EventSpec, Launch, Manifest, PackActionSpec, PackFileSpec,
     PageScope, PageSpec, Parsed, Permission, PluginId, Resource, Runtime, RuntimeChange, RuntimeKind, SelectOption,
-    SettingKind, SettingSpec, SettingValue, ShotFilterSpec, SourceLink, WasmLimits, current_platform,
+    SettingKind, SettingSpec, SettingValue, ShotFilterSpec, SourceLink, SourceSpec, WasmLimits, current_platform,
 };
 pub use package::{FilesLock, LockedFile, Unpacked};
 pub use protocol::{
     ActionContext, ActionKind, AppContext, CallId, CharacterContext, ClipContext, EpisodeContext, EpisodeCounts,
     EventContext, ExportContext, FaceBox, PackClipContext, PackContext, PluginContext, ProjectContext, RequestContext,
-    RunMessage, ServeMessage, ServiceMessage, ShotContext, ShotsContext, ToolPaths, Trigger,
+    RunMessage, ServeMessage, ServiceMessage, ShotContext, ShotsContext, SourceContext, ToolPaths, Trigger,
 };
 pub use resources::Resources;
-pub use runtime::{Report, RunSpec, VerdictSink};
+pub use runtime::{FileSink, Report, RunSpec, VerdictSink};
 pub use secrets::{MemorySecrets, OsKeyring, SecretStore};
 pub use service::{OnEvent, ProcessService, Service, ServiceEvent, ServiceSpec};
 pub use store::{Approval, Extra, Installed, Record, Source, Store, Ticket, Widens};

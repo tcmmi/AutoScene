@@ -435,6 +435,8 @@
       "whole": "{{title}} must be a whole number."
     },
     "settingsOfNewer": "A newer AutoScene saved this plugin's settings, so this one can't change them. Update AutoScene, or uninstall the plugin.",
+    "sourceNeedsProject": "A source adds videos to a project from links.",
+    "sourceRunsOnLinks": "A source runs on links you add with Add links….",
     "stage": {
       "checkingFiles": "Checking files",
       "checkingFilesFor": "Checking files for {{name}}",
@@ -488,11 +490,13 @@
       "serviceNeverStarts": "Its service never starts: a service runs while one of its pages is open, and it has none.",
       "settingKind": "Skipped the setting \"{{key}}\" of type \"{{kind}}\", which this AutoScene doesn't know.",
       "shotFiltersNeedV2": "Skipped contributes.shotFilters: shot filters need \"manifestVersion\": 2.",
-      "skippedUnknown": "Skipped {{path}}, which this AutoScene doesn't know."
+      "skippedUnknown": "Skipped {{path}}, which this AutoScene doesn't know.",
+      "sourcesNeedV2": "Skipped contributes.sources: sources need \"manifestVersion\": 2."
     },
     "wasmCantRun": "WebAssembly plugins can't run on this computer: {{why}}",
     "wasmNoFilter": "A WebAssembly plugin can't filter shots.",
     "wasmNoPack": "A WebAssembly plugin can't save a scenepack.",
+    "wasmNoSource": "A WebAssembly plugin can't fetch videos from links.",
     "withdrawn": "AutoScene withdrew {{name}}. {{reason}}",
     "wrongPlatform": "This plugin isn't made for this computer."
   },

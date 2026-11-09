@@ -24,8 +24,8 @@ use as_plugin::scratch;
 use as_plugin::{
     ActionContext, ActionKind, AppContext, CallCode, CallError, Caller, CharacterContext, EpisodeContext, FaceBox,
     Grants, HostCalls, HostMethod, Launch, MemorySecrets, PackClipContext, PackContext, PluginContext, PluginError,
-    PluginId, PluginResult, RunMessage, SettingValue, ShotContext, ShotsContext, Store, ToolPaths, Trigger,
-    current_platform,
+    PluginId, PluginResult, RunMessage, SettingValue, ShotContext, ShotsContext, SourceContext, Store, ToolPaths,
+    Trigger, current_platform,
 };
 use semver::Version;
 use serde_json::value::RawValue;
@@ -93,6 +93,7 @@ impl Plugin {
             protocol: self.protocol,
             calls: self.calls.clone(),
             verdicts: None,
+            files: None,
             message: self.message.clone(),
         }
     }
@@ -148,6 +149,7 @@ fn message() -> RunMessage {
         shots: None,
         output: None,
         pack: None,
+        source: None,
     }
 }
 
@@ -610,6 +612,52 @@ fn non_json_lines_go_to_the_log() {
     // Only the host starts a line with `---` or `[host]`.
     assert_eq!(log.lines().filter(|l| l.starts_with("---")).count(), 1, "{log}");
     assert_eq!(log.lines().filter(|l| l.starts_with("[host]")).count(), 1, "{log}");
+}
+
+#[test]
+fn a_source_hands_its_files_to_its_sink_and_others_go_to_the_log() {
+    let mut p = Plugin::new("source");
+    p.protocol = 2;
+    let out = p.dir.path().join("out");
+    let part = out.join(".autoscene-part-1a2b3c4d");
+    fs::create_dir_all(&part).unwrap();
+    p.message.action = ActionContext { kind: ActionKind::Source, id: "links".into(), trigger: Trigger::Links };
+    p.message.source = Some(SourceContext {
+        link: "https://www.youtube.com/watch?v=abc".into(),
+        out_dir: out.to_string_lossy().into_owned(),
+        part_dir: part.to_string_lossy().into_owned(),
+    });
+    let fetched = |p: &Plugin, sink: bool| {
+        let got = Arc::new(Mutex::new(Vec::new()));
+        let mut spec = p.spec();
+        if sink {
+            let keep = got.clone();
+            spec.files = Some(Box::new(move |path: &str, title: Option<&str>| {
+                keep.lock().unwrap().push((path.to_owned(), title.map(str::to_owned)))
+            }));
+        }
+        let result = runtime::run(spec, &CancelToken::new(), &|_, _| {}).unwrap();
+        (result, got.lock().unwrap().clone())
+    };
+    // Each file it named, as it named it: the host checks them, not the runtime.
+    let (result, got) = fetched(&p, true);
+    assert_eq!(result.as_deref(), Some("Fetched 1 video."));
+    assert_eq!(got.len(), 3, "{got:?}");
+    assert_eq!(got[0], (out.join("abc.mkv").to_string_lossy().into_owned(), Some("abc".to_owned())));
+    assert_eq!(got[1].1, None);
+    assert!(out.join("abc.mkv").is_file());
+
+    // Without a sink, or outside a source's run, every file line is the log's.
+    for kind in [ActionKind::Source, ActionKind::Command] {
+        let mut q = Plugin::new("source");
+        q.protocol = 2;
+        q.message.source = p.message.source.clone();
+        q.message.action = ActionContext { kind, id: "links".into(), trigger: Trigger::Links };
+        let (_, got) = fetched(&q, kind == ActionKind::Command);
+        assert!(got.is_empty(), "{kind:?}");
+        let log = q.log_text();
+        assert_eq!(log.matches("not a source's run, ignored").count(), 3, "{log}");
+    }
 }
 
 #[test]

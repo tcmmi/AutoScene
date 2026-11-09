@@ -447,6 +447,11 @@ pub async fn plugin_run(
             let elsewhere = msg!("plugin.packActionRunsInBuilder", "A pack action saves a scenepack from its builder.");
             return Err(AppError::new(ErrorCode::Invalid, elsewhere));
         }
+        // It runs on links the person adds (`source_links_queue`).
+        ActionKind::Source => {
+            let elsewhere = msg!("plugin.sourceRunsOnLinks", "A source runs on links you add with Add links….");
+            return Err(AppError::new(ErrorCode::Invalid, elsewhere));
+        }
     };
     blocking(move || plugins::queue_run(&app, &id, kind, &action_id, trigger, project_id, export_id, None)).await
 }

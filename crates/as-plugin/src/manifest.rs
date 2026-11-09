@@ -109,6 +109,11 @@ pub const MAX_PACK_ACTIONS: usize = 4;
 pub const MAX_PACK_ACTION_TITLE: usize = 40;
 pub const MAX_PACK_FILE_NAME: usize = 100;
 pub const MAX_PACK_EXTENSIONS: usize = 4;
+/// The most sources a plugin may add, the longest a source's title may be,
+/// and the most hosts one may take links from.
+pub const MAX_SOURCES: usize = 4;
+pub const MAX_SOURCE_TITLE: usize = 40;
+pub const MAX_LINK_HOSTS: usize = 16;
 /// The memory a WebAssembly plugin's run may use in all, in MB (1 MB = 1
 /// MiB), when it doesn't say; and the least and most it may ask for.
 pub const DEFAULT_MEMORY_MB: u32 = 512;
@@ -298,6 +303,9 @@ pub struct Manifest {
     pub shot_filters: Vec<ShotFilterSpec>,
     /// What it saves a character's scenepack as (manifest version 2).
     pub pack_actions: Vec<PackActionSpec>,
+    /// Where it fetches videos from, by their links, for New project and a
+    /// project's Add links… (manifest version 2).
+    pub sources: Vec<SourceSpec>,
     pub settings: Vec<SettingSpec>,
     /// Its pages (manifest version 2); whether their files are there is
     /// checked at install.
@@ -561,6 +569,26 @@ pub struct PackFileSpec {
     /// The kinds of file it offers: 1 to 4 extensions without their dot,
     /// each of 1 to 10 lowercase letters and digits.
     pub extensions: Vec<String>,
+}
+
+/// A source a plugin adds (manifest version 2): links the person pastes in
+/// New project or a project's Add links…, of the hosts it names, become
+/// runs of its program, one per link, which fetch the videos into a folder
+/// AutoScene names; each finished video joins the project
+/// ([`crate::protocol::SourceContext`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSpec {
+    pub id: String,
+    /// What it fetches from ("YouTube and TikTok"), at most 40 characters.
+    pub title: String,
+    pub description: Option<String>,
+    /// The hosts it takes links from: a link's host is one of them or ends
+    /// in `.` and one of them. 1 to 16 lowercase public host names.
+    pub link_hosts: Vec<String>,
+    /// The keys of its `select` and `boolean` settings that AutoScene shows
+    /// beside the links (a quality, say), in this order.
+    pub settings: Vec<String>,
 }
 
 /// A page a plugin adds: one of its files, which AutoScene shows full screen
@@ -1033,6 +1061,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
 
     let (mut export_actions, mut commands_out, mut settings) = (Vec::new(), Vec::new(), Vec::new());
     let (mut pages, mut events, mut shot_filters, mut pack_actions) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut sources = Vec::new();
     if let Some(c) = root.object("contributes")? {
         for key in c.map.keys() {
             match key.as_str() {
@@ -1061,7 +1090,13 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
                         r#"Skipped contributes.packActions: pack actions need "manifestVersion": 2."#
                     ));
                 }
-                "pages" | "events" | "shotFilters" | "packActions" => {}
+                "sources" if manifest_version < 2 => {
+                    w.push(msg!(
+                        "plugin.warn.sourcesNeedV2",
+                        r#"Skipped contributes.sources: sources need "manifestVersion": 2."#
+                    ));
+                }
+                "pages" | "events" | "shotFilters" | "packActions" | "sources" => {}
                 key => w.push(msg!(
                     "plugin.warn.skippedUnknown",
                     "Skipped {{path}}, which this AutoScene doesn't know.",
@@ -1196,6 +1231,18 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
             pack_actions.push(pack_action(&object(a, format!("contributes.packActions[{i}]"))?, &mut w)?);
         }
         unique(pack_actions.iter().map(|a| a.id.as_str()), "contributes.packActions", "id")?;
+        // A version 1 manifest's sources were skipped above, whatever they hold.
+        let listed = if manifest_version >= 2 { c.list("sources")? } else { &[] };
+        if !listed.is_empty() {
+            check_sourcing(kind, protocol, &permissions)?;
+        }
+        if listed.len() > MAX_SOURCES {
+            return Err(invalid(format!("The plugin adds more than {MAX_SOURCES} sources.")));
+        }
+        for (i, f) in listed.iter().enumerate() {
+            sources.push(source(&object(f, format!("contributes.sources[{i}]"))?, &settings, &mut w)?);
+        }
+        unique(sources.iter().map(|f| f.id.as_str()), "contributes.sources", "id")?;
     }
 
     // A plugin that runs no program is its pages.
@@ -1274,6 +1321,7 @@ fn parse_for(bytes: &[u8], app: Option<&Version>) -> PluginResult<Parsed> {
         commands: commands_out,
         shot_filters,
         pack_actions,
+        sources,
         settings,
         pages,
         events,
@@ -1351,6 +1399,78 @@ fn pack_action(a: &Obj, w: &mut Vec<Msg>) -> PluginResult<PackActionSpec> {
         )));
     }
     Ok(PackActionSpec { id, title, file: PackFileSpec { name: name.to_owned(), extensions } })
+}
+
+/// Whether a plugin of runtime `kind`, speaking `protocol` and asking for
+/// `permissions`, may have sources: its program fetches from the internet
+/// and writes the videos into the folder AutoScene names, so it is a
+/// program (a component in the sandbox can't write there), it speaks
+/// protocol 2 (the files it finished are its lines), and it says it talks
+/// to the internet.
+fn check_sourcing(kind: RuntimeKind, protocol: u32, permissions: &[Permission]) -> PluginResult<()> {
+    match kind {
+        RuntimeKind::Wasm => Err(invalid("A WebAssembly plugin can't write the videos a source fetches.")),
+        RuntimeKind::None => Err(invalid("Sources need a program, and runtime.type none runs none.")),
+        _ if protocol < 2 => Err(invalid(r#"A source speaks protocol 2: set "engines": {"protocol": 2}."#)),
+        _ if !permissions.contains(&Permission::Network) => {
+            Err(invalid(r#"A source fetches from the internet: add "network" to permissions."#))
+        }
+        RuntimeKind::Process | RuntimeKind::Service => Ok(()),
+    }
+}
+
+/// A source `f`, of a plugin with the settings `settings`: its id, title,
+/// the hosts it takes links from, and the settings shown beside the links,
+/// each one of the plugin's `select` or `boolean` settings.
+fn source(f: &Obj, settings: &[SettingSpec], w: &mut Vec<Msg>) -> PluginResult<SourceSpec> {
+    f.warn_unknown(&["id", "title", "description", "linkHosts", "settings"], w);
+    let id = f.contribution_id()?;
+    let title = f.required_label("title", MAX_SOURCE_TITLE, w)?;
+    let description = f.label("description", 200, w)?;
+    let listed = f.list("linkHosts")?;
+    if !(1..=MAX_LINK_HOSTS).contains(&listed.len()) {
+        return Err(invalid(format!("The plugin's {} must name 1 to {MAX_LINK_HOSTS} hosts.", f.at("linkHosts"))));
+    }
+    let mut link_hosts: Vec<String> = Vec::new();
+    for (i, h) in listed.iter().enumerate() {
+        let Some(h) = h.as_str().filter(|h| is_host(h) && net::public_name(h)) else {
+            let host = h.as_str().map_or_else(|| shown(&h.to_string()), shown);
+            return Err(invalid(format!(
+                "The plugin's {}[{i}] names {host}, which isn't a lowercase public host name such as youtube.com.",
+                f.at("linkHosts")
+            )));
+        };
+        if !link_hosts.iter().any(|known| known == h) {
+            link_hosts.push(h.to_owned());
+        }
+    }
+    let mut keys: Vec<String> = Vec::new();
+    for (i, key) in f.list("settings")?.iter().enumerate() {
+        let at = format!("{}[{i}]", f.at("settings"));
+        let Some(key) = key.as_str() else {
+            return Err(invalid(format!("The plugin's {at} must be text.")));
+        };
+        match settings.iter().find(|s| s.key == key).map(|s| &s.kind) {
+            Some(SettingKind::Select { .. } | SettingKind::Boolean { .. }) => {
+                if !keys.iter().any(|k| k == key) {
+                    keys.push(key.to_owned());
+                }
+            }
+            Some(_) => {
+                return Err(invalid(format!(
+                    "The plugin's {at} names \"{}\", which isn't a select or boolean setting.",
+                    shown(key)
+                )));
+            }
+            None => {
+                return Err(invalid(format!(
+                    "The plugin's {at} names \"{}\", which isn't one of its settings.",
+                    shown(key)
+                )));
+            }
+        }
+    }
+    Ok(SourceSpec { id, title, description, link_hosts, settings: keys })
 }
 
 /// Whether a plugin of runtime `kind`, speaking `protocol` and asking for
@@ -3457,6 +3577,9 @@ mod tests {
             (&defs["packAction"]["properties"]["title"]["maxLength"], MAX_PACK_ACTION_TITLE),
             (&defs["packFile"]["properties"]["name"]["maxLength"], MAX_PACK_FILE_NAME),
             (&defs["packFile"]["properties"]["extensions"]["maxItems"], MAX_PACK_EXTENSIONS),
+            (&contributes["sources"]["maxItems"], MAX_SOURCES),
+            (&defs["source"]["properties"]["title"]["maxLength"], MAX_SOURCE_TITLE),
+            (&defs["source"]["properties"]["linkHosts"]["maxItems"], MAX_LINK_HOSTS),
             (&schema["properties"]["platforms"]["maxItems"], MAX_PLATFORMS),
             (&defs["network"]["properties"]["hosts"]["maxItems"], MAX_HOSTS),
             (&defs["commandLine"]["maxItems"], MAX_ARGS),
@@ -3549,6 +3672,8 @@ mod tests {
         full["contributes"]["exportActions"][0]["afterFailed"] = json!(true);
         full["contributes"]["shotFilters"] = json!([{"id": "speaks", "title": "Speaks", "reason": "No speech"}]);
         full["contributes"]["packActions"] = json!([fcpxml()]);
+        full["contributes"]["sources"] =
+            json!([{"id": "links", "title": "Links", "linkHosts": ["youtube.com"], "settings": []}]);
         let reads = |v: &Value, what: &str| {
             let p = read(v).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             assert_eq!(warned(&p), Vec::<String>::new(), "{what}");
@@ -3574,6 +3699,7 @@ mod tests {
             ("shotFilter", "/contributes/shotFilters/0"),
             ("packAction", "/contributes/packActions/0"),
             ("packFile", "/contributes/packActions/0/file"),
+            ("source", "/contributes/sources/0"),
         ];
         // Every object the schema describes is here, but a setting, whose
         // keys depend on its type, and the limits, which only a WebAssembly
@@ -3609,6 +3735,7 @@ mod tests {
         sandboxed["contributes"].as_object_mut().unwrap().remove("events");
         sandboxed["contributes"].as_object_mut().unwrap().remove("shotFilters");
         sandboxed["contributes"].as_object_mut().unwrap().remove("packActions");
+        sandboxed["contributes"].as_object_mut().unwrap().remove("sources");
         assert_eq!(reads(&sandboxed, "wasm").runtime.limits, Some(WasmLimits::default()));
         for (at, properties) in [("/runtime", &defs["runtime"]["properties"]), ("/runtime/limits", wasm_limits)] {
             for key in keys(properties) {
@@ -3674,6 +3801,7 @@ mod tests {
                 c.remove("events");
                 c.remove("shotFilters");
                 c.remove("packActions");
+                c.remove("sources");
             }
             if runtime == "wasm" {
                 v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"});
@@ -3681,6 +3809,7 @@ mod tests {
                 c.remove("events");
                 c.remove("shotFilters");
                 c.remove("packActions");
+                c.remove("sources");
             }
             assert_eq!(kind_name(json!(reads(&v, runtime).runtime.kind)), *runtime);
         }
@@ -4005,6 +4134,105 @@ mod tests {
     }
 
     /// A pack action that saves an FCPXML.
+    fn links() -> Value {
+        json!({"id": "links", "title": "YouTube and TikTok", "description": "Videos by their links.",
+               "linkHosts": ["youtube.com", "youtu.be", "tiktok.com"], "settings": ["quality"]})
+    }
+
+    fn sourcing(sources: Value) -> PluginResult<Parsed> {
+        with(|v| {
+            v["manifestVersion"] = json!(2);
+            v["engines"]["protocol"] = json!(2);
+            v["permissions"] = json!(["network"]);
+            v["contributes"]["settings"] = json!([
+                {"key": "quality", "type": "select", "title": "Quality", "default": "best",
+                 "options": [{"value": "best", "label": "Best"}, {"value": "1080", "label": "1080p"}]},
+                {"key": "sdr", "type": "boolean", "title": "SDR only"},
+                {"key": "folder", "type": "string", "title": "Folder"}
+            ]);
+            v["contributes"]["sources"] = sources;
+        })
+    }
+
+    #[test]
+    fn a_source_takes_links_of_its_hosts_and_needs_the_network() {
+        let p = sourcing(json!([links()])).unwrap();
+        assert_eq!(warned(&p), Vec::<String>::new());
+        assert_eq!(
+            p.manifest.sources,
+            [SourceSpec {
+                id: "links".into(),
+                title: "YouTube and TikTok".into(),
+                description: Some("Videos by their links.".into()),
+                link_hosts: vec!["youtube.com".into(), "youtu.be".into(), "tiktok.com".into()],
+                settings: vec!["quality".into()],
+            }]
+        );
+        // Its settings may be left out; a boolean one is drawn too; a host named twice counts once.
+        let plain = sourcing(json!([{"id": "a", "title": "A", "linkHosts": ["vimeo.com", "vimeo.com"],
+                                     "settings": ["sdr", "quality"]}]))
+        .unwrap()
+        .manifest;
+        assert_eq!((plain.sources[0].link_hosts.len(), plain.sources[0].settings.len()), (1, 2));
+
+        // Protocol 2, the network permission and a program, or it is refused.
+        let refused = |edit: &dyn Fn(&mut Value)| {
+            message(with(|v| {
+                v["manifestVersion"] = json!(2);
+                v["engines"]["protocol"] = json!(2);
+                v["permissions"] = json!(["network"]);
+                v["contributes"]["sources"] = json!([{"id": "a", "title": "A", "linkHosts": ["youtube.com"]}]);
+                edit(v);
+            }))
+        };
+        assert_eq!(
+            refused(&|v| v["engines"]["protocol"] = json!(1)),
+            r#"A source speaks protocol 2: set "engines": {"protocol": 2}."#
+        );
+        assert_eq!(
+            refused(&|v| v["permissions"] = json!(["project:read"])),
+            r#"A source fetches from the internet: add "network" to permissions."#
+        );
+        assert_eq!(
+            refused(&|v| v["runtime"] = json!({"type": "wasm", "component": "plugin.wasm"})),
+            "A WebAssembly plugin can't write the videos a source fetches."
+        );
+        assert_eq!(
+            refused(&|v| {
+                v["runtime"] = json!({"type": "none"});
+                v["contributes"] = json!({"pages": [{"id": "main", "title": "Main", "entry": "ui/index.html"}],
+                                          "sources": [{"id": "a", "title": "A", "linkHosts": ["youtube.com"]}]});
+            }),
+            "Sources need a program, and runtime.type none runs none."
+        );
+
+        // Its hosts: 1 to 16 lowercase public names.
+        let hosts = |h: Value| message(sourcing(json!([{"id": "a", "title": "A", "linkHosts": h}])));
+        for bad in [json!([]), json!((0..17).map(|i| format!("h{i}.com")).collect::<Vec<_>>())] {
+            assert!(hosts(bad).contains("must name 1 to 16 hosts"));
+        }
+        for bad in
+            ["YouTube.com", "*.youtube.com", "https://youtube.com", "localhost", "10.0.0.1", "nas.lan", "youtube"]
+        {
+            assert!(hosts(json!([bad])).contains("isn't a lowercase public host name"), "{bad}");
+        }
+        // Its settings: the plugin's own, of a kind drawn beside the links.
+        let set =
+            |k: &str| message(sourcing(json!([{"id": "a", "title": "A", "linkHosts": ["a.com"], "settings": [k]}])));
+        assert!(set("folder").contains("isn't a select or boolean setting"));
+        assert!(set("speed").contains("isn't one of its settings"));
+        // At most 4, each id once.
+        let five: Vec<Value> =
+            (0..5).map(|i| json!({"id": format!("s{i}"), "title": "S", "linkHosts": ["a.com"]})).collect();
+        assert_eq!(message(sourcing(json!(five))), "The plugin adds more than 4 sources.");
+        assert!(message(sourcing(json!([links(), links()]))).contains("twice"));
+
+        // Version 1 skips them, with a word.
+        let v1 = with(|v| v["contributes"]["sources"] = json!([links()])).unwrap();
+        assert!(v1.manifest.sources.is_empty());
+        assert_eq!(warned(&v1), [r#"Skipped contributes.sources: sources need "manifestVersion": 2."#]);
+    }
+
     fn fcpxml() -> Value {
         json!({"id": "fcpxml", "title": "Save as FCPXML…", "file": {"name": "{character}.fcpxml", "extensions": ["fcpxml"]}})
     }

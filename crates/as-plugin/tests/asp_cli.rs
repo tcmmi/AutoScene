@@ -1817,18 +1817,39 @@ fn script_wants(script: &str) -> (String, BTreeSet<String>) {
         .map(|l| format!("{}\n", l.strip_prefix("# ").or(l.strip_prefix('#')).unwrap()))
         .collect();
     let block: toml::Table = block.parse().unwrap();
-    let deps = block["dependencies"].as_array().unwrap().iter().map(|d| squeezed(d.as_str().unwrap()));
+    let deps = block["dependencies"].as_array().unwrap().iter().map(|d| {
+        // A marker is left out: uv writes it in an order of its own.
+        let d = squeezed(d.as_str().unwrap());
+        let d = d.split(';').next().unwrap().to_owned();
+        match d.split_once('[') {
+            Some((name, rest)) => {
+                let (extras, spec) = rest.split_once(']').unwrap();
+                requirement(name, extras.split(',').collect(), spec)
+            }
+            None => d,
+        }
+    });
     (block["requires-python"].as_str().unwrap().to_owned(), deps.collect())
 }
 
+/// A requirement as the two helpers compare it: its name, its extras in
+/// order (none: no brackets) and its version.
+fn requirement(name: &str, mut extras: Vec<&str>, spec: &str) -> String {
+    extras.sort_unstable();
+    let extras = if extras.is_empty() { String::new() } else { format!("[{}]", extras.join(",")) };
+    squeezed(&format!("{name}{extras}{spec}"))
+}
+
 /// The Python and the dependencies the uv lock `lock` was made for, as
-/// [`script_wants`] gives them. Only a name and a version are compared:
-/// the examples' dependencies have no extras or markers.
+/// [`script_wants`] gives them: a name, its extras and its version; a
+/// marker isn't compared.
 fn lock_has(lock: &str) -> (String, BTreeSet<String>) {
     let lock: toml::Table = lock.parse().unwrap();
     let requirements = lock.get("manifest").and_then(|m| m.get("requirements"));
     let deps = requirements.map_or(&[][..], |r| r.as_array().unwrap()).iter().map(|r| {
-        squeezed(&format!("{}{}", r["name"].as_str().unwrap(), r.get("specifier").map_or("", |s| s.as_str().unwrap())))
+        let extras: Vec<&str> =
+            r.get("extras").map_or(Vec::new(), |e| e.as_array().unwrap().iter().map(|x| x.as_str().unwrap()).collect());
+        requirement(r["name"].as_str().unwrap(), extras, r.get("specifier").map_or("", |s| s.as_str().unwrap()))
     });
     (lock["requires-python"].as_str().unwrap().to_owned(), deps.collect())
 }
@@ -1951,6 +1972,50 @@ fn the_example_plugins_pack_and_parse() {
         let sandboxed = if m.is_sandboxed() { "Runs in a sandbox.\n" } else { "" };
         assert_eq!(asp(&["verify", text(&out)]).ok(), format!("{} {}: Unreviewed\n{sandboxed}", m.id, m.version));
     }
+}
+
+/// AutoScene's own plugin Reel In (`plugins/reel-in`) packs as it is, with
+/// no warning, and reads as its engines say: made for the AutoScene that
+/// has sources, so it is read for that one, not this crate's version.
+#[test]
+fn reel_in_packs_and_parses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/reel-in");
+    let out = tmp.path().join("reel-in.asp");
+    // Its one word: this crate, an AutoScene before sources, won't install it.
+    let here = env!("CARGO_PKG_VERSION");
+    let warned = asp(&["pack", text(&folder), text(&out)]).warnings();
+    if Version::parse(here).unwrap() < Version::new(1, 0, 6) {
+        let older = format!("warning: AutoScene {here} won't install it: its engines.autoscene is \">=1.0.6, <2\".
+");
+        assert_eq!(warned, older);
+    } else {
+        assert_eq!(warned, "");
+    }
+    let into = tmp.path().join("reel-in");
+    let lock = package::unpack(&out, &into).unwrap().lock;
+    let parsed = manifest::parse_for_any_app(&fs::read(into.join("plugin.json")).unwrap()).unwrap();
+    assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
+    let m = parsed.manifest;
+    assert_eq!((m.id.as_str(), m.runtime.kind), ("dev.autoscene.reel-in", RuntimeKind::Process));
+    assert_eq!((m.manifest_version, m.engines.protocol), (2, 2));
+    // It needs the AutoScene with sources: one without them would skip its source.
+    let first = Version::parse("1.0.6").unwrap();
+    assert!(m.requirement_met(&first).is_ok());
+    assert!(m.requirement_met(&Version::parse("1.0.5").unwrap()).is_err());
+    assert_eq!(m.sources[0].link_hosts, ["youtube.com", "youtu.be", "tiktok.com"]);
+    assert_eq!(m.sources[0].settings, ["quality"]);
+    // A uv script with its lock, on every platform.
+    let script = fs::read_to_string(into.join("main.py")).unwrap();
+    let uv_lock = fs::read_to_string(into.join("main.py.lock")).unwrap();
+    assert_eq!(lock_has(&uv_lock), script_wants(&script), "lock it again");
+    assert_eq!(m.launches().len(), 6);
+    for (platform, launch) in m.launches() {
+        let launch = launch.unwrap();
+        assert_eq!(launch, Launch::UvScript { script: "main.py".into() }, "on {platform}");
+        package::check_launch(&lock, &launch, platform).unwrap();
+    }
+    assert_eq!(asp(&["verify", text(&out)]).ok(), "dev.autoscene.reel-in 1.0.0: Unreviewed\n");
 }
 
 /// The WebAssembly examples are built against the world this AutoScene

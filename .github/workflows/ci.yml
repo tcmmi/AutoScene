@@ -161,3 +161,7 @@ jobs:
         run: |
           git diff --exit-code ../crates/as-plugin/templates/types
           test -z "$(git status --porcelain ../crates/as-plugin/templates/types)"
+      # Reel In's own logic, in the standard library: nothing is downloaded.
+      - name: Reel In's tests
+        working-directory: plugins/reel-in
+        run: python3 -B -m unittest test_main.py

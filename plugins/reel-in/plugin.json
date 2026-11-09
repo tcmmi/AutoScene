@@ -1,0 +1,63 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tcmmi/AutoScene/main/crates/as-plugin/schema/plugin.schema.json",
+  "manifestVersion": 2,
+  "id": "dev.autoscene.reel-in",
+  "version": "1.0.0",
+  "name": "Reel In",
+  "description": "Add YouTube and TikTok videos to a project by their links, in the quality you choose. Uses yt-dlp, and AutoScene's FFmpeg to join video and sound.",
+  "author": { "name": "AutoScene", "url": "https://github.com/tcmmi/AutoScene" },
+  "repository": "https://github.com/tcmmi/AutoScene/tree/main/plugins/reel-in",
+  "engines": { "autoscene": ">=1.0.6, <2", "protocol": 2 },
+  "runtime": {
+    "type": "process",
+    "command": { "*": ["uv", "run", "--script", "--locked", "main.py"] }
+  },
+  "permissions": ["network"],
+  "network": {
+    "hosts": [
+      "youtube.com",
+      "www.youtube.com",
+      "m.youtube.com",
+      "youtu.be",
+      "youtubei.googleapis.com",
+      "googlevideo.com",
+      "ytimg.com",
+      "tiktok.com",
+      "www.tiktok.com",
+      "vm.tiktok.com",
+      "vt.tiktok.com",
+      "tiktokcdn.com",
+      "tiktokcdn-us.com",
+      "tiktokv.com"
+    ]
+  },
+  "contributes": {
+    "sources": [
+      {
+        "id": "links",
+        "title": "YouTube and TikTok",
+        "description": "Videos by their links, also playlists (up to 100 videos), in the quality you choose.",
+        "linkHosts": ["youtube.com", "youtu.be", "tiktok.com"],
+        "settings": ["quality"]
+      }
+    ],
+    "settings": [
+      {
+        "key": "quality",
+        "type": "select",
+        "title": "Quality",
+        "description": "The most it downloads. Best takes the highest the video has.",
+        "default": "best",
+        "options": [
+          { "value": "best", "label": "Best" },
+          { "value": "2160", "label": "4K" },
+          { "value": "1440", "label": "1440p" },
+          { "value": "1080", "label": "1080p" },
+          { "value": "720", "label": "720p" },
+          { "value": "480", "label": "480p" }
+        ]
+      }
+    ]
+  },
+  "icon": "icon.svg"
+}

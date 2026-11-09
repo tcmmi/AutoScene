@@ -469,6 +469,9 @@ fn the_examples_have_the_helper_asp_init_writes() {
         let example = examples.join(name).join("autoscene.py");
         assert_eq!(read_text(&example), read_text(&Path::new(TEMPLATES).join("autoscene.py")), "{name}");
     }
+    // And AutoScene's own plugins.
+    let reel_in = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/reel-in/autoscene.py");
+    assert_eq!(read_text(&reel_in), read_text(&Path::new(TEMPLATES).join("autoscene.py")), "reel-in");
 }
 
 /// A run of the Discord example (`examples/plugins/discord-notify`) for the

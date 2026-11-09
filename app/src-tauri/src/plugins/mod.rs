@@ -96,6 +96,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use as_api::{ExportStatus, ExportSummary, JobInfo, JobKind, JobState};
@@ -303,6 +304,9 @@ pub struct PluginHost {
     net: Box<dyn Transport>,
     /// The `net.fetch` calls of each plugin waiting for their answer.
     fetching: Mutex<HashMap<PluginId, usize>>,
+    /// Set while AutoScene quits: a download stopped then keeps its link for
+    /// the next start ([`sources`]). This host's, so tests don't share it.
+    quitting: Arc<AtomicBool>,
     /// What each open page did that it may do only so often.
     page_limits: calls::PageLimits,
     /// When the app's page last said it is there for each open page (macOS
@@ -703,6 +707,7 @@ impl PluginHost {
             freed: Condvar::new(),
             net,
             fetching: Mutex::default(),
+            quitting: Arc::default(),
             page_limits: calls::PageLimits::default(),
             beats: pages::Heartbeats::default(),
             services: Services::new(start),
@@ -983,19 +988,30 @@ impl PluginHost {
         self.services.stop_where(|trust| trust != Trust::Reviewed, STOP_GRACE);
     }
 
+    /// AutoScene quits (`true`), or didn't after all (`false`): a download
+    /// stopped while it quits keeps its link for the next start.
+    pub fn set_quitting(&self, quitting: bool) {
+        self.quitting.store(quitting, Ordering::SeqCst);
+    }
+
+    /// The flag [`PluginHost::set_quitting`] sets, for what outlives a call.
+    pub(crate) fn quitting(&self) -> Arc<AtomicBool> {
+        self.quitting.clone()
+    }
+
     /// AutoScene quits: every service stops, all at once, each within
     /// [`services::QUIT_GRACE`] and the system's grace after it, and none
     /// starts any more (a page still open asks in vain).
     pub fn shutdown(&self) {
         // A download stopped by the quit keeps its link for the next start.
-        sources::set_quitting(true);
+        self.set_quitting(true);
         self.services.stop_all(services::QUIT_GRACE);
     }
 
     /// AutoScene didn't quit after [`PluginHost::shutdown`] after all: its
     /// pages' services start again when they ask.
     pub fn resume(&self) {
-        sources::set_quitting(false);
+        self.set_quitting(false);
         self.services.resume();
     }
 

@@ -63,15 +63,6 @@ const PART_PREFIX: &str = ".autoscene-part-";
 /// pack action's notes are named by their job id alone).
 const NOTE_PREFIX: &str = "source-";
 
-/// Set while AutoScene quits: a run stopped then keeps its link for the
-/// next start.
-static QUITTING: AtomicBool = AtomicBool::new(false);
-
-/// AutoScene quits (`true`), or didn't after all (`false`).
-pub fn set_quitting(quitting: bool) {
-    QUITTING.store(quitting, Ordering::SeqCst);
-}
-
 /// A link of a pasted text, as AutoScene reads it.
 #[derive(Clone, Debug, PartialEq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -383,7 +374,7 @@ fn queue_one(sv: &Sourcing, entry: &Pending, out_dir: &Path) -> AppResult<bool> 
     let gpu = m.runtime.gpu;
     // Goes with the work, run or not: a job stopped while it waits never
     // runs, and its link is no longer the person's to fetch.
-    let kept = Kept { lib: sv.lib.clone(), entry: entry.clone() };
+    let kept = Kept { lib: sv.lib.clone(), entry: entry.clone(), quitting: sv.host.quitting() };
     let work = {
         let (sv, key, link, out) = (sv.clone(), key.clone(), entry.link.clone(), out_dir.to_path_buf());
         move |ctx: &JobCtx| {
@@ -400,11 +391,13 @@ fn queue_one(sv: &Sourcing, entry: &Pending, out_dir: &Path) -> AppResult<bool> 
 struct Kept {
     lib: Arc<Library>,
     entry: Pending,
+    /// The host's [`PluginHost::set_quitting`] flag.
+    quitting: Arc<AtomicBool>,
 }
 
 impl Drop for Kept {
     fn drop(&mut self) {
-        if !QUITTING.load(Ordering::SeqCst) {
+        if !self.quitting.load(Ordering::SeqCst) {
             let entry = &self.entry;
             change_pending(&self.lib, |all| all.retain(|e| e != entry));
         }
@@ -757,7 +750,6 @@ mod tests {
     type Answer = Box<dyn Fn(&RunMessage, &mut FileSink) -> as_plugin::PluginResult<Option<String>> + Send + Sync>;
 
     struct Bench {
-        _one: parking_lot::MutexGuard<'static, ()>,
         sv: Sourcing,
         project: ProjectId,
         added: Arc<Mutex<Vec<String>>>,
@@ -770,12 +762,8 @@ mod tests {
         }
     }
 
-    /// The bench's tests share the quit flag: one at a time.
-    static ONE_BENCH: Mutex<()> = Mutex::new(());
-
     impl Bench {
         fn new(name: &str, answer: Answer) -> Self {
-            let one = ONE_BENCH.lock();
             let tmp = std::env::temp_dir().join(format!("autoscene-sources-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&tmp);
             let (lib, host) = host_in(&tmp);
@@ -812,7 +800,7 @@ mod tests {
                     Ok(new)
                 }),
             };
-            Self { _one: one, sv, project, added, tmp }
+            Self { sv, project, added, tmp }
         }
 
         fn jobs(&self) -> Vec<JobInfo> {
@@ -890,18 +878,11 @@ mod tests {
         );
         queue_links(&b.sv, b.project, &["youtube.com/watch?v=z".into()]).unwrap();
         assert_eq!(pending(&b.sv.lib).len(), 1, "kept while it waits");
-        struct Unquit;
-        impl Drop for Unquit {
-            fn drop(&mut self) {
-                set_quitting(false);
-            }
-        }
-        let unquit = Unquit;
-        set_quitting(true);
+        b.sv.host.set_quitting(true);
         let id = b.jobs()[0].id;
         b.sv.jobs.cancel(id);
         b.settle();
-        drop(unquit);
+        b.sv.host.set_quitting(false);
         assert_eq!(pending(&b.sv.lib).len(), 1, "a quit keeps it");
         resume(&b.sv);
         b.settle();

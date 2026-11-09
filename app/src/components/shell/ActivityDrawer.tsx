@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next"
 import {
   Check,
   Copy,
+  DownloadSimple,
   Eye,
   FilmStrip,
   Image,
@@ -49,6 +50,7 @@ const KIND_ICON: Record<JobInfo["kind"], React.ReactNode> = {
   regroup: <Users />,
   plugin: <PuzzlePiece />,
   rescan: <Scan />,
+  download: <DownloadSimple />,
 }
 
 /** Global view of background work (indexing, previews, analysis, exports, plugins). */

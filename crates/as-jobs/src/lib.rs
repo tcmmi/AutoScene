@@ -38,6 +38,9 @@ pub enum Class {
     Upkeep,
     /// Plugin runs (one at a time; GPU plugins run as Analysis).
     Plugin,
+    /// Videos plugins fetch from links (one at a time): their own lane, so
+    /// a long download never holds up another plugin's run.
+    Download,
 }
 
 /// What to show for a job and what it belongs to.

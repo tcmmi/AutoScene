@@ -32,7 +32,7 @@ use crate::plugins::PluginHost;
 /// one run at a time (one that uses the GPU waits its turn as analysis). A
 /// class missing here has no worker: its jobs would wait forever.
 const LIMITS: &[(Class, usize)] =
-    &[(Class::Media, 2), (Class::Export, 1), (Class::Analysis, 1), (Class::Upkeep, 1), (Class::Plugin, 1)];
+    &[(Class::Media, 2), (Class::Export, 1), (Class::Analysis, 1), (Class::Upkeep, 1), (Class::Plugin, 1), (Class::Download, 1)];
 
 /// Which media an analysis job is working on, and the restarts asked for
 /// meanwhile. Both change under one lock, so a restart is either handed to
@@ -473,7 +473,8 @@ mod tests {
             Some(Class::Export) => Some(Class::Analysis),
             Some(Class::Analysis) => Some(Class::Upkeep),
             Some(Class::Upkeep) => Some(Class::Plugin),
-            Some(Class::Plugin) => None,
+            Some(Class::Plugin) => Some(Class::Download),
+            Some(Class::Download) => None,
         };
         for class in std::iter::successors(next(None), |&c| next(Some(c))) {
             assert!(LIMITS.iter().any(|&(c, n)| c == class && n > 0), "{class:?} has no worker");

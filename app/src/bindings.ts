@@ -599,7 +599,12 @@ export type ActionKind = "exportAction" | "command" |
  *  An entry of a scenepack's menu (protocol 2), which saves
  *  [`RunMessage::pack`] as [`RunMessage::output`].
  */
-"packAction";
+"packAction" | 
+/**
+ *  A source (protocol 2): it fetches the videos of
+ *  [`RunMessage::source`]'s link into its folder, for the run's project.
+ */
+"source";
 
 /**  Analysis results of a media changed (shots or faces found, or reset). */
 export type AnalysisChanged = {
@@ -1550,7 +1555,9 @@ export type JobKind = "ingest" | "proxy" | "export" |
  *  Faces read again at the source's own quality; what it finds waits for
  *  the person's answer.
  */
-"rescan";
+"rescan" | 
+/**  A plugin's source fetching the videos of one link into a project. */
+"download";
 
 /**  Throttled progress for a running job (≤ 4 Hz per job). */
 export type JobProgress = {

@@ -1618,6 +1618,8 @@ pub enum JobKind {
     /// Faces read again at the source's own quality; what it finds waits for
     /// the person's answer.
     Rescan,
+    /// A plugin's source fetching the videos of one link into a project.
+    Download,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]

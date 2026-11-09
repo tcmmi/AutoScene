@@ -121,7 +121,6 @@ impl<F: FnOnce()> Drop for Unstarted<F> {
     }
 }
 
-/// Index a media (probe, frame index, poster). Queues its preview proxy if it needs one.
 /// Adds `files` (videos, or folders of them) to the project `project_id`,
 /// as its type parses them, and starts indexing those it didn't have: how
 /// many were new. Blocks on the library: call it off the main thread.
@@ -142,6 +141,7 @@ pub fn add_files(
     Ok(added.len() as u32)
 }
 
+/// Index a media (probe, frame index, poster). Queues its preview proxy if it needs one.
 pub fn queue_ingest(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) {
     let state = app.state::<AppState>();
     let Ok(m) = project.media(media_id) else { return };

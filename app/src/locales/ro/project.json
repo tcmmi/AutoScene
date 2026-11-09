@@ -262,9 +262,9 @@
   },
   "downloads": {
     "waiting": "Așteaptă descărcarea",
-    "moreQueued_one": "Încă {{count}} videoclip așteaptă",
-    "moreQueued_few": "Încă {{count}} videoclipuri așteaptă",
-    "moreQueued_other": "Încă {{count}} de videoclipuri așteaptă",
+    "moreQueued_one": "Încă {{count}} link așteaptă",
+    "moreQueued_few": "Încă {{count}} linkuri așteaptă",
+    "moreQueued_other": "Încă {{count}} de linkuri așteaptă",
     "onTheirWay": "Videoclipurile se descarcă. Fiecare apare aici când e gata."
   }
 }

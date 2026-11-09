@@ -56,8 +56,8 @@ export default {
     /** A download waits behind another. */
     waiting: "Waiting to download",
     /** `count` is how many more downloads wait behind the one that runs. */
-    moreQueued_one: "{{count}} more video waiting",
-    moreQueued_other: "{{count}} more videos waiting",
+    moreQueued_one: "{{count}} more link waiting",
+    moreQueued_other: "{{count}} more links waiting",
     /** The empty shelf while videos download. */
     onTheirWay: "Videos are downloading. Each one shows up here when it's done.",
   },

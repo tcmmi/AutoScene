@@ -264,6 +264,8 @@ fn found<T, E>(cell: &OnceLock<T>, find: impl FnOnce() -> Result<T, E>) -> Resul
 /// Stop all background work before the process goes away (quit, restart,
 /// update install), so no ffmpeg or plugin is left running or writing a file.
 pub fn shutdown_work(app: &AppHandle) {
+    // First, before any download sees its stop: a quit keeps their links.
+    crate::plugins::sources::set_quitting(true);
     if let Some(state) = app.try_state::<AppState>() {
         std::thread::scope(|s| {
             // Plugins' services stop beside the jobs, each in its own grace.
@@ -315,6 +317,10 @@ pub fn resume_work(app: &AppHandle) {
         }
         if state.jobs.resume(RESUME_GRACE) {
             crate::work::recover_all(&app);
+            // The downloads the stop kept, queued again.
+            if let Ok(sv) = crate::plugins::sources::Sourcing::of(&app) {
+                crate::plugins::sources::resume(&sv);
+            }
         }
     });
 }

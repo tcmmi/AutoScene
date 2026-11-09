@@ -152,7 +152,7 @@ export default {
     /** `sources` lists what the plugins fetch from ("YouTube and TikTok"), `plugins` their names. */
     takes: "Takes links from {{sources}}, with {{plugins}}.",
     /** Under the settings beside the links. */
-    settingsNote: "A change counts for downloads that haven't started.",
+    settingsNote: "A change counts for links that haven't started. A video downloaded before stays as it is.",
     rights: "Download only videos you have the right to use.",
     where: "Videos go to the Downloads folder of your AutoScene library.",
     /** A link the list shows as one a plugin takes; `source` is what it fetches from, `plugin` the plugin's name. */
@@ -163,9 +163,9 @@ export default {
     /** While no link can be added yet. */
     addNone: "Add links",
     /** Toast after links were queued; `count` is a number. Its description follows. */
-    queued_one: "Downloading {{count}} video",
-    queued_other: "Downloading {{count}} videos",
-    queuedNote: "Each one joins the project when it's done.",
+    queued_one: "Downloading from {{count}} link",
+    queued_other: "Downloading from {{count}} links",
+    queuedNote: "Each video joins the project when it's done.",
     /** Toast after links were added that are downloading already. */
     waiting: "Those links are downloading already",
     /** Toast titles; the reason follows. */

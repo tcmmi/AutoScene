@@ -9085,7 +9085,7 @@
   },
   "project:downloads.moreQueued": {
     "state": "draft",
-    "en": "02f73e9c"
+    "en": "8fbdef38"
   },
   "project:downloads.onTheirWay": {
     "state": "draft",
@@ -9133,7 +9133,7 @@
   },
   "library:links.settingsNote": {
     "state": "draft",
-    "en": "5947ea49"
+    "en": "b7c754bc"
   },
   "library:links.rights": {
     "state": "draft",
@@ -9157,11 +9157,11 @@
   },
   "library:links.queued": {
     "state": "draft",
-    "en": "d0bae5fe"
+    "en": "52f588a2"
   },
   "library:links.queuedNote": {
     "state": "draft",
-    "en": "b64f2b92"
+    "en": "7b0fb019"
   },
   "library:links.waiting": {
     "state": "draft",

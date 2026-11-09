@@ -328,17 +328,24 @@ pub fn queue_links(sv: &Sourcing, project: ProjectId, links: &[String]) -> AppRe
         };
         let entry =
             Pending { project_id: project, plugin: plugin.clone(), source: source.clone(), link: item.link.clone() };
-        match queue_one(sv, &entry, &out_dir) {
-            Ok(true) => {
-                done.queued += 1;
-                change_pending(&sv.lib, |all| {
-                    if !all.contains(&entry) {
-                        all.push(entry);
-                    }
-                });
+        // Kept before its job exists: a job that ends at once removes it after.
+        let had = pending(&sv.lib).contains(&entry);
+        if !had {
+            change_pending(&sv.lib, |all| all.push(entry.clone()));
+        }
+        let unkeep = || {
+            if !had {
+                change_pending(&sv.lib, |all| all.retain(|e| *e != entry));
             }
-            Ok(false) => done.waiting += 1,
+        };
+        match queue_one(sv, &entry, &out_dir) {
+            Ok(true) => done.queued += 1,
+            Ok(false) => {
+                unkeep();
+                done.waiting += 1;
+            }
             Err(e) => {
+                unkeep();
                 let mut item = item;
                 item.refused = Some(e.msg);
                 done.refused.push(item);
@@ -374,30 +381,43 @@ fn queue_one(sv: &Sourcing, entry: &Pending, out_dir: &Path) -> AppResult<bool> 
         export_id: None,
     };
     let gpu = m.runtime.gpu;
+    // Goes with the work, run or not: a job stopped while it waits never
+    // runs, and its link is no longer the person's to fetch.
+    let kept = Kept { lib: sv.lib.clone(), entry: entry.clone() };
     let work = {
         let (sv, key, link, out) = (sv.clone(), key.clone(), entry.link.clone(), out_dir.to_path_buf());
-        let entry = entry.clone();
         move |ctx: &JobCtx| {
-            let ended = fetch(&sv, ctx, &key, &link, &out, gpu);
-            // Kept for the next start only when a quit stopped it.
-            let quit = matches!(ended, Err(JobError::Cancelled)) && QUITTING.load(Ordering::SeqCst);
-            if !quit {
-                change_pending(&sv.lib, |all| all.retain(|e| *e != entry));
-            }
-            ended
+            let _kept = kept;
+            fetch(&sv, ctx, &key, &link, &out, gpu)
         }
     };
     Ok(sv.host.submit(&sv.jobs, key, job, work).is_some())
 }
 
-/// At the start: queues again the links a quit left, whose project and
-/// source are still there; drops the rest.
+/// A link kept for the next start while its job waits or runs: it goes as
+/// the job's work goes (run, stopped while waiting, or dropped with its
+/// plugin), unless AutoScene quits, which keeps it.
+struct Kept {
+    lib: Arc<Library>,
+    entry: Pending,
+}
+
+impl Drop for Kept {
+    fn drop(&mut self) {
+        if !QUITTING.load(Ordering::SeqCst) {
+            let entry = &self.entry;
+            change_pending(&self.lib, |all| all.retain(|e| e != entry));
+        }
+    }
+}
+
+/// At the start (and when a quit didn't happen after all): queues again the
+/// links a quit left, whose project and source are still there; drops the
+/// rest. Only what it drops leaves the list: a job that ends meanwhile
+/// removes its own.
 pub fn resume(sv: &Sourcing) {
     let left = pending(&sv.lib);
-    if left.is_empty() {
-        return;
-    }
-    let mut kept = Vec::new();
+    let mut dropped = Vec::new();
     for entry in left {
         let queued = sv
             .lib
@@ -405,12 +425,14 @@ pub fn resume(sv: &Sourcing) {
             .map_err(AppError::from)
             .and_then(|summary| Ok(sv.lib.default_download_dir(&summary)?))
             .and_then(|out| queue_one(sv, &entry, &out));
-        match queued {
-            Ok(_) => kept.push(entry),
-            Err(e) => log::info!("a link left to fetch is dropped: {}", e.msg.text),
+        if let Err(e) = queued {
+            log::info!("a link left to fetch is dropped: {}", e.msg.text);
+            dropped.push(entry);
         }
     }
-    change_pending(&sv.lib, |all| *all = kept);
+    if !dropped.is_empty() {
+        change_pending(&sv.lib, |all| all.retain(|e| !dropped.contains(e)));
+    }
 }
 
 /// The queued run `key` of the link `link`, now it starts: fetches its
@@ -476,6 +498,7 @@ fn file_sink(
     added: Arc<Mutex<usize>>,
     log: PathBuf,
 ) -> FileSink {
+    let written = out.to_path_buf();
     let (out, part) = (std::fs::canonicalize(out).ok(), std::fs::canonicalize(part).ok());
     let mut seen = 0usize;
     Box::new(move |path: &str, title: Option<&str>| {
@@ -492,7 +515,7 @@ fn file_sink(
             return;
         };
         let file = paths::name(Path::new(path)).into_owned();
-        match check_file(path, out, part) {
+        match check_file(path, &written, out, part) {
             Err(why) => said(format!("[host] not added: {file}: {why}")),
             Ok(()) => match add(project, path) {
                 Ok(new) => {
@@ -519,16 +542,20 @@ fn note_in_log(log: &Path, line: &str) {
 /// be an absolute, plain path to a file (not a link, not a reparse point)
 /// inside `out` (canonical) and outside `part` (canonical), of a kind of
 /// video AutoScene imports, and not empty.
-fn check_file(path: &str, out: &Path, part: &Path) -> Result<(), &'static str> {
+fn check_file(path: &str, written: &Path, out: &Path, part: &Path) -> Result<(), &'static str> {
     let p = Path::new(path);
     if !p.is_absolute() || !paths::is_plain(p) {
         return Err("not a plain absolute path");
+    }
+    // Before anything reads it: a path elsewhere (a share, say) is never touched.
+    if !lexically_inside(p, written) {
+        return Err("outside the run's outDir");
     }
     if !as_project::naming::is_video(p) {
         return Err("not a kind of video AutoScene imports");
     }
     let meta = std::fs::symlink_metadata(p).map_err(|_| "not there")?;
-    if !meta.file_type().is_file() || is_reparse_point(&meta) {
+    if !meta.file_type().is_file() {
         return Err("not a plain file");
     }
     if meta.len() == 0 {
@@ -544,16 +571,28 @@ fn check_file(path: &str, out: &Path, part: &Path) -> Result<(), &'static str> {
     Ok(())
 }
 
-#[cfg(windows)]
-fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-    meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
-
-#[cfg(not(windows))]
-fn is_reparse_point(_: &std::fs::Metadata) -> bool {
-    false
+/// Whether `path`, as written, is under `out`, also as written: compared by
+/// components (case-blind on Windows), before any file is read.
+fn lexically_inside(path: &Path, out: &Path) -> bool {
+    use std::path::Component;
+    let parts = |p: &Path| -> Option<Vec<String>> {
+        let mut v = Vec::new();
+        for c in p.components() {
+            match c {
+                Component::ParentDir => return None,
+                Component::CurDir => {}
+                c => {
+                    let s = c.as_os_str().to_string_lossy().replace('/', std::path::MAIN_SEPARATOR_STR);
+                    v.push(if cfg!(windows) { s.to_lowercase() } else { s });
+                }
+            }
+        }
+        Some(v)
+    };
+    match (parts(path), parts(out)) {
+        (Some(p), Some(o)) => p.len() > o.len() && p.starts_with(&o),
+        _ => false,
+    }
 }
 
 /// A run's folder for unfinished files, in its `outDir`: removed as it
@@ -625,8 +664,11 @@ pub fn remove_left_parts(notes: &Path) {
         }
         if let Ok(dir) = std::fs::read_to_string(note.path()).map(PathBuf::from)
             && let Err(e) = remove_part_dir(&dir)
+            && e.kind() != io::ErrorKind::InvalidInput
         {
+            // Tried again at the next start.
             log::warn!("a source's unfinished files: {e}");
+            continue;
         }
         let _ = std::fs::remove_file(note.path());
     }
@@ -715,6 +757,7 @@ mod tests {
     type Answer = Box<dyn Fn(&RunMessage, &mut FileSink) -> as_plugin::PluginResult<Option<String>> + Send + Sync>;
 
     struct Bench {
+        _one: parking_lot::MutexGuard<'static, ()>,
         sv: Sourcing,
         project: ProjectId,
         added: Arc<Mutex<Vec<String>>>,
@@ -727,8 +770,12 @@ mod tests {
         }
     }
 
+    /// The bench's tests share the quit flag: one at a time.
+    static ONE_BENCH: Mutex<()> = Mutex::new(());
+
     impl Bench {
         fn new(name: &str, answer: Answer) -> Self {
+            let one = ONE_BENCH.lock();
             let tmp = std::env::temp_dir().join(format!("autoscene-sources-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&tmp);
             let (lib, host) = host_in(&tmp);
@@ -765,7 +812,7 @@ mod tests {
                     Ok(new)
                 }),
             };
-            Self { sv, project, added, tmp }
+            Self { _one: one, sv, project, added, tmp }
         }
 
         fn jobs(&self) -> Vec<JobInfo> {
@@ -833,6 +880,7 @@ mod tests {
         assert!(pending(&b.sv.lib).is_empty(), "a failed link isn't kept");
 
         // A quit stops a run: its link is kept, and queued again at the start.
+        drop(b);
         let b = Bench::new(
             "quit",
             Box::new(|_, _| {
@@ -842,15 +890,53 @@ mod tests {
         );
         queue_links(&b.sv, b.project, &["youtube.com/watch?v=z".into()]).unwrap();
         assert_eq!(pending(&b.sv.lib).len(), 1, "kept while it waits");
+        struct Unquit;
+        impl Drop for Unquit {
+            fn drop(&mut self) {
+                set_quitting(false);
+            }
+        }
+        let unquit = Unquit;
         set_quitting(true);
         let id = b.jobs()[0].id;
         b.sv.jobs.cancel(id);
         b.settle();
-        set_quitting(false);
+        drop(unquit);
         assert_eq!(pending(&b.sv.lib).len(), 1, "a quit keeps it");
         resume(&b.sv);
         b.settle();
         assert_eq!(b.jobs().len(), 2, "queued again");
+    }
+
+    #[test]
+    fn a_waiting_download_the_person_stops_isnt_kept() {
+        let b = Bench::new(
+            "stop",
+            Box::new(|_, _| {
+                std::thread::sleep(Duration::from_millis(300));
+                Ok(None)
+            }),
+        );
+        let links = ["youtube.com/watch?v=a".to_owned(), "youtube.com/watch?v=b".to_owned()];
+        queue_links(&b.sv, b.project, &links).unwrap();
+        assert_eq!(pending(&b.sv.lib).len(), 2);
+        // The second waits behind the first: stopped, it never runs.
+        let waiting = b.jobs().into_iter().find(|j| j.state == JobState::Queued).unwrap().id;
+        b.sv.jobs.cancel(waiting);
+        b.settle();
+        assert!(pending(&b.sv.lib).is_empty(), "{:?}", pending(&b.sv.lib));
+    }
+
+    #[test]
+    fn a_path_elsewhere_is_refused_before_it_is_read() {
+        let out = Path::new(if cfg!(windows) { r"D:\Library\Downloads\Show" } else { "/lib/Downloads/Show" });
+        let inside = out.join("a.mkv");
+        assert!(lexically_inside(&inside, out));
+        assert!(!lexically_inside(out, out));
+        assert!(!lexically_inside(&out.join("..").join("x.mkv"), out));
+        assert!(!lexically_inside(Path::new(if cfg!(windows) { r"\evil\s.mkv" } else { "/evil/a.mkv" }), out));
+        #[cfg(windows)]
+        assert!(lexically_inside(Path::new(r"d:\library\downloads\show\A.mkv"), out));
     }
 
     #[test]
@@ -872,25 +958,25 @@ mod tests {
             p.to_string_lossy().into_owned()
         };
         let good = write(&out.join("Sprite Fright [x].mkv"), b"video");
-        assert_eq!(check_file(&good, &out_c, &part_c), Ok(()));
+        assert_eq!(check_file(&good, &out, &out_c, &part_c), Ok(()));
         let unfinished = write(&part.join("a.mkv"), b"video");
-        assert!(check_file(&unfinished, &out_c, &part_c).is_err());
+        assert!(check_file(&unfinished, &out, &out_c, &part_c).is_err());
         let outside = write(&tmp.path().join("b.mkv"), b"video");
-        assert!(check_file(&outside, &out_c, &part_c).is_err());
+        assert!(check_file(&outside, &out, &out_c, &part_c).is_err());
         let climbing = out.join("..").join("b.mkv").to_string_lossy().into_owned();
-        assert!(check_file(&climbing, &out_c, &part_c).is_err());
+        assert!(check_file(&climbing, &out, &out_c, &part_c).is_err());
         let empty = write(&out.join("c.mkv"), b"");
-        assert!(check_file(&empty, &out_c, &part_c).is_err());
+        assert!(check_file(&empty, &out, &out_c, &part_c).is_err());
         let text = write(&out.join("d.txt"), b"text");
-        assert!(check_file(&text, &out_c, &part_c).is_err());
-        assert!(check_file("relative.mkv", &out_c, &part_c).is_err());
-        assert!(check_file(&out.join("gone.mkv").to_string_lossy(), &out_c, &part_c).is_err());
+        assert!(check_file(&text, &out, &out_c, &part_c).is_err());
+        assert!(check_file("relative.mkv", &out, &out_c, &part_c).is_err());
+        assert!(check_file(&out.join("gone.mkv").to_string_lossy(), &out, &out_c, &part_c).is_err());
         // A link out of the folder, to a video outside it, isn't taken.
         #[cfg(unix)]
         {
             let link = out.join("link.mkv");
             std::os::unix::fs::symlink(tmp.path().join("b.mkv"), &link).unwrap();
-            assert!(check_file(&link.to_string_lossy(), &out_c, &part_c).is_err());
+            assert!(check_file(&link.to_string_lossy(), &out, &out_c, &part_c).is_err());
         }
     }
 

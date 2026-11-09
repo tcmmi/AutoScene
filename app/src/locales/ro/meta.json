@@ -9070,5 +9070,125 @@
   "backend:plugin.tooManyLinks": {
     "state": "draft",
     "en": "d3f3b194"
+  },
+  "shell:jobs.stops.download": {
+    "state": "draft",
+    "en": "0b3f5801"
+  },
+  "project:menu.addLinks": {
+    "state": "draft",
+    "en": "4f23c5f1"
+  },
+  "project:downloads.waiting": {
+    "state": "draft",
+    "en": "7bf316b7"
+  },
+  "project:downloads.moreQueued": {
+    "state": "draft",
+    "en": "02f73e9c"
+  },
+  "project:downloads.onTheirWay": {
+    "state": "draft",
+    "en": "5e6ae16e"
+  },
+  "library:newProject.addLinks": {
+    "state": "draft",
+    "en": "4f23c5f1"
+  },
+  "library:newProject.links": {
+    "state": "draft",
+    "en": "81660078"
+  },
+  "library:newProject.linkWaits": {
+    "state": "draft",
+    "en": "7ca06523"
+  },
+  "library:newProject.removeLink": {
+    "state": "draft",
+    "en": "7b297afa"
+  },
+  "library:newProject.removeLinkNamed": {
+    "state": "draft",
+    "en": "16643a2b"
+  },
+  "library:newProject.linkCount": {
+    "state": "draft",
+    "en": "087b35c0"
+  },
+  "library:newProject.linksNote": {
+    "state": "draft",
+    "en": "fca7ddc3"
+  },
+  "library:links.label": {
+    "state": "draft",
+    "en": "9202088e"
+  },
+  "library:links.placeholder": {
+    "state": "draft",
+    "en": "ac77ade2"
+  },
+  "library:links.takes": {
+    "state": "draft",
+    "en": "ca62617a"
+  },
+  "library:links.settingsNote": {
+    "state": "draft",
+    "en": "5947ea49"
+  },
+  "library:links.rights": {
+    "state": "draft",
+    "en": "2d294413"
+  },
+  "library:links.where": {
+    "state": "draft",
+    "en": "523a8f50"
+  },
+  "library:links.takenBy": {
+    "state": "draft",
+    "en": "9d0e6eac"
+  },
+  "library:links.add": {
+    "state": "draft",
+    "en": "eeee01ea"
+  },
+  "library:links.addNone": {
+    "state": "draft",
+    "en": "ef18fccd"
+  },
+  "library:links.queued": {
+    "state": "draft",
+    "en": "d0bae5fe"
+  },
+  "library:links.queuedNote": {
+    "state": "draft",
+    "en": "b64f2b92"
+  },
+  "library:links.waiting": {
+    "state": "draft",
+    "en": "2f9e0851"
+  },
+  "library:links.queueFailed": {
+    "state": "draft",
+    "en": "aece60e9"
+  },
+  "library:links.readFailed": {
+    "state": "draft",
+    "en": "a4badd8d"
+  },
+  "library:links.refused": {
+    "state": "draft",
+    "en": "e35888d8"
+  },
+  "library:links.dialogTitle": {
+    "state": "draft",
+    "en": "1fc18535"
+  },
+  "library:links.dialogDescription": {
+    "state": "draft",
+    "en": "0d1d6b29"
+  },
+  "plugins:review.adds.source": {
+    "state": "draft",
+    "en": "e8017a73"
   }
 }

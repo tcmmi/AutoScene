@@ -23,6 +23,8 @@ export default {
     addFiles: "Add files…",
     /** Choose a folder of videos to put in the project. */
     addFolder: "Add folder…",
+    /** Paste links (YouTube, TikTok) whose videos a plugin downloads into the project. */
+    addLinks: "Add links…",
     editDetails: "Edit details…",
     /** Opens the folder of the project's data in the system's file manager. */
     showProjectFolder: "Show project folder",
@@ -48,6 +50,16 @@ export default {
     /** `count` is how many more episodes are waiting behind the one that runs. */
     moreQueued_one: "{{count}} more episode queued",
     moreQueued_other: "{{count}} more episodes queued",
+  },
+  /** A project's downloads from links, as a card under its title. */
+  downloads: {
+    /** A download waits behind another. */
+    waiting: "Waiting to download",
+    /** `count` is how many more downloads wait behind the one that runs. */
+    moreQueued_one: "{{count}} more video waiting",
+    moreQueued_other: "{{count}} more videos waiting",
+    /** The empty shelf while videos download. */
+    onTheirWay: "Videos are downloading. Each one shows up here when it's done.",
   },
   /** The page a project opens on. */
   overview: {

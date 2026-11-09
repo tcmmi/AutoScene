@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
-import { CircleNotch, FilePlus, FilmSlate, FilmStrip, FolderPlus, Television, Warning, X } from "@/components/icons"
+import { CircleNotch, FilePlus, FilmSlate, FilmStrip, FolderPlus, LinkSimple, Television, Warning, X } from "@/components/icons"
 import { toast } from "sonner"
-import type { ContentKind, ImportCandidate, ProjectKind } from "@/bindings"
+import type { ContentKind, ImportCandidate, LinkItem, ProjectKind } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { Tooltip } from "@/components/ui/tooltip"
 import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
@@ -16,10 +16,13 @@ import { formatBytes } from "@/lib/format"
 import { say, t as translate } from "@/lib/i18n"
 import { commands, errorMessage } from "@/lib/ipc"
 import { fileStem, pickFolder, pickVideoFiles } from "@/lib/media"
-import { useScanDefaults, useSettings } from "@/lib/queries"
+import { usePlugins, useScanDefaults, useSettings } from "@/lib/queries"
 import { cn } from "@/lib/utils"
 import { useNewProject } from "@/state/new-project"
+import { sourceItems } from "@/features/plugins/plugin-items"
 import { FootagePicker } from "./FootagePicker"
+import { LinkSourcesPanel } from "./LinkSourcesPanel"
+import { queueLinks } from "./queue-links"
 import { suggestTitle } from "./suggest-title"
 
 export function NewProjectDialog() {
@@ -58,6 +61,11 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
   const [scan, setScan] = useState<{ key: string; found: ImportCandidate[] }>({ key: "", found: [] })
   const [removed, setRemoved] = useState<Set<string>>(new Set())
   const [creating, setCreating] = useState(false)
+  // Links a plugin's source downloads once the project exists, and whether their field is open.
+  const { data: plugins } = usePlugins()
+  const linkSources = useMemo(() => sourceItems(plugins), [plugins])
+  const [links, setLinks] = useState<LinkItem[]>([])
+  const [linking, setLinking] = useState(false)
   // Files dragged over the window land here: the list says so while they hover.
   const dragging = useNewProject((s) => s.dragging)
   const scanKey = JSON.stringify([kind, sources])
@@ -99,6 +107,26 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
   const chosen = useMemo(() => candidates.filter((c) => !c.refused && !removed.has(c.path)), [candidates, removed])
   const totalBytes = chosen.reduce((n, c) => n + (c.sizeBytes ?? 0), 0)
   const addSources = (paths: string[]) => paths.length && setPicked((s) => [...new Set([...s, ...paths])])
+  const addLinks = (items: LinkItem[]) => {
+    setLinks((had) => {
+      const next = [...had, ...items.filter((i) => !had.some((h) => h.link === i.link))]
+      // Without files, links guess the type as files do: more than one, a series.
+      // i18n-ignore: project kinds, not words
+      const guess: ProjectKind = next.length > 1 ? "series" : "movie"
+      if (!kindTouched.current && candidates.length === 0) setKind(guess)
+      return next
+    })
+    setLinking(false)
+  }
+  const linksButton = (small: boolean) =>
+    linkSources.length > 0 && (
+      <Button size={small ? "sm" : undefined} variant="ghost" onClick={() => setLinking(true)}>
+        <LinkSimple /> {small ? t("newProject.links") : t("newProject.addLinks")}
+      </Button>
+    )
+  const linksPanel = linking && (
+    <LinkSourcesPanel sources={linkSources} onAdd={addLinks} onCancel={() => setLinking(false)} />
+  )
 
   const create = async () => {
     setCreating(true)
@@ -106,6 +134,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
       const req = { title: title.trim(), kind, content, files: chosen.map((c) => c.path) }
       // What the switch shows; `null` (the library's own default) only while it waits for it.
       const p = await commands.projectCreate(req, scanKnown ? fastScan : null)
+      if (links.length > 0) await queueLinks(p.id, links)
       onDone()
       void navigate({ to: "/p/$pid/episodes", params: { pid: p.id } })
     } catch (e) {
@@ -179,7 +208,9 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
             <p className="mt-1 text-sm text-fg-3">{t("newProject.dropToAddKinds")}</p>
           </div>
         )}
-        {candidates.length === 0 ? (
+        {candidates.length === 0 && links.length === 0 && linking ? (
+          linksPanel
+        ) : candidates.length === 0 && links.length === 0 ? (
           // Lower on short windows, so the dialog keeps a margin round it.
           <div className="m-2 flex flex-col items-center rounded-xl border-2 border-dashed border-white/[0.08] px-6 py-12 text-center [@media(max-height:720px)]:py-8">
             {scanning ? (
@@ -200,6 +231,7 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
               <Button variant="ghost" onClick={() => void pickVideoFiles().then(addSources)}>
                 <FilePlus /> {t("newProject.addFiles")}
               </Button>
+              {linksButton(false)}
             </div>
           </div>
         ) : (
@@ -254,12 +286,41 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
                       </tr>
                     )
                   })}
+                  {links.map((l) => (
+                    <tr key={l.link} className="group">
+                      <td className="w-24 whitespace-nowrap rounded-l-xl py-2 pl-3 group-hover:bg-white/[0.04]">
+                        <LinkSimple className="size-4 text-fg-3" />
+                      </td>
+                      <td className="max-w-0 py-2 group-hover:bg-white/[0.04]">
+                        <Tooltip label={l.link} side="top" delay={600}>
+                          <div className="truncate text-fg-2">{l.short}</div>
+                        </Tooltip>
+                        <div className="mt-0.5 truncate text-sm text-fg-3">{t("newProject.linkWaits")}</div>
+                      </td>
+                      <td className="w-24 py-2 pr-2 text-right text-sm text-fg-3 group-hover:bg-white/[0.04]">—</td>
+                      <td className="w-10 rounded-r-xl py-1 pr-1.5 group-hover:bg-white/[0.04]">
+                        <Tooltip label={t("newProject.removeLink")} side="left">
+                          <button
+                            aria-label={t("newProject.removeLinkNamed", { link: l.short })}
+                            onClick={() => setLinks((had) => had.filter((h) => h.link !== l.link))}
+                            className="flex size-7 items-center justify-center rounded-full text-fg-3 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-white/[0.1] hover:text-fg-1 focus-visible:opacity-100"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </Tooltip>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
+            {linksPanel && <div className="border-t border-white/[0.06]">{linksPanel}</div>}
             <div className="flex items-center justify-between border-t border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
               <span className="text-sm text-fg-2">
-                {t("newProject.videos", { count: chosen.length })} · {formatBytes(totalBytes)}
+                {(chosen.length > 0 || links.length === 0) &&
+                  `${t("newProject.videos", { count: chosen.length })} · ${formatBytes(totalBytes)}`}
+                {chosen.length > 0 && links.length > 0 && " · "}
+                {links.length > 0 && t("newProject.linkCount", { count: links.length })}
                 {scanning && <CircleNotch className="ml-2 inline size-3 animate-spin" />}
               </span>
               <div className="flex gap-1">
@@ -269,17 +330,19 @@ function NewProjectForm({ seed, onDone }: { seed: string[]; onDone: () => void }
                 <Button size="sm" variant="ghost" onClick={() => void pickVideoFiles().then(addSources)}>
                   <FilePlus /> {t("newProject.files")}
                 </Button>
+                {!linking && linksButton(true)}
               </div>
             </div>
           </>
         )}
       </div>
+      {links.length > 0 && <p className="mt-2 text-sm text-fg-3">{t("newProject.linksNote")}</p>}
 
       <DialogFooter>
         <Button variant="ghost" onClick={onDone}>
           {t("common:action.cancel")}
         </Button>
-        <Button variant="primary" busy={creating} disabled={!title.trim() || chosen.length === 0} onClick={() => void create()}>
+        <Button variant="primary" busy={creating} disabled={!title.trim() || (chosen.length === 0 && links.length === 0)} onClick={() => void create()}>
           {t("newProject.create")}
         </Button>
       </DialogFooter>

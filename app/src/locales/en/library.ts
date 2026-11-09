@@ -129,6 +129,54 @@ export default {
     /** Toast titles; the reason follows. */
     readFailed: "Couldn't read those files",
     createFailed: "Couldn't create the project",
+    /** Beside Add folder… and Add files…: opens a field for links (YouTube, TikTok) a plugin downloads. */
+    addLinks: "Add links…",
+    /** Beside Folder… and Files…, when the list has something. */
+    links: "Links…",
+    /** In a link's row: a link isn't fetched before the project exists. */
+    linkWaits: "Downloads after you create the project",
+    /** A tooltip and label of the button that takes a link out of the list; `link` is the link, short. */
+    removeLink: "Remove it",
+    removeLinkNamed: "Remove {{link}}",
+    /** Under the list, after the videos and their size: how many links; `count` is a number. */
+    linkCount_one: "{{count}} link",
+    linkCount_other: "{{count}} links",
+    /** Under the list while it has links. */
+    linksNote: "Links download after you create the project.",
+  },
+  /** The field for links that a plugin's source downloads: in New project, and in a project's Add links…. */
+  links: {
+    /** The field's label. */
+    label: "Links",
+    placeholder: "Paste links here, one per line",
+    /** `sources` lists what the plugins fetch from ("YouTube and TikTok"), `plugins` their names. */
+    takes: "Takes links from {{sources}}, with {{plugins}}.",
+    /** Under the settings beside the links. */
+    settingsNote: "A change counts for downloads that haven't started.",
+    rights: "Download only videos you have the right to use.",
+    where: "Videos go to the Downloads folder of your AutoScene library.",
+    /** A link the list shows as one a plugin takes; `source` is what it fetches from, `plugin` the plugin's name. */
+    takenBy: "{{source}} · {{plugin}}",
+    /** The button that adds the links read so far; `count` is a number. */
+    add_one: "Add {{count}} link",
+    add_other: "Add {{count}} links",
+    /** While no link can be added yet. */
+    addNone: "Add links",
+    /** Toast after links were queued; `count` is a number. Its description follows. */
+    queued_one: "Downloading {{count}} video",
+    queued_other: "Downloading {{count}} videos",
+    queuedNote: "Each one joins the project when it's done.",
+    /** Toast after links were added that are downloading already. */
+    waiting: "Those links are downloading already",
+    /** Toast titles; the reason follows. */
+    queueFailed: "Couldn't start the downloads",
+    readFailed: "Couldn't read those links",
+    /** Toast title when some links couldn't be queued; `count` is a number. Their reasons follow. */
+    refused_one: "{{count}} link couldn't be added",
+    refused_other: "{{count}} links couldn't be added",
+    /** The dialog of a project's Add links…. */
+    dialogTitle: "Add videos from links",
+    dialogDescription: "Each video joins this project when it's downloaded.",
   },
   /** Edit details and Remove from the library. */
   details: {

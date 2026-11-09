@@ -427,7 +427,8 @@
       "settings_few": "<x>Setări:</x> {{count}} setări",
       "settings_other": "<x>Setări:</x> {{count}} de setări",
       "secret": "Poate păstra {{title}} în seiful sistemului",
-      "nothing": "Nimic de listat."
+      "nothing": "Nimic de listat.",
+      "source": "<x>Adaugă linkuri… în Proiect nou și în proiecte:</x> <what/><x>, linkuri de pe {{hosts}}</x>"
     }
   }
 }

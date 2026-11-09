@@ -54,6 +54,7 @@ export {
   Image,
   Info,
   Keyboard,
+  LinkSimple,
   ListBullets,
   ListNumbers,
   MagnifyingGlass,

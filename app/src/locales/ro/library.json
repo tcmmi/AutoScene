@@ -91,7 +91,16 @@
     "videos_other": "{{count}} de fișiere video",
     "create": "Creează proiectul",
     "readFailed": "Nu s-au putut citi fișierele",
-    "createFailed": "Nu s-a putut crea proiectul"
+    "createFailed": "Nu s-a putut crea proiectul",
+    "addLinks": "Adaugă linkuri…",
+    "links": "Linkuri…",
+    "linkWaits": "Se descarcă după ce creezi proiectul",
+    "removeLink": "Elimină-l",
+    "removeLinkNamed": "Elimină {{link}}",
+    "linkCount_one": "{{count}} link",
+    "linkCount_few": "{{count}} linkuri",
+    "linkCount_other": "{{count}} de linkuri",
+    "linksNote": "Linkurile se descarcă după ce creezi proiectul."
   },
   "details": {
     "title": "Detaliile proiectului",
@@ -208,5 +217,30 @@
     "watchFromFirst": "Vezi de la primul plan",
     "watchFromWhere": "Vezi de la {{where}}",
     "watchFromClock": "Vezi de la {{clock}}"
+  },
+  "links": {
+    "label": "Linkuri",
+    "placeholder": "Lipește linkurile aici, câte unul pe rând",
+    "takes": "Acceptă linkuri de pe {{sources}}, prin {{plugins}}.",
+    "settingsNote": "O schimbare contează pentru descărcările care n-au început.",
+    "rights": "Descarcă doar videoclipuri pe care ai dreptul să le folosești.",
+    "where": "Videoclipurile ajung în dosarul Downloads al bibliotecii tale AutoScene.",
+    "takenBy": "{{source}} · {{plugin}}",
+    "add_one": "Adaugă {{count}} link",
+    "add_few": "Adaugă {{count}} linkuri",
+    "add_other": "Adaugă {{count}} de linkuri",
+    "addNone": "Adaugă linkuri",
+    "queued_one": "Se descarcă {{count}} videoclip",
+    "queued_few": "Se descarcă {{count}} videoclipuri",
+    "queued_other": "Se descarcă {{count}} de videoclipuri",
+    "queuedNote": "Fiecare intră în proiect când e gata.",
+    "waiting": "Linkurile acelea se descarcă deja",
+    "queueFailed": "Descărcările nu au putut porni",
+    "readFailed": "Linkurile acelea nu au putut fi citite",
+    "refused_one": "{{count}} link nu a putut fi adăugat",
+    "refused_few": "{{count}} linkuri nu au putut fi adăugate",
+    "refused_other": "{{count}} de linkuri nu au putut fi adăugate",
+    "dialogTitle": "Adaugă videoclipuri din linkuri",
+    "dialogDescription": "Fiecare videoclip intră în acest proiect când e descărcat."
   }
 }

@@ -18,6 +18,7 @@ import type {
   ActionKind,
   CallCode,
   CharacterShot,
+  LinkItem,
   PageEvent,
   PageMount,
   PageReply,
@@ -423,8 +424,54 @@ const fcpxml = plugin({
   packActions: [{ id: "fcpxml", title: "Save as FCPXML…", file: { name: "{character}.fcpxml", extensions: ["fcpxml"] } }],
 })
 
+/**
+ * The source plugin (plugins/reel-in has the real one): YouTube and TikTok
+ * links become downloads into the project, in the quality its setting says.
+ */
+const reelIn = plugin({
+  id: "dev.autoscene.reel-in",
+  name: "Reel In",
+  version: "1.0.0",
+  trust: "reviewed",
+  author: "AutoScene",
+  description: "Add YouTube and TikTok videos to a project by their links, in the quality you choose.",
+  permissions: ["network"],
+  networkHosts: ["youtube.com", "googlevideo.com", "tiktok.com"],
+  icon: icon("#e0a33a"),
+  protocol: 2,
+  settings: [
+    {
+      key: "quality",
+      title: "Quality",
+      description: "The most it fetches. Best takes the highest the video has.",
+      kind: {
+        type: "select",
+        default: "best",
+        options: [
+          { value: "best", label: "Best" },
+          { value: "2160", label: "4K" },
+          { value: "1440", label: "1440p" },
+          { value: "1080", label: "1080p" },
+          { value: "720", label: "720p" },
+          { value: "480", label: "480p" },
+        ],
+      },
+    },
+  ],
+  sources: [
+    {
+      id: "links",
+      title: "YouTube and TikTok",
+      description: "Videos by their links, in the quality you choose.",
+      linkHosts: ["youtube.com", "youtu.be", "tiktok.com"],
+      settings: ["quality"],
+    },
+  ],
+})
+
 const installed = new Map<string, MockPlugin>([
   [hello("1.0.0").id, hello("1.0.0")],
+  [reelIn.id, reelIn],
   [speechFilter.id, speechFilter],
   [fcpxml.id, fcpxml],
   [helloPage.id, helloPage],
@@ -754,6 +801,55 @@ function defaultOf(s: SettingSpec): SettingValue | undefined {
 }
 
 /** Each setting's value: the person's, else its default (none without one). */
+/** A pasted link as the backend reads it (plugins/sources.rs): cleaned, and the active source that takes it. */
+export function readLinks(text: string, allow: boolean): LinkItem[] {
+  const sources = pluginsList(allow)
+    .filter((p) => p.active)
+    .flatMap((p) => p.sources.map((s) => ({ p, s })))
+  const seen = new Set<string>()
+  const out: LinkItem[] = []
+  for (const token of text.split(/[\s,]+/).filter(Boolean)) {
+    const item: LinkItem = {
+      text: token.slice(0, 200),
+      link: "",
+      short: "",
+      pluginId: null,
+      sourceId: null,
+      sourceTitle: null,
+      pluginName: null,
+      refused: null,
+    }
+    let url: URL | null = null
+    try {
+      url = new URL(token.includes("://") ? token : `https://${token}`)
+    } catch {
+      url = null
+    }
+    const host = url?.hostname.toLowerCase().replace(/\.$/, "") ?? ""
+    const plain = url && /^https?:$/.test(url.protocol) && host.includes(".") && !/^[\d.]+$/.test(host) && !url.username && !url.password
+    if (!url || !plain || (url.port && url.port !== "443" && url.port !== "80")) {
+      item.refused = { key: "plugin.notALink", text: "That isn't a web link.", args: {} }
+    } else {
+      url.protocol = "https:"
+      url.port = ""
+      url.hash = ""
+      const link = url.toString()
+      if (seen.has(link)) continue
+      seen.add(link)
+      item.link = link
+      item.short = link.replace(/^https:\/\//, "").replace(/^www\./, "").replace(/\/$/, "").slice(0, 60)
+      const found = sources.find(({ s }) => s.linkHosts.some((h) => host === h || host.endsWith(`.${h}`)))
+      if (found) {
+        Object.assign(item, { pluginId: found.p.id, sourceId: found.s.id, sourceTitle: found.s.title, pluginName: found.p.name })
+      } else {
+        item.refused = { key: "plugin.noSourceForHost", text: `No plugin takes links from ${host}.`, args: { host } }
+      }
+    }
+    out.push(item)
+  }
+  return out
+}
+
 export function pluginValues(id: string): Record<string, SettingValue> {
   const own = changed.get(id)
   const values: Record<string, SettingValue> = {}

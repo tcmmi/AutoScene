@@ -22,7 +22,7 @@ export function cancelLabel(kind: JobInfo["kind"]): string {
 
 /** The word for stopping a job beside its title: a plugin's run is stopped, other work cancelled. */
 export function stopWord(kind: JobInfo["kind"]): string {
-  return kind === "plugin" ? t("common:action.stop") : t("common:action.cancel")
+  return kind === "plugin" || kind === "download" ? t("common:action.stop") : t("common:action.cancel")
 }
 
 /** What stops when its episode or project goes, in the order it is named. Each says how many of its kind there are. */
@@ -33,6 +33,7 @@ const STOPPING: [JobInfo["kind"], (n: number) => string][] = [
   ["export", (n) => t("shell:jobs.stops.export", { count: n, n })],
   ["rescan", () => t("shell:jobs.stops.rescan")],
   ["plugin", (n) => t("shell:jobs.stops.pluginRun", { count: n, n })],
+  ["download", (n) => t("shell:jobs.stops.download", { count: n, n })],
 ]
 
 /**
@@ -54,7 +55,7 @@ export function stopsFirst(kinds: JobInfo["kind"][]): string | null {
 
 /** The toast title when stopping a job fails: a plugin's run is stopped, other work cancelled. */
 export function stopFailed(kind: JobInfo["kind"]): string {
-  return kind === "plugin" ? t("shell:activity.stopFailed") : t("shell:activity.cancelFailed")
+  return kind === "plugin" || kind === "download" ? t("shell:activity.stopFailed") : t("shell:activity.cancelFailed")
 }
 
 /** Stop `job`, as the Activity drawer does; a toast says so when it can't. */

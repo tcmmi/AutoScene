@@ -171,7 +171,10 @@
       "pluginRun_one": "o rulare de plugin",
       "pluginRun_few": "{{n}} rulări de plugin",
       "pluginRun_other": "{{n}} de rulări de plugin",
-      "rescan": "rescanarea"
+      "rescan": "rescanarea",
+      "download_one": "o descărcare",
+      "download_few": "{{n}} descărcări",
+      "download_other": "{{n}} de descărcări"
     }
   },
   "copy": {

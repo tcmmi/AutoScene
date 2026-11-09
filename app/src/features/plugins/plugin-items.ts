@@ -1,4 +1,4 @@
-import type { Permission, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, Trust } from "@/bindings"
+import type { Permission, PluginInfo, PluginReview, PluginSandbox, PluginUpdate, SettingSpec, SourceSpec, Trust } from "@/bindings"
 import { fmt, t } from "@/lib/i18n"
 
 /**
@@ -264,6 +264,33 @@ export function packActionItems(plugins: PluginInfo[] | undefined): PackActionIt
         icon: p.icon,
         actionId: a.id,
         title: a.title,
+      })),
+    )
+}
+
+/** A source a plugin adds: links of its hosts become downloads into a project. */
+export type SourceItem = {
+  key: string
+  pluginId: string
+  pluginName: string
+  icon: string | null
+  source: SourceSpec
+  /** The settings it shows beside the links, in its order. */
+  settings: SettingSpec[]
+}
+
+/** The sources of the plugins that may run now, plugin by plugin, in the order each lists them. */
+export function sourceItems(plugins: PluginInfo[] | undefined): SourceItem[] {
+  return (plugins ?? [])
+    .filter((p) => p.active)
+    .flatMap((p) =>
+      p.sources.map((s) => ({
+        key: `${p.id}.${s.id}`,
+        pluginId: p.id,
+        pluginName: p.name,
+        icon: p.icon,
+        source: s,
+        settings: s.settings.flatMap((k) => p.settings.filter((x) => x.key === k)),
       })),
     )
 }

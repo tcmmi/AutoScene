@@ -567,6 +567,8 @@ export default {
       command: "<x>Command palette:</x> <what/>",
       shotFilter: "<x>A scenepack filter:</x> <what/>",
       packAction: "<x>A scenepack's ⋯ menu:</x> <what/>",
+      /** `hosts` lists the web sites whose links it takes. */
+      source: "<x>Add links… in New project and projects:</x> <what/><x>, links from {{hosts}}</x>",
       afterFailed: "<x>Can run after every export, also one that failed:</x> <what/><x> (you turn it on)</x>",
       settings_one: "<x>Settings:</x> {{count}} setting",
       settings_other: "<x>Settings:</x> {{count}} settings",

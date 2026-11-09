@@ -219,6 +219,8 @@ export default {
       export_other: "{{n}} exports",
       pluginRun_one: "a plugin run",
       pluginRun_other: "{{n}} plugin runs",
+      download_one: "a download",
+      download_other: "{{n}} downloads",
     },
   },
 

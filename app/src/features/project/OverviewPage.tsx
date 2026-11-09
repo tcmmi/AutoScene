@@ -2,7 +2,7 @@ import type * as React from "react"
 import { useState } from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useTranslation } from "react-i18next"
-import { CaretRight, DotsThree, FilePlus, FolderOpen, FolderPlus, Package, PencilSimple, Plus } from "@/components/icons"
+import { CaretRight, DotsThree, FilePlus, FolderOpen, FolderPlus, LinkSimple, Package, PencilSimple, Plus } from "@/components/icons"
 import type { MediaItem, ProjectSummary } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
@@ -28,7 +28,10 @@ import { reveal } from "@/lib/os"
 import { pickFolder, pickVideoFiles } from "@/lib/media"
 import { addToProject, projectFacts } from "@/lib/projects"
 import { firstFailure, useCast, useMediaList, useProject } from "@/lib/queries"
+import { AddLinksDialog } from "./AddLinksDialog"
 import { AnalysisStatus } from "./AnalysisStatus"
+import { DownloadStatus } from "./DownloadStatus"
+import { useProjectDownloads, useTakesLinks } from "./links"
 import { EpisodeCard } from "./EpisodeCard"
 import { MissingBanner } from "./MissingBanner"
 import { ProjectLoadError } from "./ProjectLoadError"
@@ -48,6 +51,9 @@ export function OverviewPage() {
   const [renaming, setRenaming] = useState<ProjectSummary | null>(null)
   const [choosing, setChoosing] = useState(false)
   const [removing, setRemoving] = useState<MediaItem | null>(null)
+  const [linking, setLinking] = useState(false)
+  const takesLinks = useTakesLinks()
+  const downloading = useProjectDownloads(pid).length > 0
   const navigate = useNavigate()
   const pictured = project?.poster ? project : media?.find((m) => m.poster)
   const backdrop = pictured?.poster ?? null
@@ -80,6 +86,11 @@ export function OverviewPage() {
           <ContextMenuItem onSelect={() => void pickVideoFiles().then((p) => addToProject(pid, p))}>
             <FilePlus /> {t("menu.addFiles")}
           </ContextMenuItem>
+          {takesLinks && (
+            <ContextMenuItem onSelect={() => setLinking(true)}>
+              <LinkSimple /> {t("menu.addLinks")}
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => project && setRenaming(project)}>
             <PencilSimple /> {t("menu.editDetails")}
@@ -125,6 +136,11 @@ export function OverviewPage() {
                 <DropdownMenuItem onSelect={() => void pickVideoFiles().then((p) => addToProject(pid, p))}>
                   <FilePlus /> {t("menu.addFiles")}
                 </DropdownMenuItem>
+                {takesLinks && (
+                  <DropdownMenuItem onSelect={() => setLinking(true)}>
+                    <LinkSimple /> {t("menu.addLinks")}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onSelect={() => project && setRenaming(project)}>
                   <PencilSimple /> {t("menu.editDetails")}
                 </DropdownMenuItem>
@@ -135,7 +151,8 @@ export function OverviewPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <AnalysisStatus pid={pid} className="mt-8" />
+          <DownloadStatus pid={pid} className="mt-8" />
+          <AnalysisStatus pid={pid} className="mt-3" />
         </div>
       </Hero>
 
@@ -187,6 +204,8 @@ export function OverviewPage() {
                 />
               ))}
             </Shelf>
+          ) : downloading ? (
+            <Placeholder>{t("downloads.onTheirWay")}</Placeholder>
           ) : (
             <button
               onClick={() => void pickFolder().then((p) => (p ? addToProject(pid, [p]) : undefined))}
@@ -198,6 +217,7 @@ export function OverviewPage() {
           )}
         </Section>
       </div>
+      <AddLinksDialog projectId={pid} open={linking} onOpenChange={setLinking} />
       <ProjectDetailsDialog project={renaming} onOpenChange={(o) => !o && setRenaming(null)} />
       <RemoveMediaDialog projectId={pid} media={removing} onOpenChange={(o) => !o && setRemoving(null)} />
       <PickCharacter

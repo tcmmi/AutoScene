@@ -64,6 +64,7 @@ import {
   pluginRun,
   pluginValues,
   pluginsList,
+  readLinks,
   reviewed,
   runnableName,
   setAfterExport,
@@ -591,7 +592,7 @@ const onCancel = new Map<string, () => void>()
  * The kinds of work that run one job at a time, as the backend's analysis
  * class does: a second one waits `queued` until the one before it ends.
  */
-const ONE_AT_A_TIME: JobKind[] = ["analyze"]
+const ONE_AT_A_TIME: JobKind[] = ["analyze", "download"]
 /** How each waiting job starts once its turn comes, by job. */
 const waiting = new Map<string, () => void>()
 
@@ -1266,6 +1267,31 @@ const handlers: Record<string, Handler> = {
     items.forEach((m) => ingest(p, m))
     void emit("media:changed", { projectId: p.id, mediaId: null })
     return items.length
+  },
+  source_links_read: ({ text }) => readLinks(String(text), allows()),
+  source_links_queue: ({ projectId, links }) => {
+    const p = find(projectId)
+    const items = readLinks((links as string[]).join("\n"), allows())
+    const outDir = `C:\\Users\\you\\Documents\\AutoScene Library\\Downloads\\${p.title}`
+    const done = { queued: 0, waiting: 0, refused: items.filter((i) => i.refused || !i.pluginId), outDir }
+    for (const item of items.filter((i) => !i.refused && i.pluginId)) {
+      const title = said("plugin.downloading", `Downloading ${item.short}`, { link: item.short })
+      const waits = jobs.some((j) => j.kind === "download" && j.projectId === p.id && !isFinished(j) && j.title.text === title.text)
+      if (waits) {
+        done.waiting += 1
+        continue
+      }
+      done.queued += 1
+      const name = `${item.short.split(/[/=?]/).filter(Boolean).pop() ?? "video"}.mkv`
+      startJob("download", title, p, 5000, { subtitle: item.pluginName ?? undefined, stage: said("", `Fetching ${item.short}`) }, () => {
+        const m = media(name, [null, null], { status: "queued", path: `${outDir}\\${name}` })
+        p.media.push(m)
+        refresh(p)
+        ingest(p, m)
+        void emit("media:changed", { projectId: p.id, mediaId: null })
+      })
+    }
+    return done
   },
   media_remove: ({ projectId, mediaId }) => {
     const p = find(projectId)

@@ -186,6 +186,12 @@ async function tellWithdrawn(ids: string[], goPlugins: () => void) {
  * saved with a plugin's action says which file, and shows it in its folder.
  */
 function notifyFinished(job: JobInfo) {
+  // A download that ends well shows as its episode; one that fails says why, named by its plugin.
+  if (job.kind === "download") {
+    if (job.state === "failed")
+      pluginToast(job.subtitle, "jobFailed", { action: say(job.title) }, { description: errorOf(job) })
+    return
+  }
   if (job.kind === "plugin") {
     const saved = isFinished(job) ? takePackSave(job.id) : undefined
     if (job.state === "failed")

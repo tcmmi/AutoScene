@@ -17,7 +17,8 @@
     "showFolder": "Arată folderul",
     "copyFilePath": "Copiază calea fișierului",
     "copyFolderPath": "Copiază calea folderului",
-    "copyError": "Copiază eroarea"
+    "copyError": "Copiază eroarea",
+    "addLinks": "Adaugă linkuri…"
   },
   "add": {
     "files": "Adaugă fișiere",
@@ -258,5 +259,12 @@
     },
     "verified": "Verificat: fiecare cadru corespunde sursei",
     "unverifiedWhy": "Exportat, dar cadrele nu au putut fi verificate"
+  },
+  "downloads": {
+    "waiting": "Așteaptă descărcarea",
+    "moreQueued_one": "Încă {{count}} videoclip așteaptă",
+    "moreQueued_few": "Încă {{count}} videoclipuri așteaptă",
+    "moreQueued_other": "Încă {{count}} de videoclipuri așteaptă",
+    "onTheirWay": "Videoclipurile se descarcă. Fiecare apare aici când e gata."
   }
 }

@@ -7,6 +7,7 @@ import {
   FilePlus,
   FolderOpen,
   FolderPlus,
+  LinkSimple,
   Play,
 } from "@/components/icons"
 import { toast } from "sonner"
@@ -42,6 +43,9 @@ import { addToProject, projectFacts } from "@/lib/projects"
 import { firstFailure, useMediaList, useProject } from "@/lib/queries"
 import { formatFps } from "@/lib/timecode"
 import { cn } from "@/lib/utils"
+import { AddLinksDialog } from "./AddLinksDialog"
+import { DownloadStatus } from "./DownloadStatus"
+import { useTakesLinks } from "./links"
 import { EpisodeItems } from "./episode-actions"
 import { MissingBanner } from "./MissingBanner"
 import { ProjectLoadError } from "./ProjectLoadError"
@@ -59,6 +63,8 @@ export function EpisodesPage() {
   const { data: media, isPending } = mediaQuery
   const navigate = useNavigate()
   const [removing, setRemoving] = useState<MediaItem | null>(null)
+  const [linking, setLinking] = useState(false)
+  const takesLinks = useTakesLinks()
   const nameCounts = useMemo(() => {
     const counts = new Map<string, number>()
     for (const m of media ?? []) counts.set(releaseTitle(m.fileName), (counts.get(releaseTitle(m.fileName)) ?? 0) + 1)
@@ -87,6 +93,11 @@ export function EpisodesPage() {
           <ContextMenuItem onSelect={() => void pickVideoFiles().then((p) => addToProject(pid, p))}>
             <FilePlus /> {t("menu.addFiles")}
           </ContextMenuItem>
+          {takesLinks && (
+            <ContextMenuItem onSelect={() => setLinking(true)}>
+              <LinkSimple /> {t("menu.addLinks")}
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => project && reveal(project.dir)}>
             <FolderOpen /> {t("menu.showProjectFolder")}
@@ -105,6 +116,11 @@ export function EpisodesPage() {
           )}
         </div>
         <div className="flex items-center gap-2.5">
+          {takesLinks && (
+            <Button size="lg" variant="secondary" onClick={() => setLinking(true)}>
+              <LinkSimple /> {t("menu.addLinks")}
+            </Button>
+          )}
           <Button size="lg" variant="secondary" onClick={() => void pickVideoFiles().then((p) => addToProject(pid, p))}>
             <FilePlus /> {t("add.files")}
           </Button>
@@ -119,6 +135,7 @@ export function EpisodesPage() {
       </header>
 
       <div className="px-10 pb-16">
+        <DownloadStatus pid={pid} className="mb-6" />
         <MissingBanner pid={pid} media={media} movie={movie} className="mb-6" />
         {!isPending && media?.length === 0 ? (
           <EmptyState
@@ -149,6 +166,7 @@ export function EpisodesPage() {
         )}
       </div>
       <RemoveMediaDialog projectId={pid} media={removing} onOpenChange={(o) => !o && setRemoving(null)} />
+      <AddLinksDialog projectId={pid} open={linking} onOpenChange={setLinking} />
     </Page>
   )
 }

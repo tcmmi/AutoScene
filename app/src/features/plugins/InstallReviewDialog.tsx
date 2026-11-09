@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Field, Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { formatBytes } from "@/lib/format"
-import { say } from "@/lib/i18n"
+import { fmt, say } from "@/lib/i18n"
 import { commands, errorMessage, isAppError } from "@/lib/ipc"
 import { qk, queryClient } from "@/lib/queries"
 import { type Getting, usePluginReview } from "@/state/plugin-review"
@@ -515,6 +515,7 @@ type AddLine =
   | "review.adds.command"
   | "review.adds.shotFilter"
   | "review.adds.packAction"
+  | "review.adds.source"
   | "review.adds.afterFailed"
   | "event.analysisFinished.adds"
 
@@ -543,7 +544,7 @@ function eventAdds(on: EventKind): AddLine {
  */
 function Adds({ p, update }: { p: PluginInfo; update: PluginUpdate | null | undefined }) {
   const { t } = useTranslation("plugins")
-  const adds: { key: string; line: AddLine; what: string; added: boolean }[] = [
+  const adds: { key: string; line: AddLine; what: string; added: boolean; hosts?: string }[] = [
     ...p.pages.map((page) => ({
       key: `page-${page.id}`,
       line: pagePlace(page),
@@ -564,6 +565,13 @@ function Adds({ p, update }: { p: PluginInfo; update: PluginUpdate | null | unde
       what: a.title,
       added: update?.addedPackActions.includes(a.id) ?? false,
     })),
+    ...p.sources.map((s) => ({
+      key: `source-${s.id}`,
+      line: "review.adds.source" as const,
+      what: s.title,
+      hosts: fmt.list(s.linkHosts),
+      added: (update?.addedSources.includes(s.id) || s.linkHosts.some((h) => update?.addedLinkHosts.includes(h))) ?? false,
+    })),
     ...p.exportActions
       .filter((a) => a.afterFailed)
       .map((a) => ({ key: `failed-${a.id}`, line: "review.adds.afterFailed" as const, what: a.title, added: false })),
@@ -580,7 +588,7 @@ function Adds({ p, update }: { p: PluginInfo; update: PluginUpdate | null | unde
         {adds.map((a) => (
           <li key={a.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span>
-              <Trans t={t} i18nKey={a.line} values={{ max: MAX_RAIL_PAGES }} components={{ ...muted, what: <>{a.what}</> }} />
+              <Trans t={t} i18nKey={a.line} values={{ max: MAX_RAIL_PAGES, hosts: a.hosts ?? "" }} components={{ ...muted, what: <>{a.what}</> }} />
             </span>
             {a.added && <Badge tone="accent">{t("new")}</Badge>}
           </li>

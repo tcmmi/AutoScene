@@ -23,6 +23,42 @@ pub fn half(rgb: &[u8], w: usize, h: usize) -> Vec<u8> {
     out
 }
 
+/// Shrink a `w`×`h` RGB24 frame to three quarters of its size: along each
+/// side four pixels become three, every source pixel counted by how much of
+/// it lies under an output pixel (3:1, 2:2, 1:3). `w` and `h` must be
+/// multiples of 4.
+pub fn three_quarters(rgb: &[u8], w: usize, h: usize) -> Vec<u8> {
+    assert!(w.is_multiple_of(4) && h.is_multiple_of(4) && rgb.len() == w * h * 3);
+    let (ow, oh) = (w / 4 * 3, h / 4 * 3);
+    let mut out = vec![0u8; ow * oh * 3];
+    // Four rows shrunk across (values ×4), then down into three (×16).
+    let mut across = vec![0u16; 4 * ow * 3];
+    for (block, dst) in out.chunks_exact_mut(3 * ow * 3).enumerate() {
+        for (r, line) in across.chunks_exact_mut(ow * 3).enumerate() {
+            let src = &rgb[(4 * block + r) * w * 3..(4 * block + r + 1) * w * 3];
+            for (s, o) in src.as_chunks::<12>().0.iter().zip(line.as_chunks_mut::<9>().0) {
+                for c in 0..3 {
+                    let (p0, p1, p2, p3) = (s[c] as u16, s[3 + c] as u16, s[6 + c] as u16, s[9 + c] as u16);
+                    o[c] = 3 * p0 + p1;
+                    o[3 + c] = 2 * (p1 + p2);
+                    o[6 + c] = p2 + 3 * p3;
+                }
+            }
+        }
+        let (r0, rest) = across.split_at(ow * 3);
+        let (r1, rest) = rest.split_at(ow * 3);
+        let (r2, r3) = rest.split_at(ow * 3);
+        let (o0, rest) = dst.split_at_mut(ow * 3);
+        let (o1, o2) = rest.split_at_mut(ow * 3);
+        for i in 0..ow * 3 {
+            o0[i] = ((3 * r0[i] + r1[i] + 8) >> 4) as u8;
+            o1[i] = ((2 * (r1[i] + r2[i]) + 8) >> 4) as u8;
+            o2[i] = ((r2[i] + 3 * r3[i] + 8) >> 4) as u8;
+        }
+    }
+    out
+}
+
 /// Shrink a whole `w`×`h` RGB24 frame to `ow`×`oh` — every source pixel
 /// under an output pixel averaged — into `out`, an RGB24 image `out_w`
 /// pixels wide, at column `ox`. The frame must be at least as big as the
@@ -258,6 +294,26 @@ mod tests {
     fn halving_averages_blocks() {
         let rgb = [0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255];
         assert_eq!(half(&rgb, 2, 2), [191, 191, 191]);
+    }
+
+    #[test]
+    fn three_quarters_weighs_each_pixel_by_what_lies_under_it() {
+        // One row of grey 0, 40, 80, 120 (four rows alike): 3:1, 2:2, 1:3.
+        let rgb: Vec<u8> = (0..16).flat_map(|i| [(i % 4 * 40) as u8; 3]).collect();
+        let out = three_quarters(&rgb, 4, 4);
+        assert_eq!(out.len(), 3 * 3 * 3);
+        assert_eq!(&out[..9], &[10, 10, 10, 60, 60, 60, 110, 110, 110]);
+        assert_eq!(out[..9], out[9..18], "rows alike stay alike");
+        // Down a side as across; channels are kept apart.
+        let rgb: Vec<u8> = (0..16).flat_map(|i| [(i / 4 * 40) as u8, 200, 0]).collect();
+        let out = three_quarters(&rgb, 4, 4);
+        assert_eq!((&out[..3], &out[9..12], &out[18..21]), (&[10, 200, 0][..], &[60, 200, 0][..], &[110, 200, 0][..]));
+        // As the exact resize of the whole frame, to a rounding step.
+        let (w, h) = (16, 8);
+        let rgb: Vec<u8> = (0..w * h * 3).map(|i| (i * 37 % 251) as u8).collect();
+        let exact = resize_region(&rgb, (w, h), [0.0, 0.0, w as f32, h as f32], (12, 6));
+        let fast = three_quarters(&rgb, w, h);
+        assert!(fast.iter().zip(&exact).all(|(a, b)| a.abs_diff(*b) <= 1));
     }
 
     #[test]

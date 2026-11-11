@@ -236,7 +236,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
         arcface: None,
         persons: None,
         person_reid: None,
-        yunet: None,
+        yunet: Vec::new(),
         sface: None,
         anime_heads: None,
         anime_persons: None,
@@ -401,8 +401,9 @@ struct Models {
     arcface: Option<ArcFace>,
     persons: Option<PpDet>,
     person_reid: Option<PersonReid>,
-    /// Fast Scan's detector, planned for the last media's frame size, and embedder.
-    yunet: Option<YuNet>,
+    /// Fast Scan's detectors, one planned for each size the last media's
+    /// frames are looked at, and embedder.
+    yunet: Vec<YuNet>,
     sface: Option<SFace>,
     /// The anime models: head and person detectors planned for the last
     /// media's frame size, and the character embedder (also serves `Embed`
@@ -432,7 +433,8 @@ impl Models {
         (self.transnet, self.arcface) = (None, None);
         self.scrfd.clear();
         (self.persons, self.person_reid) = (None, None);
-        (self.yunet, self.sface) = (None, None);
+        self.yunet.clear();
+        self.sface = None;
         (self.anime_heads, self.anime_persons, self.anime_ccip) = (None, None, None);
         self.anime_berkeley = None;
     }
@@ -448,7 +450,8 @@ impl Models {
             Family::Anime => {
                 self.scrfd.clear();
                 (self.arcface, self.persons, self.person_reid) = (None, None, None);
-                (self.yunet, self.sface) = (None, None);
+                self.yunet.clear();
+                self.sface = None;
             }
         }
     }
@@ -522,13 +525,22 @@ impl Models {
         Ok(())
     }
 
-    /// Load Fast Scan's models, the detector planned for `size` frames.
-    fn load_fast(&mut self, rt: &Runtime, size: (usize, usize)) -> Result<(), AnalysisError> {
+    /// Load Fast Scan's models, a detector planned for each of `sizes`: the
+    /// sizes a frame is looked at, in their order (loaded again when a media
+    /// needs other sizes; one of a size still needed stays).
+    fn load_fast(&mut self, rt: &Runtime, sizes: &[(usize, usize)]) -> Result<(), AnalysisError> {
         self.keep(Family::Live);
-        if self.yunet.as_ref().is_none_or(|d| d.frame_size() != size) {
-            self.yunet = None;
+        if !self.yunet.iter().map(YuNet::frame_size).eq(sizes.iter().copied()) {
+            let mut old = std::mem::take(&mut self.yunet);
+            old.retain(|d| sizes.contains(&d.frame_size()));
             let path = self.path(ids::YUNET)?;
-            self.yunet = Some(YuNet::load(self.runtime_for(rt, ids::YUNET), &path, size, FAST_DETECT_BATCH)?);
+            for &size in sizes {
+                let detector = match old.iter().position(|d| d.frame_size() == size) {
+                    Some(i) => old.swap_remove(i),
+                    None => YuNet::load(self.runtime_for(rt, ids::YUNET), &path, size, FAST_DETECT_BATCH)?,
+                };
+                self.yunet.push(detector);
+            }
         }
         if self.sface.is_none() {
             let path = self.path(ids::SFACE)?;
@@ -814,21 +826,23 @@ fn run_rescan(
         let p = RescanParams::anime(&params);
         rescan::read_faces(tools, src, &faces, &mut HeadFinder { embedder, params }, &p, cancel, progress, read)
     } else if job.fast {
-        models.load_fast(rt, (rescan::SIDE, rescan::SIDE))?;
+        // A crop is searched once, as it is.
+        let frame = (rescan::SIDE, rescan::SIDE);
+        models.load_fast(rt, &[frame])?;
         if job.second && models.arcface.is_none() {
             let path = models.path(ids::ARCFACE)?;
             models.arcface = Some(ArcFace::load(models.runtime_for(rt, ids::ARCFACE), &path, EMBED_BATCH)?);
         }
         let Models { yunet, sface, arcface, .. } = models;
-        let (detector, embedder) = (yunet.as_mut().expect("loaded"), sface.as_mut().expect("loaded"));
+        let embedder = sface.as_mut().expect("loaded");
         send_devices(
             out,
             id,
             rt,
-            &[(as_models::ids::YUNET, detector.device()), (as_models::ids::SFACE, embedder.device())],
+            &[(as_models::ids::YUNET, yunet[0].device()), (as_models::ids::SFACE, embedder.device())],
         );
         let p = RescanParams { batch: FAST_EMBED_BATCH, ..RescanParams::default() };
-        let finder = FastModels { detector, embedder };
+        let finder = FastModels { detectors: yunet, embedder, frame };
         if job.second {
             let other = arcface.as_mut().expect("loaded");
             let embed = |c: &[&[u8]]| Ok(other.embed(c)?.into_iter().map(|e| (e.v, e.norm)).collect());
@@ -909,13 +923,18 @@ fn run_fast_faces(
         return Err(AnalysisError::Internal("Fast Scan looks for faces alone".into()));
     }
     let decoder = frames::decoder_for(tools, &job.info, models.decoder(rt));
-    let params = FastParams { decoder, ..FastParams::default() };
+    let base = if job.animated { FastParams::animated() } else { FastParams::default() };
+    let params = FastParams { decoder, ..base };
     out.send(&Reply::Decoding { id: job.id, decoder });
-    models.load_fast(rt, fast::frame_size(&job.info, &params))?;
-    let (detector, embedder) = (models.yunet.as_mut().expect("loaded"), models.sface.as_mut().expect("loaded"));
-    let device = detector.device();
-    if embedder.device() != device {
-        tracing::warn!(detector = ?device, embedder = ?embedder.device(), "Fast Scan's models run on different devices");
+    let frame = fast::frame_size(&job.info, &params);
+    let looks = fast::looks(frame, &params);
+    models.load_fast(rt, &looks)?;
+    let Models { yunet, sface, .. } = models;
+    let embedder = sface.as_mut().expect("loaded");
+    let device = yunet[0].device();
+    if embedder.device() != device || yunet.iter().any(|d| d.device() != device) {
+        let detectors: Vec<_> = yunet.iter().map(|d| (d.frame_size(), d.device())).collect();
+        tracing::warn!(?detectors, embedder = ?embedder.device(), "Fast Scan's models run on different devices");
     }
     send_devices(out, job.id, rt, &[(as_models::ids::YUNET, device), (as_models::ids::SFACE, embedder.device())]);
     let index = FrameIndex::from_bytes(&job.index.0).map_err(|e| AnalysisError::Internal(e.to_string()))?;
@@ -923,12 +942,12 @@ fn run_fast_faces(
     let started = Instant::now();
     let (id, file) = (job.id, job.path.file_name().unwrap_or_default());
     let decoder = params.decoder;
-    tracing::info!(id, ?file, resume = job.resume, ?device, ?decoder, "finding faces (Fast Scan)");
+    tracing::info!(id, ?file, resume = job.resume, ?device, ?decoder, ?looks, "finding faces (Fast Scan)");
     let mut found = 0usize;
     fast_face_tracks(
         tools,
         Source { path: Path::new(&job.path), info: &job.info, index: &index },
-        FastModels { detector, embedder },
+        FastModels { detectors: yunet, embedder, frame },
         &shots,
         job.resume,
         job.chunk,

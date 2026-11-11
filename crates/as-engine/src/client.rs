@@ -267,10 +267,11 @@ pub struct FacesInput {
     /// people are looked for.
     pub known: Option<Vec<u8>>,
     /// 3D animation: faces are searched at more sizes
-    /// (`as_analysis::FaceParams::animated`).
+    /// (`as_analysis::FaceParams::animated`), or with `fast` at a bigger
+    /// first one (`as_analysis::FastParams::animated`).
     pub animated: bool,
     /// Fast Scan: faces are found the way the Scener app finds them
-    /// (`as_analysis::fast`); `bodies` and `animated` don't apply.
+    /// (`as_analysis::fast`); `bodies` doesn't apply.
     pub fast: bool,
     /// Anime footage: heads are found and embedded the way
     /// `as_analysis::anime` does — with `fast`, in the frames Fast Scan

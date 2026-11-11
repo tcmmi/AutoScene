@@ -3,6 +3,19 @@
 //! YuNet finds faces, SFace embeds them, and only a few frames of each shot
 //! are looked at instead of every third one.
 //!
+//! Unlike Scener, which searches each frame once at up to 1280 pixels with
+//! the smaller YuNet-s, YuNet-n looks at it twice ([`looks`]): at up to 960
+//! pixels for the small faces and at 320 for the close-ups, which at 1280
+//! are bigger than the faces YuNet is trained on. Measured on 2,028 frames
+//! of three live-action episodes (2026-11-11, faces pooled from YuNet and
+//! SCRFD at several sizes, the disputed ones judged by eye): 91.7% of the
+//! faces found instead of 85.7%, close-ups 95.9% instead of 85.9%, as many
+//! false boxes (1.8 in 100 frames); the two looks take the model 4.9 ms a
+//! frame on a processor where the one took 5.4. End to end on Breaking
+//! Bad's pilot (`bench/identity`), 73.2% of the main cast's time on screen
+//! ends up on their character instead of 71.2%. 3D animation is looked at
+//! bigger ([`FastParams::animated`]).
+//!
 //! Each shot has a pool of candidate frames, one a second from its first
 //! frame on plus its last one. Looked at first: its first and last frame,
 //! its middle, a frame where the picture changed from the candidate before
@@ -43,7 +56,8 @@ use as_core::{CancelToken, FrameIdx, FrameRange};
 use as_media::frames::Decoder;
 use as_media::{MediaInfo, Source, Tools};
 use as_vision::arcface;
-use as_vision::{SFace, YuNet, image};
+use as_vision::scrfd::FaceBox;
+use as_vision::{SFace, YuNet, image, yunet};
 
 use crate::AnalysisError;
 use crate::faces::FaceChunk;
@@ -55,7 +69,11 @@ use crate::tracks::{DIM, FaceDet, FaceTrack};
 pub struct FastParams {
     /// Frames are decoded to fit this box: Scener searches at most 1280
     /// pixels along the longer side (`DEFAULT_YUNET_DETECT_MAX_EDGE`).
+    /// Crops and thumbnails are cut from frames this size.
     pub decode_max: (u32, u32),
+    /// The longer side of each size YuNet looks at a frame at ([`looks`]),
+    /// the first for small faces, the second for close-ups.
+    pub looks: [u32; 2],
     /// Where they are decoded (software where the GPU can't). Software
     /// unless the caller knows the card the analysis runs on: the engine
     /// follows the person's choice of graphics.
@@ -116,6 +134,7 @@ impl Default for FastParams {
     fn default() -> Self {
         Self {
             decode_max: (1280, 1280),
+            looks: [960, 320],
             decoder: Decoder::Cpu,
             grid_per_sec: 4.0,
             pool_secs: 1.0,
@@ -162,6 +181,20 @@ impl FastParams {
             small_side: 0.133,
             ..Self::default()
         }
+    }
+
+    /// Fast Scan on 3D animation: the first look at the frame as decoded
+    /// (1280 pixels) instead of 960. YuNet, trained on photos, finds fewer
+    /// rendered faces, and the small ones go first when the frame shrinks.
+    /// Measured on 1,080 frames of a 3D series and film (2026-11-11, faces
+    /// pooled as in the module docs): 86.8% of the faces found, 81.8% of
+    /// those under a tenth of the frame's height — at 960 and 320 pixels
+    /// 84.0% and 74.5%, with YuNet-s looking once at 1280 78.7% and 73.1% —
+    /// for 2.4 false boxes in 100 frames instead of 2.0, and 7.9 ms a frame
+    /// on a processor instead of 4.9. (The full pass's three looks find
+    /// 95.9%.)
+    pub fn animated() -> Self {
+        Self { looks: [1280, 320], ..Self::default() }
     }
 
     /// Frames between candidates on the grid at `fps`.
@@ -215,10 +248,70 @@ impl FastParams {
     }
 }
 
-/// The size Fast Scan decodes `info`'s frames at (YuNet's input, padded).
+/// The size Fast Scan decodes `info`'s frames at.
 pub fn frame_size(info: &MediaInfo, params: &FastParams) -> (usize, usize) {
     let (w, h) = as_media::frames::sample_size(info, params.decode_max, 4);
     (w as usize, h as usize)
+}
+
+/// A look this much bigger than asked for is still that look: a frame 1024
+/// wide is looked at as it is, not shrunk to 960.
+const LOOK_SLACK: usize = 15;
+
+/// The sizes YuNet looks at a `w`×`h` frame at ([`FastParams::looks`]), the
+/// bigger first — [`FastModels`] takes one detector for each, loaded for
+/// its size. The first is the frame itself where it is small enough, three
+/// quarters of it where that is (a frame 1280 wide: 960), and else the
+/// frame shrunk to fit; the second the frame shrunk to fit, left out where
+/// the first is less than half as big again.
+pub fn looks((w, h): (usize, usize), params: &FastParams) -> Vec<(usize, usize)> {
+    let [wide, small] = params.looks.map(|side| side as usize);
+    let (long, most) = (w.max(h), wide + wide / LOOK_SLACK);
+    let first = if long <= most {
+        (w, h)
+    } else if w.is_multiple_of(4) && h.is_multiple_of(4) && long / 4 * 3 <= most {
+        (w / 4 * 3, h / 4 * 3)
+    } else {
+        fit((w, h), wide)
+    };
+    let second = fit((w, h), small);
+    let mut out = vec![first];
+    if small > 0 && first.0.max(first.1) * 2 >= second.0.max(second.1) * 3 {
+        out.push(second);
+    }
+    out
+}
+
+/// `w`×`h` shrunk to fit a square of `side`, its shape kept; sides even.
+fn fit((w, h): (usize, usize), side: usize) -> (usize, usize) {
+    let long = w.max(h);
+    if long <= side {
+        return (w, h);
+    }
+    let shrink = |v: usize| (((v * side + long / 2) / long) / 2 * 2).max(2);
+    (shrink(w), shrink(h))
+}
+
+/// A `w`×`h` frame at the size of one of its [`looks`].
+fn shrunk(rgb: &[u8], (w, h): (usize, usize), (ow, oh): (usize, usize)) -> Vec<u8> {
+    if w.is_multiple_of(4) && h.is_multiple_of(4) && (ow, oh) == (w / 4 * 3, h / 4 * 3) {
+        return image::three_quarters(rgb, w, h);
+    }
+    let mut out = vec![0u8; ow * oh * 3];
+    image::shrink_into(rgb, (w, h), &mut out, ow, 0, (ow, oh));
+    out
+}
+
+/// A face found in a look, in the frame's pixels: `kx` and `ky` times as
+/// far along and down.
+fn stretched(mut b: FaceBox, kx: f32, ky: f32) -> FaceBox {
+    for (i, v) in b.bbox.iter_mut().enumerate() {
+        *v *= if i % 2 == 0 { kx } else { ky };
+    }
+    for p in &mut b.kps {
+        *p = [p[0] * kx, p[1] * ky];
+    }
+    b
 }
 
 /// A shot's candidates: every `steps`-th frame of the `grid` from the
@@ -501,27 +594,47 @@ pub trait Finder {
     fn tracker(&self, params: &FastParams, fps: f64) -> TrackerParams;
 }
 
-/// The models Fast Scan finds faces with: the detector loaded for the
-/// media's [`frame_size`].
+/// The models Fast Scan finds faces with: a detector for each size a
+/// frame is looked at (the [`looks`] of the media's [`frame_size`]; one
+/// loaded for the frame itself looks once), and the embedder.
 pub struct FastModels<'a> {
-    pub detector: &'a mut YuNet,
+    pub detectors: &'a mut [YuNet],
     pub embedder: &'a mut SFace,
+    /// The size of the frames searched.
+    pub frame: (usize, usize),
 }
 
 impl Finder for FastModels<'_> {
     fn frame_size(&self) -> (usize, usize) {
-        self.detector.frame_size()
+        self.frame
     }
 
     fn find(&mut self, rgb: &[u8], p: &FastParams) -> Result<Vec<Spot>, AnalysisError> {
-        let (w, h) = self.detector.frame_size();
-        Ok(self
-            .detector
-            .detect_many(&[rgb], p.det_threshold)?
-            .pop()
-            .unwrap_or_default()
+        let (w, h) = self.frame;
+        let mut found: Vec<FaceBox> = Vec::new();
+        for detector in self.detectors.iter_mut() {
+            let size = detector.frame_size();
+            let faces = if size == (w, h) {
+                detector.detect_many(&[rgb], p.det_threshold)?
+            } else {
+                let small = shrunk(rgb, (w, h), size);
+                detector.detect_many(&[small.as_slice()], p.det_threshold)?
+            };
+            let (kx, ky) = (w as f32 / size.0 as f32, h as f32 / size.1 as f32);
+            // Pooled, a face too small to count must not hide one that counts.
+            found.extend(
+                faces
+                    .into_iter()
+                    .flatten()
+                    .map(|b| stretched(b, kx, ky))
+                    .filter(|b| b.height() >= p.min_height * h as f32),
+            );
+        }
+        if self.detectors.len() > 1 {
+            found = yunet::nms(found);
+        }
+        Ok(found
             .into_iter()
-            .filter(|b| b.height() >= p.min_height * h as f32)
             .map(|b| Spot { bbox: b.bbox, score: b.score, crop: arcface::align(rgb, w, h, &b.kps) })
             .collect())
     }
@@ -830,6 +943,54 @@ mod tests {
         assert_eq!(pool(FrameRange::new(0, 25), 6, 4), [0, 24]);
         assert_eq!(pool(FrameRange::new(7, 12), 6, 4), Vec::<FrameIdx>::new());
         assert_eq!(pool(FrameRange::new(6, 7), 6, 4), [6]);
+    }
+
+    #[test]
+    fn a_frame_is_looked_at_at_two_sizes() {
+        let p = FastParams::default();
+        assert_eq!(p.looks, [960, 320]);
+        // As decoded from 16:9, 2.39:1 and upright sources 1280 or more wide:
+        // three quarters, and a quarter.
+        assert_eq!(looks((1280, 720), &p), [(960, 540), (320, 180)]);
+        assert_eq!(looks((1280, 536), &p), [(960, 402), (320, 134)]);
+        assert_eq!(looks((720, 1280), &p), [(540, 960), (180, 320)]);
+        // Smaller frames as they are (1024 is close enough to 960), ...
+        assert_eq!(looks((1024, 576), &p), [(1024, 576), (320, 180)]);
+        assert_eq!(looks((960, 540), &p), [(960, 540), (320, 180)]);
+        assert_eq!(looks((640, 360), &p), [(640, 360), (320, 180)]);
+        assert_eq!(looks((720, 576), &p), [(720, 576), (320, 256)]);
+        // ... a second look only where it is clearly smaller, ...
+        assert_eq!(looks((480, 272), &p), [(480, 272), (320, 180)]);
+        assert_eq!(looks((400, 300), &p), [(400, 300)]);
+        assert_eq!(looks((320, 320), &p), [(320, 320)], "a crop Rescan reads is looked at once");
+        // ... and a frame that three quarters don't bring down far enough to fit.
+        let wide = FastParams { decode_max: (1920, 1920), ..p };
+        assert_eq!(looks((1920, 1080), &wide), [(960, 540), (320, 180)]);
+        // 3D animation: the frame as decoded, and a quarter.
+        let animated = FastParams::animated();
+        assert_eq!(looks((1280, 720), &animated), [(1280, 720), (320, 180)]);
+        assert_eq!(looks((1280, 536), &animated), [(1280, 536), (320, 134)]);
+        assert_eq!(looks((960, 540), &animated), looks((960, 540), &p), "smaller frames as live action's");
+        assert_eq!((animated.det_threshold, animated.decode_max), (p.det_threshold, p.decode_max));
+        assert_eq!(fit((1280, 720), 320), (320, 180));
+        assert_eq!(fit((300, 200), 320), (300, 200));
+    }
+
+    #[test]
+    fn a_frame_shrinks_to_its_looks_and_faces_come_back_in_its_pixels() {
+        let (w, h) = (16, 8);
+        let rgb: Vec<u8> = (0..w * h * 3).map(|i| (i * 7 % 256) as u8).collect();
+        assert_eq!(shrunk(&rgb, (w, h), (12, 6)), image::three_quarters(&rgb, w, h));
+        let quarter = shrunk(&rgb, (w, h), (4, 2));
+        assert_eq!(quarter.len(), 4 * 2 * 3);
+        // The first quarter pixel is the mean of the frame's first 4×4 block.
+        let mean = |c: usize| {
+            (0..4).flat_map(|y| (0..4).map(move |x| (y, x))).map(|(y, x)| rgb[(y * w + x) * 3 + c] as u32).sum::<u32>()
+        };
+        assert_eq!(quarter[0] as u32, (mean(0) + 8) / 16);
+        let face = FaceBox { bbox: [10.0, 20.0, 30.0, 60.0], score: 0.9, kps: [[12.0, 30.0]; 5] };
+        let back = stretched(face, 4.0, 2.0);
+        assert_eq!((back.bbox, back.kps[0], back.score), ([40.0, 40.0, 120.0, 120.0], [48.0, 60.0], 0.9));
     }
 
     fn calm(faces: usize) -> Summary {

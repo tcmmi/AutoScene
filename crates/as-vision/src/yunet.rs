@@ -1,6 +1,16 @@
-//! YuNet (Wu et al. 2023; OpenCV Zoo `face_detection_yunet_2023mar`): a
-//! small face detector — boxes plus five points — and Fast Scan's (the
-//! pipeline of the Scener app) choice for speed over SCRFD-10G.
+//! YuNet (Wu et al. 2023): a small face detector — boxes plus five points —
+//! and Fast Scan's choice for speed over SCRFD-10G. The file is YuNet-n
+//! (`yunet_n_640_640.onnx` of the authors' training repository), the larger
+//! of their two: OpenCV Zoo's `face_detection_yunet_2023mar`, which the
+//! Scener app ships and Fast Scan began with, is the smaller YuNet-s. Both
+//! have the same inputs, outputs and scores; YuNet-n finds more of the
+//! small faces, which lets Fast Scan look at smaller frames (see
+//! `as_analysis::fast`).
+//!
+//! It is trained for faces of about 10 to 300 pixels: bigger ones (a
+//! close-up in a frame 1280 wide) it finds less often and is less sure of,
+//! so a frame is looked at at more than one size and the answers pooled
+//! ([`nms`]).
 //!
 //! The graph takes any input size that is a multiple of 32 (padded at the
 //! right and bottom, as OpenCV's `FaceDetectorYN` does) and pins its batch
@@ -185,8 +195,10 @@ impl YuNet {
 
 /// OpenCV's `NMSBoxes` as YuNet's demo runs it: the strongest [`TOP_K`]
 /// candidates, a box overlapping a stronger one kept by more than
-/// [`NMS_IOU`] dropped.
-fn nms(mut faces: Vec<FaceBox>) -> Vec<FaceBox> {
+/// [`NMS_IOU`] dropped. Also pools what several looks at one frame found
+/// (boxes in the frame's pixels): each face once, as the look surest of it
+/// saw it.
+pub fn nms(mut faces: Vec<FaceBox>) -> Vec<FaceBox> {
     faces.sort_by(|a, b| b.score.total_cmp(&a.score));
     faces.truncate(TOP_K);
     let mut keep: Vec<FaceBox> = Vec::with_capacity(faces.len());

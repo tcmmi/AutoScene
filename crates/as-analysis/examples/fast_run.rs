@@ -2,8 +2,11 @@
 //! episode and save its tracks, like `faces_run` does for the full pass.
 //! `cargo run --release -p as-analysis --example fast_run -- <ort_dir> <models_dir> <ffmpeg_dir> <dir with
 //! bb.index/bb.info.json/bb.path/bb.segments.tsv> <out_prefix> [resume]`
-//! `<models_dir>` holds `face_detection_yunet_2023mar.onnx` and
-//! `face_recognition_sface_2021dec.onnx`. Writes `<out_prefix>.tracks`
+//! `<models_dir>` holds `yunet_n_640_640.onnx` and
+//! `face_recognition_sface_2021dec.onnx` (`YUNET=<file>` names another
+//! detector file there, `LOOKS=<side>,<side>` the sizes a frame is looked
+//! at: Fast Scan as it began is `YUNET=face_detection_yunet_2023mar.onnx
+//! LOOKS=1280,0`). Writes `<out_prefix>.tracks`
 //! (as_analysis::tracks::encode of all tracks), `<out_prefix>.chunks` (one
 //! `start end tracks sprites` line per chunk) and `<out_prefix>.dets.tsv`
 //! (one `frame score height norm quality` line per face, to calibrate the
@@ -67,17 +70,27 @@ fn main() {
     if let Ok(v) = std::env::var("GAP") {
         params.max_gap_secs = v.parse().expect("GAP=<seconds>");
     }
+    if let Ok(v) = std::env::var("LOOKS") {
+        let (wide, small) = v.split_once(',').expect("LOOKS=<side>,<side>");
+        params.looks = [wide.parse().unwrap(), small.parse().unwrap()];
+    }
     let size = fast::frame_size(&info, &params);
-    let mut detector = YuNet::load(&rt, &models.join("face_detection_yunet_2023mar.onnx"), size, 1).unwrap();
+    let looks = fast::looks(size, &params);
+    let file = std::env::var("YUNET").unwrap_or_else(|_| "yunet_n_640_640.onnx".into());
+    let mut detectors: Vec<YuNet> =
+        looks.iter().map(|&look| YuNet::load(&rt, &models.join(&file), look, 1).unwrap()).collect();
     let mut embedder = SFace::load(&rt, &models.join("face_recognition_sface_2021dec.onnx"), 16).unwrap();
-    println!("Fast Scan at {size:?}, grid {} frames", params.grid(index.nominal_fps.to_f64()));
+    println!(
+        "Fast Scan at {size:?}, {file} looking at {looks:?}, grid {} frames",
+        params.grid(index.nominal_fps.to_f64())
+    );
     let t0 = Instant::now();
     let mut all = Vec::new();
     let mut chunks = std::fs::File::create(format!("{out}.chunks")).unwrap();
     as_analysis::fast_face_tracks(
         &tools,
         Source { path: &path, info: &info, index: &index },
-        FastModels { detector: &mut detector, embedder: &mut embedder },
+        FastModels { detectors: &mut detectors, embedder: &mut embedder, frame: size },
         &shots,
         resume,
         2400,

@@ -164,7 +164,8 @@ pub struct FacesPlan {
     pub resume: FrameIdx,
     pub chunk: u32,
     /// 3D animation: the faces are searched for harder
-    /// (`as_analysis::FaceParams::animated`; never with Fast Scan).
+    /// (`as_analysis::FaceParams::animated`, or with Fast Scan
+    /// `as_analysis::FastParams::animated`).
     pub animated: bool,
     /// Fast Scan finds the faces (`as_analysis::fast`).
     pub fast: bool,
@@ -177,7 +178,8 @@ pub struct FacesPlan {
 }
 
 /// How 3D animation's faces are searched for (`as_analysis::FaceParams::
-/// animated`), as recorded after the embedder in [`faces_key`].
+/// animated`, with Fast Scan `as_analysis::FastParams::animated`), as
+/// recorded after the embedder in [`faces_key`].
 const SCALES: &str = "+scales";
 
 /// The anime pass's version, recorded after the CCIP id in [`faces_key`]:
@@ -189,13 +191,23 @@ const ANIME: &str = "+anime2";
 /// [`faces_key`] (everywhere else, Fast Scan's own embedder says so).
 const FAST: &str = "+fast";
 
-/// What a media's faces are recorded as found with: the embedder, for 3D
-/// animation its search, and for anime whether Fast Scan picked the
-/// frames. Faces found one way are found again (their decisions kept) when
-/// the footage moves to or from 3D animation, or Fast Scan is switched.
+/// Fast Scan's face pass's version, recorded after its embedder in
+/// [`faces_key`] as [`ANIME`] is after CCIP: bump the number whenever the
+/// pass finds other faces, so those an older pass found are found again.
+/// The bare embedder is the first pass (YuNet-s looking at a frame once, at
+/// up to 1280 pixels); in 2, YuNet-n looks twice (`as_analysis::fast::looks`).
+const FAST_FACES: &str = "+fast2";
+
+/// What a media's faces are recorded as found with: the embedder, for
+/// Fast Scan's own faces its pass's version, for 3D animation its search,
+/// and for anime whether Fast Scan picked the frames. Faces found one way
+/// are found again (their decisions kept) when the footage moves to or from
+/// 3D animation, Fast Scan is switched, or its pass changed.
 fn faces_key(embedder: &str, animated: bool, fast: bool) -> String {
     if anime_embedder(embedder) {
         format!("{embedder}{ANIME}{}", if fast { FAST } else { "" })
+    } else if embedder == as_models::ids::SFACE {
+        format!("{embedder}{FAST_FACES}{}", if animated { SCALES } else { "" })
     } else if animated {
         format!("{embedder}{SCALES}")
     } else {
@@ -253,8 +265,11 @@ pub fn face_models(embedder: &str) -> &'static [&'static str] {
 
 /// The embedder of a [`faces_key`].
 pub(crate) fn embedder_of(key: &str) -> &str {
-    let key = key.strip_suffix(FAST).unwrap_or(key);
-    key.strip_suffix(SCALES).or_else(|| key.strip_suffix(ANIME)).unwrap_or(key)
+    let mut key = key;
+    while let Some(rest) = [FAST, SCALES, ANIME, FAST_FACES].iter().find_map(|suffix| key.strip_suffix(suffix)) {
+        key = rest;
+    }
+    key
 }
 
 /// Whether the faces of a [`faces_key`] were looked for in the few frames
@@ -867,17 +882,17 @@ impl Project {
         }
     }
 
-    /// Whether faces found with `model` are searched for harder: 3D
-    /// animation in the full pass (Fast Scan looks the same way whatever
-    /// the footage).
-    fn searched_harder(&self, model: &str) -> ProjectResult<bool> {
-        Ok(model != as_models::ids::SFACE && self.content()? == ContentKind::Animation)
+    /// Whether this footage's faces are searched for harder: 3D animation,
+    /// at more sizes in the full pass and at a bigger first one in Fast
+    /// Scan. (Anime has its own pass.)
+    fn searched_harder(&self) -> ProjectResult<bool> {
+        Ok(self.content()? == ContentKind::Animation)
     }
 
     /// The [`faces_key`] of faces found with `model` the way this project
     /// finds them now.
     fn faces_key_now(&self, model: &str) -> ProjectResult<String> {
-        Ok(faces_key(model, self.searched_harder(model)?, self.fast_scan()))
+        Ok(faces_key(model, self.searched_harder()?, self.fast_scan()))
     }
 
     /// Whether the faces of `id` are being found (or were found) another way
@@ -917,7 +932,7 @@ impl Project {
                 "Shots of this media aren't found yet."
             )));
         }
-        let animated = self.searched_harder(model)?;
+        let animated = self.searched_harder()? && !anime_embedder(model);
         let key = self.faces_key_now(model)?;
         if self.db().use_faces_model(id, &key)? {
             tracing::info!(file = %m.file_name, model = key, "faces are found with a new model");
@@ -2498,8 +2513,19 @@ pub(crate) mod tests {
         assert_eq!(embedder_of(&old), as_models::ids::ANIME_CCIP_OLD);
         assert!(anime_embedder(embedder_of(&old)) && anime_embedder(embedder_of(&faces_key(ccip, false, true))));
         assert!(found_fast(&faces_key(ccip, false, true)) && !found_fast(&faces_key(ccip, false, false)));
-        assert_eq!(faces_key(as_models::ids::SFACE, false, true), as_models::ids::SFACE);
-        assert!(found_fast(as_models::ids::SFACE) && !found_fast(&faces_key(MODEL, true, true)));
+        // Fast Scan's own faces carry its pass's version, whatever the
+        // footage; the bare embedder is what its first pass found.
+        let sface = as_models::ids::SFACE;
+        assert_eq!(faces_key(sface, false, true), format!("{sface}{FAST_FACES}"));
+        assert_ne!(faces_key(sface, false, true), sface, "faces of the first pass are found again");
+        // 3D animation is looked at bigger, recorded after the version.
+        assert_eq!(faces_key(sface, true, true), format!("{sface}{FAST_FACES}{SCALES}"));
+        assert!(
+            found_fast(sface)
+                && found_fast(&faces_key(sface, false, true))
+                && found_fast(&faces_key(sface, true, true))
+        );
+        assert!(!found_fast(&faces_key(MODEL, true, true)));
     }
 
     #[test]
@@ -2549,12 +2575,12 @@ pub(crate) mod tests {
             .map(|s| Segment { start: s, end: s + 100, kind: SegmentKind::Shot, tiny: false })
             .collect();
         project.db().store_segments(id, &segments).unwrap();
-        // 3D animation: the full pass searches it harder, Fast Scan as always.
+        // 3D animation: both passes search it harder, each its own way.
         project.set_content(ContentKind::Animation).unwrap();
         let find = |fast: bool| {
             let model = project.face_embedder();
             let plan = project.faces_plan(id, model).unwrap();
-            assert_eq!((plan.fast, plan.animated, plan.resume), (fast, !fast, 0));
+            assert_eq!((plan.fast, plan.animated, plan.resume), (fast, true, 0));
             let found: Vec<FaceTrack> = (0..frames).step_by(100).map(|s| face(0, s, 0.1, 0.9)).collect();
             project.store_face_chunk(id, 0, frames, &tracks::encode(&found), &[], &[]).unwrap();
             project.finish_faces(id).unwrap();
@@ -2584,11 +2610,13 @@ pub(crate) mod tests {
         find(true);
         // Now they come from Fast Scan: grouped for SFace, on screen as it looked.
         assert!(project.faces_found_fast().unwrap() && !project.faces_outdated(id).unwrap());
-        // Fast Scan looks the same way whatever the footage: nothing to find again.
+        // Fast Scan looks at live action smaller: its faces would be found again.
         project.set_content(ContentKind::Live).unwrap();
+        assert!(project.faces_outdated(id).unwrap());
+        assert_eq!(project.faces_by_other_model(as_models::ids::SFACE).unwrap(), [id]);
+        project.set_content(ContentKind::Animation).unwrap();
         assert!(!project.faces_outdated(id).unwrap());
         assert!(project.faces_by_other_model(as_models::ids::SFACE).unwrap().is_empty());
-        project.set_content(ContentKind::Animation).unwrap();
         assert_eq!(project.grids().unwrap().get(&id), Some(&(6, 8)));
         assert_eq!(project.identity_params().unwrap().link, Params::sface().link);
         assert!(project.identity_params().unwrap().animated);

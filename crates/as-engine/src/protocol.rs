@@ -83,7 +83,8 @@ pub struct FacesJob {
     /// are looked for, and tied to these.
     #[serde(default)]
     pub known: Option<Blob>,
-    /// 3D animation: faces are searched as `FaceParams::animated` does.
+    /// 3D animation: faces are searched as `FaceParams::animated` does, or
+    /// with `fast` as `FastParams::animated` does.
     #[serde(default)]
     pub animated: bool,
     /// Fast Scan: faces are found as `as_analysis::fast` does (a few frames

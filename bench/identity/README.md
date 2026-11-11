@@ -212,6 +212,27 @@ of the main cast's screen time on their character; Fast Scan keeps them
 from 0.7 and lets the less sure ones count for less (without that, faces
 from 0.7 split Walter in most stress runs).
 
+Since 2026-11-11 Fast Scan's detector is YuNet-n looking at each frame
+twice (at 960 and 320 pixels; 3D animation at 1280 and 320) instead of
+YuNet-s — the file Scener ships — looking once at up to 1280
+(`as_analysis::fast`). Both on the BB proxy that day (`YUNET=
+face_detection_yunet_2023mar.onnx LOOKS=1280,0` runs the pass as it was):
+
+| | YuNet-s, one look | YuNet-n, two looks |
+|---|---|---|
+| tracks / faces | 1129 / 4343 | 1147 / 4500 |
+| main cast per track P / R / F | 0.973 / 0.752 / 0.848 | 0.980 / 0.762 / 0.857 |
+| per screen time P / R / F | 0.991 / 0.937 / 0.963 | 0.986 / 0.910 / 0.947 |
+| main cast faces (labels) in a track / on their character | 0.766 / 0.742 | 0.787 / 0.760 |
+| main cast over time, in a track / on their character | 0.735 / 0.712 | 0.763 / 0.732 |
+| time | 40 s | 44 s |
+
+More of the main cast's faces end up on their character. The faces it adds
+are the harder ones, which stay unassigned more often: that is the lower
+recall per screen time. The proxy is 960 wide, so here the second look
+only adds time; a frame decoded 1280 wide is searched at 960 and 320
+instead of at 1280.
+
 Time on the film's last 22,319 frames (warm file cache, idle RTX 3060 Ti,
 16 threads; two runs each): the full pass 133–149 s for 3D animation,
 113–134 s for live action; Fast Scan 39–57 s decoding on the GPU (NVDEC),

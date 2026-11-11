@@ -5,7 +5,7 @@
 
 # Files of models a better one replaced: removed from the models folder at
 # launch (`ModelStore::prune`). Nothing else there is ever deleted.
-retired = ["arcface_w600k_r50.onnx", "anime_ccip_caformer24.onnx"]
+retired = ["arcface_w600k_r50.onnx", "anime_ccip_caformer24.onnx", "face_detection_yunet_2023mar.onnx"]
 
 [[model]]
 id = "transnetv2"
@@ -43,18 +43,24 @@ license = "InsightFace non-commercial research"
 non_commercial = true
 source = "InsightFace antelopev2 glintr100 (ArcFace ResNet-100 on Glint360K), byte-identical mirror by Immich"
 
-# Fast Scan (an optional mode for new projects): the face models of the
-# Scener app's worker, byte-identical to the files it ships, from OpenCV
-# Zoo. Faster and smaller than SCRFD-10G and glintr100, less sure.
+# Fast Scan: the face models of the Scener app's worker. Faster and smaller
+# than SCRFD-10G and glintr100, less sure. SFace is byte-identical to the
+# file Scener ships (OpenCV Zoo). The detector is YuNet-n, the larger of
+# the authors' two: Scener's (OpenCV Zoo's `face_detection_yunet_2023mar`,
+# which Fast Scan began with) is their smaller YuNet-s. Same inputs, outputs
+# and scores; looked at twice a frame (960 and 320 pixels) it found 91.7%
+# of the faces of three episodes where YuNet-s at 1280 found 85.7%, in less
+# time (2026-11-11, `as_analysis::fast`). The URL pins the commit the file
+# last changed in.
 [[model]]
-id = "yunet-2023mar"
-file = "face_detection_yunet_2023mar.onnx"
+id = "yunet-n-2023jan"
+file = "yunet_n_640_640.onnx"
 purpose = "Face detection with five landmarks (Fast Scan)"
-url = "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310/face_detection_yunet_2023mar.onnx"
-sha256 = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
-size = 232589
-license = "MIT"
-source = "OpenCV Zoo YuNet 2023mar (Wu et al. 2023), Hugging Face opencv/face_detection_yunet"
+url = "https://raw.githubusercontent.com/ShiqiYu/libfacedetection.train/02246e79b1e976c83d1e135a85e0628120c93769/onnx/yunet_n_640_640.onnx"
+sha256 = "25a606a145a5b6d7271ae138fbd00eba91dad8b83222ae3f2c7ecd0f4a7b0e31"
+size = 317466
+license = "BSD-3-Clause"
+source = "YuNet-n (Wu et al. 2023), github.com/ShiqiYu/libfacedetection.train"
 
 [[model]]
 id = "sface-2021dec"

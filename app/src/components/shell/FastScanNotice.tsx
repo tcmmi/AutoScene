@@ -227,7 +227,7 @@ export function FastScanNotice() {
 
 /**
  * Who is in `public/fast-scan-notice.webp`, in the dialog's own 540×180: the
- * boxes YuNet, Fast Scan's own detector, found in this picture, with a little
+ * boxes YuNet, Fast Scan's detector when it was made, found in this picture, with a little
  * room around them. `public/fast-scan-notice-mesh.svg` follows the same faces.
  */
 const FACES = [

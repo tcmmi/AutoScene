@@ -195,8 +195,9 @@ const FAST: &str = "+fast";
 /// [`faces_key`] as [`ANIME`] is after CCIP: bump the number whenever the
 /// pass finds other faces, so those an older pass found are found again.
 /// The bare embedder is the first pass (YuNet-s looking at a frame once, at
-/// up to 1280 pixels); in 2, YuNet-n looks twice (`as_analysis::fast::looks`).
-const FAST_FACES: &str = "+fast2";
+/// up to 1280 pixels); in 2, YuNet-n looked twice; since 3, SCRFD-2.5G does
+/// (`as_analysis::fast::looks`).
+const FAST_FACES: &str = "+fast3";
 
 /// What a media's faces are recorded as found with: the embedder, for
 /// Fast Scan's own faces its pass's version, for 3D animation its search,

@@ -1,6 +1,6 @@
 //! Vision models on top of [`as_infer`]: TransNetV2 shot boundaries, SCRFD
 //! face detection and ArcFace identity embeddings — or, for Fast Scan,
-//! YuNet and SFace — and people: their detectors and an appearance
+//! a smaller SCRFD and SFace — and people: their detectors and an appearance
 //! embedding for finding them again. For anime stills: deepghs's YOLO
 //! detectors, the CCIP character embedding and Berkeley's.
 

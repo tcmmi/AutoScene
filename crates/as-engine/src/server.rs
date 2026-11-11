@@ -27,7 +27,7 @@ use as_infer::{Device, InferError, Runtime};
 use as_media::frames::Decoder;
 use as_media::{Source, Tools, frames};
 use as_models::{ModelStore, ids};
-use as_vision::{ArcFace, Berkeley, Ccip, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo, YuNet};
+use as_vision::{ArcFace, Berkeley, Ccip, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo};
 use parking_lot::Mutex;
 
 use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, RescanJob, ShotsJob, Sprite};
@@ -36,7 +36,7 @@ use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, Res
 const EMBED_BATCH: usize = 32;
 /// People per appearance (ReID) call.
 const REID_BATCH: usize = 32;
-/// Fast Scan: frames per detector call — YuNet's, or on anime the head and
+/// Fast Scan: frames per detector call — SCRFD-2.5G's, or on anime the head and
 /// person detectors' (it looks at one frame at a time, and decides from
 /// what it found where to look next) — and faces per SFace call.
 const FAST_DETECT_BATCH: usize = 1;
@@ -64,7 +64,7 @@ const LIVE_ON_ACCEL: bool = false;
 /// only when `live` says so. The anime models may: they compute there what
 /// the processor computes, and CCIP proves it against its goldens at every
 /// load. TransNetV2 never does (the engine can't take one of its nodes), nor
-/// does Fast Scan's YuNet and SFace (SFace's embeddings bend there). Where
+/// do Fast Scan's SCRFD-2.5G and SFace (SFace's embeddings bend there). Where
 /// a model runs no longer depends on which job loaded it first.
 fn may_use_accel(id: &str, live: bool) -> bool {
     match id {
@@ -236,7 +236,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
         arcface: None,
         persons: None,
         person_reid: None,
-        yunet: Vec::new(),
+        fast_scrfd: Vec::new(),
         sface: None,
         anime_heads: None,
         anime_persons: None,
@@ -403,7 +403,7 @@ struct Models {
     person_reid: Option<PersonReid>,
     /// Fast Scan's detectors, one planned for each size the last media's
     /// frames are looked at, and embedder.
-    yunet: Vec<YuNet>,
+    fast_scrfd: Vec<Scrfd>,
     sface: Option<SFace>,
     /// The anime models: head and person detectors planned for the last
     /// media's frame size, and the character embedder (also serves `Embed`
@@ -433,7 +433,7 @@ impl Models {
         (self.transnet, self.arcface) = (None, None);
         self.scrfd.clear();
         (self.persons, self.person_reid) = (None, None);
-        self.yunet.clear();
+        self.fast_scrfd.clear();
         self.sface = None;
         (self.anime_heads, self.anime_persons, self.anime_ccip) = (None, None, None);
         self.anime_berkeley = None;
@@ -450,7 +450,7 @@ impl Models {
             Family::Anime => {
                 self.scrfd.clear();
                 (self.arcface, self.persons, self.person_reid) = (None, None, None);
-                self.yunet.clear();
+                self.fast_scrfd.clear();
                 self.sface = None;
             }
         }
@@ -530,16 +530,16 @@ impl Models {
     /// needs other sizes; one of a size still needed stays).
     fn load_fast(&mut self, rt: &Runtime, sizes: &[(usize, usize)]) -> Result<(), AnalysisError> {
         self.keep(Family::Live);
-        if !self.yunet.iter().map(YuNet::frame_size).eq(sizes.iter().copied()) {
-            let mut old = std::mem::take(&mut self.yunet);
+        if !self.fast_scrfd.iter().map(Scrfd::frame_size).eq(sizes.iter().copied()) {
+            let mut old = std::mem::take(&mut self.fast_scrfd);
             old.retain(|d| sizes.contains(&d.frame_size()));
-            let path = self.path(ids::YUNET)?;
+            let path = self.path(ids::SCRFD_FAST)?;
             for &size in sizes {
                 let detector = match old.iter().position(|d| d.frame_size() == size) {
                     Some(i) => old.swap_remove(i),
-                    None => YuNet::load(self.runtime_for(rt, ids::YUNET), &path, size, FAST_DETECT_BATCH)?,
+                    None => Scrfd::load(self.runtime_for(rt, ids::SCRFD_FAST), &path, size, FAST_DETECT_BATCH)?,
                 };
-                self.yunet.push(detector);
+                self.fast_scrfd.push(detector);
             }
         }
         if self.sface.is_none() {
@@ -833,16 +833,16 @@ fn run_rescan(
             let path = models.path(ids::ARCFACE)?;
             models.arcface = Some(ArcFace::load(models.runtime_for(rt, ids::ARCFACE), &path, EMBED_BATCH)?);
         }
-        let Models { yunet, sface, arcface, .. } = models;
+        let Models { fast_scrfd, sface, arcface, .. } = models;
         let embedder = sface.as_mut().expect("loaded");
         send_devices(
             out,
             id,
             rt,
-            &[(as_models::ids::YUNET, yunet[0].device()), (as_models::ids::SFACE, embedder.device())],
+            &[(as_models::ids::SCRFD_FAST, fast_scrfd[0].device()), (as_models::ids::SFACE, embedder.device())],
         );
         let p = RescanParams { batch: FAST_EMBED_BATCH, ..RescanParams::default() };
-        let finder = FastModels { detectors: yunet, embedder, frame };
+        let finder = FastModels { detectors: fast_scrfd, embedder, frame };
         if job.second {
             let other = arcface.as_mut().expect("loaded");
             let embed = |c: &[&[u8]]| Ok(other.embed(c)?.into_iter().map(|e| (e.v, e.norm)).collect());
@@ -929,14 +929,14 @@ fn run_fast_faces(
     let frame = fast::frame_size(&job.info, &params);
     let looks = fast::looks(frame, &params);
     models.load_fast(rt, &looks)?;
-    let Models { yunet, sface, .. } = models;
+    let Models { fast_scrfd, sface, .. } = models;
     let embedder = sface.as_mut().expect("loaded");
-    let device = yunet[0].device();
-    if embedder.device() != device || yunet.iter().any(|d| d.device() != device) {
-        let detectors: Vec<_> = yunet.iter().map(|d| (d.frame_size(), d.device())).collect();
+    let device = fast_scrfd[0].device();
+    if embedder.device() != device || fast_scrfd.iter().any(|d| d.device() != device) {
+        let detectors: Vec<_> = fast_scrfd.iter().map(|d| (d.frame_size(), d.device())).collect();
         tracing::warn!(?detectors, embedder = ?embedder.device(), "Fast Scan's models run on different devices");
     }
-    send_devices(out, job.id, rt, &[(as_models::ids::YUNET, device), (as_models::ids::SFACE, embedder.device())]);
+    send_devices(out, job.id, rt, &[(as_models::ids::SCRFD_FAST, device), (as_models::ids::SFACE, embedder.device())]);
     let index = FrameIndex::from_bytes(&job.index.0).map_err(|e| AnalysisError::Internal(e.to_string()))?;
     let shots: Vec<FrameRange> = job.shots.iter().map(|&(s, e)| FrameRange::new(s, e)).collect();
     let started = Instant::now();
@@ -947,7 +947,7 @@ fn run_fast_faces(
     fast_face_tracks(
         tools,
         Source { path: Path::new(&job.path), info: &job.info, index: &index },
-        FastModels { detectors: yunet, embedder, frame },
+        FastModels { detectors: fast_scrfd, embedder, frame },
         &shots,
         job.resume,
         job.chunk,
@@ -1148,7 +1148,7 @@ mod tests {
         }
         // Never: a node it can't take, Fast Scan's models, and the Best anime
         // model (not yet checked on NVIDIA's engine).
-        let never = [ids::TRANSNET, ids::YUNET, ids::SFACE, ids::ANIME_BERKELEY];
+        let never = [ids::TRANSNET, ids::SCRFD_FAST, ids::SFACE, ids::ANIME_BERKELEY];
         for id in never {
             assert!(!may_use_accel(id, false) && !may_use_accel(id, true), "{id}");
         }

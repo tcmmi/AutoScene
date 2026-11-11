@@ -88,7 +88,7 @@ pub struct FacesJob {
     #[serde(default)]
     pub animated: bool,
     /// Fast Scan: faces are found as `as_analysis::fast` does (a few frames
-    /// per shot) with YuNet and SFace, or on anime (`anime`) with its own
+    /// per shot) with SCRFD-2.5G and SFace, or on anime (`anime`) with its own
     /// models; nobody is looked for by their body.
     #[serde(default)]
     pub fast: bool,
@@ -129,7 +129,7 @@ pub struct RescanJob {
     /// `FrameIndex::to_bytes`.
     pub index: Blob,
     pub faces: Vec<RescanFaceIn>,
-    /// The faces were found by Fast Scan (YuNet, SFace) ...
+    /// The faces were found by Fast Scan (SCRFD-2.5G, SFace) ...
     #[serde(default)]
     pub fast: bool,
     /// ... or are anime heads (CCIP): read by what found them.

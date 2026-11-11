@@ -1,20 +1,23 @@
 //! Fast Scan: the face pass of the Scener app, as its shipped worker does it
 //! (constants recovered from the binary, see `models/manifest.toml`) —
-//! YuNet finds faces, SFace embeds them, and only a few frames of each shot
-//! are looked at instead of every third one.
+//! a small detector finds faces, SFace embeds them, and only a few frames of
+//! each shot are looked at instead of every third one.
 //!
 //! Unlike Scener, which searches each frame once at up to 1280 pixels with
-//! the smaller YuNet-s, YuNet-n looks at it twice ([`looks`]): at up to 960
-//! pixels for the small faces and at 320 for the close-ups, which at 1280
-//! are bigger than the faces YuNet is trained on. Measured on 2,028 frames
-//! of three live-action episodes (2026-11-11, faces pooled from YuNet and
-//! SCRFD at several sizes, the disputed ones judged by eye): 91.7% of the
-//! faces found instead of 85.7%, close-ups 95.9% instead of 85.9%, as many
-//! false boxes (1.8 in 100 frames); the two looks take the model 4.9 ms a
-//! frame on a processor where the one took 5.4. End to end on Breaking
-//! Bad's pilot (`bench/identity`), 73.2% of the main cast's time on screen
-//! ends up on their character instead of 71.2%. 3D animation is looked at
-//! bigger ([`FastParams::animated`]).
+//! YuNet, faces are found by SCRFD-2.5G — the full pass's detector's
+//! smaller sibling — looking at a frame twice ([`looks`]): at up to 640
+//! pixels, and at 320 for the close-ups too big for it there. Measured on
+//! Breaking Bad's pilot against its labels (`bench/identity`, 2026-11-11):
+//! 78.1% of the main cast's time on screen ends up on their character
+//! (YuNet-s looking once: 71.2%; YuNet-n looking at 960 and 320 pixels:
+//! 73.2%), nobody split or merged in the stress test's 27 runs (YuNet-n:
+//! one mix-up in 18 of them), for 5 s more an episode on a graphics card
+//! and 11% more time on a processor. Frame by frame (2,028 frames of three
+//! live-action episodes, faces pooled from both detectors' looks, the
+//! disputed ones judged by eye) it finds 93.2% of the faces with 0.25 false
+//! boxes in 100 frames, where YuNet-n found 91.7% with 1.8 and YuNet-s at
+//! 1280 pixels 85.7% with 1.8. 3D animation is looked at bigger
+//! ([`FastParams::animated`]).
 //!
 //! Each shot has a pool of candidate frames, one a second from its first
 //! frame on plus its last one. Looked at first: its first and last frame,
@@ -26,7 +29,7 @@
 //! once. The faces then go to the same tracker and the same grouping as
 //! the full pass's.
 //!
-//! What finds and embeds the faces is a [`Finder`]: YuNet and SFace
+//! What finds and embeds the faces is a [`Finder`]: SCRFD-2.5G and SFace
 //! ([`FastModels`]) for faces, or — anime — the anime pass's head and person
 //! detectors and CCIP (`crate::anime::FastAnime`), which see drawn
 //! characters where a photo-trained face model sees nobody. Fast Scan picks
@@ -56,8 +59,8 @@ use as_core::{CancelToken, FrameIdx, FrameRange};
 use as_media::frames::Decoder;
 use as_media::{MediaInfo, Source, Tools};
 use as_vision::arcface;
-use as_vision::scrfd::FaceBox;
-use as_vision::{SFace, YuNet, image, yunet};
+use as_vision::scrfd::{self, FaceBox, iou};
+use as_vision::{SFace, Scrfd, YuNet, image, yunet};
 
 use crate::AnalysisError;
 use crate::faces::FaceChunk;
@@ -71,8 +74,8 @@ pub struct FastParams {
     /// pixels along the longer side (`DEFAULT_YUNET_DETECT_MAX_EDGE`).
     /// Crops and thumbnails are cut from frames this size.
     pub decode_max: (u32, u32),
-    /// The longer side of each size YuNet looks at a frame at ([`looks`]),
-    /// the first for small faces, the second for close-ups.
+    /// The longer side of each size the detector looks at a frame at
+    /// ([`looks`]), the first for small faces, the second for close-ups.
     pub looks: [u32; 2],
     /// Where they are decoded (software where the GPU can't). Software
     /// unless the caller knows the card the analysis runs on: the engine
@@ -88,20 +91,18 @@ pub struct FastParams {
     /// A candidate this much unlike the one before is looked at
     /// (`VISUAL_CHANGE_THRESHOLD`, see [`visual_change`]).
     pub visual_change: f32,
-    /// A look with a face less sure than this (`LOW_CONFIDENCE_THRESHOLD`),
-    /// ...
+    /// A look with a face less sure than this (Scener's
+    /// `LOW_CONFIDENCE_THRESHOLD`: 0.92 of YuNet's scores, which leaves over
+    /// half of its faces in doubt; here where SCRFD-2.5G's scores leave as
+    /// many), ...
     pub low_confidence: f32,
     /// ... one covering less of the frame than this (`SMALL_FACE_AREA_THRESHOLD`),
     pub small_area: f32,
     /// ... or one narrower or shorter than this share of the frame's
     /// (`SMALL_FACE_SIDE_THRESHOLD`) has its neighbours looked at too.
     pub small_side: f32,
-    /// YuNet keeps faces from this score. Scener keeps them from 0.85, which
-    /// loses a quarter of the faces a live-action episode shows at the
-    /// looks (BB S01E01 from its 960×540 proxy: 76% held, 90% at 0.7) and
-    /// half those of a CGI film (160 hand-labelled frames: 48% found, 67%
-    /// at 0.7, still 98% of them faces). The faces it is less sure of count
-    /// for less ([`FastParams::score_floor`]).
+    /// The detector keeps faces from this score, as in the full pass. The
+    /// faces it is less sure of count for less ([`FastParams::score_floor`]).
     pub det_threshold: f32,
     /// Faces smaller than this (fraction of the frame height) are ignored,
     /// as in the full pass.
@@ -117,9 +118,10 @@ pub struct FastParams {
     pub norm_full: f32,
     /// Face height (fraction of the frame) from which size stops limiting quality.
     pub full_height: f32,
-    /// YuNet scores from "says nothing" to "sure" (equal: score doesn't
-    /// count). Without it, faces from 0.7 split Walter in most runs of the
-    /// identity bench's stress test; with it, none.
+    /// The detector's scores from "says nothing" to "sure" (equal: the
+    /// score doesn't count). With it nobody is split or merged in the 27
+    /// runs of the identity bench's stress test; without it two people are
+    /// split and one character is merged.
     pub score_floor: f32,
     pub score_full: f32,
     /// Tracks whose clearest face is below this quality are dropped.
@@ -134,24 +136,24 @@ impl Default for FastParams {
     fn default() -> Self {
         Self {
             decode_max: (1280, 1280),
-            looks: [960, 320],
+            looks: [640, 320],
             decoder: Decoder::Cpu,
             grid_per_sec: 4.0,
             pool_secs: 1.0,
             max_gap_secs: 2.0,
             visual_change: 0.18,
-            low_confidence: 0.92,
+            low_confidence: 0.78,
             small_area: 0.012,
             small_side: 0.08,
-            det_threshold: 0.7,
+            det_threshold: 0.5,
             min_height: 0.04,
             thumb_size: 160,
             thumb_context: 1.7,
             norm_floor: 5.5,
             norm_full: 8.0,
             full_height: 0.12,
-            score_floor: 0.7,
-            score_full: 0.95,
+            score_floor: 0.5,
+            score_full: 0.8,
             min_track_quality: 0.05,
             sprite_cells: 8,
             sprite_width: 240,
@@ -184,15 +186,15 @@ impl FastParams {
     }
 
     /// Fast Scan on 3D animation: the first look at the frame as decoded
-    /// (1280 pixels) instead of 960. YuNet, trained on photos, finds fewer
-    /// rendered faces, and the small ones go first when the frame shrinks.
-    /// Measured on 1,080 frames of a 3D series and film (2026-11-11, faces
-    /// pooled as in the module docs): 86.8% of the faces found, 81.8% of
-    /// those under a tenth of the frame's height — at 960 and 320 pixels
-    /// 84.0% and 74.5%, with YuNet-s looking once at 1280 78.7% and 73.1% —
-    /// for 2.4 false boxes in 100 frames instead of 2.0, and 7.9 ms a frame
-    /// on a processor instead of 4.9. (The full pass's three looks find
-    /// 95.9%.)
+    /// (1280 pixels) instead of 640. A detector trained on photos finds
+    /// fewer rendered faces, and the small ones go first when the frame
+    /// shrinks. Measured on 1,080 frames of a 3D series and film
+    /// (2026-11-11, faces pooled as in the module docs): 90.9% of the faces
+    /// found, 87.2% of those under a tenth of the frame's height — at 640
+    /// and 320 pixels 85.0% and 70.7% — with 0.4 false boxes in 100 frames,
+    /// for 25 s more of a 22-minute episode on a processor and none on a
+    /// graphics card. (YuNet-n at these sizes found 86.8%, YuNet-s looking
+    /// once 78.7%; the full pass's three looks find 95.9%.)
     pub fn animated() -> Self {
         Self { looks: [1280, 320], ..Self::default() }
     }
@@ -235,7 +237,7 @@ impl FastParams {
 
     /// How much a detection says about identity and how good a cover it
     /// makes, 0..=1: the SFace norm and the face size, as in the full pass,
-    /// and how sure YuNet is of it.
+    /// and how sure the detector is of it.
     pub fn quality(&self, norm: f32, height: f32, score: f32) -> f32 {
         let n = ((norm - self.norm_floor) / (self.norm_full - self.norm_floor)).clamp(0.0, 1.0);
         let s = (height / self.full_height).clamp(0.0, 1.0).sqrt();
@@ -254,16 +256,16 @@ pub fn frame_size(info: &MediaInfo, params: &FastParams) -> (usize, usize) {
     (w as usize, h as usize)
 }
 
-/// A look this much bigger than asked for is still that look: a frame 1024
-/// wide is looked at as it is, not shrunk to 960.
+/// A look this much bigger than asked for is still that look: a frame 680
+/// wide is looked at as it is, not shrunk to 640.
 const LOOK_SLACK: usize = 15;
 
-/// The sizes YuNet looks at a `w`×`h` frame at ([`FastParams::looks`]), the
-/// bigger first — [`FastModels`] takes one detector for each, loaded for
-/// its size. The first is the frame itself where it is small enough, three
-/// quarters of it where that is (a frame 1280 wide: 960), and else the
-/// frame shrunk to fit; the second the frame shrunk to fit, left out where
-/// the first is less than half as big again.
+/// The sizes the detector looks at a `w`×`h` frame at
+/// ([`FastParams::looks`]), the bigger first — [`FastModels`] takes one
+/// detector for each, loaded for its size. The first is the frame itself
+/// where it is small enough, three quarters of it where that is, and else
+/// the frame shrunk to fit (a frame 1280 wide: 640); the second the frame
+/// shrunk to fit, left out where the first is less than half as big again.
 pub fn looks((w, h): (usize, usize), params: &FastParams) -> Vec<(usize, usize)> {
     let [wide, small] = params.looks.map(|side| side as usize);
     let (long, most) = (w.max(h), wide + wide / LOOK_SLACK);
@@ -594,17 +596,66 @@ pub trait Finder {
     fn tracker(&self, params: &FastParams, fps: f64) -> TrackerParams;
 }
 
+/// A face detector loaded for one size a frame is looked at.
+pub trait Look {
+    /// Two boxes of pooled looks overlapping more than this are one face
+    /// (the detector's own bar for one look).
+    const POOL_IOU: f32;
+    /// The frame size it is loaded for.
+    fn frame_size(&self) -> (usize, usize);
+    /// The faces of one frame of that size from `threshold` on, in its pixels.
+    fn faces(&mut self, rgb: &[u8], threshold: f32) -> Result<Vec<FaceBox>, AnalysisError>;
+}
+
+impl Look for YuNet {
+    const POOL_IOU: f32 = yunet::NMS_IOU;
+
+    fn frame_size(&self) -> (usize, usize) {
+        YuNet::frame_size(self)
+    }
+
+    fn faces(&mut self, rgb: &[u8], threshold: f32) -> Result<Vec<FaceBox>, AnalysisError> {
+        Ok(self.detect_many(&[rgb], threshold)?.pop().unwrap_or_default())
+    }
+}
+
+impl Look for Scrfd {
+    const POOL_IOU: f32 = scrfd::NMS_IOU;
+
+    fn frame_size(&self) -> (usize, usize) {
+        Scrfd::frame_size(self)
+    }
+
+    fn faces(&mut self, rgb: &[u8], threshold: f32) -> Result<Vec<FaceBox>, AnalysisError> {
+        Ok(self.detect_many(&[rgb], threshold)?.pop().unwrap_or_default())
+    }
+}
+
+/// What several looks found in one frame (boxes in its pixels), each face
+/// once, as the look surest of it saw it: a box overlapping a surer one
+/// kept by more than `max_iou` goes.
+fn pooled(mut found: Vec<FaceBox>, max_iou: f32) -> Vec<FaceBox> {
+    found.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let mut keep: Vec<FaceBox> = Vec::with_capacity(found.len());
+    for f in found {
+        if keep.iter().all(|k| iou(&k.bbox, &f.bbox) <= max_iou) {
+            keep.push(f);
+        }
+    }
+    keep
+}
+
 /// The models Fast Scan finds faces with: a detector for each size a
 /// frame is looked at (the [`looks`] of the media's [`frame_size`]; one
 /// loaded for the frame itself looks once), and the embedder.
-pub struct FastModels<'a> {
-    pub detectors: &'a mut [YuNet],
+pub struct FastModels<'a, D: Look = Scrfd> {
+    pub detectors: &'a mut [D],
     pub embedder: &'a mut SFace,
     /// The size of the frames searched.
     pub frame: (usize, usize),
 }
 
-impl Finder for FastModels<'_> {
+impl<D: Look> Finder for FastModels<'_, D> {
     fn frame_size(&self) -> (usize, usize) {
         self.frame
     }
@@ -615,23 +666,18 @@ impl Finder for FastModels<'_> {
         for detector in self.detectors.iter_mut() {
             let size = detector.frame_size();
             let faces = if size == (w, h) {
-                detector.detect_many(&[rgb], p.det_threshold)?
+                detector.faces(rgb, p.det_threshold)?
             } else {
-                let small = shrunk(rgb, (w, h), size);
-                detector.detect_many(&[small.as_slice()], p.det_threshold)?
+                detector.faces(&shrunk(rgb, (w, h), size), p.det_threshold)?
             };
             let (kx, ky) = (w as f32 / size.0 as f32, h as f32 / size.1 as f32);
             // Pooled, a face too small to count must not hide one that counts.
             found.extend(
-                faces
-                    .into_iter()
-                    .flatten()
-                    .map(|b| stretched(b, kx, ky))
-                    .filter(|b| b.height() >= p.min_height * h as f32),
+                faces.into_iter().map(|b| stretched(b, kx, ky)).filter(|b| b.height() >= p.min_height * h as f32),
             );
         }
         if self.detectors.len() > 1 {
-            found = yunet::nms(found);
+            found = pooled(found, D::POOL_IOU);
         }
         Ok(found
             .into_iter()
@@ -948,32 +994,33 @@ mod tests {
     #[test]
     fn a_frame_is_looked_at_at_two_sizes() {
         let p = FastParams::default();
-        assert_eq!(p.looks, [960, 320]);
+        assert_eq!(p.looks, [640, 320]);
         // As decoded from 16:9, 2.39:1 and upright sources 1280 or more wide:
-        // three quarters, and a quarter.
-        assert_eq!(looks((1280, 720), &p), [(960, 540), (320, 180)]);
-        assert_eq!(looks((1280, 536), &p), [(960, 402), (320, 134)]);
-        assert_eq!(looks((720, 1280), &p), [(540, 960), (180, 320)]);
-        // Smaller frames as they are (1024 is close enough to 960), ...
-        assert_eq!(looks((1024, 576), &p), [(1024, 576), (320, 180)]);
-        assert_eq!(looks((960, 540), &p), [(960, 540), (320, 180)]);
+        // a half, and a quarter.
+        assert_eq!(looks((1280, 720), &p), [(640, 360), (320, 180)]);
+        assert_eq!(looks((1280, 536), &p), [(640, 268), (320, 134)]);
+        assert_eq!(looks((720, 1280), &p), [(360, 640), (180, 320)]);
+        // Smaller frames shrunk to fit, three quarters where that is close
+        // enough (540 is), or as they are, ...
+        assert_eq!(looks((960, 540), &p), [(640, 360), (320, 180)]);
+        assert_eq!(looks((720, 576), &p), [(540, 432), (320, 256)]);
         assert_eq!(looks((640, 360), &p), [(640, 360), (320, 180)]);
-        assert_eq!(looks((720, 576), &p), [(720, 576), (320, 256)]);
-        // ... a second look only where it is clearly smaller, ...
+        assert_eq!(looks((680, 384), &p), [(680, 384), (320, 180)]);
+        // ... a second look only where it is clearly smaller.
         assert_eq!(looks((480, 272), &p), [(480, 272), (320, 180)]);
         assert_eq!(looks((400, 300), &p), [(400, 300)]);
         assert_eq!(looks((320, 320), &p), [(320, 320)], "a crop Rescan reads is looked at once");
-        // ... and a frame that three quarters don't bring down far enough to fit.
-        let wide = FastParams { decode_max: (1920, 1920), ..p };
-        assert_eq!(looks((1920, 1080), &wide), [(960, 540), (320, 180)]);
+        assert_eq!(fit((1280, 720), 320), (320, 180));
+        assert_eq!(fit((300, 200), 320), (300, 200));
         // 3D animation: the frame as decoded, and a quarter.
         let animated = FastParams::animated();
         assert_eq!(looks((1280, 720), &animated), [(1280, 720), (320, 180)]);
         assert_eq!(looks((1280, 536), &animated), [(1280, 536), (320, 134)]);
-        assert_eq!(looks((960, 540), &animated), looks((960, 540), &p), "smaller frames as live action's");
+        assert_eq!(looks((960, 540), &animated), [(960, 540), (320, 180)]);
         assert_eq!((animated.det_threshold, animated.decode_max), (p.det_threshold, p.decode_max));
-        assert_eq!(fit((1280, 720), 320), (320, 180));
-        assert_eq!(fit((300, 200), 320), (300, 200));
+        // A frame that three quarters don't bring down far enough to fit.
+        let wide = FastParams { decode_max: (1920, 1920), ..animated };
+        assert_eq!(looks((1920, 1080), &wide), [(1280, 720), (320, 180)]);
     }
 
     #[test]
@@ -994,7 +1041,7 @@ mod tests {
     }
 
     fn calm(faces: usize) -> Summary {
-        Summary { faces, min_confidence: 0.98, min_area: 0.05, min_side: 0.2 }
+        Summary { faces, min_confidence: 0.9, min_area: 0.05, min_side: 0.2 }
     }
 
     /// The looks of a shot of `n` candidates, given what each would find
@@ -1034,7 +1081,7 @@ mod tests {
     fn doubt_has_the_neighbours_looked_at() {
         use Why::*;
         // An unsure face at the middle: the candidates either side too.
-        let unsure = |i| if i == 4 { Summary { min_confidence: 0.9, ..calm(1) } } else { calm(1) };
+        let unsure = |i| if i == 4 { Summary { min_confidence: 0.7, ..calm(1) } } else { calm(1) };
         let why = select(9, unsure, |_| false);
         assert_eq!(why[2..7], [Some(Gap), Some(Refine), Some(Midpoint), Some(Refine), Some(Gap)]);
         // A small face counts as doubt too, by area or by side.
@@ -1079,16 +1126,16 @@ mod tests {
     }
 
     #[test]
-    fn faces_yunet_is_less_sure_of_count_for_less() {
+    fn faces_the_detector_is_less_sure_of_count_for_less() {
         let p = FastParams::default();
-        assert_eq!((p.det_threshold, p.score_floor, p.score_full), (0.7, 0.7, 0.95));
+        assert_eq!((p.det_threshold, p.score_floor, p.score_full), (0.5, 0.5, 0.8));
         let (clear, tall) = (p.norm_full, p.full_height);
-        assert_eq!(p.quality(clear, tall, 0.95), 1.0);
-        assert!((p.quality(clear, tall, 0.825) - 0.5).abs() < 1e-6);
-        assert_eq!(p.quality(clear, tall, 0.7), 0.0);
+        assert_eq!(p.quality(clear, tall, 0.8), 1.0);
+        assert!((p.quality(clear, tall, 0.65) - 0.5).abs() < 1e-6);
+        assert_eq!(p.quality(clear, tall, 0.5), 0.0);
         // Off when the two scores are equal.
-        let off = FastParams { score_full: 0.7, ..p };
-        assert_eq!(off.quality(clear, tall, 0.75), 1.0);
+        let off = FastParams { score_full: 0.5, ..p };
+        assert_eq!(off.quality(clear, tall, 0.55), 1.0);
     }
 
     #[test]

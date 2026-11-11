@@ -2,30 +2,36 @@
 //! episode and save its tracks, like `faces_run` does for the full pass.
 //! `cargo run --release -p as-analysis --example fast_run -- <ort_dir> <models_dir> <ffmpeg_dir> <dir with
 //! bb.index/bb.info.json/bb.path/bb.segments.tsv> <out_prefix> [resume]`
-//! `<models_dir>` holds `yunet_n_640_640.onnx` and
-//! `face_recognition_sface_2021dec.onnx` (`YUNET=<file>` names another
-//! detector file there, `LOOKS=<side>,<side>` the sizes a frame is looked
-//! at: Fast Scan as it began is `YUNET=face_detection_yunet_2023mar.onnx
-//! LOOKS=1280,0`). Writes `<out_prefix>.tracks`
+//! `<models_dir>` holds `scrfd_2.5g.onnx` and
+//! `face_recognition_sface_2021dec.onnx` (`SCRFD=<file>` names another
+//! SCRFD file there, `LOOKS=<side>,<side>` the sizes a frame is looked at,
+//! `ANIMATED=1` looks as at 3D animation). Writes `<out_prefix>.tracks`
 //! (as_analysis::tracks::encode of all tracks), `<out_prefix>.chunks` (one
 //! `start end tracks sprites` line per chunk) and `<out_prefix>.dets.tsv`
 //! (one `frame score height norm quality` line per face, to calibrate the
 //! quality). `NORMS=<floor>,<full>` sets the SFace norms quality is read
 //! from, `MIN_TRACK_Q=<q>` the quality below which tracks are dropped,
 //! `POOL=<secs>` and `GAP=<secs>` how far apart candidates and looks lie;
-//! `DET_THRESHOLD=<score>` sets YuNet's threshold, `SCORES=<floor>,<full>`
-//! the scores quality is read from (equal: off), `DECODER=cpu`
-//! decodes in software.
+//! `DET_THRESHOLD=<score>` sets the detector's threshold,
+//! `SCORES=<floor>,<full>` the scores quality is read from (equal: off),
+//! `LOW=<score>` the score under which a look's neighbours are looked at
+//! too, `DECODER=cpu` decodes in software, `DEVICE=cpu` runs the models on
+//! the processor. `YUNET=<file>` finds faces with a YuNet model of
+//! `<models_dir>` instead, whose scores sit higher: Fast Scan as it began
+//! is `YUNET=face_detection_yunet_2023mar.onnx LOOKS=1280,0
+//! DET_THRESHOLD=0.7 SCORES=0.7,0.95 LOW=0.92`, YuNet-n looking twice
+//! `YUNET=yunet_n_640_640.onnx LOOKS=960,320` with the same three.
 
 use std::io::Write;
+use std::ops::Not;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use as_analysis::{FastModels, FastParams, fast};
+use as_analysis::{FaceTrack, FastModels, FastParams, fast};
 use as_core::{CancelToken, FrameIndex, FrameRange};
 use as_infer::Runtime;
 use as_media::{MediaInfo, Source, Tools};
-use as_vision::{SFace, YuNet};
+use as_vision::{SFace, Scrfd, YuNet};
 
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
@@ -43,8 +49,8 @@ fn main() {
         })
         .collect();
     let tools = Tools::locate(Some(Path::new(ffmpeg))).unwrap();
-    let rt = Runtime::load(Path::new(ort), true).unwrap();
-    let mut params = FastParams::default();
+    let rt = Runtime::load(Path::new(ort), std::env::var("DEVICE").is_ok_and(|v| v == "cpu").not()).unwrap();
+    let mut params = if std::env::var("ANIMATED").is_ok() { FastParams::animated() } else { FastParams::default() };
     if let Ok(v) = std::env::var("SCORES") {
         let (floor, full) = v.split_once(',').expect("SCORES=<floor>,<full>");
         (params.score_floor, params.score_full) = (floor.parse().unwrap(), full.parse().unwrap());
@@ -70,40 +76,32 @@ fn main() {
     if let Ok(v) = std::env::var("GAP") {
         params.max_gap_secs = v.parse().expect("GAP=<seconds>");
     }
+    if let Ok(v) = std::env::var("LOW") {
+        params.low_confidence = v.parse().expect("LOW=<score>");
+    }
     if let Ok(v) = std::env::var("LOOKS") {
         let (wide, small) = v.split_once(',').expect("LOOKS=<side>,<side>");
         params.looks = [wide.parse().unwrap(), small.parse().unwrap()];
     }
     let size = fast::frame_size(&info, &params);
     let looks = fast::looks(size, &params);
-    let file = std::env::var("YUNET").unwrap_or_else(|_| "yunet_n_640_640.onnx".into());
-    let mut detectors: Vec<YuNet> =
-        looks.iter().map(|&look| YuNet::load(&rt, &models.join(&file), look, 1).unwrap()).collect();
     let mut embedder = SFace::load(&rt, &models.join("face_recognition_sface_2021dec.onnx"), 16).unwrap();
-    println!(
-        "Fast Scan at {size:?}, {file} looking at {looks:?}, grid {} frames",
-        params.grid(index.nominal_fps.to_f64())
-    );
+    let src = Source { path: &path, info: &info, index: &index };
     let t0 = Instant::now();
-    let mut all = Vec::new();
-    let mut chunks = std::fs::File::create(format!("{out}.chunks")).unwrap();
-    as_analysis::fast_face_tracks(
-        &tools,
-        Source { path: &path, info: &info, index: &index },
-        FastModels { detectors: &mut detectors, embedder: &mut embedder, frame: size },
-        &shots,
-        resume,
-        2400,
-        &params,
-        &CancelToken::new(),
-        |p| eprint!("\r{:5.1}% {:5.0}s", 100.0 * p, t0.elapsed().as_secs_f64()),
-        |c| {
-            writeln!(chunks, "{} {} {} {}", c.start, c.end, c.tracks.len(), c.sprites.len()).unwrap();
-            all.extend_from_slice(c.tracks);
-            Ok(())
-        },
-    )
-    .unwrap();
+    let all = if let Ok(file) = std::env::var("YUNET") {
+        println!("Fast Scan at {size:?}, {file} looking at {looks:?}");
+        let mut detectors: Vec<YuNet> =
+            looks.iter().map(|&look| YuNet::load(&rt, &models.join(&file), look, 1).unwrap()).collect();
+        let found = FastModels { detectors: &mut detectors, embedder: &mut embedder, frame: size };
+        pass(&tools, src, found, &shots, resume, &params, out, t0)
+    } else {
+        let file = std::env::var("SCRFD").unwrap_or_else(|_| "scrfd_2.5g.onnx".into());
+        println!("Fast Scan at {size:?}, {file} looking at {looks:?}");
+        let mut detectors: Vec<Scrfd> =
+            looks.iter().map(|&look| Scrfd::load(&rt, &models.join(&file), look, 1).unwrap()).collect();
+        let found = FastModels { detectors: &mut detectors, embedder: &mut embedder, frame: size };
+        pass(&tools, src, found, &shots, resume, &params, out, t0)
+    };
     let secs = t0.elapsed().as_secs_f64();
     std::fs::write(format!("{out}.tracks"), as_analysis::tracks::encode(&all)).unwrap();
     let mut dets = std::fs::File::create(format!("{out}.dets.tsv")).unwrap();
@@ -118,4 +116,38 @@ fn main() {
         (index.len() - resume) as f64 / secs,
         all.len()
     );
+}
+
+/// The pass with `models`; its tracks, each chunk noted in `<out>.chunks`.
+#[allow(clippy::too_many_arguments)]
+fn pass(
+    tools: &Tools,
+    src: Source,
+    models: impl fast::Finder,
+    shots: &[FrameRange],
+    resume: u32,
+    params: &FastParams,
+    out: &str,
+    t0: Instant,
+) -> Vec<FaceTrack> {
+    let mut all = Vec::new();
+    let mut chunks = std::fs::File::create(format!("{out}.chunks")).unwrap();
+    as_analysis::fast_face_tracks(
+        tools,
+        src,
+        models,
+        shots,
+        resume,
+        2400,
+        params,
+        &CancelToken::new(),
+        |p| eprint!("\r{:5.1}% {:5.0}s", 100.0 * p, t0.elapsed().as_secs_f64()),
+        |c| {
+            writeln!(chunks, "{} {} {} {}", c.start, c.end, c.tracks.len(), c.sprites.len()).unwrap();
+            all.extend_from_slice(c.tracks);
+            Ok(())
+        },
+    )
+    .unwrap();
+    all
 }

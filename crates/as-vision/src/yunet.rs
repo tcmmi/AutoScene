@@ -1,16 +1,16 @@
 //! YuNet (Wu et al. 2023): a small face detector — boxes plus five points —
-//! and Fast Scan's choice for speed over SCRFD-10G. The file is YuNet-n
-//! (`yunet_n_640_640.onnx` of the authors' training repository), the larger
-//! of their two: OpenCV Zoo's `face_detection_yunet_2023mar`, which the
-//! Scener app ships and Fast Scan began with, is the smaller YuNet-s. Both
-//! have the same inputs, outputs and scores; YuNet-n finds more of the
-//! small faces, which lets Fast Scan look at smaller frames (see
-//! `as_analysis::fast`).
+//! which the Scener app finds faces with and Fast Scan began with. Fast Scan
+//! now looks with SCRFD-2.5G (`as_analysis::fast`), which puts more of a
+//! cast on their character and makes a seventh of the false boxes; YuNet
+//! stays for comparing passes (`fast_run`'s `YUNET=`). Its authors publish
+//! two files with the same inputs, outputs and scores: YuNet-s (OpenCV
+//! Zoo's `face_detection_yunet_2023mar`, Scener's) and the larger YuNet-n
+//! (`yunet_n_640_640.onnx`), which finds more of the small faces.
 //!
 //! It is trained for faces of about 10 to 300 pixels: bigger ones (a
 //! close-up in a frame 1280 wide) it finds less often and is less sure of,
-//! so a frame is looked at at more than one size and the answers pooled
-//! ([`nms`]).
+//! so a frame is best looked at at more than one size and the answers
+//! pooled.
 //!
 //! The graph takes any input size that is a multiple of 32 (padded at the
 //! right and bottom, as OpenCV's `FaceDetectorYN` does) and pins its batch

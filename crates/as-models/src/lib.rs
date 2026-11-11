@@ -250,12 +250,12 @@ pub mod ids {
     pub const ARCFACE: &str = "arcface-glintr100";
     /// What the face pass needs.
     pub const FACES: [&str; 2] = [SCRFD, ARCFACE];
-    /// Fast Scan's detector (YuNet-n, the larger of the authors' two; the
-    /// Scener app's is their YuNet-s) and embedder (the Scener app's).
-    pub const YUNET: &str = "yunet-n-2023jan";
+    /// Fast Scan's detector (SCRFD-2.5G, the smaller sibling of [`SCRFD`])
+    /// and embedder (the Scener app's).
+    pub const SCRFD_FAST: &str = "scrfd-2.5g";
     pub const SFACE: &str = "sface-2021dec";
     /// What the Fast Scan face pass needs.
-    pub const FAST_FACES: [&str; 2] = [YUNET, SFACE];
+    pub const FAST_FACES: [&str; 2] = [SCRFD_FAST, SFACE];
     /// People (their whole bodies), and how they look (clothes, build).
     pub const PERSONS: &str = "person-ppyoloe";
     pub const PERSON_REID: &str = "person-reid-0277";
@@ -1223,12 +1223,13 @@ mod tests {
             let m = model(id).unwrap();
             assert_eq!(m.member.as_deref(), Some(m.file.as_str()), "{id}");
         }
-        // The full face pass and the people are InsightFace's, for
-        // non-commercial use; the shots and Fast Scan aren't restricted.
-        for id in ids::FACES.into_iter().chain(ids::BODIES) {
+        // The face detectors, the full pass's embedder and the people are
+        // InsightFace's, for non-commercial use; the shots and Fast Scan's
+        // embedder aren't restricted.
+        for id in ids::FACES.into_iter().chain(ids::BODIES).chain([ids::SCRFD_FAST]) {
             assert!(model(id).unwrap().non_commercial, "{id}");
         }
-        for id in ids::FAST_FACES.into_iter().chain([ids::TRANSNET]) {
+        for id in [ids::SFACE, ids::TRANSNET] {
             assert!(!model(id).unwrap().non_commercial, "{id}");
         }
     }

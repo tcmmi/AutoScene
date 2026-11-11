@@ -348,7 +348,7 @@ fn face_chunks_tile_the_media_even_across_a_kill() {
     for animated in [false, true] {
         face_chunks_tile(&engine, &m, FacesInput { animated, ..faces_input(&m, shots.clone(), false, None) });
     }
-    // Fast Scan (YuNet, SFace, a few looks per shot).
+    // Fast Scan (SCRFD-2.5G, SFace, a few looks per shot).
     if as_models::ids::FAST_FACES.iter().any(|id| store.installed(id).unwrap().is_none()) {
         assert!(!models_required(), "Fast Scan models missing (run `cargo xtask fetch-models`)");
         eprintln!("Fast Scan models missing; run `cargo xtask fetch-models` (skipping)");
@@ -471,7 +471,7 @@ fn face_chunks_tile(engine: &Engine, m: &Media, job: FacesInput) {
     } else if anime {
         (as_models::ids::ANIME_HEAD, as_models::ids::ANIME_CCIP)
     } else if fast {
-        (as_models::ids::YUNET, as_models::ids::SFACE)
+        (as_models::ids::SCRFD_FAST, as_models::ids::SFACE)
     } else {
         (as_models::ids::SCRFD, as_models::ids::ARCFACE)
     };

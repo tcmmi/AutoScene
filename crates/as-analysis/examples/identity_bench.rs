@@ -5,7 +5,10 @@
 //!    (default parameters) and writes, per character, its tracks' thumbnails
 //!    numbered `<out_dir>/c<rank>/<n>.jpg` (least typical first) — and the
 //!    rest under `u/` — plus `sheets.tsv` (`sheet  n  track`). Tile them with
-//!    ffmpeg (`-i %04d.jpg -vf tile=8x8`) to look at.
+//!    ffmpeg (`-i %04d.jpg -vf tile=8x8`) to look at. `ORDER=time` writes
+//!    sheets `t<nnn>` of 64 tracks in the order they come on screen instead,
+//!    without clustering: the labels of a test set must not follow the
+//!    grouping of the embedder they will judge.
 //! 2. Write `answers.txt`, one line per sheet folder: `c03 = jesse` or
 //!    `u = ?`, then exceptions by number: `c03 = jesse; 7 hank; 12 ?`. `?`
 //!    is anyone unnamed (an extra, or not a face).
@@ -259,7 +262,34 @@ fn scored_tracks(tracks: &[FaceTrack], truth_name: &[Option<&str>], spans: &Span
         .collect()
 }
 
+/// Tracks on one sheet of `ORDER=time` (an 8×8 tile).
+const TIME_SHEET: usize = 64;
+
+/// `ORDER=time`: sheets `t<nnn>` of [`TIME_SHEET`] tracks in the order they
+/// come on screen. Labels made from them owe nothing to how an embedder
+/// groups the tracks — what the labels of a test set must not lean on.
+fn sheets_by_time(tracks: &[FaceTrack], out: &Path) {
+    let mut ids: Vec<usize> = (0..tracks.len()).collect();
+    ids.sort_by_key(|&i| (tracks[i].start, tracks[i].end, i));
+    let _ = std::fs::remove_dir_all(out);
+    let mut tsv = String::from("sheet\tn\ttrack\n");
+    for (s, sheet) in ids.chunks(TIME_SHEET).enumerate() {
+        let name = format!("t{s:03}");
+        let dir = out.join(&name);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (n, &i) in sheet.iter().enumerate() {
+            std::fs::write(dir.join(format!("{n:04}.jpg")), &tracks[i].thumb).unwrap();
+            tsv += &format!("{name}\t{n}\t{i}\n");
+        }
+    }
+    println!("{} sheets of up to {TIME_SHEET} tracks, by time", ids.len().div_ceil(TIME_SHEET));
+    std::fs::write(out.join("sheets.tsv"), tsv).unwrap();
+}
+
 fn sheets(tracks: &[FaceTrack], out: &Path) {
+    if std::env::var("ORDER").is_ok_and(|v| v == "time") {
+        return sheets_by_time(tracks, out);
+    }
     let input = input(tracks);
     let o = identify(&input, &Params::default());
     let chars = members(&o);

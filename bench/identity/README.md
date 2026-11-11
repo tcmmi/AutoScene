@@ -236,6 +236,49 @@ the faces a bigger look adds are the small ones SFace tells apart worst.
 On a processor alone the pass takes 11% longer than with YuNet-n (a
 1080p episode: 221 s against 199 s).
 
+### Would a better embedder help Fast Scan? (2026-11-11)
+
+Asked before training one (`bench/models`): `fast_run` puts an
+ArcFace-style graph in SFace's place with `EMBEDDER=<file>`. On the BB
+proxy, scored with `GRID=6,8` and no `SFACE=1`, each at the best bars of a
+sweep (link 0.30–0.55, assign 0.22–0.45); glintr100 with its own norms
+(14–22), w600k_mbf — InsightFace's small embedder (buffalo_s, 13.6 MB) —
+with the norms at the same share of faces (10.39–16.98, `identity_bench
+norms`). A graph other than glintr100 runs on the processor (`DEVICE=cpu`):
+it has no goldens to prove itself on a graphics card.
+
+| | SFace (as shipped) | glintr100 | glintr100 and SCRFD-10G at both looks | w600k_mbf |
+|---|---|---|---|---|
+| link / assign | `Params::sface` | 0.30 / 0.28 | 0.30 / 0.28 | 0.40 / 0.28 |
+| tracks / faces | 1080 / 4404 | 1072 / 4358 | 1088 / 4476 | 1233 / 4556 |
+| main cast per track P / R / F | 0.976 / 0.834 / 0.900 | 0.982 / 0.918 / 0.949 | 0.982 / 0.915 / 0.947 | 0.985 / 0.722 / 0.833 |
+| per screen time F | 0.974 | 0.984 | 0.981 | 0.925 |
+| main cast over time, in a track / on their character | 0.797 / 0.781 | 0.791 / 0.782 | 0.811 / 0.801 | 0.801 / 0.779 |
+| main cast clips, precision / recall | 0.981 / 0.920 | 0.988 / 0.937 | | |
+| stress (27 runs) | 0 split, 0 merged | 0 split, 0 merged | 0 split, 0 merged | |
+| time (graphics card) | 55 s | 81 s | 87 s | |
+| time (processor alone, two runs) | 208–224 s | | | 162–171 s |
+
+The strongest embedder here groups Fast Scan's tracks better — fewer short
+tracks stay unsure or unassigned (per-track F 0.949 against 0.900) — but
+hardly changes what a person gets: the main cast's time on their character
+stays where it was (0.782 against 0.781), and their packs gain 1.7 points of
+recall. Fast Scan loses faces, not names: a track holds 80% of the main
+cast's time, and of that SFace already puts 98% on the right character.
+Only with the full pass's detector at both looks as well does the time on
+their character reach 0.801 (with SFace that detector merged three
+characters) — four times the detector's work and the full pass's embedder,
+which is the full scan on fewer frames rather than a Fast Scan. w600k_mbf
+tells these small faces apart worse than SFace does (Walter in four
+characters), though the pass is a fifth to a quarter faster with it on a
+processor.
+
+So neither a ready-made embedder nor a student of glintr100 takes SFace's
+place: the gate asked for 0.02 more time on their character
+(`bench/models/README.md`), and the teacher itself gives 0.001. What would
+help Fast Scan is finding and holding more faces. One title, at the proxy's
+960×540.
+
 Time on the film's last 22,319 frames (warm file cache, idle RTX 3060 Ti,
 16 threads; two runs each): the full pass 133–149 s for 3D animation,
 113–134 s for live action; Fast Scan 39–57 s decoding on the GPU (NVDEC),

@@ -25,7 +25,7 @@ pub use faces::{
     BodyModels, CLEAR_FACE, DETECT_BATCH, FaceChunk, FaceParams, Faces, Look, PERSON_INPUT, PeopleParams, Search,
     detect_looks, face_tracks, find_faces, frame_sizes,
 };
-pub use fast::{FastModels, FastParams, Finder, Spot, fast_face_tracks};
+pub use fast::{FaceEmbedder, FastModels, FastParams, Finder, Spot, fast_face_tracks};
 pub use fusion::{FusionParams, Segment, SegmentKind, TransitionKind, fuse};
 pub use pipeline::{CHUNK, shot_signals};
 pub use portrait::{crowding, portrait_region};

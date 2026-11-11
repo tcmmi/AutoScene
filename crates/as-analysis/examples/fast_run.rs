@@ -21,17 +21,23 @@
 //! is `YUNET=face_detection_yunet_2023mar.onnx LOOKS=1280,0
 //! DET_THRESHOLD=0.7 SCORES=0.7,0.95 LOW=0.92`, YuNet-n looking twice
 //! `YUNET=yunet_n_640_640.onnx LOOKS=960,320` with the same three.
+//! `EMBEDDER=<file>` embeds the faces with an ArcFace-style graph (112×112
+//! crop, 512 values; a file of `<models_dir>` or a full path) in SFace's
+//! place, to ask what a stronger embedder would add: give its norms with
+//! `NORMS` (glintr100: `14,22`) and score its tracks without `SFACE=1`. A
+//! graph other than glintr100 has no goldens to prove itself on a graphics
+//! card: run it with `DEVICE=cpu`.
 
 use std::io::Write;
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use as_analysis::{FaceTrack, FastModels, FastParams, fast};
+use as_analysis::{FaceEmbedder, FaceTrack, FastModels, FastParams, fast};
 use as_core::{CancelToken, FrameIndex, FrameRange};
 use as_infer::Runtime;
 use as_media::{MediaInfo, Source, Tools};
-use as_vision::{SFace, Scrfd, YuNet};
+use as_vision::{ArcFace, SFace, Scrfd, YuNet};
 
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
@@ -85,22 +91,16 @@ fn main() {
     }
     let size = fast::frame_size(&info, &params);
     let looks = fast::looks(size, &params);
-    let mut embedder = SFace::load(&rt, &models.join("face_recognition_sface_2021dec.onnx"), 16).unwrap();
     let src = Source { path: &path, info: &info, index: &index };
     let t0 = Instant::now();
-    let all = if let Ok(file) = std::env::var("YUNET") {
-        println!("Fast Scan at {size:?}, {file} looking at {looks:?}");
-        let mut detectors: Vec<YuNet> =
-            looks.iter().map(|&look| YuNet::load(&rt, &models.join(&file), look, 1).unwrap()).collect();
-        let found = FastModels { detectors: &mut detectors, embedder: &mut embedder, frame: size };
-        pass(&tools, src, found, &shots, resume, &params, out, t0)
+    let run = Run { rt: &rt, models, tools: &tools, size, looks: &looks, shots: &shots, resume, params: &params, out };
+    let all = if let Ok(file) = std::env::var("EMBEDDER") {
+        println!("faces embedded by {file}");
+        let mut embedder = ArcFace::load(&rt, &models.join(&file), 16).unwrap();
+        run.find(src, &mut embedder, t0)
     } else {
-        let file = std::env::var("SCRFD").unwrap_or_else(|_| "scrfd_2.5g.onnx".into());
-        println!("Fast Scan at {size:?}, {file} looking at {looks:?}");
-        let mut detectors: Vec<Scrfd> =
-            looks.iter().map(|&look| Scrfd::load(&rt, &models.join(&file), look, 1).unwrap()).collect();
-        let found = FastModels { detectors: &mut detectors, embedder: &mut embedder, frame: size };
-        pass(&tools, src, found, &shots, resume, &params, out, t0)
+        let mut embedder = SFace::load(&rt, &models.join("face_recognition_sface_2021dec.onnx"), 16).unwrap();
+        run.find(src, &mut embedder, t0)
     };
     let secs = t0.elapsed().as_secs_f64();
     std::fs::write(format!("{out}.tracks"), as_analysis::tracks::encode(&all)).unwrap();
@@ -116,6 +116,40 @@ fn main() {
         (index.len() - resume) as f64 / secs,
         all.len()
     );
+}
+
+/// What a run is given, whatever embeds its faces.
+struct Run<'a> {
+    rt: &'a Runtime,
+    models: &'a Path,
+    tools: &'a Tools,
+    size: (usize, usize),
+    looks: &'a [(usize, usize)],
+    shots: &'a [FrameRange],
+    resume: u32,
+    params: &'a FastParams,
+    out: &'a str,
+}
+
+impl Run<'_> {
+    /// The pass with the detector the environment names and `embedder`.
+    fn find<E: FaceEmbedder>(&self, src: Source, embedder: &mut E, t0: Instant) -> Vec<FaceTrack> {
+        let (size, looks) = (self.size, self.looks);
+        if let Ok(file) = std::env::var("YUNET") {
+            println!("Fast Scan at {size:?}, {file} looking at {looks:?}");
+            let mut detectors: Vec<YuNet> =
+                looks.iter().map(|&look| YuNet::load(self.rt, &self.models.join(&file), look, 1).unwrap()).collect();
+            let found = FastModels { detectors: &mut detectors, embedder, frame: size };
+            pass(self.tools, src, found, self.shots, self.resume, self.params, self.out, t0)
+        } else {
+            let file = std::env::var("SCRFD").unwrap_or_else(|_| "scrfd_2.5g.onnx".into());
+            println!("Fast Scan at {size:?}, {file} looking at {looks:?}");
+            let mut detectors: Vec<Scrfd> =
+                looks.iter().map(|&look| Scrfd::load(self.rt, &self.models.join(&file), look, 1).unwrap()).collect();
+            let found = FastModels { detectors: &mut detectors, embedder, frame: size };
+            pass(self.tools, src, found, self.shots, self.resume, self.params, self.out, t0)
+        }
+    }
 }
 
 /// The pass with `models`; its tracks, each chunk noted in `<out>.chunks`.

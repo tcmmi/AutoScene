@@ -60,7 +60,7 @@ use as_media::frames::Decoder;
 use as_media::{MediaInfo, Source, Tools};
 use as_vision::arcface;
 use as_vision::scrfd::{self, FaceBox, iou};
-use as_vision::{SFace, Scrfd, YuNet, image, yunet};
+use as_vision::{ArcFace, Embedding, SFace, Scrfd, YuNet, image, yunet};
 
 use crate::AnalysisError;
 use crate::faces::FaceChunk;
@@ -645,17 +645,37 @@ fn pooled(mut found: Vec<FaceBox>, max_iou: f32) -> Vec<FaceBox> {
     keep
 }
 
+/// What embeds the faces Fast Scan finds: SFace, or — a bench asking what a
+/// stronger embedder would add (`fast_run`'s `EMBEDDER`) — an ArcFace-style
+/// graph. Both take the same aligned crop ([`arcface::align`]).
+pub trait FaceEmbedder {
+    /// Each crop's unit vector and the length the network gave it.
+    fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<Embedding>, AnalysisError>;
+}
+
+impl FaceEmbedder for SFace {
+    fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<Embedding>, AnalysisError> {
+        Ok(SFace::embed(self, crops)?)
+    }
+}
+
+impl FaceEmbedder for ArcFace {
+    fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<Embedding>, AnalysisError> {
+        Ok(ArcFace::embed(self, crops)?)
+    }
+}
+
 /// The models Fast Scan finds faces with: a detector for each size a
 /// frame is looked at (the [`looks`] of the media's [`frame_size`]; one
 /// loaded for the frame itself looks once), and the embedder.
-pub struct FastModels<'a, D: Look = Scrfd> {
+pub struct FastModels<'a, D: Look = Scrfd, E: FaceEmbedder = SFace> {
     pub detectors: &'a mut [D],
-    pub embedder: &'a mut SFace,
+    pub embedder: &'a mut E,
     /// The size of the frames searched.
     pub frame: (usize, usize),
 }
 
-impl<D: Look> Finder for FastModels<'_, D> {
+impl<D: Look, E: FaceEmbedder> Finder for FastModels<'_, D, E> {
     fn frame_size(&self) -> (usize, usize) {
         self.frame
     }
@@ -691,8 +711,8 @@ impl<D: Look> Finder for FastModels<'_, D> {
             .embed(crops)?
             .into_iter()
             .map(|e| {
-                // Tracks keep the full pass's size: the rest stays zero and
-                // leaves every similarity as SFace's own.
+                // Tracks keep the full pass's size: what a smaller vector
+                // (SFace's) leaves stays zero, and every similarity its own.
                 let mut v = e.v;
                 v.resize(DIM, 0.0);
                 (v, e.norm)

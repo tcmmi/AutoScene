@@ -128,6 +128,8 @@ describe("the language row", () => {
 describe("switching the language", () => {
   it("switching to Română turns the rail, top bar, Settings, the Player, Cast and the palette Romanian without a reload, and back", async () => {
     const [project] = await commands.projectsList()
+    // "Episodes" below is a series' word (a film's top bar says "Files"): the mock lists a series first.
+    expect(project!.kind).toBe("series")
     const media = (await commands.mediaList(project!.id)).find((m) => m.status === "ready")!
     const cast = await commands.castGet(project!.id)
     const character = cast.characters[0]!
@@ -138,7 +140,7 @@ describe("switching the language", () => {
     const rail = () => screen.findByRole("navigation", { name: t("shell:rail.label") })
     const at = async (place: string, words: () => void) => {
       await go(place)
-      // A page's first load is a lazy chunk, which a busy CI machine takes its time over.
+      // Generous: a page asks the mock for its data, and a busy CI machine takes its time.
       await waitFor(words, { timeout: 15000 })
     }
     const pages = async (ro: boolean) => {

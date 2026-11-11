@@ -495,15 +495,16 @@ function media(
 
 type MockProject = ProjectSummary & { media: MediaItem[]; exports: ExportSummary[] }
 
-function project(title: string, kind: ProjectKind, content: ProjectSummary["content"], items: MediaItem[], age: number): MockProject {
+/** A project made at `at` and not changed since: the library lists the last changed first. */
+function project(title: string, kind: ProjectKind, content: ProjectSummary["content"], items: MediaItem[], at: number): MockProject {
   const p: MockProject = {
     id: id(),
     title,
     kind,
     content,
     dir: `${ROOT}\\${title}.autoscene`,
-    createdAt: now - age,
-    updatedAt: now - age,
+    createdAt: at,
+    updatedAt: at,
     mediaCount: 0,
     readyCount: 0,
     durationSec: 0,
@@ -513,11 +514,12 @@ function project(title: string, kind: ProjectKind, content: ProjectSummary["cont
     media: items,
     exports: [],
   }
-  refresh(p)
+  count(p)
   return p
 }
 
-function refresh(p: MockProject) {
+/** What a project says of its media: their order, how many, how long, its poster. */
+function count(p: MockProject) {
   p.media.forEach((m, i) => (m.position = i))
   p.mediaCount = p.media.length
   p.readyCount = p.media.filter((m) => m.status === "ready").length
@@ -525,6 +527,15 @@ function refresh(p: MockProject) {
   const pictured = p.media.find((m) => m.poster)
   p.poster = pictured?.poster ?? null
   p.posterSmall = pictured?.posterSmall ?? null
+}
+
+/**
+ * After a change to a project's media: counted again, and changed now. Making
+ * a project is no change: a seed keeps the age it is given, so the library's
+ * order never hangs on the clock moving between two seeds.
+ */
+function refresh(p: MockProject) {
+  count(p)
   p.updatedAt = Date.now()
 }
 
@@ -539,7 +550,7 @@ const projects: MockProject[] = [
       media("[SubsPlease] Sousou no Frieren - 03 (1080p).mkv", [null, 3], { proxy: "ready", infoArgs: ["hevc", 1920, 1080, [["jpn", 2]]] }, "frieren-03"),
       media("[SubsPlease] Sousou no Frieren - 04 (1080p).mkv", [null, 4], { status: "indexing" }),
     ],
-    1000,
+    now - 1000,
   ),
   project(
     "Dark",
@@ -550,14 +561,14 @@ const projects: MockProject[] = [
       media("Dark.S01E02.Lies.2160p.HDR.mkv", [1, 2], { proxy: "ready", infoArgs: ["hevc", 3840, 2160, [["ger", 6]], true] }, "dark-02"),
       media("Dark.S01E03.Past.and.Present.2160p.HDR.mkv", [1, 3], { status: "missing" }),
     ],
-    86_400_000,
+    now - 86_400_000,
   ),
   project(
     "Blade Runner 2049",
     "movie",
     "live",
     [media("Blade Runner 2049 (2017).mp4", [null, null], { infoArgs: ["h264", 1920, 804, [["eng", 6]]] }, "br2049")],
-    3 * 86_400_000,
+    now - 3 * 86_400_000,
   ),
 ]
 
@@ -1220,7 +1231,7 @@ const handlers: Record<string, Handler> = {
   project_create: ({ req, fastScan }) => {
     const r = req as NewProject
     const items = scan(r.files, r.kind).map((c) => media(c.fileName, [c.season, c.episode], { status: "queued", path: c.path }))
-    const p = project(r.title, r.kind, r.content, items, 0)
+    const p = project(r.title, r.kind, r.content, items, Date.now())
     // Like the library: what the dialog sent, else the footage's default here.
     p.fastScan = (fastScan as boolean | null | undefined) ?? startsFast(r.content)
     projects.unshift(p)

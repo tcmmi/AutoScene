@@ -10,6 +10,7 @@ pub mod faces;
 pub mod fast;
 pub mod fusion;
 pub mod link;
+pub mod pictures;
 pub mod pipeline;
 pub mod portrait;
 pub mod rescan;

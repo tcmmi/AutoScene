@@ -185,3 +185,69 @@ times cannot be compared); the three franchises as an app project with one
 media per episode (the bench puts every track on one timeline with one media
 id); the One Piece timeline's seconds (one of its three files is 25 fps,
 scored at 23.976).
+
+## Label oracle: what a perfect embedder would reach
+
+The third rung of the oracle ladder (`README.md`), run on 2026-11-12 after the
+comparison above; the plan was written down before its first score. Every
+named track gets the unit vector of its figure, every other track (`?e`, `n`,
+`x`, `?u`) one of its own, so the cosine is 1 inside a figure and 0 everywhere
+else. The vectors go in as `EMB_OVERRIDE`; tracks, labels, bars and scoring are
+those of the two passes. Passing a scan's own embeddings the same way gives its
+score back to the last digit.
+
+Main cast, figure level, per-track:
+
+| | Jujutsu Kaisen | Re:Zero | One Piece | Macro F |
+|---|---|---|---|---|
+| Standard | P 0.843 R 0.166 F 0.277 | P 0.899 R 0.321 F 0.473 | P 0.932 R 0.161 F 0.274 | 0.341 |
+| Best | P 0.976 R 0.121 F 0.216 | P 0.993 R 0.423 F 0.593 | P 0.967 R 0.242 F 0.387 | 0.399 |
+| Perfect embeddings | P 1.000 R 0.687 F 0.815 | P 1.000 R 0.813 F 0.897 | P 1.000 R 0.685 F 0.813 | **0.842** |
+| Characters (Standard / Best / perfect) | 70 / 55 / 17 | 47 / 44 / 17 | 124 / 88 / 31 | |
+| Share of the gap to 1 closed, against Standard | 0.744 | 0.804 | 0.742 | **0.759**, 95 % [0.719, 0.812] |
+| ... against Best | 0.764 | 0.747 | 0.695 | **0.736**, 95 % [0.697, 0.786] |
+
+By the README's rule (two thirds or more) the pass is embedder-bound on these
+franchises, against either scan. One Piece against Best is the weakest cell
+(0.695, its own interval [0.591, 0.831]). The fitted space changes nothing here
+(`ADAPT=0`: the same numbers); a vector per gallery code instead of per figure
+gives 0.815, 0.897 and 0.794.
+
+A perfect embedder still stops at 0.81–0.90, below the target of 0.90 on all
+three franchises. Precision is 1.000; what is missing is recall, and the cause is in
+the tracks: 263 of 1,115 named tracks on Jujutsu Kaisen, 209 of 984 on Re:Zero
+and 255 of 1,105 on One Piece were found in a frame with another track of the
+same figure. The grouping reads two tracks in one frame as two people, so the
+figure gets a second character, and tracks that fit both end as unsure or
+unassigned. Looked at on pages of twelve pairs per franchise: most are a second,
+wide box of the pass on the same character beside its head box (the head a
+person box implies); the rest are real doubles (the Ryuzu copies, the rabbits,
+artwork in an opening).
+
+Added after those scores were seen, not part of the plan:
+
+- Without the doubles (of every such pair the track with fewer heads leaves;
+  112–134 tracks a franchise, 7–10 %; the tracks left are scored against their
+  labels): perfect embeddings reach 0.985, 0.996 and 0.988. Standard goes from
+  0.277 / 0.473 / 0.274 to 0.368 / 0.601 / 0.316 (macro 0.341 → 0.428), Best
+  from 0.216 / 0.593 / 0.387 to 0.339 / 0.751 / 0.521 (0.399 → 0.537); Best −
+  Standard is then +0.108 [+0.049, +0.184], Jujutsu Kaisen still −0.029. These
+  runs score fewer tracks than the passes, so they show the size of the effect,
+  not a result to hold a scan to.
+- Dropping the shared frames of alike tracks (`CL_CAP=0.9`) lifts the perfect
+  oracle to 0.867, 0.907 and 0.884: the tracks' spans still overlap.
+- With every figure's tracks moved onto their mean real embedding (no spread
+  inside a figure, the embedder's own distances between figures): CCIP b36
+  0.650 / 0.824 / 0.536 with precision 0.83 / 0.95 / 0.56, Berkeley 0.735 /
+  0.832 / 0.657 with precision 0.99 / 0.98 / 0.91. CCIP's figures of One Piece
+  lie too close to each other even then.
+- A cosine mixed from the real one and the truth, (1 − a) · real + a · truth:
+  macro F 0.575 / 0.656 / 0.660 for CCIP b36 at a = 0.25 / 0.5 / 0.75, 0.611 /
+  0.727 / 0.705 for Berkeley. It does not rise evenly towards 0.842: the doubles
+  count as strangers who look alike, and the bars move up with them.
+
+So the gap of the shipped scans to a perfect score splits about three to one:
+0.50 F (Standard) or 0.44 (Best) is the embedder, 0.16 is one figure found
+twice in a frame. Not run: the first two rungs (ground-truth boxes and tracks);
+the labels sit on the pass's own tracks. Like everything above, this rests on
+labels a person has not audited yet.

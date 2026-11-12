@@ -312,11 +312,13 @@ the 771 shots (he is in nearly every scene), the second lead's from 125 to
 one file of 405.5 s with 121 chapters, as the pack said. A preview takes
 13 ms without the switch, 73 ms the first time with it and 16 ms after.
 
-Not done: the shots of a scene stay shots (a dissolve or a dark piece
-between two of them is left out, as between a character's own shots, and
-with handles two neighbours overlap); a pack action of a plugin is not told
-which clips are off screen; a shot in which the character is seen only as a
-small figure counts as off screen.
+The shots of a scene stay shots, by the owner's choice (2026-11-12, "Keep
+per shot"): a dissolve or a dark piece between two of them is left out, as
+between a character's own shots, and with handles two neighbours overlap.
+
+Not done: a pack action of a plugin is not told which clips are off screen;
+a shot in which the character is seen only as a small figure counts as off
+screen.
 
 ### The cast in the animation recipe
 

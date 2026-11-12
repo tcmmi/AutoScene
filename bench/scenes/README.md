@@ -1,7 +1,7 @@
 # Scenes bench
 
 Which shots belong to one scene, measured against scene boundaries a person
-set. It serves the scenes slot (`bench/models/DECISIONS.md`, rows 6 to 8):
+set. It serves the scenes slot (`bench/models/DECISIONS.md`, rows 6 to 10):
 all of a character's scenes, with the shots in which the character is not to
 be seen.
 
@@ -23,8 +23,10 @@ times are turned into frames of this episode, and each scene's speech turns
 into one sum per speaker. The source's times follow a 25 fps disc that plays
 the same pictures faster, so a frame here is its second × 25, with no shift:
 751 of its 819 shot cuts lie on a boundary of the project's shots, 753 within
-2 frames. Six scene starts fall into black or a fade; they stand at the first
-shot after it.
+2 frames. A scene stands at the shot whose first frame is nearest to its
+start: five starts fall into black or a fade and stand at the first shot
+after it; one lies 40 frames into a shot of the title sequence, after a
+dissolve, and stands at that shot.
 
 ```sh
 cargo run --release -p as-project --example scenes_bench -- labels bb.json 1 1 <project_copy_dir> > bench/scenes/bb_s01e01.scenes.tsv
@@ -82,7 +84,10 @@ a higher threshold only joins scenes and never reshuffles them.
   the project's cast (the character most of their faces are on), so the
   second also pays for wrong faces.
 - **Boundaries**: precision, recall and F of the gaps cut, the average
-  precision of the scores, and F when a boundary one shot off still counts.
+  precision of the scores (gaps with one and the same score count as if the
+  labelled ones among them were spread evenly), and F when a boundary one
+  shot off still counts (a found boundary answers for one labelled boundary
+  at most, and the other way round).
 - **Overlap**: each scene's best intersection over union with a scene of the
   other side, weighted by its frames, the mean of both directions.
 
@@ -91,7 +96,9 @@ reads each half of the episode (by scenes) with the threshold that is best on
 the other half; `tools/slot-bench/scene_titles.py` runs several episodes and
 gives each one's result at its own best threshold, at the one threshold that
 is best over all of them, and at the threshold that is best over the OTHER
-episodes, which is what a new title would get.
+episodes. That last number leaves out the threshold only: the weights and the
+length of a short piece were chosen by comparing it over these same
+episodes, so it flatters what a new title would get.
 
 ```sh
 # Step A: what the project stores (colours, cast, what lies between shots)
@@ -134,12 +141,12 @@ Its unit tests run with `cargo test -p as-project --example scenes_bench`.
 | Every shot its own scene | 794 | 0.040 / 1.000 / 0.078 | – | – | 0.176 | 0.450 | – |
 | One scene | 1 | – | – | – | 0.060 | 0.337 | – |
 | A new scene at each fade to black | 18 | 0.235 / 0.125 / 0.163 | – | – | 0.404 | 0.698 | – |
-| Step A | 174 | 0.145 / 0.781 / 0.244 | 0.411 | 0.196 | 0.514 | 0.832 | 0.764, 0.829 |
-| Step A, short pieces join first | 41 | 0.425 / 0.531 / 0.472 | 0.515 | 0.390 | 0.616 | 0.892 | 0.765, 0.909 |
-| Step B, Places365 ResNet-50 | 118 | 0.231 / 0.844 / 0.362 | 0.543 | 0.480 | 0.644 | 0.890 | 0.849, 0.854 |
-| Step B, Places365, short pieces join first | 43 | 0.405 / 0.531 / 0.459 | 0.649 | 0.448 | 0.659 | 0.924 | 0.834, 0.928 |
-| Step B, DINOv2-small | 108 | 0.290 / 0.969 / 0.446 | 0.647 | 0.546 | 0.728 | 0.880 | 0.826, 0.862 |
-| **Step B, DINOv2-small, short pieces join first** | 36 | 0.571 / 0.625 / 0.597 | 0.774 | 0.589 | 0.783 | **0.931** | 0.839, 0.912 |
+| Step A | 174 | 0.145 / 0.781 / 0.244 | 0.263 | 0.195 | 0.514 | 0.832 | 0.764, 0.829 |
+| Step A, short pieces join first | 41 | 0.425 / 0.531 / 0.472 | 0.500 | 0.390 | 0.616 | 0.892 | 0.785, 0.909 |
+| Step B, Places365 ResNet-50 | 118 | 0.231 / 0.844 / 0.362 | 0.376 | 0.478 | 0.644 | 0.890 | 0.849, 0.854 |
+| Step B, Places365, short pieces join first | 43 | 0.405 / 0.531 / 0.459 | 0.649 | 0.448 | 0.659 | 0.924 | 0.834, 0.924 |
+| Step B, DINOv2-small | 108 | 0.290 / 0.969 / 0.446 | 0.446 | 0.542 | 0.728 | 0.880 | 0.826, 0.862 |
+| **Step B, DINOv2-small, short pieces join first** | 37 | 0.556 / 0.625 / 0.588 | 0.735 | 0.589 | 0.762 | **0.931** | 0.839, 0.912 |
 | The labelled scenes, stored cast | 33 | 1 / 1 / 1 | 1 | – | 1 | 0.994 | – |
 
 - The stored colours are a weak sign of the place: step A finds the
@@ -175,10 +182,12 @@ scenes, mean F over each episode's main cast:
 uv run scene_titles.py <scenes_bench.exe> <titles.tsv> SHORT=40,1 W=0,0.25
 ```
 
+The last three columns are `score`'s at the shared threshold (`AT=0.675`).
+
 | Episode | Own best threshold | One threshold for all (0.675) | The other episodes' threshold | Scenes found / labelled | Boundary F, one shot off | Overlap |
 |---|---|---|---|---|---|---|
-| Breaking Bad S01E01 | 0.930 | 0.917 | 0.917 | 32 / 33 | 0.714 | 0.754 |
-| Prison Break S01E01 | 0.948 | 0.926 | 0.926 | 31 / 40 | 0.828 | 0.834 |
+| Breaking Bad S01E01 | 0.930 | 0.917 | 0.917 | 32 / 33 | 0.698 | 0.754 |
+| Prison Break S01E01 | 0.948 | 0.926 | 0.926 | 31 / 40 | 0.812 | 0.834 |
 | The Blacklist S01E01 | 0.936 | 0.936 | 0.889 | 24 / 28 | 0.640 | 0.760 |
 | Bass X Machina S01E01 (3D) | 0.817 | 0.769 | 0.769 | 25 / 22 | 0.311 | 0.544 |
 | **Mean** | 0.908 | 0.887 | 0.875 | | | |
@@ -203,5 +212,45 @@ uv run scene_titles.py <scenes_bench.exe> <titles.tsv> SHORT=40,1 W=0,0.25
   with the body under it (0.884, 0.871): a close-up of one person looking the
   same in every scene is not what limits the links.
 
-Not measured yet: more animation (2D and 3D), a larger picture network, who
-speaks across the cut (step C), scenes across the episodes of one project.
+## Animation: three anime episodes more (2026-11-12, row 9)
+
+`jjk_s2e03` (Jujutsu Kaisen S2E03, 456 shots, 28 scenes), `op_6` (One Piece,
+Wano A, 501 shots, 14 scenes) and `rz_31` (Re:Zero 31, 382 shots, 14 scenes):
+tuning episodes of `bench/anime`, labelled as above (the two labellers agree
+at F 0.947, 0.867 and 0.929; the opening and ending songs, an eyecatch and
+the preview are scenes of their own). They are in no project: `scenes_bench`
+reads their bench inputs (shots, signals), who is where comes from
+`bench/anime`'s track labels (`true cast`), and there is no stored cast, so
+the cast is no cue there.
+
+With the three live-action episodes and the 3D one, one threshold for all
+seven (0.675), the live-action recipe:
+
+| Episode | A character's scenes (F) | Boundaries' average precision |
+|---|---|---|
+| Breaking Bad, Prison Break, The Blacklist | 0.917, 0.926, 0.936 | 0.48, 0.35, 0.46 |
+| Bass X Machina (3D) | 0.769 | 0.17 |
+| Jujutsu Kaisen, One Piece, Re:Zero | 0.816, 0.712, 0.918 | 0.26, 0.09, 0.20 |
+
+- **Animation is below live action**, and it wants other settings. What the
+  project stores alone (the colours) finds anime boundaries better than
+  DINOv2 does (average precision 0.48 against 0.26 on Jujutsu Kaisen, 0.46
+  against 0.20 on Re:Zero): a place in a drawn film has its own flat colours,
+  and the picture network looks at the characters.
+- **For animation the colours go beside the embedding** (each weight 1, cast
+  0.25, short pieces up to 60 s). On the four animation episodes alone, with
+  the other three's threshold: Bass X Machina 0.861, Jujutsu Kaisen 0.882,
+  One Piece 0.695, Re:Zero 0.952, mean 0.847. That setting was picked among
+  seven tried on these four episodes, and the 3D episode swings by 0.25 with
+  the threshold in some of them: provisional.
+- For live action the colours beside the embedding still do not help (mean
+  over the three with the others' threshold 0.880 against 0.906, and half as
+  many scenes again are cut), so the two footage types keep their own
+  settings. The app knows a project's footage type.
+- One Piece stays at 0.70 to 0.73 whatever the setting: the episode is one
+  long fight on a roof, cut by a recap, two eyecatch cards and three short
+  looks elsewhere.
+
+Not measured yet: more titles of each kind (the animation settings rest on
+four episodes), a larger picture network, who speaks across the cut (step C),
+scenes across the episodes of one project.

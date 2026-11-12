@@ -2,7 +2,8 @@
 
     uv run shot_sheets.py <ffmpeg> <video> <project_copy_dir> <media> <out_dir>
 
-`<media>` is the media's place in the project (0 for the first). One picture
+`<media>` is the media's place in the project (0 for the first); the folder
+may also hold bench inputs (`bb.segments.tsv`, `bb.info.json`). One picture
 per shot from its middle; a shot of 8 s or more gets two (at 1/4 and 3/4,
 the second marked `b`). Under each picture: the shot's number, when it starts
 (m:ss) and how long it is; `FADE` or `DISS` when black, a fade or a dissolve
@@ -12,6 +13,7 @@ lies before it. Thirty pictures per sheet (`sheet_000.jpg`, …), and
 The video is decoded once, every frame from frame 0, and the run stops when
 the number of frames is not the project's.
 """
+import json
 import os
 import sqlite3
 import subprocess
@@ -24,14 +26,26 @@ W, H, STRIP = 320, 180, 24
 COLS, ROWS = 6, 5
 
 
-def shots(project, nth):
+def segments(project, nth):
+    """`(start, end, kind)` rows, the frame count and the frame rate: from a copy of a project, or
+    from a folder of bench inputs (an episode that is in no project)."""
+    if not os.path.isfile(f"{project}/project.db"):
+        rows = [line.split("\t") for line in open(f"{project}/bb.segments.tsv", encoding="utf-8") if line.strip()]
+        rate = json.load(open(f"{project}/bb.info.json", encoding="utf-8"))["video"]["avgFrameRate"]
+        return [(int(r[0]), int(r[1]), r[2].strip()) for r in rows], int(rows[-1][1]), rate["num"] / rate["den"]
     db = sqlite3.connect(f"file:{project}/project.db?mode=ro", uri=True)
     media = db.execute(
         "SELECT id, frames, CAST(fps_num AS REAL) / fps_den FROM media WHERE shots = 'ready' ORDER BY position, id"
     ).fetchall()
     mid, frames, fps = media[nth]
+    rows = db.execute("SELECT start, end, kind FROM segments WHERE media_id = ? ORDER BY start", (mid,)).fetchall()
+    return rows, frames, fps
+
+
+def shots(project, nth):
+    segs, frames, fps = segments(project, nth)
     rows, before = [], ""
-    for start, end, kind in db.execute("SELECT start, end, kind FROM segments WHERE media_id = ? ORDER BY start", (mid,)):
+    for start, end, kind in segs:
         if kind == "shot":
             rows.append((start, end, before))
             before = ""

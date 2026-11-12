@@ -3,7 +3,8 @@
     uv run shot_embed.py <ffmpeg> <video> <project_copy_dir> <media> <dinov2.onnx> <resnet50_places365.pth.tar | -> <out_prefix>
 
 The shots come from a COPY of a project (`project.db`), `<media>` being the
-media's place in it (0 for the first); the video is decoded once, every frame from frame 0, so that frame n is the n-th picture as in the
+media's place in it (0 for the first), or from a folder of bench inputs
+(`bb.segments.tsv`); the video is decoded once, every frame from frame 0, so that frame n is the n-th picture as in the
 project's frame index. Three frames per shot (at 1/6, 1/2 and 5/6 of it) go
 through DINOv2 (a general picture network) and, unless `-` stands in its
 place, a ResNet-50 trained on Places365 (a place network). Writes `<out_prefix>.dino_cls.emb`,
@@ -37,6 +38,9 @@ STD = np.array([0.229, 0.224, 0.225], np.float32).reshape(1, 3, 1, 1)
 
 
 def shots(project, nth):
+    if not os.path.isfile(f"{project}/project.db"):  # bench inputs of an episode that is in no project
+        rows = [line.split("\t") for line in open(f"{project}/bb.segments.tsv", encoding="utf-8") if line.strip()]
+        return [(int(r[0]), int(r[1])) for r in rows if r[2].strip() == "shot"], int(rows[-1][1])
     db = sqlite3.connect(f"file:{project}/project.db?mode=ro", uri=True)
     media = db.execute("SELECT id, frames FROM media WHERE shots = 'ready' ORDER BY position, id").fetchall()
     mid, frames = media[nth]

@@ -9,7 +9,9 @@ labels, the identity labels or `-`, the embedding file or `-`). Further
 `P`, `W`); with an embedding the cues are the embedding alone unless `W` says
 otherwise.
 
-Per title: a character's scenes (mean F, stored cast) at the title's own best
+Per title: a character's scenes (mean F; who is where comes from the project's
+stored cast, or from the identity labels for an episode that is in no project)
+at the title's own best
 threshold, at the one threshold that is best over all titles, and at the
 threshold that is best over the OTHER titles (what a new title would get).
 """
@@ -19,7 +21,11 @@ import sys
 
 
 def curve(exe, row, settings):
-    env = dict(os.environ, CURVE="1", MEDIA=row["media"], **settings)
+    # Settings left in the shell must not reach a run that did not ask for them.
+    ours = ("EMB", "W", "P", "SHORT", "AT", "SWEEP", "STATS", "DETAIL")
+    env = {k: v for k, v in os.environ.items() if k not in ours}
+    env.update(CURVE="1", MEDIA=row["media"], **settings)
+    stored = os.path.isfile(os.path.join(row["copy"], "project.db"))
     if row["emb"] != "-":
         env["EMB"] = "1:" + row["emb"]
         env.setdefault("W", "0,0")
@@ -29,7 +35,7 @@ def curve(exe, row, settings):
     for line in out.stdout.splitlines():
         f = line.split("\t")
         if f[0] == "curve" and f[1] != "threshold":
-            points[f[1]] = (float(f[3]), float(f[4]), int(f[5]))
+            points[f[1]] = (float(f[3] if stored else f[2]), float(f[4]), int(f[5]))
     ap = next(line.split()[-1] for line in out.stdout.splitlines() if line.startswith("boundary scores"))
     return points, float(ap)
 
@@ -45,7 +51,7 @@ def main():
     mean = lambda among, t: sum(curves[n][0][t][0] for n in among) / len(among)
     shared = max(thresholds, key=lambda t: mean(names, t))
     print(f"settings {settings or 'default'}; one threshold for all: {shared}")
-    print(f"{'title':14} {'AP':>6} {'own best':>16} {'shared':>8} {'others`':>16} {'scenes own/shared':>18}")
+    print(f"{'title':14} {'AP':>6} {'own best':>16} {'shared':>8} {"others'":>16} {'scenes own/shared':>18}")
     total = [0.0, 0.0, 0.0]
     for n in names:
         points, ap = curves[n]

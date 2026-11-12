@@ -15,6 +15,11 @@
 //! `scenes_bench agree <project_copy_dir> <one.scenes.tsv> <other.scenes.tsv>`
 //!   says how well two sets of scene labels agree, and where they differ.
 //!
+//! In place of a project copy, `score` and `agree` also take a folder of bench
+//! inputs (`bb.segments.tsv`, `bb.sig`, `bb.info.json`, as the anime bench
+//! makes them): an episode that is in no project. It has no stored cast, so
+//! only `true cast` counts there.
+//!
 //! Scene labels name each scene's first shot by its first frame (`frame`) or
 //! by the shot's number among the project's shots (`shot`), as the header says.
 //!
@@ -62,8 +67,31 @@ struct Episode {
     characters: Vec<String>,
 }
 
+/// An episode that is in no project, from its bench inputs: the shots, the
+/// frames' signals and the frame rate. Nobody is known in it.
+fn load_inputs(dir: &Path) -> Episode {
+    let read = |name: &str| std::fs::read(dir.join(name)).unwrap_or_else(|e| panic!("{}/{name}: {e}", dir.display()));
+    let segments = String::from_utf8(read("bb.segments.tsv"))
+        .expect("segments")
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            (f[0].parse().unwrap(), f[1].parse().unwrap(), f[2].to_owned())
+        })
+        .collect();
+    let info: serde_json::Value = serde_json::from_slice(&read("bb.info.json")).expect("media info");
+    let rate = &info["video"]["avgFrameRate"];
+    let fps = rate["num"].as_f64().expect("frame rate") / rate["den"].as_f64().expect("frame rate");
+    let signals = signals::decode(&read("bb.sig")).expect("a signals file");
+    Episode { fps, segments, signals, tracks: Vec::new(), characters: Vec::new() }
+}
+
 fn load(dir: &Path) -> Episode {
     let path = dir.join("project.db");
+    if !path.is_file() && dir.join("bb.segments.tsv").is_file() {
+        return load_inputs(dir);
+    }
     assert!(path.is_file(), "{}: no project.db (a COPY of a project's folder)", dir.display());
     let db = Connection::open(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let media: Vec<(String, f64)> = db
@@ -440,6 +468,7 @@ fn embedding(path: &Path, shots: &[Shot]) -> Vec<Vec<Vec<f32>>> {
             out[s].push(v);
         }
     }
+    assert!(out.iter().all(|v| !v.is_empty()), "{}: a shot has no vector: not this media's file", path.display());
     out
 }
 
@@ -519,18 +548,22 @@ fn iou(a: &[f32; 4], b: &[f32; 4]) -> f32 {
     if both > 0.0 { both / (area(a) + area(b) - both) } else { 0.0 }
 }
 
-/// The label a stored track is: the one most of its detections lie on (the
-/// label's box nearest in time, at most 4 frames away, overlapping by 0.3).
+/// The label a stored track is: the one most of its detections lie on. A
+/// detection lies on the label whose box (the nearest in time, at most 4
+/// frames away) overlaps it most, by 0.3 at least.
 fn label_of<'a>(track: &Track, labels: &'a [Label]) -> Option<(&'a str, u32)> {
     let mut votes: HashMap<&str, u32> = HashMap::new();
     for d in &track.dets {
-        let hit = labels.iter().filter(|l| l.start <= d.frame + 4 && d.frame <= l.end + 4).find(|l| {
-            l.boxes
-                .iter()
-                .min_by_key(|(f, _)| f.abs_diff(d.frame))
-                .is_some_and(|(f, b)| f.abs_diff(d.frame) <= 4 && iou(b, &d.bbox) >= 0.3)
-        });
-        if let Some(l) = hit {
+        let hit = labels
+            .iter()
+            .filter(|l| l.start <= d.frame + 4 && d.frame <= l.end + 4)
+            .filter_map(|l| {
+                let (f, b) = l.boxes.iter().min_by_key(|(f, _)| f.abs_diff(d.frame))?;
+                (f.abs_diff(d.frame) <= 4).then(|| (iou(b, &d.bbox), l))
+            })
+            .filter(|(overlap, _)| *overlap >= 0.3)
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((_, l)) = hit {
             *votes.entry(&l.name).or_default() += 1;
         }
     }
@@ -539,7 +572,7 @@ fn label_of<'a>(track: &Track, labels: &'a [Label]) -> Option<(&'a str, u32)> {
 
 // -- scores ------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Prf {
     p: f64,
     r: f64,
@@ -553,29 +586,40 @@ fn prf(hit: f64, given: f64, wanted: f64) -> Prf {
 }
 
 /// Boundaries found against the labelled ones; `slack` gaps to either side
-/// still count (each labelled boundary once).
+/// still count. A found boundary answers for one labelled boundary at most,
+/// and a labelled one for one found.
 fn boundary_prf(found: &[bool], truth: &[bool], slack: usize) -> Prf {
-    let near =
-        |at: usize, other: &[bool]| (at.saturating_sub(slack)..=(at + slack).min(other.len() - 1)).any(|g| other[g]);
-    let given = found.iter().filter(|&&c| c).count();
-    let wanted = truth.iter().filter(|&&c| c).count();
-    let right = (0..found.len()).filter(|&g| found[g] && near(g, truth)).count();
-    let got = (0..truth.len()).filter(|&g| truth[g] && near(g, found)).count();
-    let p = if given > 0 { right as f64 / given as f64 } else { 0.0 };
-    let r = if wanted > 0 { got as f64 / wanted as f64 } else { 0.0 };
-    Prf { p, r, f: if p + r > 0.0 { 2.0 * p * r / (p + r) } else { 0.0 } }
+    let at = |c: &[bool]| (0..c.len()).filter(|&g| c[g]).collect::<Vec<usize>>();
+    let (given, wanted) = (at(found), at(truth));
+    // Both lists rise: a labelled boundary takes the first found one within
+    // reach that no labelled boundary before it took.
+    let (mut matched, mut next) = (0, 0);
+    for &t in &wanted {
+        while next < given.len() && given[next] + slack < t {
+            next += 1;
+        }
+        if next < given.len() && given[next] <= t + slack {
+            matched += 1;
+            next += 1;
+        }
+    }
+    prf(matched as f64, given.len() as f64, wanted.len() as f64)
 }
 
 /// Average precision of the gaps' scores against the labelled boundaries.
+/// Gaps with one and the same score count as if the labelled ones among them
+/// were spread evenly: where they lie in the episode says nothing.
 fn average_precision(score: &[f32], truth: &[bool]) -> f64 {
     let mut order: Vec<usize> = (0..score.len()).collect();
-    order.sort_by(|&a, &b| score[b].total_cmp(&score[a]).then(a.cmp(&b)));
-    let (mut hits, mut sum) = (0f64, 0f64);
-    for (rank, &g) in order.iter().enumerate() {
-        if truth[g] {
-            hits += 1.0;
-            sum += hits / (rank + 1) as f64;
+    order.sort_by(|&a, &b| score[b].total_cmp(&score[a]));
+    let (mut hits, mut rank, mut sum) = (0f64, 0f64, 0f64);
+    for tied in order.chunk_by(|&a, &b| score[a] == score[b]) {
+        let (all, labelled) = (tied.len() as f64, tied.iter().filter(|&&g| truth[g]).count());
+        for i in 1..=labelled {
+            sum += (hits + i as f64) / (rank + i as f64 * all / labelled as f64);
         }
+        hits += labelled as f64;
+        rank += all;
     }
     if hits > 0.0 { sum / hits } else { 0.0 }
 }
@@ -614,19 +658,16 @@ fn overlap(a: &[usize], b: &[usize], frames: &[u32]) -> f64 {
 fn character_scenes(
     truth: (&[usize], &[bool]),
     given: (&[usize], &[bool]),
-    weight: impl Fn(usize) -> f64,
     range: std::ops::Range<usize>,
 ) -> Option<Prf> {
-    let shots_of = |(scene, seen): (&[usize], &[bool])| {
+    let in_scenes = |(scene, seen): (&[usize], &[bool])| {
         let with: HashSet<usize> = range.clone().filter(|&s| seen[s]).map(|s| scene[s]).collect();
         range.clone().map(|s| with.contains(&scene[s])).collect::<Vec<bool>>()
     };
-    let (wanted, got) = (shots_of(truth), shots_of(given));
-    let sum = |f: &dyn Fn(usize) -> bool| {
-        range.clone().enumerate().filter(|&(k, _)| f(k)).map(|(_, s)| weight(s)).sum::<f64>()
-    };
-    let all = sum(&|k| wanted[k]);
-    (all > 0.0).then(|| prf(sum(&|k| wanted[k] && got[k]), sum(&|k| got[k]), all))
+    let (wanted, got) = (in_scenes(truth), in_scenes(given));
+    let count = |f: &dyn Fn(usize) -> bool| (0..wanted.len()).filter(|&k| f(k)).count() as f64;
+    let all = count(&|k| wanted[k]);
+    (all > 0.0).then(|| prf(count(&|k| wanted[k] && got[k]), count(&|k| got[k]), all))
 }
 
 fn mean(v: impl Iterator<Item = f64>) -> f64 {
@@ -661,7 +702,7 @@ impl Bench {
         let each = |stored: bool| {
             mean(self.cast.iter().filter_map(|(_, seen, shown)| {
                 let at = if stored { shown } else { seen };
-                character_scenes((&truth, seen), (&given, at), |_| 1.0, range.clone()).map(|x| x.f)
+                character_scenes((&truth, seen), (&given, at), range.clone()).map(|x| x.f)
             }))
         };
         (each(false), each(true))
@@ -671,15 +712,17 @@ impl Bench {
         score.iter().map(|&s| s > threshold).collect()
     }
 
-    /// The threshold with the best mean F (true cast) over `range`.
+    /// The threshold with the best mean F (true cast) over `range`; of
+    /// several as good, the lowest.
     fn best_threshold(&self, score: &[f32], range: std::ops::Range<usize>) -> f32 {
-        (2..=38)
-            .map(|k| k as f32 * 0.025)
-            .max_by(|&a, &b| {
-                let f = |t| self.characters(&self.cuts_at(score, t), range.clone()).0;
-                f(a).total_cmp(&f(b))
-            })
-            .unwrap()
+        let mut best = (0.0, f64::MIN);
+        for t in (2..=38).map(|k| k as f32 * 0.025) {
+            let f = self.characters(&self.cuts_at(score, t), range.clone()).0;
+            if f > best.1 {
+                best = (t, f);
+            }
+        }
+        best.0
     }
 }
 
@@ -815,6 +858,8 @@ fn score(args: &[String]) {
         None => stored_cast(&ep, &shots),
     };
 
+    assert!(!cast.is_empty(), "nobody is known in this episode: its scores need identity labels");
+
     let mut pairs = Pairs::new(&shots, &ep.signals);
     for cue in std::env::var("EMB").unwrap_or_default().split(',').filter(|c| !c.is_empty()) {
         let (weight, file) = cue.split_once(':').expect("EMB=<weight>:<file>[,<weight>:<file>…]");
@@ -896,11 +941,12 @@ fn score(args: &[String]) {
 
     println!("\nper character at {at:.3} (P / R / F of the shots of their scenes):");
     let given = scene_ids(&bench.cuts_at(&scores, at));
-    for (name, seen, shown) in &bench.cast {
-        let alone = character_scenes((&truth, seen), (&(0..n).collect::<Vec<_>>(), seen), |_| 1.0, 0..n).unwrap();
-        let a = character_scenes((&truth, seen), (&given, seen), |_| 1.0, 0..n).unwrap();
-        let b = character_scenes((&truth, seen), (&given, shown), |_| 1.0, 0..n).unwrap();
-        let c = character_scenes((&truth, seen), (&truth, shown), |_| 1.0, 0..n).unwrap();
+    // A main character of a project's labels may not be in this episode at all.
+    for (name, seen, shown) in bench.cast.iter().filter(|(_, seen, _)| seen.contains(&true)) {
+        let alone = character_scenes((&truth, seen), (&(0..n).collect::<Vec<_>>(), seen), 0..n).unwrap();
+        let a = character_scenes((&truth, seen), (&given, seen), 0..n).unwrap();
+        let b = character_scenes((&truth, seen), (&given, shown), 0..n).unwrap();
+        let c = character_scenes((&truth, seen), (&truth, shown), 0..n).unwrap();
         println!(
             "  {name:10} only the shots they are seen in: R {:.3} | true cast {:.3} / {:.3} / {:.3} | stored {:.3} / {:.3} / {:.3} | stored cast, labelled scenes F {:.3}",
             alone.r, a.p, a.r, a.f, b.p, b.r, b.f, c.f
@@ -1021,7 +1067,7 @@ fn labels(args: &[String]) {
                 }
             }
         }
-        votes.into_iter().max_by_key(|&(d, n)| (n, std::cmp::Reverse(d.abs()))).unwrap()
+        votes.into_iter().max_by_key(|&(d, n)| (n, std::cmp::Reverse(d.abs()), d)).unwrap()
     };
     let source_fps = ep_json["fps"].as_f64().unwrap();
     let (rate, (shift, _)) =
@@ -1148,12 +1194,19 @@ mod tests {
 
     #[test]
     fn a_higher_threshold_only_joins_scenes() {
-        let s = [0.1, 0.7, 0.4, 0.9, 0.2];
+        // Scores as the join of short pieces leaves them, at thresholds
+        // between each two of them.
+        let p = Params { short: 30.0, ..Params::DEFAULT };
+        let s = settle(&[0.9, 0.5, 0.2, 0.7, 0.9, 0.3], &[60.0, 5.0, 20.0, 5.0, 40.0, 3.0, 50.0], &p);
         let cuts = |t: f32| s.iter().map(|&x| x > t).collect::<Vec<_>>();
-        let (fine, coarse) = (scene_ids(&cuts(0.3)), scene_ids(&cuts(0.6)));
-        for a in 0..fine.len() {
-            for b in 0..fine.len() {
-                assert!(fine[a] != fine[b] || coarse[a] == coarse[b], "shots {a} and {b} were parted");
+        let mut levels = s.clone();
+        levels.sort_by(f32::total_cmp);
+        for pair in levels.windows(2) {
+            let (fine, coarse) = (scene_ids(&cuts(pair[0] - 0.001)), scene_ids(&cuts(pair[1] - 0.001)));
+            for a in 0..fine.len() {
+                for b in 0..fine.len() {
+                    assert!(fine[a] != fine[b] || coarse[a] == coarse[b], "shots {a} and {b} were parted: {s:?}");
+                }
             }
         }
     }
@@ -1164,6 +1217,13 @@ mod tests {
         let (truth, given) = (scene_ids(&[false, false, true, false]), scene_ids(&[false, true, false, false]));
         assert_eq!(boundary_prf(&[false, true, false, false], &[false, false, true, false], 0).f, 0.0);
         assert_eq!(boundary_prf(&[false, true, false, false], &[false, false, true, false], 1).f, 1.0);
+        // One shot off: a boundary answers for one boundary only.
+        let two = boundary_prf(&[false, true, false, true, false], &[false, false, true, false, false], 1);
+        assert_eq!((two.p, two.r), (0.5, 1.0));
+        let one = boundary_prf(&[false, true, false, false], &[false, true, true, false], 1);
+        assert_eq!((one.p, one.r), (1.0, 0.5));
+        // Equal scores: the labelled gap's place among them does not count.
+        assert_eq!(average_precision(&[0.5, 0.5], &[true, false]), average_precision(&[0.5, 0.5], &[false, true]));
         let o = overlap(&truth, &given, &[1, 1, 1, 1, 1]);
         assert!((o - 2.0 / 3.0).abs() < 1e-9, "{o}");
         assert_eq!(average_precision(&[0.1, 0.9, 0.5], &[false, true, false]), 1.0);
@@ -1171,10 +1231,10 @@ mod tests {
         // Seen in shot 0 only: their scene is shots 0..3; the scenes under
         // test give shots 0..2, so 2 of 3 wanted, both given ones right.
         let seen = [true, false, false, false, false];
-        let x = character_scenes((&truth, &seen), (&given, &seen), |_| 1.0, 0..5).unwrap();
+        let x = character_scenes((&truth, &seen), (&given, &seen), 0..5).unwrap();
         assert_eq!((x.p, x.r), (1.0, 2.0 / 3.0));
         let nowhere = [false; 5];
-        assert!(character_scenes((&truth, &nowhere), (&given, &seen), |_| 1.0, 0..5).is_none());
+        assert!(character_scenes((&truth, &nowhere), (&given, &seen), 0..5).is_none());
     }
 
     #[test]

@@ -36,6 +36,7 @@ export function defaultPackState(): PackState {
       solo: false,
       skipTiny: true,
       skipFaceless: false,
+      wholeScenes: false,
       media: [],
       order: "episodes",
       limit: null,
@@ -75,7 +76,76 @@ function sizeOf(h: number): ShotSize {
 
 const lengthFit = (sec: number) => (sec < 1 ? sec : sec > 6 ? 6 / sec : 1)
 
-type Cand = { clip: PackClip; rule: PackReason | null; seconds: number; tenths: number }
+type Cand = { clip: PackClip; rule: PackReason | null; seconds: number; tenths: number; scene?: string }
+
+/** The mock's scenes: every five shots of an episode make one. */
+const SCENE = 5
+
+/**
+ * Whole scenes: the other shots of the scenes the character's `own` shots are in, as shots they aren't to be seen
+ * in (their own shots get their scene too). Only the filters that speak of a shot itself judge them.
+ */
+function offScreen(pid: string, cid: string, spec: PackSpec, media: MediaItem[], segments: Segment[], own: Cand[]): Cand[] {
+  const manual = picks.get(keyOf(pid, cid)) ?? new Map<string, boolean>()
+  const shots = segments.filter((s) => s.kind === "shot")
+  const sceneAt = new Map(shots.map((s, i) => [s.start, Math.floor(i / SCENE)]))
+  const out: Cand[] = []
+  for (const m of media) {
+    const mine = own.filter((c) => c.clip.shot.mediaId === m.id)
+    const have = new Set(mine.map((c) => c.clip.shot.start))
+    const scenes = new Set<number>()
+    for (const c of mine) {
+      const n = sceneAt.get(c.clip.shot.start)
+      if (n === undefined) continue
+      c.scene = `${m.id}:${n}`
+      scenes.add(n)
+    }
+    const fps = m.fps ? m.fps.num / m.fps.den : 24
+    for (const s of shots) {
+      const n = sceneAt.get(s.start)
+      if (n === undefined || !scenes.has(n) || have.has(s.start) || s.start >= (m.frames ?? 0)) continue
+      const seconds = (s.end - s.start) / fps
+      const rule: PackReason | null =
+        m.status !== "ready"
+          ? "missing"
+          : spec.media.length > 0 && !spec.media.includes(m.id)
+            ? "episode"
+            : spec.skipTiny && s.tiny
+              ? "tiny"
+              : spec.minSec != null && seconds < spec.minSec
+                ? "short"
+                : spec.maxSec != null && seconds > spec.maxSec
+                  ? "long"
+                  : null
+      const start = Math.max(0, s.start - spec.handles)
+      const end = Math.min(m.frames ?? s.end, s.end + spec.handles)
+      // The character's own face stands for them where they aren't to be seen.
+      const shot: CharacterShot = { ...mine[0].clip.shot, start: s.start, end: s.end, trackId: 0, faceHeight: 0, faceless: false, bodies: [], offScreen: true }
+      out.push({
+        clip: {
+          shot,
+          start,
+          end,
+          size: "wide",
+          quality: 0,
+          coverage: 0,
+          others: othersInShot(pid, cid, m.id, s.start, s.end),
+          score: 0.1 * lengthFit(seconds),
+          included: false,
+          byRules: rule == null,
+          reason: rule,
+          manual: manual.get(`${m.id}:${s.start}`) ?? null,
+          filter: null,
+        },
+        rule,
+        seconds: (end - start) / fps,
+        tenths: 0,
+        scene: `${m.id}:${n}`,
+      })
+    }
+  }
+  return out
+}
 
 /** Every shot of the character with what the pack's own filters say of it (a plugin's are for the preview). */
 function candidates(pid: string, cid: string, spec: PackSpec, media: MediaItem[], segments: Segment[]): Cand[] {
@@ -178,6 +248,7 @@ export function packPreview(
 ): PackPreview {
   const order = new Map(media.map((m, i) => [m.id, i]))
   const cands = candidates(pid, cid, spec, media, segments)
+  if (spec.wholeScenes) cands.push(...offScreen(pid, cid, spec, media, segments, cands))
   // The plugins' filters judge what the pack's own take: a shot none of the
   // filters turned on has judged stays in and counts as unchecked; a verdict
   // of an earlier basis stands until the new one comes.
@@ -185,7 +256,7 @@ export function packPreview(
   const counted = filters.map(() => ({ checked: 0, total: 0 }))
   let unchecked = 0
   for (const c of cands) {
-    if (c.rule != null) continue
+    if (c.rule != null || c.clip.shot.offScreen) continue
     const given = (f: PackFilterHost) => verdicts.get(chain(pid, cid, f.key))?.get(shotKey(c.clip.shot))
     let unjudged = false
     filters.forEach((f, i) => {
@@ -204,9 +275,10 @@ export function packPreview(
   }
   const episode = (a: Cand, b: Cand) =>
     (order.get(a.clip.shot.mediaId) ?? 1e9) - (order.get(b.clip.shot.mediaId) ?? 1e9) || a.clip.shot.start - b.clip.shot.start
-  // Shots without the character's face come behind the ones with it; then
-  // the higher score, longer on screen, the bigger face, the earlier shot.
+  // Shots the character isn't to be seen in come behind all of their own, shots without their face behind the
+  // ones with it; then the higher score, longer on screen, the bigger face, the earlier shot.
   const better = (a: Cand, b: Cand) =>
+    Number(a.clip.shot.offScreen ?? false) - Number(b.clip.shot.offScreen ?? false) ||
     Number(a.clip.shot.faceless ?? false) - Number(b.clip.shot.faceless ?? false) ||
     (b.clip.score ?? 0) - (a.clip.score ?? 0) ||
     b.tenths - a.tenths ||
@@ -220,6 +292,16 @@ export function packPreview(
     const pickedPast = cands.filter((c) => c.rule == null && c.clip.manual != null && kept.filter((k) => better(k, c) < 0).length >= limit)
     for (const c of [...kept.slice(limit), ...pickedPast]) {
       c.rule = "limit"
+      c.clip.byRules = false
+    }
+  }
+  // A shot they aren't to be seen in comes with its scene: it stays out when none of their own shots of it is in.
+  const kept = new Set(
+    cands.filter((c) => !c.clip.shot.offScreen && c.rule !== "missing" && (c.clip.manual ?? c.rule == null)).map((c) => c.scene),
+  )
+  for (const c of cands) {
+    if (c.clip.shot.offScreen && c.rule == null && !kept.has(c.scene)) {
+      c.rule = "scene"
       c.clip.byRules = false
     }
   }
@@ -252,6 +334,7 @@ export function packPreview(
       }),
     ),
     unchecked,
+    scenesUnread: 0,
   }
 }
 

@@ -17,6 +17,7 @@
     "limit": "Peste limită",
     "removed": "Scos",
     "plugin": "Filtru de plugin",
+    "scene": "Scenă neinclusă",
     "other": "Omis"
   },
   "size": {
@@ -92,8 +93,10 @@
   },
   "card": {
     "added": "Adăugat",
+    "offScreen": "În afara cadrului",
     "hint": {
       "faceless": "fața nu se vede",
+      "offScreen": "nu se vede în plan",
       "wouldLeaveOut": "„{{title}}” ar omite planul",
       "takeOut": "Dă clic pentru a-l scoate",
       "takeIn": "Dă clic pentru a-l include"
@@ -106,6 +109,7 @@
       "shot": "Plan",
       "shotAt": "Plan la {{at}}",
       "withoutFace": "fără față",
+      "offScreen": "nu apare în plan",
       "inPack": "în scenepack",
       "leftOut": "omis: {{why}}"
     },
@@ -144,6 +148,8 @@
     "skipTiny": "Omite planurile-fulger",
     "withFace": "Doar cu fața vizibilă",
     "withFaceHint": "Omite planurile găsite după corp",
+    "wholeScenes": "Scene întregi",
+    "wholeScenesHint": "Include și planurile din scenele sale în care nu se vede",
     "noHandles": "Fără margini",
     "handles": "Margini {{n}} c",
     "framesAround_one": "{{count}} cadru înainte și după",
@@ -195,6 +201,9 @@
       "out": "Omise {{n}}"
     },
     "hint": "Dă clic pentru a include sau a scoate un plan · Shift pentru toate de la ultimul · Enter pentru a-l vedea",
+    "scenesUnread_one": "Scenele din {{count}} episod nu sunt citite încă",
+    "scenesUnread_few": "Scenele din {{count}} episoade nu sunt citite încă",
+    "scenesUnread_other": "Scenele din {{count}} de episoade nu sunt citite încă",
     "loadFailed": "Nu s-a putut crea scenepackul",
     "reanalysing": "Episodul se analizează din nou; planurile revin când se termină analiza.",
     "noShots": "Încă nu există planuri cu acest personaj.",

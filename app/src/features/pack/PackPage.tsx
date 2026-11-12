@@ -320,6 +320,7 @@ export function Builder({
             spec={pack.state.spec}
             media={media}
             faceless={faceless}
+            scenes={settings?.findScenes ?? false}
             filters={filters}
             plugins={plugins}
             onChange={pack.setSpec}
@@ -339,6 +340,9 @@ export function Builder({
                 { value: "out", label: t("page.show.out", { n: clips.length - taken }) },
               ]}
             />
+            {(pack.state?.spec.wholeScenes ?? false) && (pack.preview.data?.scenesUnread ?? 0) > 0 && (
+              <span className="text-sm text-fg-2">{t("page.scenesUnread", { count: pack.preview.data?.scenesUnread ?? 0 })}</span>
+            )}
             {clips.length > 0 && (
               <span className="text-sm text-fg-3">{t("page.hint")}</span>
             )}

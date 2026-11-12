@@ -161,6 +161,7 @@ describe("the pack's counts and checks", () => {
       limit: "Past the limit",
       removed: "Taken out",
       plugin: "Plugin filter",
+      scene: "Scene not in pack",
     })
     expect(t("pack:reason.other")).toBe("Left out")
   })

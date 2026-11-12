@@ -185,6 +185,12 @@ describe("filters", () => {
     expect(isDefault({ ...DEFAULT_SPEC, skipTiny: false })).toBe(false)
     expect(isDefault({ ...DEFAULT_SPEC, sizes: ["wide"] })).toBe(false)
   })
+
+  it("whole scenes aren't the default, and a pack saved before them has none", () => {
+    expect(isDefault({ ...DEFAULT_SPEC, wholeScenes: true })).toBe(false)
+    const { wholeScenes: _, ...older } = DEFAULT_SPEC
+    expect(isDefault(older)).toBe(true)
+  })
 })
 
 describe("plugin filters", () => {

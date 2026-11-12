@@ -901,6 +901,10 @@ pub struct CharacterShot {
     /// the user's word on the shot is on all of them.
     #[serde(default)]
     pub bodies: Vec<u32>,
+    /// They aren't to be seen in the shot at all: it belongs to a scene of
+    /// theirs, and a pack of whole scenes takes it with the scene.
+    #[serde(default)]
+    pub off_screen: bool,
 }
 
 /// Shots of a character close together in time, in time order: each
@@ -1365,6 +1369,11 @@ pub struct PackSpec {
     /// their body).
     #[serde(default)]
     pub skip_faceless: bool,
+    /// Whole scenes: every other shot of the scenes the character is seen
+    /// in joins the pack too (where the scenes are read; see
+    /// [`AppSettings::find_scenes`]).
+    #[serde(default)]
+    pub whole_scenes: bool,
     /// Only these episodes (empty: all).
     pub media: Vec<MediaId>,
     pub order: PackOrder,
@@ -1388,6 +1397,7 @@ impl Default for PackSpec {
             solo: false,
             skip_tiny: true,
             skip_faceless: false,
+            whole_scenes: false,
             media: Vec::new(),
             order: PackOrder::Episodes,
             limit: None,
@@ -1417,6 +1427,9 @@ pub enum PackReason {
     Removed,
     /// A plugin's shot filter said no ([`PackClip::filter`] names which).
     Plugin,
+    /// A shot the character isn't to be seen in, whose scene has none of
+    /// their own shots in the pack.
+    Scene,
 }
 
 /// A shot of a pack, picked or not.
@@ -1475,6 +1488,11 @@ pub struct PackPreview {
     /// Shots a filter turned on hasn't judged yet (with its settings as
     /// they are): they are in the pack until it has.
     pub unchecked: u32,
+    /// Asked for whole scenes: how many of the character's episodes have no
+    /// scenes read (yet, or because the mode is off); their shots stay as
+    /// they are.
+    #[serde(default)]
+    pub scenes_unread: u32,
 }
 
 /// A plugin's shot filter, as the scenepack builder shows it.

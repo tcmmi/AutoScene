@@ -153,6 +153,8 @@ pub struct Project {
     /// once opened (`Library::project`); a project nobody shared it with
     /// reads no scenes.
     find_scenes: std::sync::OnceLock<Arc<AtomicBool>>,
+    /// The scenes of media as they were last worked out (see `scenes`).
+    pub(crate) scenes: Mutex<crate::scenes::SceneCache>,
 }
 
 /// A media whose frames are being read for its index: its file, and how far
@@ -213,6 +215,7 @@ impl Project {
             fast_scan: AtomicBool::new(s.fast_scan),
             anime_best: std::sync::OnceLock::new(),
             find_scenes: std::sync::OnceLock::new(),
+            scenes: Mutex::default(),
         };
         p.ensure_dirs()?;
         Ok(p)
@@ -236,6 +239,7 @@ impl Project {
             fast_scan,
             anime_best: std::sync::OnceLock::new(),
             find_scenes: std::sync::OnceLock::new(),
+            scenes: Mutex::default(),
         };
         p.ensure_dirs()?;
         // Exports can't resume mid-way (M1): close them out. No export runs

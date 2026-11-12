@@ -1105,6 +1105,11 @@ export type CharacterShot = {
 	 *  the user's word on the shot is on all of them.
 	 */
 	bodies?: number[],
+	/**
+	 *  They aren't to be seen in the shot at all: it belongs to a scene of
+	 *  theirs, and a pack of whole scenes takes it with the scene.
+	 */
+	offScreen?: boolean,
 };
 
 export type ClipRequest = {
@@ -2033,6 +2038,12 @@ export type PackPreview = {
 	 *  they are): they are in the pack until it has.
 	 */
 	unchecked: number,
+	/**
+	 *  Asked for whole scenes: how many of the character's episodes have no
+	 *  scenes read (yet, or because the mode is off); their shots stay as
+	 *  they are.
+	 */
+	scenesUnread?: number,
 };
 
 /**  Why a shot is left out of a pack. */
@@ -2046,7 +2057,12 @@ export type PackReason =
 /**  Dropped by hand. */
 "removed" | 
 /**  A plugin's shot filter said no ([`PackClip::filter`] names which). */
-"plugin";
+"plugin" | 
+/**
+ *  A shot the character isn't to be seen in, whose scene has none of
+ *  their own shots in the pack.
+ */
+"scene";
 
 /**
  *  Which of a character's shots go into their scenepack. (Filters saved by
@@ -2068,6 +2084,12 @@ export type PackSpec = {
 	 *  their body).
 	 */
 	skipFaceless?: boolean,
+	/**
+	 *  Whole scenes: every other shot of the scenes the character is seen
+	 *  in joins the pack too (where the scenes are read; see
+	 *  [`AppSettings::find_scenes`]).
+	 */
+	wholeScenes?: boolean,
 	/**  Only these episodes (empty: all). */
 	media: MediaId[],
 	order: PackOrder,

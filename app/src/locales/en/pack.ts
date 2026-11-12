@@ -23,6 +23,8 @@ export default {
     removed: "Taken out",
     /** A plugin's filter left the shot out and gave no words of its own. */
     plugin: "Plugin filter",
+    /** A shot the character isn't seen in, of a scene none of their own shots is in the pack from. */
+    scene: "Scene not in pack",
     /** A shot is out for a reason the card has no word for. */
     other: "Left out",
   },
@@ -82,9 +84,12 @@ export default {
   card: {
     /** A badge on a shot someone added to the pack by hand, against the filters. */
     added: "Added",
+    /** A badge on a shot of the character's scene in which they aren't to be seen (a pack of whole scenes). */
+    offScreen: "Off screen",
     /** The tooltip's lines, joined with " · ". */
     hint: {
       faceless: "their face doesn't show",
+      offScreen: "they aren't to be seen in it",
       /** `title` is a plugin filter's title, which AutoScene doesn't translate. */
       wouldLeaveOut: "“{{title}}” would leave it out",
       takeOut: "Click to leave it out",
@@ -104,6 +109,7 @@ export default {
       shot: "Shot",
       shotAt: "Shot at {{at}}",
       withoutFace: "without their face",
+      offScreen: "they aren't in the shot",
       inPack: "in the pack",
       leftOut: "left out: {{why}}",
     },
@@ -156,6 +162,10 @@ export default {
     withFace: "Only with their face",
     /** A line under "Only with their face". */
     withFaceHint: "Leaves out the shots found by their body",
+    /** A switch beside the order: the pack takes the character's scenes whole. */
+    wholeScenes: "Whole scenes",
+    /** Its tooltip. */
+    wholeScenesHint: "Also takes the shots of their scenes where they aren't to be seen",
     noHandles: "No handles",
     /** The Handles button once some are on; `n` frames ("fr") on each side of the shot. */
     handles: "Handles {{n}} fr",
@@ -222,6 +232,9 @@ export default {
       out: "Left out {{n}}",
     },
     hint: "Click to take a shot in or out · Shift for every shot since · Enter to watch",
+    /** Whole scenes is on, and `count` of the character's episodes have no scenes read yet. */
+    scenesUnread_one: "The scenes of {{count}} episode aren't read yet",
+    scenesUnread_other: "The scenes of {{count}} episodes aren't read yet",
     loadFailed: "The pack couldn't be made",
     reanalysing: "Their episode is being analysed again; the shots come back when it's done.",
     noShots: "No shots of them yet.",

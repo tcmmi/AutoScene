@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use as_analysis::scenes::{self, Piece, Recipe};
 use as_analysis::{FrameSignals, pictures, signals};
@@ -26,6 +27,24 @@ pub struct ScenesPlan {
     pub total: usize,
 }
 
+/// The scenes of media as they were last worked out, each for the cast and
+/// the footage it was worked out with: they are asked for with every look
+/// at a pack, and change only when those do.
+pub(crate) type SceneCache = HashMap<MediaId, (i64, ContentKind, Arc<Vec<(FrameRange, usize)>>)>;
+
+/// A shot of a media as a pack of whole scenes needs it.
+pub(crate) struct SceneShot {
+    pub range: FrameRange,
+    /// The number of its scene, counted from 0.
+    pub scene: usize,
+    /// A flash cut.
+    pub tiny: bool,
+    /// Its sprite, if it has one: the shot end it was made for, and its cells.
+    pub sprite: Option<(FrameIdx, u32)>,
+    /// How many characters the cast shows in it.
+    pub cast: u32,
+}
+
 fn piece(kind: SegmentKind) -> Piece {
     match kind {
         SegmentKind::Shot => Piece::Shot,
@@ -37,6 +56,7 @@ fn piece(kind: SegmentKind) -> Piece {
 
 impl Project {
     pub fn set_scenes_state(&self, id: MediaId, state: StageState, error: Option<&Msg>) -> ProjectResult<()> {
+        self.scenes.lock().remove(&id);
         Ok(self.db().set_scenes_state(id, state, error)?)
     }
 
@@ -75,6 +95,7 @@ impl Project {
         if shots.iter().any(|(_, vectors)| pictures::from_bytes(vectors).is_none()) {
             return Err(ProjectError::Invalid(msg!("analysis.unreadablePictures", "unreadable pictures")));
         }
+        self.scenes.lock().remove(&id);
         Ok(self.db().put_shot_pictures(id, shots)?)
     }
 
@@ -94,6 +115,13 @@ impl Project {
         let m = self.media(id)?;
         if m.scenes != StageState::Ready {
             return Ok(None);
+        }
+        // As worked out before, unless the cast or the footage changed since.
+        let (rev, content) = (self.db().cast_rev()?, self.content()?);
+        if let Some((r, c, scenes)) = self.scenes.lock().get(&id)
+            && (*r, *c) == (rev, content)
+        {
+            return Ok(Some(scenes.to_vec()));
         }
         let segments = self.segments(id)?;
         let (mut shots, between) = scenes::shots(segments.iter().map(|s| (s.start, s.end, piece(s.kind))));
@@ -118,13 +146,42 @@ impl Project {
         }
         let fps = m.fps.map_or(24.0, |f| f.to_f64());
         let secs: Vec<f32> = shots.iter().map(|s| ((s.end - s.start) as f64 / fps) as f32).collect();
-        let recipe = match self.content()? {
+        let recipe = match content {
             ContentKind::Anime | ContentKind::Animation => Recipe::DRAWN,
             ContentKind::Live | ContentKind::Mixed => Recipe::LIVE,
         };
         let sig = if recipe.reads_colours() { self.frame_signals(id, &m.file_name)? } else { None };
         let of = scenes::scenes(&shots, &between, &secs, sig.as_deref(), &vectors, &recipe);
-        Ok(Some(shots.iter().zip(of).map(|(s, scene)| (FrameRange::new(s.start, s.end), scene)).collect()))
+        let scenes: Vec<(FrameRange, usize)> =
+            shots.iter().zip(of).map(|(s, scene)| (FrameRange::new(s.start, s.end), scene)).collect();
+        self.scenes.lock().insert(id, (rev, content, Arc::new(scenes.clone())));
+        Ok(Some(scenes))
+    }
+
+    /// Every shot of `id` with its scene and what a pack shows of it;
+    /// `None` while its scenes aren't read.
+    pub(crate) fn scene_shots(&self, id: MediaId) -> ProjectResult<Option<Vec<SceneShot>>> {
+        let Some(scenes) = self.scenes(id)? else { return Ok(None) };
+        let tiny: HashSet<FrameIdx> =
+            self.segments(id)?.into_iter().filter(|s| s.kind == SegmentKind::Shot && s.tiny).map(|s| s.start).collect();
+        let sprites: HashMap<FrameIdx, (FrameIdx, u32)> =
+            self.db().shot_sprites(id)?.into_iter().map(|(shot, end, cells)| (shot, (end, cells))).collect();
+        let mut cast: HashMap<FrameIdx, u32> = HashMap::new();
+        for (shot, _) in self.db().shot_cast(id)? {
+            *cast.entry(shot).or_default() += 1;
+        }
+        Ok(Some(
+            scenes
+                .into_iter()
+                .map(|(range, scene)| SceneShot {
+                    range,
+                    scene,
+                    tiny: tiny.contains(&range.start),
+                    sprite: sprites.get(&range.start).copied(),
+                    cast: cast.get(&range.start).copied().unwrap_or(0),
+                })
+                .collect(),
+        ))
     }
 
     /// The signals of every frame of `id`, as the shots pass stored them;

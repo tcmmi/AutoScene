@@ -1162,6 +1162,7 @@ const MODELS: ModelInfo[] = [
   { id: "sface-2021dec", purpose: "Face identity embeddings (Fast Scan)", source: "OpenCV Zoo SFace 2021dec (Zhong et al. 2021), Hugging Face opencv/face_recognition_sface", license: "Apache-2.0", nonCommercial: false, sizeBytes: 38696353, installed: false },
   { id: "person-ppyoloe", purpose: "People (whole bodies), to follow characters while their face doesn't show", source: "InsightFace cheetah_l pp_det_med: PaddleDetection PP-YOLOE pedestrian detector", license: "InsightFace non-commercial (cheetah_l-public-v1)", nonCommercial: true, sizeBytes: 29836627, installed: false },
   { id: "person-reid-0277", purpose: "How a person looks (clothes, build), to find them again without a face", source: "InsightFace cheetah_l reid_0265: OpenVINO person-reidentification-retail-0277 (OmniScaleNet)", license: "InsightFace non-commercial (cheetah_l-public-v1)", nonCommercial: true, sizeBytes: 8440242, installed: false },
+  { id: "picture-dinov2-small", purpose: "What a frame shows, to tell the scenes of an episode apart", source: "DINOv2 ViT-S/14 (Oquab et al. 2023, Meta AI), ONNX export by onnx-community", license: "Apache-2.0", nonCommercial: false, sizeBytes: 88513997, installed: false },
 ]
 
 // -- handlers -----------------------------------------------------------------

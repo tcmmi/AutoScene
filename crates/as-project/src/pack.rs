@@ -7,6 +7,13 @@
 //! make a clip ([`as_analysis::bodies::Showing::prominent`]): a shot
 //! without their face, badged so, behind the shots with it.
 //!
+//! A pack of whole scenes ([`PackSpec::whole_scenes`]) also takes the other
+//! shots of the scenes the character is seen in ([`Project::scenes`]),
+//! badged as shots they aren't to be seen in and behind all of their own.
+//! Such a shot comes with its scene: it stays out when none of the
+//! character's own shots of that scene is in, and the filters that speak
+//! of the character in a shot (size, alone, the plugins') don't judge it.
+//!
 //! Picking shots changes only their [`PackChoice`]s, never which shots a
 //! pack has or their order: the grid takes the choices alone after a pick
 //! ([`Project::pack_choices`]), while the pack's `shape` is the one it shows.
@@ -522,10 +529,57 @@ impl Project {
             order.insert(media.id, i);
             sources.insert(media.id, Source { media, index });
         }
-        let shots = shots_of(c, &rows, &bodies);
+        let mut shots = shots_of(c, &rows, &bodies);
+        let unread = if spec.whole_scenes { self.add_scenes(&mut shots)? } else { 0 };
         let shot = |s: &Shot| self.character_shot(s, cover.as_deref());
-        let (pack, lacking) = make(spec, &shots, &sources, &order, &overrides, &judged, shot);
+        let (mut pack, lacking) = make(spec, &shots, &sources, &order, &overrides, &judged, shot);
+        pack.scenes_unread = unread;
         Ok(Made { pack, sources, lacking })
+    }
+
+    /// Widens a character's `shots` to their whole scenes: every other shot
+    /// of a scene they are seen in joins, as one they aren't to be seen in.
+    /// Returns how many of their episodes have no scenes read (the shots of
+    /// those stay as they are).
+    fn add_scenes(&self, shots: &mut Vec<Shot>) -> ProjectResult<u32> {
+        let mut media: Vec<MediaId> = shots.iter().map(|s| s.media).collect();
+        media.dedup();
+        let (mut unread, mut added) = (0, Vec::new());
+        for m in media {
+            let Some(all) = self.scene_shots(m)? else {
+                unread += 1;
+                continue;
+            };
+            // The scenes they are seen in, and the shots that are theirs already.
+            let (mut scenes, mut own) = (HashSet::new(), HashSet::new());
+            for s in shots.iter_mut().filter(|s| s.media == m) {
+                own.insert(s.start);
+                if let Ok(i) = all.binary_search_by_key(&s.start, |x| x.range.start) {
+                    s.scene = Some(all[i].scene);
+                    scenes.insert(all[i].scene);
+                }
+            }
+            added.extend(all.iter().filter(|x| scenes.contains(&x.scene) && !own.contains(&x.range.start)).map(|x| {
+                Shot {
+                    media: m,
+                    start: x.range.start,
+                    end: x.range.end,
+                    tiny: x.tiny,
+                    sprite: x.sprite,
+                    track: 0,
+                    quality: 0.0,
+                    face_h: 0.0,
+                    on_screen: 0,
+                    others: x.cast,
+                    bodies: Vec::new(),
+                    off_screen: true,
+                    scene: Some(x.scene),
+                }
+            }));
+        }
+        shots.extend(added);
+        shots.sort_by_key(|s| (s.media, s.start));
+        Ok(unread)
     }
 
     /// The small picture of a character's own face (for shots without it).
@@ -537,7 +591,7 @@ impl Project {
     /// and the character's face in it — `cover`, their own face, where it
     /// doesn't show.
     fn character_shot(&self, s: &Shot, cover: Option<&str>) -> CharacterShot {
-        let face = match s.bodies.is_empty() {
+        let face = match s.bodies.is_empty() && !s.off_screen {
             false => cover.unwrap_or_default().to_string(),
             true => Project::path_string(&self.thumb_path(s.media, s.track)),
         };
@@ -552,6 +606,7 @@ impl Project {
             face_height: s.face_h,
             faceless: !s.bodies.is_empty(),
             bodies: s.bodies.iter().map(|&b| track_id(b)).collect(),
+            off_screen: s.off_screen,
         }
     }
 
@@ -690,6 +745,11 @@ pub(crate) struct Shot {
     others: u32,
     /// Their face doesn't show: these bodies of theirs do (one makes a clip).
     bodies: Vec<i64>,
+    /// They aren't to be seen in it: it is another shot of a scene of
+    /// theirs (a pack of whole scenes).
+    off_screen: bool,
+    /// Its scene, once a pack of whole scenes read the media's scenes.
+    scene: Option<usize>,
 }
 
 /// The shots of `c` from the faces (`rows`, `c`'s clearest first in each
@@ -761,6 +821,8 @@ pub(crate) fn shots_of(c: CharacterId, rows: &[PackRow], bodies: &[PackBodyRow])
             on_screen: covered,
             others: others.len() as u32,
             bodies,
+            off_screen: false,
+            scene: None,
         });
     }
     out
@@ -814,6 +876,8 @@ fn make(
         seconds_with_handles: f64,
         /// Tenths of a second the character is on screen in the shot.
         on_screen: i64,
+        /// Its scene, in a pack of whole scenes.
+        scene: Option<(MediaId, usize)>,
     }
     let mut cands: Vec<Cand> = Vec::with_capacity(shots.len());
     // Per plugin filter: the shots it judged on its basis now, and those it could.
@@ -843,9 +907,9 @@ fn make(
             Some(PackReason::Short)
         } else if spec.max_sec.is_some_and(|max| seconds > max) {
             Some(PackReason::Long)
-        } else if !spec.sizes.is_empty() && !spec.sizes.contains(&size) {
+        } else if !s.off_screen && !spec.sizes.is_empty() && !spec.sizes.contains(&size) {
             Some(PackReason::Size)
-        } else if spec.solo && s.others > 0 {
+        } else if !s.off_screen && spec.solo && s.others > 0 {
             Some(PackReason::NotSolo)
         } else {
             None
@@ -853,7 +917,7 @@ fn make(
         // The plugins' filters judge what AutoScene's own take; the first
         // filter turned on that says no names the shot's reason.
         let mut filter = None;
-        if rule.is_none() {
+        if rule.is_none() && !s.off_screen {
             let mut unjudged = false;
             for (i, j) in judged.all.iter().enumerate() {
                 let Some(j) = j else { continue };
@@ -891,22 +955,21 @@ fn make(
             filter: filter.map(|i| i as u32),
         };
         let on_screen = index.map_or(0, |i| tenths(s.on_screen.min(s.end - s.start), i.nominal_fps));
-        cands.push(Cand { clip, rule, seconds_with_handles, on_screen });
+        cands.push(Cand { clip, rule, seconds_with_handles, on_screen, scene: s.scene.map(|n| (s.media, n)) });
     }
 
     let episode =
         |c: &PackClip| (order.get(&c.shot.media_id).copied().unwrap_or(usize::MAX), c.shot.media_id, c.shot.start);
     // Which of two shots makes the better clip, for "best first" and the
-    // limit alike. Shots without the character's face come behind every
-    // shot with it; then the higher score. The best shots all score 1
+    // limit alike. Shots the character isn't to be seen in come behind every
+    // shot of theirs, shots without their face behind every shot with it;
+    // then the higher score. The best shots all score 1
     // (clear, big, on screen all along, alone): of those, the one they are
     // on screen longer in (to a tenth of a second), then the one their face
     // is bigger in, then the earlier one.
     let better = |a: &Cand, b: &Cand| -> Ordering {
-        a.clip
-            .shot
-            .faceless
-            .cmp(&b.clip.shot.faceless)
+        (a.clip.shot.off_screen, a.clip.shot.faceless)
+            .cmp(&(b.clip.shot.off_screen, b.clip.shot.faceless))
             .then(b.clip.score.total_cmp(&a.clip.score))
             .then(b.on_screen.cmp(&a.on_screen))
             .then(b.clip.shot.face_height.total_cmp(&a.clip.shot.face_height))
@@ -929,6 +992,20 @@ fn make(
         for i in kept.into_iter().skip(limit).chain(picked_past) {
             cands[i].clip.by_rules = false;
             cands[i].rule = Some(PackReason::Limit);
+        }
+    }
+    // A shot the character isn't to be seen in comes with its scene: it
+    // stays out when none of their own shots of that scene is in.
+    let kept: HashSet<(MediaId, usize)> = cands
+        .iter()
+        .filter(|x| !x.clip.shot.off_screen && x.rule != Some(PackReason::Missing))
+        .filter(|x| x.clip.manual.unwrap_or(x.rule.is_none()))
+        .filter_map(|x| x.scene)
+        .collect();
+    for cand in cands.iter_mut().filter(|x| x.clip.shot.off_screen && x.rule.is_none()) {
+        if cand.scene.is_none_or(|scene| !kept.contains(&scene)) {
+            cand.clip.by_rules = false;
+            cand.rule = Some(PackReason::Scene);
         }
     }
     for cand in &mut cands {
@@ -982,7 +1059,8 @@ fn make(
             state: f.state,
         })
         .collect();
-    let pack = PackPreview { clips, totals, stamp: stamp.hex(), shape: shape.hex(), filters, unchecked };
+    let pack =
+        PackPreview { clips, totals, stamp: stamp.hex(), shape: shape.hex(), filters, unchecked, scenes_unread: 0 };
     (pack, lacking)
 }
 
@@ -1014,7 +1092,7 @@ impl Fnv {
         for x in [s.face_height, c.quality, c.coverage, c.score] {
             self.write(&x.to_bits().to_le_bytes());
         }
-        self.write(&[u8::from(s.faceless), u8::from(s.sprite.is_some())]);
+        self.write(&[u8::from(s.faceless), u8::from(s.sprite.is_some()), u8::from(s.off_screen)]);
         self.text(s.sprite.as_deref().unwrap_or_default());
         self.text(&s.face);
         self.write(&(s.bodies.len() as u64).to_le_bytes());
@@ -1140,6 +1218,87 @@ mod tests {
         // Cards show the shot and the character's face.
         assert_eq!((b.shot.start, b.shot.end, b.start, b.end), (50, 290, 50, 290));
         assert!(b.shot.face.ends_with(".jpg"));
+    }
+
+    /// One 24 fps episode of six shots of 30 s. Walter is seen in the first
+    /// and the third, Jesse in the second and the last, nobody in the other
+    /// two. The first four shots show one place, the last two another: the
+    /// pictures stored say so, and so do the scenes.
+    fn two_scenes() -> Pack {
+        const SHOT: u32 = 720;
+        let (dir, project, media) = project_with_media(6 * SHOT);
+        let shot = |i: u32| Segment { start: i * SHOT, end: (i + 1) * SHOT, kind: SegmentKind::Shot, tiny: false };
+        project.db().store_segments(media, &(0..6).map(shot).collect::<Vec<_>>()).unwrap();
+        let face = |who, i: u32, height| sized(seen(who, i * SHOT, i * SHOT, i * SHOT + 600, 0.1), height);
+        let faces = [face(1, 0, 0.3), face(2, 1, 0.2), face(1, 2, 0.3), face(2, 5, 0.2)];
+        project.store_face_chunk(media, 0, 6 * SHOT, &tracks::encode(&faces), &[], &[]).unwrap();
+        project.finish_faces(media).unwrap();
+        let tracks = project.cast_tracks(TrackFilter::Unassigned).unwrap();
+        let pick = |jesse: bool| -> Vec<u32> {
+            tracks.iter().filter(|t| ((t.face_height - 0.2).abs() < 0.01) == jesse).map(|t| t.id).collect()
+        };
+        let new = |tracks, name: &str| {
+            project.cast_edit(&CastEdit::NewCharacter { tracks, name: Some(name.into()) }).unwrap().unwrap()
+        };
+        let (walter, jesse) = (new(pick(false), "Walter"), new(pick(true), "Jesse"));
+        Pack { dir, project, media, walter, jesse }
+    }
+
+    /// The pictures of [`two_scenes`]: its scenes are read.
+    fn read_scenes(p: &Pack) {
+        let place = |i: u32| {
+            let mut v = vec![0.0f32; as_vision::dinov2::DIM];
+            v[usize::from(i >= 4)] = 1.0;
+            as_analysis::pictures::to_bytes(&[v])
+        };
+        p.project.store_shot_pictures(p.media, &(0..6).map(|i| (i * 720, place(i))).collect::<Vec<_>>()).unwrap();
+        p.project.finish_scenes(p.media).unwrap();
+    }
+
+    #[test]
+    fn whole_scenes_bring_the_shots_the_character_is_not_seen_in() {
+        let p = two_scenes();
+        let whole = with(|s| s.whole_scenes = true);
+        // Before the episode's scenes are read: the pack as it was, and it says so.
+        let v = preview(&p, &whole);
+        assert_eq!((starts(&v, true), v.scenes_unread), (vec![0, 1440], 1));
+        read_scenes(&p);
+        assert_eq!(
+            p.project.scenes(p.media).unwrap().unwrap().iter().map(|s| s.1).collect::<Vec<_>>(),
+            [0, 0, 0, 0, 1, 1]
+        );
+        // Without the switch nothing changes.
+        let v = preview(&p, &PackSpec::default());
+        assert_eq!((starts(&v, true), v.scenes_unread), (vec![0, 1440], 0));
+        // With it, the rest of his scene joins: Jesse's answer and the empty room.
+        let v = preview(&p, &whole);
+        assert_eq!((starts(&v, true), v.scenes_unread), (vec![0, 720, 1440, 2160], 0));
+        let off: Vec<bool> = v.clips.iter().map(|c| c.shot.off_screen).collect();
+        assert_eq!(off, [false, true, false, true]);
+        let (answer, room) = (clip(&v, 720), clip(&v, 2160));
+        assert_eq!((answer.others, room.others, answer.shot.track_id), (1, 0, 0));
+        assert!(answer.shot.face.ends_with(".jpg") && !answer.shot.faceless, "his own face stands for him there");
+        // The filters that speak of him in a shot don't judge them.
+        let v = preview(&p, &with(|s| (s.whole_scenes, s.solo, s.sizes) = (true, true, vec![ShotSize::CloseUp])));
+        assert_eq!(starts(&v, true), [0, 720, 1440, 2160]);
+        // Best first: every shot of his own before any he isn't seen in; a limit cuts those first.
+        let v = preview(&p, &with(|s| (s.whole_scenes, s.order) = (true, PackOrder::Best)));
+        assert_eq!(v.clips.iter().map(|c| c.shot.off_screen).collect::<Vec<_>>(), [false, false, true, true]);
+        let v = preview(&p, &with(|s| (s.whole_scenes, s.limit) = (true, Some(2))));
+        assert_eq!(starts(&v, true), [0, 1440]);
+        assert_eq!(clip(&v, 720).reason, Some(PackReason::Limit));
+        // They come with their scene: without a shot of his own in it they stay out, and say why.
+        let keys = [0, 1440].map(|shot| PackKey { media_id: p.media, shot });
+        p.project.set_pack_overrides(p.walter, &keys, Some(false)).unwrap();
+        let v = preview(&p, &whole);
+        assert!(starts(&v, true).is_empty());
+        assert_eq!((clip(&v, 720).reason, clip(&v, 720).by_rules), (Some(PackReason::Scene), false));
+        // One picked back by hand is in again, alone.
+        p.project.set_pack_overrides(p.walter, &[PackKey { media_id: p.media, shot: 2160 }], Some(true)).unwrap();
+        assert_eq!(starts(&preview(&p, &whole), true), [2160]);
+        // Jesse's two shots are two scenes: his first scene is Walter's.
+        let v = p.project.pack_preview(p.jesse, &whole, &PluginFilters::NONE).unwrap();
+        assert_eq!(starts(&v, true), [0, 720, 1440, 2160, 2880, 3600]);
     }
 
     #[test]
@@ -2086,6 +2245,7 @@ mod tests {
             face_height: 0.0,
             faceless: false,
             bodies: Vec::new(),
+            off_screen: false,
         }
     }
 

@@ -90,6 +90,16 @@ impl ProjectDb {
         })
     }
 
+    /// The sprites of a media's shots: the shot's first frame, the shot end
+    /// its sprite was made for, and its cells.
+    pub fn shot_sprites(&self, id: MediaId) -> DbResult<Vec<(FrameIdx, FrameIdx, u32)>> {
+        self.0.read(|c| {
+            let mut st = c.prepare("SELECT shot, end, cells FROM sprites WHERE media_id = ?1 ORDER BY shot")?;
+            let rows = st.query_map([id.to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+    }
+
     /// Media whose shots are found and whose pictures aren't read (an
     /// interrupted run counts as pending again: for a launch, when nothing
     /// runs yet), in episode order.

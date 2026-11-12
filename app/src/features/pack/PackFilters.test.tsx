@@ -142,6 +142,7 @@ function Bar({
   start = DEFAULT_SPEC,
   episodes = media("a", "b", "c"),
   faceless = false,
+  scenes = false,
   filters = [] as PackFilter[],
   seen = undefined as ((spec: PackSpec) => void) | undefined,
 }) {
@@ -151,6 +152,7 @@ function Bar({
       spec={spec}
       media={episodes}
       faceless={faceless}
+      scenes={scenes}
       filters={filters}
       plugins={plugins}
       onChange={(next) => {
@@ -364,6 +366,28 @@ describe("PackFilters, the Filters menu", () => {
     // Saved with the pack: it shows, so it can be turned off.
     render(<Bar start={{ ...DEFAULT_SPEC, skipFaceless: true }} />, { wrapper })
     expect(within(open()).getByRole("menuitemcheckbox", { name: /Only with their face/ }).getAttribute("aria-checked")).toBe("true")
+  })
+
+  it("whole scenes switch on and off where scenes are read, and show for a saved choice", () => {
+    const seen = vi.fn()
+    render(<Bar seen={seen} />, { wrapper })
+    // Scenes aren't read (the setting is off): nothing to take whole.
+    expect(screen.queryByRole("button", { name: "Whole scenes" })).toBeNull()
+    cleanup()
+    render(<Bar scenes seen={seen} />, { wrapper })
+    const whole = screen.getByRole("button", { name: "Whole scenes" })
+    expect(whole.getAttribute("aria-pressed")).toBe("false")
+    fireEvent.click(whole)
+    expect(seen).toHaveBeenLastCalledWith({ ...DEFAULT_SPEC, wholeScenes: true })
+    expect(whole.getAttribute("aria-pressed")).toBe("true")
+    // It adds shots, it leaves none out: no filter to count, but Reset takes it back.
+    expect(screen.getByRole("button", { name: "Filters" })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: /Reset filters/ }))
+    expect(seen).toHaveBeenLastCalledWith(DEFAULT_SPEC)
+    cleanup()
+    // Saved with the pack, the setting off since: it shows, so it can be turned off.
+    render(<Bar start={{ ...DEFAULT_SPEC, wholeScenes: true }} />, { wrapper })
+    expect(screen.getByRole("button", { name: "Whole scenes" }).getAttribute("aria-pressed")).toBe("true")
   })
 
   it("ticking every episode back by hand is all of them again", async () => {

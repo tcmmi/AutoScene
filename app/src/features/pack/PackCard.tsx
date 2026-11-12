@@ -1,6 +1,6 @@
 import { memo } from "react"
 import { useTranslation } from "react-i18next"
-import { ArrowCounterClockwise, Check, Copy, Play, Prohibit, UserCircleDashed } from "@/components/icons"
+import { ArrowCounterClockwise, Check, Copy, EyeSlash, Play, Prohibit, UserCircleDashed } from "@/components/icons"
 import type { MediaItem, PackClip, PackFilter } from "@/bindings"
 import { Badge } from "@/components/ui/badge"
 import { CardPlayButton } from "@/components/ui/card-play-button"
@@ -70,7 +70,9 @@ export const PackCard = memo(function PackCard({
   const where = at && `${media?.label ? `${media.label} · ` : ""}${at}`
   const why = clip.included ? null : clip.reason === "plugin" ? filterReason(filter) : clip.reason ? REASONS[clip.reason] : t("reason.other")
   const canPick = pickable(clip)
-  const sizeKey = SIZE_KEY.get(clip.size)
+  // A shot they aren't to be seen in has no size of theirs.
+  const offScreen = clip.shot.offScreen ?? false
+  const sizeKey = offScreen ? undefined : SIZE_KEY.get(clip.size)
   // A filter's word on a shot it hasn't checked again since its settings changed.
   const before = (f: PackFilter) => t(f.checked === 0 ? "card.before.sure" : "card.before.maybe", { title: f.title })
   const bodies = clip.shot.faceless ? (clip.shot.bodies ?? []) : []
@@ -78,6 +80,7 @@ export const PackCard = memo(function PackCard({
   const hint = [
     sizeKey && t(`size.${sizeKey}.label`),
     clip.shot.faceless && t("card.hint.faceless"),
+    offScreen && t("card.hint.offScreen"),
     clip.included && filter && t("card.hint.wouldLeaveOut", { title: filter.title }),
     !clip.included && clip.reason === "plugin" && filter && filter.checked < filter.total && before(filter),
     canPick && t(clip.included ? "card.hint.takeOut" : "card.hint.takeIn"),
@@ -148,6 +151,7 @@ export const PackCard = memo(function PackCard({
                 where ? t("card.aria.shotAt", { at: where }) : t("card.aria.shot"),
                 length,
                 clip.shot.faceless && t("card.aria.withoutFace"),
+                offScreen && t("card.aria.offScreen"),
                 clip.included ? t("card.aria.inPack") : t("card.aria.leftOut", { why: why ?? "" }),
               ]
                 .filter(Boolean)
@@ -183,6 +187,12 @@ export const PackCard = memo(function PackCard({
                   </Badge>
                 )}
                 {clip.shot.faceless && clip.reason !== "faceless" && <NoFaceBadge />}
+                {offScreen && (
+                  <Badge tone="picture" size="sm">
+                    <EyeSlash weight="bold" aria-hidden />
+                    {t("card.offScreen")}
+                  </Badge>
+                )}
               </span>
               <span className="absolute right-2 bottom-2 flex items-center gap-1.5">
                 <Badge tone="picture" size="sm">

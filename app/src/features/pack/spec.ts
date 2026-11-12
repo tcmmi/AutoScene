@@ -14,6 +14,7 @@ export const DEFAULT_SPEC: PackSpec = {
   solo: false,
   skipTiny: true,
   skipFaceless: false,
+  wholeScenes: false,
   media: [],
   order: "episodes",
   limit: null,
@@ -73,6 +74,9 @@ export const REASONS: Record<PackReason, string> = {
   get plugin() {
     return t("pack:reason.plugin")
   },
+  get scene() {
+    return t("pack:reason.scene")
+  },
 }
 
 /** Lengths to keep, in seconds. `id` is what the menu's radio items carry. */
@@ -112,6 +116,7 @@ export function isDefault(spec: PackSpec): boolean {
     spec.solo === DEFAULT_SPEC.solo &&
     spec.skipTiny === DEFAULT_SPEC.skipTiny &&
     (spec.skipFaceless ?? false) === DEFAULT_SPEC.skipFaceless &&
+    (spec.wholeScenes ?? false) === DEFAULT_SPEC.wholeScenes &&
     spec.media.length === 0 &&
     spec.order === DEFAULT_SPEC.order &&
     spec.limit === DEFAULT_SPEC.limit &&

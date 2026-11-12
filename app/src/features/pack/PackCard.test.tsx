@@ -87,3 +87,29 @@ describe("PackCard, plugin filters", () => {
     expect(tooltip()).toContain("“Speaks” may have said so with its settings before")
   })
 })
+
+describe("PackCard, a shot of a whole scene", () => {
+  const own = clip({ included: true, byRules: true, reason: null, filter: null })
+  const off = { ...own, size: "wide" as const, shot: { ...own.shot, trackId: 0, faceHeight: 0, offScreen: true } }
+
+  it("says the character isn't to be seen in it, and names no size of theirs", () => {
+    card(off, undefined, episode)
+    expect(screen.getByText("Off screen")).toBeTruthy()
+    expect(screen.getByRole("button", { name: /they aren't in the shot, in the pack/ })).toBeTruthy()
+    expect(screen.queryByText("WS")).toBeNull()
+    const words = tooltip()
+    expect(words).toContain("they aren't to be seen in it")
+    expect(words).not.toContain("Wide shot")
+    cleanup()
+    // Their own shot wears its size and no such badge.
+    card(own, undefined, episode)
+    expect(screen.queryByText("Off screen")).toBeNull()
+    expect(screen.getByText("CU")).toBeTruthy()
+  })
+
+  it("wears why it stays out when none of their own shots of the scene is in", () => {
+    card({ ...off, included: false, byRules: false, reason: "scene" }, undefined, episode)
+    expect(screen.getByText("Scene not in pack")).toBeTruthy()
+    expect(screen.getByRole("button", { name: /left out: Scene not in pack/ })).toBeTruthy()
+  })
+})

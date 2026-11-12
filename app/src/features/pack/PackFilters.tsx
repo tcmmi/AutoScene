@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { useTranslation } from "react-i18next"
-import { ArrowCounterClockwise, CaretDown, FunnelSimple, Warning } from "@/components/icons"
+import { ArrowCounterClockwise, CaretDown, FilmSlate, FunnelSimple, Warning } from "@/components/icons"
 import type { MediaItem, PackFilter, PackOrder, PackSpec, PluginInfo, ShotSize } from "@/bindings"
 import { Button } from "@/components/ui/button"
 import {
@@ -35,6 +35,7 @@ export function PackFilters({
   spec,
   media,
   faceless,
+  scenes = false,
   filters = NO_FILTERS,
   plugins = NO_PLUGINS,
   onChange,
@@ -43,6 +44,8 @@ export function PackFilters({
   media: MediaItem[]
   /** The pack has shots where the character's face doesn't show. */
   faceless: boolean
+  /** Scenes are read (the setting), so the pack can take whole scenes. */
+  scenes?: boolean
   /** The plugins' shot filters the pack can show: every one of a plugin that is on, and those `spec` turns on. */
   filters?: PackFilter[]
   /** The installed plugins: their marks. */
@@ -73,6 +76,14 @@ export function PackFilters({
           { value: "best", label: t("filters.order.best") },
         ]}
       />
+      {(scenes || (spec.wholeScenes ?? false)) && (
+        // It adds shots, so it is no filter: it sits with the order, which shapes the pack too.
+        <Tooltip label={t("filters.wholeScenesHint")}>
+          <ToggleChip pressed={spec.wholeScenes ?? false} onClick={() => set({ wholeScenes: !(spec.wholeScenes ?? false) })}>
+            <FilmSlate className="size-4" /> {t("filters.wholeScenes")}
+          </ToggleChip>
+        </Tooltip>
+      )}
       <Divider />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

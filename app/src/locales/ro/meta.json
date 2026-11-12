@@ -4727,6 +4727,10 @@
     "state": "draft",
     "en": "bd80f9a8"
   },
+  "pack:reason.scene": {
+    "state": "draft",
+    "en": "b1a5579a"
+  },
   "pack:reason.other": {
     "state": "draft",
     "en": "6a531974"
@@ -4867,9 +4871,17 @@
     "state": "draft",
     "en": "b35c3185"
   },
+  "pack:card.offScreen": {
+    "state": "draft",
+    "en": "8e504952"
+  },
   "pack:card.hint.faceless": {
     "state": "draft",
     "en": "f345f54f"
+  },
+  "pack:card.hint.offScreen": {
+    "state": "draft",
+    "en": "b81346cb"
   },
   "pack:card.hint.wouldLeaveOut": {
     "state": "draft",
@@ -4902,6 +4914,10 @@
   "pack:card.aria.withoutFace": {
     "state": "draft",
     "en": "6e4b94c0"
+  },
+  "pack:card.aria.offScreen": {
+    "state": "draft",
+    "en": "8ae1e2b2"
   },
   "pack:card.aria.inPack": {
     "state": "draft",
@@ -5026,6 +5042,14 @@
   "pack:filters.withFaceHint": {
     "state": "draft",
     "en": "a34f0fe4"
+  },
+  "pack:filters.wholeScenes": {
+    "state": "draft",
+    "en": "3653d605"
+  },
+  "pack:filters.wholeScenesHint": {
+    "state": "draft",
+    "en": "d444f62d"
   },
   "pack:filters.noHandles": {
     "state": "draft",
@@ -5174,6 +5198,10 @@
   "pack:page.hint": {
     "state": "draft",
     "en": "0c362244"
+  },
+  "pack:page.scenesUnread": {
+    "state": "draft",
+    "en": "280b7d80"
   },
   "pack:page.loadFailed": {
     "state": "draft",

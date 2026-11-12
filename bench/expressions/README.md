@@ -54,7 +54,9 @@ third: a face that all three judged gets the labels two of them gave (`none`
 when there is no such label); a face that only two judged is `unclear`,
 since those two did not agree; `noface` wants two votes; anything else is
 `unclear` (`expr_check.py final`). No person has checked these labels yet:
-the owner's audit of 100 is open.
+the owner's audit of 100 is open (`expr_audit.py page` makes its page: 100
+crops over the three episodes, some of every label, answered without
+seeing the labels).
 
 How far the first two agree (`expr_check.py join`; kappa is agreement beyond
 chance, 1 is perfect):

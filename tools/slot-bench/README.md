@@ -93,6 +93,11 @@ The steps of `bench/expressions/README.md`, in their order:
    the picture embeddings that `expr_models.py --emb <emb_dir> --only
    <check.tsv>` writes. A look at whether training is worth a try, not a
    model.
+6. `expr_audit.py page <out_dir> <name>=<crops_dir>,<check.tsv> …` draws 100
+   labelled crops and writes one page (`audit.html`, the crops inside it)
+   on which a person says what each face shows, without seeing the labels;
+   `expr_audit.py compare <answers.tsv>` sets the answers against the
+   labels. The page holds faces: it stays on this computer.
 
 `tokenizers` reads SigLIP 2's tokenizer (its newest pre-release cannot, so
 the last release is pinned); `onnx` changes one attribute of Kagami's graph

@@ -78,6 +78,41 @@ chance, 1 is perfect):
 | `unclear` | 0.82 | 0.90 | 0.79 |
 | `noface` | 0.67 | 0.85 | 0.89 |
 
+### A check of the labels by a model (`audit_model.tsv`)
+
+Not the owner's audit, which stays open. The model that leads this work (a
+stronger one than the labellers) read the 100 crops of the audit sample
+itself, twelve to a sheet at one and a half times their size and without the
+labels (of two crops it had seen the label before), wrote its answers down,
+and then looked again, at twice the size and with both answers in hand, at
+every crop where the two differed.
+
+- **69 of 100 crops answered exactly as the labels.** Kappa of that blind
+  reading against the labels: `noface` 0.92, `angry` 0.90, `smile` 0.86,
+  `unclear` 0.86, `surprised` 0.85, `laugh` 0.79, `downcast` 0.79,
+  `mouth_open` 0.79, `eyes_closed` 0.78; `shout` 0.42; `cry` and `blush`
+  0.00, since the reading gave neither.
+- **The 31 that differ, on the second look:** in 15 the label holds (the
+  reading had been too strict: a shout four times, an open mouth four
+  times, a cry, a laugh, a downcast look, a shut eye; or had put what is not
+  there: `surprised` and an open mouth once each, `angry` for a grin); in 14
+  either answer can be defended (lips barely parted, a stern look, a tiny,
+  dark or blurred face, a screwed-up face that may cry, scream or laugh);
+  in 2 the label looks wrong (shut eyes that no labeller named, an open
+  mouth that no labeller named; both on the cartoon).
+- **Two labels are soft.** None of the four `cry` crops of the sample shows
+  tears: they are faces with eyes squeezed shut and the mouth open, and one
+  picture does not tell a sob from a scream or a laugh (one of the four is
+  clearly a sob). Both `blush` crops are one character with the same pink
+  spot on the cheek in each, which may be its design. Neither label has the
+  tracks for a verdict anywhere, so no number above hangs on them.
+
+A model reading models' labels may share their blind spots; this narrows
+what the owner's audit has to look for and does not stand in for it.
+Columns: `set`, `file`, `reading` (the blind answer), `labels`,
+`second_look` (`same`; `label`: the label holds; `open`: either can be
+defended; `reading`: the label looks wrong) and `note`.
+
 What the labels say about the footage itself: of an episode's crops 25.9 %
 (Breaking Bad), 46.5 % (Bass X Machina) and 19.2 % (Rick and Morty) are
 `unclear`, and 0.4 %, 8.1 % and 8.7 % hold no face. Nearly half of what the
@@ -319,7 +354,8 @@ episode share its look and its light.
 
 - One episode per kind of footage, and the cartoon's is a compilation.
 - The labels are agents' readings of 256 px crops on sheets of thirty; no
-  person has checked them.
+  person has checked them (a model has, 100 of them: see above). `cry`
+  rests on screwed-up faces, not on tears.
 - Most labels have too few tracks for any verdict.
 - The crops are the app's own tracks: what the app does not track is not
   here, and what it tracks wrongly is (`noface`). A character is the app's

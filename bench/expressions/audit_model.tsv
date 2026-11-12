@@ -1,0 +1,101 @@
+set	file	reading	labels	second_look	note
+bxm	t1501_f10980.jpg	noface	noface	same	not blind: its label had been seen while the audit page was tested
+bb	t36_f8037.jpg	noface	noface	same	not blind: its label had been seen while the audit page was tested
+bxm	t1399_f7884.jpg	angry,mouth_open	smile,mouth_open	label	an evil grin with bared teeth: a smile, as two of the three labellers said
+bxm	t2062_f34986.jpg	mouth_open	none	open	lips barely parted
+bb	t1102_f75657.jpg	eyes_closed,mouth_open	cry,mouth_open	label	a face screwed up in crying; no tears to be seen
+rm	t890_f23136.jpg	unclear	unclear	same	
+bxm	t1386_f7368.jpg	angry,mouth_open	angry,mouth_open	same	
+bxm	t1979_f29310.jpg	unclear	unclear	same	
+bxm	t1455_f10536.jpg	none	none	same	
+bb	t765_f52518.jpg	smile,mouth_open	smile,mouth_open	same	
+bb	t664_f43284.jpg	none	angry	open	a stern stare with pressed lips
+bb	t367_f17742.jpg	unclear	unclear	same	
+bxm	t1805_f20262.jpg	angry	angry,mouth_open	label	lips apart, teeth showing
+rm	t1217_f29364.jpg	mouth_open	mouth_open	same	
+bxm	t1650_f14784.jpg	unclear	unclear	same	
+rm	t1134_f26874.jpg	angry,mouth_open	angry,mouth_open	same	
+rm	t654_f14964.jpg	none	none	same	
+bxm	t2138_f38244.jpg	eyes_closed	laugh,eyes_closed	open	laughing eyes, the mouth behind a hand
+bb	t525_f30633.jpg	unclear	unclear	same	
+rm	t1186_f28224.jpg	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open	same	
+rm	t183_f4506.jpg	eyes_closed	blush	open	the pink cheek spot is on this character in both of its crops, so it may be its design; the eye half shut
+bxm	t2451_f46152.jpg	angry,mouth_open	angry,shout,mouth_open	label	an angry shout
+bxm	t2488_f46836.jpg	unclear	unclear	same	
+bxm	t1857_f23202.jpg	angry	angry,mouth_open	label	bared teeth
+bb	t943_f63420.jpg	surprised,mouth_open	mouth_open	label	brows drawn together, not raised
+bb	t810_f55479.jpg	none	none	same	
+bb	t433_f18801.jpg	eyes_closed	eyes_closed	same	
+bb	t170_f14157.jpg	downcast	downcast	same	
+bb	t623_f39228.jpg	unclear	unclear	same	
+bb	t1101_f75570.jpg	eyes_closed,mouth_open	shout,mouth_open	label	a wide-open scream; the eyes look shut as well
+bb	t977_f64863.jpg	smile,mouth_open	smile,mouth_open	same	
+rm	t36_f942.jpg	mouth_open	downcast,mouth_open	label	drooping eyes, raised inner brows
+rm	t299_f7944.jpg	shout,mouth_open	shout,mouth_open	same	
+bb	t289_f16893.jpg	none	mouth_open	open	lips barely parted
+bxm	t2006_f30396.jpg	smile,eyes_closed	smile,eyes_closed	same	
+rm	t386_f9648.jpg	mouth_open	mouth_open	same	
+rm	t1268_f30924.jpg	shout,eyes_closed,mouth_open	cry,eyes_closed,mouth_open	open	eyes shut, mouth wide open, hands on the ears: a cry or a scream; no tears
+bxm	t2414_f44964.jpg	eyes_closed,mouth_open	eyes_closed,mouth_open	same	
+bb	t922_f61725.jpg	none	none	same	
+rm	t1194_f28338.jpg	surprised,mouth_open	mouth_open	open	a round mouth; the eyes are the show's usual ones
+bb	t1035_f68592.jpg	mouth_open	shout,mouth_open	label	blurred, the mouth wide open
+bb	t42_f8652.jpg	surprised,mouth_open	surprised,mouth_open	same	
+rm	t1051_f25836.jpg	surprised,mouth_open	surprised,mouth_open	same	
+bxm	t2353_f43602.jpg	angry,mouth_open	angry,mouth_open	same	
+rm	t1269_f30924.jpg	eyes_closed,mouth_open	cry,mouth_open	reading	the eyes are shut and no labeller said so; cry or scream is open, no tears
+rm	t193_f4536.jpg	eyes_closed	eyes_closed,mouth_open	label	the mouth is open
+rm	t704_f17658.jpg	mouth_open	mouth_open	same	
+rm	t1228_f29562.jpg	laugh,mouth_open	laugh,mouth_open	same	
+rm	t322_f8718.jpg	unclear	unclear	same	
+bxm	t2663_f55128.jpg	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open	same	
+rm	t928_f23550.jpg	noface	noface	same	
+rm	t862_f22710.jpg	none	none	same	
+bxm	t1706_f16212.jpg	mouth_open	mouth_open	same	
+rm	t180_f4500.jpg	smile,eyes_closed	smile,eyes_closed	same	
+bb	t1137_f82041.jpg	unclear	eyes_closed	label	dark, but the eye is shut
+bb	t895_f58983.jpg	mouth_open	mouth_open	same	
+bxm	t1945_f28374.jpg	downcast	downcast	same	
+bb	t763_f52416.jpg	angry,mouth_open	angry,mouth_open	same	
+rm	t1266_f30762.jpg	shout,mouth_open	shout,mouth_open	same	
+rm	t470_f10710.jpg	none	unclear	open	small and blurred
+bxm	t2651_f53202.jpg	surprised	surprised,mouth_open	label	an open mouth under the moustache
+bb	t355_f17676.jpg	noface	noface	same	
+rm	t250_f6180.jpg	downcast	downcast	same	
+rm	t760_f19356.jpg	mouth_open	none	open	lips barely parted
+rm	t1294_f32082.jpg	smile	smile	same	
+rm	t646_f14952.jpg	angry	angry	same	
+bb	t930_f62379.jpg	unclear	unclear	same	
+rm	t278_f7458.jpg	eyes_closed	eyes_closed	same	
+bb	t200_f15426.jpg	smile,mouth_open	laugh,mouth_open	label	a wide open laughing mouth
+bxm	t1775_f18450.jpg	unclear	unclear	same	
+bb	t166_f13710.jpg	eyes_closed	none	open	both eyes look shut, in a blurred frame
+bxm	t2598_f50256.jpg	mouth_open	none	label	no open mouth under the moustache
+bb	t1067_f71568.jpg	downcast	downcast	same	
+bb	t1088_f73296.jpg	unclear	unclear	same	
+bb	t212_f15423.jpg	laugh,mouth_open	laugh,mouth_open	same	
+bxm	t2008_f30480.jpg	smile	smile	same	
+bxm	t1907_f26412.jpg	unclear	unclear	same	
+bxm	t1975_f29136.jpg	none	none	same	
+bb	t841_f56340.jpg	unclear	unclear	same	
+bxm	t2304_f42846.jpg	angry	angry	same	
+rm	t206_f4884.jpg	eyes_closed	eyes_closed	same	
+bxm	t2201_f40434.jpg	unclear	unclear	same	
+bxm	t2638_f52560.jpg	noface	unclear	open	a bent figure and no face to be seen: unclear or noface
+bxm	t1692_f16116.jpg	surprised,mouth_open	surprised,mouth_open	same	
+rm	t151_f3894.jpg	surprised,mouth_open	surprised,mouth_open	same	
+bb	t30_f7677.jpg	none	none	same	
+rm	t66_f1746.jpg	none	none	same	
+rm	t1093_f26460.jpg	mouth_open	unclear	open	a tiny face with an open mouth
+bxm	t2032_f32850.jpg	angry	angry	same	
+bxm	t2216_f41154.jpg	none	downcast	open	a pensive, perhaps sad look
+bxm	t2417_f45036.jpg	unclear	unclear	same	
+rm	t183_f4494.jpg	eyes_closed,mouth_open	blush,eyes_closed	reading	the mouth is open and no labeller said so; the pink cheek spot as in the other crop of this character
+bb	t843_f56346.jpg	surprised	surprised	same	
+bb	t734_f49608.jpg	mouth_open	mouth_open	same	
+bxm	t2231_f41736.jpg	mouth_open	shout,mouth_open	label	a wide-open scream
+bxm	t1440_f9894.jpg	noface	noface	same	
+rm	t989_f24606.jpg	noface	noface	same	
+bb	t1075_f72120.jpg	eyes_closed,mouth_open	cry,eyes_closed,mouth_open	open	a screwed-up face in a hug: crying, laughing or neither; no tears
+bb	t203_f15438.jpg	smile,mouth_open	smile,mouth_open	same	
+bb	t103_f11301.jpg	none	none	same	

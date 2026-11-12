@@ -38,12 +38,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use as_analysis::FrameSignals;
+use as_analysis::scenes::{
+    self, Between, Pairs, Params, Piece, REACH, Shot, boundary_scores, scene_ids, settle, shot_at,
+};
 use as_analysis::signals;
 use as_analysis::tracks::{FaceDet, dets_from_bytes};
 use rusqlite::Connection;
 
-/// Frames of a shot whose colour signatures stand for it.
-const KEYS: u32 = 5;
 /// A main character has at least this long on screen (as in `bench/identity`).
 const MAIN_SEC: f64 = 30.0;
 
@@ -155,47 +156,17 @@ fn load(dir: &Path) -> Episode {
 
 // -- shots -------------------------------------------------------------------
 
-/// What lies between two shots that follow each other.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Between {
-    Cut,
-    /// A dissolve.
-    Blend,
-    /// Black, or a fade to or from it.
-    Dark,
-}
-
-#[derive(Clone, Debug, Default)]
-struct Shot {
-    start: u32,
-    end: u32,
-    /// Frames whose colour signatures stand for the shot.
-    keys: Vec<u32>,
-    /// The characters the cast shows in it, sorted.
-    cast: Vec<usize>,
-}
-
+/// The project's shots and what lies between them, with the cast of each.
 fn shots_of(ep: &Episode) -> (Vec<Shot>, Vec<Between>) {
-    let mut shots: Vec<Shot> = Vec::new();
-    let mut between = Vec::new();
-    let mut gap = Between::Cut;
-    for (start, end, kind) in &ep.segments {
-        match kind.as_str() {
-            "shot" => {
-                if !shots.is_empty() {
-                    between.push(gap);
-                }
-                gap = Between::Cut;
-                let len = end - start;
-                let n = len.min(KEYS);
-                let keys = (0..n).map(|k| start + (2 * k + 1) * len / (2 * n)).collect();
-                shots.push(Shot { start: *start, end: *end, keys, cast: Vec::new() });
-            }
-            "dissolve" if gap == Between::Cut => gap = Between::Blend,
-            "black" | "fade_in" | "fade_out" => gap = Between::Dark,
-            _ => {}
-        }
-    }
+    let (mut shots, between) = scenes::shots(ep.segments.iter().map(|(start, end, kind)| {
+        let piece = match kind.as_str() {
+            "shot" => Piece::Shot,
+            "dissolve" => Piece::Dissolve,
+            "black" | "fade_in" | "fade_out" => Piece::Dark,
+            _ => Piece::Other,
+        };
+        (*start, *end, piece)
+    }));
     for t in &ep.tracks {
         if let (Some(c), Some(s)) = (t.character, shot_at(&shots, t.start))
             && !shots[s].cast.contains(&c)
@@ -209,248 +180,35 @@ fn shots_of(ep: &Episode) -> (Vec<Shot>, Vec<Between>) {
     (shots, between)
 }
 
-/// The shot a frame lies in.
-fn shot_at(shots: &[Shot], frame: u32) -> Option<usize> {
-    let i = shots.partition_point(|s| s.start <= frame).checked_sub(1)?;
-    (frame < shots[i].end).then_some(i)
-}
-
 /// The shot whose first frame is nearest to `frame`.
 fn shot_starting_near(shots: &[Shot], frame: u32) -> usize {
     (0..shots.len()).min_by_key(|&i| shots[i].start.abs_diff(frame)).expect("shots")
 }
 
-// -- scenes from colour, cast, pictures and what lies between -----------------
+// -- the settings under test ----------------------------------------------------
 
-/// The most shots a link between two alike shots may reach over.
-const REACH: usize = 24;
-
-#[derive(Clone, Copy, Debug)]
-struct Params {
-    /// How many shots on a link between two alike shots may reach.
-    window: usize,
-    /// What each shot in between leaves of a link.
-    decay: f32,
-    /// The colour distance at which two shots have nothing in common.
-    far: f32,
-    /// What black, or a fade, leaves of a link across it; and a dissolve.
-    dark: f32,
-    blend: f32,
-    /// The weights of the colours and of the cast (a picture embedding
-    /// brings its own).
-    colour: f32,
-    cast: f32,
-    /// A piece of a scene shorter than this many seconds joins its
-    /// neighbour more readily (0: no such rule), by this power of its share.
-    short: f32,
-    curve: f32,
-}
-
-impl Params {
-    const DEFAULT: Self =
-        Self { window: 8, decay: 0.9, far: 0.2, dark: 0.5, blend: 0.8, colour: 0.7, cast: 0.3, short: 0.0, curve: 1.0 };
-
-    fn from_env() -> Self {
-        let list = |name: &str, n: usize, what: &str| {
-            std::env::var(name).ok().map(|v| {
-                let v: Vec<f32> =
-                    v.split(',').map(|x| x.trim().parse().unwrap_or_else(|_| panic!("{name}={what}"))).collect();
-                assert_eq!(v.len(), n, "{name}={what}");
-                v
-            })
-        };
-        let mut p = Self::DEFAULT;
-        if let Some(v) = list("P", 5, "<window>,<decay>,<far>,<dark>,<blend>") {
-            p = Self { window: v[0] as usize, decay: v[1], far: v[2], dark: v[3], blend: v[4], ..p };
-        }
-        if let Some(v) = list("W", 2, "<colour>,<cast>") {
-            p = Self { colour: v[0], cast: v[1], ..p };
-        }
-        if let Some(v) = list("SHORT", 2, "<seconds>,<curve>") {
-            p = Self { short: v[0], curve: v[1], ..p };
-        }
-        assert!((1..=REACH).contains(&p.window), "the window is 1 to {REACH} shots");
-        p
-    }
-}
-
-/// Colour distance of two shots, 0..1: that of their closest pair of frames,
-/// so that a shot which moves is still like the shot it ends on.
-fn distance(a: &Shot, b: &Shot, sig: &[FrameSignals]) -> f32 {
-    let mut best = 1f32;
-    for &x in &a.keys {
-        for &y in &b.keys {
-            best = best.min(sig[x as usize].color_distance(&sig[y as usize]));
-        }
-    }
-    best
-}
-
-/// The share of the characters of two shots that both have; `None` when
-/// either shows nobody the cast knows.
-fn shared_cast(a: &[usize], b: &[usize]) -> Option<f32> {
-    if a.is_empty() || b.is_empty() {
-        return None;
-    }
-    let both = a.iter().filter(|c| b.contains(c)).count();
-    Some(both as f32 / (a.len() + b.len() - both) as f32)
-}
-
-/// How alike the pictures of two shots are: the cosine of their closest
-/// pair of frames. `None` when a shot has no vector.
-fn closest(a: &[Vec<f32>], b: &[Vec<f32>]) -> Option<f32> {
-    a.iter()
-        .flat_map(|x| b.iter().map(move |y| x.iter().zip(y).map(|(p, q)| p * q).sum::<f32>()))
-        .max_by(f32::total_cmp)
-}
-
-/// A picture embedding's say on every pair of shots within [`REACH`].
-struct Cue {
-    name: String,
-    weight: f32,
-    /// The cosine two shots far apart have: nothing in common.
-    floor: f32,
-    /// By [`Pairs::at`]; NaN where a shot has no vector.
-    cos: Vec<f32>,
-}
-
-/// What is known of every pair of shots within [`REACH`] of each other.
-struct Pairs {
-    /// Colour distance.
-    colour: Vec<f32>,
-    /// Shared cast; NaN where a shot shows nobody the cast knows.
-    cast: Vec<f32>,
-    cues: Vec<Cue>,
-}
-
-impl Pairs {
-    fn at(i: usize, j: usize) -> usize {
-        i * REACH + (j - i - 1)
-    }
-
-    fn fill(n: usize, of: impl Fn(usize, usize) -> Option<f32>) -> Vec<f32> {
-        let mut v = vec![f32::NAN; n * REACH];
-        for i in 0..n {
-            for j in i + 1..n.min(i + 1 + REACH) {
-                v[Self::at(i, j)] = of(i, j).unwrap_or(f32::NAN);
-            }
-        }
-        v
-    }
-
-    fn new(shots: &[Shot], sig: &[FrameSignals]) -> Self {
-        let n = shots.len();
-        Self {
-            colour: Self::fill(n, |i, j| Some(distance(&shots[i], &shots[j], sig))),
-            cast: Self::fill(n, |i, j| shared_cast(&shots[i].cast, &shots[j].cast)),
-            cues: Vec::new(),
-        }
-    }
-
-    /// Adds a picture embedding: per shot, the unit vectors of its frames.
-    fn add(&mut self, name: &str, weight: f32, vectors: &[Vec<Vec<f32>>]) {
-        let n = vectors.len();
-        // What shots have in common that have nothing in common: the median
-        // over pairs at least 100 shots apart.
-        let mut apart: Vec<f32> = (0..n)
-            .flat_map(|i| (i + 100..n).step_by(100).filter_map(move |j| closest(&vectors[i], &vectors[j])))
-            .collect();
-        apart.sort_by(f32::total_cmp);
-        let floor = apart.get(apart.len() / 2).copied().unwrap_or(0.0);
-        let cos = Self::fill(n, |i, j| closest(&vectors[i], &vectors[j]));
-        self.cues.push(Cue { name: name.to_owned(), weight, floor, cos });
-    }
-
-    /// What each cue says of shots `i < j`, 0..1, with its weight: the
-    /// colours, the cast, then each embedding. A cue that knows nothing of
-    /// the pair is left out.
-    fn says(&self, i: usize, j: usize, p: &Params) -> impl Iterator<Item = (f32, f32)> {
-        let k = Self::at(i, j);
-        let colour = (1.0 - self.colour[k] / p.far).clamp(0.0, 1.0);
-        let cues = self.cues.iter().map(move |c| (((c.cos[k] - c.floor) / (1.0 - c.floor)).clamp(0.0, 1.0), c.weight));
-        [(colour, p.colour), (self.cast[k], p.cast)].into_iter().chain(cues).filter(|(v, _)| !v.is_nan())
-    }
-
-    /// How alike shots `i < j` are, 0..1: the weighted mean of the cues.
-    fn alike(&self, i: usize, j: usize, p: &Params) -> f32 {
-        let (sum, weight) = self.says(i, j, p).fold((0.0, 0.0), |(s, w), (v, x)| (s + v * x, w + x));
-        if weight > 0.0 { sum / weight } else { 0.0 }
-    }
-}
-
-/// One score per gap between two shots, 0..1: how much speaks for a new scene
-/// there. Two alike shots hold everything between them together (a shot
-/// between two alike shots belongs with them); the link weakens with each
-/// shot it reaches over and with a fade or a dissolve on its way. Scenes come
-/// from a threshold, so a higher one only joins scenes.
-fn boundary_scores(pairs: &Pairs, between: &[Between], p: &Params) -> Vec<f32> {
-    let n = between.len() + 1;
-    let mut link = vec![0f32; between.len()];
-    for i in 0..n {
-        let mut keep = 1f32;
-        for j in i + 1..n.min(i + 1 + p.window) {
-            keep *= match between[j - 1] {
-                Between::Cut => 1.0,
-                Between::Blend => p.blend,
-                Between::Dark => p.dark,
-            };
-            if j > i + 1 {
-                keep *= p.decay;
-            }
-            let s = pairs.alike(i, j, p) * keep;
-            for l in &mut link[i..j] {
-                *l = l.max(s);
-            }
-        }
-    }
-    link.into_iter().map(|l| 1.0 - l).collect()
-}
-
-/// Joins the shots into ever longer pieces, the weakest boundary first, and
-/// gives each gap the score at which it went. A boundary beside a piece
-/// shorter than [`Params::short`] counts for less (a cutaway, the first shot
-/// of a scene), and for more again once that piece has grown. The scores
-/// rise from join to join, so a threshold on them still only joins scenes.
-fn settle(base: &[f32], secs: &[f32], p: &Params) -> Vec<f32> {
-    let n = base.len();
-    if p.short <= 0.0 {
-        return base.to_vec();
-    }
-    // The gaps still open, as a list: `before[g]` and `after[g]` are the
-    // open gaps around gap g (n: none), so a piece is the shots between two.
-    let mut before: Vec<usize> = (0..n).map(|g| g.checked_sub(1).unwrap_or(n)).collect();
-    let mut after: Vec<usize> = (0..n).map(|g| if g + 1 < n { g + 1 } else { n }).collect();
-    let mut open = vec![true; n];
-    let upto: Vec<f32> = std::iter::once(0.0)
-        .chain(secs.iter().scan(0.0, |sum, s| {
-            *sum += s;
-            Some(*sum)
-        }))
-        .collect();
-    let cost = |g: usize, before: &[usize], after: &[usize]| {
-        let left = upto[g + 1] - if before[g] == n { 0.0 } else { upto[before[g] + 1] };
-        let right = if after[g] == n { upto[n + 1] } else { upto[after[g] + 1] } - upto[g + 1];
-        base[g] * (left.min(right) / p.short).min(1.0).powf(p.curve)
+/// The settings of `as_analysis::scenes`, as the environment changes them.
+fn params_from_env() -> Params {
+    let list = |name: &str, n: usize, what: &str| {
+        std::env::var(name).ok().map(|v| {
+            let v: Vec<f32> =
+                v.split(',').map(|x| x.trim().parse().unwrap_or_else(|_| panic!("{name}={what}"))).collect();
+            assert_eq!(v.len(), n, "{name}={what}");
+            v
+        })
     };
-    let mut out = vec![0f32; n];
-    let mut level = 0f32;
-    for _ in 0..n {
-        let (g, c) = (0..n)
-            .filter(|&g| open[g])
-            .map(|g| (g, cost(g, &before, &after)))
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .expect("an open gap");
-        level = level.max(c);
-        out[g] = level;
-        open[g] = false;
-        if before[g] != n {
-            after[before[g]] = after[g];
-        }
-        if after[g] != n {
-            before[after[g]] = before[g];
-        }
+    let mut p = Params::DEFAULT;
+    if let Some(v) = list("P", 5, "<window>,<decay>,<far>,<dark>,<blend>") {
+        p = Params { window: v[0] as usize, decay: v[1], far: v[2], dark: v[3], blend: v[4], ..p };
     }
-    out
+    if let Some(v) = list("W", 2, "<colour>,<cast>") {
+        p = Params { colour: v[0], cast: v[1], ..p };
+    }
+    if let Some(v) = list("SHORT", 2, "<seconds>,<curve>") {
+        p = Params { short: v[0], curve: v[1], ..p };
+    }
+    assert!((1..=REACH).contains(&p.window), "the window is 1 to {REACH} shots");
+    p
 }
 
 /// Reads a file of `shot_embed.py`: per shot, the unit vectors of its frames.
@@ -470,15 +228,6 @@ fn embedding(path: &Path, shots: &[Shot]) -> Vec<Vec<Vec<f32>>> {
     }
     assert!(out.iter().all(|v| !v.is_empty()), "{}: a shot has no vector: not this media's file", path.display());
     out
-}
-
-/// The scene of each shot, for a cut at every gap marked.
-fn scene_ids(cuts: &[bool]) -> Vec<usize> {
-    let mut ids = vec![0; cuts.len() + 1];
-    for (g, &cut) in cuts.iter().enumerate() {
-        ids[g + 1] = ids[g] + usize::from(cut);
-    }
-    ids
 }
 
 // -- labels ------------------------------------------------------------------
@@ -860,7 +609,7 @@ fn score(args: &[String]) {
 
     assert!(!cast.is_empty(), "nobody is known in this episode: its scores need identity labels");
 
-    let mut pairs = Pairs::new(&shots, &ep.signals);
+    let mut pairs = Pairs::new(&shots, Some(&ep.signals));
     for cue in std::env::var("EMB").unwrap_or_default().split(',').filter(|c| !c.is_empty()) {
         let (weight, file) = cue.split_once(':').expect("EMB=<weight>:<file>[,<weight>:<file>…]");
         let path = Path::new(file);
@@ -872,7 +621,7 @@ fn score(args: &[String]) {
     let frames: Vec<u32> = bench.shots.iter().map(|s| s.end - s.start).collect();
     let truth = scene_ids(&bench.truth_cuts);
 
-    let p = Params::from_env();
+    let p = params_from_env();
     println!("\n{p:?}");
     for c in &bench.pairs.cues {
         println!("{}: weight {}, shots far apart are {:.3} alike", c.name, c.weight, c.floor);
@@ -1128,88 +877,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Shots of ten frames each; `look[i]` picks the colours, `cast[i]` the people.
-    fn film(look: &[u8], cast: &[&[usize]]) -> (Vec<Shot>, Vec<FrameSignals>) {
-        let mut sig = Vec::new();
-        let shots = look
-            .iter()
-            .zip(cast)
-            .enumerate()
-            .map(|(i, (&l, c))| {
-                let mut colors = [0u8; signals::COLORS];
-                for ch in 0..3 {
-                    colors[ch * signals::BINS + l as usize] = 255;
-                }
-                sig.extend(std::iter::repeat_n(FrameSignals { colors, ..Default::default() }, 10));
-                let start = i as u32 * 10;
-                Shot { start, end: start + 10, keys: vec![start + 5], cast: c.to_vec() }
-            })
-            .collect();
-        (shots, sig)
-    }
-
-    #[test]
-    fn a_shot_between_two_alike_shots_belongs_with_them() {
-        // A B A B | C D C: the answers and the cutaways stay in their scenes.
-        let (shots, sig) = film(&[0, 5, 0, 5, 9, 12, 9], &[&[1], &[2], &[1], &[2], &[3], &[4], &[3]]);
-        let between = vec![Between::Cut; 6];
-        let s = boundary_scores(&Pairs::new(&shots, &sig), &between, &Params::DEFAULT);
-        assert!(s[3] > 0.8, "the two scenes share nothing: {s:?}");
-        for g in [0, 1, 2, 4, 5] {
-            assert!(s[g] < 0.2, "gap {g} lies between two alike shots: {s:?}");
-        }
-        // No reach: every change of picture and people is a boundary.
-        let alone = boundary_scores(&Pairs::new(&shots, &sig), &between, &Params { window: 1, ..Params::DEFAULT });
-        assert!(alone.iter().all(|&x| x > 0.8), "{alone:?}");
-    }
-
-    #[test]
-    fn a_fade_weakens_the_link_across_it() {
-        let (shots, sig) = film(&[0, 0, 0, 0], &[&[], &[], &[], &[]]);
-        let plain = boundary_scores(&Pairs::new(&shots, &sig), &[Between::Cut; 3], &Params::DEFAULT);
-        let faded =
-            boundary_scores(&Pairs::new(&shots, &sig), &[Between::Cut, Between::Dark, Between::Cut], &Params::DEFAULT);
-        assert!(faded[1] > plain[1] + 0.3, "{plain:?} {faded:?}");
-        assert_eq!((faded[0], faded[2]), (plain[0], plain[2]), "the gaps beside it keep their own links");
-    }
-
-    #[test]
-    fn a_short_piece_joins_a_neighbour() {
-        let p = Params { short: 30.0, ..Params::DEFAULT };
-        // A cutaway of 3 s between two long shots, unlike both: it joins one
-        // of them, and the boundary that is left stands as it was.
-        assert_eq!(settle(&[0.8, 0.8], &[60.0, 3.0, 60.0], &p), [0.8 * 3.0 / 30.0, 0.8]);
-        // Long pieces on both sides: nothing changes.
-        assert_eq!(settle(&[0.7, 0.4], &[60.0, 45.0, 90.0], &p), [0.7, 0.4]);
-        // Without the rule the scores are the links' own.
-        assert_eq!(settle(&[0.8, 0.8], &[60.0, 3.0, 60.0], &Params::DEFAULT), [0.8, 0.8]);
-        // Three short shots in a row grow into one piece of 15 s. It joins
-        // one neighbour at half the boundary's score; what is left stands in
-        // full, and the scores never fall from join to join.
-        let s = settle(&[0.9, 0.5, 0.5, 0.9], &[60.0, 5.0, 5.0, 5.0, 60.0], &p);
-        assert!(s[1] < 0.1 && s[2] < 0.1, "the short shots join each other first: {s:?}");
-        assert_eq!((s[0], s[3]), (0.45, 0.9));
-    }
-
-    #[test]
-    fn a_higher_threshold_only_joins_scenes() {
-        // Scores as the join of short pieces leaves them, at thresholds
-        // between each two of them.
-        let p = Params { short: 30.0, ..Params::DEFAULT };
-        let s = settle(&[0.9, 0.5, 0.2, 0.7, 0.9, 0.3], &[60.0, 5.0, 20.0, 5.0, 40.0, 3.0, 50.0], &p);
-        let cuts = |t: f32| s.iter().map(|&x| x > t).collect::<Vec<_>>();
-        let mut levels = s.clone();
-        levels.sort_by(f32::total_cmp);
-        for pair in levels.windows(2) {
-            let (fine, coarse) = (scene_ids(&cuts(pair[0] - 0.001)), scene_ids(&cuts(pair[1] - 0.001)));
-            for a in 0..fine.len() {
-                for b in 0..fine.len() {
-                    assert!(fine[a] != fine[b] || coarse[a] == coarse[b], "shots {a} and {b} were parted: {s:?}");
-                }
-            }
-        }
-    }
 
     #[test]
     fn scores_of_known_cases() {

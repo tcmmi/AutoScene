@@ -13,6 +13,7 @@ pub mod link;
 pub mod pipeline;
 pub mod portrait;
 pub mod rescan;
+pub mod scenes;
 pub mod signals;
 pub mod sprites;
 pub mod tracker;

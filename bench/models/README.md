@@ -28,6 +28,18 @@ Not trained: a body model (the bodies bench holds 84 queries, too few to tell
 models apart; ready-made ones come first, on at least 3 titles and 300
 queries).
 
+Two slots that are not about identity were added on 2026-11-12; rows 5 and 6
+of `DECISIONS.md` hold their labels, checks and gates:
+
+- **Expressions**: what a face shows (smiling, laughing, crying and so on),
+  one score per label, for real life, anime and 3D animation.
+- **Scenes**: which shots belong together, so that a character's scenes
+  include the shots in which the character is not to be seen.
+
+Both test what exists before anything is trained. The rules of this file
+apply to them where they fit: the titles of a check set never train, sources
+are listed before a download, and the caps hold.
+
 ## Before any training: is the embedder the limit?
 
 Free, on the development PC. A slot whose check fails is closed with a

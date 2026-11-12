@@ -251,3 +251,96 @@ So the gap of the shipped scans to a perfect score splits about three to one:
 twice in a frame. Not run: the first two rungs (ground-truth boxes and tracks);
 the labels sit on the pass's own tracks. Like everything above, this rests on
 labels a person has not audited yet.
+
+## One figure, one head: the doubles taken out of the pass
+
+The oracle above stops short because one figure is found twice in a frame.
+The second box is nearly always the head a person box implies (its top 35 %)
+beside the head the head detector found on the same figure: in a close-up the
+head is far bigger than that top strip, and a figure reaching out or leaning
+has its head at one side of its box, so neither of the two overlap rules
+(`union_iou`, `union_cover`) took the boxes for one head.
+
+How the rule was found. `anime_dets` writes what the two detectors find in
+every sample before anything is joined; replaying the pass's own rule on that
+gives the pass's heads back (99.97–100 % of the heads in tracks), so rules can
+be tried without a pass. By the labels, the implied heads the pass kept were,
+per frame: 1,436 a second box on a figure with another track in the frame,
+2,015 the figure's only track there (what the person detector is for), 653
+`n`, 1,190 other unnamed, 126 in no track. An own head's top lies within about
+half its height of the person box's top; the head of someone in front of the
+figure lies 1.2 heights or more below. The rule (`union_heads`,
+`Params::union_reach` 1.0): a person on which a found head sits adds no implied
+head. A head sits on a person when its centre lies in the person box, its top
+at most one head height below the box's top, and it is at most 1.25 person
+widths wide; a head about to be dropped as too small counts for no one; the
+implied head of such a person still stands where a head is for the people
+after it, so the rule only takes heads away. Replayed, it drops 1,340 of the
+1,436 doubles (93 %; 94 / 95 / 91 % a franchise) and 94 of the 2,015 sole
+heads (4.7 %), and adds none. The labels chose this rule, so they are tuning
+data for it; no other title has seen it.
+
+The check was written down before a pass with the rule had finished: both
+scans run again on the seven episodes and scored against the same labels (the
+scorer puts labels on tracks by frame and box). Main cast, figure level,
+per-track; before → after:
+
+| | Jujutsu Kaisen | Re:Zero | One Piece | Macro F | After − before, 95 % |
+|---|---|---|---|---|---|
+| Standard | P 0.843 R 0.166 F 0.277 → P 0.871 R 0.197 F 0.322 | P 0.899 R 0.321 F 0.473 → P 0.914 R 0.470 F 0.620 | P 0.932 R 0.161 F 0.274 → P 0.930 R 0.212 F 0.345 | 0.341 → 0.429 | +0.088 [+0.049, +0.118] |
+| Best | P 0.976 R 0.121 F 0.216 → P 0.974 R 0.185 F 0.311 | P 0.993 R 0.423 F 0.593 → P 0.988 R 0.492 F 0.657 | P 0.967 R 0.242 F 0.387 → P 0.951 R 0.369 F 0.532 | 0.399 → 0.500 | +0.101 [+0.070, +0.130] |
+| Perfect embeddings | 0.815 → 0.908 | 0.897 → 0.974 | 0.813 → 0.882 | 0.842 → 0.921 | |
+| Tracks | 1,515 → 1,405 | 1,147 → 1,053 | 2,038 → 1,913 | | |
+| Named tracks in a frame with another of their figure | 263 → 82 | 209 → 52 | 255 → 95 | | |
+| Frames in which a figure had a track and has none now | 0.43 % | 0.15 % | 0.66 % | | |
+| Characters, Standard / Best | 70 → 57 / 55 → 48 | 47 → 39 / 44 → 40 | 124 → 100 / 88 → 84 | | |
+| Merges to clean, Standard / Best | 36 → 26 / 22 → 15 | 26 → 17 / 15 → 12 | 45 → 32 / 26 → 20 | | |
+| Clips, Standard | P 0.972 → 0.938, R 0.390 → 0.417 | P 0.985 → 0.982, R 0.554 → 0.673 | P 0.966 → 0.948, R 0.379 → 0.427 | | |
+| Clips, Best | P 0.937 → 0.954, R 0.333 → 0.403 | P 0.993 → 0.991, R 0.712 → 0.713 | P 0.972 → 0.953, R 0.524 → 0.605 | | |
+
+The five conditions set beforehand:
+
+1. Fewer doubles on every franchise: held.
+2. Macro F of neither scan falls: held (both rise, intervals above 0).
+3. Precision of neither scan falls by more than 0.01 on any franchise: **not
+   held**. Best on One Piece falls from 0.967 to 0.951. Every other cell is
+   within 0.005; Standard rises on two franchises.
+4. At most 1 % of a figure's frames lose their track: held.
+5. The oracle rises on every franchise: held.
+
+What the lost precision is. It is not noise: leaving five unnamed tracks out
+at random, twelve times, moves that precision by 0.005 at most. With the fix
+Best puts Kozuki Toki together with eight tracks of her daughter as the oiran
+(drawn alike; labelled `?e`) and one of another woman, and Nami's character
+takes three unnamed tracks. The boxes are not at fault: the doubles put
+cannot-links between a figure's own tracks, which kept every group small, the
+wrong joins along with the right ones. Without them Best's bars (row 7: set on
+one title, `copy_link` and the table never tuned for Berkeley) join more. The
+same shows in `stress` over its 27 runs: with Standard both fall (people split
+952 / 645 / 1,145 → 767 / 420 / 897, characters holding two people 204 / 207 /
+189 → 118 / 156 / 127); with Best fewer people are split (1,017 / 638 / 949 →
+843 / 564 / 597) but more characters hold two (7 / 10 / 15 → 28 / 13 / 27).
+
+Beside it:
+
+- Best − Standard after the fix: +0.071 [+0.024, +0.143] (row 9: +0.057
+  [+0.009, +0.126]).
+- The oracle's share of the gap after the fix: 0.862 [0.818, 0.919] against
+  Standard, 0.843 [0.788, 0.905] against Best. What it still lacks to 1 is
+  mostly two found heads of one figure in a frame: real doubles (copies of a
+  character, mirrors, opening artwork), which no rule here should join.
+- Fast Scan uses the same rule. One episode a franchise, before → after: F
+  0.398 → 0.428, 0.513 → 0.579, 0.531 → 0.513 (each interval spans 0);
+  precision 0.875 → 0.872, 0.872 → 0.871, 0.858 → 0.830; doubles 92 → 42, 71
+  → 10, 61 → 24; 0.3 %, 1.2 % and 1.2 % of a figure's frames lose their track.
+- The labels still hold a row for every box taken away, so "labelled faces in
+  a track" falls from 1.000 to 0.937 / 0.970 / 0.953 by construction; of the
+  faces in a track, as many are on their character as before (Standard 0.809 →
+  0.805, Best 0.776 → 0.812, macro).
+- Macro clip precision: Standard −0.018 [−0.040, +0.001], Best −0.001
+  [−0.016, +0.014]; clip recall 0.441 → 0.506 and 0.523 → 0.574.
+
+Not verified: any title outside these three (the labels of the title the bars
+were set on are no longer on disk; test and reserve episodes were not
+touched); the app itself (a project analysed again under `+anime3`); pass
+times (other jobs shared the card).

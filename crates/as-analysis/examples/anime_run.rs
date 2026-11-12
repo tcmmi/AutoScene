@@ -19,7 +19,9 @@
 //! batch (32).
 //! `STRIDE=<n>`, `DET_THRESHOLD=<score>`, `PERSON_THRESHOLD=<score>`,
 //! `NORMS=<floor>,<full>`, `MIN_TRACK_Q=<q>`, `CROP_SCALE=<k>`,
-//! `PERSON_HEAD=<share>`, `UNION_IOU=<iou>` and `UNION_COVER=<share>` override
+//! `PERSON_HEAD=<share>`, `UNION_IOU=<iou>`, `UNION_COVER=<share>` and
+//! `UNION_REACH=<head heights>` (`-1000`: no found head counts as a person's
+//! own, the pass as it was before) override
 //! `Params::anime()`.
 //! `FAST=1` runs it with Fast Scan (`as_analysis::fast`, its frames
 //! decoded on the GPU where it can, `DECODER=cpu` in software; detectors one
@@ -100,6 +102,9 @@ fn main() {
     }
     if let Ok(v) = std::env::var("UNION_COVER") {
         params.union_cover = v.parse().expect("UNION_COVER=<share>");
+    }
+    if let Ok(v) = std::env::var("UNION_REACH") {
+        params.union_reach = v.parse().expect("UNION_REACH=<head heights>");
     }
     let model = |var: &str, default: &str| std::env::var(var).map_or_else(|_| models.join(default), PathBuf::from);
     let head_model = model("HEAD", "anime_head_detection/head_detect_v2.0_s/model.onnx");

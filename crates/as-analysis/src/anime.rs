@@ -15,7 +15,8 @@
 //! person detector (`anime_person_detection`) may run as a second source at
 //! a bigger input: the head a person box implies ([`person_head`]) is added
 //! where the head detector saw none ([`union_heads`]) — someone standing there
-//! means a head the head model missed more often than none at all.
+//! means a head the head model missed more often than none at all. A person
+//! whose own head was found adds none: one figure is one head.
 //!
 //! Chunks and sampling follow [`crate::faces`]: chunks are made of whole
 //! shots (tracks never cross a cut), samples sit on absolute multiples of
@@ -81,9 +82,16 @@ pub struct Params {
     /// So does one sharing at least this share of the smaller box's area
     /// with a kept head, the smaller one centred across the other: a
     /// person's top is wider than the head the head detector boxed, so the
-    /// two meet at a low IoU though they are one head. Another figure's head
-    /// off to the side of the top keeps the person's own.
+    /// two meet at a low IoU though they are one head (a head off to the
+    /// side of the top is not held by it).
     pub union_cover: f32,
+    /// A found head in a person box whose top lies within this many of its
+    /// own heights of the box's top is that person's head, and the person
+    /// implies no second one ([`union_heads`]). In a close-up the head
+    /// fills far more of the person box than its top `person_head`, and a
+    /// figure reaching out or leaning has its head off to one side of the
+    /// box; a head further down is someone in front of the figure.
+    pub union_reach: f32,
     /// Thumbnail side and how much context around the head box it shows.
     pub thumb_size: usize,
     pub thumb_context: f32,
@@ -117,6 +125,7 @@ impl Params {
             person_head: 0.35,
             union_iou: 0.3,
             union_cover: 0.5,
+            union_reach: 1.0,
             thumb_size: 160,
             thumb_context: 1.7,
             norm_floor: 200.0,
@@ -219,9 +228,8 @@ impl Finder for FastAnime<'_> {
             Some(d) => d.detect_many(&[rgb], p.person_threshold)?.pop().unwrap_or_default(),
             None => Vec::new(),
         };
-        Ok(union_heads(heads, &persons, p.person_head, p.union_iou, p.union_cover)
+        Ok(union_heads(heads, &persons, h, p)
             .into_iter()
-            .filter(|d| (d.bbox[3] - d.bbox[1]) / h as f32 >= p.min_height)
             .map(|d| Spot { bbox: d.bbox, score: d.score, crop: head_crop(rgb, w, h, d.bbox, p.crop_scale) })
             .collect())
     }
@@ -257,25 +265,62 @@ pub fn person_head(bbox: [f32; 4], share: f32) -> [f32; 4] {
     [bbox[0], bbox[1], bbox[2], bbox[1] + (bbox[3] - bbox[1]) * share]
 }
 
-/// The heads of one sample: the head detector's own, plus the implied head
-/// of each person box ([`person_head`]) none of them covers. The person
-/// detector looks at a bigger picture and catches heads the head detector
-/// misses, but where both find the same head only the head box counts — an
-/// implied head overlapping a kept one at `max_iou` (IoU) or more, or
-/// holding it (or held by it) as [`one_head`] reads `max_cover`, counts as
-/// already found, by a real detection or by a person before it. A box too
-/// small to hold a head adds nothing.
-pub fn union_heads(mut heads: Vec<Det>, persons: &[Det], head_share: f32, max_iou: f32, max_cover: f32) -> Vec<Det> {
-    for p in persons {
-        let head = person_head(p.bbox, head_share);
+/// The heads of one sample of a frame `frame_height` pixels high: the head
+/// detector's own, plus the implied head of each person box
+/// ([`person_head`]) that has none of them, less those under
+/// `Params::min_height`. The person detector looks at a bigger picture and
+/// catches heads the head detector misses, but a figure whose head was
+/// found is that one head: a second box on it becomes a second track in the
+/// same frames, which grouping reads as a second person. So a person adds
+/// nothing
+/// - when a found head sits on it ([`sits_on`]) — one big enough to be
+///   kept: a head about to be dropped as too small stands for no one — or
+/// - when its implied head overlaps another at `union_iou` (IoU) or more,
+///   or holds it (or is held by it) as [`one_head`] reads `union_cover`:
+///   a found head, or the implied head of a person before it, added or not
+///   (two boxes on one figure imply one head, whichever of them the found
+///   head sits on).
+///
+/// A box too small to hold a head adds nothing either. A found head counts
+/// for every person it sits on: where two figures' boxes overlap that far,
+/// nothing tells whose head it is.
+pub fn union_heads(mut heads: Vec<Det>, persons: &[Det], frame_height: usize, p: &Params) -> Vec<Det> {
+    let least = p.min_height * frame_height as f32;
+    let tall = |d: &Det| d.bbox[3] - d.bbox[1] >= least;
+    let found = heads.len();
+    // The implied heads of people whose own head was found: not heads to
+    // add, but where a head is.
+    let mut taken: Vec<[f32; 4]> = Vec::new();
+    for person in persons {
+        let head = person_head(person.bbox, p.person_head);
         if head[2] - head[0] < 1.0 || head[3] - head[1] < 1.0 {
             continue;
         }
-        if heads.iter().all(|h| iou(&h.bbox, &head) < max_iou && !one_head(&h.bbox, &head, max_cover)) {
-            heads.push(Det { bbox: head, score: p.score });
+        if heads[..found].iter().any(|h| tall(h) && sits_on(&h.bbox, &person.bbox, p)) {
+            taken.push(head);
+            continue;
+        }
+        let covers = |b: &[f32; 4]| iou(b, &head) >= p.union_iou || one_head(b, &head, p.union_cover);
+        if !heads.iter().any(|h| covers(&h.bbox)) && !taken.iter().any(covers) {
+            heads.push(Det { bbox: head, score: person.score });
         }
     }
+    heads.retain(tall);
     heads
+}
+
+/// Whether a found head is where `person`'s own head would be: its centre
+/// inside the person box, its top at most `union_reach` head heights below
+/// the box's top, and the head no wider than the person (a quarter more is
+/// let through: hair spills over a box drawn round a body).
+fn sits_on(head: &[f32; 4], person: &[f32; 4], p: &Params) -> bool {
+    let (x, y) = ((head[0] + head[2]) / 2.0, (head[1] + head[3]) / 2.0);
+    x >= person[0]
+        && x <= person[2]
+        && y >= person[1]
+        && y <= person[3]
+        && head[1] - person[1] <= p.union_reach * (head[3] - head[1])
+        && head[2] - head[0] <= 1.25 * (person[2] - person[0])
 }
 
 /// Whether two boxes hold one head: at least `share` of the smaller one
@@ -612,11 +657,7 @@ impl<C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, C> {
             sprite.paint(f, rgb, self.size);
         }
         let mut found = Vec::new();
-        for d in union_heads(heads, persons, p.person_head, p.union_iou, p.union_cover) {
-            let height = (d.bbox[3] - d.bbox[1]) / h as f32;
-            if height < p.min_height {
-                continue;
-            }
+        for d in union_heads(heads, persons, h, p) {
             let thumb = image::face_thumb(rgb, w, h, d.bbox, p.thumb_context, p.thumb_size);
             found.push(Found {
                 det: FaceDet {
@@ -947,33 +988,130 @@ mod tests {
         let p = Params::anime();
         let persons = [Det { bbox: [10.0, 20.0, 50.0, 220.0], score: 0.7 }];
         // The head detector silent there: the implied head joins the found ones.
-        let out = union_heads(vec![head(200.0, 30.0, 60.0, 0.9)], &persons, p.person_head, p.union_iou, p.union_cover);
+        let out = union_heads(vec![head(200.0, 30.0, 60.0, 0.9)], &persons, 720, &p);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].bbox, [200.0, 30.0, 260.0, 90.0]);
         assert_eq!(out[1].bbox, [10.0, 20.0, 50.0, 90.0]);
         assert_eq!(out[1].score, 0.7);
         // Found already: the person adds nothing.
         let seen = vec![Det { bbox: [12.0, 22.0, 52.0, 92.0], score: 0.8 }];
-        assert_eq!(union_heads(seen, &persons, p.person_head, p.union_iou, p.union_cover).len(), 1);
+        assert_eq!(union_heads(seen, &persons, 720, &p).len(), 1);
     }
 
     #[test]
-    fn a_person_whose_top_holds_a_found_head_adds_nothing() {
+    fn a_person_whose_head_was_found_adds_nothing() {
         let p = Params::anime();
-        // A close-up: the person box spans the frame, its top is far wider
-        // than the head inside it (IoU 0.21, the head wholly within).
-        let persons = [Det { bbox: [100.0, 0.0, 1100.0, 720.0], score: 0.8 }];
-        let found = vec![head(450.0, 20.0, 230.0, 0.9)];
-        assert!(iou(&found[0].bbox, &person_head(persons[0].bbox, p.person_head)) < p.union_iou);
-        assert_eq!(union_heads(found.clone(), &persons, p.person_head, p.union_iou, p.union_cover), found);
-        // A head box bigger than the person's top: the top lies within it.
+        let implied = |person: &Det| person_head(person.bbox, p.person_head);
+        // Neither of the overlap rules takes the two boxes for one head.
+        let apart = |found: &Det, person: &Det| {
+            iou(&found.bbox, &implied(person)) < p.union_iou && !one_head(&found.bbox, &implied(person), p.union_cover)
+        };
+        // A close-up: the person box spans the frame and the head fills
+        // its middle, reaching far below the top the person implies a head
+        // at — the two boxes barely meet, yet they are one figure.
+        let close = [Det { bbox: [100.0, 0.0, 1100.0, 720.0], score: 0.8 }];
+        let found = vec![head(380.0, 150.0, 420.0, 0.9)];
+        assert!(apart(&found[0], &close[0]));
+        assert_eq!(union_heads(found.clone(), &close, 720, &p), found);
+        // A figure reaching out: its head sits at one side of its box.
+        let reaching = [Det { bbox: [100.0, 100.0, 500.0, 700.0], score: 0.8 }];
+        let found = vec![head(380.0, 120.0, 100.0, 0.9)];
+        assert!(apart(&found[0], &reaching[0]));
+        assert_eq!(union_heads(found.clone(), &reaching, 720, &p), found);
+        // A head far down the box is someone in front of the figure: the
+        // figure's own head, which the head detector missed, still joins.
+        let front = vec![head(250.0, 480.0, 90.0, 0.9)];
+        let out = union_heads(front, &close, 720, &p);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[1].bbox, implied(&close[0]));
+    }
+
+    #[test]
+    fn a_head_is_a_persons_down_to_its_own_height_below_the_top() {
+        let p = Params::anime();
+        let persons = [Det { bbox: [0.0, 0.0, 400.0, 800.0], score: 0.8 }];
+        // Off to the side, so that only where it sits decides.
+        let at = |top: f32| vec![Det { bbox: [300.0, top, 400.0, top + 100.0], score: 0.9 }];
+        assert!(!one_head(&at(100.0)[0].bbox, &person_head(persons[0].bbox, p.person_head), p.union_cover));
+        assert_eq!(union_heads(at(100.0), &persons, 800, &p).len(), 1);
+        assert_eq!(union_heads(at(101.0), &persons, 800, &p).len(), 2);
+    }
+
+    #[test]
+    fn two_boxes_on_one_figure_imply_no_head_beside_the_found_one() {
+        let p = Params::anime();
+        // The close-up again, its figure boxed twice: whole, and from the
+        // shoulders down. The head sits on both.
+        let boxed_twice = [
+            Det { bbox: [100.0, 0.0, 1100.0, 720.0], score: 0.8 },
+            Det { bbox: [300.0, 150.0, 900.0, 720.0], score: 0.7 },
+        ];
+        let found = vec![head(380.0, 150.0, 420.0, 0.9)];
+        assert_eq!(union_heads(found.clone(), &boxed_twice, 720, &p), found);
+        // A head on a wide box, and two narrow boxes inside it to either
+        // side of the head, which sits on neither: their implied heads lie
+        // in the wide box's, where a head already is.
+        let (wide, left, right) = (
+            Det { bbox: [0.0, 0.0, 1000.0, 720.0], score: 0.9 },
+            Det { bbox: [200.0, 20.0, 480.0, 720.0], score: 0.8 },
+            Det { bbox: [520.0, 20.0, 800.0, 720.0], score: 0.7 },
+        );
+        let found = vec![Det { bbox: [350.0, 120.0, 650.0, 520.0], score: 0.9 }];
+        assert!(!sits_on(&found[0].bbox, &left.bbox, &p) && !sits_on(&found[0].bbox, &right.bbox, &p));
+        assert_eq!(union_heads(found.clone(), &[wide, left, right], 720, &p), found);
+    }
+
+    #[test]
+    fn where_two_figures_overlap_a_head_on_both_counts_for_both() {
+        let p = Params::anime();
+        let (a, b) = (
+            Det { bbox: [100.0, 100.0, 320.0, 700.0], score: 0.9 },
+            Det { bbox: [235.0, 140.0, 455.0, 700.0], score: 0.8 },
+        );
+        // The head of `a`, its centre inside both boxes: nothing tells
+        // whose it is, and `b` — whose head was missed — implies none.
+        let found = vec![Det { bbox: [200.0, 110.0, 290.0, 200.0], score: 0.9 }];
+        assert!(sits_on(&found[0].bbox, &a.bbox, &p) && sits_on(&found[0].bbox, &b.bbox, &p));
+        assert_eq!(union_heads(found.clone(), &[a, b], 720, &p), found);
+        // A step further apart the head is on `a` alone, and `b` implies its own.
+        let b = Det { bbox: [250.0, 140.0, 470.0, 700.0], score: 0.8 };
+        assert!(!sits_on(&found[0].bbox, &b.bbox, &p));
+        let out = union_heads(found, &[a, b], 720, &p);
+        assert_eq!(out.len(), 2);
+        assert_eq!((out[1].bbox, out[1].score), (person_head(b.bbox, p.person_head), 0.8));
+    }
+
+    #[test]
+    fn a_found_head_beside_its_person_box_still_covers_the_implied_one() {
+        let p = Params::anime();
+        // The head's centre lies outside the person box (so it sits on no
+        // one), but it overlaps the implied head enough to be it.
+        let persons = [Det { bbox: [10.0, 20.0, 50.0, 220.0], score: 0.7 }];
+        let found = vec![Det { bbox: [28.0, 22.0, 78.0, 92.0], score: 0.8 }];
+        assert!(!sits_on(&found[0].bbox, &persons[0].bbox, &p));
+        assert!(iou(&found[0].bbox, &person_head(persons[0].bbox, p.person_head)) >= p.union_iou);
+        assert_eq!(union_heads(found.clone(), &persons, 720, &p), found);
+        // A head box far bigger than the person box is no head of that
+        // person, but the person's top lies within it: one head.
         let small = [Det { bbox: [500.0, 40.0, 600.0, 240.0], score: 0.8 }];
         let big = vec![head(420.0, 0.0, 300.0, 0.9)];
-        assert_eq!(union_heads(big.clone(), &small, p.person_head, p.union_iou, p.union_cover), big);
-        // Someone else's head off to the side of the person's top: the
-        // person's own head (missed by the head detector) still joins.
-        let aside = vec![head(120.0, 60.0, 120.0, 0.9)];
-        assert_eq!(union_heads(aside, &persons, p.person_head, p.union_iou, p.union_cover).len(), 2);
+        assert!(!sits_on(&big[0].bbox, &small[0].bbox, &p));
+        assert_eq!(union_heads(big.clone(), &small, 720, &p), big);
+    }
+
+    #[test]
+    fn a_head_too_small_to_keep_stands_for_no_one() {
+        let p = Params::anime();
+        // 25 pixels of 720: under `min_height`. It sits on the person, off
+        // to one side; kept, it would be the person's head.
+        let persons = [Det { bbox: [400.0, 100.0, 560.0, 600.0], score: 0.7 }];
+        let tiny = vec![Det { bbox: [520.0, 100.0, 545.0, 125.0], score: 0.9 }];
+        assert!(sits_on(&tiny[0].bbox, &persons[0].bbox, &p));
+        let out = union_heads(tiny.clone(), &persons, 720, &p);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].bbox, person_head(persons[0].bbox, p.person_head));
+        // In a frame it is big enough for, it is that head.
+        assert_eq!(union_heads(tiny.clone(), &persons, 600, &p), tiny);
     }
 
     #[test]
@@ -982,7 +1120,7 @@ mod tests {
         // Two overlapping person boxes whose implied heads are one.
         let persons =
             [Det { bbox: [10.0, 20.0, 50.0, 220.0], score: 0.9 }, Det { bbox: [12.0, 22.0, 52.0, 225.0], score: 0.8 }];
-        let out = union_heads(Vec::new(), &persons, p.person_head, p.union_iou, p.union_cover);
+        let out = union_heads(Vec::new(), &persons, 720, &p);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].score, 0.9);
     }
@@ -991,7 +1129,7 @@ mod tests {
     fn a_person_box_too_small_for_a_head_adds_none() {
         let p = Params::anime();
         let squeezed = [Det { bbox: [10.0, 20.0, 10.0, 20.0], score: 0.9 }];
-        assert!(union_heads(Vec::new(), &squeezed, p.person_head, p.union_iou, p.union_cover).is_empty());
+        assert!(union_heads(Vec::new(), &squeezed, 720, &p).is_empty());
     }
 
     #[test]
@@ -1014,10 +1152,11 @@ mod tests {
                 p.person_head,
                 p.union_iou,
                 p.union_cover,
+                p.union_reach,
                 p.norm_floor,
                 p.norm_full
             ),
-            (6, 0.5, 1.9, 0.35, 0.3, 0.5, 200.0, 400.0)
+            (6, 0.5, 1.9, 0.35, 0.3, 0.5, 1.0, 200.0, 400.0)
         );
     }
 }

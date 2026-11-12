@@ -159,8 +159,9 @@ Candidates are loaded from fixed Hugging Face commits (paths and SHA-256 in
 
 Code-complete (Phase E/F): head/person YOLO and CCIP wrappers with the CPU
 golden self-check, the anime pass, 768-d tracking, `Params::anime()`, engine
-anime jobs and `Embed`, the cast arms (`faces_key` `+anime2` since the
-person-box union was fixed), and AniList suggestions behind the opt-in.
+anime jobs and `Embed`, the cast arms (`faces_key` `+anime3`: the person-box
+union was fixed twice, DECISIONS #5 and #12), and AniList suggestions behind
+the opt-in.
 
 The `AUTOSCENE_ANIME_FACES` switch is gone (owner's decision, 2026-10-31):
 every project made as anime finds its characters with this pass, in every

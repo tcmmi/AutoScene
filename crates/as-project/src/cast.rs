@@ -184,8 +184,11 @@ const SCALES: &str = "+scales";
 
 /// The anime pass's version, recorded after the CCIP id in [`faces_key`]:
 /// bump the number whenever the pass's output changes (new models, new
-/// crops), so faces found by the older pass are found again.
-const ANIME: &str = "+anime2";
+/// crops), so faces found by the older pass are found again. Since 2 a
+/// person box whose top holds a found head adds no second one; since 3
+/// none does on which a found head sits, however little the two boxes
+/// meet (`as_analysis::anime::union_heads`).
+const ANIME: &str = "+anime3";
 
 /// Anime whose heads Fast Scan looked for, recorded after [`ANIME`] in
 /// [`faces_key`] (everywhere else, Fast Scan's own embedder says so).
@@ -264,13 +267,23 @@ pub fn face_models(embedder: &str) -> &'static [&'static str] {
     }
 }
 
-/// The embedder of a [`faces_key`].
+/// The embedder of a [`faces_key`] — of any version of a pass: faces an
+/// older pass found (`+anime2`, `+fast2`) are that embedder's too, and stay
+/// so until the pass of today has found them again.
 pub(crate) fn embedder_of(key: &str) -> &str {
     let mut key = key;
-    while let Some(rest) = [FAST, SCALES, ANIME, FAST_FACES].iter().find_map(|suffix| key.strip_suffix(suffix)) {
+    while let Some(rest) = key.strip_suffix(SCALES).or_else(|| versioned(key, ANIME)).or_else(|| versioned(key, FAST)) {
         key = rest;
     }
     key
+}
+
+/// `key` without a trailing `pass` of any version: the pass's name (its
+/// constant without the number) followed by digits, or by none.
+fn versioned<'a>(key: &'a str, pass: &str) -> Option<&'a str> {
+    let name = pass.trim_end_matches(|c: char| c.is_ascii_digit());
+    let at = key.rfind(name)?;
+    key[at + name.len()..].chars().all(|c| c.is_ascii_digit()).then(|| &key[..at])
 }
 
 /// Whether the faces of a [`faces_key`] were looked for in the few frames
@@ -2527,6 +2540,18 @@ pub(crate) mod tests {
                 && found_fast(&faces_key(sface, true, true))
         );
         assert!(!found_fast(&faces_key(MODEL, true, true)));
+        // Faces an older pass found are still their embedder's: anime heads
+        // on the anime grid, Fast Scan's faces on its own.
+        for old in ["+anime1", "+anime2", "+anime2+fast"] {
+            assert_eq!(embedder_of(&format!("{ccip}{old}")), ccip, "{old}");
+        }
+        for old in ["+fast2", "+fast2+scales", "+fast12"] {
+            assert_eq!(embedder_of(&format!("{sface}{old}")), sface, "{old}");
+        }
+        assert!(found_fast(&format!("{ccip}+anime2+fast")) && !found_fast(&format!("{ccip}+anime2")));
+        // Only a pass's own name and number go: an embedder's id stays whole.
+        assert_eq!(embedder_of("anime-embedder"), "anime-embedder");
+        assert_eq!(embedder_of("embedder+fastest"), "embedder+fastest");
     }
 
     #[test]

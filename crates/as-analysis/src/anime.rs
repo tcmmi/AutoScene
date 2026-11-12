@@ -230,6 +230,10 @@ impl Finder for FastAnime<'_> {
         Ok(self.anime.ccip.embed(crops)?.into_iter().map(|e| (e.v, e.norm)).collect())
     }
 
+    fn batch(&self) -> usize {
+        self.anime.ccip.batch()
+    }
+
     fn quality(&self, _: &FastParams, norm: f32, height: f32, _: f32) -> f32 {
         self.params.quality(norm, height)
     }

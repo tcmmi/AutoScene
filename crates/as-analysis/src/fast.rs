@@ -35,10 +35,25 @@
 //! characters where a photo-trained face model sees nobody. Fast Scan picks
 //! the frames the same way for both.
 //!
+//! The faces of a look wait for the embedder on a pile that runs across
+//! shots. It is handed whole runs only ([`Finder::batch`]); what is left
+//! when a chunk closes runs then. A shot's few faces rarely fill a run, and
+//! an embedder computes the empty rows of a padded one like the others:
+//! embedded shot by shot, SFace took 722 runs of 16 for the 4,738 faces of
+//! Breaking Bad's pilot (59% of their rows empty) and CCIP 675 runs of 4
+//! for the 2,175 heads of an anime episode (19% empty); from the pile it is
+//! 313 and 548 runs. A face's embedding depends neither on its place in a
+//! run nor on what shares it (measured on DirectML and on a processor,
+//! 2026-11-12), so the tracks are the same to the byte, and the pass takes
+//! 46 s instead of 49 s for the pilot and 180 s instead of 201 s for the
+//! anime episode on an RTX 3060 Ti, 142 s instead of 155 s for the pilot on
+//! a processor alone (Ryzen 7 5800X3D; runs taken in turn).
+//!
 //! Like the full pass ([`crate::faces`]), chunks are whole shots and the
 //! candidates sit on an absolute grid of frames ([`FastParams::grid`]): what
 //! a shot looks at depends on the shot alone, so a resumed run produces the
-//! same tracks as an uninterrupted one on the same device and runtime.
+//! same tracks as an uninterrupted one on the same device and runtime — and,
+//! the pile being empty wherever a chunk ends, makes the very same runs.
 //! Looking at this few frames, the pass is as fast as its frames are
 //! decoded: like Scener, it has an NVIDIA GPU decode them where the analysis
 //! runs on one ([`FastParams::decoder`]).
@@ -525,35 +540,13 @@ struct Kept {
     rgb: Vec<u8>,
 }
 
-/// A face found in a look: its crop until it is embedded, then its
-/// embedding and norm.
+/// A face found in a look. Its crop waits in the pass's pile for the
+/// embedder; `at` is its place among the faces of the pass in the order
+/// they were found, which is the order they are embedded in.
 struct Found {
     det: FaceDet,
-    crop: Vec<u8>,
     thumb: Vec<u8>,
-    embedding: Option<(Vec<f32>, f32)>,
-}
-
-/// Crops a shot keeps waiting before they are embedded mid-shot: an anime
-/// head's CCIP crop is 442 KB, and a long take (or footage no cut was found
-/// in) can hold hundreds of looks. Shots with fewer are embedded whole at
-/// their end, in frame order.
-const EMBED_AHEAD: usize = 64;
-
-/// Embed the faces of `looks` still waiting, in order; their crops go.
-fn embed_found(models: &mut impl Finder, looks: &mut [(FrameIdx, Vec<Found>)]) -> Result<(), AnalysisError> {
-    let mut waiting: Vec<&mut Found> =
-        looks.iter_mut().flat_map(|(_, found)| found.iter_mut()).filter(|x| x.embedding.is_none()).collect();
-    if waiting.is_empty() {
-        return Ok(());
-    }
-    let crops: Vec<&[u8]> = waiting.iter().map(|x| x.crop.as_slice()).collect();
-    let embeddings = models.embed(&crops)?;
-    for (x, e) in waiting.iter_mut().zip(embeddings) {
-        x.embedding = Some(e);
-        x.crop = Vec::new();
-    }
-    Ok(())
+    at: u64,
 }
 
 /// The shot being looked at.
@@ -566,9 +559,16 @@ struct Shot {
     kept: VecDeque<Kept>,
     previous: Option<Vec<f32>>,
     looks: Vec<(FrameIdx, Vec<Found>)>,
-    /// Crops of `looks` not yet embedded.
-    waiting: usize,
     sprite: Option<SpriteCanvas>,
+}
+
+/// A shot whose frames are past: its looks (in frame order) wait until the
+/// last of its faces is embedded, then it is tracked.
+struct Seen {
+    range: FrameRange,
+    looks: Vec<(FrameIdx, Vec<Found>)>,
+    /// Faces found in the pass up to its end.
+    until: u64,
 }
 
 /// A face (or head) a [`Finder`] found in a look: its box in the frame's
@@ -589,6 +589,13 @@ pub trait Finder {
     /// Embed crops of [`Spot`]s: each one's vector as tracks keep it, and
     /// its embedder's norm.
     fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<(Vec<f32>, f32)>, AnalysisError>;
+    /// Crops a run of the embedder holds. Fast Scan hands [`Finder::embed`]
+    /// whole runs while a chunk lasts, so that none is padded with empty
+    /// rows — an embedder computes those too. 1 unless the finder says
+    /// otherwise: any number is a whole run, and nothing waits.
+    fn batch(&self) -> usize {
+        1
+    }
     /// How much a face says about identity, 0..=1, from its norm, height
     /// (share of the frame's) and score.
     fn quality(&self, params: &FastParams, norm: f32, height: f32, score: f32) -> f32;
@@ -651,17 +658,27 @@ fn pooled(mut found: Vec<FaceBox>, max_iou: f32) -> Vec<FaceBox> {
 pub trait FaceEmbedder {
     /// Each crop's unit vector and the length the network gave it.
     fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<Embedding>, AnalysisError>;
+    /// Faces a run holds ([`Finder::batch`]).
+    fn batch(&self) -> usize;
 }
 
 impl FaceEmbedder for SFace {
     fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<Embedding>, AnalysisError> {
         Ok(SFace::embed(self, crops)?)
     }
+
+    fn batch(&self) -> usize {
+        SFace::batch(self)
+    }
 }
 
 impl FaceEmbedder for ArcFace {
     fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<Embedding>, AnalysisError> {
         Ok(ArcFace::embed(self, crops)?)
+    }
+
+    fn batch(&self) -> usize {
+        ArcFace::batch(self)
     }
 }
 
@@ -720,6 +737,10 @@ impl<D: Look, E: FaceEmbedder> Finder for FastModels<'_, D, E> {
             .collect())
     }
 
+    fn batch(&self) -> usize {
+        self.embedder.batch()
+    }
+
     fn quality(&self, p: &FastParams, norm: f32, height: f32, score: f32) -> f32 {
         p.quality(norm, height, score)
     }
@@ -747,18 +768,68 @@ struct Pass<'a, F, C> {
     on_chunk: C,
     /// Looks taken, for the log.
     looked: usize,
+    /// Faces found so far: [`Found::at`] of the next one.
+    found: u64,
+    /// Crops not yet embedded, oldest first: fewer than a run of the
+    /// embedder between looks, and none between chunks.
+    pile: VecDeque<Vec<u8>>,
+    /// Embeddings no shot has taken yet, oldest first; the first is that of
+    /// face `embedded_from`.
+    embedded: VecDeque<(Vec<f32>, f32)>,
+    embedded_from: u64,
+    /// Shots past whose faces wait for their embeddings, oldest first.
+    seen: VecDeque<Seen>,
 }
 
-impl<F: Finder, C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, F, C> {
+impl<'a, F: Finder, C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'a, F, C> {
+    /// A pass over `size` frames at `fps` in `shots` from frame `resume` on.
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        params: &'a FastParams,
+        models: F,
+        size: (usize, usize),
+        fps: f64,
+        shots: &'a [FrameRange],
+        resume: FrameIdx,
+        chunk: u32,
+        on_chunk: C,
+    ) -> Self {
+        let shots = &shots[shots.partition_point(|s| s.end <= resume)..];
+        debug_assert!(shots.first().is_none_or(|s| s.start >= resume), "resume points are shot starts");
+        Self {
+            params,
+            tracker: models.tracker(params, fps),
+            models,
+            size,
+            grid: params.grid(fps),
+            steps: params.pool_steps(fps),
+            shots,
+            next_shot: 0,
+            current: None,
+            chunk,
+            chunk_start: resume,
+            chunk_goal: resume + chunk,
+            tracks: Vec::new(),
+            sprites: Vec::new(),
+            on_chunk,
+            looked: 0,
+            found: 0,
+            pile: VecDeque::new(),
+            embedded: VecDeque::new(),
+            embedded_from: 0,
+            seen: VecDeque::new(),
+        }
+    }
+
     /// Take in grid frame `f`: open and close shots and chunks up to it,
     /// paint it into its shot's sprite, and look at it when its shot wants.
     fn take(&mut self, f: FrameIdx, rgb: &[u8]) -> Result<(), AnalysisError> {
         if self.current.as_ref().is_some_and(|c| f >= c.range.end) {
-            self.finish_shot()?;
+            self.finish_shot();
         }
         while self.next_shot < self.shots.len() && self.shots[self.next_shot].start <= f {
             let s = self.shots[self.next_shot];
-            self.finish_shot()?;
+            self.finish_shot();
             if s.start >= self.chunk_goal {
                 self.close_chunk(s.start)?;
             }
@@ -773,7 +844,6 @@ impl<F: Finder, C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, F, C>
                     kept: VecDeque::new(),
                     previous: None,
                     looks: Vec::new(),
-                    waiting: 0,
                     sprite: SpriteCanvas::new(s, self.grid, p.sprite_cells, self.size, p.sprite_width),
                 });
             }
@@ -817,18 +887,18 @@ impl<F: Finder, C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, F, C>
         Ok(())
     }
 
-    /// Find the faces of frame `f` of the current shot; keep their crops and
-    /// thumbnails for embedding at the shot's end (or once [`EMBED_AHEAD`]
-    /// crops wait).
+    /// Find the faces of frame `f` of the current shot; keep their
+    /// thumbnails, put their crops on the pile, and embed what whole runs
+    /// the pile now holds.
     fn look_at(&mut self, f: FrameIdx, rgb: &[u8]) -> Result<Summary, AnalysisError> {
         let (w, h) = self.size;
         let p = self.params;
         let faces = self.models.find(rgb, p)?;
         self.looked += 1;
         let summary = Summary::of(&faces, (w, h));
-        let found = faces
-            .into_iter()
-            .map(|b| Found {
+        let mut found = Vec::with_capacity(faces.len());
+        for b in faces {
+            found.push(Found {
                 det: FaceDet {
                     frame: f,
                     bbox: [b.bbox[0] / w as f32, b.bbox[1] / h as f32, b.bbox[2] / w as f32, b.bbox[3] / h as f32],
@@ -836,57 +906,91 @@ impl<F: Finder, C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, F, C>
                     norm: 0.0,
                     quality: 0.0,
                 },
-                crop: b.crop,
                 thumb: image::jpeg(
                     &image::face_thumb(rgb, w, h, b.bbox, p.thumb_context, p.thumb_size),
                     p.thumb_size,
                     p.thumb_size,
                     85,
                 ),
-                embedding: None,
-            })
-            .collect::<Vec<_>>();
-        let cur = self.current.as_mut().expect("a shot is open");
-        cur.waiting += found.len();
-        cur.looks.push((f, found));
-        if cur.waiting >= EMBED_AHEAD {
-            embed_found(&mut self.models, &mut cur.looks)?;
-            cur.waiting = 0;
+                at: self.found,
+            });
+            self.found += 1;
+            self.pile.push_back(b.crop);
         }
+        self.current.as_mut().expect("a shot is open").looks.push((f, found));
+        self.embed_pile(false)?;
         Ok(summary)
     }
 
-    /// Embed and track the faces of the current shot, finish its sprite.
-    fn finish_shot(&mut self) -> Result<(), AnalysisError> {
-        let Some(mut shot) = self.current.take() else { return Ok(()) };
+    /// Embed the whole runs the pile holds, oldest crop first — with `rest`,
+    /// what is left over too — and track the shots that waited for them.
+    fn embed_pile(&mut self, rest: bool) -> Result<(), AnalysisError> {
+        let run = self.models.batch().max(1);
+        let n = if rest { self.pile.len() } else { self.pile.len() / run * run };
+        if n > 0 {
+            let crops: Vec<Vec<u8>> = self.pile.drain(..n).collect();
+            let crops: Vec<&[u8]> = crops.iter().map(Vec::as_slice).collect();
+            let embeddings = self.models.embed(&crops)?;
+            if embeddings.len() != n {
+                // One too few would give every later face its neighbour's.
+                return Err(AnalysisError::Internal(format!("{} embeddings for {n} faces", embeddings.len())));
+            }
+            self.embedded.extend(embeddings);
+        }
+        self.track_seen();
+        Ok(())
+    }
+
+    /// Finish the current shot's sprite; its looks wait to be tracked until
+    /// the last of its faces is embedded.
+    fn finish_shot(&mut self) {
+        let Some(mut shot) = self.current.take() else { return };
         if let Some(sprite) = shot.sprite.take() {
             self.sprites.push(sprite.finish(self.params.sprite_quality));
         }
         shot.looks.sort_by_key(|(f, _)| *f);
-        embed_found(&mut self.models, &mut shot.looks)?;
-        let p = self.params;
-        let samples: Vec<(FrameIdx, Vec<Observation>)> = shot
-            .looks
-            .into_iter()
-            .map(|(f, found)| {
-                let obs = found
-                    .into_iter()
-                    .map(|x| {
-                        let (embedding, norm) = x.embedding.expect("embedded before tracking");
-                        let mut det = x.det;
-                        det.norm = norm;
-                        det.quality = self.models.quality(p, norm, det.height(), det.score);
-                        Observation { det, embedding, thumb: x.thumb }
-                    })
-                    .collect();
-                (f, obs)
-            })
-            .collect();
-        self.tracks.extend(track_shot(shot.range, samples, &self.tracker));
-        Ok(())
+        self.seen.push_back(Seen { range: shot.range, looks: shot.looks, until: self.found });
+        self.track_seen();
     }
 
+    /// Track the shots past whose faces are all embedded, oldest first, so
+    /// that a chunk's tracks stay in the order of its shots.
+    fn track_seen(&mut self) {
+        let p = self.params;
+        while self.seen.front().is_some_and(|s| s.until <= self.embedded_from + self.embedded.len() as u64) {
+            let shot = self.seen.pop_front().expect("one is there");
+            let from = self.embedded_from;
+            let samples: Vec<(FrameIdx, Vec<Observation>)> = shot
+                .looks
+                .into_iter()
+                .map(|(f, found)| {
+                    let obs = found
+                        .into_iter()
+                        .map(|x| {
+                            let (embedding, norm) = std::mem::take(&mut self.embedded[(x.at - from) as usize]);
+                            let mut det = x.det;
+                            det.norm = norm;
+                            det.quality = self.models.quality(p, norm, det.height(), det.score);
+                            Observation { det, embedding, thumb: x.thumb }
+                        })
+                        .collect();
+                    (f, obs)
+                })
+                .collect();
+            // Its faces' embeddings are taken: the next shot's come first.
+            self.embedded.drain(..(shot.until - from) as usize);
+            self.embedded_from = shot.until;
+            self.tracks.extend(track_shot(shot.range, samples, &self.tracker));
+        }
+    }
+
+    /// Hand out the chunk that ends at `end` (a shot start, or the end). What
+    /// is left of the pile runs first, in one padded run at most: a chunk's
+    /// tracks are whole when it goes, and the next chunk starts on an empty
+    /// pile, as a pass resumed there does.
     fn close_chunk(&mut self, end: FrameIdx) -> Result<(), AnalysisError> {
+        self.embed_pile(true)?;
+        debug_assert!(self.current.is_none() && self.seen.is_empty() && self.embedded.is_empty(), "no shot is open");
         (self.on_chunk)(FaceChunk {
             start: self.chunk_start,
             end,
@@ -899,6 +1003,13 @@ impl<F: Finder, C: FnMut(FaceChunk) -> Result<(), AnalysisError>> Pass<'_, F, C>
         self.chunk_start = end;
         self.chunk_goal = end + self.chunk;
         Ok(())
+    }
+
+    /// The last frame is in: finish the shot that is open and hand out the
+    /// last chunk, up to frame `n`.
+    fn end(&mut self, n: FrameIdx) -> Result<(), AnalysisError> {
+        self.finish_shot();
+        self.close_chunk(n)
     }
 }
 
@@ -935,27 +1046,8 @@ pub fn fast_face_tracks(
     }
     let fps = src.index.nominal_fps.to_f64();
     let grid = params.grid(fps);
-    let shots = &shots[shots.partition_point(|s| s.end <= resume)..];
-    debug_assert!(shots.first().is_none_or(|s| s.start >= resume), "resume points are shot starts");
     let started = std::time::Instant::now();
-    let mut pass = Pass {
-        params,
-        tracker: models.tracker(params, fps),
-        models,
-        size,
-        grid,
-        steps: params.pool_steps(fps),
-        shots,
-        next_shot: 0,
-        current: None,
-        chunk,
-        chunk_start: resume,
-        chunk_goal: resume + chunk,
-        tracks: Vec::new(),
-        sprites: Vec::new(),
-        on_chunk,
-        looked: 0,
-    };
+    let mut pass = Pass::new(params, models, size, fps, shots, resume, chunk, on_chunk);
     let mut failure: Option<AnalysisError> = None;
     let first = resume - resume % grid;
     let decoded = (size.0 as u32, size.1 as u32);
@@ -985,8 +1077,7 @@ pub fn fast_face_tracks(
             "fast face pass decoded {delivered} samples from {first}, expected {expected}"
         ))));
     }
-    pass.finish_shot()?;
-    pass.close_chunk(n)?;
+    pass.end(n)?;
     tracing::debug!(looks = pass.looked, secs = started.elapsed().as_secs_f64(), "fast face pass done");
     progress(1.0);
     Ok(())
@@ -1174,6 +1265,192 @@ mod tests {
         for fps in [5.0, 9.0, 23.976, 25.0, 29.97, 50.0, 59.94] {
             let t = p.tracker(fps);
             assert_eq!(t.max_gap, p.max_steps() as u32 * p.pool_steps(fps), "{fps} fps");
+        }
+    }
+
+    /// The stage the pass itself is tried on: two minutes of 64×36 frames at
+    /// 24 fps, in chunks of 20 seconds.
+    const STAGE: (usize, usize) = (64, 36);
+    const STAGE_FRAMES: FrameIdx = 2880;
+    const STAGE_CHUNK: u32 = 480;
+
+    /// Its shots: 2 to 11 seconds long, back to back from the first second on.
+    fn stage_shots() -> Vec<FrameRange> {
+        let mut shots = Vec::new();
+        let (mut at, mut i) = (24, 0);
+        while at + 48 + i * 67 % 216 <= STAGE_FRAMES {
+            let len = 48 + i * 67 % 216;
+            shots.push(FrameRange::new(at, at + len));
+            (at, i) = (at + len, i + 1);
+        }
+        shots
+    }
+
+    /// Who is on it in frame `f`: nobody, one person or two, ten seconds
+    /// each — so some shots show no one and the cast changes inside others.
+    fn crowd(f: FrameIdx) -> u8 {
+        (f / 240 % 3) as u8
+    }
+
+    /// Frame `f` of the stage: grey, its number in its first bytes.
+    fn stage_frame(f: FrameIdx) -> Vec<u8> {
+        let mut rgb = vec![90u8; STAGE.0 * STAGE.1 * 3];
+        rgb[..4].copy_from_slice(&f.to_le_bytes());
+        rgb
+    }
+
+    /// The length the stage's embedder gives person `who` in frame `f`: no
+    /// two faces share one, so a face that got another's embedding shows.
+    fn stage_norm(who: u8, f: FrameIdx) -> f32 {
+        10.0 + f32::from(who) + f as f32 / 4096.0
+    }
+
+    /// The stage's finder: it finds the people of a frame side by side,
+    /// each crop naming its person and frame, and embeds a person as one
+    /// direction; a run of its embedder holds `batch` faces.
+    struct Staged {
+        batch: usize,
+        /// The faces (person, frame) of each call of `embed`.
+        runs: Vec<Vec<(u8, FrameIdx)>>,
+    }
+
+    impl Finder for Staged {
+        fn frame_size(&self) -> (usize, usize) {
+            STAGE
+        }
+
+        fn find(&mut self, rgb: &[u8], _: &FastParams) -> Result<Vec<Spot>, AnalysisError> {
+            let f = FrameIdx::from_le_bytes(rgb[..4].try_into().expect("four bytes"));
+            Ok((0..crowd(f))
+                .map(|who| {
+                    let x = 4.0 + 20.0 * f32::from(who);
+                    let crop = [&[who][..], &f.to_le_bytes()].concat();
+                    Spot { bbox: [x, 8.0, x + 16.0, 28.0], score: 0.9, crop }
+                })
+                .collect())
+        }
+
+        fn embed(&mut self, crops: &[&[u8]]) -> Result<Vec<(Vec<f32>, f32)>, AnalysisError> {
+            let faces: Vec<(u8, FrameIdx)> = crops
+                .iter()
+                .map(|c| (c[0], FrameIdx::from_le_bytes(c[1..5].try_into().expect("four bytes"))))
+                .collect();
+            let embeddings = faces
+                .iter()
+                .map(|&(who, f)| {
+                    let mut v = vec![0.0; DIM];
+                    v[usize::from(who)] = 1.0;
+                    (v, stage_norm(who, f))
+                })
+                .collect();
+            self.runs.push(faces);
+            Ok(embeddings)
+        }
+
+        fn batch(&self) -> usize {
+            self.batch
+        }
+
+        fn quality(&self, _: &FastParams, _: f32, _: f32, _: f32) -> f32 {
+            1.0
+        }
+
+        fn tracker(&self, p: &FastParams, fps: f64) -> TrackerParams {
+            p.tracker(fps)
+        }
+    }
+
+    type StageChunk = (FrameIdx, FrameIdx, Vec<FaceTrack>);
+
+    /// The pass over the stage from frame `resume` on, its embedder taking
+    /// `batch` faces a run: its chunks and the embedder's runs.
+    fn staged(batch: usize, resume: FrameIdx) -> (Vec<StageChunk>, Vec<Vec<(u8, FrameIdx)>>) {
+        let (p, shots) = (FastParams::default(), stage_shots());
+        let mut chunks: Vec<StageChunk> = Vec::new();
+        let on_chunk = |c: FaceChunk| {
+            chunks.push((c.start, c.end, c.tracks.to_vec()));
+            Ok(())
+        };
+        let models = Staged { batch, runs: Vec::new() };
+        let mut pass = Pass::new(&p, models, STAGE, 24.0, &shots, resume, STAGE_CHUNK, on_chunk);
+        let grid = p.grid(24.0);
+        for f in (resume.next_multiple_of(grid)..STAGE_FRAMES).step_by(grid as usize) {
+            pass.take(f, &stage_frame(f)).unwrap();
+        }
+        pass.end(STAGE_FRAMES).unwrap();
+        let runs = pass.models.runs;
+        (chunks, runs)
+    }
+
+    /// Every face of `chunks` in a track, each with the embedding that is
+    /// its own; how many there are.
+    fn own_embeddings(chunks: &[StageChunk]) -> usize {
+        let mut faces = 0;
+        for d in chunks.iter().flat_map(|c| &c.2).flat_map(|t| &t.dets) {
+            let who = if d.bbox[0] < 0.2 { 0 } else { 1 };
+            assert_eq!(d.norm, stage_norm(who, d.frame), "person {who} in frame {}", d.frame);
+            faces += 1;
+        }
+        faces
+    }
+
+    #[test]
+    fn faces_are_embedded_in_whole_runs_and_a_chunk_ends_on_what_is_left() {
+        let (chunks, runs) = staged(4, 0);
+        assert!(chunks.len() >= 4 && chunks.iter().map(|c| c.2.len()).sum::<usize>() >= 8, "{} chunks", chunks.len());
+        let faces: usize = runs.iter().map(Vec::len).sum();
+        assert!(faces >= 60, "{faces} faces");
+        assert_eq!(own_embeddings(&chunks), faces, "every face found is in a track");
+        // No run is empty or bigger than the embedder's; one short of it
+        // is the last of a chunk, and no chunk has two.
+        assert!(runs.iter().all(|r| (1..=4).contains(&r.len())));
+        let ends: Vec<FrameIdx> = chunks.iter().map(|c| c.1).collect();
+        let mut closed: Vec<FrameIdx> = Vec::new();
+        for (i, run) in runs.iter().enumerate().filter(|(_, r)| r.len() < 4) {
+            let last = run.iter().map(|x| x.1).max().expect("not empty");
+            let end = *ends.iter().find(|&&e| e > last).expect("a chunk holds it");
+            let next = runs.get(i + 1).map(|r| r.iter().map(|x| x.1).min().expect("not empty"));
+            assert!(next.is_none_or(|n| n >= end), "a short run before frame {end}, the next one from {next:?}");
+            closed.push(end);
+        }
+        assert!(!closed.is_empty() && closed.windows(2).all(|w| w[0] < w[1]), "{closed:?}");
+        // The cast changes inside shots, so looks were added back in time:
+        // faces are embedded in the order they were found, not by frame.
+        assert!(runs.concat().windows(2).any(|w| w[1].1 < w[0].1));
+    }
+
+    #[test]
+    fn tracks_are_the_same_whatever_a_run_holds() {
+        // A run of one: every look's faces are embedded as they are found.
+        let (alone, each) = staged(1, 0);
+        let faces = own_embeddings(&alone);
+        assert!(faces >= 60 && each.iter().all(|r| r.len() <= 2), "{faces} faces");
+        // Runs that fill across shots, and one no chunk ever fills.
+        for batch in [3, 4, 16, 1000] {
+            let (chunks, runs) = staged(batch, 0);
+            assert_eq!(own_embeddings(&chunks), faces, "runs of {batch}");
+            assert!(chunks == alone, "runs of {batch} give other tracks or chunks");
+            assert_eq!(runs.concat(), each.concat(), "runs of {batch}: the same faces in the same order");
+        }
+        let (_, never_full) = staged(1000, 0);
+        assert_eq!(
+            never_full.len(),
+            alone.iter().filter(|c| !c.2.is_empty()).count(),
+            "one run for each chunk with faces"
+        );
+    }
+
+    #[test]
+    fn a_resumed_pass_makes_the_runs_of_one_that_ran_through() {
+        let (whole, runs) = staged(4, 0);
+        for from in [whole[1].0, whole[3].0] {
+            let (rest, rest_runs) = staged(4, from);
+            let at = whole.iter().position(|c| c.0 == from).expect("a chunk's start");
+            assert!(rest == whole[at..], "resumed at {from}: other tracks or chunks");
+            // The same faces share each run: no chunk's faces wait for those
+            // of the one before or after.
+            let tail: Vec<_> = runs.iter().filter(|r| r[0].1 >= from).cloned().collect();
+            assert_eq!(rest_runs, tail, "resumed at {from}");
         }
     }
 }

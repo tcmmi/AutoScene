@@ -562,17 +562,18 @@ fn analysed_otherwise(jobs: &JobRunner, runs: &parking_lot::Mutex<AnalysisRuns>,
         || jobs.is_under_way(|j| j.kind == JobKind::Analyze && j.media_id == Some(media))
 }
 
-/// Whether an analysis of `media_id` has anything to do: a stage it runs
-/// isn't ready, or its faces are an older embedder's or another search's.
-/// One of an episode analysed already (as a folder found again queues)
-/// finds nothing to do.
+/// Whether an analysis of `media_id` has anything to do that plugins are
+/// told of: a stage of its shots or its cast isn't ready, or its faces are
+/// an older embedder's or another search's. One of an episode analysed
+/// already (as a folder found again queues) finds nothing to do, and one
+/// that only reads the scenes (the setting went on) changes neither the
+/// shots nor the cast: plugins aren't told every episode was analysed.
 fn analysis_due(project: &Project, media_id: MediaId) -> bool {
     let Ok(m) = project.media(media_id) else { return false };
     let ready = |s: StageState| s == StageState::Ready;
     !ready(m.shots)
         || !ready(m.faces)
         || (project.finds_bodies() && !ready(m.bodies))
-        || (project.finds_scenes() && !ready(m.scenes))
         || project.faces_by_other_model(project.face_embedder()).is_ok_and(|ids| ids.contains(&media_id))
 }
 

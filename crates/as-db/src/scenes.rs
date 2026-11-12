@@ -90,6 +90,23 @@ impl ProjectDb {
         })
     }
 
+    /// How many characters the cast shows (hidden ones left out) are to be
+    /// seen in the shots of a media, by a face the cast is sure of: the
+    /// shot's first frame and their number, for the shots that have any.
+    pub fn shot_shown(&self, id: MediaId) -> DbResult<Vec<(FrameIdx, u32)>> {
+        self.0.read(|c| {
+            let mut st = c.prepare(
+                "SELECT t.shot, COUNT(DISTINCT t.character_id) FROM tracks t
+                   JOIN characters ch ON ch.id = t.character_id
+                  WHERE t.media_id = ?1 AND t.not_face = 0 AND t.assign IN (?2, ?3) AND ch.hidden = 0
+                  GROUP BY t.shot ORDER BY t.shot",
+            )?;
+            let sure = [TrackAssign::Auto, TrackAssign::Pinned].map(enum_to_sql);
+            let rows = st.query_map(params![id.to_string(), sure[0], sure[1]], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+    }
+
     /// The sprites of a media's shots: the shot's first frame, the shot end
     /// its sprite was made for, and its cells.
     pub fn shot_sprites(&self, id: MediaId) -> DbResult<Vec<(FrameIdx, FrameIdx, u32)>> {

@@ -857,7 +857,7 @@ impl ProjectDb {
             if n == 0 {
                 return Ok(false);
             }
-            for stage in ["shots", "faces", "bodies"] {
+            for stage in ["shots", "faces", "bodies", "scenes"] {
                 tx.execute(
                     &format!(
                         "UPDATE media SET {stage} = 'pending', {stage}_error = NULL WHERE id = ?1 AND {stage} = 'failed'"
@@ -1586,6 +1586,7 @@ pub(crate) mod tests {
         db.put_face_chunk(a, 0, 1000, &[track(10, 0.9)], &[], |_| Ok(())).unwrap();
         db.set_faces_state(a, StageState::Ready, None).unwrap();
         db.set_bodies_state(a, StageState::Failed, Some(&Msg::plain("The file is missing."))).unwrap();
+        db.set_scenes_state(a, StageState::Failed, Some(&Msg::plain("The file is missing."))).unwrap();
         let key = "source_changed";
         let state = |db: &ProjectDb| {
             let m = db.media(a).unwrap().unwrap();
@@ -1598,6 +1599,8 @@ pub(crate) mod tests {
         assert!(relink("/t/Show - 01.mkv", Relinked::Same).unwrap());
         let ready = ("/t/Show - 01.mkv".to_string(), MediaStatus::Ready, StageState::Ready, Some(1), Some(1));
         assert_eq!(state(&db), (ready.0.clone(), ready.1, ready.2, ready.3, ready.4, StageState::Pending, None));
+        let m = db.media(a).unwrap().unwrap();
+        assert_eq!((m.scenes, m.scenes_error), (StageState::Pending, None), "the scenes are tried again too");
 
         // A write that fails midway (the disk filled up) leaves the media as
         // it was: still at its old path, with its analysis and index.

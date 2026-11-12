@@ -349,6 +349,11 @@ impl Project {
         self.find_bodies.store(on, Ordering::Relaxed);
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_finds_scenes(&self, on: bool) {
+        self.find_scenes.get_or_init(Default::default).store(on, Ordering::Relaxed);
+    }
+
     pub fn thumbs_dir(&self) -> PathBuf {
         self.dir.join("thumbs")
     }

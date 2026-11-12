@@ -530,7 +530,7 @@ impl Project {
             sources.insert(media.id, Source { media, index });
         }
         let mut shots = shots_of(c, &rows, &bodies);
-        let unread = if spec.whole_scenes { self.add_scenes(&mut shots)? } else { 0 };
+        let unread = if spec.whole_scenes { self.add_scenes(&mut shots, &spec.media)? } else { 0 };
         let shot = |s: &Shot| self.character_shot(s, cover.as_deref());
         let (mut pack, lacking) = make(spec, &shots, &sources, &order, &overrides, &judged, shot);
         pack.scenes_unread = unread;
@@ -540,14 +540,15 @@ impl Project {
     /// Widens a character's `shots` to their whole scenes: every other shot
     /// of a scene they are seen in joins, as one they aren't to be seen in.
     /// Returns how many of their episodes have no scenes read (the shots of
-    /// those stay as they are).
-    fn add_scenes(&self, shots: &mut Vec<Shot>) -> ProjectResult<u32> {
+    /// those stay as they are), of the episodes the pack takes shots from
+    /// (`only`; empty: all).
+    fn add_scenes(&self, shots: &mut Vec<Shot>, only: &[MediaId]) -> ProjectResult<u32> {
         let mut media: Vec<MediaId> = shots.iter().map(|s| s.media).collect();
         media.dedup();
         let (mut unread, mut added) = (0, Vec::new());
         for m in media {
             let Some(all) = self.scene_shots(m)? else {
-                unread += 1;
+                unread += u32::from(only.is_empty() || only.contains(&m));
                 continue;
             };
             // The scenes they are seen in, and the shots that are theirs already.
@@ -975,6 +976,23 @@ fn make(
             .then(b.clip.shot.face_height.total_cmp(&a.clip.shot.face_height))
             .then_with(|| episode(&a.clip).cmp(&episode(&b.clip)))
     };
+    // A shot the character isn't to be seen in comes with its scene: it
+    // stays out when none of their own shots of that scene is in. Before
+    // the limit, so such a shot takes no place there; the limit itself cuts
+    // every shot they aren't seen in before the first of their own, so it
+    // leaves no scene without one behind.
+    let kept: HashSet<(MediaId, usize)> = cands
+        .iter()
+        .filter(|x| !x.clip.shot.off_screen && x.rule != Some(PackReason::Missing))
+        .filter(|x| x.clip.manual.unwrap_or(x.rule.is_none()))
+        .filter_map(|x| x.scene)
+        .collect();
+    for cand in cands.iter_mut().filter(|x| x.clip.shot.off_screen && x.rule.is_none()) {
+        if cand.scene.is_none_or(|scene| !kept.contains(&scene)) {
+            cand.clip.by_rules = false;
+            cand.rule = Some(PackReason::Scene);
+        }
+    }
     // The limit keeps the best of what the filters take; picks by hand
     // stay on top of it and don't take a place. A missing file can't be
     // picked back in: there is nothing to cut from.
@@ -992,20 +1010,6 @@ fn make(
         for i in kept.into_iter().skip(limit).chain(picked_past) {
             cands[i].clip.by_rules = false;
             cands[i].rule = Some(PackReason::Limit);
-        }
-    }
-    // A shot the character isn't to be seen in comes with its scene: it
-    // stays out when none of their own shots of that scene is in.
-    let kept: HashSet<(MediaId, usize)> = cands
-        .iter()
-        .filter(|x| !x.clip.shot.off_screen && x.rule != Some(PackReason::Missing))
-        .filter(|x| x.clip.manual.unwrap_or(x.rule.is_none()))
-        .filter_map(|x| x.scene)
-        .collect();
-    for cand in cands.iter_mut().filter(|x| x.clip.shot.off_screen && x.rule.is_none()) {
-        if cand.scene.is_none_or(|scene| !kept.contains(&scene)) {
-            cand.clip.by_rules = false;
-            cand.rule = Some(PackReason::Scene);
         }
     }
     for cand in &mut cands {
@@ -1112,7 +1116,7 @@ mod bench;
 mod tests {
     use as_analysis::FaceDet;
     use as_analysis::tracks::{self, FaceTrack};
-    use as_api::{CastEdit, Segment, SegmentKind, TrackFilter};
+    use as_api::{CastEdit, Segment, SegmentKind, StageState, TrackFilter};
 
     use super::*;
     use crate::analysis::tests::project_with_media;
@@ -1246,13 +1250,36 @@ mod tests {
 
     /// The pictures of [`two_scenes`]: its scenes are read.
     fn read_scenes(p: &Pack) {
+        read_scenes_from(p, 4);
+    }
+
+    /// Pictures of [`two_scenes`] that show another place from shot `second` on.
+    fn read_scenes_from(p: &Pack, second: u32) {
         let place = |i: u32| {
             let mut v = vec![0.0f32; as_vision::dinov2::DIM];
-            v[usize::from(i >= 4)] = 1.0;
+            v[usize::from(i >= second)] = 1.0;
             as_analysis::pictures::to_bytes(&[v])
         };
         p.project.store_shot_pictures(p.media, &(0..6).map(|i| (i * 720, place(i))).collect::<Vec<_>>()).unwrap();
         p.project.finish_scenes(p.media).unwrap();
+    }
+
+    #[test]
+    fn scenes_worked_out_before_are_not_kept_past_new_pictures() {
+        let p = two_scenes();
+        let scenes = || p.project.scenes(p.media).unwrap().unwrap().iter().map(|s| s.1).collect::<Vec<_>>();
+        read_scenes(&p);
+        assert_eq!(scenes(), [0, 0, 0, 0, 1, 1]);
+        assert_eq!(scenes(), [0, 0, 0, 0, 1, 1], "asked again: as worked out before");
+        // The pictures read again show the other place two shots earlier.
+        read_scenes_from(&p, 2);
+        assert_eq!(scenes(), [0, 0, 1, 1, 1, 1]);
+        // A cast edit leaves them be, and they are told as before.
+        p.project.cast_edit(&CastEdit::Rename { character_id: p.jesse, name: Some("Pinkman".into()) }).unwrap();
+        assert_eq!(scenes(), [0, 0, 1, 1, 1, 1]);
+        // Not read (the pass runs again): no scenes to tell.
+        p.project.set_scenes_state(p.media, StageState::Running, None).unwrap();
+        assert!(p.project.scenes(p.media).unwrap().is_none());
     }
 
     #[test]
@@ -1299,6 +1326,49 @@ mod tests {
         // Jesse's two shots are two scenes: his first scene is Walter's.
         let v = p.project.pack_preview(p.jesse, &whole, &PluginFilters::NONE).unwrap();
         assert_eq!(starts(&v, true), [0, 720, 1440, 2160, 2880, 3600]);
+    }
+
+    #[test]
+    fn a_shot_they_are_not_in_counts_the_shown_characters_only() {
+        let p = two_scenes();
+        read_scenes(&p);
+        let whole = with(|s| s.whole_scenes = true);
+        assert_eq!(clip(&preview(&p, &whole), 720).others, 1, "Jesse answers");
+        p.project.cast_edit(&CastEdit::SetHidden { character_id: p.jesse, hidden: true }).unwrap();
+        assert_eq!(clip(&preview(&p, &whole), 720).others, 0, "hidden: not counted, as in his own shots");
+    }
+
+    #[test]
+    fn a_scene_left_out_takes_no_place_of_the_limit() {
+        let p = two_scenes();
+        read_scenes(&p);
+        let jesse = |spec: &PackSpec| p.project.pack_preview(p.jesse, spec, &PluginFilters::NONE).unwrap();
+        // Jesse's shot of the first scene taken out by hand: the scene's other shots go with it.
+        p.project.set_pack_overrides(p.jesse, &[PackKey { media_id: p.media, shot: 720 }], Some(false)).unwrap();
+        let v = jesse(&with(|s| (s.whole_scenes, s.limit) = (true, Some(2))));
+        // The empty room of the first scene (2160) is as good a shot as the one of the second (2880) and
+        // earlier, but it isn't in the pack: the two places go to the second scene.
+        assert_eq!(starts(&v, true), [2880, 3600]);
+        assert_eq!(clip(&v, 720).reason, Some(PackReason::Removed));
+        for shot in [0, 1440, 2160] {
+            assert_eq!((clip(&v, shot).reason, clip(&v, shot).by_rules), (Some(PackReason::Scene), false), "{shot}");
+        }
+        // A limit of one cuts the shot he isn't seen in, never his own.
+        let v = jesse(&with(|s| (s.whole_scenes, s.limit) = (true, Some(1))));
+        assert_eq!((starts(&v, true), clip(&v, 2880).reason), (vec![3600], Some(PackReason::Limit)));
+    }
+
+    #[test]
+    fn unread_scenes_count_only_in_the_episodes_asked_for() {
+        let p = two_scenes();
+        let other = MediaId::new();
+        let v = preview(&p, &with(|s| s.whole_scenes = true));
+        assert_eq!(v.scenes_unread, 1);
+        // The pack takes another episode only: this one's unread scenes are no news.
+        let v = preview(&p, &with(|s| (s.whole_scenes, s.media) = (true, vec![other])));
+        assert_eq!(v.scenes_unread, 0);
+        let v = preview(&p, &with(|s| (s.whole_scenes, s.media) = (true, vec![p.media])));
+        assert_eq!(v.scenes_unread, 1);
     }
 
     #[test]

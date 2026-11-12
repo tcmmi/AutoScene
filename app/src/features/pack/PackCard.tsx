@@ -195,9 +195,11 @@ export const PackCard = memo(function PackCard({
                 )}
               </span>
               <span className="absolute right-2 bottom-2 flex items-center gap-1.5">
-                <Badge tone="picture" size="sm">
-                  {sizeKey && t(`size.${sizeKey}.short`)}
-                </Badge>
+                {sizeKey && (
+                  <Badge tone="picture" size="sm">
+                    {t(`size.${sizeKey}.short`)}
+                  </Badge>
+                )}
                 {length && (
                   <Badge tone="picture" size="sm" className="timecode">
                     {length}

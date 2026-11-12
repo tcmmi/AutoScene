@@ -139,10 +139,12 @@ impl Recipe {
         picture: 1.0,
         threshold: 0.675,
     };
-    /// Drawn and rendered footage (row 9, provisional): the colours beside
-    /// the pictures; pieces under 60 s join first.
+    /// Drawn and rendered footage (rows 9 and 12, provisional): the colours
+    /// beside the pictures; pieces under 60 s join first. The cast has no
+    /// say: the anime episodes of the bench had none stored, and on the one
+    /// title that had it gave nothing (0.861 with it, 0.866 without).
     pub const DRAWN: Self = Self {
-        params: Params { colour: 1.0, cast: 0.25, short: 60.0, ..Params::DEFAULT },
+        params: Params { colour: 1.0, cast: 0.0, short: 60.0, ..Params::DEFAULT },
         picture: 1.0,
         threshold: 0.6,
     };
@@ -150,6 +152,11 @@ impl Recipe {
     /// Whether the frames' colour signatures are read at all.
     pub fn reads_colours(&self) -> bool {
         self.params.colour > 0.0
+    }
+
+    /// Whether who is in a shot has a say.
+    pub fn reads_cast(&self) -> bool {
+        self.params.cast > 0.0
     }
 }
 

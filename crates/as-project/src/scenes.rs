@@ -116,8 +116,14 @@ impl Project {
         if m.scenes != StageState::Ready {
             return Ok(None);
         }
-        // As worked out before, unless the cast or the footage changed since.
-        let (rev, content) = (self.db().cast_rev()?, self.content()?);
+        let content = self.content()?;
+        let recipe = match content {
+            ContentKind::Anime | ContentKind::Animation => Recipe::DRAWN,
+            ContentKind::Live | ContentKind::Mixed => Recipe::LIVE,
+        };
+        // As worked out before, unless the footage changed since, or the
+        // cast where it has a say (elsewhere a cast edit leaves them be).
+        let rev = if recipe.reads_cast() { self.db().cast_rev()? } else { 0 };
         if let Some((r, c, scenes)) = self.scenes.lock().get(&id)
             && (*r, *c) == (rev, content)
         {
@@ -133,7 +139,8 @@ impl Project {
         };
         // Who the cast shows in each shot, as numbers of this media's own.
         let mut numbers: HashMap<String, usize> = HashMap::new();
-        for (shot, character) in self.db().shot_cast(id)? {
+        let cast = if recipe.reads_cast() { self.db().shot_cast(id)? } else { Vec::new() };
+        for (shot, character) in cast {
             let Ok(i) = shots.binary_search_by_key(&shot, |s| s.start) else { continue };
             let next = numbers.len();
             let c = *numbers.entry(character).or_insert(next);
@@ -146,10 +153,6 @@ impl Project {
         }
         let fps = m.fps.map_or(24.0, |f| f.to_f64());
         let secs: Vec<f32> = shots.iter().map(|s| ((s.end - s.start) as f64 / fps) as f32).collect();
-        let recipe = match content {
-            ContentKind::Anime | ContentKind::Animation => Recipe::DRAWN,
-            ContentKind::Live | ContentKind::Mixed => Recipe::LIVE,
-        };
         let sig = if recipe.reads_colours() { self.frame_signals(id, &m.file_name)? } else { None };
         let of = scenes::scenes(&shots, &between, &secs, sig.as_deref(), &vectors, &recipe);
         let scenes: Vec<(FrameRange, usize)> =
@@ -166,10 +169,8 @@ impl Project {
             self.segments(id)?.into_iter().filter(|s| s.kind == SegmentKind::Shot && s.tiny).map(|s| s.start).collect();
         let sprites: HashMap<FrameIdx, (FrameIdx, u32)> =
             self.db().shot_sprites(id)?.into_iter().map(|(shot, end, cells)| (shot, (end, cells))).collect();
-        let mut cast: HashMap<FrameIdx, u32> = HashMap::new();
-        for (shot, _) in self.db().shot_cast(id)? {
-            *cast.entry(shot).or_default() += 1;
-        }
+        // As a character's own shots count the others: the hidden ones aren't among them.
+        let cast: HashMap<FrameIdx, u32> = self.db().shot_shown(id)?.into_iter().collect();
         Ok(Some(
             scenes
                 .into_iter()

@@ -97,6 +97,10 @@ describe("PackCard, a shot of a whole scene", () => {
     expect(screen.getByText("Off screen")).toBeTruthy()
     expect(screen.getByRole("button", { name: /they aren't in the shot, in the pack/ })).toBeTruthy()
     expect(screen.queryByText("WS")).toBeNull()
+    // No badge left empty where the size would be (the one empty span is the picture's shade).
+    const shown = screen.getByRole("button", { name: /^Shot/ })
+    const empty = [...shown.querySelectorAll("span")].filter((s) => s.childNodes.length === 0)
+    expect(empty.filter((s) => !s.className.includes("pointer-events-none"))).toEqual([])
     const words = tooltip()
     expect(words).toContain("they aren't to be seen in it")
     expect(words).not.toContain("Wide shot")

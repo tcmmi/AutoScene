@@ -130,6 +130,8 @@ pub enum StoppedStage {
     /// grouped again without them.
     FacesForgotten,
     People,
+    /// Nothing but the scenes waited.
+    Scenes,
 }
 
 /// Portraits being made (one decode per file at a time; others go on
@@ -1219,6 +1221,10 @@ impl Project {
     /// decisions on them waiting in `track_edits`, and stopped: the cast
     /// can't hold faces of both ways. The caller groups the cast again.
     ///
+    /// The scenes, read at the end of every analysis when the library reads
+    /// them, stop with it where they wait: left pending, the next launch
+    /// would queue the analysis for them all the same.
+    ///
     /// Only call it when no analysis of `id` is under way. Returns what it
     /// recorded.
     pub fn stop_unstarted_analysis(&self, id: MediaId) -> ProjectResult<Option<StoppedStage>> {
@@ -1242,9 +1248,13 @@ impl Project {
                 self.set_faces_state(id, StageState::Stopped, None)?
             }
             Some(StoppedStage::People) => self.set_bodies_state(id, StageState::Stopped, None)?,
-            None => {}
+            Some(StoppedStage::Scenes) | None => {}
         }
-        Ok(stopped)
+        let scenes = self.finds_scenes() && waits(m.scenes);
+        if scenes {
+            self.set_scenes_state(id, StageState::Stopped, None)?;
+        }
+        Ok(stopped.or(scenes.then_some(StoppedStage::Scenes)))
     }
 
     // -- identity -----------------------------------------------------------
@@ -2779,6 +2789,39 @@ pub(crate) mod tests {
             project.set_finds_bodies(true);
             assert_eq!(project.stop_unstarted_analysis(id).unwrap(), None, "{shots:?} {faces:?} {people:?}");
             assert_eq!(stages(&project, id), (shots, faces, people));
+        }
+    }
+
+    #[test]
+    fn scenes_that_wait_stop_with_the_analysis() {
+        use StageState::*;
+        let scenes = |project: &Project, id| project.media(id).unwrap().scenes;
+        // The library doesn't read scenes: they aren't touched.
+        let (_dir, project, id) = staged(Ready, Ready, Ready);
+        assert_eq!(project.stop_unstarted_analysis(id).unwrap(), None);
+        assert_eq!(scenes(&project, id), Pending);
+        // It does, and nothing else waits (the setting went on after the analysis).
+        for waiting in [Pending, Running] {
+            let (_dir, project, id) = staged(Ready, Ready, Ready);
+            project.set_finds_scenes(true);
+            project.set_scenes_state(id, waiting, None).unwrap();
+            assert_eq!(project.stop_unstarted_analysis(id).unwrap(), Some(StoppedStage::Scenes));
+            assert_eq!(scenes(&project, id), Stopped);
+            assert!(project.pending_scenes().unwrap().is_empty(), "the next launch leaves it alone");
+        }
+        // With the characters: both stop, or a launch would queue the analysis for the scenes.
+        let (_dir, project, id) = staged(Ready, Pending, Pending);
+        project.set_finds_scenes(true);
+        assert_eq!(project.stop_unstarted_analysis(id).unwrap(), Some(StoppedStage::Faces));
+        assert_eq!((stages(&project, id), scenes(&project, id)), ((Ready, Stopped, Pending), Stopped));
+        assert!(project.pending_scenes().unwrap().is_empty());
+        // Scenes that failed, stopped or are read stay as they are.
+        for state in [Failed, Stopped, Ready] {
+            let (_dir, project, id) = staged(Ready, Ready, Ready);
+            project.set_finds_scenes(true);
+            project.set_scenes_state(id, state, None).unwrap();
+            assert_eq!(project.stop_unstarted_analysis(id).unwrap(), None, "{state:?}");
+            assert_eq!(scenes(&project, id), state);
         }
     }
 

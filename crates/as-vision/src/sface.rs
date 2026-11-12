@@ -9,13 +9,14 @@
 //! session is planned for fixed batches like ArcFace's, the last one of a
 //! call padded. The processor's takes each run as it comes, holding just its
 //! faces ([`LEAST`] at least): a processor computes a padded batch in full —
-//! 16 rows take it 100 ms with one face in them as with 16 — and Fast Scan
-//! embeds the few faces of a shot at a time. Measured on Breaking Bad's
-//! pilot (960×540 proxy, Ryzen 7 5800X3D, 2026-11-12): its 4,738 faces come
-//! in 619 calls, padded 722 runs of 16 with 59% of their rows empty. With
-//! runs that fit, embedding takes 44 s of the pass instead of 81 s and the
-//! pass 182 s instead of 225 s (medians of four runs each), and the tracks
-//! are the same to the byte.
+//! 16 rows take it 100 ms with one face in them as with 16. Measured on
+//! Breaking Bad's pilot (960×540 proxy, Ryzen 7 5800X3D, 2026-11-12) while
+//! Fast Scan still embedded the few faces of a shot at a time: its 4,738
+//! faces came in 619 calls, padded 722 runs of 16 with 59% of their rows
+//! empty; with runs that fit, the pass took 155 s instead of 193 s on an
+//! idle PC (two runs each) and gave the same tracks to the byte. Fast Scan
+//! has since handed over whole runs (`as_analysis::fast`): only what a
+//! chunk leaves over, and what other callers bring, still comes short.
 
 use std::path::Path;
 

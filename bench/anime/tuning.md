@@ -12,6 +12,7 @@ people, and the human audit of 150 items that freezes labels (`README.md`,
 | File | What |
 |---|---|
 | `jjk.labels.tsv`, `rezero.labels.tsv`, `onepiece.labels.tsv` | a name for every track of the anime pass: 1,515 + 1,147 + 2,038 = 4,700 tracks (`FORMATS.md`, "Track labels") |
+| `tuning.best-bars.tsv` | every run of the Best scan under other grouping bars (432; "The bars of Best, tried again") |
 | `<project>.labelling.tsv` | per label, in the same order: the first and the second labeller's answer and what reviewed it afterwards |
 | `<project>.gallery.tsv` | the look codes: the galleries of 2026-10-30, plus `GARFIEL_BEAST` (Re:Zero) and `LUFFY_KID` (One Piece), added from the labellers' notes |
 | `<project>.spans.tsv` | opening, ending, eyecatch, recap and preview of each episode, found by eye and set on shot cuts |
@@ -344,3 +345,64 @@ Not verified: any title outside these three (the labels of the title the bars
 were set on are no longer on disk; test and reserve episodes were not
 touched); the app itself (a project analysed again under `+anime3`); pass
 times (other jobs shared the card).
+
+## The bars of Best, tried again: none better
+
+After the doubles went (above), Best joins more and its precision on One Piece
+sits at 0.951. Its bars are `Params::anime()`, set for CCIP b36 on one title,
+so they were tried again on the tracks of the Best pass with the fix. Grouping
+and scoring only; every run is in `tuning.best-bars.tsv`.
+
+The plan was written before any of these runs. Stage 1, 126 settings a
+franchise: the footage's fitted space on / off, `LINK` 0.20–0.50 in steps of
+0.05, `MIN_COH` 0.50 / 0.35 / 0.20, `ASSIGN` 0.45 / 0.35 / 0.25. Stage 2, 18
+settings around stage 1's pick: `MARGIN` 0.05 / 0.08 / 0.12, `COPY_LINK` 0.55 /
+0.70 / 0.85, the bars moved by how alike strangers look or not. A setting is
+picked as the highest mean F among those with precision ≥ 0.97 on every
+franchise of the set. The test leaves one franchise out: picked on two, scored
+on the third. New bars are taken only if (1) the mean held-out F beats the
+shipped bars' 0.500 by 0.02 with a bootstrap lower bound above 0, (2) held-out
+precision is ≥ 0.96 everywhere, (3) the pick on all three keeps precision ≥
+0.97 and F on no franchise below the shipped bars', (4) `stress` leaves no more
+characters holding two people than the shipped bars do (68 over the three).
+
+Nothing passes.
+
+| | Jujutsu Kaisen | Re:Zero | One Piece | Macro F |
+|---|---|---|---|---|
+| Shipped (space on, link 0.45) | P 0.974 F 0.311 | P 0.988 F 0.657 | P 0.951 F 0.532 | 0.500 |
+| Picked at precision ≥ 0.97 (space off, link 0.40) | P 0.981 F 0.279 | P 0.993 F 0.756 | P 0.971 F 0.414 | 0.483 |
+| Held out, picked on the other two | P 0.981 F 0.279 | P 0.993 F 0.756 | P 0.943 F 0.518 | 0.518 |
+
+1. Mean held-out F 0.518: +0.018, under 0.02. Not held.
+2. One Piece held out (bars picked on the other two: link 0.30): precision
+   0.943. Not held.
+3. The pick on all three holds 0.97 everywhere, but F falls on Jujutsu Kaisen
+   and One Piece (macro −0.017, 95 % [−0.046, +0.007]). Not held.
+4. Its `stress` count is 78. Not held.
+
+Only 9 of the 126 settings reach 0.97 on all three, and stage 2 moves none of
+it (`MARGIN` and `COPY_LINK` move macro F by at most 0.03 and never above stage
+1's pick; bars that do not move with the strangers are simply looser).
+
+What the runs show beside the test (looked at afterwards):
+
+- The trade is steep and it is One Piece's. Least precision of the three
+  against macro F, the best setting at each step, all with the space off:
+  0.971 / 0.483 (link 0.40), 0.964 / 0.547 (0.35), 0.943 / 0.605 (0.30), 0.925 /
+  0.628 (0.30 with `ASSIGN` 0.35). Jujutsu Kaisen and Re:Zero take looser bars
+  than One Piece does, so bars picked on two franchises do not hold on the
+  third.
+- No setting is at least as precise and at least as good in F as the shipped
+  bars on every franchise. The nearest, space off at link 0.35, is more precise
+  on all three (0.977 / 0.995 / 0.964) and better on two (F 0.365 / 0.800), but
+  One Piece falls to 0.477; macro +0.048 [−0.005, +0.088], and its `stress`
+  count is 104 (Jujutsu Kaisen 71 against 28).
+- With the fitted space on, `LINK` hardly matters (Jujutsu Kaisen's F is 0.311
+  from 0.25 to 0.50): the space sets its own bar from how alike strangers look
+  in it. With it off, `LINK` walks the trade above; a lower `ASSIGN` buys
+  0.02–0.07 F for 0.01–0.12 precision at every link, and `MIN_COH` matters
+  only at links of 0.30 and below.
+
+So the shipped bars stay. What limits Best here is not a bar: at one bar it is
+too loose for One Piece and too strict for Jujutsu Kaisen.

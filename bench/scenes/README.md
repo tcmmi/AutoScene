@@ -283,7 +283,11 @@ The pass is in the app, off by default (Settings, General, "Read scenes").
   45.9 s, which is 47 s per hour of video on the development PC (RTX 3060
   Ti, DirectML, NVDEC), after 43 s for the shots and 331 s for the faces
   and people. A project made by the app before (schema 16) opened and moved
-  to 17.
+  to 17. A pass cancelled after 66 shots was recorded stopped and went on
+  with the other 705; cancelled while it waited behind another analysis it
+  stayed stopped. The animation recipe ran on Bass X Machina S01E01 (679
+  shots, pictures in 34.0 s, the colours read from what the shots pass
+  stored): whole scenes take its most seen character from 74 to 405 shots.
 
 ### The scenepack's "Whole scenes"
 

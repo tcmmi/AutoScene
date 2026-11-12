@@ -1,7 +1,7 @@
 # Scenes bench
 
 Which shots belong to one scene, measured against scene boundaries a person
-set. It serves the scenes slot (`bench/models/DECISIONS.md`, rows 6 and 7):
+set. It serves the scenes slot (`bench/models/DECISIONS.md`, rows 6 to 8):
 all of a character's scenes, with the shots in which the character is not to
 be seen.
 
@@ -30,6 +30,41 @@ shot after it.
 cargo run --release -p as-project --example scenes_bench -- labels bb.json 1 1 <project_copy_dir> > bench/scenes/bb_s01e01.scenes.tsv
 ```
 
+## Three more episodes, labelled here
+
+`pb_s01e01` (Prison Break S01E01, 584 shots, 40 scenes), `bl_s01e01` (The
+Blacklist S01E01, 1,003 shots, 28 scenes) and `bxm_s01e01` (Bass X Machina
+S01E01, 3D animation, 679 shots, 22 scenes), from the owner's library. No
+public scene labels exist for them. `frame` is the first frame of the scene's
+first shot, `sure` whether both labellers were sure, `note` where and what.
+
+Two labellers (AI agents) each read contact sheets of the episode's shots in
+time order (`tools/slot-bench/shot_sheets.py`), blind to each other and to
+any other label, and named each scene's first shot. A scene is a run of shots
+with one place, one stretch of time and one action; cutaways, answer shots
+and a continuous walk or drive stay in it; cutting back and forth between two
+places of one action is one scene; a title sequence, a recap and the credits
+are scenes of their own. The starts both labellers name are the labels
+(`scene_merge.py`); the starts only one names are left out (4, 3 and 3, all
+marked `maybe` by the one who named them). Their own files are in `check/`.
+
+How far such labels can be trusted was checked first on Breaking Bad S01E01,
+against the human labels above (`scenes_bench agree`):
+
+| Labels | Scenes | Boundary P / R / F against the human labels | Overlap |
+|---|---|---|---|
+| Labeller A | 34 | 0.909 / 0.938 / 0.923 | 0.909 |
+| Labeller B | 36 | 0.886 / 0.969 / 0.925 | 0.939 |
+| The starts both name | 33 | 0.938 / 0.938 / 0.938 | 0.938 |
+
+The two agree with each other at F 0.941 there, 0.951 on Prison Break, 0.947
+on The Blacklist and 0.933 on Bass X Machina. Where they part from the human
+labels it is over what a scene is (a bedroom after the laundry room the same
+night, the logos after the credits), not over what is in the pictures. These
+three episodes have no identity labels: the project's own cast says who is
+where (the stored characters with at least 30 s on screen: 18, 9 and 13), so
+their results measure the scenes alone, not wrong faces.
+
 ## The measure
 
 `scenes_bench score` reads a COPY of a project (`project.db` and its `-wal`
@@ -51,15 +86,18 @@ a higher threshold only joins scenes and never reshuffles them.
 - **Overlap**: each scene's best intersection over union with a scene of the
   other side, weighted by its frames, the mean of both directions.
 
-There is one labelled episode, so the threshold is chosen on it. As a check,
-the threshold that is best on one half of the episode (by scenes) is read on
-the other half.
+A threshold chosen on the episode it is read on flatters it. `score` also
+reads each half of the episode (by scenes) with the threshold that is best on
+the other half; `tools/slot-bench/scene_titles.py` runs several episodes and
+gives each one's result at its own best threshold, at the one threshold that
+is best over all of them, and at the threshold that is best over the OTHER
+episodes, which is what a new title would get.
 
 ```sh
 # Step A: what the project stores (colours, cast, what lies between shots)
 SHORT=40,1 cargo run --release -p as-project --example scenes_bench -- score <project_copy_dir> bench/scenes/bb_s01e01.scenes.tsv bench/identity/bb_s01e01.labels.tsv
 # Step B: a picture embedding of three frames per shot
-cd tools/slot-bench && uv run shot_embed.py <ffmpeg> <video> <project_copy_dir> <dinov2-small model.onnx> <resnet50_places365.pth.tar> <out_prefix>
+cd tools/slot-bench && uv run shot_embed.py <ffmpeg> <video> <project_copy_dir> <media> <dinov2-small model.onnx> <resnet50_places365.pth.tar | -> <out_prefix>
 SHORT=40,1 W=0,0 EMB=1:<out_prefix>.dino_cls.emb cargo run --release -p as-project --example scenes_bench -- score …
 ```
 
@@ -127,5 +165,43 @@ Its unit tests run with `cargo test -p as-project --example scenes_bench`.
 - Three frames per shot cost 36 s to decode and 38 s through DINOv2-small on
   the development PC's graphics card for this episode.
 
-Not measured yet: a second live-action title, animation, a threshold that
-holds across titles, a larger picture network.
+## Results across four episodes (2026-11-12, row 8)
+
+DINOv2-small's class token (weight 1) with the share of characters two shots
+have in common (0.25), short pieces joining first (40 s). A character's
+scenes, mean F over each episode's main cast:
+
+```sh
+uv run scene_titles.py <scenes_bench.exe> <titles.tsv> SHORT=40,1 W=0,0.25
+```
+
+| Episode | Own best threshold | One threshold for all (0.675) | The other episodes' threshold | Scenes found / labelled | Boundary F, one shot off | Overlap |
+|---|---|---|---|---|---|---|
+| Breaking Bad S01E01 | 0.930 | 0.917 | 0.917 | 32 / 33 | 0.714 | 0.754 |
+| Prison Break S01E01 | 0.948 | 0.926 | 0.926 | 31 / 40 | 0.828 | 0.834 |
+| The Blacklist S01E01 | 0.936 | 0.936 | 0.889 | 24 / 28 | 0.640 | 0.760 |
+| Bass X Machina S01E01 (3D) | 0.817 | 0.769 | 0.769 | 25 / 22 | 0.311 | 0.544 |
+| **Mean** | 0.908 | 0.887 | 0.875 | | | |
+
+- **Live action holds the gate (0.85) on three titles**, also with a
+  threshold none of them chose: 0.917, 0.926, 0.889. The shared threshold is
+  0.675 for 20, 30 and 40 s alike.
+- **The 3D title does not** (0.77): its boundaries are barely found (average
+  precision 0.17 against 0.35 to 0.48). Its scenes are short (a dream, a
+  flashback), its sets look alike, and its stored cast is in pieces. One
+  title; animation stays open.
+- Across titles a little cast helps the measure (mean with the other
+  episodes' threshold 0.875 against 0.842 without), though it lowers the
+  boundaries' average precision on Breaking Bad. The colours beside the
+  embedding do not (0.79 to 0.84 in four mixes).
+- What the project stores alone (step A, 40 s): 0.892, 0.845, 0.790 and 0.817
+  with one threshold, mean 0.836; with the other episodes' threshold 0.811.
+  It is the fallback for a project without the embedding pass, and it is
+  ahead on the 3D title.
+- No gain from DINOv2's patch tokens in place of its class token (0.866 with
+  one threshold), nor from leaving out the patches on a stored face, alone or
+  with the body under it (0.884, 0.871): a close-up of one person looking the
+  same in every scene is not what limits the links.
+
+Not measured yet: more animation (2D and 3D), a larger picture network, who
+speaks across the cut (step C), scenes across the episodes of one project.

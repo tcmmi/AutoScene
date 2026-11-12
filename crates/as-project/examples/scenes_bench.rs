@@ -10,6 +10,13 @@
 //! `scenes_bench score <project_copy_dir> <scenes.tsv> <identity labels.tsv>`
 //!   scores the scenes: the boundaries, the scenes' overlap, and per main
 //!   character the shots of their scenes (see `bench/scenes/README.md`).
+//!   `-` for the identity labels takes the project's own cast as who is
+//!   where (a title without such labels).
+//! `scenes_bench agree <project_copy_dir> <one.scenes.tsv> <other.scenes.tsv>`
+//!   says how well two sets of scene labels agree, and where they differ.
+//!
+//! Scene labels name each scene's first shot by its first frame (`frame`) or
+//! by the shot's number among the project's shots (`shot`), as the header says.
 //!
 //! Step B adds picture embeddings of a few frames per shot, made by
 //! `tools/slot-bench/shot_embed.py`: `EMB=<weight>:<file>[,<weight>:<file>…]`.
@@ -19,7 +26,8 @@
 //! `W=<colour>,<cast>` other weights, `SHORT=<seconds>,<curve>` the rule for
 //! short pieces, `AT=<threshold>` another threshold;
 //! `SWEEP=1` lists a grid of settings, `STATS=1` how alike shots are inside
-//! a scene and across a boundary, `DETAIL=1` every gap with its score.
+//! a scene and across a boundary, `DETAIL=1` every gap with its score,
+//! `CURVE=1` the scores at every threshold (to choose one across titles).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
@@ -38,6 +46,7 @@ const MAIN_SEC: f64 = 30.0;
 
 struct Track {
     start: u32,
+    end: u32,
     /// Index into [`Episode::characters`], when the cast shows the track there.
     character: Option<usize>,
     dets: Vec<FaceDet>,
@@ -97,17 +106,18 @@ fn load(dir: &Path) -> Episode {
     let mut tracks = Vec::new();
     let mut st = db
         .prepare(
-            "SELECT start, character_id, assign, dets FROM tracks WHERE media_id = ?1 AND not_face = 0 ORDER BY start",
+            "SELECT start, end, character_id, assign, dets FROM tracks WHERE media_id = ?1 AND not_face = 0 ORDER BY start",
         )
         .unwrap();
     let mut rows = st.query([&id]).unwrap();
     while let Some(r) = rows.next().unwrap() {
-        let (start, cid, assign, dets): (u32, Option<String>, String, Vec<u8>) =
-            (r.get(0).unwrap(), r.get(1).unwrap(), r.get(2).unwrap(), r.get(3).unwrap());
+        let (start, end, cid, assign, dets): (u32, u32, Option<String>, String, Vec<u8>) =
+            (r.get(0).unwrap(), r.get(1).unwrap(), r.get(2).unwrap(), r.get(3).unwrap(), r.get(4).unwrap());
         // The cast shows a face with its character when it is sure of it.
         let shown = matches!(assign.as_str(), "auto" | "pinned");
         tracks.push(Track {
             start,
+            end,
             character: cid.filter(|_| shown).and_then(|c| index.get(&c).copied()),
             dets: dets_from_bytes(&dets).expect("stored detections"),
         });
@@ -445,14 +455,22 @@ fn scene_ids(cuts: &[bool]) -> Vec<usize> {
 // -- labels ------------------------------------------------------------------
 
 /// The first shot of each labelled scene (`bench/scenes/*.scenes.tsv`), as a
-/// cut per gap.
+/// cut per gap. The first column is the shot's first frame, or the shot's
+/// number when the header calls it `shot`.
 fn scene_labels(path: &Path, shots: &[Shot]) -> Vec<bool> {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let by_number = text.lines().next().is_some_and(|h| h.split('\t').next() == Some("shot"));
     let mut cuts = vec![false; shots.len() - 1];
     for line in text.lines().skip(1).filter(|l| !l.trim().is_empty()) {
-        let frame: u32 = line.split('\t').next().unwrap().parse().expect("scenes.tsv: a frame");
-        let s = shot_starting_near(shots, frame);
-        assert!(shots[s].start.abs_diff(frame) <= 12, "scene at frame {frame}: no shot starts there");
+        let v: u32 = line.split('\t').next().unwrap().trim().parse().expect("scene labels: a number first");
+        let s = if by_number {
+            assert!((v as usize) < shots.len(), "scene at shot {v}: the project has {} shots", shots.len());
+            v as usize
+        } else {
+            let s = shot_starting_near(shots, v);
+            assert!(shots[s].start.abs_diff(v) <= 12, "scene at frame {v}: no shot starts there");
+            s
+        };
         if s > 0 {
             cuts[s - 1] = true;
         }
@@ -665,22 +683,11 @@ impl Bench {
     }
 }
 
-fn score(args: &[String]) {
-    let ep = load(Path::new(&args[0]));
-    let (shots, between) = shots_of(&ep);
-    let truth_cuts = scene_labels(Path::new(&args[1]), &shots);
-    let labels = face_labels(Path::new(&args[2]));
+/// Per main character of the identity labels: its name, the shots it is
+/// truly seen in, and the shots the stored character most of its faces are
+/// on is shown in.
+fn labelled_cast(ep: &Episode, shots: &[Shot], labels: &[Label]) -> Vec<(String, Vec<bool>, Vec<bool>)> {
     let n = shots.len();
-    println!(
-        "{} shots ({} with someone the cast knows), {} labelled scenes; between shots: {} dissolves, {} black or fades",
-        n,
-        shots.iter().filter(|s| !s.cast.is_empty()).count(),
-        truth_cuts.iter().filter(|&&c| c).count() + 1,
-        between.iter().filter(|&&b| b == Between::Blend).count(),
-        between.iter().filter(|&&b| b == Between::Dark).count(),
-    );
-
-    // Where each main character truly is, and which stored character is theirs.
     let mut screen: BTreeMap<&str, u32> = BTreeMap::new();
     for l in labels.iter().filter(|l| named(&l.name)) {
         *screen.entry(&l.name).or_default() += l.end - l.start;
@@ -689,7 +696,7 @@ fn score(args: &[String]) {
     main.sort_by_key(|&(name, f)| (std::cmp::Reverse(f), name));
     let mut held: HashMap<(&str, usize), u32> = HashMap::new();
     for t in &ep.tracks {
-        if let (Some(c), Some((name, dets))) = (t.character, label_of(t, &labels)) {
+        if let (Some(c), Some((name, dets))) = (t.character, label_of(t, labels)) {
             *held.entry((name, c)).or_default() += dets;
         }
     }
@@ -729,6 +736,84 @@ fn score(args: &[String]) {
         );
         cast.push((name.to_owned(), seen, shown));
     }
+    cast
+}
+
+/// The same for a title without identity labels: the stored characters with
+/// at least [`MAIN_SEC`] on screen, taken as who is where.
+fn stored_cast(ep: &Episode, shots: &[Shot]) -> Vec<(String, Vec<bool>, Vec<bool>)> {
+    let mut frames = vec![0u32; ep.characters.len()];
+    for t in &ep.tracks {
+        if let Some(c) = t.character {
+            frames[c] += t.end - t.start;
+        }
+    }
+    let mut main: Vec<usize> = (0..frames.len()).filter(|&c| frames[c] as f64 / ep.fps >= MAIN_SEC).collect();
+    main.sort_by_key(|&c| (std::cmp::Reverse(frames[c]), c));
+    println!("\nmain cast (the stored characters with at least {MAIN_SEC} s on screen; no identity labels):");
+    main.iter()
+        .map(|&c| {
+            let shown: Vec<bool> = shots.iter().map(|s| s.cast.contains(&c)).collect();
+            println!(
+                "  {:16} {:6.1} s, shown in {:3} shots",
+                ep.characters[c],
+                frames[c] as f64 / ep.fps,
+                shown.iter().filter(|&&x| x).count()
+            );
+            (ep.characters[c].clone(), shown.clone(), shown)
+        })
+        .collect()
+}
+
+/// How well two sets of scene labels of one episode agree.
+fn agree(args: &[String]) {
+    let ep = load(Path::new(&args[0]));
+    let (shots, _) = shots_of(&ep);
+    let (one, other) = (scene_labels(Path::new(&args[1]), &shots), scene_labels(Path::new(&args[2]), &shots));
+    let frames: Vec<u32> = shots.iter().map(|s| s.end - s.start).collect();
+    let count = |c: &[bool]| c.iter().filter(|&&x| x).count() + 1;
+    let (exact, slack) = (boundary_prf(&one, &other, 0), boundary_prf(&one, &other, 1));
+    println!(
+        "{} scenes against {}: boundaries P {:.3} R {:.3} F {:.3}; one shot off still counted: F {:.3}; overlap {:.3}",
+        count(&one),
+        count(&other),
+        exact.p,
+        exact.r,
+        exact.f,
+        slack.f,
+        overlap(&scene_ids(&one), &scene_ids(&other), &frames)
+    );
+    for g in (0..one.len()).filter(|&g| one[g] != other[g]) {
+        let at = shots[g + 1].start as f64 / ep.fps;
+        println!(
+            "  shot {:4} ({}:{:02}): only in the {}",
+            g + 1,
+            at as u32 / 60,
+            at as u32 % 60,
+            if one[g] { "first" } else { "second" }
+        );
+    }
+}
+
+fn score(args: &[String]) {
+    let ep = load(Path::new(&args[0]));
+    let (shots, between) = shots_of(&ep);
+    let truth_cuts = scene_labels(Path::new(&args[1]), &shots);
+    let labels = (args[2] != "-").then(|| face_labels(Path::new(&args[2])));
+    let n = shots.len();
+    println!(
+        "{} shots ({} with someone the cast knows), {} labelled scenes; between shots: {} dissolves, {} black or fades",
+        n,
+        shots.iter().filter(|s| !s.cast.is_empty()).count(),
+        truth_cuts.iter().filter(|&&c| c).count() + 1,
+        between.iter().filter(|&&b| b == Between::Blend).count(),
+        between.iter().filter(|&&b| b == Between::Dark).count(),
+    );
+
+    let cast = match labels.as_deref() {
+        Some(labels) => labelled_cast(&ep, &shots, labels),
+        None => stored_cast(&ep, &shots),
+    };
 
     let mut pairs = Pairs::new(&shots, &ep.signals);
     for cue in std::env::var("EMB").unwrap_or_default().split(',').filter(|c| !c.is_empty()) {
@@ -759,6 +844,16 @@ fn score(args: &[String]) {
         .ok()
         .map_or_else(|| bench.best_threshold(&scores, 0..n), |v| v.parse().expect("AT=<threshold>"));
     println!("boundary scores: average precision {:.3}", average_precision(&scores, &bench.truth_cuts));
+    if std::env::var("CURVE").is_ok() {
+        println!("curve	threshold	true cast	stored	boundary F	scenes");
+        for k in 2..=38 {
+            let t = k as f32 * 0.025;
+            let cuts = bench.cuts_at(&scores, t);
+            let (seen, shown) = bench.characters(&cuts, 0..n);
+            let b = boundary_prf(&cuts, &bench.truth_cuts, 0);
+            println!("curve	{t:.3}	{seen:.4}	{shown:.4}	{:.4}	{}", b.f, cuts.iter().filter(|&&c| c).count() + 1);
+        }
+    }
 
     println!(
         "\n{:34} {:>6} {:>22} {:>8} {:>10} {:>10}",
@@ -974,9 +1069,10 @@ fn main() {
     match (args.first().map(String::as_str), args.len()) {
         (Some("labels"), 5) => labels(&args[1..]),
         (Some("score"), 4) => score(&args[1..]),
+        (Some("agree"), 4) => agree(&args[1..]),
         _ => {
             eprintln!(
-                "usage: scenes_bench labels <serial_speakers.json> <season> <episode> <project_copy_dir>\n       scenes_bench score <project_copy_dir> <scenes.tsv> <identity labels.tsv>"
+                "usage: scenes_bench labels <serial_speakers.json> <season> <episode> <project_copy_dir>\n       scenes_bench score <project_copy_dir> <scenes.tsv> <identity labels.tsv | ->\n       scenes_bench agree <project_copy_dir> <one.scenes.tsv> <other.scenes.tsv>"
             );
             std::process::exit(2);
         }
@@ -1093,7 +1189,7 @@ mod tests {
             Label { start: 10, end: 20, name: "b".into(), boxes: vec![(10, [0.6, 0.1, 0.8, 0.5])] },
         ];
         let det = |frame, x: f32| FaceDet { frame, bbox: [x, 0.1, x + 0.2, 0.5], score: 1.0, norm: 20.0, quality: 1.0 };
-        let track = |x| Track { start: 11, character: None, dets: vec![det(11, x), det(14, x)] };
+        let track = |x| Track { start: 11, end: 15, character: None, dets: vec![det(11, x), det(14, x)] };
         assert_eq!(label_of(&track(0.11), &labels), Some(("a", 2)));
         assert_eq!(label_of(&track(0.61), &labels), Some(("b", 2)));
         assert_eq!(label_of(&track(0.35), &labels), None);

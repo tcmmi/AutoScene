@@ -20,7 +20,7 @@ Picture embeddings of three frames per shot (at 1/6, 1/2 and 5/6 of it), for
 step B of the scenes bench (`bench/scenes/README.md`):
 
 ```sh
-uv run shot_embed.py <ffmpeg> <video> <project_copy_dir> <dinov2-small model.onnx> <resnet50_places365.pth.tar> <out_prefix>
+uv run shot_embed.py <ffmpeg> <video> <project_copy_dir> <media> <dinov2-small model.onnx> <resnet50_places365.pth.tar | -> <out_prefix>
 ```
 
 The shots come from a COPY of a project; the video is decoded once, every
@@ -42,3 +42,23 @@ One picture per shot (two for a shot of 8 s or more), thirty per sheet, each
 with the shot's number, its start and its length, and a mark where black, a
 fade or a dissolve lies before it. `shots.tsv` beside the sheets turns shot
 numbers back into frames.
+
+## Scenes: `scene_merge.py`, `scene_titles.py`
+
+`scene_merge.py join <a.tsv> <b.tsv> <out_prefix>` joins two labellers' scene
+starts into the starts both name and the starts only one names;
+`scene_merge.py final <out_prefix> <shots.tsv> <scenes.tsv>` writes the label
+file of `bench/scenes` (frames in place of shot numbers).
+
+`scene_titles.py <scenes_bench.exe> <titles.tsv> [NAME=value …]` runs the
+scenes bench over several episodes and says what one threshold for all of
+them gives, and what each would get with the threshold of the others.
+
+## Expressions: `sound_events.py`, `crop_sheets.py`
+
+`sound_events.py <ffmpeg> <video> <yamnet.onnx> <yamnet_class_map.csv> <out.tsv>`
+listens to a video's soundtrack with YAMNet: laughing, crying and shouting
+every 0.48 s, the second vote of the expressions slot.
+
+`crop_sheets.py <list.tsv> <out_dir>` makes contact sheets of face crops,
+thirty per sheet with a number under each, for labelling what the faces show.

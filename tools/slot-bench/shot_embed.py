@@ -1,19 +1,24 @@
 """Picture embeddings of a few frames per shot, for the scenes bench (step B).
 
-    uv run shot_embed.py <ffmpeg> <video> <project_copy_dir> <dinov2.onnx> <resnet50_places365.pth.tar> <out_prefix>
+    uv run shot_embed.py <ffmpeg> <video> <project_copy_dir> <media> <dinov2.onnx> <resnet50_places365.pth.tar | -> <out_prefix>
 
-The shots come from a COPY of a project (`project.db`); the video is decoded
-once, every frame from frame 0, so that frame n is the n-th picture as in the
+The shots come from a COPY of a project (`project.db`), `<media>` being the
+media's place in it (0 for the first); the video is decoded once, every frame from frame 0, so that frame n is the n-th picture as in the
 project's frame index. Three frames per shot (at 1/6, 1/2 and 5/6 of it) go
-through DINOv2 (a general picture network) and a ResNet-50 trained on
-Places365 (a place network). Writes `<out_prefix>.dino_cls.emb`,
+through DINOv2 (a general picture network) and, unless `-` stands in its
+place, a ResNet-50 trained on Places365 (a place network). Writes `<out_prefix>.dino_cls.emb`,
 `.dino_patch.emb` and `.places.emb`: `ASEM`, the number of rows and the
 vector length as u32, then per row the frame (u32) and its unit vector (f32),
 little-endian. `scenes_bench score` reads them with `EMB=`.
 
+`SIGLIP=<vision_model.onnx>` also writes `<out_prefix>.siglip.emb` (SigLIP 2
+so400m at 384 px, its pooled output): a far larger network, to see what a
+better encoder would be worth.
+
 The Places365 file is a pickle from 2017: it is loaded weights-only (plain
 tensors, no code).
 """
+import os
 import sqlite3
 import struct
 import subprocess
@@ -24,18 +29,19 @@ import numpy as np
 import onnxruntime as ort
 import torch
 import torchvision
+from PIL import Image
 
 W, H = 448, 252  # 32 x 18 patches of 14 px, the frame's shape
 MEAN = np.array([0.485, 0.456, 0.406], np.float32).reshape(1, 3, 1, 1)
 STD = np.array([0.229, 0.224, 0.225], np.float32).reshape(1, 3, 1, 1)
 
 
-def shots(project):
+def shots(project, nth):
     db = sqlite3.connect(f"file:{project}/project.db?mode=ro", uri=True)
     media = db.execute("SELECT id, frames FROM media WHERE shots = 'ready' ORDER BY position, id").fetchall()
-    assert len(media) == 1, f"{len(media)} media with shots: this tool reads projects with one"
-    rows = db.execute("SELECT start, end FROM segments WHERE media_id = ? AND kind = 'shot' ORDER BY start", (media[0][0],))
-    return rows.fetchall(), media[0][1]
+    mid, frames = media[nth]
+    rows = db.execute("SELECT start, end FROM segments WHERE media_id = ? AND kind = 'shot' ORDER BY start", (mid,))
+    return rows.fetchall(), frames
 
 
 def wanted(rows):
@@ -77,8 +83,8 @@ def write(path, frames, vectors):
 
 
 def main():
-    ffmpeg, video, project, dino, places, out = sys.argv[1:7]
-    rows, total = shots(project)
+    ffmpeg, video, project, nth, dino, places, out = sys.argv[1:8]
+    rows, total = shots(project, int(nth))
     frames = wanted(rows)
     t = time.time()
     pictures = decode(ffmpeg, video, frames, total)
@@ -98,6 +104,18 @@ def main():
     write(out + ".dino_cls.emb", frames, unit(np.concatenate(cls)))
     write(out + ".dino_patch.emb", frames, unit(np.concatenate(patch)))
 
+    siglip = os.environ.get("SIGLIP")
+    if siglip:
+        t = time.time()
+        net = ort.InferenceSession(siglip, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+        small = np.stack([np.asarray(Image.fromarray(pictures[f]).resize((384, 384), Image.BILINEAR)) for f in frames])
+        y = (small.transpose(0, 3, 1, 2).astype(np.float32) / 255.0 - 0.5) / 0.5
+        pooled = [net.run(["pooler_output"], {"pixel_values": y[i:i + 4]})[0] for i in range(0, len(y), 4)]
+        print(f"SigLIP 2 on {net.get_providers()[0]}: {time.time() - t:.0f} s")
+        write(out + ".siglip.emb", frames, unit(np.concatenate(pooled)))
+
+    if places == "-":
+        return
     t = time.time()
     saved = torch.load(places, map_location="cpu", weights_only=True)
     model = torchvision.models.resnet50(num_classes=365)

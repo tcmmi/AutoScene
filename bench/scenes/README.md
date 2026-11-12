@@ -251,6 +251,85 @@ seven (0.675), the live-action recipe:
   long fight on a roof, cut by a recap, two eyecatch cards and three short
   looks elsewhere.
 
+## In the app (2026-11-12, row 12)
+
+The pass is in the app, off by default (Settings, General, "Read scenes").
+
+- **What is stored.** For every shot three frames (at 1/6, 1/2 and 5/6 of
+  it), each resized to 448 × 252 and given to DINOv2-small
+  (`picture-dinov2-small` in `models/manifest.toml`, 88.5 MB, Apache-2.0,
+  fetched when the pass first runs); the class token of each, as a unit
+  vector in half floats, in `shot_pictures` (migration 17; about 2.3 KB a
+  shot). The scenes themselves are not stored: they are worked out from the
+  pictures when asked for and kept in memory until the pictures, the footage
+  type or (live action) the cast change.
+- **When it runs.** At the end of an episode's analysis, after the cast,
+  also where the cast failed, not where the analysis was stopped; for
+  episodes analysed before, when the setting goes on. It goes on from the
+  shots it has read. Shots found again forget their pictures.
+- **The recipes** (`as_analysis::scenes::Recipe`). Live action and mixed
+  footage: pictures (weight 1) and shared cast (0.25), short pieces up to
+  40 s join first, threshold 0.675 (row 8). Anime and animation: pictures
+  and stored colours (each 1), no cast, 60 s, threshold 0.600 (rows 9 and
+  12, provisional).
+- **The same numbers with the app's own pictures.** `scenes_run` (an example
+  of `as-analysis`) reads Breaking Bad S01E01 as the app does: 2,379
+  pictures of 794 shots in 49 s. Its vectors against `shot_embed.py`'s:
+  cosine 0.9986 on average (the two resize differently). A character's
+  scenes with them: 0.931 at 0.675 (0.917 with the Python pictures).
+- **In the real app** (a build of the app on a copy of the owner's library,
+  the episode found again from its 960 × 540 proxy, so analysed anew: 771
+  shots): the model arrived in 9 s, the pictures of 771 shots were read in
+  45.9 s, which is 47 s per hour of video on the development PC (RTX 3060
+  Ti, DirectML, NVDEC), after 43 s for the shots and 331 s for the faces
+  and people. A project made by the app before (schema 16) opened and moved
+  to 17.
+
+### The scenepack's "Whole scenes"
+
+A switch beside the pack's order, shown where the setting is on or the pack
+was saved with it. With it on, every other shot of the scenes the character
+is seen in joins the pack, marked "Off screen":
+
+- such a shot has no size of the character's, and the filters that speak of
+  the character in a shot (size, alone, plugin filters) pass it by; the
+  filters that speak of the shot itself (episode, flash cut, length) judge
+  it;
+- it ranks behind every shot of the character's own, so a limit cuts those
+  shots first;
+- it stays out ("Scene not in pack") when none of the character's own shots
+  of its scene is in, and that is settled before the limit;
+- an episode whose scenes are not read keeps its shots as they are, and the
+  page says how many such episodes the pack takes shots from.
+
+In the real app, on that episode: the lead's pack goes from 307 to 669 of
+the 771 shots (he is in nearly every scene), the second lead's from 125 to
+412 (9:24 to 26:02). A pack of 121 clips, 80 of them off screen, exported as
+one file of 405.5 s with 121 chapters, as the pack said. A preview takes
+13 ms without the switch, 73 ms the first time with it and 16 ms after.
+
+Not done: the shots of a scene stay shots (a dissolve or a dark piece
+between two of them is left out, as between a character's own shots, and
+with handles two neighbours overlap); a pack action of a plugin is not told
+which clips are off screen; a shot in which the character is seen only as a
+small figure counts as off screen.
+
+### The cast in the animation recipe
+
+Row 9 gave the cast a weight of 0.25 for animation too. The three anime
+episodes of the bench have no stored cast, so the cast had no say there, and
+on Bass X Machina, the one animation title with a cast, it gives nothing:
+
+| Animation recipe, one threshold for the four episodes (0.600) | Bass X Machina | Jujutsu Kaisen | One Piece | Re:Zero | mean |
+|---|---|---|---|---|---|
+| with the cast (0.25) | 0.861 | 0.900 | 0.695 | 0.952 | 0.852 |
+| without the cast | 0.866 | 0.900 | 0.695 | 0.952 | 0.853 |
+
+The app therefore leaves the cast out for anime and animation: that is what
+was measured on anime, and the anime cast is the one known to split
+characters. A cast edit then leaves the scenes of such a project as they
+are.
+
 Not measured yet: more titles of each kind (the animation settings rest on
 four episodes), a larger picture network, who speaks across the cut (step C),
 scenes across the episodes of one project.

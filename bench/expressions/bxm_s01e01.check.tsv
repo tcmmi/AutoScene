@@ -1,0 +1,842 @@
+file	track	frame	x1	y1	x2	y2	character	group	weight	a	b	c	labels
+t1195_f954.jpg	1195	954	0.0145	0.1237	0.6467	0.3871		top	1	noface	noface		noface
+t1195_f960.jpg	1195	960	0.0209	0.1232	0.6501	0.3866		top	1	noface	noface		noface
+t1195_f966.jpg	1195	966	0.3088	0.1227	0.4581	0.2404		top	1	unclear	unclear		unclear
+t1197_f1032.jpg	1197	1032	0.0030	0.1230	0.6740	0.3874		rest	8.77333	noface	noface		noface
+t1197_f1044.jpg	1197	1044	0.0015	0.1238	0.6093	0.3878		rest	8.77333	unclear	unclear		unclear
+t1197_f1056.jpg	1197	1056	0.0009	0.1235	0.6053	0.3878		rest	8.77333	noface	noface		noface
+t1198_f1080.jpg	1198	1080	0.3006	0.1316	0.6640	0.5678		rest	8.77333	unclear	unclear		unclear
+t1198_f1116.jpg	1198	1116	0.2527	0.1244	0.6782	0.6744		rest	8.77333	unclear	unclear		unclear
+t1198_f1122.jpg	1198	1122	0.2530	0.1239	0.6738	0.6249		rest	8.77333	unclear	unclear		unclear
+t1199_f1158.jpg	1199	1158	0.2823	0.4779	0.4439	0.5721		top	1	noface	noface		noface
+t1199_f1188.jpg	1199	1188	0.2734	0.4706	0.4468	0.5757		top	1	noface	noface		noface
+t1199_f1206.jpg	1199	1206	0.2726	0.4736	0.4449	0.5819		top	1	noface	noface		noface
+t1201_f1524.jpg	1201	1524	0.4157	0.1222	0.6066	0.3670	Character 60	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1201_f1548.jpg	1201	1548	0.3599	0.2473	0.6553	0.8075	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1201_f1584.jpg	1201	1584	0.3899	0.1218	0.6403	0.4074	Character 60	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1207_f1692.jpg	1207	1692	0.6880	0.4054	0.7147	0.4817	Character 68	top	1	mouth_open	unclear	mouth_open	mouth_open
+t1207_f1722.jpg	1207	1722	0.6830	0.4122	0.7089	0.4922	Character 68	top	1	angry,mouth_open	mouth_open	mouth_open	mouth_open
+t1207_f1740.jpg	1207	1740	0.6836	0.4179	0.7089	0.4971	Character 68	top	1	mouth_open	mouth_open		mouth_open
+t1208_f1704.jpg	1208	1704	0.6246	0.2777	0.6470	0.3307	Character 73	rest	8.77333	unclear	unclear		unclear
+t1208_f1728.jpg	1208	1728	0.6269	0.2835	0.6489	0.3404	Character 73	rest	8.77333	unclear	unclear		unclear
+t1208_f1740.jpg	1208	1740	0.6272	0.2882	0.6493	0.3421	Character 73	rest	8.77333	unclear	unclear		unclear
+t1209_f1704.jpg	1209	1704	0.3806	0.3409	0.3979	0.3876	Character 99	top	1	unclear	unclear		unclear
+t1209_f1734.jpg	1209	1734	0.3757	0.3478	0.3927	0.3976	Character 99	top	1	unclear	unclear		unclear
+t1209_f1752.jpg	1209	1752	0.3754	0.3542	0.3931	0.4008	Character 99	top	1	unclear	unclear		unclear
+t1216_f1836.jpg	1216	1836	0.1577	0.1223	0.2432	0.2537	Character 68	rest	8.77333	unclear	unclear		unclear
+t1216_f1896.jpg	1216	1896	0.1573	0.1221	0.2432	0.2614	Character 68	rest	8.77333	unclear	unclear		unclear
+t1216_f1920.jpg	1216	1920	0.1574	0.1219	0.2417	0.2536	Character 68	rest	8.77333	unclear	unclear		unclear
+t1220_f2058.jpg	1220	2058	0.4005	0.4650	0.6495	0.6099	Character 74	top	1	unclear	unclear		unclear
+t1220_f2076.jpg	1220	2076	0.4495	0.1993	0.5053	0.3419	Character 74	top	1	angry,mouth_open	surprised,mouth_open	angry,mouth_open	angry,mouth_open
+t1220_f2094.jpg	1220	2094	0.1904	0.2923	0.2443	0.3965	Character 74	top	1	none	angry	none	none
+t1224_f2208.jpg	1224	2208	0.0016	0.1234	0.5659	0.3874		rest	8.77333	noface	noface		noface
+t1224_f2226.jpg	1224	2226	0.0205	0.1237	0.5922	0.3874		rest	8.77333	noface	noface		noface
+t1224_f2232.jpg	1224	2232	0.0222	0.1234	0.5678	0.3872		rest	8.77333	noface	noface		noface
+t1226_f2376.jpg	1226	2376	0.8013	0.4762	0.9450	0.7412	Character 60	top	1	downcast	angry	none	none
+t1226_f2394.jpg	1226	2394	0.2467	0.2639	0.3344	0.4132	Character 60	top	1	unclear	unclear		unclear
+t1226_f2406.jpg	1226	2406	0.3854	0.2046	0.5280	0.4318	Character 60	top	1	mouth_open	mouth_open		mouth_open
+t1229_f2394.jpg	1229	2394	0.1612	0.3596	0.2145	0.4760	Character 68	rest	8.77333	unclear	unclear		unclear
+t1229_f2400.jpg	1229	2400	0.1881	0.3103	0.2462	0.4419	Character 68	rest	8.77333	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1229_f2406.jpg	1229	2406	0.2384	0.2686	0.3350	0.4489	Character 68	rest	8.77333	unclear	unclear		unclear
+t1234_f2766.jpg	1234	2766	0.0024	0.1425	0.4708	0.3414		rest	8.77333	unclear	unclear		unclear
+t1236_f2796.jpg	1236	2796	0.4157	0.1249	0.6111	0.2526		top	1	noface	noface		noface
+t1236_f2802.jpg	1236	2802	0.3750	0.1226	0.5887	0.2492		top	1	noface	noface		noface
+t1237_f2808.jpg	1237	2808	0.3504	0.1212	0.6042	0.2704		top	1	noface	noface		noface
+t1237_f2814.jpg	1237	2814	0.2767	0.1218	0.6409	0.2930		top	1	noface	noface		noface
+t1237_f2820.jpg	1237	2820	0.1780	0.1239	0.6130	0.3620		top	1	noface	noface		noface
+t1238_f2934.jpg	1238	2934	0.3577	0.2591	0.5641	0.5774	Character 60	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1238_f2964.jpg	1238	2964	0.4378	0.1959	0.5990	0.4999	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1238_f2988.jpg	1238	2988	0.4372	0.2054	0.5994	0.5110	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1239_f2934.jpg	1239	2934	0.3186	0.2129	0.9693	0.4313		top	1	unclear	unclear		unclear
+t1239_f2970.jpg	1239	2970	0.3895	0.1618	0.9802	0.4118		top	1	mouth_open	unclear	unclear	unclear
+t1239_f2988.jpg	1239	2988	0.3890	0.1687	0.9833	0.4166		top	1	unclear	unclear		unclear
+t1245_f3204.jpg	1245	3204	0.3563	0.1412	0.5915	0.5705	Character 73	top	1	mouth_open	mouth_open		mouth_open
+t1245_f3216.jpg	1245	3216	0.3552	0.1484	0.6046	0.5690	Character 73	top	1	none	none		none
+t1245_f3222.jpg	1245	3222	0.3537	0.1468	0.5797	0.5642	Character 73	top	1	none	none		none
+t1249_f3288.jpg	1249	3288	0.3982	0.1650	0.9712	0.4146		top	1	unclear	unclear		unclear
+t1249_f3312.jpg	1249	3312	0.3884	0.1534	0.9742	0.4068		top	1	unclear	unclear		unclear
+t1249_f3330.jpg	1249	3330	0.3978	0.1582	0.9652	0.4084		top	1	unclear	unclear		unclear
+t1250_f3288.jpg	1250	3288	0.4399	0.1963	0.5997	0.5075	Character 60	rest	8.77333	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t1250_f3324.jpg	1250	3324	0.4450	0.1918	0.5987	0.5008	Character 60	rest	8.77333	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t1250_f3336.jpg	1250	3336	0.4454	0.1918	0.6093	0.5345	Character 60	rest	8.77333	unclear	unclear		unclear
+t1251_f3354.jpg	1251	3354	0.0026	0.2992	0.6616	0.5022		top	1	unclear	unclear		unclear
+t1251_f3366.jpg	1251	3366	0.0024	0.2726	0.6793	0.4849		top	1	unclear	unclear		unclear
+t1251_f3372.jpg	1251	3372	0.0023	0.2326	0.6777	0.4587		top	1	unclear	unclear		unclear
+t1252_f3366.jpg	1252	3366	0.9295	0.2528	0.9635	0.3041	Character 73	rest	8.77333	unclear	unclear		unclear
+t1252_f3420.jpg	1252	3420	0.5760	0.2203	0.6375	0.3679	Character 73	rest	8.77333	smile,mouth_open	unclear	mouth_open	unclear
+t1252_f3438.jpg	1252	3438	0.4277	0.1869	0.4914	0.3413	Character 73	rest	8.77333	smile,mouth_open	unclear	mouth_open	unclear
+t1255_f3444.jpg	1255	3444	0.1373	0.1209	0.9478	0.8835	Character 60	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1255_f3456.jpg	1255	3456	0.1402	0.1212	0.9474	0.8849	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1255_f3462.jpg	1255	3462	0.1405	0.1213	0.9430	0.8851	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1260_f3528.jpg	1260	3528	0.6058	0.3487	0.6889	0.5056		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1260_f3546.jpg	1260	3546	0.5994	0.1659	0.6689	0.2852		rest	8.77333	angry,mouth_open	mouth_open	angry,mouth_open	angry,mouth_open
+t1260_f3582.jpg	1260	3582	0.4570	0.3445	0.5432	0.4355		rest	8.77333	unclear	unclear		unclear
+t1261_f3534.jpg	1261	3534	0.4151	0.3772	0.5535	0.6603		top	1	noface	noface		noface
+t1264_f3624.jpg	1264	3624	0.6139	0.4733	0.6697	0.5958	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1264_f3642.jpg	1264	3642	0.6331	0.4212	0.6929	0.5347	Character 60	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1264_f3660.jpg	1264	3660	0.6492	0.3625	0.7045	0.4735	Character 60	top	1	mouth_open	unclear	angry,mouth_open	unclear
+t1267_f3720.jpg	1267	3720	0.3794	0.2546	0.4827	0.4226	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1267_f3732.jpg	1267	3732	0.6891	0.2930	0.7927	0.4597	Character 60	top	1	surprised,mouth_open	angry,mouth_open	angry	angry,mouth_open
+t1267_f3774.jpg	1267	3774	0.0000	0.2972	0.0993	0.4922	Character 60	top	1	mouth_open	mouth_open		mouth_open
+t1268_f3738.jpg	1268	3738	0.1606	0.4139	0.4682	0.5769		top	1	unclear	unclear		unclear
+t1269_f3738.jpg	1269	3738	0.3610	0.4451	0.4504	0.6230	Character 64	rest	8.77333	unclear	unclear		unclear
+t1269_f3780.jpg	1269	3780	0.4643	0.1718	0.5637	0.3145	Character 64	rest	8.77333	angry	angry		angry
+t1269_f3810.jpg	1269	3810	0.6060	0.1367	0.9198	0.8063	Character 64	rest	8.77333	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1270_f3822.jpg	1270	3822	0.2887	0.1729	0.3908	0.3646	Character 60	rest	8.77333	unclear	unclear		unclear
+t1270_f3828.jpg	1270	3828	0.2740	0.1675	0.3762	0.3590	Character 60	rest	8.77333	unclear	unclear		unclear
+t1270_f3834.jpg	1270	3834	0.2646	0.1683	0.3666	0.3624	Character 60	rest	8.77333	unclear	unclear		unclear
+t1271_f3846.jpg	1271	3846	0.2413	0.1328	0.5691	0.5127	Character 54	rest	8.77333	mouth_open	mouth_open		mouth_open
+t1271_f3858.jpg	1271	3858	0.2243	0.1326	0.5521	0.5309	Character 54	rest	8.77333	none	unclear	none	none
+t1271_f3864.jpg	1271	3864	0.2213	0.1286	0.5517	0.5234	Character 54	rest	8.77333	mouth_open	mouth_open		mouth_open
+t1272_f3876.jpg	1272	3876	0.0493	0.3223	0.1713	0.5064	Character 86	rest	8.77333	mouth_open	mouth_open		mouth_open
+t1272_f3894.jpg	1272	3894	0.1588	0.3396	0.2795	0.5218	Character 86	rest	8.77333	mouth_open	mouth_open		mouth_open
+t1272_f3912.jpg	1272	3912	0.1302	0.3269	0.2486	0.5098	Character 86	rest	8.77333	mouth_open	mouth_open		mouth_open
+t1273_f3876.jpg	1273	3876	0.6529	0.3161	0.7465	0.4482	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1273_f3894.jpg	1273	3894	0.7599	0.2660	0.8551	0.4186	Character 60	top	1	surprised,mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t1273_f3912.jpg	1273	3912	0.7343	0.2337	0.8120	0.3870	Character 60	top	1	none	angry	angry	angry
+t1275_f4044.jpg	1275	4044	0.2745	0.1715	0.4724	0.6915	Character 60	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1275_f4068.jpg	1275	4068	0.2605	0.1835	0.4680	0.6846	Character 60	rest	8.77333	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1275_f4098.jpg	1275	4098	0.2572	0.1867	0.4647	0.6834	Character 60	rest	8.77333	none	none		none
+t1279_f4404.jpg	1279	4404	0.5797	0.3411	0.6759	0.4632		rest	8.77333	unclear	unclear		unclear
+t1279_f4422.jpg	1279	4422	0.5815	0.3417	0.6770	0.4600		rest	8.77333	unclear	unclear		unclear
+t1279_f4434.jpg	1279	4434	0.5763	0.3350	0.6814	0.4571		rest	8.77333	unclear	unclear		unclear
+t1283_f4632.jpg	1283	4632	0.4619	0.1222	0.5424	0.2276	Character 64	rest	8.77333	surprised,mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t1283_f4638.jpg	1283	4638	0.4507	0.1498	0.5473	0.3856	Character 64	rest	8.77333	surprised,mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t1288_f4746.jpg	1288	4746	0.1464	0.1249	0.9977	0.9024		top	1	surprised	surprised		surprised
+t1288_f4758.jpg	1288	4758	0.1461	0.1252	0.9986	0.8953		top	1	surprised	surprised		surprised
+t1288_f4764.jpg	1288	4764	0.1453	0.1252	0.9987	0.8917		top	1	surprised	surprised		surprised
+t1302_f5028.jpg	1302	5028	0.1775	0.4173	0.2563	0.5506		top	1	none	none		none
+t1302_f5040.jpg	1302	5040	0.1311	0.3739	0.1954	0.5141		top	1	angry	angry		angry
+t1302_f5088.jpg	1302	5088	0.2773	0.2651	0.3131	0.3537		top	1	angry	angry		angry
+t1304_f5034.jpg	1304	5034	0.6107	0.3493	0.7115	0.4212	Character 68	rest	8.77333	unclear	unclear		unclear
+t1304_f5052.jpg	1304	5052	0.6441	0.3610	0.6623	0.4110	Character 68	rest	8.77333	unclear	unclear		unclear
+t1304_f5058.jpg	1304	5058	0.6398	0.3525	0.6579	0.4014	Character 68	rest	8.77333	unclear	unclear		unclear
+t1315_f5178.jpg	1315	5178	0.6707	0.4995	0.7377	0.6529		top	1	eyes_closed	eyes_closed		eyes_closed
+t1315_f5190.jpg	1315	5190	0.7632	0.6199	0.8170	0.7108		top	1	mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open
+t1315_f5196.jpg	1315	5196	0.6774	0.5968	0.8175	0.6958		top	1	unclear	noface	eyes_closed,mouth_open	unclear
+t1330_f5652.jpg	1330	5652	0.0633	0.5740	0.2064	0.6775	Character 100	top	1	unclear	unclear		unclear
+t1330_f5664.jpg	1330	5664	0.1349	0.5454	0.1843	0.6641	Character 100	top	1	mouth_open	mouth_open		mouth_open
+t1330_f5670.jpg	1330	5670	0.1581	0.5383	0.2028	0.6504	Character 100	top	1	mouth_open	mouth_open		mouth_open
+t1331_f5652.jpg	1331	5652	0.0000	0.5606	0.0338	0.7091		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1331_f5676.jpg	1331	5676	0.4068	0.6354	0.5517	0.8807		rest	8.77333	angry	angry		angry
+t1331_f5694.jpg	1331	5694	0.4105	0.6355	0.5565	0.8809		rest	8.77333	angry	angry		angry
+t1338_f5862.jpg	1338	5862	0.2804	0.1231	0.8052	0.3816		top	1	unclear	unclear		unclear
+t1338_f5874.jpg	1338	5874	0.2638	0.1231	0.7952	0.3812		top	1	unclear	unclear		unclear
+t1338_f5892.jpg	1338	5892	0.2725	0.1238	0.7966	0.3844		top	1	unclear	unclear		unclear
+t1343_f5994.jpg	1343	5994	0.2911	0.2200	0.5829	0.8085		top	1	unclear	unclear		unclear
+t1345_f6150.jpg	1345	6150	0.1440	0.1235	0.9996	0.6767	Character 54	top	1	unclear	unclear		unclear
+t1345_f6156.jpg	1345	6156	0.4138	0.1538	0.7910	0.5612	Character 54	top	1	angry,mouth_open	mouth_open	angry,mouth_open	angry,mouth_open
+t1348_f6264.jpg	1348	6264	0.2427	0.3097	0.3867	0.4324		top	1	unclear	unclear		unclear
+t1348_f6276.jpg	1348	6276	0.2418	0.3108	0.3853	0.4342		top	1	unclear	unclear		unclear
+t1348_f6306.jpg	1348	6306	0.2490	0.4267	0.2900	0.5315		top	1	downcast	downcast		downcast
+t1350_f6282.jpg	1350	6282	0.3086	0.3320	0.3381	0.3966		rest	8.77333	unclear	unclear		unclear
+t1350_f6300.jpg	1350	6300	0.3101	0.3315	0.3373	0.3995		rest	8.77333	unclear	unclear		unclear
+t1350_f6306.jpg	1350	6306	0.3105	0.3333	0.3378	0.4021		rest	8.77333	unclear	unclear		unclear
+t1359_f6342.jpg	1359	6342	0.7004	0.3745	0.7974	0.4320		top	1	unclear	unclear		unclear
+t1366_f6588.jpg	1366	6588	0.1113	0.1240	0.4816	0.4785	Character 54	top	1	mouth_open	unclear	mouth_open	mouth_open
+t1366_f6606.jpg	1366	6606	0.4120	0.2860	0.5398	0.4948	Character 54	top	1	surprised,mouth_open	shout,mouth_open	surprised,mouth_open	surprised,mouth_open
+t1366_f6612.jpg	1366	6612	0.3944	0.1960	0.6431	0.6479	Character 54	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1367_f6666.jpg	1367	6666	0.6303	0.4903	0.6726	0.5963		rest	8.77333	unclear	unclear		unclear
+t1367_f6684.jpg	1367	6684	0.6299	0.4910	0.6814	0.5932		rest	8.77333	unclear	unclear		unclear
+t1367_f6708.jpg	1367	6708	0.6303	0.4896	0.6813	0.5914		rest	8.77333	unclear	unclear		unclear
+t1386_f7368.jpg	1386	7368	0.6332	0.3851	0.6852	0.4867	Character 64	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1386_f7386.jpg	1386	7386	0.6334	0.4142	0.6849	0.5158	Character 64	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1386_f7404.jpg	1386	7404	0.0957	0.1431	0.5570	0.8453	Character 64	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t1390_f7452.jpg	1390	7452	0.0585	0.1506	0.2529	0.5340	Character 100	top	1	downcast,eyes_closed	downcast,eyes_closed		downcast,eyes_closed
+t1390_f7458.jpg	1390	7458	0.0912	0.1721	0.2714	0.5055	Character 100	top	1	mouth_open	mouth_open		mouth_open
+t1395_f7518.jpg	1395	7518	0.3869	0.1233	0.7307	0.7082	Character 101	rest	8.77333	angry,mouth_open	mouth_open	angry,mouth_open	angry,mouth_open
+t1395_f7542.jpg	1395	7542	0.3491	0.1235	0.5144	0.3700	Character 101	rest	8.77333	unclear	unclear		unclear
+t1395_f7548.jpg	1395	7548	0.2139	0.1232	0.4897	0.4861	Character 101	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1399_f7884.jpg	1399	7884	0.0238	0.1248	0.9424	0.8724		top	1	angry,mouth_open	smile,mouth_open	smile,mouth_open	smile,mouth_open
+t1399_f7896.jpg	1399	7896	0.0433	0.1328	0.8240	0.8760		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1399_f7914.jpg	1399	7914	0.0084	0.1235	0.9862	0.8767		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1403_f8136.jpg	1403	8136	0.0269	0.1233	0.7740	0.8583	Character 54	rest	8.77333	unclear	unclear		unclear
+t1411_f8442.jpg	1411	8442	0.2925	0.1240	0.7897	0.8542	Character 83	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1411_f8448.jpg	1411	8448	0.3757	0.1229	0.7032	0.5344	Character 83	top	1	angry	angry		angry
+t1411_f8454.jpg	1411	8454	0.4163	0.1243	0.6605	0.4276	Character 83	top	1	angry	angry		angry
+t1413_f8514.jpg	1413	8514	0.4149	0.1257	0.9421	0.8753	Character 60	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1415_f8544.jpg	1415	8544	0.2624	0.5385	0.4334	0.8790		rest	8.77333	noface	noface		noface
+t1420_f8784.jpg	1420	8784	0.3610	0.1694	0.4186	0.2847	Character 83	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1420_f8802.jpg	1420	8802	0.3591	0.1720	0.4172	0.2872	Character 83	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1420_f8826.jpg	1420	8826	0.3599	0.1754	0.4187	0.2906	Character 83	rest	8.77333	angry	angry		angry
+t1424_f8940.jpg	1424	8940	0.2767	0.4259	0.3106	0.5313		top	1	noface	noface		noface
+t1432_f9396.jpg	1432	9396	0.1878	0.1217	0.8500	0.8748		top	1	unclear	unclear		unclear
+t1432_f9408.jpg	1432	9408	0.1781	0.1227	0.8243	0.8747		top	1	unclear	unclear		unclear
+t1432_f9414.jpg	1432	9414	0.2018	0.1233	0.8303	0.8697		top	1	unclear	unclear		unclear
+t1434_f9546.jpg	1434	9546	0.4154	0.2722	0.6054	0.3685		top	1	noface	noface		noface
+t1435_f9606.jpg	1435	9606	0.4684	0.3796	0.6743	0.5135		top	1	noface	noface		noface
+t1435_f9612.jpg	1435	9612	0.4850	0.4006	0.6843	0.5371		top	1	noface	noface		noface
+t1435_f9624.jpg	1435	9624	0.5119	0.4386	0.6983	0.5793		top	1	noface	noface		noface
+t1436_f9678.jpg	1436	9678	0.4870	0.3161	0.5107	0.3827		rest	8.77333	unclear	unclear		unclear
+t1436_f9684.jpg	1436	9684	0.4851	0.3182	0.5082	0.3824		rest	8.77333	unclear	unclear		unclear
+t1436_f9696.jpg	1436	9696	0.4847	0.3192	0.5052	0.3852		rest	8.77333	unclear	unclear		unclear
+t1440_f9888.jpg	1440	9888	0.4509	0.2817	0.5654	0.3877		top	1	noface	noface		noface
+t1440_f9894.jpg	1440	9894	0.4518	0.2816	0.5660	0.3876		top	1	noface	noface		noface
+t1440_f9900.jpg	1440	9900	0.4523	0.2848	0.5640	0.3853		top	1	noface	noface		noface
+t1442_f10200.jpg	1442	10200	0.1714	0.5411	0.2743	0.6302		rest	8.77333	noface	noface		noface
+t1454_f10542.jpg	1454	10542	0.2327	0.1824	0.2793	0.2799		rest	8.77333	none	none		none
+t1454_f10554.jpg	1454	10554	0.1960	0.1405	0.2528	0.2471		rest	8.77333	none	none		none
+t1454_f10560.jpg	1454	10560	0.1746	0.1216	0.2375	0.2272		rest	8.77333	none	none		none
+t1455_f10536.jpg	1455	10536	0.1948	0.1934	0.2393	0.2976	Character 103	top	1	none	none		none
+t1455_f10554.jpg	1455	10554	0.1374	0.1220	0.1863	0.2398	Character 103	top	1	mouth_open	none	mouth_open	mouth_open
+t1455_f10560.jpg	1455	10560	0.1128	0.1224	0.1684	0.2201	Character 103	top	1	none	none		none
+t1456_f10560.jpg	1456	10560	0.9366	0.3788	0.9648	0.4329	Character 52	top	1	none	angry	unclear	unclear
+t1456_f10566.jpg	1456	10566	0.9449	0.3789	0.9725	0.4332	Character 52	top	1	unclear	unclear		unclear
+t1456_f10602.jpg	1456	10602	0.9327	0.3939	0.9599	0.4554	Character 52	top	1	unclear	angry	angry	angry
+t1473_f10734.jpg	1473	10734	0.3989	0.2354	0.6097	0.5363		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1473_f10758.jpg	1473	10758	0.3883	0.2409	0.5963	0.5406		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1473_f10794.jpg	1473	10794	0.3799	0.2315	0.5880	0.5351		top	1	surprised	surprised		surprised
+t1475_f10728.jpg	1475	10728	0.6821	0.2341	0.7821	0.4109		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1475_f10782.jpg	1475	10782	0.6974	0.1861	0.8052	0.3548		top	1	none	none		none
+t1475_f10824.jpg	1475	10824	0.6653	0.1848	0.7671	0.3540		top	1	mouth_open	mouth_open		mouth_open
+t1478_f10830.jpg	1478	10830	0.0000	0.4053	0.0589	0.5716		rest	8.77333	unclear	unclear		unclear
+t1478_f10842.jpg	1478	10842	0.0000	0.4282	0.0580	0.5955		rest	8.77333	unclear	unclear		unclear
+t1478_f10854.jpg	1478	10854	0.0000	0.4502	0.0590	0.6158		rest	8.77333	unclear	unclear		unclear
+t1484_f10836.jpg	1484	10836	0.0000	0.1932	0.0308	0.2810		rest	8.77333	noface	noface		noface
+t1484_f10866.jpg	1484	10866	0.0000	0.2476	0.0291	0.3350		rest	8.77333	noface	noface		noface
+t1484_f10884.jpg	1484	10884	0.0000	0.2810	0.0305	0.3696		rest	8.77333	noface	noface		noface
+t1501_f10980.jpg	1501	10980	0.4995	0.2840	0.6708	0.4918		rest	8.77333	noface	noface		noface
+t1512_f11040.jpg	1512	11040	0.3976	0.3398	0.4477	0.4393		rest	8.77333	unclear	unclear		unclear
+t1512_f11052.jpg	1512	11052	0.3855	0.3478	0.4352	0.4454		rest	8.77333	unclear	unclear		unclear
+t1512_f11076.jpg	1512	11076	0.3593	0.3642	0.4113	0.4665		rest	8.77333	unclear	unclear		unclear
+t1562_f11598.jpg	1562	11598	0.1482	0.1762	0.2444	0.3582		top	1	eyes_closed	eyes_closed		eyes_closed
+t1562_f11622.jpg	1562	11622	0.1233	0.1767	0.2187	0.3594		top	1	eyes_closed	eyes_closed		eyes_closed
+t1562_f11646.jpg	1562	11646	0.0996	0.1791	0.1927	0.3598		top	1	eyes_closed	eyes_closed		eyes_closed
+t1573_f11736.jpg	1573	11736	0.0699	0.5391	0.1191	0.6249		rest	8.77333	unclear	unclear		unclear
+t1583_f12066.jpg	1583	12066	0.6792	0.5341	0.7148	0.6069	Character 104	rest	8.77333	unclear	unclear		unclear
+t1583_f12072.jpg	1583	12072	0.6792	0.5340	0.7148	0.6070	Character 104	rest	8.77333	unclear	unclear		unclear
+t1583_f12084.jpg	1583	12084	0.6771	0.5360	0.7149	0.6054	Character 104	rest	8.77333	none	unclear	none	none
+t1586_f12120.jpg	1586	12120	0.5489	0.1266	1.0000	0.3896		rest	8.77333	noface	noface		noface
+t1586_f12132.jpg	1586	12132	0.5489	0.1266	1.0000	0.3896		rest	8.77333	noface	noface		noface
+t1586_f12180.jpg	1586	12180	0.5478	0.1297	0.9991	0.3910		rest	8.77333	noface	noface		noface
+t1591_f12612.jpg	1591	12612	0.2411	0.3552	0.6277	0.8610	Character 61	top	1	angry	angry		angry
+t1591_f12624.jpg	1591	12624	0.2947	0.1212	0.7252	0.8470	Character 61	top	1	angry	angry		angry
+t1591_f12654.jpg	1591	12654	0.2958	0.1213	0.7247	0.8511	Character 61	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1593_f12852.jpg	1593	12852	0.3461	0.1242	0.7902	0.3882		rest	8.77333	noface	noface		noface
+t1593_f12864.jpg	1593	12864	0.2127	0.1232	0.7991	0.3867		rest	8.77333	noface	noface		noface
+t1593_f12900.jpg	1593	12900	0.2055	0.1239	0.8058	0.3877		rest	8.77333	unclear	unclear		unclear
+t1601_f12960.jpg	1601	12960	0.2036	0.1618	0.4231	0.5968	Character 61	rest	8.77333	none	none		none
+t1601_f13002.jpg	1601	13002	0.1242	0.1224	0.5426	0.6235	Character 61	rest	8.77333	none	none		none
+t1601_f13014.jpg	1601	13014	0.1311	0.1229	0.4767	0.6290	Character 61	rest	8.77333	none	none		none
+t1609_f13356.jpg	1609	13356	0.6767	0.1253	0.7021	0.1909	Character 87	rest	8.77333	unclear	unclear		unclear
+t1609_f13374.jpg	1609	13374	0.6769	0.2578	0.7013	0.3155	Character 87	rest	8.77333	unclear	unclear		unclear
+t1609_f13386.jpg	1609	13386	0.6775	0.3061	0.7016	0.3618	Character 87	rest	8.77333	unclear	unclear		unclear
+t1617_f13422.jpg	1617	13422	0.2049	0.1364	0.8228	0.3959		top	1	smile,eyes_closed,mouth_open	smile,eyes_closed,mouth_open		smile,eyes_closed,mouth_open
+t1617_f13428.jpg	1617	13428	0.2892	0.1248	0.7054	0.6669		top	1	smile	smile		smile
+t1617_f13446.jpg	1617	13446	0.2702	0.1245	0.6861	0.6574		top	1	none	none		none
+t1620_f13626.jpg	1620	13626	0.3490	0.1222	0.6850	0.7216	Character 53	rest	8.77333	downcast	mouth_open	surprised,mouth_open	mouth_open
+t1620_f13656.jpg	1620	13656	0.3369	0.1342	0.6860	0.7748	Character 53	rest	8.77333	none	none		none
+t1620_f13704.jpg	1620	13704	0.3666	0.1230	0.7111	0.7488	Character 53	rest	8.77333	mouth_open	mouth_open		mouth_open
+t1628_f13980.jpg	1628	13980	0.2351	0.3533	0.4453	0.8077		rest	8.77333	unclear	unclear		unclear
+t1628_f14016.jpg	1628	14016	0.2350	0.3533	0.4454	0.8075		rest	8.77333	unclear	unclear		unclear
+t1628_f14028.jpg	1628	14028	0.2369	0.3517	0.4472	0.8032		rest	8.77333	unclear	unclear		unclear
+t1629_f13986.jpg	1629	13986	0.2124	0.2317	0.2382	0.3286		top	1	noface	noface		noface
+t1629_f13998.jpg	1629	13998	0.2125	0.2323	0.2377	0.3288		top	1	noface	noface		noface
+t1629_f14040.jpg	1629	14040	0.2126	0.2325	0.2376	0.3283		top	1	noface	noface		noface
+t1630_f14046.jpg	1630	14046	0.2922	0.2037	0.4685	0.5438	Character 53	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1630_f14100.jpg	1630	14100	0.3293	0.1988	0.4988	0.5496	Character 53	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1630_f14166.jpg	1630	14166	0.4659	0.2297	0.6326	0.5576	Character 53	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1650_f14784.jpg	1650	14784	0.3912	0.4637	0.5035	0.6334	Character 53	rest	8.77333	unclear	unclear		unclear
+t1650_f14802.jpg	1650	14802	0.3543	0.4234	0.4590	0.6195	Character 53	rest	8.77333	unclear	unclear		unclear
+t1650_f14808.jpg	1650	14808	0.3317	0.4233	0.4367	0.6183	Character 53	rest	8.77333	unclear	unclear		unclear
+t1651_f14820.jpg	1651	14820	0.6229	0.3787	0.9674	0.8765	Character 57	rest	8.77333	none	none		none
+t1651_f14874.jpg	1651	14874	0.6230	0.3787	0.9693	0.8764	Character 57	rest	8.77333	none	none		none
+t1651_f14928.jpg	1651	14928	0.6239	0.2323	0.9528	0.7011	Character 57	rest	8.77333	unclear	unclear		unclear
+t1652_f14820.jpg	1652	14820	0.5441	0.1222	0.6891	0.3051	Character 53	top	1	downcast	none	downcast	downcast
+t1652_f14898.jpg	1652	14898	0.4343	0.1765	0.6233	0.5463	Character 53	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1652_f14940.jpg	1652	14940	0.3847	0.1537	0.5607	0.4802	Character 53	top	1	downcast	downcast		downcast
+t1656_f15126.jpg	1656	15126	0.1941	0.1229	0.5073	0.6749	Character 53	top	1	angry	angry		angry
+t1656_f15180.jpg	1656	15180	0.1942	0.1228	0.5045	0.6514	Character 53	top	1	downcast	downcast		downcast
+t1656_f15222.jpg	1656	15222	0.2320	0.1252	0.5439	0.7370	Character 53	top	1	downcast,mouth_open	mouth_open	downcast,mouth_open	downcast,mouth_open
+t1664_f15618.jpg	1664	15618	0.3510	0.7448	0.3739	0.7858		rest	8.77333	noface	unclear	unclear	unclear
+t1664_f15636.jpg	1664	15636	0.3506	0.7546	0.3739	0.7947		rest	8.77333	noface	unclear	unclear	unclear
+t1664_f15648.jpg	1664	15648	0.3509	0.7603	0.3741	0.8005		rest	8.77333	noface	unclear	unclear	unclear
+t1673_f15780.jpg	1673	15780	0.2451	0.1513	0.2965	0.2355		rest	8.77333	noface	noface		noface
+t1687_f15966.jpg	1687	15966	0.0012	0.1235	0.5498	0.7640	Character 58	rest	8.77333	smile,mouth_open	smile	smile,mouth_open	smile,mouth_open
+t1687_f16002.jpg	1687	16002	0.0193	0.1217	0.5431	0.7448	Character 58	rest	8.77333	smile	smile		smile
+t1687_f16050.jpg	1687	16050	0.0798	0.1237	0.5519	0.6848	Character 58	rest	8.77333	smile	smile		smile
+t1692_f16086.jpg	1692	16086	0.5011	0.1236	0.9729	0.8487	Character 53	top	1	downcast	surprised	surprised,mouth_open	surprised
+t1692_f16116.jpg	1692	16116	0.6159	0.1226	0.9079	0.4925	Character 53	top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t1692_f16182.jpg	1692	16182	0.7603	0.1233	1.0000	0.6088	Character 53	top	1	downcast,eyes_closed	eyes_closed,mouth_open	cry,eyes_closed	eyes_closed
+t1693_f16062.jpg	1693	16062	0.4452	0.1633	0.4680	0.2213	Character 86	rest	8.77333	none	unclear	none	none
+t1693_f16122.jpg	1693	16122	0.5131	0.3376	0.6715	0.5950	Character 86	rest	8.77333	none	none		none
+t1693_f16158.jpg	1693	16158	0.7658	0.1223	0.9325	0.4475	Character 86	rest	8.77333	downcast	none	none	none
+t1695_f16074.jpg	1695	16074	0.0467	0.4520	0.1510	0.5546		top	1	unclear	noface	unclear	unclear
+t1695_f16128.jpg	1695	16128	0.0473	0.3961	0.1648	0.6504		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1695_f16146.jpg	1695	16146	0.0398	0.3961	0.1552	0.6522		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1697_f16128.jpg	1697	16128	0.3589	0.2543	0.5240	0.5914		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1697_f16158.jpg	1697	16158	0.3157	0.1500	0.5238	0.5339		top	1	mouth_open	mouth_open		mouth_open
+t1697_f16170.jpg	1697	16170	0.3430	0.1470	0.5560	0.5467		top	1	mouth_open	mouth_open		mouth_open
+t1698_f16116.jpg	1698	16116	0.2311	0.3783	0.3654	0.7258	Character 85	top	1	none	none		none
+t1698_f16164.jpg	1698	16164	0.1191	0.1237	0.3228	0.4309	Character 85	top	1	unclear	unclear		unclear
+t1698_f16194.jpg	1698	16194	0.1034	0.1237	0.3150	0.4219	Character 85	top	1	unclear	unclear		unclear
+t1702_f16188.jpg	1702	16188	0.3307	0.3014	0.4259	0.4977		rest	8.77333	unclear	unclear		unclear
+t1702_f16194.jpg	1702	16194	0.3261	0.3014	0.4243	0.4972		rest	8.77333	unclear	unclear		unclear
+t1706_f16212.jpg	1706	16212	0.6687	0.3568	0.6904	0.4002		top	1	mouth_open	mouth_open		mouth_open
+t1706_f16248.jpg	1706	16248	0.6691	0.3763	0.6903	0.4190		top	1	mouth_open	mouth_open		mouth_open
+t1706_f16254.jpg	1706	16254	0.6689	0.3797	0.6904	0.4226		top	1	mouth_open	mouth_open		mouth_open
+t1708_f16206.jpg	1708	16206	0.6512	0.4351	0.6721	0.4825		top	1	unclear	unclear		unclear
+t1708_f16236.jpg	1708	16236	0.6506	0.4527	0.6716	0.5002		top	1	unclear	unclear		unclear
+t1708_f16266.jpg	1708	16266	0.6510	0.4655	0.6720	0.5151		top	1	unclear	unclear		unclear
+t1713_f16212.jpg	1713	16212	0.9461	0.4338	0.9627	0.4776		top	1	mouth_open	mouth_open		mouth_open
+t1713_f16224.jpg	1713	16224	0.9453	0.4398	0.9622	0.4855		top	1	mouth_open	mouth_open		mouth_open
+t1713_f16254.jpg	1713	16254	0.9458	0.4559	0.9627	0.5004		top	1	mouth_open	mouth_open		mouth_open
+t1715_f16206.jpg	1715	16206	0.2848	0.2449	0.3175	0.2943		rest	8.77333	unclear	unclear		unclear
+t1715_f16224.jpg	1715	16224	0.2846	0.2525	0.3172	0.3033		rest	8.77333	unclear	unclear		unclear
+t1715_f16248.jpg	1715	16248	0.2586	0.4603	0.2761	0.5079		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1719_f16206.jpg	1719	16206	0.1934	0.3747	0.2131	0.4150		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1719_f16230.jpg	1719	16230	0.1934	0.3869	0.2135	0.4270		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1719_f16266.jpg	1719	16266	0.1937	0.4051	0.2119	0.4460		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1721_f16218.jpg	1721	16218	0.3419	0.5084	0.3599	0.5557		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1721_f16236.jpg	1721	16236	0.3418	0.5178	0.3606	0.5665		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1721_f16260.jpg	1721	16260	0.3419	0.5297	0.3601	0.5772		rest	8.77333	mouth_open	mouth_open		mouth_open
+t1723_f16212.jpg	1723	16212	0.7127	0.3783	0.7277	0.4185	Character 85	rest	8.77333	unclear	unclear		unclear
+t1723_f16254.jpg	1723	16254	0.7127	0.4002	0.7278	0.4410	Character 85	rest	8.77333	unclear	unclear		unclear
+t1723_f16260.jpg	1723	16260	0.7127	0.4037	0.7279	0.4437	Character 85	rest	8.77333	unclear	unclear		unclear
+t1726_f16218.jpg	1726	16218	0.0000	0.3034	0.0399	0.4193		rest	8.77333	noface	noface		noface
+t1726_f16230.jpg	1726	16230	0.0000	0.2802	0.0432	0.4045		rest	8.77333	noface	noface		noface
+t1726_f16248.jpg	1726	16248	0.2371	0.3778	0.2542	0.4179		rest	8.77333	unclear	unclear		unclear
+t1728_f16230.jpg	1728	16230	0.3838	0.3219	0.4004	0.3628		rest	8.77333	unclear	unclear		unclear
+t1740_f16278.jpg	1740	16278	0.0001	0.6211	0.0896	0.8371		top	1	unclear	unclear		unclear
+t1740_f16308.jpg	1740	16308	0.1493	0.6207	0.2524	0.8446		top	1	unclear	unclear		unclear
+t1740_f16326.jpg	1740	16326	0.2475	0.6224	0.3467	0.8498		top	1	unclear	unclear		unclear
+t1742_f16296.jpg	1742	16296	0.1836	0.5836	0.3034	0.8326		top	1	mouth_open	mouth_open		mouth_open
+t1742_f16314.jpg	1742	16314	0.2793	0.5964	0.3826	0.8282		top	1	mouth_open	mouth_open		mouth_open
+t1742_f16320.jpg	1742	16320	0.3041	0.5986	0.4130	0.8347		top	1	mouth_open	mouth_open		mouth_open
+t1750_f16710.jpg	1750	16710	0.4112	0.3220	0.4374	0.3728		rest	8.77333	unclear	unclear		unclear
+t1750_f16734.jpg	1750	16734	0.4111	0.3220	0.4373	0.3721		rest	8.77333	unclear	unclear		unclear
+t1750_f16752.jpg	1750	16752	0.4111	0.3220	0.4374	0.3728		rest	8.77333	unclear	unclear		unclear
+t1764_f17670.jpg	1764	17670	0.6074	0.2748	0.6938	0.4685	Character 59	rest	8.77333	none	none		none
+t1764_f17688.jpg	1764	17688	0.6190	0.2801	0.7050	0.4734	Character 59	rest	8.77333	none	angry	none	none
+t1764_f17712.jpg	1764	17712	0.5823	0.2817	0.6713	0.4834	Character 59	rest	8.77333	eyes_closed	eyes_closed		eyes_closed
+t1775_f18420.jpg	1775	18420	0.5175	0.3299	0.5434	0.3859	Character 59	rest	8.77333	unclear	unclear		unclear
+t1775_f18450.jpg	1775	18450	0.5175	0.3300	0.5434	0.3859	Character 59	rest	8.77333	unclear	unclear		unclear
+t1775_f18474.jpg	1775	18474	0.5174	0.3299	0.5434	0.3861	Character 59	rest	8.77333	unclear	unclear		unclear
+t1792_f19194.jpg	1792	19194	0.3878	0.2207	0.4768	0.3591	Character 2	top	1	unclear	unclear		unclear
+t1792_f19212.jpg	1792	19212	0.3306	0.1450	0.4769	0.3849	Character 2	top	1	unclear	none	unclear	unclear
+t1792_f19242.jpg	1792	19242	0.2917	0.1228	0.5263	0.3577	Character 2	top	1	none	angry	angry	angry
+t1799_f19740.jpg	1799	19740	0.0021	0.1233	0.2454	0.4168	Character 52	rest	8.77333	unclear	unclear		unclear
+t1799_f19746.jpg	1799	19746	0.0138	0.1239	0.3649	0.4314	Character 52	rest	8.77333	unclear	unclear		unclear
+t1799_f19752.jpg	1799	19752	0.0005	0.1231	0.5434	0.3891	Character 52	rest	8.77333	unclear	unclear		unclear
+t1804_f19980.jpg	1804	19980	0.3211	0.1225	0.9793	0.3867		rest	8.77333	angry	angry		angry
+t1804_f20046.jpg	1804	20046	0.3221	0.1225	0.9807	0.3868		rest	8.77333	angry	angry		angry
+t1804_f20112.jpg	1804	20112	0.3174	0.1226	0.9790	0.3868		rest	8.77333	angry	angry		angry
+t1805_f20262.jpg	1805	20262	0.5450	0.1217	0.8048	0.6215	Character 59	rest	8.77333	mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1805_f20316.jpg	1805	20316	0.5432	0.1227	0.8059	0.6152	Character 59	rest	8.77333	mouth_open	mouth_open		mouth_open
+t1805_f20370.jpg	1805	20370	0.5408	0.1237	0.8025	0.6341	Character 59	rest	8.77333	mouth_open	none	angry,mouth_open	mouth_open
+t1829_f21648.jpg	1829	21648	0.5193	0.2720	0.7227	0.4838		rest	8.77333	unclear	unclear		unclear
+t1829_f21672.jpg	1829	21672	0.5219	0.2705	0.7204	0.4828		rest	8.77333	unclear	unclear		unclear
+t1829_f21684.jpg	1829	21684	0.5205	0.2605	0.7208	0.4762		rest	8.77333	unclear	unclear		unclear
+t1835_f22062.jpg	1835	22062	0.4415	0.5783	0.5579	0.8212		rest	8.77333	unclear	unclear		unclear
+t1835_f22074.jpg	1835	22074	0.5284	0.6716	0.5987	0.8142		rest	8.77333	unclear	unclear		unclear
+t1835_f22080.jpg	1835	22080	0.5558	0.7155	0.6101	0.8313		rest	8.77333	unclear	unclear		unclear
+t1838_f22104.jpg	1838	22104	0.2114	0.4241	0.2797	0.5609	Character 114	top	1	smile	smile,mouth_open	smile,mouth_open	smile,mouth_open
+t1838_f22128.jpg	1838	22128	0.2416	0.4193	0.3308	0.5878	Character 114	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1838_f22158.jpg	1838	22158	0.4105	0.4722	0.5201	0.6602	Character 114	top	1	smile	smile		smile
+t1846_f22404.jpg	1846	22404	0.4832	0.3103	0.5188	0.3852	Character 55	top	1	mouth_open	mouth_open		mouth_open
+t1846_f22428.jpg	1846	22428	0.4969	0.3126	0.5276	0.3822	Character 55	top	1	none	none		none
+t1846_f22476.jpg	1846	22476	0.4971	0.3133	0.5273	0.3826	Character 55	top	1	none	none		none
+t1849_f22494.jpg	1849	22494	0.5955	0.3789	0.6966	0.5694	Character 55	rest	8.77333	none	none		none
+t1849_f22518.jpg	1849	22518	0.5681	0.3752	0.6723	0.5640	Character 55	rest	8.77333	none	none		none
+t1849_f22554.jpg	1849	22554	0.5391	0.3693	0.6418	0.5390	Character 55	rest	8.77333	none	none		none
+t1857_f23160.jpg	1857	23160	0.3690	0.2718	0.4182	0.3883	Character 52	top	1	none	none		none
+t1857_f23184.jpg	1857	23184	0.5312	0.1496	0.5752	0.2728	Character 52	top	1	none	angry	none	none
+t1857_f23202.jpg	1857	23202	0.5430	0.1533	0.5999	0.3041	Character 52	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1864_f23454.jpg	1864	23454	0.4474	0.2341	0.5866	0.5291	Character 52	top	1	eyes_closed	eyes_closed		eyes_closed
+t1864_f23496.jpg	1864	23496	0.4471	0.2333	0.5877	0.5278	Character 52	top	1	eyes_closed	eyes_closed		eyes_closed
+t1864_f23538.jpg	1864	23538	0.4471	0.2330	0.5879	0.5278	Character 52	top	1	eyes_closed	eyes_closed		eyes_closed
+t1865_f23454.jpg	1865	23454	0.3921	0.1891	0.9672	0.4304	Character 112	rest	8.77333	downcast,eyes_closed	downcast	eyes_closed	downcast,eyes_closed
+t1865_f23496.jpg	1865	23496	0.4002	0.1918	0.9634	0.4321	Character 112	rest	8.77333	downcast,eyes_closed	downcast	eyes_closed	downcast,eyes_closed
+t1865_f23538.jpg	1865	23538	0.3991	0.1937	0.9654	0.4333	Character 112	rest	8.77333	downcast,eyes_closed	downcast	eyes_closed	downcast,eyes_closed
+t1879_f24396.jpg	1879	24396	0.6046	0.1223	0.9649	0.5120	Character 52	rest	8.77333	unclear	unclear		unclear
+t1879_f24432.jpg	1879	24432	0.6043	0.1223	0.9645	0.5117	Character 52	rest	8.77333	unclear	unclear		unclear
+t1879_f24444.jpg	1879	24444	0.6044	0.1223	0.9643	0.5117	Character 52	rest	8.77333	unclear	unclear		unclear
+t1886_f24834.jpg	1886	24834	0.4519	0.3805	0.4825	0.4561	Character 55	top	1	downcast,mouth_open	downcast	downcast,mouth_open	downcast,mouth_open
+t1886_f24906.jpg	1886	24906	0.3104	0.3826	0.3422	0.4519	Character 55	top	1	downcast	downcast		downcast
+t1886_f24948.jpg	1886	24948	0.2930	0.3823	0.3259	0.4504	Character 55	top	1	downcast,mouth_open	mouth_open	downcast,mouth_open	downcast,mouth_open
+t1890_f25002.jpg	1890	25002	0.6248	0.1811	0.7386	0.4354	Character 52	rest	8.77333	downcast	downcast		downcast
+t1890_f25044.jpg	1890	25044	0.6231	0.1814	0.7361	0.4364	Character 52	rest	8.77333	angry	angry		angry
+t1890_f25104.jpg	1890	25104	0.6182	0.1801	0.7315	0.4371	Character 52	rest	8.77333	angry	angry		angry
+t1904_f26154.jpg	1904	26154	0.2343	0.1234	0.7087	0.8516	Character 55	top	1	downcast,mouth_open	downcast,mouth_open		downcast,mouth_open
+t1904_f26202.jpg	1904	26202	0.2350	0.1235	0.7071	0.8574	Character 55	top	1	downcast,eyes_closed,mouth_open	downcast,eyes_closed,mouth_open		downcast,eyes_closed,mouth_open
+t1904_f26244.jpg	1904	26244	0.2444	0.1231	0.7148	0.8678	Character 55	top	1	mouth_open	mouth_open		mouth_open
+t1907_f26352.jpg	1907	26352	0.4925	0.2975	0.5228	0.3646	Character 52	top	1	unclear	unclear		unclear
+t1907_f26376.jpg	1907	26376	0.4933	0.3042	0.5214	0.3598	Character 52	top	1	unclear	unclear		unclear
+t1907_f26412.jpg	1907	26412	0.4934	0.3062	0.5211	0.3612	Character 52	top	1	unclear	unclear		unclear
+t1910_f26508.jpg	1910	26508	0.3710	0.1550	0.6108	0.6520		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t1910_f26544.jpg	1910	26544	0.3972	0.1690	0.5587	0.5275		top	1	unclear	unclear		unclear
+t1910_f26574.jpg	1910	26574	0.6057	0.2478	0.6651	0.3767		top	1	unclear	unclear		unclear
+t1912_f26610.jpg	1912	26610	0.3557	0.1230	0.6150	0.6590	Character 52	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t1912_f26616.jpg	1912	26616	0.3514	0.1263	0.6294	0.6764	Character 52	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t1912_f26622.jpg	1912	26622	0.3401	0.1244	0.6509	0.6957	Character 52	top	1	eyes_closed,mouth_open	shout,eyes_closed,mouth_open	angry,eyes_closed,mouth_open	eyes_closed,mouth_open
+t1913_f26646.jpg	1913	26646	0.0166	0.1248	0.4737	0.6326		rest	8.77333	unclear	unclear		unclear
+t1913_f26652.jpg	1913	26652	0.0016	0.1225	1.0000	0.8724		rest	8.77333	angry	angry		angry
+t1913_f26658.jpg	1913	26658	0.0006	0.1221	1.0000	0.8727		rest	8.77333	angry	angry		angry
+t1917_f26850.jpg	1917	26850	0.1360	0.2122	0.4086	0.6517	Character 52	top	1	unclear	unclear		unclear
+t1917_f26868.jpg	1917	26868	0.1410	0.2877	0.4509	0.7690	Character 52	top	1	unclear	unclear		unclear
+t1917_f26922.jpg	1917	26922	0.1421	0.2235	0.3946	0.8142	Character 52	top	1	unclear	unclear		unclear
+t1918_f26970.jpg	1918	26970	0.4999	0.2449	0.6480	0.6088	Character 52	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t1918_f26994.jpg	1918	26994	0.3919	0.4310	0.5286	0.7022	Character 52	top	1	unclear	unclear		unclear
+t1918_f27018.jpg	1918	27018	0.4867	0.3186	0.6277	0.6391	Character 52	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1940_f28086.jpg	1940	28086	0.4720	0.3377	0.5119	0.4101	Character 55	top	1	unclear	unclear		unclear
+t1940_f28098.jpg	1940	28098	0.4691	0.3459	0.4990	0.3950	Character 55	top	1	unclear	unclear		unclear
+t1940_f28122.jpg	1940	28122	0.4692	0.3476	0.4993	0.3954	Character 55	top	1	unclear	unclear		unclear
+t1944_f28350.jpg	1944	28350	0.9058	0.2519	0.9781	0.4036	Character 114	rest	8.77333	downcast	downcast		downcast
+t1944_f28374.jpg	1944	28374	0.9059	0.2518	0.9781	0.4038	Character 114	rest	8.77333	downcast	downcast		downcast
+t1944_f28398.jpg	1944	28398	0.9059	0.2517	0.9781	0.4039	Character 114	rest	8.77333	downcast	downcast		downcast
+t1945_f28350.jpg	1945	28350	0.5996	0.4194	0.6764	0.5763		top	1	downcast	downcast		downcast
+t1945_f28374.jpg	1945	28374	0.5320	0.4333	0.6139	0.5937		top	1	downcast	downcast		downcast
+t1945_f28404.jpg	1945	28404	0.3630	0.2858	0.5247	0.5043		top	1	eyes_closed	eyes_closed		eyes_closed
+t1948_f28416.jpg	1948	28416	0.3349	0.3822	0.3799	0.4707	Character 113	rest	8.77333	eyes_closed	eyes_closed		eyes_closed
+t1948_f28452.jpg	1948	28452	0.3056	0.4170	0.3532	0.5021	Character 113	rest	8.77333	downcast	downcast		downcast
+t1948_f28464.jpg	1948	28464	0.2997	0.4181	0.3433	0.5027	Character 113	rest	8.77333	downcast	downcast		downcast
+t1949_f28416.jpg	1949	28416	0.5926	0.1234	0.7465	0.4507	Character 114	top	1	none	none		none
+t1949_f28446.jpg	1949	28446	0.5926	0.1234	0.7468	0.4501	Character 114	top	1	none	none		none
+t1949_f28488.jpg	1949	28488	0.5897	0.1400	0.7375	0.4523	Character 114	top	1	downcast	downcast		downcast
+t1953_f28578.jpg	1953	28578	0.5469	0.2419	0.6674	0.5176	Character 55	top	1	downcast,mouth_open	downcast	downcast	downcast
+t1953_f28632.jpg	1953	28632	0.5319	0.2520	0.6702	0.5090	Character 55	top	1	none	mouth_open	none	none
+t1953_f28650.jpg	1953	28650	0.4416	0.3018	0.5800	0.5663	Character 55	top	1	eyes_closed	downcast,eyes_closed	downcast,eyes_closed	downcast,eyes_closed
+t1954_f28578.jpg	1954	28578	0.3735	0.1824	0.5054	0.4696	Character 52	top	1	downcast	none	none	none
+t1954_f28620.jpg	1954	28620	0.3506	0.1275	0.4702	0.3612	Character 52	top	1	angry	angry		angry
+t1954_f28674.jpg	1954	28674	0.3853	0.1473	0.5065	0.3914	Character 52	top	1	eyes_closed	eyes_closed		eyes_closed
+t1971_f29010.jpg	1971	29010	0.0030	0.1234	0.3679	0.6377		top	1	angry	angry		angry
+t1971_f29022.jpg	1971	29022	0.0604	0.1234	0.4843	0.6400		top	1	angry	angry		angry
+t1971_f29040.jpg	1971	29040	0.2070	0.1225	0.6118	0.6390		top	1	angry	angry		angry
+t1975_f29112.jpg	1975	29112	0.5564	0.3415	0.6811	0.5870	Character 69	rest	8.77333	none	none		none
+t1975_f29124.jpg	1975	29124	0.5157	0.3332	0.6416	0.5885	Character 69	rest	8.77333	none	none		none
+t1975_f29136.jpg	1975	29136	0.4741	0.3358	0.5996	0.5864	Character 69	rest	8.77333	none	none		none
+t1978_f29238.jpg	1978	29238	0.5660	0.1245	0.9254	0.8531	Character 25	rest	8.77333	none	none		none
+t1978_f29256.jpg	1978	29256	0.4950	0.1238	0.8517	0.7685	Character 25	rest	8.77333	none	none		none
+t1978_f29274.jpg	1978	29274	0.4950	0.1237	0.8517	0.7689	Character 25	rest	8.77333	none	none		none
+t1979_f29286.jpg	1979	29286	0.0473	0.7071	0.1823	0.7670		rest	8.77333	unclear	unclear		unclear
+t1979_f29304.jpg	1979	29304	0.0473	0.7088	0.1811	0.7681		rest	8.77333	unclear	unclear		unclear
+t1979_f29310.jpg	1979	29310	0.0463	0.7058	0.1907	0.7661		rest	8.77333	unclear	unclear		unclear
+t1981_f29298.jpg	1981	29298	0.3522	0.3819	0.4433	0.5505		top	1	mouth_open	mouth_open		mouth_open
+t1981_f29310.jpg	1981	29310	0.2591	0.2920	0.3743	0.4781		top	1	mouth_open	mouth_open		mouth_open
+t1981_f29328.jpg	1981	29328	0.1145	0.1223	0.2476	0.2590		top	1	mouth_open	mouth_open		mouth_open
+t1995_f29742.jpg	1995	29742	0.5027	0.2846	0.5246	0.3273	Character 115	rest	8.77333	unclear	unclear		unclear
+t1995_f29748.jpg	1995	29748	0.5027	0.2847	0.5246	0.3273	Character 115	rest	8.77333	none	none		none
+t1995_f29766.jpg	1995	29766	0.5028	0.2855	0.5244	0.3277	Character 115	rest	8.77333	unclear	unclear		unclear
+t1998_f29790.jpg	1998	29790	0.5947	0.2187	0.6528	0.3205	Character 90	top	1	mouth_open	mouth_open		mouth_open
+t1998_f29892.jpg	1998	29892	0.5762	0.2103	0.6270	0.3081	Character 90	top	1	none	none		none
+t1998_f29928.jpg	1998	29928	0.5758	0.2119	0.6264	0.3087	Character 90	top	1	none	none		none
+t2001_f30198.jpg	2001	30198	0.4493	0.1235	0.7696	0.6178	Character 90	top	1	none	none		none
+t2001_f30210.jpg	2001	30210	0.4495	0.1238	0.7703	0.6175	Character 90	top	1	none	none		none
+t2001_f30234.jpg	2001	30234	0.4499	0.1239	0.7758	0.5665	Character 90	top	1	none	none		none
+t2002_f30264.jpg	2002	30264	0.3200	0.3288	0.4447	0.5963	Character 25	top	1	mouth_open	mouth_open		mouth_open
+t2002_f30282.jpg	2002	30282	0.3357	0.1942	0.4649	0.4753	Character 25	top	1	mouth_open	mouth_open		mouth_open
+t2002_f30300.jpg	2002	30300	0.3544	0.2070	0.4866	0.4946	Character 25	top	1	none	none		none
+t2004_f30318.jpg	2004	30318	0.3897	0.1237	0.7538	0.6833	Character 90	top	1	laugh,eyes_closed,mouth_open	smile,mouth_open	smile,eyes_closed,mouth_open	smile,eyes_closed,mouth_open
+t2004_f30330.jpg	2004	30330	0.3539	0.1237	0.7180	0.7150	Character 90	top	1	smile	smile		smile
+t2004_f30336.jpg	2004	30336	0.0930	0.1229	0.4854	0.7413	Character 90	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2006_f30348.jpg	2006	30348	0.5154	0.4829	0.5604	0.5610	Character 90	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2006_f30378.jpg	2006	30378	0.4603	0.4929	0.5095	0.5793	Character 90	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t2006_f30396.jpg	2006	30396	0.4606	0.4942	0.5079	0.5793	Character 90	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t2007_f30408.jpg	2007	30408	0.4920	0.3828	0.5134	0.4254	Character 115	rest	8.77333	unclear	unclear		unclear
+t2007_f30432.jpg	2007	30432	0.4919	0.3818	0.5134	0.4259	Character 115	rest	8.77333	unclear	unclear		unclear
+t2007_f30450.jpg	2007	30450	0.4919	0.3818	0.5134	0.4260	Character 115	rest	8.77333	unclear	unclear		unclear
+t2008_f30468.jpg	2008	30468	0.3696	0.1223	0.6975	0.6838	Character 53	top	1	smile	smile		smile
+t2008_f30480.jpg	2008	30480	0.3695	0.1220	0.6976	0.6839	Character 53	top	1	smile	smile		smile
+t2008_f30504.jpg	2008	30504	0.3619	0.1223	0.6902	0.6886	Character 53	top	1	none	none		none
+t2012_f30828.jpg	2012	30828	0.6689	0.3582	0.8350	0.8526	Character 69	top	1	none	none		none
+t2012_f30852.jpg	2012	30852	0.6600	0.3588	0.8235	0.8523	Character 69	top	1	none	none		none
+t2012_f30876.jpg	2012	30876	0.6496	0.3608	0.8146	0.8555	Character 69	top	1	none	none		none
+t2015_f31086.jpg	2015	31086	0.1303	0.4218	0.2196	0.5777		top	1	mouth_open	mouth_open		mouth_open
+t2015_f31104.jpg	2015	31104	0.1241	0.4193	0.2231	0.5933		top	1	mouth_open	mouth_open		mouth_open
+t2015_f31122.jpg	2015	31122	0.1191	0.4156	0.2147	0.5884		top	1	none	mouth_open	mouth_open	mouth_open
+t2024_f31836.jpg	2024	31836	0.1248	0.1229	0.6803	0.8810	Character 53	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2024_f31848.jpg	2024	31848	0.1291	0.1226	0.6858	0.8833	Character 53	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2024_f31884.jpg	2024	31884	0.1220	0.1229	0.6781	0.8776	Character 53	top	1	angry	none	angry	angry
+t2027_f32202.jpg	2027	32202	0.3361	0.1649	0.6997	0.5785	Character 2	rest	8.77333	none	angry	angry,mouth_open	angry
+t2027_f32244.jpg	2027	32244	0.3361	0.1652	0.7001	0.5778	Character 2	rest	8.77333	mouth_open	angry	angry,mouth_open	angry,mouth_open
+t2027_f32262.jpg	2027	32262	0.3361	0.1648	0.7001	0.5781	Character 2	rest	8.77333	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t2032_f32826.jpg	2032	32826	0.1407	0.1432	0.4760	0.5772	Character 2	rest	8.77333	angry	angry		angry
+t2032_f32850.jpg	2032	32850	0.1407	0.1433	0.4760	0.5771	Character 2	rest	8.77333	angry	angry		angry
+t2032_f32862.jpg	2032	32862	0.1407	0.1433	0.4761	0.5772	Character 2	rest	8.77333	angry,mouth_open	angry	angry	angry
+t2039_f33090.jpg	2039	33090	0.6129	0.2499	0.6556	0.3346	Character 57	rest	8.77333	angry,mouth_open	angry	angry	angry
+t2039_f33108.jpg	2039	33108	0.5848	0.2605	0.6345	0.3578	Character 57	rest	8.77333	angry,mouth_open	angry	angry	angry
+t2039_f33126.jpg	2039	33126	0.5790	0.2919	0.6397	0.4134	Character 57	rest	8.77333	angry	angry		angry
+t2046_f33810.jpg	2046	33810	0.4229	0.1853	0.6234	0.5732	Character 53	top	1	smile,mouth_open	smile	smile,mouth_open	smile,mouth_open
+t2046_f33864.jpg	2046	33864	0.4201	0.1787	0.6230	0.5716	Character 53	top	1	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open		laugh,eyes_closed,mouth_open
+t2046_f33984.jpg	2046	33984	0.3792	0.2525	0.5340	0.5366	Character 53	top	1	mouth_open	mouth_open		mouth_open
+t2049_f34026.jpg	2049	34026	0.4568	0.3956	0.5054	0.4959	Character 53	rest	8.77333	downcast	downcast		downcast
+t2049_f34056.jpg	2049	34056	0.4517	0.3958	0.5002	0.4967	Character 53	rest	8.77333	downcast	downcast		downcast
+t2049_f34092.jpg	2049	34092	0.4458	0.3958	0.4944	0.4962	Character 53	rest	8.77333	downcast	downcast		downcast
+t2059_f34740.jpg	2059	34740	0.3394	0.1604	0.6789	0.5415	Character 2	rest	8.77333	mouth_open	angry	angry,mouth_open	angry,mouth_open
+t2059_f34794.jpg	2059	34794	0.3311	0.1444	0.6872	0.5452	Character 2	rest	8.77333	mouth_open	angry,mouth_open	mouth_open	mouth_open
+t2059_f34812.jpg	2059	34812	0.3285	0.1389	0.6909	0.5462	Character 2	rest	8.77333	mouth_open	angry,mouth_open	mouth_open	mouth_open
+t2062_f34944.jpg	2062	34944	0.2826	0.1521	0.5780	0.7270	Character 53	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2062_f34986.jpg	2062	34986	0.2418	0.3031	0.4685	0.7418	Character 53	rest	8.77333	none	none		none
+t2062_f35022.jpg	2062	35022	0.2417	0.3087	0.4701	0.7201	Character 53	rest	8.77333	unclear	unclear		unclear
+t2067_f35274.jpg	2067	35274	0.2526	0.1441	0.5115	0.5925	Character 31	rest	8.77333	unclear	unclear		unclear
+t2067_f35280.jpg	2067	35280	0.2515	0.1501	0.5117	0.5931	Character 31	rest	8.77333	unclear	unclear		unclear
+t2067_f35298.jpg	2067	35298	0.2538	0.1467	0.5106	0.5972	Character 31	rest	8.77333	unclear	unclear		unclear
+t2080_f36036.jpg	2080	36036	0.6055	0.4016	0.8790	0.8772	Character 116	rest	8.77333	unclear	unclear		unclear
+t2080_f36060.jpg	2080	36060	0.6173	0.3974	0.8863	0.8722	Character 116	rest	8.77333	unclear	unclear		unclear
+t2080_f36090.jpg	2080	36090	0.6153	0.3594	0.8846	0.8057	Character 116	rest	8.77333	unclear	unclear		unclear
+t2087_f36528.jpg	2087	36528	0.3951	0.1220	0.7500	0.7272	Character 53	rest	8.77333	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2087_f36564.jpg	2087	36564	0.3571	0.1224	0.7426	0.7397	Character 53	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2087_f36612.jpg	2087	36612	0.3354	0.1224	0.7307	0.7595	Character 53	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2088_f36624.jpg	2088	36624	0.5904	0.2591	0.7408	0.5399	Character 53	rest	8.77333	downcast	downcast		downcast
+t2088_f36678.jpg	2088	36678	0.6029	0.2529	0.7437	0.5221	Character 53	rest	8.77333	downcast,mouth_open	mouth_open	downcast,mouth_open	downcast,mouth_open
+t2088_f36708.jpg	2088	36708	0.6082	0.2545	0.7480	0.5239	Character 53	rest	8.77333	downcast,mouth_open	downcast,mouth_open		downcast,mouth_open
+t2095_f37236.jpg	2095	37236	0.6070	0.2232	0.7609	0.5238	Character 53	top	1	mouth_open	mouth_open		mouth_open
+t2095_f37278.jpg	2095	37278	0.5918	0.2258	0.7523	0.5288	Character 53	top	1	downcast	downcast		downcast
+t2095_f37296.jpg	2095	37296	0.5987	0.2196	0.7613	0.5275	Character 53	top	1	downcast,eyes_closed	downcast,eyes_closed		downcast,eyes_closed
+t2110_f37620.jpg	2110	37620	0.9489	0.6175	0.9740	0.6719		rest	8.77333	unclear	unclear		unclear
+t2110_f37626.jpg	2110	37626	0.9489	0.6175	0.9739	0.6718		rest	8.77333	unclear	unclear		unclear
+t2110_f37644.jpg	2110	37644	0.9488	0.6176	0.9739	0.6714		rest	8.77333	unclear	unclear		unclear
+t2111_f37638.jpg	2111	37638	0.0325	0.5380	0.0726	0.6096		rest	8.77333	unclear	unclear		unclear
+t2111_f37644.jpg	2111	37644	0.0323	0.5384	0.0717	0.6100		rest	8.77333	unclear	unclear		unclear
+t2126_f38106.jpg	2126	38106	0.5457	0.4295	0.5681	0.4732		top	1	unclear	unclear		unclear
+t2126_f38118.jpg	2126	38118	0.5458	0.4286	0.5710	0.4760		top	1	unclear	unclear		unclear
+t2126_f38130.jpg	2126	38130	0.5476	0.4270	0.5733	0.4783		top	1	unclear	unclear		unclear
+t2130_f38088.jpg	2130	38088	0.1782	0.3824	0.2522	0.5126		rest	8.77333	noface	noface		noface
+t2130_f38112.jpg	2130	38112	0.1510	0.3608	0.2322	0.5059		rest	8.77333	noface	noface		noface
+t2130_f38124.jpg	2130	38124	0.1376	0.3717	0.2186	0.5168		rest	8.77333	noface	noface		noface
+t2132_f38082.jpg	2132	38082	0.8647	0.2774	0.9105	0.3577		rest	8.77333	unclear	noface	unclear	unclear
+t2136_f38124.jpg	2136	38124	0.5909	0.3874	0.6359	0.4413		rest	8.77333	noface	unclear	unclear	unclear
+t2138_f38220.jpg	2138	38220	0.2222	0.1300	0.4136	0.5081	Character 5	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2138_f38232.jpg	2138	38232	0.2178	0.1361	0.4058	0.4994	Character 5	top	1	laugh,eyes_closed	laugh,eyes_closed		laugh,eyes_closed
+t2138_f38244.jpg	2138	38244	0.2240	0.1438	0.4114	0.5066	Character 5	top	1	laugh,eyes_closed	laugh,eyes_closed		laugh,eyes_closed
+t2139_f38226.jpg	2139	38226	0.3993	0.1228	0.7449	0.5243	Character 71	top	1	unclear	unclear		unclear
+t2139_f38238.jpg	2139	38238	0.4081	0.1233	0.7541	0.5284	Character 71	top	1	unclear	unclear		unclear
+t2139_f38250.jpg	2139	38250	0.3898	0.1234	0.9972	0.3869	Character 71	top	1	unclear	unclear		unclear
+t2150_f38418.jpg	2150	38418	0.6477	0.2656	0.7206	0.4216		rest	8.77333	unclear	unclear		unclear
+t2150_f38430.jpg	2150	38430	0.6452	0.2655	0.7184	0.4244		rest	8.77333	unclear	unclear		unclear
+t2150_f38436.jpg	2150	38436	0.6444	0.2664	0.7168	0.4241		rest	8.77333	unclear	unclear		unclear
+t2153_f38562.jpg	2153	38562	0.3769	0.1234	0.8085	0.7866	Character 56	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t2153_f38592.jpg	2153	38592	0.3794	0.1232	0.8121	0.8213	Character 56	top	1	eyes_closed,mouth_open	eyes_closed	eyes_closed,mouth_open	eyes_closed,mouth_open
+t2153_f38622.jpg	2153	38622	0.4127	0.1228	0.7622	0.7075	Character 56	top	1	downcast,mouth_open	mouth_open	shout,mouth_open	mouth_open
+t2159_f38706.jpg	2159	38706	0.3509	0.2952	0.5189	0.4583		rest	8.77333	unclear	unclear		unclear
+t2159_f38760.jpg	2159	38760	0.6118	0.4290	0.6973	0.5545		rest	8.77333	unclear	unclear		unclear
+t2159_f38766.jpg	2159	38766	0.6158	0.4283	0.6985	0.5539		rest	8.77333	unclear	unclear		unclear
+t2173_f39084.jpg	2173	39084	0.1109	0.2813	0.1425	0.3746		rest	8.77333	unclear	unclear		unclear
+t2173_f39108.jpg	2173	39108	0.1065	0.2813	0.1378	0.3741		rest	8.77333	unclear	unclear		unclear
+t2173_f39132.jpg	2173	39132	0.1021	0.2811	0.1331	0.3731		rest	8.77333	unclear	unclear		unclear
+t2174_f39078.jpg	2174	39078	0.0062	0.2870	0.0428	0.3849	Character 67	top	1	unclear	unclear		unclear
+t2174_f39114.jpg	2174	39114	0.0003	0.2875	0.0353	0.3881	Character 67	top	1	unclear	unclear		unclear
+t2174_f39120.jpg	2174	39120	0.0001	0.2868	0.0344	0.3873	Character 67	top	1	unclear	unclear		unclear
+t2180_f39108.jpg	2180	39108	0.9292	0.3309	1.0000	0.5229		top	1	unclear	unclear		unclear
+t2180_f39114.jpg	2180	39114	0.9270	0.3318	1.0000	0.5237		top	1	unclear	unclear		unclear
+t2180_f39126.jpg	2180	39126	0.9281	0.3316	1.0000	0.5236		top	1	unclear	unclear		unclear
+t2185_f39210.jpg	2185	39210	0.5161	0.2482	0.5844	0.3943		rest	8.77333	smile,mouth_open	smile	smile,mouth_open	smile,mouth_open
+t2185_f39240.jpg	2185	39240	0.4967	0.2503	0.5796	0.3977		rest	8.77333	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t2185_f39270.jpg	2185	39270	0.4887	0.2276	0.5483	0.3637		rest	8.77333	smile	smile		smile
+t2187_f39744.jpg	2187	39744	0.5697	0.2494	0.7502	0.4494	Character 121	rest	8.77333	unclear	unclear		unclear
+t2187_f39792.jpg	2187	39792	0.5662	0.2498	0.7467	0.4501	Character 121	rest	8.77333	unclear	unclear		unclear
+t2187_f39900.jpg	2187	39900	0.5378	0.2429	0.7217	0.4349	Character 121	rest	8.77333	unclear	unclear		unclear
+t2201_f40434.jpg	2201	40434	0.0001	0.1273	0.3257	0.3902	Character 123	rest	8.77333	unclear	unclear		unclear
+t2209_f40692.jpg	2209	40692	0.0000	0.1245	0.9985	0.8718	Character 56	rest	8.77333	unclear	unclear		unclear
+t2209_f40698.jpg	2209	40698	0.0099	0.1248	0.9994	0.8710	Character 56	rest	8.77333	unclear	unclear		unclear
+t2209_f40710.jpg	2209	40710	0.0044	0.1240	0.9998	0.8698	Character 56	rest	8.77333	unclear	unclear		unclear
+t2216_f41082.jpg	2216	41082	0.4396	0.4374	0.6080	0.8006	Character 56	top	1	smile	smile		smile
+t2216_f41154.jpg	2216	41154	0.4661	0.4307	0.6353	0.7647	Character 56	top	1	downcast	none	downcast	downcast
+t2216_f41232.jpg	2216	41232	0.3517	0.3041	0.8418	0.5048	Character 56	top	1	mouth_open	mouth_open		mouth_open
+t2217_f41142.jpg	2217	41142	0.3664	0.4027	0.6634	0.5691	Character 10	rest	8.77333	downcast,mouth_open	downcast	downcast,mouth_open	downcast,mouth_open
+t2217_f41148.jpg	2217	41148	0.3800	0.3971	0.6711	0.5653	Character 10	rest	8.77333	downcast,mouth_open	downcast	downcast,mouth_open	downcast,mouth_open
+t2217_f41202.jpg	2217	41202	0.3650	0.4420	0.6121	0.5942	Character 10	rest	8.77333	none	none		none
+t2228_f41514.jpg	2228	41514	0.2566	0.1943	0.5433	0.4335		rest	8.77333	unclear	unclear		unclear
+t2228_f41520.jpg	2228	41520	0.2008	0.1557	0.5206	0.3934		rest	8.77333	unclear	noface	unclear	unclear
+t2229_f41526.jpg	2229	41526	0.6819	0.1221	0.9995	0.5054		top	1	unclear	noface	unclear	unclear
+t2229_f41532.jpg	2229	41532	0.6665	0.1228	0.9998	0.4954		top	1	unclear	noface	unclear	unclear
+t2229_f41538.jpg	2229	41538	0.6673	0.1228	0.9998	0.4961		top	1	unclear	noface	unclear	unclear
+t2231_f41700.jpg	2231	41700	0.4354	0.1738	0.5415	0.3513	Character 71	top	1	mouth_open	mouth_open		mouth_open
+t2231_f41736.jpg	2231	41736	0.0036	0.2337	0.6635	0.4588	Character 71	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t2231_f41742.jpg	2231	41742	0.2906	0.4398	0.5339	0.8768	Character 71	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t2232_f41718.jpg	2232	41718	0.4933	0.2601	0.5367	0.3471	Character 1	rest	8.77333	unclear	unclear		unclear
+t2232_f41736.jpg	2232	41736	0.4888	0.1398	0.5271	0.2173	Character 1	rest	8.77333	unclear	unclear		unclear
+t2232_f41748.jpg	2232	41748	0.4696	0.1229	0.5268	0.1869	Character 1	rest	8.77333	unclear	unclear		unclear
+t2233_f41778.jpg	2233	41778	0.4694	0.2884	0.6573	0.5543	Character 1	rest	8.77333	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2233_f41850.jpg	2233	41850	0.4327	0.1791	0.6158	0.4550	Character 1	rest	8.77333	mouth_open	surprised,mouth_open	surprised,mouth_open	surprised,mouth_open
+t2233_f41892.jpg	2233	41892	0.4451	0.2240	0.6513	0.4762	Character 1	rest	8.77333	none	none		none
+t2239_f42048.jpg	2239	42048	0.3234	0.5630	0.3578	0.6338		top	1	unclear	unclear		unclear
+t2239_f42066.jpg	2239	42066	0.3232	0.5622	0.3579	0.6355		top	1	unclear	unclear		unclear
+t2239_f42090.jpg	2239	42090	0.3234	0.5631	0.3579	0.6338		top	1	unclear	unclear		unclear
+t2254_f42210.jpg	2254	42210	0.7532	0.1714	0.9662	0.6060		rest	8.77333	unclear	unclear		unclear
+t2257_f42222.jpg	2257	42222	0.4396	0.3548	0.4799	0.4521	Character 1	top	1	unclear	mouth_open	mouth_open	mouth_open
+t2257_f42228.jpg	2257	42228	0.4445	0.3632	0.4815	0.4539	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2257_f42234.jpg	2257	42234	0.4487	0.3956	0.4827	0.4569	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2261_f42228.jpg	2261	42228	0.4639	0.2807	0.4991	0.3316	Character 67	rest	8.77333	unclear	unclear		unclear
+t2261_f42264.jpg	2261	42264	0.6666	0.2672	0.7716	0.5105	Character 67	rest	8.77333	unclear	unclear		unclear
+t2261_f42276.jpg	2261	42276	0.6502	0.2915	0.7414	0.5078	Character 67	rest	8.77333	unclear	unclear		unclear
+t2274_f42372.jpg	2274	42372	0.4543	0.2603	0.5672	0.4866	Character 56	top	1	smile	smile		smile
+t2274_f42396.jpg	2274	42396	0.4536	0.2531	0.5665	0.4753	Character 56	top	1	none	none		none
+t2274_f42414.jpg	2274	42414	0.4646	0.2724	0.5532	0.4505	Character 56	top	1	smile	smile		smile
+t2278_f42414.jpg	2278	42414	0.8685	0.1225	0.9996	0.2872		rest	8.77333	unclear	unclear		unclear
+t2278_f42420.jpg	2278	42420	0.8956	0.2041	0.9358	0.3135		rest	8.77333	angry	angry		angry
+t2280_f42420.jpg	2280	42420	0.1869	0.2129	0.2331	0.3427		rest	8.77333	none	none		none
+t2280_f42426.jpg	2280	42426	0.2110	0.1669	0.2620	0.2924		rest	8.77333	angry	angry		angry
+t2287_f42480.jpg	2287	42480	0.4864	0.2624	0.9974	0.8773	Character 10	top	1	surprised,mouth_open	shout,mouth_open	shout,mouth_open	shout,mouth_open
+t2287_f42486.jpg	2287	42486	0.5950	0.3572	0.9998	0.8786	Character 10	top	1	unclear	none	unclear	unclear
+t2288_f42480.jpg	2288	42480	0.1065	0.1226	0.5952	0.7390		top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2288_f42498.jpg	2288	42498	0.0019	0.1234	0.6350	0.3875		top	1	noface	noface		noface
+t2288_f42522.jpg	2288	42522	0.3204	0.1877	0.6195	0.4288		top	1	noface	unclear	noface	noface
+t2290_f42552.jpg	2290	42552	0.0072	0.1262	0.7618	0.8768		top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t2290_f42558.jpg	2290	42558	0.0968	0.1283	0.7655	0.8739		top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t2290_f42564.jpg	2290	42564	0.1198	0.1264	0.7504	0.8715		top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t2291_f42570.jpg	2291	42570	0.4012	0.3242	0.6597	0.4599		rest	8.77333	unclear	unclear		unclear
+t2291_f42576.jpg	2291	42576	0.3823	0.2889	0.6888	0.4515		rest	8.77333	unclear	unclear		unclear
+t2296_f42600.jpg	2296	42600	0.9848	0.3780	0.9996	0.4220	Character 67	top	1	unclear	unclear		unclear
+t2296_f42612.jpg	2296	42612	0.9743	0.3934	0.9911	0.4370	Character 67	top	1	unclear	unclear		unclear
+t2296_f42624.jpg	2296	42624	0.9409	0.3832	0.9880	0.4481	Character 67	top	1	unclear	unclear		unclear
+t2298_f42660.jpg	2298	42660	0.2619	0.2636	0.4610	0.4989	Character 91	rest	8.77333	none	none		none
+t2298_f42672.jpg	2298	42672	0.2558	0.2140	0.4236	0.4828	Character 91	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2298_f42684.jpg	2298	42684	0.2692	0.2100	0.4428	0.4766	Character 91	rest	8.77333	angry	angry		angry
+t2301_f42720.jpg	2301	42720	0.8009	0.2593	0.9750	0.4032		rest	8.77333	noface	unclear	unclear	unclear
+t2301_f42750.jpg	2301	42750	0.8072	0.2473	0.9687	0.3905		rest	8.77333	unclear	unclear		unclear
+t2301_f42786.jpg	2301	42786	0.8070	0.2477	0.9671	0.3904		rest	8.77333	unclear	unclear		unclear
+t2302_f42726.jpg	2302	42726	0.5329	0.3259	0.5784	0.4028	Character 52	top	1	unclear	unclear		unclear
+t2302_f42762.jpg	2302	42762	0.5659	0.2626	0.6042	0.3430	Character 52	top	1	unclear	unclear		unclear
+t2302_f42768.jpg	2302	42768	0.5660	0.2625	0.6044	0.3444	Character 52	top	1	unclear	unclear		unclear
+t2304_f42792.jpg	2304	42792	0.1602	0.1482	0.4337	0.6752	Character 52	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t2304_f42822.jpg	2304	42822	0.2317	0.1332	0.4624	0.6557	Character 52	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2304_f42846.jpg	2304	42846	0.2442	0.1253	0.4742	0.6508	Character 52	top	1	angry	angry		angry
+t2307_f42870.jpg	2307	42870	0.5994	0.1245	0.8709	0.6385	Character 1	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2307_f42900.jpg	2307	42900	0.5995	0.1242	0.8730	0.6403	Character 1	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2307_f42960.jpg	2307	42960	0.4880	0.1238	0.8178	0.7118	Character 1	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2316_f43128.jpg	2316	43128	0.0746	0.3028	0.3099	0.7992		rest	8.77333	unclear	unclear		unclear
+t2317_f43128.jpg	2317	43128	0.5408	0.2150	0.5868	0.2695		rest	8.77333	unclear	unclear		unclear
+t2317_f43134.jpg	2317	43134	0.0003	0.2237	0.4225	0.4524		rest	8.77333	unclear	none	unclear	unclear
+t2317_f43140.jpg	2317	43140	0.0420	0.1370	0.2948	0.5769		rest	8.77333	angry	angry		angry
+t2324_f43170.jpg	2324	43170	0.6847	0.1451	0.7922	0.3909	Character 93	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2324_f43182.jpg	2324	43182	0.6892	0.1236	0.9999	0.3576	Character 93	rest	8.77333	noface	unclear	unclear	unclear
+t2324_f43194.jpg	2324	43194	0.7541	0.1219	0.9752	0.3720	Character 93	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2327_f43230.jpg	2327	43230	0.2119	0.1224	0.4365	0.3487		rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2327_f43236.jpg	2327	43236	0.2522	0.1235	0.5376	0.3994		rest	8.77333	angry,mouth_open	unclear	angry,mouth_open	angry,mouth_open
+t2327_f43242.jpg	2327	43242	0.3239	0.1421	0.5506	0.4483		rest	8.77333	unclear	unclear		unclear
+t2330_f43302.jpg	2330	43302	0.1522	0.1212	0.2903	0.1869		rest	8.77333	noface	noface		noface
+t2330_f43308.jpg	2330	43308	0.2167	0.1206	0.3489	0.2701		rest	8.77333	noface	noface		noface
+t2330_f43320.jpg	2330	43320	0.4732	0.1379	0.5056	0.2365		rest	8.77333	none	none		none
+t2335_f43326.jpg	2335	43326	0.1366	0.3733	0.2523	0.5516	Character 1	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2335_f43332.jpg	2335	43332	0.1365	0.3732	0.2527	0.5517	Character 1	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2335_f43344.jpg	2335	43344	0.0000	0.7242	0.0389	0.8781	Character 1	rest	8.77333	mouth_open	none	mouth_open	mouth_open
+t2336_f43326.jpg	2336	43326	0.2738	0.1234	0.6690	0.3875		rest	8.77333	noface	noface		noface
+t2336_f43344.jpg	2336	43344	0.2107	0.1635	0.4305	0.3471		rest	8.77333	unclear	unclear		unclear
+t2341_f43374.jpg	2341	43374	0.5153	0.3197	0.5433	0.3813	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2341_f43380.jpg	2341	43380	0.4994	0.3303	0.5271	0.3913	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2341_f43398.jpg	2341	43398	0.7214	0.1383	0.7609	0.2421	Character 1	top	1	unclear	unclear		unclear
+t2342_f43386.jpg	2342	43386	0.4473	0.3349	0.5771	0.4706	Character 124	rest	8.77333	unclear	unclear		unclear
+t2344_f43458.jpg	2344	43458	0.8468	0.1686	0.8787	0.2385	Character 63	rest	8.77333	mouth_open	unclear	mouth_open	mouth_open
+t2351_f43542.jpg	2351	43542	0.2544	0.2153	0.4262	0.5143	Character 1	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2351_f43554.jpg	2351	43554	0.2299	0.2116	0.4172	0.5007	Character 1	top	1	none	none		none
+t2351_f43578.jpg	2351	43578	0.2295	0.2112	0.4184	0.5007	Character 1	top	1	none	none		none
+t2353_f43596.jpg	2353	43596	0.2582	0.3075	0.4154	0.6246	Character 92	rest	8.77333	angry,mouth_open	angry,shout,mouth_open	angry,mouth_open	angry,mouth_open
+t2353_f43602.jpg	2353	43602	0.2398	0.1828	0.4056	0.4723	Character 92	rest	8.77333	angry,mouth_open	angry,shout,mouth_open	angry,mouth_open	angry,mouth_open
+t2353_f43608.jpg	2353	43608	0.1550	0.1221	0.3753	0.4065	Character 92	rest	8.77333	angry,mouth_open	angry,shout,mouth_open	angry,mouth_open	angry,mouth_open
+t2354_f43602.jpg	2354	43602	0.5458	0.2997	0.6509	0.5305		top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2354_f43608.jpg	2354	43608	0.5826	0.2131	0.7038	0.4721		top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2354_f43620.jpg	2354	43620	0.7089	0.1220	0.9462	0.2986		top	1	mouth_open	shout,mouth_open	mouth_open	mouth_open
+t2357_f43662.jpg	2357	43662	0.3900	0.1266	0.9207	0.3897	Character 2	rest	8.77333	unclear	unclear		unclear
+t2357_f43674.jpg	2357	43674	0.3902	0.1266	0.9201	0.3897	Character 2	rest	8.77333	unclear	unclear		unclear
+t2357_f43710.jpg	2357	43710	0.5162	0.1225	0.9991	0.3869	Character 2	rest	8.77333	unclear	unclear		unclear
+t2358_f43662.jpg	2358	43662	0.2140	0.1882	0.3390	0.4534	Character 1	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2358_f43680.jpg	2358	43680	0.1709	0.1238	0.3470	0.3233	Character 1	top	1	unclear	unclear		unclear
+t2358_f43716.jpg	2358	43716	0.0000	0.1221	0.4151	0.3857	Character 1	top	1	noface	noface		noface
+t2360_f43794.jpg	2360	43794	0.0907	0.4018	0.4846	0.5681	Character 92	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2360_f43806.jpg	2360	43806	0.3816	0.2199	0.5340	0.4376	Character 92	top	1	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t2360_f43818.jpg	2360	43818	0.7694	0.3566	0.8578	0.5287	Character 92	top	1	shout,mouth_open	angry,mouth_open	shout,eyes_closed,mouth_open	shout,mouth_open
+t2369_f43962.jpg	2369	43962	0.6081	0.4446	0.6441	0.5109	Character 9	rest	8.77333	unclear	unclear		unclear
+t2369_f44004.jpg	2369	44004	0.4541	0.4076	0.4889	0.4723	Character 9	rest	8.77333	angry	none	none	none
+t2369_f44016.jpg	2369	44016	0.0290	0.5823	0.0638	0.6461	Character 9	rest	8.77333	unclear	unclear		unclear
+t2373_f44028.jpg	2373	44028	0.0941	0.6459	0.1221	0.6980	Character 94	rest	8.77333	unclear	unclear		unclear
+t2373_f44040.jpg	2373	44040	0.0909	0.6378	0.1177	0.6897	Character 94	rest	8.77333	unclear	unclear		unclear
+t2373_f44046.jpg	2373	44046	0.0836	0.6424	0.1151	0.6961	Character 94	rest	8.77333	unclear	unclear		unclear
+t2375_f44040.jpg	2375	44040	0.5201	0.4564	0.8319	0.6041		top	1	unclear	noface	unclear	unclear
+t2388_f44328.jpg	2388	44328	0.4225	0.1288	0.9696	0.8263		rest	8.77333	unclear	unclear		unclear
+t2388_f44346.jpg	2388	44346	0.3458	0.1251	0.9623	0.8177		rest	8.77333	unclear	unclear		unclear
+t2388_f44352.jpg	2388	44352	0.3246	0.1289	0.8633	0.7140		rest	8.77333	unclear	unclear		unclear
+t2389_f44370.jpg	2389	44370	0.5596	0.3484	0.6634	0.4718	Character 1	top	1	unclear	unclear		unclear
+t2389_f44376.jpg	2389	44376	0.4905	0.2575	0.6250	0.4203	Character 1	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2389_f44382.jpg	2389	44382	0.4423	0.2672	0.5875	0.4294	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2391_f44442.jpg	2391	44442	0.0394	0.1241	0.9678	0.8726	Character 10	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2391_f44454.jpg	2391	44454	0.0476	0.1243	0.9630	0.8724	Character 10	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2391_f44472.jpg	2391	44472	0.0304	0.1239	0.9703	0.8771	Character 10	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2395_f44514.jpg	2395	44514	0.4799	0.3438	0.5810	0.5048	Character 2	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t2395_f44526.jpg	2395	44526	0.4710	0.3718	0.5254	0.4582	Character 2	top	1	unclear	unclear		unclear
+t2395_f44538.jpg	2395	44538	0.4752	0.4075	0.5233	0.4812	Character 2	top	1	unclear	unclear		unclear
+t2396_f44544.jpg	2396	44544	0.4180	0.1214	0.6191	0.5595		top	1	mouth_open	angry	angry,eyes_closed,mouth_open	angry,mouth_open
+t2396_f44556.jpg	2396	44556	0.3060	0.1220	0.5273	0.4813		top	1	shout,eyes_closed,mouth_open	shout,eyes_closed,mouth_open		shout,eyes_closed,mouth_open
+t2396_f44562.jpg	2396	44562	0.2848	0.1223	0.5085	0.4678		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t2414_f44934.jpg	2414	44934	0.0417	0.1234	0.8212	0.8709	Character 10	rest	8.77333	eyes_closed	eyes_closed		eyes_closed
+t2414_f44946.jpg	2414	44946	0.0301	0.1229	0.8443	0.8719	Character 10	rest	8.77333	eyes_closed	eyes_closed		eyes_closed
+t2414_f44964.jpg	2414	44964	0.0176	0.1232	0.8777	0.8709	Character 10	rest	8.77333	eyes_closed,mouth_open	mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open
+t2417_f45036.jpg	2417	45036	0.2565	0.1747	0.7945	0.4204	Character 122	rest	8.77333	unclear	unclear		unclear
+t2417_f45060.jpg	2417	45060	0.2570	0.1768	0.7964	0.4218	Character 122	rest	8.77333	eyes_closed	eyes_closed,mouth_open	unclear	unclear
+t2417_f45084.jpg	2417	45084	0.2549	0.1787	0.7913	0.4230	Character 122	rest	8.77333	unclear	unclear		unclear
+t2418_f45090.jpg	2418	45090	0.2234	0.2744	0.3316	0.4712		rest	8.77333	noface	noface		noface
+t2419_f45306.jpg	2419	45306	0.2402	0.1244	0.6315	0.7063	Character 1	top	1	none	mouth_open	surprised,mouth_open	mouth_open
+t2419_f45318.jpg	2419	45318	0.2342	0.1243	0.5918	0.6877	Character 1	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2419_f45330.jpg	2419	45330	0.2327	0.1245	0.6470	0.6774	Character 1	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2421_f45438.jpg	2421	45438	0.4293	0.3157	0.4953	0.4092	Character 122	rest	8.77333	unclear	unclear		unclear
+t2421_f45456.jpg	2421	45456	0.4278	0.3150	0.5024	0.4082	Character 122	rest	8.77333	unclear	unclear		unclear
+t2421_f45480.jpg	2421	45480	0.4317	0.3124	0.4980	0.4063	Character 122	rest	8.77333	unclear	unclear		unclear
+t2435_f45780.jpg	2435	45780	0.0641	0.1257	0.0927	0.1721		rest	8.77333	unclear	unclear		unclear
+t2435_f45798.jpg	2435	45798	0.0663	0.1269	0.0942	0.1755		rest	8.77333	unclear	unclear		unclear
+t2435_f45816.jpg	2435	45816	0.0698	0.1278	0.0952	0.1799		rest	8.77333	unclear	unclear		unclear
+t2436_f45780.jpg	2436	45780	0.0262	0.1463	0.0506	0.1906	Character 66	rest	8.77333	unclear	unclear		unclear
+t2436_f45798.jpg	2436	45798	0.0281	0.1525	0.0521	0.1950	Character 66	rest	8.77333	unclear	unclear		unclear
+t2436_f45816.jpg	2436	45816	0.0290	0.1538	0.0546	0.1975	Character 66	rest	8.77333	unclear	unclear		unclear
+t2440_f45822.jpg	2440	45822	0.2726	0.1229	0.6061	0.6653	Character 56	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2440_f45852.jpg	2440	45852	0.2846	0.1230	0.6118	0.7035	Character 56	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2440_f45870.jpg	2440	45870	0.2847	0.1230	0.6120	0.7035	Character 56	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2441_f45894.jpg	2441	45894	0.3544	0.1229	0.6167	0.6559	Character 52	rest	8.77333	angry	angry		angry
+t2441_f45918.jpg	2441	45918	0.3538	0.1232	0.6170	0.6581	Character 52	rest	8.77333	angry	angry		angry
+t2441_f45942.jpg	2441	45942	0.3527	0.1232	0.6186	0.6583	Character 52	rest	8.77333	angry	angry		angry
+t2442_f45960.jpg	2442	45960	0.5064	0.3955	0.5374	0.4607	Character 52	top	1	angry	angry		angry
+t2442_f45972.jpg	2442	45972	0.5055	0.3937	0.5369	0.4564	Character 52	top	1	angry	angry		angry
+t2442_f45978.jpg	2442	45978	0.5052	0.3927	0.5363	0.4502	Character 52	top	1	angry	angry		angry
+t2443_f46026.jpg	2443	46026	0.8214	0.5289	0.8894	0.6023		rest	8.77333	unclear	unclear		unclear
+t2443_f46050.jpg	2443	46050	0.8243	0.5262	0.8905	0.6010		rest	8.77333	unclear	unclear		unclear
+t2443_f46080.jpg	2443	46080	0.6623	0.5246	0.7459	0.6223		rest	8.77333	unclear	noface	noface	noface
+t2447_f46086.jpg	2447	46086	0.4463	0.5269	0.5075	0.5779		rest	8.77333	unclear	unclear		unclear
+t2449_f46110.jpg	2449	46110	0.4846	0.5129	0.5310	0.6445	Character 63	top	1	angry,mouth_open	angry	mouth_open	angry,mouth_open
+t2449_f46116.jpg	2449	46116	0.4862	0.5286	0.5505	0.6625	Character 63	top	1	angry,mouth_open	angry	mouth_open	angry,mouth_open
+t2449_f46122.jpg	2449	46122	0.4862	0.5287	0.5505	0.6626	Character 63	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2451_f46134.jpg	2451	46134	0.3168	0.1232	0.6639	0.6635	Character 56	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2451_f46146.jpg	2451	46146	0.3002	0.1235	0.6495	0.7419	Character 56	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t2451_f46152.jpg	2451	46152	0.3015	0.1227	0.6510	0.7367	Character 56	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t2452_f46218.jpg	2452	46218	0.4474	0.3640	0.5143	0.5049	Character 52	top	1	angry	angry		angry
+t2452_f46224.jpg	2452	46224	0.4483	0.3541	0.5114	0.4941	Character 52	top	1	none	angry	angry	angry
+t2452_f46230.jpg	2452	46230	0.4461	0.3632	0.5101	0.4989	Character 52	top	1	none	angry	angry	angry
+t2453_f46236.jpg	2453	46236	0.0000	0.4763	0.1946	0.5891		rest	8.77333	noface	noface		noface
+t2453_f46242.jpg	2453	46242	0.0678	0.4767	0.2694	0.5911		rest	8.77333	noface	noface		noface
+t2457_f46332.jpg	2457	46332	0.1649	0.5038	0.2840	0.6347		rest	8.77333	unclear	unclear		unclear
+t2461_f46386.jpg	2461	46386	0.3322	0.1261	0.7039	0.2981		top	1	noface	noface		noface
+t2461_f46398.jpg	2461	46398	0.3436	0.1329	0.7247	0.3850		top	1	noface	noface		noface
+t2461_f46410.jpg	2461	46410	0.3817	0.3381	0.7207	0.5273		top	1	noface	noface		noface
+t2468_f46440.jpg	2468	46440	0.4476	0.3807	0.4666	0.4242	Character 81	rest	8.77333	unclear	unclear		unclear
+t2468_f46452.jpg	2468	46452	0.5455	0.3433	0.5709	0.4016	Character 81	rest	8.77333	unclear	unclear		unclear
+t2468_f46476.jpg	2468	46476	0.7304	0.2991	0.7636	0.3588	Character 81	rest	8.77333	unclear	surprised	surprised	surprised
+t2473_f46644.jpg	2473	46644	0.1863	0.1826	0.8219	0.4260	Character 113	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2474_f46644.jpg	2474	46644	0.4096	0.2303	0.5890	0.6654	Character 81	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2474_f46650.jpg	2474	46650	0.3765	0.1601	0.6196	0.7222	Character 81	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2474_f46656.jpg	2474	46656	0.3540	0.1231	0.6429	0.7892	Character 81	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2486_f46824.jpg	2486	46824	0.9208	0.5010	0.9824	0.6242		rest	8.77333	unclear	unclear		unclear
+t2486_f46830.jpg	2486	46830	0.8538	0.4338	0.9043	0.5349		rest	8.77333	noface	noface		noface
+t2486_f46836.jpg	2486	46836	0.1683	0.1513	0.3332	0.3892		rest	8.77333	unclear	unclear		unclear
+t2488_f46836.jpg	2488	46836	0.4978	0.4148	0.5164	0.4718		rest	8.77333	unclear	unclear		unclear
+t2492_f46866.jpg	2492	46866	0.3006	0.3639	0.3278	0.4226	Character 93	top	1	unclear	unclear		unclear
+t2505_f47046.jpg	2505	47046	0.2682	0.1674	0.3561	0.4091		rest	8.77333	noface	noface		noface
+t2505_f47058.jpg	2505	47058	0.2703	0.1859	0.3562	0.4223		rest	8.77333	noface	noface		noface
+t2505_f47064.jpg	2505	47064	0.2703	0.1857	0.3562	0.4245		rest	8.77333	noface	noface		noface
+t2506_f47094.jpg	2506	47094	0.2299	0.4282	0.2979	0.5411		rest	8.77333	mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open
+t2517_f47238.jpg	2517	47238	0.3314	0.1220	0.4979	0.4352	Character 52	top	1	angry	angry		angry
+t2517_f47262.jpg	2517	47262	0.4188	0.1267	0.5840	0.5233	Character 52	top	1	angry	angry		angry
+t2517_f47280.jpg	2517	47280	0.4113	0.1224	0.5838	0.4684	Character 52	top	1	angry	angry		angry
+t2518_f47304.jpg	2518	47304	0.4221	0.1923	0.5407	0.4382	Character 56	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2518_f47310.jpg	2518	47310	0.3434	0.2602	0.4651	0.4826	Character 56	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2518_f47316.jpg	2518	47316	0.3343	0.2169	0.4763	0.4291	Character 56	top	1	unclear	unclear		unclear
+t2520_f47370.jpg	2520	47370	0.2036	0.1232	0.4929	0.4720		rest	8.77333	unclear	unclear		unclear
+t2520_f47376.jpg	2520	47376	0.3298	0.1232	0.5333	0.4487		rest	8.77333	unclear	unclear		unclear
+t2520_f47382.jpg	2520	47382	0.4056	0.1298	0.5721	0.4287		rest	8.77333	unclear	unclear		unclear
+t2525_f47658.jpg	2525	47658	0.4284	0.4452	0.4730	0.5071		top	1	noface	noface		noface
+t2525_f47706.jpg	2525	47706	0.4118	0.3913	0.4627	0.5011		top	1	unclear	unclear		unclear
+t2525_f47718.jpg	2525	47718	0.4118	0.4436	0.4577	0.4997		top	1	noface	noface		noface
+t2528_f47718.jpg	2528	47718	0.5483	0.4749	0.5793	0.5274	Character 79	rest	8.77333	unclear	unclear		unclear
+t2528_f47724.jpg	2528	47724	0.5484	0.4654	0.5784	0.5271	Character 79	rest	8.77333	unclear	unclear		unclear
+t2530_f47784.jpg	2530	47784	0.2948	0.3004	0.3429	0.3924	Character 23	top	1	mouth_open	mouth_open		mouth_open
+t2530_f47796.jpg	2530	47796	0.2942	0.2956	0.3436	0.3907	Character 23	top	1	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t2530_f47820.jpg	2530	47820	0.2923	0.2884	0.3440	0.3879	Character 23	top	1	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t2532_f47838.jpg	2532	47838	0.6766	0.2624	0.7402	0.3872	Character 52	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2532_f47880.jpg	2532	47880	0.6450	0.2022	0.7200	0.3285	Character 52	rest	8.77333	mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t2532_f47904.jpg	2532	47904	0.6451	0.2024	0.7191	0.3269	Character 52	rest	8.77333	angry	none	angry	angry
+t2535_f47934.jpg	2535	47934	0.6172	0.5088	0.6475	0.5899	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2535_f47952.jpg	2535	47952	0.6243	0.5384	0.6492	0.6029	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2535_f47970.jpg	2535	47970	0.6263	0.5517	0.6511	0.6161	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2536_f47940.jpg	2536	47940	0.0001	0.1258	0.3400	0.3892		top	1	mouth_open	mouth_open		mouth_open
+t2536_f47946.jpg	2536	47946	0.0000	0.1293	0.3438	0.3918		top	1	shout,mouth_open	angry,shout,mouth_open	shout,mouth_open	shout,mouth_open
+t2536_f47976.jpg	2536	47976	0.0000	0.1433	0.3316	0.4009		top	1	shout,mouth_open	angry,shout,mouth_open	shout,mouth_open	shout,mouth_open
+t2537_f47928.jpg	2537	47928	0.1174	0.2994	0.1874	0.5377	Character 81	top	1	shout,mouth_open	surprised,mouth_open	shout,mouth_open	shout,mouth_open
+t2537_f47958.jpg	2537	47958	0.0638	0.1743	0.1961	0.5785	Character 81	top	1	shout,mouth_open	angry,shout,mouth_open	shout,mouth_open	shout,mouth_open
+t2537_f47970.jpg	2537	47970	0.1248	0.3422	0.1858	0.5444	Character 81	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t2539_f47988.jpg	2539	47988	0.1935	0.1228	0.7284	0.8504	Character 23	rest	8.77333	angry	angry		angry
+t2539_f48018.jpg	2539	48018	0.1738	0.1225	0.7206	0.8630	Character 23	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2539_f48030.jpg	2539	48030	0.1705	0.1225	0.7234	0.8639	Character 23	rest	8.77333	angry	angry		angry
+t2543_f48126.jpg	2543	48126	0.1385	0.1257	0.5970	0.7586	Character 1	rest	8.77333	downcast	downcast		downcast
+t2543_f48150.jpg	2543	48150	0.1402	0.1347	0.5977	0.7752	Character 1	rest	8.77333	downcast	downcast		downcast
+t2543_f48168.jpg	2543	48168	0.1376	0.1364	0.5985	0.7912	Character 1	rest	8.77333	downcast	downcast		downcast
+t2545_f48252.jpg	2545	48252	0.1451	0.1239	0.7157	0.7950	Character 23	top	1	angry	angry		angry
+t2545_f48294.jpg	2545	48294	0.1946	0.1248	0.7641	0.7865	Character 23	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2545_f48300.jpg	2545	48300	0.1941	0.1234	0.7642	0.7736	Character 23	top	1	angry	angry		angry
+t2548_f48390.jpg	2548	48390	0.3357	0.3015	0.3634	0.3673	Character 1	top	1	mouth_open	none	none	none
+t2548_f48414.jpg	2548	48414	0.3491	0.2915	0.3780	0.3632	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2548_f48432.jpg	2548	48432	0.3035	0.2541	0.3447	0.3492	Character 1	top	1	none	none		none
+t2559_f48612.jpg	2559	48612	0.7973	0.1630	0.8507	0.2538		rest	8.77333	unclear	unclear		unclear
+t2559_f48696.jpg	2559	48696	0.7884	0.1626	0.8411	0.2510		rest	8.77333	unclear	unclear		unclear
+t2559_f48714.jpg	2559	48714	0.7884	0.1625	0.8412	0.2508		rest	8.77333	unclear	unclear		unclear
+t2575_f48906.jpg	2575	48906	0.4410	0.1382	0.9992	0.3963	Character 2	rest	8.77333	angry	none	none	none
+t2575_f48930.jpg	2575	48930	0.3346	0.1250	0.8049	0.7653	Character 2	rest	8.77333	angry	angry		angry
+t2575_f48960.jpg	2575	48960	0.3425	0.1245	0.8084	0.7531	Character 2	rest	8.77333	angry	angry		angry
+t2578_f49134.jpg	2578	49134	0.6159	0.1686	0.7737	0.4201	Character 2	rest	8.77333	angry	angry		angry
+t2578_f49170.jpg	2578	49170	0.7163	0.1248	0.8721	0.3739	Character 2	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2578_f49176.jpg	2578	49176	0.7722	0.1237	0.9323	0.3309	Character 2	rest	8.77333	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t2580_f49170.jpg	2580	49170	0.1490	0.2344	0.4035	0.7223	Character 1	top	1	unclear	unclear		unclear
+t2580_f49194.jpg	2580	49194	0.2391	0.2262	0.5141	0.7114	Character 1	top	1	none	none		none
+t2580_f49248.jpg	2580	49248	0.2107	0.2046	0.5898	0.7274	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2584_f49326.jpg	2584	49326	0.0154	0.1220	0.7742	0.7814	Character 1	top	1	mouth_open	mouth_open		mouth_open
+t2584_f49392.jpg	2584	49392	0.1533	0.1229	0.5214	0.7712	Character 1	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t2584_f49398.jpg	2584	49398	0.0000	0.1220	0.7477	0.7835	Character 1	top	1	smile,eyes_closed,mouth_open	eyes_closed,mouth_open	smile,eyes_closed,mouth_open	smile,eyes_closed,mouth_open
+t2585_f49512.jpg	2585	49512	0.2086	0.2364	0.4328	0.5044	Character 1	top	1	none	none		none
+t2585_f49548.jpg	2585	49548	0.2087	0.2340	0.4325	0.5028	Character 1	top	1	mouth_open	none	mouth_open	mouth_open
+t2585_f49578.jpg	2585	49578	0.2079	0.2264	0.4330	0.4976	Character 1	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2586_f49536.jpg	2586	49536	0.0612	0.1367	0.1112	0.2254	Character 95	top	1	unclear	unclear		unclear
+t2586_f49548.jpg	2586	49548	0.0612	0.1364	0.1114	0.2264	Character 95	top	1	unclear	unclear		unclear
+t2586_f49596.jpg	2586	49596	0.0616	0.1366	0.1115	0.2261	Character 95	top	1	unclear	unclear		unclear
+t2588_f49728.jpg	2588	49728	0.2304	0.1268	0.7793	0.3896	Character 123	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2588_f49740.jpg	2588	49740	0.2286	0.1248	0.7827	0.3885	Character 123	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2588_f49746.jpg	2588	49746	0.2078	0.1225	0.8091	0.3870	Character 123	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2589_f49728.jpg	2589	49728	0.3858	0.1502	0.6255	0.6903	Character 1	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2589_f49770.jpg	2589	49770	0.3740	0.1236	0.6348	0.6477	Character 1	top	1	smile	smile		smile
+t2589_f49842.jpg	2589	49842	0.3623	0.1235	0.6489	0.6720	Character 1	top	1	smile	smile		smile
+t2591_f49866.jpg	2591	49866	0.2864	0.1255	0.7540	0.8159	Character 2	rest	8.77333	mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t2591_f49878.jpg	2591	49878	0.2858	0.1255	0.7539	0.8066	Character 2	rest	8.77333	angry,mouth_open	surprised,mouth_open	angry,mouth_open	angry,mouth_open
+t2591_f49890.jpg	2591	49890	0.2866	0.1253	0.7552	0.8152	Character 2	rest	8.77333	angry,mouth_open	angry	angry,mouth_open	angry,mouth_open
+t2594_f49950.jpg	2594	49950	0.2063	0.2279	0.4225	0.4847	Character 1	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t2594_f50010.jpg	2594	50010	0.2064	0.2278	0.4228	0.4848	Character 1	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t2594_f50022.jpg	2594	50022	0.2064	0.2278	0.4230	0.4849	Character 1	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t2595_f49938.jpg	2595	49938	0.0615	0.1365	0.1113	0.2263	Character 95	top	1	unclear	unclear		unclear
+t2595_f49974.jpg	2595	49974	0.0614	0.1362	0.1114	0.2264	Character 95	top	1	unclear	unclear		unclear
+t2595_f50064.jpg	2595	50064	0.0614	0.1369	0.1112	0.2254	Character 95	top	1	unclear	unclear		unclear
+t2598_f50256.jpg	2598	50256	0.2222	0.1228	0.3624	0.2663	Character 2	rest	8.77333	none	none		none
+t2598_f50286.jpg	2598	50286	0.2235	0.1226	0.3622	0.2680	Character 2	rest	8.77333	none	none		none
+t2598_f50328.jpg	2598	50328	0.2272	0.1228	0.3644	0.2736	Character 2	rest	8.77333	none	none		none
+t2607_f51180.jpg	2607	51180	0.4884	0.2288	0.6201	0.5272	Character 96	top	1	surprised,mouth_open	shout,mouth_open	shout,mouth_open	shout,mouth_open
+t2607_f51246.jpg	2607	51246	0.1545	0.4259	0.2456	0.5777	Character 96	top	1	unclear	unclear		unclear
+t2607_f51270.jpg	2607	51270	0.3136	0.5498	0.4271	0.6581	Character 96	top	1	unclear	unclear		unclear
+t2609_f51336.jpg	2609	51336	0.3854	0.5238	0.5673	0.5937	Character 62	top	1	unclear	unclear		unclear
+t2609_f51390.jpg	2609	51390	0.4400	0.2883	0.4890	0.4008	Character 62	top	1	eyes_closed	downcast	eyes_closed	eyes_closed
+t2609_f51408.jpg	2609	51408	0.4131	0.2103	0.4775	0.3424	Character 62	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2617_f51864.jpg	2617	51864	0.4905	0.2219	0.6377	0.5616	Character 62	top	1	unclear	downcast	unclear	unclear
+t2617_f51882.jpg	2617	51882	0.4562	0.1446	0.6195	0.4375	Character 62	top	1	mouth_open	mouth_open		mouth_open
+t2617_f51912.jpg	2617	51912	0.5219	0.4378	0.5591	0.5122	Character 62	top	1	unclear	unclear		unclear
+t2618_f51894.jpg	2618	51894	0.6450	0.4317	0.6874	0.5054	Character 96	rest	8.77333	unclear	unclear		unclear
+t2618_f51900.jpg	2618	51900	0.6552	0.3961	0.6981	0.4866	Character 96	rest	8.77333	unclear	unclear		unclear
+t2618_f51906.jpg	2618	51906	0.6112	0.3505	0.6542	0.4399	Character 96	rest	8.77333	unclear	unclear		unclear
+t2623_f52014.jpg	2623	52014	0.2817	0.3207	0.3710	0.4542		top	1	unclear	noface	noface	noface
+t2631_f52206.jpg	2631	52206	0.6583	0.3850	0.7520	0.4708		rest	8.77333	unclear	unclear		unclear
+t2631_f52218.jpg	2631	52218	0.6508	0.3506	0.7428	0.4454		rest	8.77333	noface	unclear	unclear	unclear
+t2638_f52560.jpg	2638	52560	0.4875	0.1240	0.9973	0.3690		top	1	noface	unclear	unclear	unclear
+t2645_f53052.jpg	2645	53052	0.3436	0.1804	0.3660	0.2390		rest	8.77333	unclear	unclear		unclear
+t2645_f53058.jpg	2645	53058	0.3441	0.1953	0.3661	0.2550		rest	8.77333	unclear	unclear		unclear
+t2651_f53202.jpg	2651	53202	0.4504	0.2350	0.5656	0.4801	Character 62	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2651_f53214.jpg	2651	53214	0.3147	0.1242	0.5425	0.5863	Character 62	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2651_f53232.jpg	2651	53232	0.1763	0.1225	0.7095	0.8764	Character 62	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t2652_f53370.jpg	2652	53370	0.2444	0.1250	0.7557	0.8717		top	1	angry	angry		angry
+t2652_f53382.jpg	2652	53382	0.2419	0.1254	0.7589	0.8646		top	1	angry	angry		angry
+t2652_f53400.jpg	2652	53400	0.2430	0.1256	0.7566	0.8624		top	1	angry	angry		angry
+t2661_f54054.jpg	2661	54054	0.0023	0.1237	0.6366	0.3872		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2661_f54060.jpg	2661	54060	0.0017	0.1236	0.6321	0.3870		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2661_f54066.jpg	2661	54066	0.0029	0.1235	0.6281	0.3864		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2662_f54600.jpg	2662	54600	0.6328	0.1224	0.8762	0.5194	Character 25	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2662_f54666.jpg	2662	54666	0.6326	0.1227	0.8805	0.5198	Character 25	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2662_f54732.jpg	2662	54732	0.6290	0.1217	0.8874	0.5246	Character 25	rest	8.77333	mouth_open	mouth_open		mouth_open
+t2663_f55020.jpg	2663	55020	0.4533	0.3408	0.6460	0.6446		top	1	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open		laugh,eyes_closed,mouth_open
+t2663_f55074.jpg	2663	55074	0.4593	0.3395	0.6516	0.6457		top	1	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open		laugh,eyes_closed,mouth_open
+t2663_f55128.jpg	2663	55128	0.4651	0.3404	0.6567	0.6442		top	1	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open		laugh,eyes_closed,mouth_open
+t2664_f55044.jpg	2664	55044	0.7022	0.2004	0.9085	0.6028		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2664_f55050.jpg	2664	55050	0.7029	0.2007	0.9091	0.6021		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2664_f55164.jpg	2664	55164	0.7151	0.2009	0.9230	0.5982		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2665_f55026.jpg	2665	55026	0.5323	0.1229	0.7537	0.5344	Character 55	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2665_f55068.jpg	2665	55068	0.5403	0.1231	0.7600	0.5356	Character 55	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t2665_f55152.jpg	2665	55152	0.5454	0.1234	0.7686	0.5367	Character 55	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open

@@ -11,6 +11,8 @@ dependencies = [
     "onnxruntime-directml==1.24.4",
     "safetensors==0.9.0rc1",
     "pillow==13.0.0",
+    "tokenizers==0.23.3",
+    "onnx==1.23.2",
 ]
 
 [tool.uv]

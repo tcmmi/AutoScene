@@ -1,7 +1,7 @@
 # slot-bench
 
 Dev-only tools for the two slots that are not about identity
-(`bench/models/DECISIONS.md`, rows 5 to 7): they run ready-made models over
+(`bench/models/DECISIONS.md`, rows 5 to 11): they run ready-made models over
 frames of the bench media, so that what exists is tested before anything is
 trained. Nothing here ships.
 
@@ -62,3 +62,38 @@ every 0.48 s, the second vote of the expressions slot.
 
 `crop_sheets.py <list.tsv> <out_dir>` makes contact sheets of face crops,
 thirty per sheet with a number under each, for labelling what the faces show.
+
+## Expressions: the ready-made models against a check set
+
+The steps of `bench/expressions/README.md`, in their order:
+
+1. `face_crops.py <ffmpeg> <video> <project_copy_dir> <media> <out_dir>`
+   cuts up to three face crops out of every face track of an episode (a
+   copy of a project, never the library itself) and lists them in
+   `crops.tsv`.
+2. `expr_models.py [--top <dir>] [--emb <dir>] [--only <table>] <models_root> <crops_dir> <out_dir> [model …]`
+   runs the ready-made models over the crops, one table of raw outputs per
+   model; `--top` also draws the thirty highest crops of every output.
+   `expr_scores.py` (no program of its own) turns those tables into one
+   number per crop and output, and names the outputs that could stand for
+   each label.
+3. `expr_select.py <crops_dir> <scores_dir> <out_dir> [random_tracks] [seed]`
+   draws the tracks to label: the highest of every candidate output, and a
+   random draw of the rest with a weight, so that the labelled tracks stand
+   for the whole episode. `crop_sheets.py` makes the sheets of its `list.tsv`.
+4. `expr_check.py join <check_dir>` compares two labellers and lists what a
+   third has to decide; `expr_check.py final <check_dir> <project_copy_dir>
+   <out.tsv>` writes the label file of `bench/expressions`;
+   `expr_check.py score <crops_dir> <scores_dir> <check.tsv> [<sound.tsv>
+   <fps_num> <fps_den>]` rates every output against every label, per crop
+   and per track, with the gate of `DECISIONS.md` row 5.
+5. `expr_probe.py <name>=<crops_dir>,<scores_dir>,<check.tsv>[,<emb_dir>] …`
+   trains a small head per label on the labelled crops and scores it on
+   tracks it never saw: over the models' outputs, or (`EMB=<model>`) over
+   the picture embeddings that `expr_models.py --emb <emb_dir> --only
+   <check.tsv>` writes. A look at whether training is worth a try, not a
+   model.
+
+`tokenizers` reads SigLIP 2's tokenizer (its newest pre-release cannot, so
+the last release is pinned); `onnx` changes one attribute of Kagami's graph
+in memory, which DirectML refuses otherwise.

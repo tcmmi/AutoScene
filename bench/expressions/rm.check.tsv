@@ -1,0 +1,881 @@
+file	track	frame	x1	y1	x2	y2	character	group	weight	a	b	c	labels
+t2_f60.jpg	2	60	0.5614	0.4259	0.6104	0.5184	Morty Smith	top	1	unclear	unclear		unclear
+t2_f102.jpg	2	102	0.8826	0.3709	0.9222	0.4439	Morty Smith	top	1	none	none		none
+t2_f168.jpg	2	168	0.6370	0.2740	0.7052	0.3981	Morty Smith	top	1	surprised	none	none	none
+t5_f216.jpg	5	216	0.5677	0.2744	0.6585	0.4368	Morty Smith	rest	7.38	none	none		none
+t5_f234.jpg	5	234	0.7077	0.2527	0.8022	0.4128	Morty Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t5_f246.jpg	5	246	0.7066	0.2551	0.7966	0.4143	Morty Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t6_f270.jpg	6	270	0.3855	0.1345	0.6974	0.7274	Morty Smith	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t6_f276.jpg	6	276	0.3833	0.1307	0.7009	0.7274	Morty Smith	rest	7.38	mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t6_f294.jpg	6	294	0.3871	0.1469	0.7003	0.7357	Morty Smith	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t9_f378.jpg	9	378	0.4005	0.1063	0.6570	0.6243		top	1	angry,mouth_open	angry,shout,mouth_open	angry	angry,mouth_open
+t9_f396.jpg	9	396	0.4158	0.0858	0.6563	0.6224		top	1	angry	angry,mouth_open	angry	angry
+t10_f408.jpg	10	408	0.3744	0.0047	0.8575	0.8376	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t10_f414.jpg	10	414	0.3463	0.0000	0.9954	0.3385	Morty Smith	top	1	unclear	eyes_closed	unclear	unclear
+t13_f510.jpg	13	510	0.4269	0.5591	0.6681	0.6887	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t13_f552.jpg	13	552	0.5381	0.3950	0.6164	0.5469	Morty Smith	top	1	none	none		none
+t13_f576.jpg	13	576	0.5006	0.4221	0.5805	0.5674	Morty Smith	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t16_f642.jpg	16	642	0.6480	0.1504	0.8585	0.5541	Morty Smith	rest	7.38	unclear	unclear		unclear
+t23_f690.jpg	23	690	0.1305	0.2354	0.5138	0.5030		rest	7.38	unclear	unclear		unclear
+t23_f708.jpg	23	708	0.1317	0.2364	0.5138	0.5037		rest	7.38	unclear	unclear		unclear
+t23_f726.jpg	23	726	0.1318	0.2366	0.5135	0.5038		rest	7.38	unclear	unclear		unclear
+t30_f828.jpg	30	828	0.3258	0.4350	0.4904	0.5417	Character 52	rest	7.38	unclear	unclear		unclear
+t30_f864.jpg	30	864	0.0389	0.4045	0.1289	0.5065	Character 52	rest	7.38	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t30_f888.jpg	30	888	0.2766	0.4662	0.3176	0.5580	Character 52	rest	7.38	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t34_f918.jpg	34	918	0.0153	0.1601	0.3575	0.4322	Character 31	rest	7.38	mouth_open	mouth_open		mouth_open
+t34_f924.jpg	34	924	0.1027	0.1938	0.2635	0.5073	Character 31	rest	7.38	mouth_open	mouth_open		mouth_open
+t34_f954.jpg	34	954	0.0139	0.2021	0.3359	0.4643	Character 31	rest	7.38	downcast	none	downcast	downcast
+t36_f936.jpg	36	936	0.6704	0.1264	0.8225	0.4459	Character 53	top	1	downcast,mouth_open	mouth_open	mouth_open	mouth_open
+t36_f942.jpg	36	942	0.6675	0.1312	0.8178	0.4519	Character 53	top	1	downcast	downcast,mouth_open	downcast,mouth_open	downcast,mouth_open
+t36_f966.jpg	36	966	0.6693	0.1381	0.8321	0.4569	Character 53	top	1	mouth_open	mouth_open		mouth_open
+t40_f1128.jpg	40	1128	0.5592	0.0000	0.6784	0.1485		rest	7.38	noface	noface		noface
+t50_f1230.jpg	50	1230	0.7780	0.5060	0.8114	0.5826	Character 14	rest	7.38	mouth_open	mouth_open		mouth_open
+t50_f1236.jpg	50	1236	0.7765	0.5090	0.8103	0.5825	Character 14	rest	7.38	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t50_f1242.jpg	50	1242	0.7757	0.5185	0.8101	0.5885	Character 14	rest	7.38	unclear	mouth_open	mouth_open	mouth_open
+t51_f1242.jpg	51	1242	0.0714	0.5136	0.1112	0.5778	Character 53	rest	7.38	none	none		none
+t52_f1248.jpg	52	1248	0.5051	0.5411	0.5758	0.6899	Character 14	top	1	angry	none	none	none
+t52_f1254.jpg	52	1254	0.5032	0.5507	0.5670	0.7014	Character 14	top	1	angry	none	none	none
+t52_f1260.jpg	52	1260	0.5008	0.5617	0.5823	0.7164	Character 14	top	1	none	angry	none	none
+t55_f1350.jpg	55	1350	0.3818	0.6247	0.4582	0.7547		rest	7.38	mouth_open	mouth_open		mouth_open
+t55_f1362.jpg	55	1362	0.3740	0.6292	0.4539	0.7539		rest	7.38	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t55_f1368.jpg	55	1368	0.3743	0.6293	0.4533	0.7548		rest	7.38	none	none		none
+t59_f1530.jpg	59	1530	0.8500	0.4241	0.9910	0.7810		rest	7.38	unclear	unclear		unclear
+t59_f1542.jpg	59	1542	0.8480	0.4266	0.9827	0.7781		rest	7.38	unclear	unclear		unclear
+t59_f1548.jpg	59	1548	0.8549	0.4250	0.9783	0.7617		rest	7.38	unclear	unclear		unclear
+t61_f1554.jpg	61	1554	0.4835	0.0297	0.6576	0.4803		top	1	smile,mouth_open	mouth_open	mouth_open	mouth_open
+t61_f1596.jpg	61	1596	0.4829	0.0330	0.6563	0.3799		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t61_f1638.jpg	61	1638	0.4712	0.0294	0.6470	0.4872		top	1	mouth_open	mouth_open		mouth_open
+t65_f1692.jpg	65	1692	0.3311	0.0136	0.9734	0.3583		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t65_f1722.jpg	65	1722	0.3359	0.0021	0.9904	0.3496		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t65_f1728.jpg	65	1728	0.3277	0.0013	0.9886	0.3499		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t66_f1740.jpg	66	1740	0.6844	0.4627	0.7271	0.5831	Jerry Smith	rest	7.38	none	none		none
+t66_f1746.jpg	66	1746	0.6744	0.4735	0.7240	0.6031	Jerry Smith	rest	7.38	none	none		none
+t67_f1758.jpg	67	1758	0.5853	0.1147	0.7418	0.4568	Beth Smith	rest	7.38	none	none		none
+t67_f1794.jpg	67	1794	0.5448	0.0929	0.7035	0.4376	Beth Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t67_f1830.jpg	67	1830	0.5264	0.1170	0.6891	0.4604	Beth Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t68_f1764.jpg	68	1764	0.3835	0.1004	0.5258	0.4378	Jerry Smith	rest	7.38	none	none		none
+t68_f1824.jpg	68	1824	0.3049	0.0978	0.4422	0.4343	Jerry Smith	rest	7.38	none	none		none
+t68_f1836.jpg	68	1836	0.3040	0.0978	0.4436	0.4344	Jerry Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t69_f1884.jpg	69	1884	0.2049	0.0022	0.5217	0.7830	Jerry Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t69_f1908.jpg	69	1908	0.1943	0.0040	0.5228	0.7976	Jerry Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t69_f1932.jpg	69	1932	0.2346	0.0019	0.5624	0.7856	Jerry Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t71_f1962.jpg	71	1962	0.4334	0.1028	0.5246	0.3218	Jerry Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t71_f1980.jpg	71	1980	0.4098	0.0828	0.5009	0.2966	Jerry Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t71_f1992.jpg	71	1992	0.4148	0.0694	0.5066	0.2866	Jerry Smith	rest	7.38	none	none		none
+t74_f2028.jpg	74	2028	0.4726	0.1745	0.6029	0.4932	Rick Sanchez	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t74_f2076.jpg	74	2076	0.4837	0.1409	0.6117	0.4687	Rick Sanchez	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t74_f2124.jpg	74	2124	0.4197	0.2452	0.5488	0.5296	Rick Sanchez	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t76_f2058.jpg	76	2058	0.9493	0.0710	1.0000	0.1881		rest	7.38	none	none		none
+t76_f2136.jpg	76	2136	0.9493	0.0710	1.0000	0.1882		rest	7.38	none	none		none
+t76_f2178.jpg	76	2178	0.9492	0.0709	1.0000	0.1883		rest	7.38	none	none		none
+t80_f2202.jpg	80	2202	0.3709	0.1742	0.4448	0.3464	Jerry Smith	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t80_f2244.jpg	80	2244	0.3812	0.1417	0.4561	0.3241	Jerry Smith	top	1	none	none		none
+t80_f2262.jpg	80	2262	0.3812	0.1416	0.4561	0.3240	Jerry Smith	top	1	downcast	downcast		downcast
+t81_f2286.jpg	81	2286	0.0000	0.0015	0.4046	0.8288	Morty Smith	rest	7.38	unclear	unclear		unclear
+t81_f2298.jpg	81	2298	0.0005	0.0016	0.4321	0.8253	Morty Smith	rest	7.38	unclear	unclear		unclear
+t81_f2316.jpg	81	2316	0.0000	0.0004	0.3511	0.7893	Morty Smith	rest	7.38	unclear	none	unclear	unclear
+t88_f2508.jpg	88	2508	0.3685	0.3389	0.4296	0.5149	Rick Sanchez	top	1	mouth_open	mouth_open		mouth_open
+t88_f2514.jpg	88	2514	0.3352	0.3291	0.4085	0.4969	Rick Sanchez	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t88_f2520.jpg	88	2520	0.3384	0.3246	0.4135	0.4952	Rick Sanchez	top	1	mouth_open	mouth_open		mouth_open
+t101_f2730.jpg	101	2730	0.2501	0.2181	0.4300	0.5789	Morty Smith	rest	7.38	unclear	unclear		unclear
+t101_f2748.jpg	101	2748	0.2501	0.2182	0.4299	0.5788	Morty Smith	rest	7.38	unclear	unclear		unclear
+t101_f2760.jpg	101	2760	0.2518	0.2187	0.4309	0.5788	Morty Smith	rest	7.38	unclear	unclear		unclear
+t113_f3186.jpg	113	3186	0.7537	0.0668	0.8061	0.1333	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t113_f3192.jpg	113	3192	0.7678	0.0826	0.7934	0.1274	Morty Smith	top	1	mouth_open	unclear	mouth_open	mouth_open
+t113_f3198.jpg	113	3198	0.7537	0.0704	0.8078	0.1343	Morty Smith	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t125_f3372.jpg	125	3372	0.7021	0.0458	0.9585	0.6143	Character 52	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t125_f3450.jpg	125	3450	0.2721	0.7086	0.3953	0.9479	Character 52	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t125_f3528.jpg	125	3528	0.2738	0.7066	0.3963	0.9476	Character 52	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t126_f3546.jpg	126	3546	0.4161	0.4168	0.4678	0.5122	Morty Smith	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t126_f3552.jpg	126	3552	0.4168	0.4130	0.4685	0.5086	Morty Smith	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t126_f3570.jpg	126	3570	0.4765	0.4122	0.5270	0.5125	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t129_f3660.jpg	129	3660	0.5378	0.0762	0.5816	0.1839		rest	7.38	angry	angry		angry
+t129_f3672.jpg	129	3672	0.5379	0.0760	0.5816	0.1838		rest	7.38	angry	angry		angry
+t129_f3678.jpg	129	3678	0.5379	0.0761	0.5816	0.1838		rest	7.38	angry	angry		angry
+t144_f3786.jpg	144	3786	0.3340	0.6143	0.3774	0.6965		rest	7.38	none	none		none
+t144_f3816.jpg	144	3816	0.3155	0.5779	0.3946	0.6987		rest	7.38	unclear	unclear		unclear
+t144_f3822.jpg	144	3822	0.3013	0.5447	0.3923	0.7003		rest	7.38	none	none		none
+t151_f3888.jpg	151	3888	0.4567	0.0011	0.9075	0.3499		top	1	mouth_open	mouth_open		mouth_open
+t151_f3894.jpg	151	3894	0.4615	0.0004	0.9069	0.3496		top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t151_f3900.jpg	151	3900	0.4547	0.0023	0.9089	0.3514		top	1	angry,mouth_open	angry,shout,mouth_open	angry,mouth_open	angry,mouth_open
+t158_f3912.jpg	158	3912	0.4409	0.1479	0.8232	0.8508	Character 20	rest	7.38	angry,mouth_open	mouth_open	angry,mouth_open	angry,mouth_open
+t158_f3936.jpg	158	3936	0.4210	0.1457	0.7744	0.8117	Character 20	rest	7.38	angry,mouth_open	mouth_open	angry,mouth_open	angry,mouth_open
+t158_f3948.jpg	158	3948	0.4316	0.1557	0.7906	0.8144	Character 20	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t160_f3954.jpg	160	3954	0.3211	0.3164	0.3605	0.4039		rest	7.38	unclear	noface	unclear	unclear
+t180_f4488.jpg	180	4488	0.8091	0.4207	0.9384	0.7007		top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t180_f4500.jpg	180	4500	0.8085	0.4209	0.9383	0.7013		top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t180_f4512.jpg	180	4512	0.8213	0.4128	0.9489	0.7058		top	1	none	none		none
+t183_f4494.jpg	183	4494	0.6840	0.5876	0.7478	0.7274	Character 56	top	1	blush	blush,eyes_closed	blush,eyes_closed	blush,eyes_closed
+t183_f4506.jpg	183	4506	0.6779	0.5858	0.7480	0.7284	Character 56	top	1	blush	blush,eyes_closed	blush	blush
+t183_f4512.jpg	183	4512	0.6761	0.5869	0.7389	0.7245	Character 56	top	1	blush	blush		blush
+t185_f4494.jpg	185	4494	0.7250	0.5608	0.8105	0.7468		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t185_f4506.jpg	185	4506	0.7247	0.5579	0.8151	0.7426		top	1	eyes_closed	eyes_closed,mouth_open	eyes_closed	eyes_closed
+t185_f4518.jpg	185	4518	0.7364	0.5620	0.8247	0.7394		top	1	mouth_open	surprised,mouth_open	surprised,mouth_open	surprised,mouth_open
+t189_f4530.jpg	189	4530	0.3914	0.5343	0.4127	0.5838		rest	7.38	unclear	unclear		unclear
+t189_f4542.jpg	189	4542	0.3920	0.5355	0.4122	0.5820		rest	7.38	unclear	unclear		unclear
+t189_f4548.jpg	189	4548	0.3921	0.5359	0.4122	0.5817		rest	7.38	unclear	unclear		unclear
+t193_f4536.jpg	193	4536	0.4248	0.6410	0.4562	0.7071		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t193_f4542.jpg	193	4542	0.4227	0.6587	0.4550	0.7361		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t193_f4548.jpg	193	4548	0.4208	0.6799	0.4559	0.7534		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t197_f4638.jpg	197	4638	0.1052	0.0770	0.4490	0.3999	Character 52	rest	7.38	none	smile	none	none
+t197_f4656.jpg	197	4656	0.2416	0.0627	0.6121	0.3903	Character 52	rest	7.38	smile	none	none	none
+t197_f4674.jpg	197	4674	0.2462	0.0713	0.6163	0.3959	Character 52	rest	7.38	angry,mouth_open	none	angry,mouth_open	angry,mouth_open
+t204_f4758.jpg	204	4758	0.7941	0.6453	0.8637	0.7846		top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t204_f4794.jpg	204	4794	0.7938	0.6455	0.8640	0.7846		top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t204_f4824.jpg	204	4824	0.7982	0.6452	0.8691	0.7875		top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t206_f4854.jpg	206	4854	0.2351	0.0000	0.6382	0.3500	Character 57	top	1	eyes_closed	eyes_closed		eyes_closed
+t206_f4884.jpg	206	4884	0.0000	0.6528	0.0580	0.8247	Character 57	top	1	eyes_closed	none	eyes_closed	eyes_closed
+t206_f4890.jpg	206	4890	0.3802	0.1538	0.5621	0.5797	Character 57	top	1	eyes_closed,mouth_open	angry,eyes_closed,mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open
+t208_f4890.jpg	208	4890	0.0997	0.7009	0.1634	0.8510		top	1	noface	noface		noface
+t208_f4914.jpg	208	4914	0.9736	0.3662	1.0000	0.4881		top	1	unclear	unclear		unclear
+t208_f4950.jpg	208	4950	0.0118	0.6600	0.2042	0.7227		top	1	unclear	noface	unclear	unclear
+t210_f5094.jpg	210	5094	0.4774	0.6828	0.5480	0.8195	Character 32	rest	7.38	downcast	none	none	none
+t210_f5100.jpg	210	5100	0.4791	0.6832	0.5478	0.8186	Character 32	rest	7.38	none	none		none
+t210_f5124.jpg	210	5124	0.3478	0.5888	0.5080	0.8408	Character 32	rest	7.38	unclear	noface	noface	noface
+t213_f5094.jpg	213	5094	0.7091	0.6072	0.9726	0.7447		top	1	unclear	unclear		unclear
+t213_f5142.jpg	213	5142	0.7149	0.6073	0.9728	0.7448		top	1	mouth_open	unclear	surprised,mouth_open	unclear
+t213_f5190.jpg	213	5190	0.7912	0.6503	0.8631	0.7809		top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t216_f5244.jpg	216	5244	0.5483	0.2669	0.7007	0.5573		rest	7.38	mouth_open	angry,mouth_open	mouth_open	mouth_open
+t218_f5244.jpg	218	5244	0.7641	0.4186	0.8812	0.6508		top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t218_f5250.jpg	218	5250	0.7640	0.4163	0.8802	0.6505		top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t226_f5556.jpg	226	5556	0.2356	0.5164	0.2983	0.6624		top	1	mouth_open	mouth_open		mouth_open
+t226_f5622.jpg	226	5622	0.2344	0.5158	0.2949	0.6538		top	1	mouth_open	surprised,mouth_open	surprised,mouth_open	surprised,mouth_open
+t226_f5628.jpg	226	5628	0.2244	0.5132	0.2899	0.6557		top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t230_f5616.jpg	230	5616	0.7154	0.4732	0.7685	0.5941		rest	7.38	angry	angry		angry
+t230_f5646.jpg	230	5646	0.7444	0.4665	0.8097	0.6101		rest	7.38	angry	angry		angry
+t230_f5658.jpg	230	5658	0.7444	0.4663	0.8095	0.6102		rest	7.38	angry	angry		angry
+t235_f5988.jpg	235	5988	0.8408	0.3316	0.9405	0.5425	Summer Smith	rest	7.38	none	none		none
+t235_f6024.jpg	235	6024	0.8449	0.3276	0.9425	0.5416	Summer Smith	rest	7.38	none	none		none
+t235_f6066.jpg	235	6066	0.2435	0.3325	0.3306	0.5226	Summer Smith	rest	7.38	angry	angry		angry
+t237_f6012.jpg	237	6012	0.0206	0.2639	0.1277	0.4895	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t237_f6030.jpg	237	6030	0.1081	0.2615	0.2153	0.4558	Beth Smith	top	1	shout,eyes_closed,mouth_open	shout,eyes_closed,mouth_open		shout,eyes_closed,mouth_open
+t237_f6048.jpg	237	6048	0.1889	0.2612	0.2864	0.4737	Beth Smith	top	1	shout,eyes_closed,mouth_open	shout,eyes_closed,mouth_open		shout,eyes_closed,mouth_open
+t241_f6042.jpg	241	6042	0.5504	0.3490	0.6161	0.4346		top	1	noface	noface		noface
+t241_f6054.jpg	241	6054	0.5821	0.3778	0.6116	0.4492		top	1	none	unclear	none	none
+t241_f6060.jpg	241	6060	0.5923	0.3614	0.6250	0.4413		top	1	none	none		none
+t242_f6048.jpg	242	6048	0.5798	0.1009	0.8148	0.3061	Jerry Smith	top	1	shout,eyes_closed,mouth_open	shout,mouth_open	shout,eyes_closed,mouth_open	shout,eyes_closed,mouth_open
+t242_f6078.jpg	242	6078	0.6985	0.0337	0.8060	0.2899	Jerry Smith	top	1	angry	angry		angry
+t242_f6084.jpg	242	6084	0.6984	0.0337	0.8060	0.2899	Jerry Smith	top	1	angry	angry		angry
+t250_f6180.jpg	250	6180	0.0781	0.0863	0.1701	0.3114	Jerry Smith	rest	7.38	downcast	downcast		downcast
+t250_f6192.jpg	250	6192	0.0778	0.0858	0.1698	0.3117	Jerry Smith	rest	7.38	downcast	none	downcast	downcast
+t250_f6198.jpg	250	6198	0.0778	0.0859	0.1698	0.3116	Jerry Smith	rest	7.38	downcast	downcast		downcast
+t251_f6186.jpg	251	6186	0.4123	0.3265	0.5520	0.5957	Character 21	rest	7.38	mouth_open	mouth_open		mouth_open
+t251_f6192.jpg	251	6192	0.4212	0.3260	0.5500	0.6264	Character 21	rest	7.38	mouth_open	mouth_open		mouth_open
+t251_f6198.jpg	251	6198	0.4221	0.3262	0.5512	0.6248	Character 21	rest	7.38	downcast,mouth_open	downcast,mouth_open		downcast,mouth_open
+t253_f6246.jpg	253	6246	0.3603	0.3857	0.4636	0.7071	Rick Sanchez	rest	7.38	angry	none	angry	angry
+t253_f6258.jpg	253	6258	0.2430	0.1773	0.3770	0.5185	Rick Sanchez	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t253_f6282.jpg	253	6282	0.2003	0.2203	0.5881	0.4925	Rick Sanchez	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t255_f6306.jpg	255	6306	0.4688	0.0089	0.7989	0.6027	Summer Smith	top	1	unclear	unclear		unclear
+t255_f6354.jpg	255	6354	0.4450	0.0221	0.5882	0.3356	Summer Smith	top	1	mouth_open	mouth_open		mouth_open
+t255_f6402.jpg	255	6402	0.3271	0.2902	0.4402	0.5467	Summer Smith	top	1	cry,mouth_open	cry,mouth_open		cry,mouth_open
+t256_f6312.jpg	256	6312	0.1555	0.0017	0.4415	0.5038	Summer Smith	top	1	mouth_open	mouth_open		mouth_open
+t256_f6360.jpg	256	6360	0.0783	0.0020	0.3832	0.5142	Summer Smith	top	1	none	none		none
+t256_f6402.jpg	256	6402	0.0843	0.2267	0.3312	0.6732	Summer Smith	top	1	cry,mouth_open	cry,mouth_open		cry,mouth_open
+t264_f6630.jpg	264	6630	0.9561	0.2603	1.0000	0.4401	Rick Sanchez	top	1	unclear	unclear		unclear
+t265_f6666.jpg	265	6666	0.1690	0.3761	0.3330	0.6773		rest	7.38	downcast	downcast		downcast
+t265_f6684.jpg	265	6684	0.0443	0.0014	0.3849	0.3509		rest	7.38	surprised,mouth_open	mouth_open	noface	unclear
+t265_f6840.jpg	265	6840	0.0021	0.0000	0.3689	0.3500		rest	7.38	unclear	noface	noface	noface
+t273_f6906.jpg	273	6906	0.2189	0.4448	0.2754	0.5834	Summer Smith	rest	7.38	none	none		none
+t273_f7026.jpg	273	7026	0.3486	0.4154	0.4018	0.5306	Summer Smith	rest	7.38	none	none		none
+t273_f7230.jpg	273	7230	0.3560	0.4182	0.4120	0.5357	Summer Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t275_f7326.jpg	275	7326	0.5976	0.1383	0.7689	0.4828		top	1	unclear	unclear		unclear
+t275_f7356.jpg	275	7356	0.6236	0.1840	0.7943	0.5415		top	1	unclear	unclear		unclear
+t275_f7380.jpg	275	7380	0.5795	0.1080	0.7518	0.4553		top	1	unclear	unclear		unclear
+t278_f7458.jpg	278	7458	0.6228	0.4198	0.6783	0.5301	Summer Smith	top	1	eyes_closed	eyes_closed		eyes_closed
+t278_f7470.jpg	278	7470	0.6228	0.4200	0.6783	0.5300	Summer Smith	top	1	eyes_closed	eyes_closed		eyes_closed
+t278_f7476.jpg	278	7476	0.6228	0.4200	0.6782	0.5301	Summer Smith	top	1	eyes_closed	eyes_closed		eyes_closed
+t281_f7488.jpg	281	7488	0.6675	0.0788	0.8682	0.4870	Beth Smith	rest	7.38	eyes_closed	eyes_closed		eyes_closed
+t281_f7548.jpg	281	7548	0.6615	0.0817	0.8661	0.5031	Beth Smith	rest	7.38	none	none		none
+t281_f7608.jpg	281	7608	0.6709	0.0803	0.8722	0.5023	Beth Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t298_f7932.jpg	298	7932	0.5437	0.3716	0.5850	0.4358		rest	7.38	unclear	none	none	none
+t298_f7938.jpg	298	7938	0.5437	0.3716	0.5851	0.4358		rest	7.38	unclear	none	none	none
+t299_f7944.jpg	299	7944	0.2231	0.0040	0.5659	0.8233	Jerry Smith	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t299_f7950.jpg	299	7950	0.2233	0.0042	0.5813	0.8083	Jerry Smith	top	1	surprised,mouth_open	shout,mouth_open	shout,surprised,mouth_open	shout,surprised,mouth_open
+t299_f7956.jpg	299	7956	0.2219	0.0019	0.5792	0.7978	Jerry Smith	top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t306_f8220.jpg	306	8220	0.5794	0.2300	0.6365	0.3631	Summer Smith	top	1	mouth_open	mouth_open		mouth_open
+t306_f8250.jpg	306	8250	0.5815	0.2304	0.6388	0.3623	Summer Smith	top	1	mouth_open	mouth_open		mouth_open
+t306_f8274.jpg	306	8274	0.5797	0.2302	0.6364	0.3628	Summer Smith	top	1	none	none		none
+t308_f8226.jpg	308	8226	0.8012	0.2030	0.8606	0.3463	Jerry Smith	top	1	downcast	downcast		downcast
+t308_f8262.jpg	308	8262	0.8011	0.2030	0.8607	0.3464	Jerry Smith	top	1	downcast	downcast		downcast
+t308_f8274.jpg	308	8274	0.8011	0.2030	0.8607	0.3463	Jerry Smith	top	1	downcast	downcast		downcast
+t310_f8298.jpg	310	8298	0.6521	0.4715	0.7276	0.6287	Summer Smith	top	1	downcast	downcast		downcast
+t310_f8322.jpg	310	8322	0.6453	0.4723	0.7195	0.6302	Summer Smith	top	1	downcast,mouth_open	downcast,mouth_open		downcast,mouth_open
+t310_f8340.jpg	310	8340	0.6451	0.4719	0.7187	0.6304	Summer Smith	top	1	downcast	downcast		downcast
+t313_f8304.jpg	313	8304	0.0000	0.0000	0.3511	0.3499		rest	7.38	none	none		none
+t313_f8316.jpg	313	8316	0.0000	0.0000	0.3513	0.3498		rest	7.38	unclear	unclear		unclear
+t313_f8346.jpg	313	8346	0.0004	0.0007	0.4606	0.3505		rest	7.38	unclear	noface	unclear	unclear
+t321_f8724.jpg	321	8724	0.7763	0.3114	0.8461	0.6773		top	1	unclear	unclear		unclear
+t321_f8736.jpg	321	8736	0.7768	0.3133	0.8482	0.6815		top	1	unclear	unclear		unclear
+t321_f8754.jpg	321	8754	0.7766	0.3128	0.8499	0.6852		top	1	unclear	unclear		unclear
+t322_f8718.jpg	322	8718	0.8231	0.4637	0.9413	0.7365		top	1	unclear	unclear		unclear
+t322_f8754.jpg	322	8754	0.8239	0.4628	0.9413	0.7369		top	1	unclear	unclear		unclear
+t322_f8796.jpg	322	8796	0.8237	0.4629	0.9415	0.7364		top	1	unclear	unclear		unclear
+t335_f8988.jpg	335	8988	0.5072	0.3045	0.5976	0.5069	Rick Sanchez	top	1	none	cry,mouth_open	mouth_open	mouth_open
+t335_f9000.jpg	335	9000	0.4799	0.0339	0.5709	0.2684	Rick Sanchez	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t335_f9006.jpg	335	9006	0.4737	0.0393	0.5669	0.2680	Rick Sanchez	top	1	angry	angry		angry
+t336_f8988.jpg	336	8988	0.6567	0.4836	0.7377	0.6253	Character 23	top	1	unclear	unclear		unclear
+t336_f8994.jpg	336	8994	0.6570	0.4812	0.7365	0.6259	Character 23	top	1	unclear	unclear		unclear
+t336_f9006.jpg	336	9006	0.6572	0.4771	0.7402	0.6573	Character 23	top	1	unclear	unclear		unclear
+t337_f8988.jpg	337	8988	0.3279	0.5361	0.4136	0.6700	Character 35	top	1	unclear	unclear		unclear
+t337_f9006.jpg	337	9006	0.3678	0.5208	0.4327	0.6464	Character 35	top	1	none	none		none
+t337_f9012.jpg	337	9012	0.3126	0.5057	0.3798	0.6312	Character 35	top	1	none	surprised,mouth_open	none	none
+t354_f9342.jpg	354	9342	0.3045	0.4923	0.3731	0.6435	Beth Smith	top	1	eyes_closed	eyes_closed		eyes_closed
+t354_f9360.jpg	354	9360	0.3039	0.4907	0.3705	0.6437	Beth Smith	top	1	none	none		none
+t354_f9378.jpg	354	9378	0.3039	0.4907	0.3705	0.6436	Beth Smith	top	1	none	none		none
+t363_f9594.jpg	363	9594	0.5282	0.7789	0.5735	0.8560	Summer Smith	top	1	unclear	unclear		unclear
+t363_f9606.jpg	363	9606	0.5246	0.7903	0.5534	0.8463	Summer Smith	top	1	none	none		none
+t363_f9612.jpg	363	9612	0.5207	0.7910	0.5446	0.8471	Summer Smith	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t367_f9588.jpg	367	9588	0.2479	0.4362	0.3368	0.6409	Beth Smith	top	1	unclear	unclear		unclear
+t367_f9612.jpg	367	9612	0.3089	0.4752	0.3870	0.6582	Beth Smith	top	1	unclear	unclear		unclear
+t367_f9630.jpg	367	9630	0.3553	0.5026	0.4229	0.6613	Beth Smith	top	1	unclear	unclear		unclear
+t370_f9600.jpg	370	9600	0.7381	0.8598	0.7579	0.9056	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t370_f9624.jpg	370	9624	0.7024	0.8072	0.7251	0.8661	Beth Smith	top	1	eyes_closed,mouth_open	mouth_open	mouth_open	mouth_open
+t370_f9636.jpg	370	9636	0.6911	0.7966	0.7147	0.8532	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t371_f9606.jpg	371	9606	0.9789	0.7042	1.0000	0.7843	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t371_f9624.jpg	371	9624	0.9571	0.7034	0.9884	0.7819	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t371_f9630.jpg	371	9630	0.9501	0.7035	0.9836	0.7833	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t374_f9588.jpg	374	9588	0.7189	0.8427	0.7398	0.8939	Chud	rest	7.38	mouth_open	unclear	mouth_open	mouth_open
+t374_f9624.jpg	374	9624	0.6770	0.8431	0.6976	0.8955	Chud	rest	7.38	eyes_closed	eyes_closed		eyes_closed
+t374_f9636.jpg	374	9636	0.6583	0.7941	0.6776	0.8432	Chud	rest	7.38	none	none		none
+t376_f9588.jpg	376	9588	0.9365	0.8167	0.9994	0.8809	Morty Smith	top	1	downcast	downcast		downcast
+t376_f9612.jpg	376	9612	0.9083	0.8144	0.9720	0.8794	Morty Smith	top	1	downcast	downcast		downcast
+t376_f9636.jpg	376	9636	0.9021	0.8277	0.9361	0.8971	Morty Smith	top	1	downcast	downcast		downcast
+t379_f9612.jpg	379	9612	0.0000	0.3627	0.0380	0.5895	Character 59	top	1	none	unclear	none	none
+t379_f9624.jpg	379	9624	0.0032	0.4059	0.0850	0.6142	Character 59	top	1	none	none		none
+t379_f9636.jpg	379	9636	0.0385	0.4376	0.1302	0.6318	Character 59	top	1	none	none		none
+t384_f9654.jpg	384	9654	0.3448	0.1615	0.4153	0.3197	Jerry Smith	top	1	mouth_open	mouth_open		mouth_open
+t384_f9678.jpg	384	9678	0.4619	0.1068	0.5241	0.2601	Jerry Smith	top	1	downcast	downcast		downcast
+t384_f9690.jpg	384	9690	0.5530	0.0967	0.6204	0.2577	Jerry Smith	top	1	none	none		none
+t386_f9648.jpg	386	9648	0.4509	0.2819	0.5191	0.4099		rest	7.38	mouth_open	mouth_open		mouth_open
+t386_f9672.jpg	386	9672	0.4992	0.2450	0.5779	0.4293		rest	7.38	none	none		none
+t386_f9696.jpg	386	9696	0.4992	0.2545	0.5770	0.4304		rest	7.38	smile	none	none	none
+t393_f9726.jpg	393	9726	0.0284	0.2135	0.1059	0.3895	Character 23	rest	7.38	none	none		none
+t393_f9786.jpg	393	9786	0.3011	0.2192	0.3803	0.3956	Character 23	rest	7.38	none	none		none
+t393_f9840.jpg	393	9840	0.3010	0.2193	0.3802	0.3957	Character 23	rest	7.38	none	none		none
+t395_f9744.jpg	395	9744	0.0509	0.3436	0.1411	0.5235	Character 35	rest	7.38	unclear	unclear		unclear
+t395_f9816.jpg	395	9816	0.1084	0.3424	0.1999	0.5234	Character 35	rest	7.38	none	none		none
+t395_f9888.jpg	395	9888	0.1085	0.3424	0.1999	0.5234	Character 35	rest	7.38	none	none		none
+t396_f9936.jpg	396	9936	0.6287	0.0220	0.8707	0.5845		rest	7.38	unclear	unclear		unclear
+t396_f9948.jpg	396	9948	0.6287	0.0220	0.8707	0.5847		rest	7.38	unclear	unclear		unclear
+t396_f10020.jpg	396	10020	0.6292	0.0222	0.8708	0.5846		rest	7.38	unclear	unclear		unclear
+t399_f9936.jpg	399	9936	0.3262	0.0264	0.6121	0.3666	Summer Smith	rest	7.38	angry	angry		angry
+t399_f9948.jpg	399	9948	0.3262	0.0307	0.6105	0.3693	Summer Smith	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t399_f9954.jpg	399	9954	0.3262	0.0244	0.6132	0.3652	Summer Smith	rest	7.38	angry	angry		angry
+t402_f10080.jpg	402	10080	0.7317	0.1192	0.8214	0.2364		top	1	mouth_open	mouth_open		mouth_open
+t402_f10128.jpg	402	10128	0.7378	0.1209	0.7829	0.2230		top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t402_f10164.jpg	402	10164	0.7379	0.1209	0.7828	0.2226		top	1	mouth_open	mouth_open		mouth_open
+t403_f10062.jpg	403	10062	0.2983	0.1575	0.3180	0.2067	Summer Smith	top	1	unclear	unclear		unclear
+t403_f10098.jpg	403	10098	0.2979	0.1579	0.3178	0.2080	Summer Smith	top	1	none	unclear	unclear	unclear
+t403_f10176.jpg	403	10176	0.2961	0.1580	0.3162	0.2071	Summer Smith	top	1	none	unclear	unclear	unclear
+t406_f10050.jpg	406	10050	0.2610	0.1929	0.2832	0.2370	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t406_f10134.jpg	406	10134	0.2606	0.1927	0.2831	0.2368	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t406_f10146.jpg	406	10146	0.2606	0.1926	0.2832	0.2367	Morty Smith	top	1	surprised,mouth_open	mouth_open	unclear	unclear
+t408_f10182.jpg	408	10182	0.4593	0.0417	0.5700	0.3133		rest	7.38	unclear	unclear		unclear
+t408_f10260.jpg	408	10260	0.4328	0.0411	0.5437	0.3248		rest	7.38	unclear	unclear		unclear
+t408_f10266.jpg	408	10266	0.4307	0.0408	0.5420	0.3290		rest	7.38	unclear	unclear		unclear
+t410_f10212.jpg	410	10212	0.1569	0.7102	0.1835	0.7777	Character 25	top	1	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t410_f10254.jpg	410	10254	0.1455	0.7100	0.1719	0.7780	Character 25	top	1	mouth_open	mouth_open		mouth_open
+t410_f10302.jpg	410	10302	0.1323	0.7104	0.1586	0.7774	Character 25	top	1	mouth_open	mouth_open		mouth_open
+t414_f10206.jpg	414	10206	0.2285	0.7222	0.2533	0.7815	Summer Smith	top	1	none	none		none
+t414_f10248.jpg	414	10248	0.2169	0.7225	0.2420	0.7818	Summer Smith	top	1	mouth_open	none	none	none
+t414_f10296.jpg	414	10296	0.2035	0.7222	0.2287	0.7818	Summer Smith	top	1	none	none		none
+t418_f10194.jpg	418	10194	0.1674	0.4617	0.1831	0.5035	Summer Smith	rest	7.38	mouth_open	unclear	unclear	unclear
+t418_f10242.jpg	418	10242	0.1542	0.4619	0.1695	0.5032	Summer Smith	rest	7.38	unclear	unclear		unclear
+t418_f10284.jpg	418	10284	0.1426	0.4616	0.1585	0.5037	Summer Smith	rest	7.38	mouth_open	unclear	mouth_open	mouth_open
+t419_f10182.jpg	419	10182	0.2018	0.6961	0.2279	0.7675	Chud	top	1	downcast	none	none	none
+t419_f10248.jpg	419	10248	0.1838	0.6957	0.2099	0.7677	Chud	top	1	none	none		none
+t419_f10296.jpg	419	10296	0.1706	0.6960	0.1968	0.7674	Chud	top	1	none	none		none
+t420_f10218.jpg	420	10218	0.8184	0.5236	0.8422	0.5880	Jerry Smith	top	1	none	none		none
+t420_f10260.jpg	420	10260	0.8073	0.5218	0.8311	0.5872	Jerry Smith	top	1	none	none		none
+t420_f10302.jpg	420	10302	0.7959	0.5243	0.8193	0.5870	Jerry Smith	top	1	none	none		none
+t428_f10194.jpg	428	10194	0.4196	0.5775	0.4341	0.6314	Beth Smith	rest	7.38	mouth_open	unclear	surprised,mouth_open	unclear
+t428_f10218.jpg	428	10218	0.4131	0.5806	0.4278	0.6312	Beth Smith	rest	7.38	surprised,mouth_open	unclear	surprised,mouth_open	surprised,mouth_open
+t428_f10296.jpg	428	10296	0.8770	0.6503	0.8990	0.6926	Beth Smith	rest	7.38	mouth_open	none	none	none
+t431_f10182.jpg	431	10182	0.4046	0.5756	0.4240	0.6282	Character 58	top	1	mouth_open	unclear	none	unclear
+t431_f10230.jpg	431	10230	0.3905	0.5712	0.4151	0.6286	Character 58	top	1	none	unclear	none	none
+t431_f10296.jpg	431	10296	0.3739	0.5757	0.3922	0.6275	Character 58	top	1	mouth_open	none	none	none
+t435_f10188.jpg	435	10188	0.3382	0.6170	0.3619	0.6624	Character 71	top	1	none	none		none
+t435_f10224.jpg	435	10224	0.3283	0.6142	0.3521	0.6612	Character 71	top	1	mouth_open	mouth_open		mouth_open
+t435_f10278.jpg	435	10278	0.3135	0.6166	0.3369	0.6626	Character 71	top	1	mouth_open	mouth_open		mouth_open
+t438_f10200.jpg	438	10200	0.9033	0.6509	0.9253	0.6922	Beth Smith	top	1	none	mouth_open	none	none
+t438_f10254.jpg	438	10254	0.8883	0.6503	0.9104	0.6924	Beth Smith	top	1	none	none		none
+t438_f10302.jpg	438	10302	0.3906	0.5776	0.4074	0.6350	Beth Smith	top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t439_f10200.jpg	439	10200	0.2511	0.4739	0.2705	0.5176	Character 60	rest	7.38	unclear	unclear		unclear
+t439_f10224.jpg	439	10224	0.2444	0.4678	0.2634	0.5178	Character 60	rest	7.38	unclear	unclear		unclear
+t439_f10290.jpg	439	10290	0.2267	0.4753	0.2459	0.5175	Character 60	rest	7.38	unclear	unclear		unclear
+t441_f10200.jpg	441	10200	0.7664	0.3783	0.7984	0.4347	Rick Sanchez	rest	7.38	unclear	unclear		unclear
+t446_f10248.jpg	446	10248	0.2496	0.3894	0.2741	0.4367		rest	7.38	unclear	unclear		unclear
+t446_f10290.jpg	446	10290	0.2390	0.3899	0.2637	0.4387		rest	7.38	unclear	unclear		unclear
+t449_f10308.jpg	449	10308	0.6581	0.0014	0.8314	0.3013	Character 23	rest	7.38	none	angry	angry	angry
+t449_f10326.jpg	449	10326	0.6582	0.0014	0.8314	0.3013	Character 23	rest	7.38	angry	none	angry	angry
+t449_f10344.jpg	449	10344	0.6609	0.0013	0.8336	0.3022	Character 23	rest	7.38	none	none		none
+t469_f10686.jpg	469	10686	0.5543	0.6458	0.6737	0.9368	Character 54	rest	7.38	unclear	unclear		unclear
+t469_f10692.jpg	469	10692	0.5543	0.6459	0.6747	0.9375	Character 54	rest	7.38	unclear	unclear		unclear
+t469_f10710.jpg	469	10710	0.5336	0.6461	0.6643	0.9375	Character 54	rest	7.38	unclear	unclear		unclear
+t470_f10686.jpg	470	10686	0.8614	0.2473	0.8901	0.3069	Character 59	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t470_f10698.jpg	470	10698	0.8667	0.2470	0.8953	0.3069	Character 59	top	1	unclear	smile	smile	smile
+t470_f10710.jpg	470	10710	0.8670	0.2469	0.8956	0.3070	Character 59	top	1	unclear	unclear		unclear
+t471_f10680.jpg	471	10680	0.5379	0.4257	0.5692	0.4979	Character 25	rest	7.38	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t471_f10692.jpg	471	10692	0.5380	0.4256	0.5692	0.4979	Character 25	rest	7.38	mouth_open	mouth_open		mouth_open
+t471_f10710.jpg	471	10710	0.5380	0.4256	0.5692	0.4980	Character 25	rest	7.38	mouth_open	mouth_open		mouth_open
+t482_f10860.jpg	482	10860	0.5699	0.6493	0.6807	0.9187	Character 54	rest	7.38	unclear	unclear		unclear
+t482_f10884.jpg	482	10884	0.5702	0.6491	0.6810	0.9183	Character 54	rest	7.38	unclear	unclear		unclear
+t482_f10920.jpg	482	10920	0.5698	0.6485	0.6795	0.9206	Character 54	rest	7.38	unclear	unclear		unclear
+t490_f10926.jpg	490	10926	0.7298	0.6023	0.8846	0.9558	Beth Smith	rest	7.38	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t491_f10926.jpg	491	10926	0.0000	0.5558	0.1486	0.9801	Summer Smith	rest	7.38	unclear	unclear		unclear
+t494_f10962.jpg	494	10962	0.4510	0.4087	0.5341	0.5432	Morty Smith	top	1	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t494_f10974.jpg	494	10974	0.4600	0.3890	0.5341	0.5313	Morty Smith	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t494_f11004.jpg	494	11004	0.4627	0.3914	0.5379	0.5337	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t500_f11058.jpg	500	11058	0.0003	0.3371	0.1218	0.6452	Jerry Smith	top	1	surprised,mouth_open	shout,mouth_open	shout,mouth_open	shout,mouth_open
+t502_f11058.jpg	502	11058	0.6760	0.3350	0.8351	0.7046	Jerry Smith	top	1	surprised,mouth_open	shout,mouth_open	shout,mouth_open	shout,mouth_open
+t502_f11064.jpg	502	11064	0.6247	0.4043	0.8972	0.6128	Jerry Smith	top	1	mouth_open	mouth_open		mouth_open
+t505_f11082.jpg	505	11082	0.3162	0.2219	0.3649	0.3122		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t505_f11088.jpg	505	11088	0.1466	0.1431	0.2452	0.2402		top	1	none	none		none
+t505_f11100.jpg	505	11100	0.1466	0.1432	0.2451	0.2403		top	1	none	none		none
+t507_f11094.jpg	507	11094	0.2939	0.2193	0.3553	0.3098	Morty Smith	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t507_f11100.jpg	507	11100	0.2922	0.2188	0.3563	0.3117	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t507_f11106.jpg	507	11106	0.2921	0.2189	0.3560	0.3122	Morty Smith	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t510_f11112.jpg	510	11112	0.3274	0.2440	0.5192	0.6105	Morty Smith	top	1	smile,mouth_open	shout,mouth_open	smile,mouth_open	smile,mouth_open
+t510_f11148.jpg	510	11148	0.3231	0.2270	0.5262	0.5942	Morty Smith	top	1	smile	smile		smile
+t510_f11178.jpg	510	11178	0.3231	0.2269	0.5262	0.5942	Morty Smith	top	1	smile	smile		smile
+t512_f11208.jpg	512	11208	0.8009	0.2940	0.9401	0.5656	Planätina	rest	7.38	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t512_f11256.jpg	512	11256	0.8011	0.2941	0.9401	0.5663	Planätina	rest	7.38	smile	smile		smile
+t512_f11304.jpg	512	11304	0.8118	0.2954	0.9477	0.5617	Planätina	rest	7.38	smile	smile		smile
+t520_f11430.jpg	520	11430	0.7767	0.1965	0.9570	0.5500	Planätina	rest	7.38	downcast	downcast		downcast
+t520_f11502.jpg	520	11502	0.7780	0.1966	0.9566	0.5499	Planätina	rest	7.38	none	none		none
+t520_f11574.jpg	520	11574	0.7726	0.1957	0.9534	0.5523	Planätina	rest	7.38	none	mouth_open	downcast	none
+t522_f11652.jpg	522	11652	0.3102	0.0107	0.5624	0.5371	Beth Smith	top	1	angry	angry		angry
+t522_f11658.jpg	522	11658	0.3093	0.0106	0.5608	0.5318	Beth Smith	top	1	angry	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t522_f11670.jpg	522	11670	0.2589	0.0169	0.5109	0.5228	Beth Smith	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t525_f11682.jpg	525	11682	0.0054	0.2323	0.1502	0.5286	Beth Smith	top	1	eyes_closed	eyes_closed,mouth_open	angry,mouth_open	eyes_closed,mouth_open
+t525_f11694.jpg	525	11694	0.0449	0.2293	0.1943	0.5322	Beth Smith	top	1	angry	angry		angry
+t525_f11706.jpg	525	11706	0.0450	0.2293	0.1943	0.5322	Beth Smith	top	1	angry	angry		angry
+t529_f11718.jpg	529	11718	0.5521	0.0009	0.7852	0.4479	Jerry Smith	top	1	mouth_open	mouth_open		mouth_open
+t529_f11748.jpg	529	11748	0.5112	0.0004	0.7472	0.4879	Jerry Smith	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t529_f11760.jpg	529	11760	0.4976	0.0007	0.7279	0.5262	Jerry Smith	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t530_f11730.jpg	530	11730	0.7847	0.3897	0.9810	0.7248	Character 61	rest	7.38	unclear	unclear		unclear
+t530_f11742.jpg	530	11742	0.7844	0.3892	0.9812	0.7246	Character 61	rest	7.38	unclear	unclear		unclear
+t530_f11754.jpg	530	11754	0.7841	0.3943	0.9822	0.7250	Character 61	rest	7.38	unclear	unclear		unclear
+t536_f11862.jpg	536	11862	0.5739	0.0088	0.9103	0.6650	Planätina	top	1	mouth_open	mouth_open		mouth_open
+t536_f11886.jpg	536	11886	0.4724	0.0002	0.8133	0.7036	Planätina	top	1	mouth_open	smile,mouth_open	smile,mouth_open	smile,mouth_open
+t536_f11904.jpg	536	11904	0.4756	0.0002	0.8157	0.7029	Planätina	top	1	smile	none	smile	smile
+t542_f11952.jpg	542	11952	0.3091	0.2197	0.5749	0.7205	Morty Smith	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t542_f11988.jpg	542	11988	0.3444	0.2245	0.5910	0.7338	Morty Smith	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t542_f12018.jpg	542	12018	0.3461	0.2244	0.5915	0.7352	Morty Smith	top	1	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t543_f12054.jpg	543	12054	0.2447	0.0540	0.5283	0.6477	Beth Smith	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t543_f12060.jpg	543	12060	0.2449	0.0548	0.5287	0.6462	Beth Smith	top	1	angry	angry		angry
+t543_f12072.jpg	543	12072	0.2658	0.0577	0.5476	0.6533	Beth Smith	top	1	angry,mouth_open	angry,shout,mouth_open	angry,shout,mouth_open	angry,shout,mouth_open
+t545_f12048.jpg	545	12048	0.7368	0.4606	1.0000	0.6490		top	1	unclear	unclear		unclear
+t545_f12066.jpg	545	12066	0.7367	0.4604	1.0000	0.6489		top	1	unclear	unclear		unclear
+t545_f12072.jpg	545	12072	0.7366	0.4604	1.0000	0.6489		top	1	unclear	unclear		unclear
+t547_f12078.jpg	547	12078	0.0756	0.2072	0.2078	0.4875	Beth Smith	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t547_f12114.jpg	547	12114	0.0738	0.2080	0.2023	0.4853	Beth Smith	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t547_f12150.jpg	547	12150	0.0736	0.2075	0.2031	0.4853	Beth Smith	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t552_f12210.jpg	552	12210	0.1150	0.2197	0.3872	0.7409	Morty Smith	rest	7.38	none	none		none
+t552_f12216.jpg	552	12216	0.1150	0.2197	0.3872	0.7408	Morty Smith	rest	7.38	none	none		none
+t552_f12258.jpg	552	12258	0.1150	0.2196	0.3872	0.7410	Morty Smith	rest	7.38	none	none		none
+t554_f12282.jpg	554	12282	0.5390	0.4302	0.6817	0.7015	Character 61	rest	7.38	unclear	unclear		unclear
+t554_f12312.jpg	554	12312	0.5390	0.4302	0.6816	0.7015	Character 61	rest	7.38	unclear	unclear		unclear
+t554_f12336.jpg	554	12336	0.5390	0.4299	0.6820	0.7009	Character 61	rest	7.38	unclear	unclear		unclear
+t557_f12360.jpg	557	12360	0.3445	0.1662	0.4574	0.4465	Jerry Smith	rest	7.38	smile	smile		smile
+t557_f12444.jpg	557	12444	0.3494	0.1802	0.4629	0.4565	Jerry Smith	rest	7.38	smile	smile		smile
+t557_f12522.jpg	557	12522	0.3494	0.1803	0.4629	0.4565	Jerry Smith	rest	7.38	smile	smile		smile
+t560_f12600.jpg	560	12600	0.6751	0.0074	0.9089	0.4893	Planätina	rest	7.38	mouth_open	mouth_open		mouth_open
+t560_f12642.jpg	560	12642	0.6296	0.0111	0.8549	0.4715	Planätina	rest	7.38	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t560_f12684.jpg	560	12684	0.6263	0.0122	0.8526	0.4751	Planätina	rest	7.38	smile,mouth_open	none	smile	smile
+t563_f12720.jpg	563	12720	0.3084	0.0242	0.5751	0.5914	Beth Smith	rest	7.38	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t563_f12744.jpg	563	12744	0.2712	0.0075	0.5361	0.5692	Beth Smith	rest	7.38	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t563_f12774.jpg	563	12774	0.2695	0.0079	0.5359	0.5661	Beth Smith	rest	7.38	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t565_f12786.jpg	565	12786	0.5384	0.1215	0.7623	0.5717	Planätina	top	1	downcast	downcast		downcast
+t565_f12822.jpg	565	12822	0.5235	0.1293	0.7459	0.5922	Planätina	top	1	downcast	downcast		downcast
+t565_f12852.jpg	565	12852	0.6228	0.0014	0.8556	0.3872	Planätina	top	1	downcast	downcast		downcast
+t578_f13182.jpg	578	13182	0.5109	0.0006	0.9477	0.2414		top	1	unclear	unclear		unclear
+t580_f13212.jpg	580	13212	0.3622	0.1177	0.5891	0.5504	Morty Smith	top	1	angry,mouth_open	mouth_open	angry,mouth_open	angry,mouth_open
+t580_f13272.jpg	580	13272	0.4285	0.1169	0.6520	0.5455	Morty Smith	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t580_f13356.jpg	580	13356	0.3805	0.1112	0.6059	0.5451	Morty Smith	top	1	cry,angry,shout,mouth_open	cry,angry,shout,mouth_open		cry,angry,shout,mouth_open
+t582_f13398.jpg	582	13398	0.2227	0.3097	0.3591	0.6013	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t582_f13404.jpg	582	13404	0.0080	0.0000	0.6713	0.3487	Beth Smith	top	1	shout,mouth_open	unclear	noface	unclear
+t582_f13410.jpg	582	13410	0.2339	0.1633	0.3716	0.4521	Beth Smith	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t591_f13686.jpg	591	13686	0.5539	0.7204	0.6325	0.7832	Beth Smith	top	1	unclear	unclear		unclear
+t591_f13710.jpg	591	13710	0.5895	0.7531	0.6350	0.8143	Beth Smith	top	1	unclear	unclear		unclear
+t591_f13740.jpg	591	13740	0.5873	0.7651	0.6312	0.8245	Beth Smith	top	1	unclear	unclear		unclear
+t592_f13752.jpg	592	13752	0.3539	0.7210	0.3881	0.7839	Morty Smith	top	1	none	none		none
+t592_f13758.jpg	592	13758	0.3726	0.7191	0.4054	0.7803	Morty Smith	top	1	none	none		none
+t592_f13764.jpg	592	13764	0.4019	0.7147	0.4292	0.7636	Morty Smith	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t593_f13752.jpg	593	13752	0.4555	0.6859	0.4917	0.7520	Planätina	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t593_f13764.jpg	593	13764	0.4642	0.7027	0.5031	0.7600	Planätina	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t593_f13812.jpg	593	13812	0.4645	0.6741	0.5123	0.7175	Planätina	top	1	unclear	unclear		unclear
+t594_f13818.jpg	594	13818	0.5364	0.0679	0.6143	0.2894		rest	7.38	noface	noface		noface
+t596_f13830.jpg	596	13830	0.6269	0.1084	0.9118	0.2659	Morty Smith	top	1	unclear	unclear		unclear
+t596_f13854.jpg	596	13854	0.4332	0.4653	0.5728	0.6296	Morty Smith	top	1	smile	smile		smile
+t596_f13878.jpg	596	13878	0.2796	0.4702	0.3544	0.5955	Morty Smith	top	1	mouth_open	mouth_open		mouth_open
+t609_f14082.jpg	609	14082	0.1897	0.0016	0.5360	0.7970	Planätina	rest	7.38	smile	smile		smile
+t609_f14094.jpg	609	14094	0.1956	0.0017	0.5511	0.8036	Planätina	rest	7.38	smile	smile		smile
+t609_f14100.jpg	609	14100	0.1955	0.0017	0.5511	0.8036	Planätina	rest	7.38	smile	smile		smile
+t610_f14136.jpg	610	14136	0.3681	0.3838	0.4857	0.6102	Planätina	top	1	smile	smile		smile
+t610_f14148.jpg	610	14148	0.3891	0.3807	0.5047	0.6097	Planätina	top	1	eyes_closed	eyes_closed		eyes_closed
+t610_f14154.jpg	610	14154	0.3895	0.3819	0.5046	0.6068	Planätina	top	1	eyes_closed	eyes_closed		eyes_closed
+t615_f14328.jpg	615	14328	0.2866	0.0261	0.5258	0.5315	Planätina	top	1	smile	smile		smile
+t615_f14352.jpg	615	14352	0.3997	0.0099	0.6351	0.5062	Planätina	top	1	smile	smile		smile
+t615_f14382.jpg	615	14382	0.5540	0.1300	0.7619	0.5680	Planätina	top	1	surprised,mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t619_f14472.jpg	619	14472	0.5673	0.0001	0.8066	0.2071	Planätina	rest	7.38	smile	unclear	smile	smile
+t619_f14496.jpg	619	14496	0.5443	0.0003	0.7959	0.2060	Planätina	rest	7.38	smile	unclear	smile	smile
+t619_f14514.jpg	619	14514	0.5443	0.0003	0.7959	0.2061	Planätina	rest	7.38	smile	unclear	smile	smile
+t622_f14562.jpg	622	14562	0.5434	0.2368	0.6983	0.4289	Planätina	rest	7.38	unclear	unclear		unclear
+t622_f14568.jpg	622	14568	0.5199	0.4887	0.5846	0.6168	Planätina	rest	7.38	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t628_f14568.jpg	628	14568	0.5918	0.5788	0.6579	0.7010	Morty Smith	top	1	downcast,eyes_closed	eyes_closed	downcast,eyes_closed	downcast,eyes_closed
+t628_f14574.jpg	628	14574	0.5994	0.5481	0.6659	0.6714	Morty Smith	top	1	none	none		none
+t630_f14568.jpg	630	14568	0.5580	0.3732	0.6107	0.5054	Character 40	rest	7.38	angry	angry		angry
+t630_f14574.jpg	630	14574	0.5581	0.3733	0.6105	0.5037	Character 40	rest	7.38	none	none		none
+t646_f14898.jpg	646	14898	0.3894	0.2189	0.4694	0.4283	Character 64	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t646_f14910.jpg	646	14910	0.3950	0.2133	0.4705	0.4265	Character 64	rest	7.38	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t646_f14952.jpg	646	14952	0.3597	0.2197	0.4263	0.4108	Character 64	rest	7.38	angry	angry		angry
+t647_f14892.jpg	647	14892	0.0128	0.2497	0.0891	0.4444	Character 62	top	1	none	none		none
+t647_f14922.jpg	647	14922	0.0128	0.2494	0.0891	0.4447	Character 62	top	1	none	none		none
+t647_f14946.jpg	647	14946	0.1394	0.2639	0.2115	0.4350	Character 62	top	1	none	none		none
+t648_f14892.jpg	648	14892	0.3052	0.1991	0.3684	0.3503	Character 63	top	1	smile	none	none	none
+t648_f14916.jpg	648	14916	0.3046	0.1990	0.3678	0.3507	Character 63	top	1	none	none		none
+t648_f14982.jpg	648	14982	0.3155	0.2010	0.3810	0.3419	Character 63	top	1	none	none		none
+t651_f14886.jpg	651	14886	0.6462	0.2064	0.7100	0.3668	Character 65	top	1	none	none		none
+t651_f14916.jpg	651	14916	0.6463	0.2062	0.7100	0.3661	Character 65	top	1	none	none		none
+t651_f14994.jpg	651	14994	0.6471	0.2061	0.7096	0.3480	Character 65	top	1	none	none		none
+t654_f14964.jpg	654	14964	0.4751	0.2064	0.5387	0.3726	Character 38	top	1	none	none		none
+t654_f14982.jpg	654	14982	0.4775	0.2087	0.5413	0.3722	Character 38	top	1	none	none		none
+t654_f15000.jpg	654	15000	0.4778	0.2484	0.5414	0.4073	Character 38	top	1	none	none		none
+t655_f15006.jpg	655	15006	0.3417	0.5266	0.4074	0.6656	Character 62	rest	7.38	none	none		none
+t656_f15006.jpg	656	15006	0.4265	0.5251	0.4769	0.6623	Character 39	rest	7.38	none	none		none
+t658_f15018.jpg	658	15018	0.3685	0.2507	0.4461	0.4136	Planätina	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t658_f15048.jpg	658	15048	0.3186	0.2201	0.4063	0.3853	Planätina	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t658_f15072.jpg	658	15072	0.3505	0.2441	0.4385	0.4114	Planätina	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t660_f15096.jpg	660	15096	0.4366	0.0000	0.9444	0.9965	Planätina	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t660_f15114.jpg	660	15114	0.2739	0.0015	0.7306	0.9294	Planätina	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t660_f15126.jpg	660	15126	0.2670	0.0016	0.7287	0.9515	Planätina	top	1	angry,eyes_closed,mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open
+t664_f15180.jpg	664	15180	0.2498	0.0038	0.4842	0.5649		top	1	angry	angry		angry
+t664_f15216.jpg	664	15216	0.3326	0.0004	0.5687	0.2392		top	1	shout,mouth_open	shout,eyes_closed,mouth_open	angry,shout,mouth_open	shout,mouth_open
+t664_f15228.jpg	664	15228	0.3593	0.0020	0.5856	0.2580		top	1	shout,mouth_open	shout,eyes_closed,mouth_open	angry,shout,mouth_open	shout,mouth_open
+t666_f15264.jpg	666	15264	0.3764	0.0012	0.5972	0.2626		top	1	shout,eyes_closed,mouth_open	shout,eyes_closed,mouth_open		shout,eyes_closed,mouth_open
+t666_f15270.jpg	666	15270	0.2750	0.0000	0.6596	0.3493		top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t667_f15324.jpg	667	15324	0.1718	0.1235	0.5853	0.4303		rest	7.38	mouth_open	downcast,mouth_open	downcast,mouth_open	downcast,mouth_open
+t667_f15336.jpg	667	15336	0.1516	0.0143	0.7480	0.3560		rest	7.38	mouth_open	downcast,mouth_open	cry,mouth_open	mouth_open
+t667_f15354.jpg	667	15354	0.3658	0.1362	0.6561	0.6924		rest	7.38	mouth_open	mouth_open		mouth_open
+t669_f15360.jpg	669	15360	0.5325	0.6971	0.5961	0.7640		top	1	unclear	unclear		unclear
+t669_f15396.jpg	669	15396	0.5340	0.6987	0.6020	0.7648		top	1	unclear	unclear		unclear
+t669_f15402.jpg	669	15402	0.8663	0.7445	0.8959	0.8050		top	1	unclear	unclear		unclear
+t670_f15360.jpg	670	15360	0.0000	0.2628	0.2362	0.7254	Morty Smith	top	1	unclear	unclear		unclear
+t670_f15390.jpg	670	15390	0.0000	0.2456	0.2289	0.7223	Morty Smith	top	1	unclear	unclear		unclear
+t670_f15408.jpg	670	15408	0.0000	0.2539	0.2376	0.7223	Morty Smith	top	1	unclear	unclear		unclear
+t672_f15408.jpg	672	15408	0.2431	0.3449	0.2989	0.5028		top	1	noface	noface		noface
+t673_f15420.jpg	673	15420	0.3079	0.0730	0.6183	0.6645		top	1	cry,mouth_open	cry,mouth_open		cry,mouth_open
+t673_f15444.jpg	673	15444	0.3397	0.0875	0.6536	0.6916		top	1	cry,mouth_open	cry,mouth_open		cry,mouth_open
+t673_f15456.jpg	673	15456	0.2899	0.0443	0.6022	0.6444		top	1	cry	cry		cry
+t675_f15522.jpg	675	15522	0.2842	0.4574	0.3418	0.6358	Morty Smith	top	1	noface	noface		noface
+t675_f15558.jpg	675	15558	0.1717	0.4119	0.2930	0.6344	Morty Smith	top	1	cry,eyes_closed,mouth_open	eyes_closed,mouth_open	cry,eyes_closed,mouth_open	cry,eyes_closed,mouth_open
+t675_f15564.jpg	675	15564	0.0000	0.2380	0.1349	0.5172	Morty Smith	top	1	cry,eyes_closed,mouth_open	cry,eyes_closed,mouth_open		cry,eyes_closed,mouth_open
+t676_f15540.jpg	676	15540	0.3540	0.5788	0.5218	0.7252	Morty Smith	top	1	unclear	unclear		unclear
+t676_f15546.jpg	676	15546	0.3665	0.5970	0.5246	0.7375	Morty Smith	top	1	unclear	unclear		unclear
+t676_f15552.jpg	676	15552	0.3810	0.6090	0.4679	0.7695	Morty Smith	top	1	cry,eyes_closed,mouth_open	cry,eyes_closed,mouth_open		cry,eyes_closed,mouth_open
+t677_f15546.jpg	677	15546	0.4535	0.0005	0.6677	0.1518		top	1	unclear	unclear		unclear
+t677_f15570.jpg	677	15570	0.5544	0.0926	0.6103	0.2116		top	1	eyes_closed,mouth_open	mouth_open	mouth_open	mouth_open
+t688_f16026.jpg	688	16026	0.0000	0.0000	0.4456	0.3486	Rick Sanchez	top	1	eyes_closed	eyes_closed		eyes_closed
+t688_f16128.jpg	688	16128	0.1963	0.0014	0.4339	0.5142	Rick Sanchez	top	1	mouth_open	mouth_open		mouth_open
+t688_f16230.jpg	688	16230	0.1973	0.0076	0.4248	0.5332	Rick Sanchez	top	1	eyes_closed	eyes_closed		eyes_closed
+t692_f16416.jpg	692	16416	0.3770	0.0014	0.5334	0.2709	Character 54	rest	7.38	unclear	unclear		unclear
+t692_f16428.jpg	692	16428	0.3771	0.0014	0.5334	0.2712	Character 54	rest	7.38	unclear	unclear		unclear
+t692_f16434.jpg	692	16434	0.3770	0.0013	0.5334	0.2711	Character 54	rest	7.38	unclear	unclear		unclear
+t698_f16608.jpg	698	16608	0.2042	0.1871	0.2909	0.3934	Jerry Smith	rest	7.38	none	none		none
+t698_f16662.jpg	698	16662	0.1908	0.1790	0.2810	0.3884	Jerry Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t698_f16788.jpg	698	16788	0.1877	0.1782	0.2767	0.3865	Jerry Smith	rest	7.38	none	none		none
+t703_f17178.jpg	703	17178	0.0000	0.2109	0.0626	0.4032		top	1	downcast	downcast		downcast
+t703_f17292.jpg	703	17292	0.3305	0.1174	0.4790	0.4039		top	1	mouth_open	mouth_open		mouth_open
+t703_f17478.jpg	703	17478	0.3911	0.2414	0.4746	0.4180		top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t704_f17604.jpg	704	17604	0.3270	0.0295	0.5939	0.6877	Jerry Smith	top	1	mouth_open	mouth_open		mouth_open
+t704_f17658.jpg	704	17658	0.3782	0.0539	0.6459	0.7054	Jerry Smith	top	1	mouth_open	mouth_open		mouth_open
+t704_f17700.jpg	704	17700	0.3415	0.0280	0.6120	0.6888	Jerry Smith	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t712_f18120.jpg	712	18120	0.4008	0.0389	0.9995	0.3739	Summer Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t712_f18132.jpg	712	18132	0.4009	0.0390	0.9995	0.3739	Summer Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t712_f18144.jpg	712	18144	0.4009	0.0382	0.9995	0.3735	Summer Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t713_f18222.jpg	713	18222	0.6427	0.1908	0.7269	0.3854	Beth Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t713_f18270.jpg	713	18270	0.6427	0.1904	0.7266	0.3856	Beth Smith	rest	7.38	none	none		none
+t713_f18318.jpg	713	18318	0.6427	0.1908	0.7269	0.3853	Beth Smith	rest	7.38	none	mouth_open	none	none
+t719_f18378.jpg	719	18378	0.0991	0.5451	0.1552	0.6484		top	1	none	angry	angry	angry
+t719_f18408.jpg	719	18408	0.0993	0.5453	0.1553	0.6486		top	1	eyes_closed	eyes_closed		eyes_closed
+t719_f18432.jpg	719	18432	0.0993	0.5451	0.1553	0.6485		top	1	angry	angry		angry
+t723_f18456.jpg	723	18456	0.4025	0.3321	0.4502	0.4393	Summer Smith	rest	7.38	none	none		none
+t723_f18468.jpg	723	18468	0.4016	0.3324	0.4492	0.4387	Summer Smith	rest	7.38	none	none		none
+t723_f18480.jpg	723	18480	0.4017	0.3324	0.4492	0.4388	Summer Smith	rest	7.38	none	none		none
+t727_f18456.jpg	727	18456	0.7911	0.1703	0.8031	0.2226		rest	7.38	noface	noface		noface
+t727_f18468.jpg	727	18468	0.7911	0.1703	0.8031	0.2212		rest	7.38	noface	noface		noface
+t727_f18474.jpg	727	18474	0.7911	0.1704	0.8031	0.2225		rest	7.38	noface	noface		noface
+t741_f18762.jpg	741	18762	0.3386	0.4963	0.3737	0.5609	Character 50	rest	7.38	none	none		none
+t741_f18780.jpg	741	18780	0.3209	0.5067	0.3566	0.5702	Character 50	rest	7.38	mouth_open	mouth_open		mouth_open
+t741_f18804.jpg	741	18804	0.3170	0.5054	0.3540	0.5692	Character 50	rest	7.38	mouth_open	mouth_open		mouth_open
+t746_f18834.jpg	746	18834	0.1519	0.4337	0.2629	0.6813	Summer Smith	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t746_f18870.jpg	746	18870	0.1717	0.4517	0.2904	0.6928	Summer Smith	top	1	none	none		none
+t746_f18900.jpg	746	18900	0.1690	0.4356	0.2884	0.6878	Summer Smith	top	1	mouth_open	mouth_open		mouth_open
+t752_f18966.jpg	752	18966	0.5920	0.7180	0.6354	0.8178		rest	7.38	none	none		none
+t753_f18972.jpg	753	18972	0.8396	0.4516	0.9475	0.6820	Summer Smith	top	1	none	none		none
+t753_f18984.jpg	753	18984	0.6899	0.4499	0.7999	0.6828	Summer Smith	top	1	none	none		none
+t753_f18996.jpg	753	18996	0.6668	0.4514	0.7738	0.6813	Summer Smith	top	1	downcast	none	cry,downcast	downcast
+t760_f19110.jpg	760	19110	0.6649	0.2017	0.7494	0.3949	Beth Smith	rest	7.38	mouth_open	none	none	none
+t760_f19356.jpg	760	19356	0.6649	0.2014	0.7493	0.3942	Beth Smith	rest	7.38	none	mouth_open	none	none
+t760_f19602.jpg	760	19602	0.6649	0.2017	0.7491	0.3946	Beth Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t771_f20592.jpg	771	20592	0.0719	0.2088	0.2568	0.5792	Character 66	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t771_f20652.jpg	771	20652	0.1520	0.2146	0.3425	0.5863	Character 66	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t771_f20664.jpg	771	20664	0.1540	0.2196	0.3421	0.5898	Character 66	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t773_f20814.jpg	773	20814	0.1393	0.1040	0.3206	0.4750	Character 66	top	1	smile,angry,mouth_open	smile,angry,mouth_open		smile,angry,mouth_open
+t773_f20832.jpg	773	20832	0.1460	0.1041	0.3265	0.4759	Character 66	top	1	smile,mouth_open	smile,angry,mouth_open	smile,angry,mouth_open	smile,angry,mouth_open
+t773_f20874.jpg	773	20874	0.1397	0.1035	0.3189	0.4755	Character 66	top	1	smile,angry,mouth_open	smile,angry,mouth_open		smile,angry,mouth_open
+t774_f20826.jpg	774	20826	0.6935	0.0367	0.8819	0.4825	Rick Sanchez	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t774_f20850.jpg	774	20850	0.6913	0.0347	0.8837	0.4831	Rick Sanchez	rest	7.38	mouth_open	mouth_open		mouth_open
+t774_f20862.jpg	774	20862	0.6915	0.0339	0.8818	0.4824	Rick Sanchez	rest	7.38	mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t775_f20880.jpg	775	20880	0.2621	0.3154	0.3343	0.4485	Character 66	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t775_f20892.jpg	775	20892	0.2666	0.3179	0.3366	0.4555	Character 66	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t775_f20916.jpg	775	20916	0.2565	0.3050	0.3364	0.4462	Character 66	top	1	laugh,eyes_closed,mouth_open	smile,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open
+t784_f21120.jpg	784	21120	0.6635	0.2148	0.8489	0.5915	Rick Sanchez	rest	7.38	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t789_f21144.jpg	789	21144	0.4180	0.0015	0.5665	0.2320	Character 44	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t795_f21150.jpg	795	21150	0.3953	0.1050	0.5474	0.3843	Character 44	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t795_f21162.jpg	795	21162	0.3410	0.0881	0.4937	0.3530	Character 44	top	1	none	none		none
+t795_f21174.jpg	795	21174	0.3482	0.0935	0.4838	0.3736	Character 44	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t805_f21276.jpg	805	21276	0.0570	0.2135	0.1874	0.4861	Character 43	rest	7.38	angry	angry		angry
+t805_f21294.jpg	805	21294	0.0000	0.1366	0.1099	0.4890	Character 43	rest	7.38	angry	angry		angry
+t805_f21312.jpg	805	21312	0.0000	0.1367	0.1106	0.4885	Character 43	rest	7.38	angry	angry		angry
+t807_f21294.jpg	807	21294	0.5411	0.2047	0.5742	0.2845		top	1	none	unclear	none	none
+t807_f21306.jpg	807	21306	0.5453	0.2517	0.5768	0.3324		top	1	unclear	none	none	none
+t807_f21312.jpg	807	21312	0.5203	0.2693	0.5690	0.3738		top	1	mouth_open	mouth_open		mouth_open
+t809_f21288.jpg	809	21288	0.0000	0.0000	0.2418	0.3497	Character 44	rest	7.38	angry	angry		angry
+t809_f21300.jpg	809	21300	0.0000	0.0000	0.2401	0.3497	Character 44	rest	7.38	angry	angry		angry
+t809_f21318.jpg	809	21318	0.0000	0.0000	0.2424	0.3498	Character 44	rest	7.38	angry	angry		angry
+t814_f21354.jpg	814	21354	0.2240	0.2834	0.3788	0.6331	Character 44	top	1	none	none		none
+t814_f21366.jpg	814	21366	0.2248	0.2788	0.3818	0.6351	Character 44	top	1	mouth_open	surprised,mouth_open	surprised,mouth_open	surprised,mouth_open
+t814_f21372.jpg	814	21372	0.2975	0.3276	0.4873	0.7086	Character 44	top	1	angry	angry		angry
+t822_f21462.jpg	822	21462	0.5210	0.1516	0.7409	0.5796	Character 44	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t827_f21486.jpg	827	21486	0.5613	0.4557	0.6363	0.5976	Character 44	top	1	smile,angry,mouth_open	smile,angry,mouth_open		smile,angry,mouth_open
+t827_f21558.jpg	827	21558	0.5603	0.4623	0.6353	0.6026	Character 44	top	1	smile,angry,mouth_open	smile,angry,mouth_open		smile,angry,mouth_open
+t827_f21630.jpg	827	21630	0.5671	0.4611	0.6474	0.6013	Character 44	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t834_f21984.jpg	834	21984	0.5316	0.3151	0.6034	0.4627		rest	7.38	none	none		none
+t834_f22002.jpg	834	22002	0.5248	0.3118	0.5997	0.4652		rest	7.38	mouth_open	smile,mouth_open	mouth_open	mouth_open
+t834_f22014.jpg	834	22014	0.5248	0.3122	0.5997	0.4663		rest	7.38	mouth_open	smile,mouth_open	none	mouth_open
+t835_f21984.jpg	835	21984	0.7229	0.2982	0.7882	0.4384		rest	7.38	smile	none	smile	smile
+t835_f21996.jpg	835	21996	0.6864	0.2366	0.8135	0.3638		rest	7.38	smile	smile		smile
+t835_f22008.jpg	835	22008	0.6856	0.2388	0.8150	0.3653		rest	7.38	unclear	smile	smile	smile
+t836_f22020.jpg	836	22020	0.8281	0.7533	0.8730	0.9310		rest	7.38	noface	noface		noface
+t838_f22032.jpg	838	22032	0.3380	0.0022	0.4157	0.0872		rest	7.38	noface	noface		noface
+t838_f22050.jpg	838	22050	0.3080	0.0000	0.3883	0.0681		rest	7.38	noface	noface		noface
+t838_f22056.jpg	838	22056	0.2973	0.0000	0.3716	0.0611		rest	7.38	noface	noface		noface
+t839_f22038.jpg	839	22038	0.1896	0.2215	0.2165	0.2857	Rick Sanchez	rest	7.38	unclear	mouth_open	none	unclear
+t839_f22062.jpg	839	22062	0.1823	0.2153	0.2071	0.2744	Rick Sanchez	rest	7.38	unclear	mouth_open	mouth_open	mouth_open
+t839_f22068.jpg	839	22068	0.1880	0.2100	0.2135	0.2687	Rick Sanchez	rest	7.38	mouth_open	surprised,mouth_open	surprised,mouth_open	surprised,mouth_open
+t841_f22032.jpg	841	22032	0.1525	0.1120	0.3219	0.2317	Character 11	top	1	unclear	unclear		unclear
+t841_f22056.jpg	841	22056	0.1499	0.1106	0.3146	0.2156	Character 11	top	1	unclear	noface	noface	noface
+t841_f22080.jpg	841	22080	0.2505	0.1217	0.2880	0.2214	Character 11	top	1	none	none		none
+t855_f22590.jpg	855	22590	0.6828	0.1694	0.7998	0.4102	Character 11	rest	7.38	none	none		none
+t855_f22596.jpg	855	22596	0.6992	0.1637	0.8080	0.4083	Character 11	rest	7.38	angry	angry		angry
+t855_f22602.jpg	855	22602	0.7009	0.1623	0.8079	0.4063	Character 11	rest	7.38	none	none		none
+t862_f22656.jpg	862	22656	0.4184	0.2109	0.5497	0.5338	Rick Sanchez	rest	7.38	mouth_open	mouth_open		mouth_open
+t862_f22710.jpg	862	22710	0.4280	0.2018	0.5627	0.5274	Rick Sanchez	rest	7.38	none	none		none
+t862_f22740.jpg	862	22740	0.4281	0.2076	0.5603	0.5268	Rick Sanchez	rest	7.38	mouth_open	mouth_open		mouth_open
+t878_f23010.jpg	878	23010	0.6989	0.1516	0.7714	0.3406	Character 45	rest	7.38	smile	angry	smile	smile
+t883_f23016.jpg	883	23016	0.2886	0.2003	0.3688	0.4186	Character 28	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t883_f23046.jpg	883	23046	0.2358	0.1965	0.3183	0.4209	Character 28	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t883_f23052.jpg	883	23052	0.2261	0.2013	0.3054	0.4285	Character 28	rest	7.38	angry	angry		angry
+t890_f23136.jpg	890	23136	0.7173	0.0000	0.9342	0.1551	Character 11	rest	7.38	unclear	unclear		unclear
+t890_f23166.jpg	890	23166	0.7148	0.0000	0.9130	0.1578	Character 11	rest	7.38	unclear	unclear		unclear
+t890_f23184.jpg	890	23184	0.7766	0.0000	0.8316	0.0825	Character 11	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t893_f23190.jpg	893	23190	0.0270	0.1101	0.1506	0.4170	Character 47	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t893_f23220.jpg	893	23220	0.0622	0.1168	0.1789	0.4323	Character 47	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t893_f23238.jpg	893	23238	0.0634	0.1169	0.1787	0.4313	Character 47	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t895_f23190.jpg	895	23190	0.7460	0.0152	0.9996	0.3055		top	1	mouth_open	mouth_open		mouth_open
+t895_f23214.jpg	895	23214	0.4352	0.1755	0.5462	0.4435		top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t895_f23232.jpg	895	23232	0.4202	0.1680	0.5414	0.4378		top	1	mouth_open	eyes_closed,mouth_open	mouth_open	mouth_open
+t896_f23220.jpg	896	23220	0.7788	0.1465	1.0000	0.3907	Character 28	top	1	mouth_open	mouth_open		mouth_open
+t896_f23226.jpg	896	23226	0.8759	0.1475	0.9957	0.4408	Character 28	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t896_f23238.jpg	896	23238	0.7821	0.1500	1.0000	0.3935	Character 28	top	1	smile,mouth_open	mouth_open	mouth_open	mouth_open
+t902_f23268.jpg	902	23268	0.0646	0.2972	0.2201	0.5059		rest	7.38	unclear	unclear		unclear
+t902_f23274.jpg	902	23274	0.0648	0.2970	0.2182	0.5057		rest	7.38	unclear	unclear		unclear
+t908_f23340.jpg	908	23340	0.6125	0.0951	0.7618	0.4941	Character 29	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t908_f23364.jpg	908	23364	0.6128	0.0950	0.7618	0.4964	Character 29	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t908_f23388.jpg	908	23388	0.6460	0.0938	0.7960	0.4913	Character 29	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t913_f23418.jpg	913	23418	0.7960	0.3777	0.8565	0.5315	Character 48	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t916_f23418.jpg	916	23418	0.0274	0.0708	0.0991	0.2545		rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t916_f23430.jpg	916	23430	0.0313	0.0730	0.0992	0.2578		rest	7.38	mouth_open	mouth_open		mouth_open
+t921_f23418.jpg	921	23418	0.5442	0.2151	0.6181	0.4003	Character 28	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t921_f23430.jpg	921	23430	0.5485	0.2159	0.6225	0.3760	Character 28	top	1	surprised,mouth_open	shout,mouth_open	shout,mouth_open	shout,mouth_open
+t921_f23442.jpg	921	23442	0.5472	0.2157	0.6230	0.4048	Character 28	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t922_f23454.jpg	922	23454	0.5123	0.1783	0.5426	0.2580	Character 45	rest	7.38	angry	none	angry	angry
+t922_f23460.jpg	922	23460	0.5124	0.1784	0.5424	0.2579	Character 45	rest	7.38	angry	none	angry	angry
+t922_f23478.jpg	922	23478	0.5124	0.1785	0.5424	0.2579	Character 45	rest	7.38	angry	angry		angry
+t928_f23550.jpg	928	23550	0.6146	0.3978	0.6648	0.4705		rest	7.38	noface	noface		noface
+t928_f23604.jpg	928	23604	0.6148	0.3979	0.6647	0.4703		rest	7.38	noface	noface		noface
+t928_f23634.jpg	928	23634	0.6147	0.3979	0.6647	0.4701		rest	7.38	noface	noface		noface
+t934_f23934.jpg	934	23934	0.7923	0.2175	0.8865	0.4363	Character 46	top	1	angry	none	angry	angry
+t934_f23946.jpg	934	23946	0.7842	0.2159	0.8776	0.4328	Character 46	top	1	mouth_open	mouth_open		mouth_open
+t934_f23964.jpg	934	23964	0.8016	0.2227	0.8924	0.4380	Character 46	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t936_f23940.jpg	936	23940	0.5354	0.1356	0.6323	0.3593	Character 28	rest	7.38	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t936_f23958.jpg	936	23958	0.5508	0.1399	0.6462	0.3623	Character 28	rest	7.38	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t936_f23964.jpg	936	23964	0.5675	0.1465	0.6585	0.3709	Character 28	rest	7.38	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t943_f24012.jpg	943	24012	0.0696	0.0692	0.1021	0.1340		rest	7.38	unclear	unclear		unclear
+t943_f24054.jpg	943	24054	0.0695	0.0692	0.1021	0.1342		rest	7.38	unclear	unclear		unclear
+t943_f24078.jpg	943	24078	0.0695	0.0691	0.1021	0.1341		rest	7.38	unclear	unclear		unclear
+t944_f24030.jpg	944	24030	0.8734	0.5220	0.9693	0.8341	Character 11	rest	7.38	none	none		none
+t948_f24114.jpg	948	24114	0.2198	0.4755	0.2697	0.5863	Character 11	top	1	angry	angry		angry
+t948_f24138.jpg	948	24138	0.2200	0.4757	0.2697	0.5864	Character 11	top	1	none	none		none
+t948_f24150.jpg	948	24150	0.2199	0.4757	0.2697	0.5863	Character 11	top	1	none	none		none
+t961_f24420.jpg	961	24420	0.3718	0.1480	0.4247	0.2665	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t961_f24444.jpg	961	24444	0.3734	0.1491	0.4259	0.2690	Beth Smith	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t961_f24462.jpg	961	24462	0.3684	0.1465	0.4200	0.2659	Beth Smith	top	1	none	none		none
+t967_f24480.jpg	967	24480	0.2483	0.0343	0.4596	0.5242	Character 69	rest	7.38	none	none		none
+t967_f24522.jpg	967	24522	0.2511	0.0346	0.4614	0.5239	Character 69	rest	7.38	none	mouth_open	none	none
+t967_f24552.jpg	967	24552	0.2764	0.0609	0.4959	0.5306	Character 69	rest	7.38	mouth_open	none	mouth_open	mouth_open
+t968_f24468.jpg	968	24468	0.6550	0.2255	0.7891	0.5385	Character 18	rest	7.38	mouth_open	mouth_open		mouth_open
+t968_f24522.jpg	968	24522	0.6707	0.2221	0.8060	0.5330	Character 18	rest	7.38	mouth_open	mouth_open		mouth_open
+t968_f24552.jpg	968	24552	0.6944	0.2233	0.8259	0.5345	Character 18	rest	7.38	none	none		none
+t977_f24576.jpg	977	24576	0.9296	0.7315	0.9653	0.7986		top	1	none	unclear	none	none
+t977_f24618.jpg	977	24618	0.9175	0.6889	0.9623	0.7938		top	1	angry	none	angry	angry
+t987_f24594.jpg	987	24594	0.0925	0.4675	0.1126	0.5111		rest	7.38	unclear	unclear		unclear
+t987_f24606.jpg	987	24606	0.0911	0.4669	0.1154	0.5137		rest	7.38	unclear	unclear		unclear
+t987_f24618.jpg	987	24618	0.0924	0.4697	0.1140	0.5103		rest	7.38	unclear	unclear		unclear
+t989_f24594.jpg	989	24594	0.3194	0.0740	0.6593	0.3981		rest	7.38	unclear	noface	noface	noface
+t989_f24600.jpg	989	24600	0.3249	0.0827	0.6113	0.3323		rest	7.38	noface	noface		noface
+t989_f24606.jpg	989	24606	0.3385	0.0781	0.6067	0.3820		rest	7.38	noface	noface		noface
+t993_f24606.jpg	993	24606	0.3411	0.6170	0.3636	0.6573		rest	7.38	unclear	unclear		unclear
+t993_f24612.jpg	993	24612	0.3421	0.6145	0.3627	0.6566		rest	7.38	unclear	unclear		unclear
+t993_f24618.jpg	993	24618	0.3418	0.6173	0.3636	0.6573		rest	7.38	unclear	unclear		unclear
+t994_f24636.jpg	994	24636	0.6168	0.1322	0.7922	0.5467	Character 18	top	1	none	none		none
+t994_f24648.jpg	994	24648	0.6158	0.1345	0.7927	0.5498	Character 18	top	1	downcast	downcast		downcast
+t994_f24672.jpg	994	24672	0.6157	0.1345	0.7923	0.5499	Character 18	top	1	none	smile	none	none
+t996_f24624.jpg	996	24624	0.4242	0.4066	0.6134	0.7954		top	1	eyes_closed,mouth_open	mouth_open	eyes_closed,mouth_open	eyes_closed,mouth_open
+t996_f24648.jpg	996	24648	0.3864	0.0932	0.5815	0.5076		top	1	smile	smile		smile
+t996_f24672.jpg	996	24672	0.3861	0.0896	0.5809	0.5015		top	1	smile	smile		smile
+t1005_f24804.jpg	1005	24804	0.6979	0.4025	0.7746	0.5522	Character 50	rest	7.38	angry	angry		angry
+t1005_f24846.jpg	1005	24846	0.7173	0.4203	0.7920	0.5719	Character 50	rest	7.38	angry	angry		angry
+t1005_f24852.jpg	1005	24852	0.7173	0.4204	0.7920	0.5719	Character 50	rest	7.38	angry	angry		angry
+t1007_f24792.jpg	1007	24792	0.8397	0.5156	0.8994	0.6542	Beth Smith	rest	7.38	unclear	unclear		unclear
+t1007_f24822.jpg	1007	24822	0.8344	0.5148	0.8937	0.6394	Beth Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t1007_f24852.jpg	1007	24852	0.8344	0.5148	0.8937	0.6394	Beth Smith	rest	7.38	mouth_open	none	none	none
+t1011_f25032.jpg	1011	25032	0.5206	0.4242	0.5421	0.4677		top	1	unclear	unclear		unclear
+t1011_f25056.jpg	1011	25056	0.5209	0.4240	0.5420	0.4679		top	1	unclear	unclear		unclear
+t1011_f25062.jpg	1011	25062	0.7211	0.5666	0.7418	0.6099		top	1	unclear	unclear		unclear
+t1016_f25140.jpg	1016	25140	0.1666	0.1107	0.2674	0.3175	Character 51	rest	7.38	angry	angry		angry
+t1016_f25176.jpg	1016	25176	0.1707	0.1125	0.2719	0.3144	Character 51	rest	7.38	angry	angry		angry
+t1016_f25212.jpg	1016	25212	0.1708	0.1124	0.2717	0.3141	Character 51	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1018_f25116.jpg	1018	25116	0.6456	0.3320	0.7209	0.5010	Beth Smith	top	1	downcast,mouth_open	mouth_open	mouth_open	mouth_open
+t1018_f25152.jpg	1018	25152	0.6378	0.3318	0.7139	0.5006	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t1018_f25188.jpg	1018	25188	0.6377	0.3312	0.7144	0.5008	Beth Smith	top	1	downcast,mouth_open	downcast,mouth_open		downcast,mouth_open
+t1029_f25272.jpg	1029	25272	0.0000	0.5291	0.0718	0.6378		rest	7.38	noface	noface		noface
+t1029_f25290.jpg	1029	25290	0.0000	0.5304	0.0713	0.6382		rest	7.38	noface	noface		noface
+t1029_f25296.jpg	1029	25296	0.0000	0.5304	0.0713	0.6382		rest	7.38	noface	noface		noface
+t1030_f25326.jpg	1030	25326	0.6799	0.3079	0.8229	0.6394	Summer Smith	top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t1030_f25368.jpg	1030	25368	0.6640	0.3079	0.8209	0.6365	Summer Smith	top	1	none	none		none
+t1030_f25410.jpg	1030	25410	0.6449	0.3099	0.7933	0.6435	Summer Smith	top	1	mouth_open	mouth_open		mouth_open
+t1032_f25458.jpg	1032	25458	0.3628	0.2513	0.4101	0.3507	Beth Smith	rest	7.38	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t1032_f25464.jpg	1032	25464	0.3608	0.2377	0.4075	0.3341	Beth Smith	rest	7.38	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t1034_f25464.jpg	1034	25464	0.2712	0.3272	0.3205	0.4185	Summer Smith	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t1034_f25470.jpg	1034	25470	0.2788	0.2795	0.3270	0.3946	Summer Smith	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t1034_f25476.jpg	1034	25476	0.4266	0.5255	0.4882	0.6709	Summer Smith	top	1	angry,mouth_open	angry,shout,mouth_open	angry,shout,mouth_open	angry,shout,mouth_open
+t1041_f25584.jpg	1041	25584	0.4598	0.1406	0.5133	0.2403	Beth Smith	top	1	surprised,mouth_open	mouth_open	shout,mouth_open	mouth_open
+t1041_f25590.jpg	1041	25590	0.6174	0.2500	0.6803	0.3551	Beth Smith	top	1	surprised,mouth_open	shout,mouth_open	surprised,mouth_open	surprised,mouth_open
+t1041_f25602.jpg	1041	25602	0.6582	0.3965	0.7175	0.4975	Beth Smith	top	1	mouth_open	mouth_open		mouth_open
+t1044_f25704.jpg	1044	25704	0.6573	0.2929	0.6921	0.3722	Beth Smith	rest	7.38	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t1044_f25710.jpg	1044	25710	0.5684	0.2987	0.6165	0.3835	Beth Smith	rest	7.38	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t1044_f25716.jpg	1044	25716	0.3757	0.2648	0.4449	0.4008	Beth Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t1046_f25782.jpg	1046	25782	0.3428	0.3631	0.3770	0.4313		rest	7.38	mouth_open	surprised,mouth_open	mouth_open	mouth_open
+t1046_f25806.jpg	1046	25806	0.3629	0.3033	0.4290	0.3522		rest	7.38	mouth_open	mouth_open		mouth_open
+t1046_f25866.jpg	1046	25866	0.3712	0.3088	0.4286	0.3557		rest	7.38	mouth_open	mouth_open		mouth_open
+t1047_f25806.jpg	1047	25806	0.4621	0.3514	0.4974	0.4175	Character 70	top	1	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t1047_f25836.jpg	1047	25836	0.4626	0.3515	0.4984	0.4183	Character 70	top	1	mouth_open	mouth_open		mouth_open
+t1047_f25848.jpg	1047	25848	0.4620	0.3512	0.4978	0.4175	Character 70	top	1	mouth_open	mouth_open		mouth_open
+t1049_f25782.jpg	1049	25782	0.6244	0.3439	0.6593	0.4166		top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t1049_f25842.jpg	1049	25842	0.6235	0.3443	0.6580	0.4170		top	1	mouth_open	mouth_open		mouth_open
+t1049_f25860.jpg	1049	25860	0.6243	0.3439	0.6594	0.4163		top	1	surprised,mouth_open	surprised,mouth_open		surprised,mouth_open
+t1050_f25788.jpg	1050	25788	0.3743	0.3261	0.4125	0.4007		top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t1050_f25836.jpg	1050	25836	0.3743	0.3261	0.4125	0.3997		top	1	mouth_open	mouth_open		mouth_open
+t1050_f25854.jpg	1050	25854	0.3757	0.3241	0.4149	0.3974		top	1	mouth_open	mouth_open		mouth_open
+t1051_f25812.jpg	1051	25812	0.5099	0.3072	0.5412	0.3882	Character 69	top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t1051_f25836.jpg	1051	25836	0.5108	0.3070	0.5416	0.3882	Character 69	top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t1051_f25854.jpg	1051	25854	0.5108	0.3075	0.5420	0.3877	Character 69	top	1	surprised,mouth_open	mouth_open	mouth_open	mouth_open
+t1056_f25794.jpg	1056	25794	0.6127	0.3298	0.6665	0.3741		top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t1065_f25932.jpg	1065	25932	0.7831	0.4032	0.8963	0.6704	Character 18	rest	7.38	mouth_open	mouth_open		mouth_open
+t1065_f25962.jpg	1065	25962	0.7807	0.4024	0.8944	0.6714	Character 18	rest	7.38	mouth_open	mouth_open		mouth_open
+t1065_f25998.jpg	1065	25998	0.7806	0.4025	0.8944	0.6714	Character 18	rest	7.38	mouth_open	mouth_open		mouth_open
+t1073_f26088.jpg	1073	26088	0.0994	0.5683	0.1964	0.7578	Character 50	rest	7.38	none	none		none
+t1075_f26094.jpg	1075	26094	0.7802	0.4031	0.8945	0.6720	Character 18	top	1	none	smile	none	none
+t1075_f26100.jpg	1075	26100	0.7787	0.4044	0.8940	0.6716	Character 18	top	1	mouth_open	mouth_open		mouth_open
+t1075_f26112.jpg	1075	26112	0.7854	0.4042	0.8989	0.6717	Character 18	top	1	mouth_open	none	mouth_open	mouth_open
+t1076_f26094.jpg	1076	26094	0.4613	0.1190	0.5956	0.4566	Character 69	top	1	none	surprised,mouth_open	none	none
+t1076_f26100.jpg	1076	26100	0.4625	0.1185	0.5960	0.4560	Character 69	top	1	none	none		none
+t1076_f26112.jpg	1076	26112	0.5169	0.1167	0.6517	0.4539	Character 69	top	1	none	none		none
+t1081_f26142.jpg	1081	26142	0.8141	0.3662	0.8789	0.5016		top	1	mouth_open	mouth_open		mouth_open
+t1081_f26148.jpg	1081	26148	0.6432	0.3675	0.7144	0.5036		top	1	cry,mouth_open	mouth_open	mouth_open	mouth_open
+t1083_f26166.jpg	1083	26166	0.4020	0.5642	0.5252	0.6585	Morty Smith	rest	7.38	none	none		none
+t1083_f26202.jpg	1083	26202	0.4018	0.5653	0.5253	0.6591	Morty Smith	rest	7.38	none	none		none
+t1083_f26244.jpg	1083	26244	0.4017	0.5649	0.5250	0.6591	Morty Smith	rest	7.38	none	none		none
+t1087_f26262.jpg	1087	26262	0.8243	0.8108	0.8603	0.9206	Character 13	rest	7.38	angry	angry		angry
+t1087_f26298.jpg	1087	26298	0.8879	0.4546	0.9712	0.6782	Character 13	rest	7.38	surprised,mouth_open	shout,mouth_open	mouth_open	mouth_open
+t1087_f26310.jpg	1087	26310	0.9357	0.6043	1.0000	0.7857	Character 13	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1092_f26424.jpg	1092	26424	0.1079	0.6447	0.2247	0.9553		top	1	noface	noface		noface
+t1093_f26442.jpg	1093	26442	0.7054	0.3347	0.7660	0.4268		top	1	noface	noface		noface
+t1093_f26454.jpg	1093	26454	0.5240	0.3150	0.5970	0.4289		top	1	noface	noface		noface
+t1093_f26460.jpg	1093	26460	0.3202	0.4373	0.4207	0.5358		top	1	mouth_open	unclear	noface	unclear
+t1094_f26448.jpg	1094	26448	0.6056	0.2738	0.6885	0.3861		top	1	noface	noface		noface
+t1094_f26454.jpg	1094	26454	0.5976	0.2805	0.6668	0.3979		top	1	noface	noface		noface
+t1094_f26466.jpg	1094	26466	0.6004	0.2784	0.6668	0.4019		top	1	noface	noface		noface
+t1096_f26508.jpg	1096	26508	0.7157	0.5903	0.7477	0.6529		top	1	unclear	unclear		unclear
+t1098_f26508.jpg	1098	26508	0.6572	0.4808	0.6767	0.5210		top	1	unclear	unclear		unclear
+t1099_f26508.jpg	1099	26508	0.9224	0.3585	0.9569	0.4336		rest	7.38	none	none		none
+t1099_f26598.jpg	1099	26598	0.0173	0.5455	0.0399	0.5918		rest	7.38	unclear	unclear		unclear
+t1099_f26634.jpg	1099	26634	0.0171	0.5457	0.0402	0.5911		rest	7.38	none	unclear	none	none
+t1100_f26508.jpg	1100	26508	0.5812	0.5127	0.6344	0.6297	Beth Smith	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t1100_f26598.jpg	1100	26598	0.4038	0.6666	0.4298	0.7286	Beth Smith	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t1100_f26622.jpg	1100	26622	0.4038	0.6679	0.4278	0.7249	Beth Smith	top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t1102_f26544.jpg	1102	26544	0.1233	0.7458	0.1552	0.8210		rest	7.38	smile	none	none	none
+t1102_f26610.jpg	1102	26610	0.1210	0.7456	0.1522	0.8206		rest	7.38	smile	none	none	none
+t1102_f26616.jpg	1102	26616	0.1233	0.7454	0.1556	0.8209		rest	7.38	none	none		none
+t1103_f26526.jpg	1103	26526	0.8189	0.5753	0.8555	0.6501	Summer Smith	rest	7.38	none	none		none
+t1103_f26568.jpg	1103	26568	0.5754	0.6826	0.6073	0.7509	Summer Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t1103_f26634.jpg	1103	26634	0.5766	0.6827	0.6082	0.7507	Summer Smith	rest	7.38	none	none		none
+t1112_f26562.jpg	1112	26562	0.3778	0.6525	0.4068	0.7078		top	1	unclear	unclear		unclear
+t1112_f26604.jpg	1112	26604	0.3770	0.6507	0.4052	0.7054		top	1	unclear	unclear		unclear
+t1112_f26616.jpg	1112	26616	0.3769	0.6507	0.4050	0.7054		top	1	unclear	unclear		unclear
+t1124_f26748.jpg	1124	26748	0.4031	0.1939	0.4904	0.3899		rest	7.38	none	angry	angry	angry
+t1124_f26784.jpg	1124	26784	0.5031	0.2644	0.5927	0.4645		rest	7.38	smile	smile		smile
+t1124_f26820.jpg	1124	26820	0.2699	0.5584	0.3253	0.6784		rest	7.38	smile	none	none	none
+t1126_f26784.jpg	1126	26784	0.5069	0.4546	0.6666	0.7244		top	1	noface	noface		noface
+t1131_f26844.jpg	1131	26844	0.4343	0.3594	0.5197	0.4362		rest	7.38	unclear	unclear		unclear
+t1131_f26850.jpg	1131	26850	0.4277	0.4217	0.5289	0.5217		rest	7.38	unclear	unclear		unclear
+t1134_f26850.jpg	1134	26850	0.5274	0.3660	0.6692	0.5026	Character 45	rest	7.38	unclear	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t1134_f26868.jpg	1134	26868	0.5638	0.1990	0.7150	0.3729	Character 45	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1134_f26874.jpg	1134	26874	0.8299	0.1475	0.8953	0.2904	Character 45	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1139_f26958.jpg	1139	26958	0.0001	0.2800	0.1139	0.5584		top	1	noface	noface		noface
+t1148_f27096.jpg	1148	27096	0.4930	0.0011	0.6341	0.1389		rest	7.38	noface	noface		noface
+t1148_f27246.jpg	1148	27246	0.4602	0.0013	0.5990	0.1227		rest	7.38	noface	noface		noface
+t1148_f27444.jpg	1148	27444	0.1656	0.0012	0.3065	0.1249		rest	7.38	noface	noface		noface
+t1150_f27306.jpg	1150	27306	0.1523	0.4722	0.1976	0.5702		rest	7.38	noface	noface		noface
+t1150_f27318.jpg	1150	27318	0.1145	0.4731	0.1593	0.5715		rest	7.38	noface	noface		noface
+t1150_f27336.jpg	1150	27336	0.0535	0.4718	0.0989	0.5702		rest	7.38	noface	noface		noface
+t1154_f27576.jpg	1154	27576	0.6871	0.2879	0.7147	0.3495	Jerry Smith	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1154_f27588.jpg	1154	27588	0.6834	0.2883	0.7107	0.3500	Jerry Smith	top	1	smile	none	smile	smile
+t1154_f27612.jpg	1154	27612	0.6795	0.2914	0.7067	0.3537	Jerry Smith	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1159_f27594.jpg	1159	27594	0.2785	0.2824	0.3229	0.3421	Character 19	rest	7.38	noface	noface		noface
+t1163_f27816.jpg	1163	27816	0.5180	0.2404	0.5724	0.3538	Morty Smith	top	1	shout,mouth_open	smile,mouth_open	smile,mouth_open	smile,mouth_open
+t1163_f27822.jpg	1163	27822	0.4749	0.2666	0.5372	0.3862	Morty Smith	top	1	laugh,eyes_closed,mouth_open	laugh,mouth_open	laugh,mouth_open	laugh,mouth_open
+t1163_f27828.jpg	1163	27828	0.4183	0.2949	0.4923	0.4294	Morty Smith	top	1	eyes_closed,mouth_open	cry,eyes_closed,mouth_open	laugh,mouth_open	eyes_closed,mouth_open
+t1164_f27816.jpg	1164	27816	0.5771	0.1828	0.6272	0.2818	Chud	top	1	none	none		none
+t1164_f27822.jpg	1164	27822	0.5410	0.1973	0.5990	0.3085	Chud	top	1	unclear	downcast	cry,eyes_closed	unclear
+t1164_f27828.jpg	1164	27828	0.4930	0.2128	0.5659	0.3372	Chud	top	1	downcast	downcast		downcast
+t1165_f27816.jpg	1165	27816	0.6240	0.1215	0.6791	0.2430	Summer Smith	top	1	shout,mouth_open	surprised,mouth_open	shout,mouth_open	shout,mouth_open
+t1165_f27822.jpg	1165	27822	0.5873	0.1320	0.6555	0.2654	Summer Smith	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1165_f27834.jpg	1165	27834	0.4891	0.1521	0.5984	0.3157	Summer Smith	top	1	cry,eyes_closed,mouth_open	cry,eyes_closed,mouth_open		cry,eyes_closed,mouth_open
+t1166_f27828.jpg	1166	27828	0.7342	0.0248	0.9157	0.3173		top	1	unclear	unclear		unclear
+t1169_f28008.jpg	1169	28008	0.2819	0.0121	0.8357	0.3579	Jerry Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t1169_f28026.jpg	1169	28026	0.2516	0.0201	0.8347	0.3630	Jerry Smith	rest	7.38	smile,mouth_open	mouth_open	smile,mouth_open	smile,mouth_open
+t1169_f28038.jpg	1169	28038	0.2529	0.0230	0.8385	0.3650	Jerry Smith	rest	7.38	laugh,mouth_open	smile,mouth_open	smile,mouth_open	smile,mouth_open
+t1170_f28014.jpg	1170	28014	0.4621	0.0771	0.7530	0.7691	Jerry Smith	top	1	mouth_open	mouth_open		mouth_open
+t1170_f28032.jpg	1170	28032	0.4604	0.0777	0.7540	0.7694	Jerry Smith	top	1	laugh,mouth_open	smile,mouth_open	smile,mouth_open	smile,mouth_open
+t1170_f28038.jpg	1170	28038	0.4610	0.0773	0.7535	0.7661	Jerry Smith	top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1173_f28044.jpg	1173	28044	0.0000	0.2610	0.0352	0.4333	Beth Smith	rest	7.38	none	unclear	none	none
+t1173_f28062.jpg	1173	28062	0.0684	0.2692	0.1441	0.4403	Beth Smith	rest	7.38	none	none		none
+t1173_f28086.jpg	1173	28086	0.0696	0.2701	0.1449	0.4412	Beth Smith	rest	7.38	mouth_open	none	none	none
+t1185_f28194.jpg	1185	28194	0.0000	0.2851	0.0884	0.5685		rest	7.38	unclear	noface	unclear	unclear
+t1185_f28212.jpg	1185	28212	0.0000	0.2813	0.0896	0.5688		rest	7.38	unclear	unclear		unclear
+t1185_f28218.jpg	1185	28218	0.0000	0.2854	0.0885	0.5684		rest	7.38	unclear	noface	unclear	unclear
+t1186_f28194.jpg	1186	28194	0.6668	0.2607	0.8034	0.5068	Character 30	top	1	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open		laugh,eyes_closed,mouth_open
+t1186_f28212.jpg	1186	28212	0.6621	0.2609	0.7979	0.5067	Character 30	top	1	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open		laugh,eyes_closed,mouth_open
+t1186_f28224.jpg	1186	28224	0.6581	0.2609	0.7941	0.5075	Character 30	top	1	laugh,eyes_closed,mouth_open	laugh,eyes_closed,mouth_open		laugh,eyes_closed,mouth_open
+t1187_f28188.jpg	1187	28188	0.0869	0.1947	0.1196	0.2580		rest	7.38	noface	noface		noface
+t1187_f28212.jpg	1187	28212	0.0914	0.1924	0.1244	0.2495		rest	7.38	noface	noface		noface
+t1187_f28224.jpg	1187	28224	0.0856	0.1956	0.1193	0.2568		rest	7.38	noface	noface		noface
+t1188_f28200.jpg	1188	28200	0.4409	0.5373	0.6869	0.6992		top	1	noface	noface		noface
+t1188_f28212.jpg	1188	28212	0.4390	0.5334	0.6868	0.6967		top	1	noface	noface		noface
+t1188_f28230.jpg	1188	28230	0.4398	0.5359	0.6876	0.6983		top	1	noface	noface		noface
+t1189_f28236.jpg	1189	28236	0.1578	0.0246	0.3889	0.5546	Rick Sanchez	rest	7.38	mouth_open	mouth_open		mouth_open
+t1189_f28296.jpg	1189	28296	0.1656	0.0203	0.3995	0.5554	Rick Sanchez	rest	7.38	none	none		none
+t1189_f28308.jpg	1189	28308	0.1657	0.0202	0.3995	0.5554	Rick Sanchez	rest	7.38	none	none		none
+t1194_f28338.jpg	1194	28338	0.7507	0.2870	0.7770	0.3499		top	1	mouth_open	mouth_open		mouth_open
+t1194_f28362.jpg	1194	28362	0.7387	0.2752	0.7656	0.3352		top	1	smile,mouth_open	smile,mouth_open		smile,mouth_open
+t1194_f28380.jpg	1194	28380	0.7392	0.2752	0.7657	0.3359		top	1	mouth_open	mouth_open		mouth_open
+t1196_f28356.jpg	1196	28356	0.5562	0.3143	0.6702	0.4377	Character 19	top	1	unclear	noface	unclear	unclear
+t1196_f28368.jpg	1196	28368	0.5560	0.3150	0.6706	0.4382	Character 19	top	1	unclear	unclear		unclear
+t1196_f28380.jpg	1196	28380	0.5558	0.3159	0.6705	0.4378	Character 19	top	1	unclear	unclear		unclear
+t1197_f28356.jpg	1197	28356	0.6368	0.4505	0.6621	0.4973		rest	7.38	noface	noface		noface
+t1197_f28368.jpg	1197	28368	0.6368	0.4508	0.6621	0.4973		rest	7.38	noface	noface		noface
+t1197_f28380.jpg	1197	28380	0.6367	0.4506	0.6621	0.4974		rest	7.38	noface	noface		noface
+t1200_f28440.jpg	1200	28440	0.4095	0.1026	0.9030	0.4163		rest	7.38	mouth_open	mouth_open		mouth_open
+t1200_f28452.jpg	1200	28452	0.4264	0.1262	0.9655	0.4321		rest	7.38	mouth_open	mouth_open		mouth_open
+t1200_f28512.jpg	1200	28512	0.4269	0.1296	0.8470	0.4343		rest	7.38	mouth_open	none	none	none
+t1203_f28668.jpg	1203	28668	0.5069	0.0601	0.6333	0.3663	Character 19	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1203_f28680.jpg	1203	28680	0.5124	0.0603	0.6316	0.3658	Character 19	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1203_f28692.jpg	1203	28692	0.5314	0.0705	0.6824	0.4059	Character 19	rest	7.38	unclear	noface	unclear	unclear
+t1207_f28860.jpg	1207	28860	0.9009	0.2529	0.9753	0.4275	Jerry Smith	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t1207_f28884.jpg	1207	28884	0.9002	0.2532	0.9749	0.4288	Jerry Smith	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t1207_f28914.jpg	1207	28914	0.9005	0.2537	0.9748	0.4284	Jerry Smith	top	1	smile,eyes_closed	smile,eyes_closed		smile,eyes_closed
+t1209_f28896.jpg	1209	28896	0.6854	0.2212	0.8798	0.4793		top	1	noface	noface		noface
+t1210_f28920.jpg	1210	28920	0.0685	0.2239	0.1847	0.4896	Beth Smith	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1210_f28974.jpg	1210	28974	0.1041	0.2453	0.2204	0.4970	Beth Smith	top	1	none	none		none
+t1210_f29028.jpg	1210	29028	0.0690	0.2237	0.1849	0.4789	Beth Smith	top	1	mouth_open	angry,mouth_open	angry,mouth_open	angry,mouth_open
+t1211_f28920.jpg	1211	28920	0.8575	0.1879	0.9791	0.4113		rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1211_f28974.jpg	1211	28974	0.8576	0.1881	0.9790	0.4107		rest	7.38	mouth_open	mouth_open		mouth_open
+t1211_f29046.jpg	1211	29046	0.7053	0.1652	1.0000	0.4574		rest	7.38	noface	unclear	unclear	unclear
+t1212_f28920.jpg	1212	28920	0.4302	0.1230	0.5662	0.4277	Character 19	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1212_f28974.jpg	1212	28974	0.4304	0.1230	0.5659	0.4278	Character 19	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1212_f29028.jpg	1212	29028	0.4112	0.1235	0.5543	0.4305	Character 19	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1217_f29148.jpg	1217	29148	0.1094	0.2236	0.2250	0.4826	Beth Smith	rest	7.38	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1217_f29250.jpg	1217	29250	0.1263	0.1983	0.2392	0.4524	Beth Smith	rest	7.38	angry	none	none	none
+t1217_f29364.jpg	1217	29364	0.1517	0.1920	0.2680	0.4498	Beth Smith	rest	7.38	mouth_open	mouth_open		mouth_open
+t1219_f29190.jpg	1219	29190	0.6766	0.1574	0.7224	0.2382		rest	7.38	noface	noface		noface
+t1219_f29310.jpg	1219	29310	0.6765	0.1574	0.7225	0.2381		rest	7.38	noface	noface		noface
+t1219_f29442.jpg	1219	29442	0.6766	0.1574	0.7225	0.2382		rest	7.38	noface	noface		noface
+t1222_f29508.jpg	1222	29508	0.4985	0.2969	0.5730	0.4343	Chud	rest	7.38	none	none		none
+t1227_f29562.jpg	1227	29562	0.5957	0.2524	0.7446	0.5473	Summer Smith	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1227_f29574.jpg	1227	29574	0.6171	0.2177	0.7790	0.5526	Summer Smith	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1227_f29580.jpg	1227	29580	0.6315	0.2033	0.8001	0.5595	Summer Smith	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1228_f29562.jpg	1228	29562	0.2080	0.3029	0.3756	0.6209	Character 71	top	1	laugh,mouth_open	laugh,mouth_open		laugh,mouth_open
+t1228_f29574.jpg	1228	29574	0.1672	0.2711	0.3553	0.6351	Character 71	top	1	laugh,mouth_open	laugh,mouth_open		laugh,mouth_open
+t1228_f29580.jpg	1228	29580	0.1420	0.2567	0.3403	0.6425	Character 71	top	1	laugh,mouth_open	laugh,mouth_open		laugh,mouth_open
+t1229_f29622.jpg	1229	29622	0.1390	0.1932	0.3843	0.5065		rest	7.38	noface	noface		noface
+t1229_f29628.jpg	1229	29628	0.1326	0.1998	0.3797	0.5117		rest	7.38	noface	noface		noface
+t1231_f29658.jpg	1231	29658	0.6569	0.1258	0.6969	0.1939	Chud	top	1	smile	smile		smile
+t1233_f29724.jpg	1233	29724	0.3820	0.1944	0.5579	0.5582	Chud	rest	7.38	smile	smile		smile
+t1233_f29766.jpg	1233	29766	0.4006	0.2132	0.5790	0.5868	Chud	rest	7.38	smile	smile		smile
+t1233_f29808.jpg	1233	29808	0.4015	0.2116	0.5826	0.5875	Chud	rest	7.38	smile	smile		smile
+t1239_f29910.jpg	1239	29910	0.3937	0.2081	0.5781	0.5905	Chud	top	1	downcast	downcast		downcast
+t1239_f29934.jpg	1239	29934	0.3954	0.2404	0.5774	0.6224	Chud	top	1	downcast	none	downcast	downcast
+t1239_f29958.jpg	1239	29958	0.3959	0.2408	0.5767	0.6222	Chud	top	1	none	none		none
+t1244_f29988.jpg	1244	29988	0.5422	0.1503	0.6360	0.3365		rest	7.38	unclear	unclear		unclear
+t1244_f30060.jpg	1244	30060	0.5421	0.1490	0.6358	0.3371		rest	7.38	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1244_f30084.jpg	1244	30084	0.5426	0.1492	0.6359	0.3377		rest	7.38	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1245_f30000.jpg	1245	30000	0.3486	0.0611	0.4374	0.2555	Character 19	top	1	angry	angry,mouth_open	unclear	unclear
+t1245_f30096.jpg	1245	30096	0.3489	0.0602	0.4354	0.2553	Character 19	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1245_f30120.jpg	1245	30120	0.3480	0.0589	0.4358	0.2555	Character 19	top	1	angry,mouth_open	angry,mouth_open		angry,mouth_open
+t1249_f30150.jpg	1249	30150	0.6561	0.2221	0.8068	0.6052	Summer Smith	top	1	angry	angry		angry
+t1249_f30180.jpg	1249	30180	0.6564	0.2224	0.8067	0.6056	Summer Smith	top	1	angry	angry		angry
+t1249_f30210.jpg	1249	30210	0.6517	0.2256	0.8060	0.6060	Summer Smith	top	1	none	none		none
+t1250_f30156.jpg	1250	30156	0.1410	0.3410	0.3192	0.7097	Morty Smith	rest	7.38	none	none		none
+t1250_f30186.jpg	1250	30186	0.1409	0.3397	0.3193	0.7097	Morty Smith	rest	7.38	none	none		none
+t1250_f30228.jpg	1250	30228	0.1409	0.3406	0.3192	0.7097	Morty Smith	rest	7.38	none	none		none
+t1262_f30534.jpg	1262	30534	0.4357	0.0011	0.9741	0.3468		top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1262_f30540.jpg	1262	30540	0.0098	0.2270	0.2862	0.6706		top	1	angry,shout,mouth_open	angry,shout,mouth_open		angry,shout,mouth_open
+t1263_f30534.jpg	1263	30534	0.2375	0.1389	0.4754	0.5973	Chud	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1263_f30546.jpg	1263	30546	0.2418	0.1038	0.4847	0.5621	Chud	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1263_f30558.jpg	1263	30558	0.2324	0.1296	0.4745	0.5852	Chud	top	1	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1266_f30744.jpg	1266	30744	0.1115	0.2579	0.3540	0.7438	Chud	rest	7.38	mouth_open	shout,mouth_open	shout,mouth_open	shout,mouth_open
+t1266_f30762.jpg	1266	30762	0.1155	0.2616	0.3577	0.7440	Chud	rest	7.38	shout,mouth_open	shout,mouth_open		shout,mouth_open
+t1266_f30780.jpg	1266	30780	0.0779	0.2526	0.3182	0.7543	Chud	rest	7.38	surprised,mouth_open	shout,mouth_open	shout,surprised,mouth_open	shout,surprised,mouth_open
+t1268_f30918.jpg	1268	30918	0.4400	0.4516	0.4787	0.5215		top	1	shout,eyes_closed,mouth_open	shout,eyes_closed,mouth_open		shout,eyes_closed,mouth_open
+t1268_f30924.jpg	1268	30924	0.4100	0.4263	0.4659	0.5323		top	1	cry,eyes_closed,mouth_open	cry,eyes_closed,mouth_open		cry,eyes_closed,mouth_open
+t1269_f30924.jpg	1269	30924	0.5296	0.4166	0.5849	0.5091	Summer Smith	top	1	cry,mouth_open	shout,mouth_open	cry,mouth_open	cry,mouth_open
+t1270_f30924.jpg	1270	30924	0.4744	0.4260	0.5229	0.5247	Chud	top	1	eyes_closed,mouth_open	eyes_closed,mouth_open		eyes_closed,mouth_open
+t1273_f30930.jpg	1273	30930	0.0914	0.2657	0.3498	0.7912	Character 71	top	1	cry,eyes_closed,mouth_open	cry,eyes_closed,mouth_open		cry,eyes_closed,mouth_open
+t1273_f30954.jpg	1273	30954	0.0917	0.2621	0.3484	0.7900	Character 71	top	1	cry,eyes_closed,mouth_open	cry,eyes_closed,mouth_open		cry,eyes_closed,mouth_open
+t1273_f30966.jpg	1273	30966	0.0931	0.2638	0.3490	0.7922	Character 71	top	1	shout,eyes_closed,mouth_open	shout,eyes_closed,mouth_open		shout,eyes_closed,mouth_open
+t1284_f31482.jpg	1284	31482	0.5074	0.3788	0.5583	0.4801	Summer Smith	top	1	surprised,mouth_open	mouth_open	surprised,mouth_open	surprised,mouth_open
+t1284_f31494.jpg	1284	31494	0.5370	0.4207	0.5850	0.5218	Summer Smith	top	1	none	none		none
+t1284_f31500.jpg	1284	31500	0.5370	0.4208	0.5850	0.5218	Summer Smith	top	1	none	none		none
+t1291_f31728.jpg	1291	31728	0.4816	0.0730	0.5567	0.2145	Character 73	top	1	smile	unclear	smile	smile
+t1291_f31776.jpg	1291	31776	0.5022	0.0679	0.5689	0.2104	Character 73	top	1	smile	unclear	smile	smile
+t1291_f31824.jpg	1291	31824	0.4754	0.0820	0.5479	0.2211	Character 73	top	1	mouth_open	unclear	mouth_open	mouth_open
+t1294_f32082.jpg	1294	32082	0.3888	0.1837	0.5110	0.4360	Chud	rest	7.38	smile	unclear	smile	smile
+t1294_f32388.jpg	1294	32388	0.3728	0.1833	0.4950	0.4317	Chud	rest	7.38	mouth_open	mouth_open		mouth_open
+t1294_f32694.jpg	1294	32694	0.4074	0.2190	0.5326	0.4700	Chud	rest	7.38	downcast	downcast		downcast
+t1297_f32946.jpg	1297	32946	0.1516	0.1629	0.3864	0.3471		rest	7.38	smile	smile		smile
+t1297_f32952.jpg	1297	32952	0.1521	0.1617	0.3886	0.3465		rest	7.38	mouth_open	mouth_open		mouth_open
+t1298_f32994.jpg	1298	32994	0.0243	0.7304	0.1207	0.9297		rest	7.38	none	unclear	unclear	unclear

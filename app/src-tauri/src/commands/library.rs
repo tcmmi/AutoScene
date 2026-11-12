@@ -185,6 +185,7 @@ pub async fn settings_update(
     let state = state.inner().clone();
     let lib = state.library.clone();
     let before = lib.finds_bodies();
+    let scenes_before = lib.finds_scenes();
     let handle = app.clone();
     let (checked_before, saved, launch_changed, anime_before) = blocking(move || {
         // What the anime model comes to now (the graphics are read here once,
@@ -227,6 +228,10 @@ pub async fn settings_update(
     // Finding people by their bodies changes every cast.
     if saved.find_bodies != before {
         work::bodies_setting_changed(&app, saved.find_bodies);
+    }
+    // Scenes are read from now on: of what is analysed already, too.
+    if saved.find_scenes && !scenes_before {
+        work::scenes_setting_on(&app);
     }
     // Another anime model: anime projects find their characters again.
     if app.state::<AppState>().library.anime_best() != anime_before {

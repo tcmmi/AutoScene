@@ -227,6 +227,13 @@ export default {
     /** A button that goes on with the stopped search for people (bodies). */
     peopleStoppedContinue: "People stopped · continue",
     findPeople: "Find people",
+    scenesFailed: "Scenes failed",
+    /** Tooltip of "Scenes failed" when reading them gave no words. */
+    scenesFailedWhy: "Reading scenes failed",
+    /** A button that goes on with the stopped reading of the scenes. */
+    scenesStoppedContinue: "Scenes stopped · continue",
+    /** A button that starts reading which shots belong to one scene. */
+    readScenes: "Read scenes",
     retryFailed: "Couldn't retry",
   },
   /** Asks before a file takes the place of a missing episode, and says what was found. */

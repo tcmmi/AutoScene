@@ -278,6 +278,11 @@ pub mod ids {
     pub const ANIME_BERKELEY: &str = "anime-berkeley-dino-l";
     /// What the Best anime scan needs.
     pub const ANIME_BEST: [&str; 4] = [ANIME_HEAD, ANIME_PERSON, ANIME_CCIP, ANIME_BERKELEY];
+    /// What a frame shows (DINOv2-small): the scenes pass embeds three
+    /// frames of every shot with it.
+    pub const PICTURES: &str = "picture-dinov2-small";
+    /// What the scenes pass needs.
+    pub const SCENES: [&str; 1] = [PICTURES];
 }
 
 /// A download that receives nothing for this long fails (and resumes later).

@@ -773,6 +773,13 @@ export type AppSettings = {
 	 */
 	findBodies?: boolean,
 	/**
+	 *  Also read which shots belong to one scene (a pass of its own over
+	 *  each episode, with a model of its own), so a scenepack can take whole
+	 *  scenes: the shots of a character's scenes where they are not to be
+	 *  seen too. Off by default.
+	 */
+	findScenes?: boolean,
+	/**
 	 *  Whether new live-action projects start with Fast Scan (smaller face
 	 *  models, a few frames per shot; anime keeps its character models):
 	 *  much faster, less sure who is who. Each project keeps what it was
@@ -1721,6 +1728,12 @@ export type MediaItem = {
 	/**  People followed by their bodies (when the setting is on). */
 	bodies?: StageState,
 	bodiesError?: Msg | null,
+	/**
+	 *  The pictures of its shots, which scenes are read from (when the
+	 *  setting is on).
+	 */
+	scenes?: StageState,
+	scenesError?: Msg | null,
 };
 
 export type MediaStatus = 

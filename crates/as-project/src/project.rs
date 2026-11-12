@@ -149,6 +149,10 @@ pub struct Project {
     /// opened (`Library::project`); a project nobody shared it with keeps
     /// the Standard model.
     anime_best: std::sync::OnceLock<Arc<AtomicBool>>,
+    /// The library's setting: which shots make a scene is read too. Shared
+    /// once opened (`Library::project`); a project nobody shared it with
+    /// reads no scenes.
+    find_scenes: std::sync::OnceLock<Arc<AtomicBool>>,
 }
 
 /// A media whose frames are being read for its index: its file, and how far
@@ -208,6 +212,7 @@ impl Project {
             find_bodies,
             fast_scan: AtomicBool::new(s.fast_scan),
             anime_best: std::sync::OnceLock::new(),
+            find_scenes: std::sync::OnceLock::new(),
         };
         p.ensure_dirs()?;
         Ok(p)
@@ -230,6 +235,7 @@ impl Project {
             find_bodies,
             fast_scan,
             anime_best: std::sync::OnceLock::new(),
+            find_scenes: std::sync::OnceLock::new(),
         };
         p.ensure_dirs()?;
         // Exports can't resume mid-way (M1): close them out. No export runs
@@ -288,6 +294,18 @@ impl Project {
     /// Follow the library's anime model setting (see [`Project::anime_best`]).
     pub(crate) fn share_anime_best(&self, best: Arc<AtomicBool>) {
         let _ = self.anime_best.set(best);
+    }
+
+    /// Follow the library's scenes setting (see [`Project::finds_scenes`]).
+    pub(crate) fn share_find_scenes(&self, on: Arc<AtomicBool>) {
+        let _ = self.find_scenes.set(on);
+    }
+
+    /// Whether the scenes of this project's media are read (the library's
+    /// setting): a pass of its own reads the pictures of every shot, for
+    /// every kind of footage and whichever way its faces are found.
+    pub fn finds_scenes(&self) -> bool {
+        self.find_scenes.get().is_some_and(|on| on.load(Ordering::Relaxed))
     }
 
     /// Whether anime is found with the Best model here (not with Fast Scan,
@@ -2788,6 +2806,8 @@ mod tests {
             face_count: None,
             bodies: as_api::StageState::Pending,
             bodies_error: None,
+            scenes: as_api::StageState::Pending,
+            scenes_error: None,
         }
     }
 

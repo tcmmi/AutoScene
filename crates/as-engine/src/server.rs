@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 use as_analysis::rescan::{self, FaceRead, HeadFinder, LiveFinder, RescanFace, RescanParams, SecondOpinion};
 use as_analysis::{
     AnalysisError, BodyModels, DETECT_BATCH, FaceChunk, FaceParams, Faces, FastModels, FastParams, Look, PERSON_INPUT,
-    PeopleParams, Search, anime, bodies, detect_looks, face_tracks, fast, fast_face_tracks, frame_sizes, shot_signals,
-    signals, tracks,
+    PeopleParams, Search, anime, bodies, detect_looks, face_tracks, fast, fast_face_tracks, frame_sizes, pictures,
+    shot_signals, signals, tracks,
 };
 use as_core::{CancelToken, FrameIndex, FrameRange, ToMsg, msg};
 use as_infer::accel::AccelState;
@@ -27,10 +27,10 @@ use as_infer::{Device, InferError, Runtime};
 use as_media::frames::Decoder;
 use as_media::{Source, Tools, frames};
 use as_models::{ModelStore, ids};
-use as_vision::{ArcFace, Berkeley, Ccip, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo};
+use as_vision::{ArcFace, Berkeley, Ccip, Dinov2, Fit, Norm, PersonReid, PpDet, SFace, Scrfd, TransNet, Yolo};
 use parking_lot::Mutex;
 
-use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, RescanJob, ShotsJob, Sprite};
+use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, RescanJob, ScenesJob, ShotsJob, Sprite};
 
 /// Faces per embedding call.
 const EMBED_BATCH: usize = 32;
@@ -47,6 +47,8 @@ pub const CCIP_BATCH: usize = 4;
 /// Crops per Berkeley inference: the Best scan embeds a few heads per
 /// track, a shot's worth at a time.
 const BERKELEY_BATCH: usize = 8;
+/// Frames per call of the scenes' picture embedder.
+const PICTURES_BATCH: usize = 8;
 /// The anime head detector's letterboxed input (the bench's first-config
 /// variant).
 const ANIME_HEAD_INPUT: (usize, usize) = (640, 640);
@@ -64,8 +66,9 @@ const LIVE_ON_ACCEL: bool = false;
 /// only when `live` says so. The anime models may: they compute there what
 /// the processor computes, and CCIP proves it against its goldens at every
 /// load. TransNetV2 never does (the engine can't take one of its nodes), nor
-/// do Fast Scan's SCRFD-2.5G and SFace (SFace's embeddings bend there). Where
-/// a model runs no longer depends on which job loaded it first.
+/// do Fast Scan's SCRFD-2.5G and SFace (SFace's embeddings bend there), nor
+/// the scenes' picture embedder (not checked there). Where a model runs no
+/// longer depends on which job loaded it first.
 fn may_use_accel(id: &str, live: bool) -> bool {
     match id {
         ids::ANIME_HEAD | ids::ANIME_PERSON | ids::ANIME_CCIP => true,
@@ -84,7 +87,7 @@ pub fn job_may_use_accel(req: &Request) -> bool {
         Request::Faces(j) => j.anime || (LIVE_ON_ACCEL && !j.fast),
         Request::Rescan(j) => j.anime || (LIVE_ON_ACCEL && !j.fast),
         Request::Embed(_) => true,
-        Request::Shots(_) | Request::Cancel { .. } | Request::Shutdown => false,
+        Request::Shots(_) | Request::Scenes(_) | Request::Cancel { .. } | Request::Shutdown => false,
     }
 }
 
@@ -242,6 +245,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
         anime_persons: None,
         anime_ccip: None,
         anime_berkeley: None,
+        pictures: None,
     };
     loop {
         let next = match cfg.idle_exit {
@@ -266,6 +270,7 @@ pub fn serve(cfg: Config, input: impl BufRead + Send + 'static, output: impl Wri
             Request::Faces(j) => run_faces(&tools, &rt, &mut models, *j, &cancel, &out),
             Request::Embed(j) => run_embed(&tools, &rt, &mut models, *j, &cancel, &out),
             Request::Rescan(j) => run_rescan(&tools, &rt, &mut models, *j, &cancel, &out),
+            Request::Scenes(j) => run_scenes(&tools, &rt, &mut models, *j, &cancel, &out),
             Request::Cancel { .. } | Request::Shutdown => Ok(()),
         });
         let result = run.unwrap_or_else(|panic| {
@@ -350,7 +355,13 @@ fn read_requests(
             continue;
         }
         match serde_json::from_str::<Request>(&line) {
-            Ok(job @ (Request::Shots(_) | Request::Faces(_) | Request::Embed(_) | Request::Rescan(_))) => {
+            Ok(
+                job @ (Request::Shots(_)
+                | Request::Faces(_)
+                | Request::Embed(_)
+                | Request::Rescan(_)
+                | Request::Scenes(_)),
+            ) => {
                 let id = job.id().expect("a job");
                 let cancel = CancelToken::new();
                 if early.remove(&id) {
@@ -413,6 +424,9 @@ struct Models {
     anime_ccip: Option<Ccip>,
     /// The Best anime scan's character embedder.
     anime_berkeley: Option<Berkeley>,
+    /// The scenes' picture embedder: neither family's, like the shot
+    /// detector, and small enough to stay beside either.
+    pictures: Option<Dinov2>,
 }
 
 /// Which family of models a job keeps loaded; the other family's sessions
@@ -437,6 +451,7 @@ impl Models {
         self.sface = None;
         (self.anime_heads, self.anime_persons, self.anime_ccip) = (None, None, None);
         self.anime_berkeley = None;
+        self.pictures = None;
     }
 
     /// Drop the sessions of the other family (TransNet — the shot
@@ -618,6 +633,14 @@ impl Models {
         }
         Ok(self.transnet.as_mut().expect("just loaded"))
     }
+
+    fn pictures(&mut self, rt: &Runtime) -> Result<&mut Dinov2, AnalysisError> {
+        if self.pictures.is_none() {
+            let path = self.path(ids::PICTURES)?;
+            self.pictures = Some(Dinov2::load(self.runtime_for(rt, ids::PICTURES), &path, PICTURES_BATCH)?);
+        }
+        Ok(self.pictures.as_mut().expect("just loaded"))
+    }
 }
 
 fn run_shots(
@@ -650,6 +673,42 @@ fn run_shots(
     let frames = index.len().saturating_sub(job.resume);
     let secs = started.elapsed().as_secs_f64();
     tracing::info!(id, frames, secs, fps = frames as f64 / secs.max(1e-3), "shots measured");
+    Ok(())
+}
+
+/// A scenes job: the pictures of the shots asked for, decoded where Fast
+/// Scan decodes on this engine.
+fn run_scenes(
+    tools: &Tools,
+    rt: &Runtime,
+    models: &mut Models,
+    job: ScenesJob,
+    cancel: &CancelToken,
+    out: &Out,
+) -> Result<(), AnalysisError> {
+    let decoder = frames::decoder_for(tools, &job.info, models.decoder(rt));
+    let net = models.pictures(rt)?;
+    let index = FrameIndex::from_bytes(&job.index.0).map_err(|e| AnalysisError::Internal(e.to_string()))?;
+    let shots: Vec<FrameRange> = job.shots.iter().map(|&(s, e)| FrameRange::new(s, e)).collect();
+    let started = Instant::now();
+    let (id, file) = (job.id, job.path.file_name().unwrap_or_default());
+    send_devices(out, id, rt, &[(ids::PICTURES, net.device())]);
+    tracing::info!(id, ?file, shots = shots.len(), device = ?net.device(), ?decoder, "reading the shots' pictures");
+    pictures::shot_pictures(
+        tools,
+        Source { path: Path::new(&job.path), info: &job.info, index: &index },
+        net,
+        &shots,
+        decoder,
+        cancel,
+        |fraction| out.send(&Reply::Progress { id, fraction }),
+        |chunk| {
+            let shots = chunk.into_iter().map(|s| (s.start, Blob(pictures::to_bytes(&s.vectors)))).collect();
+            out.send(&Reply::ShotPictures { id, shots });
+            Ok(())
+        },
+    )?;
+    tracing::info!(id, shots = shots.len(), secs = started.elapsed().as_secs_f64(), "pictures read");
     Ok(())
 }
 
@@ -1147,8 +1206,9 @@ mod tests {
             assert!(!may_use_accel(id, false) && may_use_accel(id, true), "{id}");
         }
         // Never: a node it can't take, Fast Scan's models, and the Best anime
-        // model (not yet checked on NVIDIA's engine).
-        let never = [ids::TRANSNET, ids::SCRFD_FAST, ids::SFACE, ids::ANIME_BERKELEY];
+        // model and the scenes' picture embedder (not yet checked on NVIDIA's
+        // engine).
+        let never = [ids::TRANSNET, ids::SCRFD_FAST, ids::SFACE, ids::ANIME_BERKELEY, ids::PICTURES];
         for id in never {
             assert!(!may_use_accel(id, false) && !may_use_accel(id, true), "{id}");
         }
@@ -1195,6 +1255,15 @@ mod tests {
             chunk: 100,
         };
         assert!(!job_may_use_accel(&Request::Shots(Box::new(shots))));
+        // Nor the scenes' pictures.
+        let scenes = ScenesJob {
+            id: 1,
+            path: "a.mp4".into(),
+            info: crate::protocol::tests::info(),
+            index: Blob(Vec::new()),
+            shots: Vec::new(),
+        };
+        assert!(!job_may_use_accel(&Request::Scenes(Box::new(scenes))));
     }
 
     #[test]

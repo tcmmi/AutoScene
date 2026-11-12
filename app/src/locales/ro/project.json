@@ -144,6 +144,10 @@
     "peopleFailedWhy": "Căutarea persoanelor a eșuat",
     "peopleStoppedContinue": "Persoane: oprit · continuă",
     "findPeople": "Găsește persoanele",
+    "scenesFailed": "Scene: a eșuat",
+    "scenesFailedWhy": "Citirea scenelor a eșuat",
+    "scenesStoppedContinue": "Scene: oprit · continuă",
+    "readScenes": "Citește scenele",
     "retryFailed": "Nu s-a putut încerca din nou"
   },
   "relink": {

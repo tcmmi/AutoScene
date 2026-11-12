@@ -68,6 +68,10 @@
       "names": {
         "label": "Numele personajelor din AniList, TVmaze și Fandom",
         "description": "După ce personajele unui proiect sunt găsite, AutoScene le caută numele: pentru anime pe AniList, pentru seriale animate pe TVmaze, pentru filme animate pe wikiul Fandom al francizei (găsit prin Wikidata). Tu le atribui cu un clic. Către aceste servicii (API-uri și servere de imagini) se trimit titlul proiectului sau textul de căutare pe care îl scrii, plus cererile pentru distribuția și imaginile potrivite; ele îți văd adresa IP. Proiectele de animație descarcă o singură dată modelul pentru personaje anime, ca să compare imaginile. Dacă dezactivezi opțiunea, se șterg toate imaginile păstrate de la aceste servicii."
+      },
+      "scenes": {
+        "label": "Citește scenele",
+        "description": "Stabilește și ce planuri țin de aceeași scenă, așa că un scenepack poate lua scene întregi: și planurile dintre cele ale unui personaj, în care acesta nu se vede. Analiza fiecărui episod durează cu circa un minut mai mult; episoadele analizate înainte sunt citite acum pentru scenele lor. Modelul său poate fi folosit pentru orice fel de lucrări."
       }
     },
     "audio": {
@@ -274,7 +278,8 @@
         "animeHead": "Detectarea capetelor (personaje anime)",
         "animePerson": "Detectarea persoanei întregi (anime), pentru capetele pe care modelul de capete le ratează",
         "animeIdentity": "Identitatea personajelor (anime), vectori CCIP cu 768 de dimensiuni",
-        "animeIdentityBest": "Identitatea personajelor (anime, scanarea Cel mai bun), 1024 de dimensiuni"
+        "animeIdentityBest": "Identitatea personajelor (anime, scanarea Cel mai bun), 1024 de dimensiuni",
+        "pictures": "Ce arată un cadru, pentru a deosebi scenele unui episod"
       }
     },
     "licenses": {

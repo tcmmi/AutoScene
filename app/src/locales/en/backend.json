@@ -15,6 +15,7 @@
     "shotsNotFound": "Shots of this media aren't found yet.",
     "signalsCover": "shot signals cover {{covered}} of {{frames}} frames",
     "unreadablePeople": "unreadable people",
+    "unreadablePictures": "unreadable pictures",
     "unreadableSignals": "unreadable shot signals",
     "unreadableTracks": "unreadable face tracks"
   },
@@ -241,6 +242,7 @@
       "poster": "Poster {{n, number}} of {{total, number}}",
       "preparingPreview": "Preparing preview",
       "readingFile": "Reading file",
+      "readingScenes": "Reading scenes",
       "rendering": "Rendering",
       "rescanning": "Reading faces again"
     },

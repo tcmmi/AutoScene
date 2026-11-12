@@ -343,6 +343,19 @@ const STEPS: &[M<'static>] = &[
          ) STRICT;
          CREATE INDEX character_apart_b ON character_apart(b);",
     ),
+    // 17: scenes (an optional mode). The pass reads a few pictures of every
+    // shot and keeps their vectors; which shots make a scene is worked out
+    // from them, the cast and the shots when asked for, and is not stored.
+    M::up(
+        "ALTER TABLE media ADD COLUMN scenes TEXT NOT NULL DEFAULT 'pending';
+         ALTER TABLE media ADD COLUMN scenes_error TEXT;
+         CREATE TABLE shot_pictures (
+           media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+           start    INTEGER NOT NULL,  -- first frame of the shot
+           vectors  BLOB NOT NULL,     -- as_analysis::pictures::to_bytes
+           PRIMARY KEY (media_id, start)
+         ) STRICT;",
+    ),
 ];
 const MIGRATIONS: Migrations<'static> = Migrations::from_slice(STEPS);
 
@@ -424,7 +437,7 @@ fn media_cols(counted: bool) -> String {
     format!(
         "id, path, file_name, size_bytes, season, episode, status, error, info, frames, duration_sec, \
          fps_num, fps_den, vfr, interlaced, audio_ordinal, proxy, poster, added_at, shots, shots_error, {shots}, \
-         faces, faces_error, {faces}, poster_small, bodies, bodies_error"
+         faces, faces_error, {faces}, poster_small, bodies, bodies_error, scenes, scenes_error"
     )
 }
 
@@ -477,6 +490,8 @@ fn media_row(r: &Row, position: u32) -> DbResult<MediaItem> {
         face_count: r.get(24)?,
         bodies: enum_from_sql(&r.get::<_, String>(26)?)?,
         bodies_error: msg_from_sql(r, 27)?,
+        scenes: enum_from_sql(&r.get::<_, String>(28)?)?,
+        scenes_error: msg_from_sql(r, 29)?,
     })
 }
 
@@ -542,6 +557,8 @@ fn clear_shots(tx: &rusqlite::Transaction, id: MediaId) -> DbResult<()> {
     tx.execute("UPDATE media SET shots = 'pending', shots_error = NULL WHERE id = ?1", [id.to_string()])?;
     // Verdicts name shots by their first frame: the shots they name are gone.
     clear_verdicts(tx, id)?;
+    // So are the shots the pictures were of.
+    crate::scenes::forget_pictures(tx, id)?;
     // Tracks belong to shots.
     crate::cast::clear_faces(tx, id)
 }

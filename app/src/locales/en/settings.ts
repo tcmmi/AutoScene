@@ -63,6 +63,12 @@ export default {
         description:
           "Also follows people by their body and clothes, so shots where someone faces away or is too small for their face join their scenepack, marked “No face”. Analysis takes about a quarter longer; episodes analysed before are looked through again for their people. Its two models come from InsightFace and may only be used for non-commercial work.",
       },
+      scenes: {
+        /** Label of the switch and its accessible name. */
+        label: "Read scenes",
+        description:
+          "Also works out which shots belong to one scene, so a scenepack can take whole scenes: the shots between a character's own too, where they aren't to be seen. Each episode takes about a minute longer to analyse; episodes analysed before are read for their scenes now. Its model may be used for any work.",
+      },
       fastScan: {
         label: "Fast Scan",
         /** A line saying what Automatic means on this computer follows it. */
@@ -359,6 +365,7 @@ export default {
         animePerson: "Whole-person detection (anime), to catch heads the head model misses",
         animeIdentity: "Character identity embeddings (anime), 768-d CCIP vectors",
         animeIdentityBest: "Character identity embeddings (anime, Best scan), 1024-d",
+        pictures: "What a frame shows, to tell the scenes of an episode apart",
       },
     },
     licenses: {

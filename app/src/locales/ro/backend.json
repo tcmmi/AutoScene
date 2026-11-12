@@ -15,6 +15,7 @@
     "shotsNotFound": "Planurile din acest material nu au fost găsite încă.",
     "signalsCover": "cadre acoperite de semnalele de plan: {{covered}} din {{frames}}",
     "unreadablePeople": "persoane care nu pot fi citite",
+    "unreadablePictures": "imagini care nu pot fi citite",
     "unreadableSignals": "semnale de plan care nu pot fi citite",
     "unreadableTracks": "trasee de fețe care nu pot fi citite"
   },
@@ -239,6 +240,7 @@
       "indexingFrames": "Se indexează cadrele",
       "joining": "Se unesc clipurile într-un singur fișier",
       "measuringSound": "Se măsoară sunetul",
+      "readingScenes": "Se citesc scenele",
       "onCpu": "{{stage}} · pe procesor (mai lent)",
       "portrait": "Portretul {{n, number}} din {{total, number}}",
       "poster": "Afișul {{n, number}} din {{total, number}}",

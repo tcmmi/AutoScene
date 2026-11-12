@@ -44,6 +44,9 @@ pub enum Request {
     /// Read faces again at the source's own resolution; `Reply::FaceRead`
     /// for each, in no order, then `Done`.
     Rescan(Box<RescanJob>),
+    /// Embed the pictures of a media's shots (`as_analysis::pictures`);
+    /// `Reply::ShotPictures` for the shots, in order, then `Done`.
+    Scenes(Box<ScenesJob>),
     /// Stop job `id` as soon as possible (it then fails with `cancelled`).
     Cancel { id: u64 },
     /// Finish the current job's cancellation and exit.
@@ -105,6 +108,17 @@ pub struct FacesJob {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ScenesJob {
+    pub id: u64,
+    pub path: PathBuf,
+    pub info: MediaInfo,
+    /// `FrameIndex::to_bytes`.
+    pub index: Blob,
+    /// The shots whose pictures are wanted, `(start, end)`, sorted.
+    pub shots: Vec<(u32, u32)>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EmbedJob {
     pub id: u64,
     /// The still image file to embed (any format ffmpeg reads).
@@ -157,6 +171,7 @@ impl Request {
             Self::Faces(j) => Some(j.id),
             Self::Embed(j) => Some(j.id),
             Self::Rescan(j) => Some(j.id),
+            Self::Scenes(j) => Some(j.id),
             Self::Cancel { .. } | Self::Shutdown => None,
         }
     }
@@ -239,6 +254,12 @@ pub enum Reply {
         quality: f32,
         tried: u32,
         found: u32,
+    },
+    /// The pictures of shots (`Scenes`), in order: each shot's first frame
+    /// and its vectors (`as_analysis::pictures::to_bytes`).
+    ShotPictures {
+        id: u64,
+        shots: Vec<(u32, Blob)>,
     },
     Done {
         id: u64,

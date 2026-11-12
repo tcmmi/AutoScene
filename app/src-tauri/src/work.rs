@@ -15,7 +15,9 @@ use as_api::{
 };
 use as_core::{CancelToken, ExportId, MediaId, Msg, ProjectId, ToMsg, msg};
 use as_engine::protocol::{Blob, RescanFaceIn};
-use as_engine::{Devices, EngineError, FacesEvent, FacesInput, RescanEvent, RescanInput, ShotsEvent};
+use as_engine::{
+    Devices, EngineError, FacesEvent, FacesInput, RescanEvent, RescanInput, ScenesEvent, ScenesInput, ShotsEvent,
+};
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_models::ModelError;
 use as_project::{DoneRead, Pass, Portrait, Project, ProjectError, RescanCast, StoppedStage};
@@ -470,17 +472,28 @@ fn submit_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, o
         record_stage(&state, &shots, |s, e| project.set_shots_state(media_id, s, e));
         notify();
         let result = shots.and_then(|()| {
-            let faces = guarded(|| recorded(|m| m.faces), || run_faces(&app2, &state, &project, media_id, ctx));
-            record_stage(&state, &faces, |s, e| project.set_faces_state(media_id, s, e));
-            notify();
-            faces?;
-            if !project.finds_bodies() {
-                return Ok(());
+            let cast: Result<(), StageError> = (|| {
+                let faces = guarded(|| recorded(|m| m.faces), || run_faces(&app2, &state, &project, media_id, ctx));
+                record_stage(&state, &faces, |s, e| project.set_faces_state(media_id, s, e));
+                notify();
+                faces?;
+                if !project.finds_bodies() {
+                    return Ok(());
+                }
+                let bodies = guarded(|| recorded(|m| m.bodies), || run_bodies(&app2, &state, &project, media_id, ctx));
+                record_stage(&state, &bodies, |s, e| project.set_bodies_state(media_id, s, e));
+                notify();
+                bodies
+            })();
+            // The scenes need the shots alone: they are read whether or not
+            // the cast was found, unless the analysis was stopped.
+            if !project.finds_scenes() || ctx.cancel.is_cancelled() {
+                return cast;
             }
-            let bodies = guarded(|| recorded(|m| m.bodies), || run_bodies(&app2, &state, &project, media_id, ctx));
-            record_stage(&state, &bodies, |s, e| project.set_bodies_state(media_id, s, e));
+            let scenes = guarded(|| recorded(|m| m.scenes), || run_scenes(&app2, &state, &project, media_id, ctx));
+            record_stage(&state, &scenes, |s, e| project.set_scenes_state(media_id, s, e));
             notify();
-            bodies
+            cast.and(scenes)
         });
         // Asked to start over while this ran: now nothing writes any more.
         // (The new analysis is the one plugins are told of.)
@@ -559,6 +572,7 @@ fn analysis_due(project: &Project, media_id: MediaId) -> bool {
     !ready(m.shots)
         || !ready(m.faces)
         || (project.finds_bodies() && !ready(m.bodies))
+        || (project.finds_scenes() && !ready(m.scenes))
         || project.faces_by_other_model(project.face_embedder()).is_ok_and(|ids| ids.contains(&media_id))
 }
 
@@ -798,6 +812,106 @@ fn run_bodies(
     log::info!("people found");
     cast_changed(app, project);
     Ok(())
+}
+
+/// Read the pictures of a media's shots, which its scenes are told from
+/// (when the setting asks for it): those of the shots still without them.
+fn run_scenes(
+    app: &AppHandle,
+    state: &AppState,
+    project: &Arc<Project>,
+    media_id: MediaId,
+    ctx: &JobCtx,
+) -> Result<(), StageError> {
+    let m = project.media(media_id).map_err(stage_error)?;
+    if m.scenes == StageState::Ready || m.shots != StageState::Ready {
+        return Ok(());
+    }
+    install_models(state, &as_models::ids::SCENES, ctx)?;
+    project.set_scenes_state(media_id, StageState::Running, None).map_err(stage_error)?;
+    media_changed(app, project, Some(media_id));
+    let plan = project.scenes_plan(media_id).map_err(stage_error)?;
+    let reading = msg!("job.stage.readingScenes", "Reading scenes");
+    if !plan.shots.is_empty() {
+        // What a run before this one read counts as done.
+        let done = 1.0 - plan.shots.len() as f64 / plan.total.max(1) as f64;
+        ctx.progress(&reading, done);
+        let job = ScenesInput { path: plan.path, info: plan.info, index: plan.index, shots: plan.shots };
+        let mut stage = reading.clone();
+        state
+            .engine
+            .scenes(job, &ctx.cancel, |e| match e {
+                ScenesEvent::Devices(devices) => {
+                    let on_cpu = devices.on_cpu();
+                    if !on_cpu.is_empty() {
+                        log::warn!("reading scenes: the GPU couldn't take {}; on the CPU (slower)", on_cpu.join(", "));
+                        stage = on_the_cpu(reading.clone());
+                    }
+                    Ok(())
+                }
+                ScenesEvent::Progress(f) => {
+                    ctx.progress(&stage, done + (1.0 - done) * f);
+                    Ok(())
+                }
+                ScenesEvent::Shots(shots) => project.store_shot_pictures(media_id, &shots).map_err(|e| e.detail()),
+            })
+            .map_err(engine_error)?;
+    }
+    project.finish_scenes(media_id).map_err(stage_error)?;
+    log::info!("scenes read");
+    Ok(())
+}
+
+/// The setting to read scenes went on: the media whose shots are found and
+/// whose pictures aren't read are analysed for them. (Going off, nothing
+/// changes: what was read stays for when it goes on again.)
+pub fn scenes_setting_on(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let projects = match state.library.projects() {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("listing projects: {}", e.detail());
+                return;
+            }
+        };
+        for summary in projects {
+            let project = match state.library.project(summary.id) {
+                Ok(p) => p,
+                Err(e) => {
+                    log::warn!("project '{}' unavailable: {}", summary.title, e.detail());
+                    continue;
+                }
+            };
+            // A pass left "running" with nothing running it waits too; one
+            // under way isn't queued again (see `queue_analysis`).
+            let waiting = project.waiting_scenes().and_then(|mut ids| {
+                for m in project.media_list_uncounted()? {
+                    let stuck = m.scenes == StageState::Running && m.shots == StageState::Ready;
+                    if stuck && m.status == MediaStatus::Ready && !ids.contains(&m.id) {
+                        ids.push(m.id);
+                    }
+                }
+                Ok(ids)
+            });
+            match waiting {
+                Ok(ids) => {
+                    let ids: Vec<MediaId> = ids
+                        .into_iter()
+                        .filter(|&id| project.media(id).is_ok_and(|m| m.status != MediaStatus::Missing))
+                        .collect();
+                    if !ids.is_empty() {
+                        log::info!("'{}': {} media get their scenes read", summary.title, ids.len());
+                    }
+                    for id in ids {
+                        queue_analysis(&app, &project, id);
+                    }
+                }
+                Err(e) => log::warn!("media of '{}' without their scenes: {}", summary.title, e.detail()),
+            }
+        }
+    });
 }
 
 /// The anime model setting came to another model here: every anime
@@ -1557,6 +1671,13 @@ pub fn recover_all(app: &AppHandle) {
             }
             if project.finds_bodies() {
                 for id in project.pending_bodies()? {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+            }
+            if project.finds_scenes() {
+                for id in project.pending_scenes()? {
                     if !ids.contains(&id) {
                         ids.push(id);
                     }

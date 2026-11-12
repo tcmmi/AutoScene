@@ -40,7 +40,9 @@ use as_media::frames::Decoder;
 use parking_lot::Mutex;
 use thiserror::Error;
 
-use crate::protocol::{Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, RescanFaceIn, RescanJob, ShotsJob, said};
+use crate::protocol::{
+    Blob, EmbedJob, FacesJob, ModelDevice, Reply, Request, RescanFaceIn, RescanJob, ScenesJob, ShotsJob, said,
+};
 
 #[derive(Debug, Error)]
 pub enum EngineError {
@@ -247,6 +249,29 @@ pub enum RescanEvent {
         tried: u32,
         found: u32,
     },
+}
+
+/// What a scenes job reads.
+#[derive(Clone, Debug)]
+pub struct ScenesInput {
+    pub path: PathBuf,
+    pub info: MediaInfo,
+    /// `FrameIndex::to_bytes`.
+    pub index: Vec<u8>,
+    /// The shots whose pictures are wanted, `(start, end)`, sorted.
+    pub shots: Vec<(u32, u32)>,
+}
+
+/// What a scenes job reports while it runs.
+pub enum ScenesEvent {
+    /// Where its model runs, before the first progress of each engine that
+    /// works on it.
+    Devices(Devices),
+    /// Of the shots this engine was asked for.
+    Progress(f64),
+    /// The pictures of shots, in order: each shot's first frame and its
+    /// vectors (`as_analysis::pictures` format).
+    Shots(Vec<(u32, Vec<u8>)>),
 }
 
 /// What a faces job looks at.
@@ -703,6 +728,43 @@ impl Engine {
         )
     }
 
+    /// Embed the pictures of a media's shots. Blocks until the job ends; a
+    /// crashed engine goes on with the shots not stored yet.
+    pub fn scenes(
+        &self,
+        job: ScenesInput,
+        cancel: &CancelToken,
+        mut on: impl FnMut(ScenesEvent) -> Result<(), String>,
+    ) -> Result<(), EngineError> {
+        let done = std::cell::RefCell::new(std::collections::HashSet::new());
+        let index = Blob(job.index);
+        self.with_retries(
+            cancel,
+            |id| {
+                let done = done.borrow();
+                Request::Scenes(Box::new(ScenesJob {
+                    id,
+                    path: job.path.clone(),
+                    info: job.info.clone(),
+                    index: index.clone(),
+                    shots: job.shots.iter().filter(|s| !done.contains(&s.0)).copied().collect(),
+                }))
+            },
+            |reply| match reply {
+                Reply::Devices { preferred, models, .. } => on(ScenesEvent::Devices(Devices::new(preferred, models))),
+                Reply::Progress { fraction, .. } => on(ScenesEvent::Progress(fraction)),
+                Reply::ShotPictures { shots, .. } => {
+                    let starts: Vec<u32> = shots.iter().map(|s| s.0).collect();
+                    on(ScenesEvent::Shots(shots.into_iter().map(|(start, v)| (start, v.0)).collect()))?;
+                    // Only what was stored counts as done.
+                    done.borrow_mut().extend(starts);
+                    Ok(())
+                }
+                _ => Ok(()),
+            },
+        )
+    }
+
     /// Embed a still image (a character portrait) with the anime embedder —
     /// the direction AniList art points in is matched against grouped
     /// characters. Blocks until the vector arrives.
@@ -900,6 +962,7 @@ impl Engine {
                     | Reply::ShotChunk { id: rid, .. }
                     | Reply::FaceChunk { id: rid, .. }
                     | Reply::FaceRead { id: rid, .. }
+                    | Reply::ShotPictures { id: rid, .. }
                     | Reply::Embedding { id: rid, .. })
                         if rid == id =>
                     {

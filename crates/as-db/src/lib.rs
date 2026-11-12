@@ -14,6 +14,7 @@ mod library;
 mod pack;
 mod project;
 mod rescan;
+mod scenes;
 
 pub use bodies::{BodyEdit, BodyEditKind, BodyRow, BodySource, BodyUpdate, IdentityBody, NewBody, PackBodyRow};
 pub use cast::{

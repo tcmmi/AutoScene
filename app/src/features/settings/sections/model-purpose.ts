@@ -11,4 +11,5 @@ export const PURPOSE = {
   "anime-person-v1m": "about.models.purpose.animePerson",
   "anime-ccip-b36": "about.models.purpose.animeIdentity",
   "anime-berkeley-dino-l": "about.models.purpose.animeIdentityBest",
+  "picture-dinov2-small": "about.models.purpose.pictures",
 } as const

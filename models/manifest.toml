@@ -168,3 +168,17 @@ license = "unknown"
 card = "https://github.com/bamman-group/animated-gender-representation"
 terms = "The repository's code is MIT-licensed; the released weights state no licence (trained on iCartoonFace and WIDER Face)."
 source = "Bamman et al. 2026, DINOv2 ViT-L/14 fine-tuned for animated characters (dino_vitl14_crop25.FINAL)"
+
+# Scenes (an optional pass): what each shot shows, as a picture embedding of
+# three of its frames (`as_vision::dinov2`). Chosen on bench/scenes: with it a
+# character's scenes read 0.89 to 0.93 on three live-action titles; a place
+# network (Places365) reads no better, the stored colours alone worse.
+[[model]]
+id = "picture-dinov2-small"
+file = "picture_dinov2_small.onnx"
+purpose = "What a frame shows, to tell the scenes of an episode apart"
+url = "https://huggingface.co/onnx-community/dinov2-small-ONNX/resolve/08c606e3123472a388efa59181b677d428f69bbd/onnx/model.onnx"
+sha256 = "6266c3cd72db6953cecdcbfeab9422a9f783d96f1a4e296ba70ffbac43b54a18"
+size = 88513997
+license = "Apache-2.0"
+source = "DINOv2 ViT-S/14 (Oquab et al. 2023, Meta AI), ONNX export by onnx-community"

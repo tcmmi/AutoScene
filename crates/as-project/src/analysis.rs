@@ -260,6 +260,7 @@ pub(crate) mod tests {
             export_options: Default::default(),
             audio_language: String::new(),
             find_bodies: false,
+            find_scenes: false,
             fast_scan: false,
             anilist: false,
             shortcuts: Default::default(),

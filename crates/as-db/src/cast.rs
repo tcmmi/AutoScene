@@ -2131,16 +2131,26 @@ pub(crate) mod tests {
     /// The schema before the faces' indexes carried what is read of them.
     const BEFORE_FACE_INDEXES: usize = 13;
 
-    /// Today's code on a schema from before the decisions that wait (15):
-    /// with the columns it reads and writes of them (`add`), or without
-    /// them again for the migration that brings them.
+    /// Today's code on a schema from before the decisions that wait (15)
+    /// and the scenes (17): with the columns and the table it reads and
+    /// writes of them (`add`), or without them again for the migrations
+    /// that bring them.
     fn waiting_columns(db: &ProjectDb, add: bool) {
         let sql = if add {
             "ALTER TABLE track_edits ADD COLUMN dormant INTEGER NOT NULL DEFAULT 0;
-             ALTER TABLE track_edits ADD COLUMN must_match INTEGER NOT NULL DEFAULT 0;"
+             ALTER TABLE track_edits ADD COLUMN must_match INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE media ADD COLUMN scenes TEXT NOT NULL DEFAULT 'pending';
+             ALTER TABLE media ADD COLUMN scenes_error TEXT;
+             CREATE TABLE shot_pictures (
+               media_id TEXT NOT NULL, start INTEGER NOT NULL, vectors BLOB NOT NULL,
+               PRIMARY KEY (media_id, start)
+             ) STRICT;"
         } else {
             "ALTER TABLE track_edits DROP COLUMN dormant;
-             ALTER TABLE track_edits DROP COLUMN must_match;"
+             ALTER TABLE track_edits DROP COLUMN must_match;
+             DROP TABLE shot_pictures;
+             ALTER TABLE media DROP COLUMN scenes;
+             ALTER TABLE media DROP COLUMN scenes_error;"
         };
         db.0.write(|tx| Ok(tx.execute_batch(sql)?)).unwrap();
     }

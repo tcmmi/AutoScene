@@ -1,5 +1,5 @@
 import { Trans, useTranslation } from "react-i18next"
-import { ArrowCounterClockwise, Check, Clock, FileX, Scissors, User, UserFocus, Warning, X } from "@/components/icons"
+import { ArrowCounterClockwise, Check, Clock, FileX, FilmSlate, Scissors, User, UserFocus, Warning, X } from "@/components/icons"
 import { toast } from "sonner"
 import type { JobInfo, MediaItem } from "@/bindings"
 import { Progress } from "@/components/ui/progress"
@@ -37,6 +37,8 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
   const { data: settings } = useSettings()
   const { data: project } = useProject(projectId)
   const people = (settings?.findBodies ?? false) && !(project?.fastScan ?? false) && project?.content !== "anime"
+  // Scenes are read too (the setting), whatever the footage and the scan.
+  const scenes = settings?.findScenes ?? false
   const retry = () => {
     commands.mediaRetry(projectId, m.id).catch((err) => toast.error(t("project:status.retryFailed"), { description: errorMessage(err) }))
   }
@@ -155,6 +157,7 @@ export function StatusCell({ media: m, projectId }: { media: MediaItem; projectI
           <Trans ns="project" i18nKey="status.faces" count={m.faceCount ?? 0} components={MONO} />
         </span>
         {people && m.bodies && m.bodies !== "ready" && <PeopleLine media={m} onContinue={analyze} />}
+        {scenes && m.scenes && m.scenes !== "ready" && <ScenesLine media={m} onContinue={analyze} />}
       </span>
     )
   }
@@ -205,6 +208,31 @@ function PeopleLine({ media: m, onContinue }: { media: MediaItem; onContinue: ()
       <button onClick={onContinue} className="inline-flex items-center gap-1 rounded-xs px-1 text-fg-3 hover:text-fg-1">
         {failed ? <ArrowCounterClockwise className="size-3" /> : <User className="size-3" />}
         {failed ? t("common:action.retry") : m.bodies === "stopped" ? t("project:status.peopleStoppedContinue") : t("project:status.findPeople")}
+      </button>
+    </span>
+  )
+}
+
+/**
+ * The scenes pass of a media whose faces are found, when it didn't finish
+ * and nothing runs it (it failed, was stopped, was cut short, or the setting
+ * went on after the analysis): it goes on from where it was.
+ */
+function ScenesLine({ media: m, onContinue }: { media: MediaItem; onContinue: () => void }) {
+  useTranslation("project")
+  const failed = m.scenes === "failed"
+  return (
+    <span className="inline-flex items-center gap-2 pl-5 text-xs">
+      {failed && (
+        <Tooltip label={m.scenesError ? say(m.scenesError) : t("project:status.scenesFailedWhy")}>
+          <span className="inline-flex items-center gap-1 text-danger">
+            <Warning className="size-3" /> {t("project:status.scenesFailed")}
+          </span>
+        </Tooltip>
+      )}
+      <button onClick={onContinue} className="inline-flex items-center gap-1 rounded-xs px-1 text-fg-3 hover:text-fg-1">
+        {failed ? <ArrowCounterClockwise className="size-3" /> : <FilmSlate className="size-3" />}
+        {failed ? t("common:action.retry") : m.scenes === "stopped" ? t("project:status.scenesStoppedContinue") : t("project:status.readScenes")}
       </button>
     </span>
   )

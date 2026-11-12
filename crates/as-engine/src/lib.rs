@@ -21,7 +21,7 @@ pub mod server;
 pub use as_infer::{Placement, accel, cache, hardware};
 pub use client::{
     Devices, Engine, EngineError, FacesEvent, FacesInput, Launch, Note, PACK_FAILURES, RescanEvent, RescanInput,
-    ShotsEvent, pack_failures,
+    ScenesEvent, ScenesInput, ShotsEvent, pack_failures,
 };
 pub use server::{Config, serve};
 

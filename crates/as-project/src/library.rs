@@ -25,6 +25,7 @@ const KEY_EXPORT_PRESET: &str = "export_preset_id";
 const DEFAULT_EXPORT_PRESET: &str = "prores-hq";
 const KEY_AUDIO_LANGUAGE: &str = "audio_language";
 const KEY_FIND_BODIES: &str = "find_bodies";
+const KEY_FIND_SCENES: &str = "find_scenes";
 /// The scan new projects start with, as the person chose it: `fast` (On) or
 /// `full` (Off); unset is Automatic, which follows this computer.
 const KEY_SCAN_DEFAULT: &str = "scan_default";
@@ -71,6 +72,9 @@ pub struct Library {
     /// Whether people are followed by their bodies too (a setting every
     /// open project reads).
     find_bodies: Arc<AtomicBool>,
+    /// The setting: the scenes of every media are read too; shared with
+    /// every open project.
+    find_scenes: Arc<AtomicBool>,
     /// Whether projects may ask AniList for names (checked between images).
     anilist_on: AtomicBool,
     /// Cancelled when the opt-in goes off: whatever asks AniList stops (see
@@ -115,6 +119,7 @@ impl Library {
         let db = Arc::new(LibraryDb::open(&paths.library_db())?);
         migrate_fast_scan(&db)?;
         let find_bodies = Arc::new(AtomicBool::new(db.setting(KEY_FIND_BODIES)?.as_deref() == Some("1")));
+        let find_scenes = Arc::new(AtomicBool::new(db.setting(KEY_FIND_SCENES)?.as_deref() == Some("1")));
         let anilist_on = AtomicBool::new(db.setting(KEY_ANILIST)?.as_deref() == Some("1"));
         let gpu = Mutex::new(db.setting(KEY_GPU)?.unwrap_or_default());
         let nvidia_acceleration = AtomicBool::new(db.setting(KEY_NVIDIA_ACCELERATION)?.as_deref() != Some("0"));
@@ -126,6 +131,7 @@ impl Library {
             open: Mutex::default(),
             opening: Mutex::default(),
             find_bodies,
+            find_scenes,
             anilist_on,
             anilist_stop: Mutex::default(),
             anilist,
@@ -192,6 +198,11 @@ impl Library {
         self.find_bodies.load(Ordering::Relaxed)
     }
 
+    /// Whether the scenes of every media are read too.
+    pub fn finds_scenes(&self) -> bool {
+        self.find_scenes.load(Ordering::Relaxed)
+    }
+
     /// The library's database, for the plugin registry, whose rows sit
     /// beside the settings.
     pub fn shared_db(&self) -> Arc<LibraryDb> {
@@ -211,6 +222,7 @@ impl Library {
                 .unwrap_or_default(),
             audio_language: self.audio_language()?,
             find_bodies: self.finds_bodies(),
+            find_scenes: self.finds_scenes(),
             fast_scan: self.fast_scan()?,
             anilist: self.names_from_anilist(),
             shortcuts: self.shortcuts()?,
@@ -400,6 +412,8 @@ impl Library {
         self.db.set_setting(KEY_AUDIO_LANGUAGE, &language)?;
         self.db.set_setting(KEY_FIND_BODIES, if s.find_bodies { "1" } else { "0" })?;
         let bodies_changed = self.find_bodies.swap(s.find_bodies, Ordering::Relaxed) != s.find_bodies;
+        self.db.set_setting(KEY_FIND_SCENES, if s.find_scenes { "1" } else { "0" })?;
+        self.find_scenes.store(s.find_scenes, Ordering::Relaxed);
         // The switch was changed in Settings, where Fast Scan's row says why
         // it is on here: the person met the setting, so the notice is done.
         if bodies_changed && self.scan_defaults()?.notice {
@@ -546,6 +560,7 @@ impl Library {
         let project = Arc::new(Project::create(&summary, self.find_bodies.clone())?);
         self.refresh_anime_best()?;
         project.share_anime_best(self.anime_best.clone());
+        project.share_find_scenes(self.find_scenes.clone());
         self.db.insert_project(&summary)?;
         self.open.lock().insert(summary.id, project.clone());
         let added = self.add_found(&project, found)?;
@@ -582,6 +597,7 @@ impl Library {
         let project = Arc::new(Project::open(id, dir, self.find_bodies.clone())?);
         self.refresh_anime_best()?;
         project.share_anime_best(self.anime_best.clone());
+        project.share_find_scenes(self.find_scenes.clone());
         let mut open = self.open.lock();
         // Removed from the library while it opened: not kept open.
         if self.db.project(id)?.is_none() {
@@ -903,6 +919,7 @@ mod tests {
             export_options: Default::default(),
             audio_language: "German".into(),
             find_bodies: false,
+            find_scenes: false,
             fast_scan: false,
             anilist: false,
             shortcuts: Default::default(),
@@ -1890,6 +1907,7 @@ mod tests {
             export_options: Default::default(),
             audio_language: "eng".into(),
             find_bodies: false,
+            find_scenes: false,
             fast_scan: false,
             anilist: false,
             shortcuts: Default::default(),

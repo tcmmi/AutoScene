@@ -3135,6 +3135,22 @@
     "state": "draft",
     "en": "f955511d"
   },
+  "project:status.scenesFailed": {
+    "state": "draft",
+    "en": "8d6c9ab5"
+  },
+  "project:status.scenesFailedWhy": {
+    "state": "draft",
+    "en": "2e4249d1"
+  },
+  "project:status.scenesStoppedContinue": {
+    "state": "draft",
+    "en": "2943826d"
+  },
+  "project:status.readScenes": {
+    "state": "draft",
+    "en": "7a65402a"
+  },
   "project:status.retryFailed": {
     "state": "draft",
     "en": "06246b15"
@@ -6707,6 +6723,10 @@
     "state": "draft",
     "en": "4ce30d21"
   },
+  "backend:analysis.unreadablePictures": {
+    "state": "draft",
+    "en": "7461a081"
+  },
   "backend:analysis.unreadableSignals": {
     "state": "draft",
     "en": "20e9cb1f"
@@ -7374,6 +7394,10 @@
   "backend:job.stage.measuringSound": {
     "state": "draft",
     "en": "bb427cd0"
+  },
+  "backend:job.stage.readingScenes": {
+    "state": "draft",
+    "en": "07290834"
   },
   "backend:job.stage.onCpu": {
     "state": "draft",
@@ -9023,6 +9047,10 @@
     "state": "draft",
     "en": "8116eb4c"
   },
+  "settings:about.models.purpose.pictures": {
+    "state": "draft",
+    "en": "ed2a8f44"
+  },
   "backend:plugin.sourceNeedsProject": {
     "state": "draft",
     "en": "3c813859"
@@ -9190,5 +9218,13 @@
   "plugins:review.adds.source": {
     "state": "draft",
     "en": "e8017a73"
+  },
+  "settings:general.characters.scenes.label": {
+    "state": "draft",
+    "en": "7a65402a"
+  },
+  "settings:general.characters.scenes.description": {
+    "state": "draft",
+    "en": "637fac4a"
   }
 }

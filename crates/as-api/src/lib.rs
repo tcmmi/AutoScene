@@ -104,6 +104,12 @@ pub struct AppSettings {
     /// scenepack. Analysis takes longer; off by default.
     #[serde(default)]
     pub find_bodies: bool,
+    /// Also read which shots belong to one scene (a pass of its own over
+    /// each episode, with a model of its own), so a scenepack can take whole
+    /// scenes: the shots of a character's scenes where they are not to be
+    /// seen too. Off by default.
+    #[serde(default)]
+    pub find_scenes: bool,
     /// Whether new live-action projects start with Fast Scan (smaller face
     /// models, a few frames per shot; anime keeps its character models):
     /// much faster, less sure who is who. Each project keeps what it was
@@ -621,6 +627,12 @@ pub struct MediaItem {
     pub bodies: StageState,
     #[serde(default)]
     pub bodies_error: Option<Msg>,
+    /// The pictures of its shots, which scenes are read from (when the
+    /// setting is on).
+    #[serde(default = "pending")]
+    pub scenes: StageState,
+    #[serde(default)]
+    pub scenes_error: Option<Msg>,
 }
 
 fn pending() -> StageState {

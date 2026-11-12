@@ -169,6 +169,17 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
+          label={t("general.characters.scenes.label")}
+          description={t("general.characters.scenes.description")}
+        >
+          <Switch
+            aria-label={t("general.characters.scenes.label")}
+            checked={settings?.findScenes ?? false}
+            disabled={!settings}
+            onCheckedChange={(on) => settings && void save({ ...settings, findScenes: on })}
+          />
+        </SettingRow>
+        <SettingRow
           label={t("general.characters.fastScan.label")}
           description={
             <span className="block text-pretty">

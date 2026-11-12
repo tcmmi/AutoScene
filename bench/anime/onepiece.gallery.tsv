@@ -1,0 +1,33 @@
+code	person	type	note
+LUFFY	monkey d. luffy	base	black messy hair, scar under left eye, straw hat with red band (often on back), red open shirt/vest, black cape in Wano; face drawn normally (no white hair)
+LUFFY_G5	monkey d. luffy	transformation	Gear 5: white flame-like hair and white curled eyebrows, white rings around eyes, huge grin, white clothes with purple sash, cloud-like steam around him
+LUFFY_OLD	monkey d. luffy	age	after Gear 5 wears off: shrivelled old-man look, grey-black limp hair, wrinkled sunken face, tongue out, straw hat and red shirt (lit pinkish at night)
+ZORO	roronoa zoro	base	short green hair, scar over closed left eye, three gold drop earrings on left ear, dark kimono open on scarred chest
+SANJI	sanji	base	blond hair covering one eye, curly eyebrow, goatee, cigarette, dark red/black suit
+SANJI_RAID	sanji	mask	Germa Raid Suit (Stealth Black): blond hair, face masked, black cape with red collar and lining
+USOPP	usopp	base	long nose, black curly beard, red helmet with goggles, red striped armour top
+ROBIN	nico robin	base	long straight black hair, blue eyes, calm face, white kimono with blue iris pattern and purple obi
+NAMI	nami	base	long orange hair, brown eyes, red kimono with cherry blossoms, light-blue feather hair ornament
+KAIDO_HYBRID	kaido	transformation	hybrid dragon-man form: long horns plus spiky crown of horns, dragon-like snout with white teeth, scaly white-blue arms and shoulders, purple fur cape, white shimenawa rope belt, dragon tail
+KAIDO_DRAGON	kaido	transformation	full azure Eastern dragon: blue scales, yellow eyes, white beard-like whiskers, long serpent body (Hn)
+MOMO	kozuki momonosuke	base	child: shaved pate with black topknot bun, round face, often red bruise or bandage cross on forehead, pink kimono with flower pattern
+MOMO_DRAGON	kozuki momonosuke	transformation	pink Eastern dragon with golden flame mane, yellow horns, yellow eyes with blue pupils, white curled brows (Hn)
+YAMATO	yamato	base	long white hair with green-teal tips, two red horns, gold hoop earrings, white kimono, purple-white shimenawa rope on back, bandages on face in aftermath
+ACE	portgas d. ace	base	black wavy hair, freckles, orange cowboy hat with two face pins, red bead necklace, ASCE tattoo on arm, bare chest
+ACE_KID	portgas d. ace	age	child Ace in flashback: black messy hair, plaster on face, tank top, holding a pipe; flashback tint
+SABO_KID	sabo	age	child Sabo in flashback: top hat with goggles, blue cravat, coat; flashback tint
+TOKI	kozuki toki	base	long straight pale-green hair, white bead hair ornaments, red/pink lipstick, red outer kimono over yellow; in burning castle flashback
+HIYORI_KID	kozuki hiyori	age	small girl with green bob haircut and fringe, pink tassel hair ties, held by Toki
+KINEMON	kinemon	base	black hair with topknot, thick brows, mustache and goatee, orange/red kimono with white tasuki cord
+RAIZO	raizo	base	round heavy face, purple hair rolled into two scroll-like coils, ninja; sometimes under a straw kasa
+KAWAMATSU	kawamatsu	base	kappa: green face with beak, red hair, straw kasa hat, red scarf, green kimono
+NEKOMAMUSHI	nekomamushi	base	giant leopard-cat mink: yellow face with dark spots, wild blond mane, often bandaged head, red long coat, pink pants
+SHINOBU	shinobu	base	plump kunoichi in pink hooded outfit, heavy makeup with red lips and rouge, smoking pipe
+ODEN	kozuki oden	base	wild black hair with teal outline and huge topknot, red eye-liner, thin goatee, red kimono; opening sequence
+LAW	trafalgar law	base	white fur hat with brown spots, goatee, dark eyes, yellow hoodie, spotted jeans, long nodachi sword
+KID	eustass kid	base	spiky red hair, goggles on forehead, no eyebrows, dark lipstick, big red fur coat, metal prosthetic arm
+KILLER	killer	mask	always masked: white round mask with rows of blue dots/holes, long wild blond hair, purple shirt
+CARROT	carrot	base	rabbit mink girl: blond hair, long white rabbit ears, green dress
+KAIDO	kaido	base	human form: huge man, long wild black hair, two large curved horns, beard/moustache, fur-trimmed coat; often lit dark/purple
+BIGMOM	charlotte linlin	base	Big Mom: enormous woman, wild curly pink hair (dark under purple light), big round face, small hat, wide grin
+LUFFY_KID	monkey d. luffy	age	child Luffy in Ace's memory: small boy, black hair, straw hat, tank top; flashback tint. Added 2026-11-12 from the track labellers' notes

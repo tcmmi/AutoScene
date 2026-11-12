@@ -1,0 +1,17 @@
+code	person	type	note
+SUBARU	subaru natsuki	base	Male; short spiky dark grey-black hair, brown eyes, sharp brow; black/white track jacket with orange collar and stripes, N logo on chest. Often bloodied/tearful. Main viewpoint character in every scene
+EMILIA	emilia	base	Half-elf girl; long straight silver-white hair (here worn loose, no flower crown), purple eyes, pointed ears, blunt bangs. Look-alike: ECHIDNA (white hair but black dress + green butterfly clip, only in the dream castle/tea party)
+ECHIDNA	echidna	base	Witch of Greed; very long straight white hair with a green-black butterfly hair clip on the left, pale skin, dark lashes, black high-collar dress with silver clasp. Appears in the green-hill tea-party (dream castle) scenes of rz_33. Not EMILIA (Emilia has purple eyes, pointed ears, no butterfly)
+RAM	ram	base	Maid; short pink bob covering her left eye, red eyes, white flower/frill headband, purple ribbon by the right ear and purple X hair clip; black-white maid dress. Look-alike: REM (same face but BLUE hair, sleeping in bed) and RYUZU (long straight pink hair, no maid band)
+REM	rem	base	Ram's twin; short BLUE bob over the right eye; in these episodes only seen asleep/comatose in a bed with eyes closed
+GARFIEL	garfiel tinsel	base	Young man; spiky blond-orange hair, green eyes, white X-shaped scar on the forehead, shark-like jagged teeth, black choker + crystal pendant, open black-red sleeveless vest, fingerless gloves. Sometimes glowing red aura
+OTTO	otto suwen	base	Merchant; wavy ash-grey/light-brown chin-length hair, grey eyes, tall green hat with gold spiral emblem and white feather, green cloak with big red bow
+ROSWAAL	roswaal l mathers	base	Lord; long dark navy-blue hair with a lighter blue streak, bandage band across forehead and bandaged chest/arms, earring, narrow eyes, sly smile; in these episodes bedridden WITHOUT his usual clown make-up (if seen with white face paint + star/teardrop marks it is still him)
+FREDERICA	frederica baumann	base	Tall maid; very long wavy blonde hair, green slit-pupil eyes, sharp fang teeth, white maid headband; black-white maid dress. Look-alike: GARFIEL (her brother; short spiky hair, scar)
+FREDERICA_BEAST	frederica baumann	transformation	Frederica in full beast form: huge yellow-gold big-cat/leopard with white fur on chest and brows, green eyes, pointed ears. Head counts as Hn
+PETRA	petra leyte	base	Little girl maid; orange shoulder-length bob, teal/green eyes, big red ribbon bow on top of head; black-white maid dress
+ELSA	elsa granhiert	base	Assassin; long black hair with purple rose clip on the right, purple eyes, calm smile, purple fur collar, dark cloak over black bodysuit, kukri knife
+RYUZU	ryuzu	base	Sanctuary elder in a girl body (Ryuzu Meyer clone, likely Ryuzu Bilma); very long straight pink hair with blunt bangs, blue eyes, pointed ears, dark high collar covering the mouth with red buckle. Not RAM (Ram has a short bob and maid headband)
+PATRASCHE	patrasche	base	Black land dragon (Subaru's mount): long reptile head with brown leather head-armour/bridle, gold eye, feathers; class Hn
+GREAT_RABBIT	great rabbit	base	Witch-beast swarm in the snow: small white rabbit with long ears, single pink horn on forehead, red eyes; class Hn (many identical ones, any of them = this code)
+GARFIEL_BEAST	garfiel tinsel	transformation	Garfiel as a huge tiger beast: yellow-orange fur with dark stripes, glowing green eyes, fangs (rz_33, night forest). Added 2026-11-12 from the track labellers' notes; head counts as Hn

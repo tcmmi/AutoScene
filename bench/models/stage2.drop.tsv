@@ -1,0 +1,6 @@
+# Trailers of the anime list (row 4) that never train in stage 2 (row 19): the video's id, why, its place in
+# the mining order, and what it is. `triplets.py build --drop` reads the first column.
+title	reason	n	what
+1n62_pP5zYI	opening	263	Vinland Saga season 2, opening theme trailer
+AEsufaK8kLw	ending	394	A Returner's Magic Should Be Special season 2, ending theme PV
+BFNSnek1v0Y	studio reel	164	MAPPA EXPO 15th Anniversary CM (the studio of Jujutsu Kaisen, a tuning franchise)

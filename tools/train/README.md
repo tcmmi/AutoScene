@@ -78,10 +78,50 @@ uv run export.py <run dir>/best.pt <run dir>/model.onnx $TRAIN_WORK/crops/<episo
   vectors are less than 0.99999 (processor) or 0.999 (DirectML) like the
   network's. The app has no loader for it yet.
 
-Not built yet: the second stage (triplets of tracks; `anime_crops` already
-writes what it needs: `APART=<frames>` heads far apart in a track, and
-`pairs.tsv`, the tracks seen together), the student for Fast Scan, the
-real-life adapter.
+Not built yet: the student for Fast Scan, the real-life adapter.
+
+## Recipe A, second stage: triplets from tracks of real video
+
+No names are needed: two heads of one track are one character, a head of a
+track seen beside it is another. The footage is run through the Standard
+anime pass (`bench_inputs`, `shot_signals`, `fuse_signals --anime`,
+`anime_run`), then `anime_crops` with `HEADS=6 APART=<a second in frames>`
+writes each track's heads and the tracks seen together. Per title, in one
+folder: `in/<title>/bb.*`, `crops/<title>.h6.{crops,crops.tsv,pairs.tsv}`.
+
+```bash
+B=../../bench/models
+uv run triplets.py build <tracks dir> <pairs dir> --titles <order.tsv> --first 400 --fuse <fuse_signals.exe> --drop $B/stage2.drop.tsv
+uv run triplets.py look <tracks dir> <pairs dir> <sheets dir>
+uv run triplets.py leaks <tracks dir> <pairs dir> <first stage>/last.pt <leaks.tsv> jjk=<emb dir>/jjk.emb,<names.tsv> …
+uv run triplets.py sheets <tracks dir> <pairs dir> <sheets dir> <key.tsv>
+uv run triplets.py audit <key.tsv> <reader A's answers> <reader B's answers> [<a third reader's>]
+uv run train_tracks.py --from <first stage>/last.pt --tracks <tracks dir> --pairs <pairs dir> --out <run dir>
+```
+
+- `build` takes the titles a list names (`n id seconds sha256_of_id channel
+  title`, the first `--first` of them) and applies the rules of
+  `bench/models/README.md` and row 19 of `DECISIONS.md` (which also says why
+  each is there): a positive is at least a second apart, not one held
+  drawing, with no shot change between its two heads and no slip onto
+  another drawing; a negative was seen beside its anchor in at least two
+  samples, is no second box on the same head and not alike to the pass's
+  own embedder. A tenth of the shows (a key made from a title's name) is
+  held out. `--drop` names the titles that never train.
+- `look` lays eight heads of every title on a row: the titles that are not
+  drawn animation go on the drop list. `leaks` looks for bench characters
+  in the footage by their looks; a title that shows one goes there too.
+  After either, `build` again: the tables a run draws from are named by
+  their hashes in its `manifest.json`, and a run refuses to go on with
+  others.
+- `sheets` and `audit` are the README's check of 300 pairs, drawn as
+  training draws them; the key stays where the readers don't look.
+- `train_tracks.py` is one pass over a fixed draw of triplets from the first
+  stage's weights. `--identity 0.02` keeps the first stage's task beside
+  them (the weight is small for a reason: see the script). `dev.tsv` holds
+  the held-out triplets ranked right and clear of the margin; `last.pt` goes
+  to `embed.py`, `sweep.py` and `export.py` as a first-stage checkpoint
+  does.
 
 ## Before the data trains anything
 

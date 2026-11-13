@@ -149,7 +149,7 @@ Three things say that this is less room for an embedder than the number
 suggests. A reviewer who had not seen the work found them in the score files;
 each was run again afterwards.
 
-1. **The largest error is the fitted space's, not the embedder's.** Marinette
+1. **The largest error can be mended in the grouping.** Marinette
    and Ladybug are one character in the pass on both episodes (152 + 89
    tracks) and on S05E21 alone. The same embedder without the per-title
    fitted space keeps them apart (130 tracks, 99 % hers, and 81 tracks, 100 %
@@ -160,7 +160,8 @@ each was run again afterwards.
    their character: 0.026 of the 0.146 gap per track, and 0.041 of the 0.075
    the oracle wins over time, is a grouping matter that needs no training.
    (The share of the gap closed is then 0.801 [0.717, 0.865].) Adrien and Cat
-   Noir stay two characters in every run.
+   Noir stay two characters in every run. Why the pair joins, and a rule that
+   holds it apart, is a section of its own below.
 2. **Most of the rest sits on tracks of a few frames.** The pass leaves 132
    of the 1,639 main-cast tracks without a character (unsure or unassigned);
    113 of them are below the grouping's own bar for a clear track (quality
@@ -255,6 +256,88 @@ time between looks, and the gate's measure is capped by the sampling whatever
 the embedder. What no embedder brings back shows in the clips: recall 0.80 to
 0.83 with perfect names. `stress` was not run (the gain the gate asks for
 first is not there).
+
+## The hero and her everyday self: why they join, and a rule that keeps them apart (not adopted)
+
+Looked into on 2026-11-13, after the scores above. Nothing was written down
+beforehand, and the labels that showed the problem are the ones the rule was
+tried on: they are tuning data for it. No reviewer has read this part.
+
+**Why they join.** Mean similarity of clear tracks, both episodes as one
+project:
+
+| | The embedder's own space | The fitted space |
+|---|---|---|
+| Inside Marinette / inside Ladybug | 0.603 / 0.630 | 0.667 / 0.696 |
+| Marinette to Ladybug | 0.428 | 0.400 |
+| Adrien to Cat Noir | 0.249 | 0.211 |
+| Monarch to Hawk Moth | 0.571 | 0.596 |
+| Strangers (two clear faces in one frame), median / 95 % | 0.257 / 0.502 | 0.153 / 0.400 |
+| The bar two groups join at | 0.480 | 0.39986 |
+
+Of the 325 pairs of figures, Marinette and Ladybug are the third most alike
+in the embedder's space and the second most alike in the fitted one (behind
+the villain's two forms). The fitted space sets its bar where 95 % of
+strangers lie below; the pair's 0.400 sits on that bar; and one person in two
+looks never shares a frame with herself, so nothing forbids the join. The
+pairs just below (Alya and Sabrina, 0.388) do share frames. Without the fit
+the bar is 0.480, raised by how alike strangers look: that holds the pair
+apart and splits everyone else (F 0.790). So the embedder does not tell the
+two apart well in either space; where the bar lies decides.
+
+**A higher bar** is a narrow fix. `LINK` in the fitted space: 0.42 still one
+character; 0.44 two (P 0.968 R 0.798 F 0.875); 0.46 F 0.862; 0.48 0.842; 0.52
+0.809.
+
+**Two tight groups stay two.** What marks the pair is not how alike the two
+are but how much less alike than each is in itself: two large groups (146 and
+76 clear tracks, 0.69 alike inside) that are 0.41 alike to each other, 0.59 of
+their own cohesion. Of the 116 joins of two groups with at least 5 tracks
+each that a plain average-linkage clustering makes in the fitted space, this
+is the lowest such share; the lowest join of one figure's own tracks is 0.68,
+0.73 where both sides hold at least 10 or 20 tracks, and 0.95 where both hold
+at least 30. A prototype of the rule (`Params::tight` and `tight_tracks`, off
+by default; a patch, in no commit): two groups of at least `tight_tracks`
+tracks each do not join when they are less alike to each other than `tight`
+times the cohesion of the less coherent one.
+
+| Both episodes, main cast, figure level | As shipped | The rule at 0.70, from 30 tracks |
+|---|---|---|
+| Per track P / R / F | 0.907 / 0.807 / 0.854 | 0.967 / 0.809 / 0.881 [0.844, 0.907] |
+| Characters | 32 | 33 (Marinette 151 tracks, Ladybug 92) |
+| Main cast's time on their character | 0.918 | 0.959 |
+| Clips, precision / recall | 0.927 / 0.892 | 0.975 / 0.940 |
+| `stress`, 27 runs: people split / characters holding two | 156 / 118 | 154 / 94 |
+
+The rule against the shipped grouping: +0.027 per-track F, 95 % [0.000,
++0.065] (two of the 26 figures change, so the lower end is 0). The share of
+the gap perfect embeddings close is then 0.800 [0.713, 0.867].
+
+How far it holds:
+
+- Every setting from 0.62 to 0.72 with 5 to 30 tracks gives these numbers;
+  from 30 tracks, every setting up to 0.85. At 0.60 the pair joins; at 0.76
+  from 20 tracks or fewer a right join is refused (F 0.862 to 0.867).
+- S01E11 alone is unchanged up to 0.72 (the pair is two there anyway); at 0.76
+  from 10 tracks it falls from 0.870 to 0.849.
+- **S05E21 alone is not fixed** at a safe setting. Ladybug has 24 tracks there;
+  the pair comes apart only at 0.72 from 10 tracks or fewer (F 0.858 to
+  0.871), one step from where right joins break. The rule needs groups large
+  enough to know their own cohesion: more footage in a project, not less.
+- The villain's two forms stay one character (0.83 of their own cohesion):
+  two looks with the same kind of mask.
+- Other footage: on the three anime tuning franchises, both scans, every score
+  is the same at 0.70 from 10, 0.70 from 30 and 0.80 from 30 (the rule never
+  applies); on live action (Breaking Bad, Fast Scan's tracks with `glintr100`)
+  likewise.
+
+**Not adopted.** One pair of one title carries it; the room between "the pair
+comes apart" and "right joins are refused" is known only here; a single
+episode is not helped; and no other 3D title is labelled. To take it into the
+app: where it is on (the fitted space only, or everywhere), a new
+`as_identity::VERSION` (every 3D project groups again), unit tests, and a
+second 3D title. The patch and the scripts are in the side-session notes
+(`3d-hero-merge`).
 
 ## Not verified
 

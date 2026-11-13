@@ -59,6 +59,7 @@ def score(name, project, emb, settings):
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")  # the scorer's own lines hold signs a Windows console can't write
     args = sys.argv[1:]
     against = None
     if "--against" in args:

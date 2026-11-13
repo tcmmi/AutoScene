@@ -45,6 +45,9 @@ def arguments():
     p.add_argument("--lr-backbone", type=float, default=1e-5)
     p.add_argument("--lr-head", type=float, default=1e-3)
     p.add_argument("--weight-decay", type=float, default=5e-4)
+    p.add_argument("--margin", type=float, default=0.5, help="ArcFace's angular margin")
+    p.add_argument("--layer-decay", type=float, default=1.0, help="each backbone layer learns this much slower than the one after it (1: all alike)")
+    p.add_argument("--parts", type=int, default=1, help="a batch goes through the network in this many parts (same step, less memory)")
     p.add_argument("--warmup", type=int, default=500)
     p.add_argument("--shrink", type=float, default=0.3, help="the share of crops shrunk and compressed")
     p.add_argument("--cut", type=float, default=0.2, help="the share of crops of which only a band is kept")
@@ -106,7 +109,7 @@ def rank1(net, loader, probes, device):
 
 
 # What a run can't change half way: its checkpoints only fit the same settings.
-FIXED = ("arch", "dim", "epochs", "batch", "lr_backbone", "lr_head", "weight_decay", "warmup", "shrink", "cut", "heads", "drop", "no_flip",
+FIXED = ("arch", "dim", "epochs", "batch", "lr_backbone", "lr_head", "weight_decay", "margin", "layer_decay", "warmup", "shrink", "cut", "heads", "drop", "no_flip",
          "dev_fraction", "limit_identities", "exclude", "fold", "seed")
 
 
@@ -140,12 +143,19 @@ def main():
     loader = torch.utils.data.DataLoader(train, batch_size=a.batch, sampler=order, drop_last=True, **workers)
 
     net = model.Embedder(a.arch, a.dim, pretrained=not a.resume).to(device)
-    head = model.ArcFace(net.dim, len(train_names)).to(device)
+    head = model.ArcFace(net.dim, len(train_names), margin=a.margin).to(device)
     fresh = [p for n, p in net.named_parameters() if not n.startswith("backbone.")] + list(head.parameters())
-    optimizer = torch.optim.AdamW(
-        [{"params": net.backbone.parameters(), "lr": a.lr_backbone}, {"params": fresh, "lr": a.lr_head}],
-        weight_decay=a.weight_decay,
-    )
+    # The backbone by layer: the patch embedding and the position and class tokens are layer 0, block i is
+    # layer i + 1, the last norm goes with the last block. With `--layer-decay d` a layer learns d times as
+    # fast as the one after it, so the first layers stay near what DINOv2 knew.
+    blocks = len(net.backbone.blocks)
+    layers = [[] for _ in range(blocks + 1)]
+    for name, param in net.backbone.named_parameters():
+        layers[int(name.split(".")[1]) + 1 if name.startswith("blocks.") else (blocks if name.startswith("norm.") else 0)].append(param)
+    groups = [{"params": ps, "lr": a.lr_backbone * a.layer_decay ** (blocks - i)} for i, ps in enumerate(layers) if ps]
+    groups.append({"params": fresh, "lr": a.lr_head})
+    bases = [g["lr"] for g in groups]
+    optimizer = torch.optim.AdamW(groups, weight_decay=a.weight_decay)
 
     def factor(step):
         if step < a.warmup:
@@ -200,14 +210,18 @@ def main():
         order.set(state["epoch"], state["in_epoch"])
         seen, t0, losses = 0, time.time(), []
         for x, y in loader:
-            for group, base in zip(optimizer.param_groups, (a.lr_backbone, a.lr_head)):
+            for group, base in zip(optimizer.param_groups, bases):
                 group["lr"] = base * factor(state["step"])
             x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-            with torch.autocast(device.type, dtype=torch.float16, enabled=device.type == "cuda"):
-                features = net(data.normalise(x))
-            loss = F.cross_entropy(head(features, y), y)
             optimizer.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
+            # In parts the gradients add up to the whole batch's: no layer of the network looks across a batch.
+            loss = 0.0
+            for xs, ys in zip(x.chunk(a.parts), y.chunk(a.parts)):
+                with torch.autocast(device.type, dtype=torch.float16, enabled=device.type == "cuda"):
+                    features = net(data.normalise(xs))
+                part = F.cross_entropy(head(features, ys), ys) * (len(xs) / len(x))
+                scaler.scale(part).backward()
+                loss = loss + part.detach()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_([p for g in optimizer.param_groups for p in g["params"]], 5.0)
             scaler.step(optimizer)
@@ -220,7 +234,7 @@ def main():
             if not math.isfinite(losses[-1]):
                 sys.exit(f"the loss is {losses[-1]} at step {state['step']}: stopped; a checkpoint, if there is one, is from before")
             if state["step"] % 50 == 0:
-                line = (state["step"], state["epoch"], sum(losses) / len(losses), optimizer.param_groups[0]["lr"], seen / (time.time() - t0), state["minutes"])
+                line = (state["step"], state["epoch"], sum(losses) / len(losses), optimizer.param_groups[-2]["lr"], seen / (time.time() - t0), state["minutes"])
                 with open(out / "train.tsv", "a", newline="\n") as f:
                     f.write("%d\t%d\t%.4f\t%.3g\t%.0f\t%.1f\n" % line)
                 print("step %d epoch %d loss %.3f lr %.2g %.0f pictures/s %.1f min" % line, flush=True)

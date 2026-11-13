@@ -1,0 +1,240 @@
+# iCartoonFace identities that never train: characters of the bench franchises (bench/anime/media.tsv:
+# One Piece, Naruto, Dragon Ball, Re:Zero; Demon Slayer and Jujutsu Kaisen have none in the set).
+# Found by name: two readers went through all 5,013 names apart (tools/train/audit.py names); a row is
+# here when either flagged it, at any confidence (`readers`: the first's and the second's, `-` when
+# that reader did not flag it). Row 13 of DECISIONS.md says what the look-alike check added (nothing).
+id	franchise	name	character	readers
+00001	op	文斯莫克·尼治	Vinsmoke Niji	sure/sure
+00066	rz	罗姆爷	Old Man Rom	sure/sure
+00075	op	老鼠上校	Captain Nezumi	-/likely
+00078	op	赛尼奥尔·皮克	Senor Pink	sure/sure
+00081	op	狐火锦卫门	Foxfire Kin'emon	sure/sure
+00089	db	雅木茶	Yamcha	sure/sure
+00097	nar	日向宁次	Hyuga Neji	sure/sure
+00130	op	萨罗梅	Salome	-/maybe
+00149	op	蒙奇·D·卡普	Monkey D. Garp	sure/sure
+00151	nar	海野伊鲁卡	Umino Iruka	sure/sure
+00170	nar	宇智波泉	Uchiha Izumi	sure/sure
+00173	op	激素果实	Horm-Horm Fruit (Ivankov)	maybe/maybe
+00176	op	邦迪·瓦尔德	Byrnndi World	likely/likely
+00181	rz	罗兹瓦尔	Roswaal L Mathers	sure/sure
+00188	nar	药师兜	Yakushi Kabuto	sure/sure
+00190	op	汉库克	Boa Hancock	sure/sure
+00196	op	文布拉·罗兰度	Mont Blanc Noland	likely/-
+00201	op	西尔巴兹·雷利	Silvers Rayleigh	sure/sure
+00212	op	达斯琪	Tashigi	sure/sure
+00222	db	波波先生	Mr. Popo	sure/sure
+00226	op	胡子船长	Whitebeard?	-/maybe
+00250	db	杰比特神	Kibito Kai	-/likely
+00256	rz	菲利克斯·阿盖尔	Felix Argyle (Ferris)	sure/sure
+00309	op	山治	Sanji	sure/sure
+00327	nar	漩涡博人	Uzumaki Boruto	sure/sure
+00328	nar	宇智波佐良娜	Uchiha Sarada	sure/sure
+00329	nar	巳月	Mitsuki	sure/sure
+00330	nar	山中井阵	Yamanaka Inojin	sure/sure
+00339	db	多多利亚	Dodoria	sure/sure
+00349	rz	菲鲁特	Felt	sure/likely
+00363	op	人妖族	Newkama (okama people)	-/maybe
+00374	op	NEW海军	Neo Marines (Film Z)	maybe/maybe
+00379	nar	秋道蝶蝶	Akimichi Chocho	sure/sure
+00391	op	可雅	Kaya	likely/likely
+00394	nar	重吾	Jugo	sure/sure
+00398	nar	佐井	Sai	sure/sure
+00419	op	柯妮丝	Conis	likely/sure
+00420	db	达普拉	Dabura	maybe/likely
+00422	rz	威尔海姆·范·阿斯特雷亚	Wilhelm van Astrea	sure/sure
+00425	rz	培提其乌斯·罗曼尼康帝	Petelgeuse Romanee-Conti	sure/sure
+00431	db	全王	Zeno (Zen-Oh)	sure/sure
+00435	op	佩罗娜	Perona	sure/sure
+00460	op	斯库拉奇曼·阿普	Scratchmen Apoo	sure/sure
+00465	op	拉奇·鲁	Lucky Roux	likely/sure
+00467	op	隆隆亚索隆	Roronoa Zoro	likely/sure
+00469	db	特兰克斯	Trunks	sure/sure
+00479	db	超级赛亚人3	Super Saiyan 3	sure/sure
+00497	op	马尔高	Marco	sure/sure
+00499	nar	千代	Chiyo	maybe/maybe
+00509	nar	波风水门	Namikaze Minato	sure/sure
+00525	op	夏洛特·蒙多尔	Charlotte Mondor	sure/sure
+00551	nar	日向雏田	Hyuga Hinata	sure/sure
+00571	op	德林杰	Dellinger	likely/-
+00577	op	波雅·玛丽哥鲁德	Boa Marigold	sure/sure
+00579	nar	角都	Kakuzu	sure/sure
+00612	rz	库珥修·卡尔斯腾	Crusch Karsten	sure/sure
+00629	nar	神月出云	Kamizuki Izumo	sure/sure
+00631	nar	纲手	Tsunade	sure/sure
+00632	nar	照美冥	Terumi Mei	sure/sure
+00640	db	超级赛亚人桃红	Super Saiyan Rose	sure/sure
+00646	db	贝吉塔	Vegeta	sure/sure
+00668	nar	梅塔鲁·李	Metal Lee	sure/sure
+00677	nar	猿飞木叶丸	Sarutobi Konohamaru	sure/sure
+00681	op	波尔琪	Porche	likely/-
+00684	nar	蛤蟆龙	Gamaryu (toad)	maybe/likely
+00685	op	玛格雷特	Marguerite	maybe/maybe
+00688	nar	洛克李	Rock Lee	sure/sure
+00699	op	勘十郎	Kanjuro	likely/likely
+00723	nar	加藤静音	Shizune	likely/-
+00734	op	比斯塔	Vista	likely/likely
+00744	op	哲普	Zeff	sure/likely
+00751	nar	达兹纳	Tazuna	sure/sure
+00753	nar	漩涡向日葵	Uzumaki Himawari	sure/sure
+00767	op	蒙卡	Axe-Hand Morgan	likely/likely
+00770	op	乌索兰达	Usoland (Usopp?)	-/maybe
+00772	nar	枸橘矢仓	Karatachi Yagura	sure/sure
+00777	db	皮拉夫	Pilaf	sure/sure
+00797	nar	旗木卡卡西	Hatake Kakashi	sure/sure
+00799	nar	迈特凯	Might Guy	sure/sure
+00805	op	帕帕古	Pappag	likely/likely
+00806	op	卡尔葛拉	Calgara	likely/likely
+00824	db	利库姆	Recoome	sure/sure
+00825	db	巴达克	Bardock	sure/sure
+00834	db	超强魔人	Majin (Buu form?)	maybe/maybe
+00836	op	波特卡斯·D·艾斯	Portgas D. Ace	sure/sure
+00841	op	文斯莫克·伊治	Vinsmoke Ichiji	sure/sure
+00842	op	颜色果实	Iro Iro devil fruit?	maybe/maybe
+00856	op	卡莉法	Kalifa	sure/sure
+00861	nar	不知火玄间	Shiranui Genma	sure/sure
+00863	nar	奇拉比	Killer Bee	sure/sure
+00864	nar	御手洗红豆	Mitarashi Anko	sure/sure
+00895	db	龙珠Z：激战	Dragon Ball Z title	maybe/likely
+00899	nar	奈良鹿丸	Nara Shikamaru	sure/sure
+00918	rz	特蕾西亚·范·阿斯特雷亚	Theresia van Astrea	sure/sure
+00921	nar	大野木	Onoki	sure/sure
+00924	op	奈菲鲁塔丽·薇薇	Nefertari Vivi	sure/sure
+00934	op	沙·克洛克达尔	Crocodile	sure/sure
+00968	op	斯摩格	Smoker	sure/sure
+00980	op	乔艾莉·波妮	Jewelry Bonney	sure/sure
+00991	nar	奈良鹿久	Nara Shikaku	sure/sure
+00999	op	耕四郎	Koshiro	likely/likely
+01022	nar	卯月夕颜	Uzuki Yugao	sure/sure
+01041	op	巴索罗米·熊	Bartholomew Kuma	sure/sure
+01049	rz	费蕾丝	Ferris (Felix Argyle)	-/maybe
+01052	nar	Indora	Otsutsuki Indra	likely/likely
+01060	db	杰比特	Kibito	-/likely
+01070	op	卡巴吉	Cabaji	sure/likely
+01080	op	加尔·帝诺	Galdino (Mr. 3)	-/likely
+01082	op	道伯曼	Vice Admiral Doberman	maybe/likely
+01083	nar	水木	Mizuki	likely/maybe
+01096	op	乌索普	Usopp	sure/sure
+01101	nar	君麻吕	Kaguya Kimimaro	sure/sure
+01112	op	斯潘达姆	Spandam	sure/sure
+01121	nar	达鲁伊	Darui	sure/sure
+01137	op	贝尔梅尔	Bell-mere	sure/sure
+01147	nar	宇智波止水	Uchiha Shisui	sure/sure
+01149	nar	油女志乃	Aburame Shino	sure/sure
+01159	db	撒旦先生	Mr. Satan	sure/sure
+01178	rz	莱因哈鲁特·范·阿斯特雷亚	Reinhard van Astrea	sure/sure
+01187	op	克布拉	Nefertari Cobra	maybe/maybe
+01191	op	培波	Bepo	-/maybe
+01201	rz	安娜塔西亚·合辛	Anastasia Hoshin	sure/sure
+01233	op	文斯莫克·蕾玖	Vinsmoke Reiju	sure/sure
+01238	op	阿布萨罗姆	Absalom	sure/sure
+01243	op	克洛	Captain Kuro	likely/likely
+01250	db	人造人8号	Android 8	sure/sure
+01251	nar	宇智波鼬	Uchiha Itachi	sure/sure
+01257	nar	猿飞未来	Sarutobi Mirai	sure/sure
+01270	db	超级赛亚人之神	Super Saiyan God	sure/sure
+01271	op	猫蝮蛇老大	Nekomamushi	sure/sure
+01272	op	夏洛特·比劳	Charlotte (Big Mom child?)	maybe/sure
+01275	op	诺琪高	Nojiko	sure/sure
+01288	op	巴托洛米奥	Bartolomeo	sure/sure
+01289	nar	多由也	Tayuya	sure/sure
+01300	op	baby-5	Baby 5	sure/sure
+01302	nar	卑留呼	Hiruko	sure/sure
+01311	nar	千手扉间	Senju Tobirama	sure/sure
+01314	rz	艾尔莎·葛兰西尔特	Elsa Granhiert	sure/sure
+01315	nar	傀儡忍者	puppet ninja	maybe/maybe
+01316	op	维尔戈	Vergo	sure/sure
+01331	op	可可罗婆婆	Kokoro	sure/sure
+01344	db	北界王	King Kai (North Kai)	sure/sure
+01361	op	玛琪诺	Makino	sure/sure
+01362	db	拉蒂兹	Raditz	sure/sure
+01365	db	赛亚蒙面超人	Great Saiyaman	sure/sure
+01368	op	乔可拉尔·米霍克	Dracule Mihawk	sure/sure
+01371	op	克比	Koby	sure/sure
+01377	nar	飞段	Hidan	sure/sure
+01386	op	耶稣布	Yasopp	sure/sure
+01394	db	比迪丽	Videl	sure/sure
+01402	op	古伊娜	Kuina	sure/sure
+01410	nar	晓の南	Konan (Akatsuki)	sure/sure
+01414	op	夏洛特·佩罗斯佩罗	Charlotte Perospero	sure/sure
+01427	rz	从零开始的使魔生活	Re:Zero x Zero no Tsukaima mash-up title	maybe/maybe
+01429	op	黄猿	Kizaru	sure/sure
+01443	db	大界王神	Grand Supreme Kai	sure/sure
+01465	nar	佩恩道	Pain (Six Paths)	likely/likely
+01471	nar	三代目雷影	Third Raikage	sure/sure
+01476	op	贝鲁梅伯	Bell-mere	-/maybe
+01486	nar	我爱罗	Gaara	sure/sure
+01497	db	悟天克斯	Gotenks	sure/sure
+01531	op	希鲁鲁克	Dr. Hiriluk	sure/sure
+01536	nar	卡多	Gato (Land of Waves)	maybe/-
+01540	op	草帽路飞	Monkey D. Luffy	sure/sure
+01573	db	人造人16号	Android 16	sure/sure
+01577	nar	秋道丁次	Akimichi Choji	sure/sure
+01582	nar	漩涡鸣人	Uzumaki Naruto	sure/sure
+01590	nar	伊那里	Inari	likely/likely
+01649	op	妮可·罗宾	Nico Robin	sure/sure
+01656	op	托尼托尼·乔巴	Tony Tony Chopper	sure/sure
+01658	op	唐吉诃德·多弗朗明哥	Donquixote Doflamingo	sure/sure
+01668	nar	奥摩伊	Omoi	sure/sure
+01674	db	贝吉特	Vegito	sure/sure
+01681	nar	日向花火	Hyuga Hanabi	sure/sure
+01684	db	布里夫太太	Mrs. Brief	sure/sure
+01694	nar	志村团藏	Shimura Danzo	sure/sure
+01698	op	冯·克雷	Bon Clay (Mr. 2)	sure/sure
+01906	db	普尔	Puar	likely/likely
+01907	op	萨博	Sabo	likely/likely
+01908	db	琪琪	Chi-Chi	maybe/likely
+01914	db	泽诺	Zeno	-/maybe
+02003	op	尤那·D·海渡	Yuna D. Haido (unknown)	maybe/maybe
+02033	db	琪琪	Chi-Chi	-/maybe
+02162	nar	李洛克	Rock Lee	sure/sure
+02282	nar	桃地再不斩	Momochi Zabuza	sure/sure
+02286	db	桃白白	Mercenary Tao	sure/sure
+02306	rz	梅莉	Meili Portroute	maybe/-
+02400	rz	比阿特丽斯	Beatrice	maybe/maybe
+02401	db	比鲁斯	Beerus	sure/sure
+02479	op	波雅·汉库克	Boa Hancock	sure/sure
+02613	rz	爱蜜莉雅	Emilia	sure/sure
+02634	op	特拉法尔加·罗	Trafalgar Law	sure/sure
+02671	nar	猿飞佐助	Sarutobi Sasuke	maybe/-
+02710	db	琪琪	Chi-Chi	maybe/maybe
+02758	db	界王神	Supreme Kai (Shin)	sure/sure
+02773	op	白星	Shirahoshi	sure/sure
+02894	op	乌索普	Usopp	sure/sure
+02955	op	乔拉可尔·米霍克	Dracule Mihawk	sure/sure
+03154	nar	自来也	Jiraiya	sure/sure
+03171	op	艾利由西亚·D·露德·伊玛	unknown (D. in name)	-/maybe
+03311	rz	菜月昴	Natsuki Subaru	sure/sure
+03360	rz	蕾姆	Rem	sure/sure
+03639	db	人造人17号	Android 17	sure/sure
+03710	op	阿隆	Arlong	maybe/likely
+03840	db	饺子	Chiaotzu	likely/likely
+03843	op	香克斯	Shanks	sure/sure
+03844	op	香吉士	Sanji	sure/sure
+03926	db	鹤仙人	Crane Hermit	sure/sure
+03995	db	龟仙人	Master Roshi	sure/sure
+04020	nar	Jyugo	Jugo	maybe/-
+04024	nar	佐井	Sai	sure/likely
+04077	op	Miss.情人节	Miss Valentine	sure/-
+04089	db	兰琪	Launch	likely/likely
+04166	nar	勘九郎	Kankuro	sure/sure
+04195	nar	千手柱间	Senju Hashirama	sure/sure
+04211	db	占卜婆婆	Fortuneteller Baba	sure/sure
+04320	nar	四代风影	Fourth Kazekage (Rasa)	sure/sure
+04437	nar	大蛇丸	Orochimaru	sure/sure
+04449	nar	天天	Tenten	likely/likely
+04455	db	天津饭	Tien Shinhan	sure/sure
+04539	db	孙悟饭	Son Gohan	sure/sure
+04551	nar	宇智波斑	Uchiha Madara	sure/sure
+04552	nar	宇智波鼬	Uchiha Itachi	sure/sure
+04558	rz	安娜史塔西亚	Anastasia Hoshin	maybe/-
+04722	db	巴菲迪	Babidi	sure/sure
+04730	db	布欧	Majin Buu	sure/sure
+04736	op	布鲁克	Brook	likely/sure
+04744	rz	帕克	Puck	maybe/maybe
+04780	op	弗兰奇	Franky	likely/sure
+04838	nar	我爱罗	Gaara	sure/sure
+04862	rz	拉姆	Ram	maybe/likely
+04912	nar	日向雏田	Hyuga Hinata	sure/sure
+04954	nar	春野樱	Haruno Sakura	sure/sure
+04958	rz	普莉希拉·巴里艾路	Priscilla Barielle	sure/sure

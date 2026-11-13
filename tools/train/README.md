@@ -48,7 +48,8 @@ After Bamman et al. 2026 (code MIT, DINOv2 Apache-2.0).
 ```bash
 uv run heads.py <personai_icartoonface_rectrain.zip> <anime head detector.onnx> $TRAIN_WORK/heads.tsv
 B=../../bench/models
-uv run train.py --zip <personai_icartoonface_rectrain.zip> --out <run dir> --arch vits14 --heads $TRAIN_WORK/heads.tsv \n  --exclude $B/icartoonface.exclude.tsv,$B/icartoonface.mixed.tsv --drop $B/icartoonface.drop.tsv
+uv run train.py --zip <personai_icartoonface_rectrain.zip> --out <run dir> --arch vits14 --heads $TRAIN_WORK/heads.tsv \
+  --exclude $B/icartoonface.exclude.tsv,$B/icartoonface.mixed.tsv --drop $B/icartoonface.drop.tsv
 uv run export.py <run dir>/best.pt <run dir>/model.onnx $TRAIN_WORK/crops/<episode>.h4
 ```
 

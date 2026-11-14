@@ -22,6 +22,8 @@ shipped pass makes, so they say nothing about faces it missed.
 | `miraculous.labels.tsv` | a name for each of the 1,818 tracks (`FORMATS.md`, "Track labels") |
 | `miraculous.labelling.tsv` | per label, in the same order: both labellers' answers and what happened after them (`adjudicated`: the two differed and a third reader decided; `second look`: neither could name the face; `majority`: a track that changes character, named by the count of ten moments; `code added`: a code added to the gallery from the notes) |
 | `miraculous.spans.tsv` | opening and ending of each episode, found by eye and set on shot cuts |
+| `miraculous.series.tsv` | the look across the series (2026-11-14): 41 projects of fifteen episodes, nine Blender films and the tuning pair, each grouped without and with the rule that keeps two tight groups apart (`footage`: `new`, `one tuning episode`, `tuning`; characters without / with; characters parted and joined; clear tracks named Marinette and Ladybug by the screen; whether one character holds both) |
+| `miraculous.series.pages.tsv` | the 16 characters that rule changes there: project, tracks a side, the letters of two readers without context (`a` one figure in one look, `b` one person in two looks, `c` two different people) and what the rows show |
 
 The formats are the anime bench's. Both episodes are one project on one
 timeline: the second episode's frames are offset by the first's.
@@ -100,6 +102,11 @@ cast comes from the labels' spans); keyframe ground truth (faces the detector
 missed); the 150-item human audit.
 
 ## The pass as shipped, and what a perfect embedder would reach
+
+(As the app grouped 3D animation on 2026-11-13. Since 2026-11-14 a rule keeps
+a hero and the everyday self apart, and the pass on both episodes reads
+P 0.967 R 0.809 F 0.881: see "The hero and her everyday self" below. The
+oracle's numbers of this part were not run again with it.)
 
 The plan was written down before a track was labelled: the number that
 decides, the oracle, the rule and how its interval is drawn. Scored as
@@ -257,11 +264,14 @@ the embedder. What no embedder brings back shows in the clips: recall 0.80 to
 0.83 with perfect names. `stress` was not run (the gain the gate asks for
 first is not there).
 
-## The hero and her everyday self: why they join, and a rule that keeps them apart (not adopted)
+## The hero and her everyday self: why they join, and the rule that keeps them apart
 
-Looked into on 2026-11-13, after the scores above. Nothing was written down
-beforehand, and the labels that showed the problem are the ones the rule was
-tried on: they are tuning data for it. No reviewer has read this part.
+Looked into on 2026-11-13, after the scores above, and taken into the app on
+2026-11-14 (row 22 of `bench/models/DECISIONS.md`). Nothing was written down
+before the rule was found, and the labels that showed the problem are the
+ones it was tuned on: they are tuning data for it. What it does on footage it
+was not tuned on was laid down before that footage was grouped ("Across the
+series", below).
 
 **Why they join.** Mean similarity of clear tracks, both episodes as one
 project:
@@ -291,53 +301,190 @@ character; 0.44 two (P 0.968 R 0.798 F 0.875); 0.46 F 0.862; 0.48 0.842; 0.52
 
 **Two tight groups stay two.** What marks the pair is not how alike the two
 are but how much less alike than each is in itself: two large groups (146 and
-76 clear tracks, 0.69 alike inside) that are 0.41 alike to each other, 0.59 of
-their own cohesion. Of the 116 joins of two groups with at least 5 tracks
-each that a plain average-linkage clustering makes in the fitted space, this
-is the lowest such share; the lowest join of one figure's own tracks is 0.68,
-0.73 where both sides hold at least 10 or 20 tracks, and 0.95 where both hold
-at least 30. A prototype of the rule (`Params::tight` and `tight_tracks`, off
-by default; a patch, in no commit): two groups of at least `tight_tracks`
-tracks each do not join when they are less alike to each other than `tight`
-times the cohesion of the less coherent one.
+76 clear tracks, 0.69 alike inside) that are 0.41 alike to each other. The
+rule (`as_identity::ahc`, `Params::tight`, `tight_tracks`): two groups of at
+least `tight_tracks` tracks each do not join when they are less alike to each
+other than `tight` times the cohesion of the less coherent one. In the app it
+is on in the space fitted to footage the user called animation, for the full
+scan's faces, at 0.70 from 15 tracks a group; nowhere else.
 
-| Both episodes, main cast, figure level | As shipped | The rule at 0.70, from 30 tracks |
+| Main cast, figure level, per track | Before | With the rule |
 |---|---|---|
-| Per track P / R / F | 0.907 / 0.807 / 0.854 | 0.967 / 0.809 / 0.881 [0.844, 0.907] |
-| Characters | 32 | 33 (Marinette 151 tracks, Ladybug 92) |
-| Main cast's time on their character | 0.918 | 0.959 |
-| Clips, precision / recall | 0.927 / 0.892 | 0.975 / 0.940 |
-| `stress`, 27 runs: people split / characters holding two | 156 / 118 | 154 / 94 |
+| Both episodes, P / R / F | 0.907 / 0.807 / 0.854 | 0.967 / 0.809 / 0.881 [0.844, 0.907] |
+| ... characters | 32 | 33 (Marinette 151 tracks, Ladybug 92) |
+| ... main cast's time on their character | 0.918 | 0.959 |
+| ... clips, precision / recall | 0.927 / 0.892 | 0.975 / 0.940 |
+| ... `stress`, 27 runs: people split / characters holding two | 156 / 118 | 154 / 94 |
+| S01E11 alone, P / R / F | 0.982 / 0.781 / 0.870 | the same |
+| S05E21 alone, P / R / F | 0.941 / 0.788 / 0.858 | 0.973 / 0.788 / 0.871 |
+| Five episodes (three unlabelled), the labelled tracks, P / R / F | 0.973 / 0.771 / 0.860 | the same; the bar is 0.423 there and the pair is two anyway |
 
-The rule against the shipped grouping: +0.027 per-track F, 95 % [0.000,
-+0.065] (two of the 26 figures change, so the lower end is 0). The share of
-the gap perfect embeddings close is then 0.800 [0.713, 0.867].
+The rule against the grouping before, per-track F: +0.027 on both episodes,
+95 % [0.000, +0.063], and +0.013 [0.000, +0.030] on S05E21 alone (two of the
+main figures change, so the lower end is 0). With the rule switched off
+(`TIGHT=0`) the bench gives the old score files back to the letter.
 
-How far it holds:
+How far it holds on these two episodes (the third reviewer's measurements,
+and the author's):
 
-- Every setting from 0.62 to 0.72 with 5 to 30 tracks gives these numbers;
-  from 30 tracks, every setting up to 0.85. At 0.60 the pair joins; at 0.76
-  from 20 tracks or fewer a right join is refused (F 0.862 to 0.867).
-- S01E11 alone is unchanged up to 0.72 (the pair is two there anyway); at 0.76
-  from 10 tracks it falls from 0.870 to 0.849.
-- **S05E21 alone is not fixed** at a safe setting. Ladybug has 24 tracks there;
-  the pair comes apart only at 0.72 from 10 tracks or fewer (F 0.858 to
-  0.871), one step from where right joins break. The rule needs groups large
-  enough to know their own cohesion: more footage in a project, not less.
+- **The share has little room.** Over 42 amounts of footage (one episode
+  whole and 0 to 20 twentieths of the other, both ways round) the two selves
+  are 0.54 to 0.68 of their own cohesion alike. Of the 331 joins of one
+  figure with at least 15 tracks a side that the grouping makes there
+  without the rule, none lies under 0.70 and 15 lie under 0.75, the lowest at
+  0.726 (15 tracks of Chloé, all of one episode, joining the rest of her).
+  So on this footage a share from 0.68 to 0.73 does it. On the project of
+  both episodes every share from 0.62 to 0.74 gives the table's numbers;
+  0.60 leaves the pair one, 0.76 refuses a right join (F 0.867).
+- **From 15 tracks.** In those 42 amounts the pair is one character in 37
+  without the rule; with it from 30 tracks in 14 (a piece of one self joins
+  the other before the rule is asked), from 20 in 2, from 15 in none. Under
+  15 clear tracks a side the rule is idle.
 - The villain's two forms stay one character (0.83 of their own cohesion):
   two looks with the same kind of mask.
-- Other footage: on the three anime tuning franchises, both scans, every score
-  is the same at 0.70 from 10, 0.70 from 30 and 0.80 from 30 (the rule never
-  applies); on live action (Breaking Bad, Fast Scan's tracks with `glintr100`)
-  likewise.
+- **Other footage.** The rule is not on for the anime embedder's faces, for
+  live action, for footage that only looks like animation, or for Fast Scan
+  (nothing was measured for SFace; on S01E11's Fast Scan tracks no share
+  helped), and a Fast Scan cast of 3D animation is not grouped again for it.
+  Switched on by hand, the three anime tuning franchises score the same in
+  both scans (under the Best scan One Piece moves faces between two figures'
+  lines, the score stays).
 
-**Not adopted.** One pair of one title carries it; the room between "the pair
-comes apart" and "right joins are refused" is known only here; a single
-episode is not helped; and no other 3D title is labelled. To take it into the
-app: where it is on (the fitted space only, or everywhere), a new
-`as_identity::VERSION` (every 3D project groups again), unit tests, and a
-second 3D title. The patch and the scripts are in the side-session notes
-(`3d-hero-merge`).
+### Across the series
+
+The rule was set on one pair of figures in one project. Before it was
+committed, fifteen episodes were grouped without and with it; the footage,
+the projects, the measures and what they would decide were written down
+before any of it was grouped (`E:\as-ownmodels\3d\series\PLAN.md`, scratch;
+its content is this part). No labels were made: what the rule changes was
+read by people who know nothing of it.
+
+**Footage.** Ten more episodes of the series, two a season, drawn by
+`random.Random(20261114)` from the episodes not scanned before, and the five
+scanned on 2026-11-13; the full pass as the app runs it on 3D animation.
+Other 3D titles, as footage the rule should leave alone: nine Blender films
+(Sintel, Sprite Fright, Charge, Spring, Agent 327, Cosmos Laundromat, Coffee
+Run, Hero, Elephants Dream), each a project of its own.
+
+| Key | Episode | Frames | Tracks |
+|---|---|---|---|
+| `mir_s1e03` | S01E03, The Pharaoh | 32,424 | 587 |
+| `mir_s1e08` | S01E08, Rogercop | 32,423 | 700 |
+| `mir_s1e11` | S01E11, Horrificator (tuning) | 32,423 | 806 |
+| `mir_s2e13` | S02E13, Zombizou | 32,422 | 1,264 |
+| `mir_s2e19` | S02E19, Sandboy | 32,422 | 410 |
+| `mir_s2e20` | S02E20, Style Queen | 32,422 | 701 |
+| `mir_s2e22` | S02E22, Malediktator | 32,422 | 798 |
+| `mir_s3e16` | S03E16, Gamer 2.0 | 32,449 | 611 |
+| `mir_s3e17` | S03E17, Stormy Weather 2 | 32,449 | 652 |
+| `mir_s4e03` | S04E03, Gang of Secrets | 32,450 | 662 |
+| `mir_s4e06` | S04E06, Furious Fu | 32,450 | 579 |
+| `mir_s4e26` | S04E26, Strike Back | 33,574 | 586 |
+| `mir_s5e01` | S05E01, Evolution | 32,907 | 665 |
+| `mir_s5e16` | S05E16, Protection | 34,132 | 703 |
+| `mir_s5e21` | S05E21, Confrontation (tuning) | 33,918 | 1,012 |
+
+**Projects** (`miraculous.series.tsv`): each episode alone (15); neighbours
+in air order (14); far pairs, the first eight episodes each with the one
+seven places on (8); five in a row (3); all fifteen (10,736 tracks, large
+enough for the per-media path); the nine films. 31 of the series' 41 projects
+hold no tuning episode, 8 hold one of the two beside new footage, 2 are a
+tuning episode alone.
+
+**Measures.** (1) Every character of the grouping without the rule that the
+grouping with it holds as two or more characters of at least 15 tracks each
+("parted"), and the reverse ("joined": the rule keeps one join from being
+made, and others then go another way). A page of faces per side, 24 a row,
+read by two readers without context (Opus) who saw only the pages, in a
+shuffled order and without being told which kind a page was: one figure in
+one look, one person in two looks (an everyday self and a masked or costumed
+one), two different people, or cannot be told. (2) A screen for the two
+selves: every clear track is named by the labelled figures' mean faces of
+this bench (the embedder's own space; a name needs a likeness of 0.5 and 0.1
+over the second). One labelled episode naming the other is right for 0.957
+and 0.986 of the tracks it names, for Marinette 85 of 98 and 54 of 54, for
+Ladybug 19 of 20 and 51 of 52. A character "holds both selves" with at least
+15 tracks of each name. The screen is made with the embedder under test: it
+counts, the pages decide.
+
+**What was laid down as the bar:** the rule goes in as it is if, on the
+projects it was not set on, the projects with a wrong part are at most a
+third of those with a right one, no Blender film has a wrong part, and
+nothing is joined that is two people.
+
+| Projects | n | Changed by the rule | The two selves one character, without / with |
+|---|---|---|---|
+| New footage: an episode alone | 13 | 4 | 4 / 1 |
+| ... neighbours | 11 | 1 | 1 / 0 |
+| ... far pairs | 6 | 2 | 2 / 0 |
+| ... five in a row | 1 | 0 | 0 / 0 |
+| One tuning episode beside new footage (neighbours, far pairs, fives, all fifteen) | 8 | 2 | 2 / 0 |
+| A tuning episode alone | 2 | 1 | 1 / 0 |
+| Blender films | 9 | 0 | (no such pair) |
+
+So the join is no accident of one project: on new footage alone the two
+selves are one character in 7 of 31 projects without the rule, and in 1 with
+it. In projects of five or fifteen episodes they are two either way.
+
+**The pages** (`miraculous.series.pages.tsv`; the two readers gave the same
+letter on all 16):
+
+| What changed | Pages | Projects |
+|---|---|---|
+| The two selves parted | 10 | S01E08, S02E22, S05E16, S05E21 alone; three neighbours and two far pairs; the tuning pair |
+| Two different people parted | 2 | S02E20 alone (the heroine in her mask and a blonde woman in sunglasses and a hat); S05E01 + S05E16 (a girl with long auburn hair and one with short red hair) |
+| One figure parted in two (wrong) | 1 | S05E01 + S05E16: a red-haired figure in a white-and-blue mask, 20 and 17 tracks; the second row holds other masked faces too, and both readers called it a thin majority |
+| One figure joined (right) | 3 | S05E01 + S05E16, S05E16 + S05E21, S02E22 + S05E16: a second small group of the unmasked girl (15 to 21 tracks, mostly side views) joins her once the masked self is out of her group |
+| Two people or the two selves joined | 0 | |
+
+On new footage: seven projects with a right part, one of them (S05E01 +
+S05E16) also with the wrong one; no Blender film changed at all (their casts
+are one to five characters of 28 to 190 tracks); nothing was joined that is
+two people. **The bar is met.**
+
+**Where the rule misses.** S04E06 alone keeps the two selves on one
+character with the rule (82 and 73 named tracks): they are over 0.70 of their
+own cohesion alike there, and part only at 0.75, which is above the lowest
+right join seen on the tuning episodes (0.726). No one share parts every
+pair and keeps every figure whole on this series; 0.70 was not moved after
+this result.
+
+### In the running app
+
+A build of the app with the change, on a scratch library (2026-11-14), driven
+through its own commands; who is on which character was read from the
+project's database against the labels of this bench (the app's 1,818 tracks
+are the bench's).
+
+| What was done | Result |
+|---|---|
+| S01E11 + S05E21 as a 3D animation series, analysed and grouped by the build of 2026-11-12 | 32 characters; one holds Marinette (158 tracks) and Ladybug (94) |
+| That project opened by the new build | grouped again once at launch; 33 characters; Marinette keeps her character (157), Ladybug is a new one (94); no other character changes |
+| The older cast named "Marinette" in the older build, then opened by the new one | parted the same way; the name stays with Marinette |
+| The new cast: Marinette named, grouped again | still two |
+| ... one of Ladybug's faces moved to Marinette, grouped again | still two; the moved face stays where it was put |
+| ... Ladybug merged into Marinette by hand, grouped again | one character (158 + 94) |
+| ... Marinette merged into Ladybug by hand, grouped again | one character |
+| Three episodes: two unlike characters merged by hand (one into a named other), grouped again | one character, the name in place; a build without the second change left the name on the merged-in faces and made the character's own 112 faces a new one |
+
+A merge by hand holds because of a second change made with the rule: a
+character the user pinned faces to keeps its own faces
+(`bench/identity/README.md`, "A merge by hand holds"). The rule itself knows
+no pins.
+
+**What this means for casts made before.** A cast of 3D animation from the
+full scan is grouped once more at the next launch. Two selves that were one
+character become two, also when the user had named that character: the name
+stays with the self the name's pinned faces are of (the bigger one, as a
+rule), and the other self goes on as a new character without a name, a
+cover picked anew and no scenepack. If the pinned faces are of the smaller
+self, the two stay one. Two selves merged by hand stay merged.
+
+Not verified here: a second labelled 3D title (the 0.70 and the 15 stand on
+this series); the readers of the pages are models, and the screen is the
+embedder's own; the name look-up that follows a regrouping (it was off in
+the app test: whether it proposes the new character back into the old one
+was not seen); Fast Scan with the rule.
 
 ## Not verified
 

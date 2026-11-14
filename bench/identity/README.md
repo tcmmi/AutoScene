@@ -133,6 +133,99 @@ per-track F; the faces it drops are below any usable quality.
 Characters without a visible face (bodies tracked through shots, found
 again by their clothes): see `bench/bodies`.
 
+## Two selves, two characters
+
+A hero and the everyday self are one person and, to the viewer, two
+characters. They are never on screen together, so no face seen beside
+another holds them apart; and in the space fitted to 3D animation
+(`as_identity::adapt`) the bar two groups join at lies where strangers still
+look alike. On two episodes of a 3D series (`bench/3d`) a heroine and her
+masked self are 0.400 alike there, the bar is 0.39986, and the two became one
+character of 243 tracks.
+
+Two tight groups with a gap between them stay two (`as_identity::ahc`):
+groups of at least 15 tracks each (`Params::tight_tracks`) do not join when
+they are less alike to each other than 0.70 (`Params::tight_animated`) of how
+alike the less coherent of them is in itself. The rule is on in the space
+fitted to footage the user called animation, for the full scan's faces, and
+nowhere else: not for live action, not for footage that only looks like
+animation, not for the anime embedder's faces, not for Fast Scan (nothing was
+measured for SFace). The full scan's casts of 3D animation group at a version
+of their own (`as_identity::ANIMATION_VERSION`), so only they were grouped
+again for it.
+
+On `bench/3d` (main cast, per track): both episodes as one project P 0.907
+R 0.807 F 0.854 before, P 0.967 R 0.809 F 0.881 with the rule; `stress` 156
+people split and 118 characters holding two people before, 154 and 94 with
+it. On fifteen episodes of the series in 41 projects the two selves are one
+character in 10 without the rule and in 1 with it; of the 12 characters it
+parts there, two readers call 9 the two selves, 2 two different people and 1
+one figure parted wrongly; nine other 3D films group the same with and without
+it. The share has little room: the selves are 0.54 to 0.68 of their own
+cohesion alike on the tuning episodes (over 0.70 in one of thirteen others),
+the least alike halves of one figure that the grouping joins 0.73.
+`bench/3d/README.md` has the tables and what was laid down before the series
+was grouped.
+
+`identity_bench` takes `TIGHT=<share>` (the rule from that share on, in every
+space; 0: nowhere) and `TIGHT_TRACKS=<n>`. Unit tests in `as-identity` cover
+it; twelve ways of breaking the rule each fail one.
+
+## A merge by hand holds
+
+Merging character B into character A pins B's faces to A (`as-db`
+`merge_characters`); A's own faces stay as the grouping found them. When the
+cast was grouped again (an episode added, a newer version of the grouping),
+B's pinned faces were one group and held A, and A's own faces were mostly too
+unlike them to join that group: had the two been alike, the grouping would
+have made one character of them, and nobody would have merged them by hand.
+A's own faces then went on as a new character, and A's name stayed with the
+faces that had been merged in. Seen in the running app on 2026-11-14 (three
+episodes of the 3D series, footage type animation; the code is the same for
+every kind of footage): a character named after one girl, a boy's character
+merged into it, the cast grouped again: the name was on the boy's 119 faces
+and four of hers, and her other 112 faces were a new, unnamed character.
+
+Now a character the user pinned faces to keeps the faces it had
+(`keep_own_faces` in `as_identity::identify`): the unpinned group that holds
+most of what a character held besides the pins (over half, by quality), and
+was that character more than any other, goes on as that character together
+with the group pinned to it. The same project grouped again with it: one
+character, the name in place (119 + 111 faces, and 103 of the third
+episode). The heroine and her masked self merged by hand, either way round,
+stay one character at every later grouping, on two episodes and on five
+(where the two groups are under the bar and the merge was undone before).
+
+What it does not do, and what stays as it was:
+
+- **A group that is not most of the character does not follow.** A named
+  character (a few of its typical faces are pinned) whose faces a better
+  grouping parts in two keeps the part its pinned faces are in; the other
+  part goes on as a new character, as before. So a wrong join inside a named
+  character can still come apart, and so do a hero and the everyday self
+  that an older grouping had put on one named character. If the pinned faces
+  are in the smaller part, the bigger one is most of the character: the two
+  stay one, where before the name went with the smaller part alone.
+- **A group that was mostly another character does not follow** a pin: a
+  face once placed with a character the user made of three faces does not
+  drag the forty faces of its real character along.
+- **One face moved to an unnamed character still carries its group.** The
+  moved face is that character's only pin; it groups with its own person,
+  whose group is then pinned to the character; and the character's own faces
+  are most of what it held: the two become one. That is what happened before
+  too (then by the grouping joining them, or by the moved face's group
+  taking the character from its own faces). A pinned group that was mostly
+  another character should leave the pinned face with the character and
+  keep its own; that is not built.
+
+Unit tests in `as-identity`: a merge of two unlike characters in three sizes,
+with new episodes and a second grouping after it; a named character that
+lets go; a group that was mostly another character. Six ways of breaking
+`keep_own_faces` each fail one (`never called`, any share, nearly all, the
+pins counted, the least of its earlier characters, the faces left behind).
+Nothing changes without pins (the function returns at once), and the
+bench's runs have none: their scores are the same to the letter.
+
 ## Rescan
 
 Rescan judges faces against every character and, for unclear ones, reads them

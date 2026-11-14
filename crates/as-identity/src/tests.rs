@@ -1430,6 +1430,13 @@ fn a_look_too_alike_gets_no_prototype_of_its_own() {
     assert_eq!(proto::prototypes(&members, 12, 0.88).len(), 1);
 }
 
+/// Every track remembers the character `o` put it on.
+fn remember(tracks: &mut [TrackIn], o: &Outcome) {
+    for (t, (to, _)) in tracks.iter_mut().zip(&o.tracks) {
+        t.previous = to.character().and_then(|c| o.characters[c].key);
+    }
+}
+
 /// Whether the tracks `a` and the tracks `b` are two characters (each of them one).
 fn are_two(o: &Outcome, a: &[usize], b: &[usize]) -> bool {
     one_character(o, a) != one_character(o, b)
@@ -1491,9 +1498,7 @@ fn a_merge_by_hand_of_two_unlike_characters_holds() {
         let all_a: Vec<usize> = a.iter().copied().chain(first_new..tracks.len()).collect();
         let o = identify(&tracks, &Params::default());
         assert!(!are_two(&o, &all_a, &b), "{per:?}");
-        for (t, (to, _)) in tracks.iter_mut().zip(&o.tracks) {
-            t.previous = to.character().and_then(|c| o.characters[c].key);
-        }
+        remember(&mut tracks, &o);
         let o = identify(&tracks, &Params::default());
         assert!(!are_two(&o, &all_a, &b), "{per:?}");
         assert_eq!(o.characters[one_character(&o, &b)].key, Some(1));
@@ -1518,19 +1523,123 @@ fn a_named_character_lets_go_of_faces_that_are_not_most_of_it() {
 
 #[test]
 fn a_group_that_was_mostly_another_character_does_not_follow_a_pin() {
-    // Character 3 is three faces the user put together (pinned); one more
-    // face was placed with it and now groups with the 40 faces of character
-    // 5, of whom it is. That face is all 3 held besides its pins, but the
-    // group was 5 far more than 3: it stays 5.
+    // Character 3 is three faces the user put together (pinned); four more
+    // faces were placed with it and now group with the 40 faces of
+    // character 5, of whom they are. They are all 3 held besides its pins,
+    // but the group was 5 far more than 3: it stays 5.
     let mut rng = Rng(46);
-    let (mut tracks, [a, b]) = two_people(&mut rng, [3, 41]);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [3, 44]);
     a.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(3), Some(3)));
     b.iter().for_each(|&i| tracks[i].previous = Some(5));
-    tracks[b[0]].previous = Some(3);
+    b[..4].iter().for_each(|&i| tracks[i].previous = Some(3));
     let o = identify(&tracks, &Params::default());
     assert!(are_two(&o, &a, &b));
     assert_eq!(o.characters[one_character(&o, &b)].key, Some(5));
     assert_eq!(o.characters[one_character(&o, &a)].key, Some(3));
+}
+
+#[test]
+fn one_face_moved_to_another_character_moves_alone() {
+    // Two characters (1 and 2), nobody named. The user moves one face of 2
+    // to 1: it groups with 2's faces, and that group is then pinned to 1.
+    // 1's own faces keep their character and take the moved face along; 2's
+    // faces stay 2. (Before, the pinned face carried 2's whole group to 1,
+    // and 1's own faces went on as a new character.) It stays so when the
+    // cast is grouped again and again.
+    for per in [[40, 40], [60, 30], [30, 60]] {
+        let mut rng = Rng(47);
+        let (mut tracks, [a, b]) = two_people(&mut rng, per);
+        a.iter().for_each(|&i| tracks[i].previous = Some(1));
+        b.iter().for_each(|&i| tracks[i].previous = Some(2));
+        (tracks[b[0]].pin, tracks[b[0]].previous) = (Some(1), Some(1));
+        for _ in 0..3 {
+            let o = identify(&tracks, &Params::default());
+            assert_eq!(o.characters.len(), 2, "{per:?}");
+            assert!(are_two(&o, &a, &b[1..]), "{per:?}");
+            assert_eq!(o.tracks[b[0]].0.character(), Some(one_character(&o, &a)), "{per:?}");
+            assert_eq!(o.characters[one_character(&o, &a)].key, Some(1));
+            assert_eq!(o.characters[one_character(&o, &b[1..])].key, Some(2));
+            remember(&mut tracks, &o);
+        }
+    }
+    // The same with new faces of the second one in the run: they are 2's.
+    let mut rng = Rng(48);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [40, 40]);
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    b.iter().for_each(|&i| tracks[i].previous = Some(2));
+    (tracks[b[0]].pin, tracks[b[0]].previous) = (Some(1), Some(1));
+    let first_new = tracks.len();
+    for i in 0..30u32 {
+        let like = tracks[b[1 + i as usize % (b.len() - 1)]].embedding.clone();
+        tracks.push(track(1, i * 100, around(&mut rng, &like, 0.95), 0.8));
+    }
+    let all_b: Vec<usize> = b[1..].iter().copied().chain(first_new..tracks.len()).collect();
+    let o = identify(&tracks, &Params::default());
+    assert!(are_two(&o, &a, &all_b));
+    assert_eq!(o.characters[one_character(&o, &all_b)].key, Some(2));
+}
+
+#[test]
+fn faces_moved_to_a_named_character_do_not_bring_their_own_along() {
+    // 1 is named (five of its faces are pinned); the user moves six faces
+    // of 2 to it. However the pinned faces group, 1 keeps its own faces and
+    // the six, and 2 keeps the rest of its own.
+    for moved in [1usize, 3, 6, 10] {
+        let mut rng = Rng(49);
+        let (mut tracks, [a, b]) = two_people(&mut rng, [40, 40]);
+        a.iter().for_each(|&i| tracks[i].previous = Some(1));
+        b.iter().for_each(|&i| tracks[i].previous = Some(2));
+        a[..5].iter().for_each(|&i| tracks[i].pin = Some(1));
+        b[..moved].iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+        for _ in 0..2 {
+            let o = identify(&tracks, &Params::default());
+            let one = one_character(&o, &a);
+            assert!(are_two(&o, &a, &b[moved..]), "{moved}");
+            assert!(b[..moved].iter().all(|&i| o.tracks[i].0.character() == Some(one)), "{moved}");
+            assert_eq!(o.characters[one].key, Some(1));
+            assert_eq!(o.characters[one_character(&o, &b[moved..])].key, Some(2));
+            remember(&mut tracks, &o);
+        }
+    }
+}
+
+#[test]
+fn a_stray_face_or_two_are_not_a_characters_own_faces() {
+    // Character 3 is three faces the user put together (pinned). One more
+    // face was once placed with it; it groups with the 40 faces of someone
+    // who has no character yet. That face is all 3 held besides its pins,
+    // but one face is no character's own faces: the 40 are a new character.
+    let mut rng = Rng(50);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [3, 41]);
+    a.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(3), Some(3)));
+    tracks[b[0]].previous = Some(3);
+    let o = identify(&tracks, &Params::default());
+    assert!(are_two(&o, &a, &b));
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(3));
+    assert_ne!(o.characters[one_character(&o, &b)].key, Some(3));
+}
+
+#[test]
+fn what_a_character_held_is_weighed_by_its_clear_faces() {
+    // 2 was merged into 1 by hand. 1 also held a crowd of faces too unclear
+    // to shape a group, and a dozen of a third person's that group apart:
+    // its own faces are most of what it held by what the clear faces say
+    // (their quality), though not by the number of tracks.
+    let mut rng = Rng(51);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [30, 30]);
+    a.iter().for_each(|&i| (tracks[i].quality, tracks[i].previous) = (0.9, Some(1)));
+    b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let third = rng.unit();
+    for i in 0..40u32 {
+        tracks.push(TrackIn { previous: Some(1), ..track(0, 100_000 + i * 100, around(&mut rng, &third, 0.85), 0.5) });
+    }
+    let own = rng.unit();
+    for i in 0..300u32 {
+        tracks.push(TrackIn { previous: Some(1), ..track(0, 200_000 + i * 100, around(&mut rng, &own, 0.2), 0.1) });
+    }
+    let o = identify(&tracks, &Params::default());
+    assert!(!are_two(&o, &a, &b));
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(1));
 }
 
 /// Two selves of one person, the way a hero and the everyday self look to a
@@ -1732,21 +1841,22 @@ fn a_merged_character_keeps_its_faces_though_some_of_them_went_elsewhere() {
 }
 
 #[test]
-fn one_face_moved_to_an_unnamed_self_joins_the_two_as_without_the_rule() {
+fn one_face_of_the_other_self_moved_by_hand_moves_alone() {
     // A fresh cast: the selves are characters 7 and 8, nobody is named. The
     // user moves one face of the second self to 7. With no other pin of 7,
     // that face groups with its own self, whose group is then pinned to 7;
-    // the first self's group is most of what 7 held and keeps its
-    // character: the two are one. Not what the user asked for, and what
-    // happened without the rule: one pinned face has always carried its
-    // group.
+    // the first self's faces follow the pin, and what the pinned group
+    // holds of 8 goes on as 8: the two stay two, the moved face is with 7.
     let mut rng = Rng(42);
     let (mut tracks, [a, b]) = two_selves(&mut rng, 0.6);
     a.iter().for_each(|&i| tracks[i].previous = Some(7));
     b.iter().for_each(|&i| tracks[i].previous = Some(8));
     (tracks[b[0]].pin, tracks[b[0]].previous) = (Some(7), Some(7));
-    assert!(!are_two(&identify(&tracks, &as_animation()), &a, &b));
-    assert!(!are_two(&identify(&tracks, &Params::default()), &a, &b));
+    let o = identify(&tracks, &as_animation());
+    assert!(are_two(&o, &a, &b[1..]));
+    assert_eq!(o.tracks[b[0]].0.character(), Some(one_character(&o, &a)));
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(7));
+    assert_eq!(o.characters[one_character(&o, &b[1..])].key, Some(8));
 }
 
 #[test]

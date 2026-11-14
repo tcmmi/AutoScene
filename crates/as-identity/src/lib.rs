@@ -180,8 +180,9 @@ pub struct Params {
     /// title set it (`bench/3d`): over two episodes of a 3D series in 42
     /// amounts the grouping finds the hero and her everyday self 0.54 to
     /// 0.68 of their own cohesion alike, and the least alike halves of one
-    /// figure it joins (15 tracks a side or more) 0.73. In one of thirteen
-    /// more episodes the two selves are over 0.70 alike and stay one.
+    /// figure it joins (15 tracks a side or more) 0.73. Footage with too
+    /// few faces seen together for a fitted space (one sparse episode, a
+    /// short film) does not get the rule at all.
     pub tight_animated: f32,
     /// Fewer tracks say too little about how alike a group's own faces
     /// are. From 30 the rule misses the pair in a third of 42 amounts of
@@ -395,8 +396,23 @@ pub(crate) fn together(a: &TrackIn, b: &TrackIn) -> bool {
 /// would go on as a new one: the merge undone, and a name left on the faces
 /// that were merged in. So the unpinned group that holds most of what a
 /// character held besides the pins, and was that character more than any
-/// other, goes on as that character: it joins the group pinned to it.
-fn keep_own_faces(tracks: &[TrackIn], core: &[usize], chars: &mut Vec<(Vec<usize>, Option<CharKey>)>) {
+/// other, goes on as that character: it joins the group pinned to it. (A
+/// few faces once placed with a character are not its own faces: the group
+/// must hold as many of them as make a character.)
+///
+/// The pins may sit in someone else's group: one face of B that the user
+/// moved to A groups with B's faces, and the group is then pinned to A.
+/// When A's own faces follow such a group, what it holds besides the pins
+/// goes on as a group of its own (B's again): the moved face moves alone.
+/// `qualifies`: whether a group is a character; one that isn't goes to `loose`.
+fn keep_own_faces(
+    tracks: &[TrackIn],
+    core: &[usize],
+    chars: &mut Vec<(Vec<usize>, Option<CharKey>)>,
+    loose: &mut Vec<usize>,
+    p: &Params,
+    qualifies: impl Fn(&[usize]) -> bool,
+) {
     let pin_of = |g: &[usize]| g.iter().find_map(|&i| tracks[i].pin);
     let pinned: HashMap<CharKey, usize> =
         chars.iter().enumerate().filter_map(|(ci, (g, _))| Some((pin_of(g)?, ci))).collect();
@@ -416,25 +432,50 @@ fn keep_own_faces(tracks: &[TrackIn], core: &[usize], chars: &mut Vec<(Vec<usize
         if pin_of(g).is_some() {
             continue;
         }
-        let mut was: HashMap<CharKey, f32> = HashMap::new();
+        let mut was: HashMap<CharKey, (f32, usize)> = HashMap::new();
         for &i in g {
             if let Some(k) = tracks[i].previous {
-                *was.entry(k).or_default() += tracks[i].quality;
+                let of = was.entry(k).or_default();
+                *of = (of.0 + tracks[i].quality, of.1 + 1);
             }
         }
         // The character most of the group's earlier faces were (a tie: the lower key).
-        let Some((&k, &w)) = was.iter().max_by(|a, b| a.1.total_cmp(b.1).then(b.0.cmp(a.0))) else { continue };
+        let Some((&k, &(w, n))) = was.iter().max_by(|a, b| a.1.0.total_cmp(&b.1.0).then(b.0.cmp(a.0))) else {
+            continue;
+        };
         if let Some(&pi) = pinned.get(&k)
             && w > 0.5 * held[&k]
+            && n >= p.min_tracks
         {
             follows.push((ci, pi));
         }
     }
+    let mut apart: Vec<Vec<usize>> = Vec::new();
     for &(ci, pi) in &follows {
+        // Was the pinned group, pins aside, more another character than this one?
+        let k = pin_of(&chars[pi].0);
+        let (mut own, mut others) = (0f32, 0f32);
+        for &i in chars[pi].0.iter().filter(|&&i| tracks[i].pin.is_none()) {
+            match tracks[i].previous {
+                Some(was) if Some(was) == k => own += tracks[i].quality,
+                Some(_) => others += tracks[i].quality,
+                None => {}
+            }
+        }
+        if others > own {
+            let (stay, go): (Vec<usize>, Vec<usize>) = std::mem::take(&mut chars[pi].0)
+                .into_iter()
+                .partition(|&i| tracks[i].pin.is_some() || (k.is_some() && tracks[i].previous == k));
+            chars[pi].0 = stay;
+            apart.push(go);
+        }
         let g = std::mem::take(&mut chars[ci].0);
         chars[pi].0.extend(g);
     }
     chars.retain(|(g, _)| !g.is_empty());
+    for g in apart {
+        if qualifies(&g) { chars.push((g, None)) } else { loose.extend(g) }
+    }
 }
 
 /// Groups that are (nearly) only ever on screen with a bigger group, most of
@@ -716,17 +757,18 @@ fn identify_in(tracks: &[TrackIn], p: &Params) -> Outcome {
     // 2. Which groups are characters; which existing character each one is.
     let frames = |g: &[usize]| -> u32 { g.iter().map(|&i| tracks[i].end - tracks[i].start).sum() };
     let pinned_key = |g: &[usize]| g.iter().find_map(|&i| tracks[i].pin);
+    let qualifies =
+        |g: &[usize]| g.len() >= p.min_tracks && frames(g) >= p.min_frames && cohesion(tracks, g) >= p.min_cohesion;
     let mut chars: Vec<(Vec<usize>, Option<CharKey>)> = Vec::new();
     let mut loose: Vec<usize> = (0..n).filter(|&i| !is_core[i]).collect();
     for g in groups {
-        let qualifies = g.len() >= p.min_tracks && frames(&g) >= p.min_frames && cohesion(tracks, &g) >= p.min_cohesion;
-        if pinned_key(&g).is_some() || qualifies {
+        if pinned_key(&g).is_some() || qualifies(&g) {
             chars.push((g, None));
         } else {
             loose.extend(g);
         }
     }
-    keep_own_faces(tracks, &core, &mut chars);
+    keep_own_faces(tracks, &core, &mut chars, &mut loose, p, qualifies);
     let copied = drop_copies(tracks, &mut chars, &mut loose, p);
     // Pins decide first; then the biggest previous overlaps, one to one.
     let mut taken: HashSet<CharKey> = HashSet::new();

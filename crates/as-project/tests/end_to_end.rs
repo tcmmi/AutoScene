@@ -471,6 +471,8 @@ fn a_moved_episode_keeps_its_analysis() {
     let id = added[0];
     let cancel = CancelToken::new();
     let m = project.ingest(&tools, id, "eng", &cancel, &|_, _, _| {}).unwrap();
+    assert!(project.posters_to_pick().unwrap().is_empty(), "no faces yet: nothing to pick from");
+    assert!(!project.pick_poster(&tools, id, &cancel).unwrap());
 
     // A face (clearest at frame 25) and a decision about it.
     let det = |frame, quality| FaceDet { frame, bbox: [0.4, 0.3, 0.55, 0.6], score: 0.9, norm: 22.0, quality };
@@ -512,6 +514,17 @@ fn a_moved_episode_keeps_its_analysis() {
     assert!(project.recover().unwrap().posters.is_empty(), "a picked poster is not an outdated one");
     assert!(!project.pick_poster(&tools, id, &cancel).unwrap(), "picked once");
     assert_eq!(project.media(id).unwrap().poster.as_deref(), Some(poster.as_str()));
+    // A poster that went missing is made again of the same frame.
+    std::fs::remove_file(&small).unwrap();
+    assert_eq!(project.recover().unwrap().posters, [id]);
+    assert!(project.refresh_posters(&tools, id, &cancel).unwrap());
+    assert_eq!(project.media(id).unwrap().poster_small.as_deref(), Some(small.as_str()));
+    assert!(Path::new(&small).is_file() && project.recover().unwrap().posters.is_empty());
+    // The main cast changed: picked again, and the frame is the same.
+    project.posters_pick_again().unwrap();
+    assert_eq!(project.posters_to_pick().unwrap(), [id]);
+    assert!(!project.pick_poster(&tools, id, &cancel).unwrap());
+    assert!(project.posters_to_pick().unwrap().is_empty());
 
     // The folder was renamed: missing, then found again where it went.
     let moved = tmp.path().join("Moved");

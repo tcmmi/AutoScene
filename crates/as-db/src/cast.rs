@@ -1498,6 +1498,37 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_medias_cast_is_the_faces_found_or_pinned_on_a_character() {
+        let db = ProjectDb::memory();
+        let (m, other) = (ready_media(&db, "/v/a.mkv"), ready_media(&db, "/v/b.mkv"));
+        let faces: Vec<NewTrack> = (0..7).map(|i| track(i * 100, 0.9)).collect();
+        let ids = db.put_face_chunk(m, 0, 1000, &faces, &[], |_| Ok(())).unwrap();
+        let elsewhere = db.put_face_chunk(other, 0, 1000, &faces[..1], &[], |_| Ok(())).unwrap();
+        let (a, b) = (CharacterId::new(), CharacterId::new());
+        let t = |id, c, assign, via_body| TrackUpdate { id, character: Some(c), assign, score: 1.0, via_body };
+        // Found on A, found on B, only a guess, named by its body, not a
+        // face after all, pinned by hand; one face is on nobody, and one of
+        // A's is in another media.
+        let now = [
+            t(ids[0], a, TrackAssign::Auto, false),
+            t(ids[1], b, TrackAssign::Auto, false),
+            t(ids[2], a, TrackAssign::Unsure, false),
+            t(ids[3], a, TrackAssign::Auto, true),
+            t(ids[4], a, TrackAssign::Auto, false),
+            t(ids[5], b, TrackAssign::Auto, false),
+            t(elsewhere[0], a, TrackAssign::Auto, false),
+        ];
+        assert!(db.apply_identity(db.cast_rev().unwrap(), &[a, b], &now, &[], &[]).unwrap());
+        db.mark_not_face(&[ids[4]]).unwrap();
+        db.pin_tracks(&[ids[5]], a, None).unwrap();
+        let cast = db.media_cast_dets(m).unwrap();
+        let who: Vec<CharacterId> = cast.iter().map(|(c, _)| *c).collect();
+        assert_eq!(who, [a, b, a], "the found, the found, the pinned: in the order they come on screen");
+        assert!(cast.iter().all(|(_, dets)| !dets.is_empty()));
+        assert_eq!(db.media_cast_dets(other).unwrap().len(), 1);
+    }
+
+    #[test]
     fn edits_stick_and_survive_reanalysis() {
         let db = ProjectDb::memory();
         let m = ready_media(&db, "/v/a.mkv");

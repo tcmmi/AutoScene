@@ -128,10 +128,20 @@ impl Project {
             .collect())
     }
 
-    /// A media's faces were found again or grouped anew: its poster frame is
-    /// picked again by the next [`Project::pick_poster`] round.
+    /// A media's faces were found again: its poster frame is picked again by
+    /// the next [`Project::pick_poster`] round.
     pub fn poster_pick_again(&self, id: MediaId) -> ProjectResult<()> {
         Ok(self.db().delete_meta(&picked_key(id))?)
+    }
+
+    /// The main cast changed (a name, a hidden character, a merge, a new
+    /// grouping): every media's poster frame is picked again. A poster whose
+    /// frame stays the one picked is not made again.
+    pub fn posters_pick_again(&self) -> ProjectResult<()> {
+        for (key, _) in self.db().meta_range(POSTER_PICKED)? {
+            self.db().delete_meta(&key)?;
+        }
+        Ok(())
     }
 
     /// The frame of `id` (`frames` frames at `fps`) that shows the most of
@@ -284,6 +294,56 @@ mod tests {
         assert_eq!(pick(&faces), Some((5_000, 1)));
         // ... and the titles will do when the body shows nobody.
         assert_eq!(pick(&faces[..2]), Some((300, 2)));
+    }
+
+    #[test]
+    fn a_medias_poster_frame_follows_its_cast_its_shots_and_its_length() {
+        use crate::analysis::tests::project_with_media;
+        use crate::cast::tests::seen;
+
+        let frames = 4000;
+        let (_dir, project, id) = project_with_media(frames);
+        let seg = |start, end, kind| Segment { start, end, kind, tiny: false };
+        let shots = [
+            seg(0, 400, SegmentKind::Shot),
+            seg(400, 2000, SegmentKind::Shot),
+            seg(2000, 2100, SegmentKind::Dissolve),
+            seg(2100, 4000, SegmentKind::Shot),
+        ];
+        project.db().store_segments(id, &shots).unwrap();
+        // Two people in the body of the media (frames 500 to 560), three in
+        // its opening stretch, three inside a dissolve, and three "seen"
+        // past the end of the file (as when it came back shorter).
+        let found = [
+            seen(1, 0, 30, 90, 0.05),
+            seen(2, 0, 30, 90, 0.4),
+            seen(3, 0, 30, 90, 0.75),
+            seen(1, 400, 500, 560, 0.1),
+            seen(2, 400, 500, 560, 0.6),
+            seen(1, 2000, 2010, 2070, 0.05),
+            seen(2, 2000, 2010, 2070, 0.4),
+            seen(3, 2000, 2010, 2070, 0.75),
+            seen(1, 2100, 4010, 4070, 0.05),
+            seen(2, 2100, 4010, 4070, 0.4),
+            seen(3, 2100, 4010, 4070, 0.75),
+        ];
+        project.store_face_chunk(id, 0, frames, &as_analysis::tracks::encode(&found), &[], &[]).unwrap();
+        // Nobody is on a character yet: no frame.
+        assert_eq!(project.poster_frame(id, frames, 24.0).unwrap(), None);
+        project.finish_faces(id).unwrap();
+        assert_eq!(project.recluster().unwrap(), 3);
+        // The body's two, away from the cut at 400, win over the three of the opening.
+        assert_eq!(project.poster_frame(id, frames, 24.0).unwrap(), Some((500, 2)));
+        // A media of which the opening stretch is all there is to see takes it.
+        assert_eq!(project.poster_frame(id, 400, 24.0).unwrap(), Some((45, 3)));
+        // Without shots any frame of the file may be it, never one past its end.
+        project.db().store_segments(id, &[]).unwrap();
+        assert_eq!(project.poster_frame(id, frames, 24.0).unwrap(), Some((2010, 3)));
+        // A hidden character is not main cast: frames with the other two are as good, the first wins.
+        let third = project.db().characters().unwrap().into_iter().min_by_key(|c| c.tracks).unwrap();
+        assert_eq!(third.tracks, 3);
+        project.db().set_character_hidden(third.id, true, &[]).unwrap();
+        assert_eq!(project.poster_frame(id, frames, 24.0).unwrap(), Some((500, 2)));
     }
 
     fn character(n: u32, name: Option<&str>, secs: f64, hidden: bool) -> CharacterRow {

@@ -63,6 +63,10 @@ const PLACE_FACES_AFTER: std::time::Duration = std::time::Duration::from_millis(
 /// such decision ([`Project::reassign`]), and the UI refetches again.
 pub fn cast_edited(app: &AppHandle, project: &Arc<Project>, edit: &CastEdit) {
     cast_changed(app, project);
+    // Who the main cast is changed: the posters show it.
+    if matches!(edit, CastEdit::Rename { .. } | CastEdit::SetHidden { .. } | CastEdit::Merge { .. }) {
+        repick_posters(app, project);
+    }
     if !edit.moves_faces() {
         return;
     }
@@ -1131,8 +1135,54 @@ pub fn queue_posters(app: &AppHandle, project: &Arc<Project>, ids: Vec<MediaId>)
             sync_library_posters(&app2, &project);
             media_changed(&app2, &project, Some(id));
         }
-        Ok(())
+        // A pick asked for while this job waited was not queued beside it.
+        pick_posters(&app2, &project, ctx)
     });
+}
+
+/// Pick the poster frame of every media that is due (see
+/// [`Project::posters_to_pick`]), one at a time; each media and the Library
+/// card show the new picture as soon as it exists.
+fn pick_posters(app: &AppHandle, project: &Arc<Project>, ctx: &JobCtx) -> Result<(), JobError> {
+    let state = app.state::<AppState>();
+    let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
+    let ids = project.posters_to_pick().map_err(job_error)?;
+    for (i, &id) in ids.iter().enumerate() {
+        if ctx.cancel.is_cancelled() {
+            return Err(JobError::Cancelled);
+        }
+        let stage = msg!("job.stage.poster", "Poster {{n, number}} of {{total, number}}", n = i + 1, total = ids.len());
+        ctx.progress(&stage, i as f64 / ids.len() as f64);
+        match project.pick_poster(&tools, id, &ctx.cancel) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(ProjectError::Cancelled) => return Err(JobError::Cancelled),
+            // The poster stays as it is; the next launch tries again.
+            Err(e) => {
+                log::warn!("picking the poster of {id}: {}", e.detail());
+                continue;
+            }
+        }
+        // A project made in this session has only its first posters allowed.
+        if let Ok(m) = project.media(id) {
+            for poster in [&m.poster, &m.poster_small].into_iter().flatten() {
+                crate::state::allow_asset(app, std::path::Path::new(poster));
+            }
+        }
+        // The Library card first, as in `queue_posters`.
+        sync_library_posters(app, project);
+        media_changed(app, project, Some(id));
+    }
+    Ok(())
+}
+
+/// The main cast changed (a name, a hidden character, a merge, a new
+/// grouping): the posters are picked again.
+pub fn repick_posters(app: &AppHandle, project: &Arc<Project>) {
+    if let Err(e) = project.posters_pick_again() {
+        return log::warn!("forgetting the picked posters: {}", e.detail());
+    }
+    queue_poster_picks(app, project);
 }
 
 /// Pick the frame each media's posters show, once its faces are found and
@@ -1162,36 +1212,7 @@ pub fn queue_poster_picks(app: &AppHandle, project: &Arc<Project>) {
     let pid = project.id;
     let waiting =
         move |j: &JobInfo| j.kind == JobKind::Posters && j.project_id == Some(pid) && j.state == JobState::Queued;
-    state.jobs.submit_unless(waiting, spec, move |ctx| {
-        let state = app2.state::<AppState>();
-        let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
-        let ids = project.posters_to_pick().map_err(job_error)?;
-        for (i, &id) in ids.iter().enumerate() {
-            let stage =
-                msg!("job.stage.poster", "Poster {{n, number}} of {{total, number}}", n = i + 1, total = ids.len());
-            ctx.progress(&stage, i as f64 / ids.len() as f64);
-            match project.pick_poster(&tools, id, &ctx.cancel) {
-                Ok(true) => {}
-                Ok(false) => continue,
-                Err(ProjectError::Cancelled) => return Err(JobError::Cancelled),
-                // The poster stays as it is; the next launch tries again.
-                Err(e) => {
-                    log::warn!("picking the poster of {id}: {}", e.detail());
-                    continue;
-                }
-            }
-            // A project made in this session has only its first posters allowed.
-            if let Ok(m) = project.media(id) {
-                for poster in [&m.poster, &m.poster_small].into_iter().flatten() {
-                    crate::state::allow_asset(&app2, std::path::Path::new(poster));
-                }
-            }
-            // The Library card first, as in `queue_posters`.
-            sync_library_posters(&app2, &project);
-            media_changed(&app2, &project, Some(id));
-        }
-        Ok(())
-    });
+    state.jobs.submit_unless(waiting, spec, move |ctx| pick_posters(&app2, &project, ctx));
 }
 
 /// Bring a project's cast up to date on the upkeep worker (see
@@ -1224,6 +1245,7 @@ pub fn queue_regroup(app: &AppHandle, project: &Arc<Project>) {
         }
         cast_changed(&app2, &project);
         if regrouped.is_some() {
+            repick_posters(&app2, &project);
             crate::commands::anilist::look_up(&app2, project.id, true);
         }
         Ok(())

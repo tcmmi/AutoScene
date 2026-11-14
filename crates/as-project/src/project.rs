@@ -822,12 +822,14 @@ impl Project {
             index_blob: index.to_bytes(),
             info,
         };
+        // The poster is a tenth of the way in again: its frame is picked anew
+        // (forgotten first: stopped between the two, the first poster would
+        // count as the picked one).
+        let _ = self.db.delete_meta(&crate::poster::picked_key(id));
         self.db.record_ingest(id, &rec)?;
         // Indexed again (a file that was missing): pictures it no longer
         // uses go, also when no poster could be made this time.
         self.remove_stale_posters(&m, [rec.poster.as_deref(), rec.poster_small.as_deref()]);
-        // The poster is a tenth of the way in again: its frame is picked anew.
-        let _ = self.db.delete_meta(&crate::poster::picked_key(id));
         self.indexes.lock().insert(id, Arc::new(index));
         self.media(id)
     }
@@ -2072,11 +2074,13 @@ impl Drop for WorkDir {
 }
 
 /// The frame a media's posters show when it was picked for them
-/// (`poster.rs`): their file names end in `-f<frame>`. `None`: the frame a
-/// tenth of the way in.
+/// (`poster.rs`): their file names end in `-f<frame>`, after the media's id
+/// (36 characters, which may hold an `-f` themselves) and the size. `None`:
+/// the frame a tenth of the way in.
 pub(crate) fn picked_frame(m: &MediaItem) -> Option<FrameIdx> {
     let stem = Path::new(m.poster.as_deref()?).file_stem()?.to_str()?;
-    stem.rsplit_once("-f")?.1.parse().ok()
+    let (name, frame) = stem.rsplit_once("-f")?;
+    if name.len() > 36 { frame.parse().ok() } else { None }
 }
 
 /// Does a media need its posters made again? A ready media does when either
@@ -2856,6 +2860,9 @@ mod tests {
         assert_eq!(at(&format!("thumbs/{id}-720-f1234.jpg")), Some(1234));
         assert_eq!(at(&format!("thumbs/{id}-480x270-f0.jpg")), Some(0));
         assert_eq!(at(&format!("thumbs/{id}-720-fx.jpg")), None);
+        // A poster from before the sizes were in the name, of an id that ends like a frame.
+        assert_eq!(at("thumbs/01a1d9d7-f9be-72d9-afd1-f12345678901.jpg"), None);
+        assert_eq!(at("thumbs/01a1d9d7-f9be-72d9-afd1-f12345678901-720-f7.jpg"), Some(7));
         assert_eq!(picked_frame(&media(ready, None, None)), None);
     }
 

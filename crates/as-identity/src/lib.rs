@@ -354,6 +354,56 @@ pub(crate) fn together(a: &TrackIn, b: &TrackIn) -> bool {
     share_a_frame(&a.seen, &b.seen)
 }
 
+/// A character the user pinned faces to keeps the faces it had. A merge by
+/// hand pins the merged character's faces to the other one (`as-db`
+/// `merge_characters`), and that one's own faces are often too unlike them
+/// to join their group (had they been alike, the grouping would have made
+/// one character of the two). The pins hold the character, so its own faces
+/// would go on as a new one: the merge undone, and a name left on the faces
+/// that were merged in. So the unpinned group that holds most of what a
+/// character held besides the pins, and was that character more than any
+/// other, goes on as that character: it joins the group pinned to it.
+fn keep_own_faces(tracks: &[TrackIn], core: &[usize], chars: &mut Vec<(Vec<usize>, Option<CharKey>)>) {
+    let pin_of = |g: &[usize]| g.iter().find_map(|&i| tracks[i].pin);
+    let pinned: HashMap<CharKey, usize> =
+        chars.iter().enumerate().filter_map(|(ci, (g, _))| Some((pin_of(g)?, ci))).collect();
+    if pinned.is_empty() {
+        return;
+    }
+    let mut held: HashMap<CharKey, f32> = HashMap::new();
+    for &i in core {
+        if tracks[i].pin.is_none()
+            && let Some(k) = tracks[i].previous
+        {
+            *held.entry(k).or_default() += tracks[i].quality;
+        }
+    }
+    let mut follows: Vec<(usize, usize)> = Vec::new();
+    for (ci, (g, _)) in chars.iter().enumerate() {
+        if pin_of(g).is_some() {
+            continue;
+        }
+        let mut was: HashMap<CharKey, f32> = HashMap::new();
+        for &i in g {
+            if let Some(k) = tracks[i].previous {
+                *was.entry(k).or_default() += tracks[i].quality;
+            }
+        }
+        // The character most of the group's earlier faces were (a tie: the lower key).
+        let Some((&k, &w)) = was.iter().max_by(|a, b| a.1.total_cmp(b.1).then(b.0.cmp(a.0))) else { continue };
+        if let Some(&pi) = pinned.get(&k)
+            && w > 0.5 * held[&k]
+        {
+            follows.push((ci, pi));
+        }
+    }
+    for &(ci, pi) in &follows {
+        let g = std::mem::take(&mut chars[ci].0);
+        chars[pi].0.extend(g);
+    }
+    chars.retain(|(g, _)| !g.is_empty());
+}
+
 /// Groups that are (nearly) only ever on screen with a bigger group, most of
 /// whose faces are the face beside them seen twice — a reflection, a face on
 /// a screen — go to `loose`: no character of their own, and their faces
@@ -643,6 +693,7 @@ fn identify_in(tracks: &[TrackIn], p: &Params) -> Outcome {
             loose.extend(g);
         }
     }
+    keep_own_faces(tracks, &core, &mut chars);
     let copied = drop_copies(tracks, &mut chars, &mut loose, p);
     // Pins decide first; then the biggest previous overlaps, one to one.
     let mut taken: HashSet<CharKey> = HashSet::new();

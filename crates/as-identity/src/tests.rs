@@ -1429,3 +1429,106 @@ fn a_look_too_alike_gets_no_prototype_of_its_own() {
     assert_eq!(proto::prototypes(&members, 12, 0.98).len(), 2);
     assert_eq!(proto::prototypes(&members, 12, 0.88).len(), 1);
 }
+
+/// Whether the tracks `a` and the tracks `b` are two characters (each of them one).
+fn are_two(o: &Outcome, a: &[usize], b: &[usize]) -> bool {
+    one_character(o, a) != one_character(o, b)
+}
+
+/// Two people who look nothing alike, `per` tracks each, never in a frame
+/// together. Returns the tracks and each one's indices.
+fn two_people(rng: &mut Rng, per: [u32; 2]) -> (Vec<TrackIn>, [Vec<usize>; 2]) {
+    let centres = [rng.unit(), rng.unit()];
+    let mut tracks = Vec::new();
+    let mut ids = [Vec::new(), Vec::new()];
+    for i in 0..per[0].max(per[1]) {
+        for s in 0..2 {
+            if i < per[s] {
+                ids[s].push(tracks.len());
+                tracks.push(track(0, (2 * i + s as u32) * 100, around(rng, &centres[s], 0.85), 0.8));
+            }
+        }
+    }
+    (tracks, ids)
+}
+
+#[test]
+fn a_merge_by_hand_of_two_unlike_characters_holds() {
+    // The grouping made two characters (1 and 2) of faces far too unlike to
+    // join; the user merged 2 into 1, as the cast stores it: 2's faces are
+    // pinned to 1, 1's own faces were 1 and are not pinned.
+    for per in [[30, 30], [40, 8], [8, 40]] {
+        let mut rng = Rng(44);
+        let (mut tracks, [a, b]) = two_people(&mut rng, per);
+        // Apart without the merge.
+        assert!(are_two(&identify(&tracks, &Params::default()), &a, &b));
+        a.iter().for_each(|&i| tracks[i].previous = Some(1));
+        b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+        // Six faces of a third person were 1 too (an older grouping's
+        // mistake) and group apart now: 1's own faces are most of what it
+        // held, not all of it.
+        let third = rng.unit();
+        let first_stray = tracks.len();
+        for i in 0..6u32 {
+            tracks.push(TrackIn {
+                previous: Some(1),
+                ..track(0, 100_000 + i * 100, around(&mut rng, &third, 0.85), 0.8)
+            });
+        }
+        let strays: Vec<usize> = (first_stray..tracks.len()).collect();
+        let o = identify(&tracks, &Params::default());
+        assert_eq!(o.characters.len(), 2, "{per:?}");
+        assert!(!are_two(&o, &a, &b));
+        assert!(are_two(&o, &a, &strays));
+        assert_eq!(o.characters[one_character(&o, &a)].key, Some(1));
+        // Also when new episodes have added many more faces of the first
+        // one, and when the cast is grouped once more after that.
+        let first_new = tracks.len();
+        for i in 0..120u32 {
+            let like = tracks[a[i as usize % a.len()]].embedding.clone();
+            tracks.push(track(1, i * 100, around(&mut rng, &like, 0.95), 0.8));
+        }
+        let all_a: Vec<usize> = a.iter().copied().chain(first_new..tracks.len()).collect();
+        let o = identify(&tracks, &Params::default());
+        assert!(!are_two(&o, &all_a, &b), "{per:?}");
+        for (t, (to, _)) in tracks.iter_mut().zip(&o.tracks) {
+            t.previous = to.character().and_then(|c| o.characters[c].key);
+        }
+        let o = identify(&tracks, &Params::default());
+        assert!(!are_two(&o, &all_a, &b), "{per:?}");
+        assert_eq!(o.characters[one_character(&o, &b)].key, Some(1));
+    }
+}
+
+#[test]
+fn a_named_character_lets_go_of_faces_that_are_not_most_of_it() {
+    // An older grouping put two people on one character (7), which the user
+    // named: five faces of the bigger one are pinned. A better grouping
+    // parts them: the smaller one's faces were 7, but are not most of what 7
+    // held, and go on as a character of their own.
+    let mut rng = Rng(45);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [40, 25]);
+    tracks.iter_mut().for_each(|t| t.previous = Some(7));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(7));
+    let o = identify(&tracks, &Params::default());
+    assert!(are_two(&o, &a, &b));
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(7));
+    assert_ne!(o.characters[one_character(&o, &b)].key, Some(7));
+}
+
+#[test]
+fn a_group_that_was_mostly_another_character_does_not_follow_a_pin() {
+    // Character 3 is three faces the user put together (pinned); one more
+    // face was placed with it and now groups with the 40 faces of character
+    // 5, of whom it is. That face is all 3 held besides its pins, but the
+    // group was 5 far more than 3: it stays 5.
+    let mut rng = Rng(46);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [3, 41]);
+    a.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(3), Some(3)));
+    b.iter().for_each(|&i| tracks[i].previous = Some(5));
+    tracks[b[0]].previous = Some(3);
+    let o = identify(&tracks, &Params::default());
+    assert!(are_two(&o, &a, &b));
+    assert_eq!(o.characters[one_character(&o, &b)].key, Some(5));
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(3));
+}

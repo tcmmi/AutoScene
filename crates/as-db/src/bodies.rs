@@ -780,7 +780,7 @@ mod tests {
         assert_eq!(db.identity_bodies().unwrap().len(), 1);
         // Merged: everything of one character goes to the other.
         db.pin_bodies(&[new[0]], walter).unwrap();
-        db.merge_characters(walter, jesse).unwrap();
+        db.merge_characters(walter, jesse, &[]).unwrap();
         assert!(db.assigned_bodies().unwrap().iter().all(|b| b.character_id == jesse));
     }
 }

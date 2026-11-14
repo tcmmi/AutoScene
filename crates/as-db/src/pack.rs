@@ -300,7 +300,7 @@ mod tests {
         db.set_pack_state(heisenberg, r#"{"solo":true}"#, None).unwrap();
         db.set_pack_overrides(heisenberg, &[(m, 102)], Some(true)).unwrap();
         db.set_pack_overrides(walter, &[(m, 0)], Some(false)).unwrap();
-        db.merge_characters(heisenberg, walter).unwrap();
+        db.merge_characters(heisenberg, walter, &[]).unwrap();
         let mut o = db.pack_overrides(walter).unwrap();
         o.sort_by_key(|x| x.1);
         assert_eq!(o, [(m, 0, false), (m, 102, true)]);
@@ -319,7 +319,7 @@ mod tests {
         // Both decided about the shot at 0, differently.
         db.set_pack_overrides(walter, &[(m, 0)], Some(true)).unwrap();
         db.set_pack_overrides(heisenberg, &[(m, 0)], Some(false)).unwrap();
-        db.merge_characters(heisenberg, walter).unwrap();
+        db.merge_characters(heisenberg, walter, &[]).unwrap();
         assert_eq!(db.pack_overrides(walter).unwrap(), [(m, 0, true)]);
         assert_eq!(db.pack_state(walter).unwrap(), Some((r#"{"limit":10}"#.into(), None)));
         assert!(db.pack_overrides(heisenberg).unwrap().is_empty());

@@ -25,7 +25,11 @@
 //!    can't be joined piece by piece, one episode's fragment at a time.
 //!
 //! Pins are absolute: groups pinned to different characters never meet,
-//! and a pinned track never steps aside.
+//! and a pinned track never steps aside. Tracks pinned to one character
+//! start in groups of like faces, not as one: the user may have pinned two
+//! people to it (a merge by hand, a face moved), and one group of them all
+//! is like neither, so no face of either would join it. Several groups may
+//! leave here pinned to one character; `identify` makes one of them.
 //!
 //! Faces seen together hold two people apart; one person in two looks is
 //! never seen beside themself. In a space fitted to animation the bar lies
@@ -120,7 +124,7 @@ pub fn cluster(tracks: &[TrackIn], core: &[usize], p: &Params) -> Vec<Vec<usize>
 
 /// [`cluster`] in runs of at most `levels` groups (but all the pinned ones).
 pub(crate) fn cluster_in(tracks: &[TrackIn], core: &[usize], p: &Params, levels: Levels) -> Vec<Vec<usize>> {
-    let mut groups = initial_groups(tracks, core);
+    let mut groups = initial_groups(tracks, core, p);
     let mut aside = Vec::new();
     // 1. Faces seen together are two people.
     if groups.len() > levels.single {
@@ -193,29 +197,53 @@ fn stretches(tracks: &[TrackIn], mut groups: Vec<Group>, cap: usize) -> Vec<Vec<
     out
 }
 
-/// Singletons, except that tracks pinned to the same character start together.
-fn initial_groups(tracks: &[TrackIn], core: &[usize]) -> Vec<Group> {
+/// Singletons, except that a track pinned to a character starts with the
+/// group of that character's pinned tracks it is most like, if it is like
+/// that group as two groups must be alike to join: on average as alike as
+/// `Params::link` asks and, where two tight groups stay two
+/// (`Params::tight`), not that much less alike than the group's own faces
+/// are to one another (a group of one face is taken as wholly coherent: a
+/// second face must be that like the first). The rule has no floor of tracks
+/// here: the few faces a merge pins of the character that stays must not
+/// start among the many of the one merged in, which they are about as like
+/// as the bar asks when the two are a hero and the everyday self.
+fn initial_groups(tracks: &[TrackIn], core: &[usize], p: &Params) -> Vec<Group> {
     let dim = tracks.first().map_or(0, |t| t.embedding.len());
-    let mut by_pin: HashMap<CharKey, usize> = HashMap::new();
+    let mut by_pin: HashMap<CharKey, Vec<usize>> = HashMap::new();
     let mut groups: Vec<Group> = Vec::with_capacity(core.len());
+    // Per group, the sum of its tracks' squared weights (for its cohesion).
+    let mut squares: Vec<f32> = Vec::with_capacity(core.len());
     for &i in core {
         let t = &tracks[i];
-        let slot = match t.pin {
-            Some(k) => *by_pin.entry(k).or_insert_with(|| {
-                groups.push(Group { members: vec![], sum: vec![0.0; dim], weight: 0.0, pin: Some(k) });
-                groups.len() - 1
-            }),
-            None => {
-                groups.push(Group { members: vec![], sum: vec![0.0; dim], weight: 0.0, pin: None });
-                groups.len() - 1
-            }
-        };
-        let g = &mut groups[slot];
         let w = weight(t);
+        // How alike the track is to a group's faces on average, and whether that is enough.
+        let alike = |slot: usize| {
+            let g: &Group = &groups[slot];
+            let mean = dot(&g.sum, &t.embedding) / g.weight.max(1e-9);
+            let within = if g.members.len() < 2 { 1.0 } else { cohesion(norm(&g.sum), g.weight, squares[slot]) };
+            (mean >= p.link.max(p.tight * within)).then_some((mean, slot))
+        };
+        let like = t.pin.and_then(|k| {
+            by_pin
+                .get(&k)?
+                .iter()
+                .filter_map(|&slot| alike(slot))
+                .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)))
+        });
+        let slot = like.map(|(_, slot)| slot).unwrap_or_else(|| {
+            groups.push(Group { members: vec![], sum: vec![0.0; dim], weight: 0.0, pin: t.pin });
+            squares.push(0.0);
+            if let Some(k) = t.pin {
+                by_pin.entry(k).or_default().push(groups.len() - 1);
+            }
+            groups.len() - 1
+        });
+        let g = &mut groups[slot];
         for (s, x) in g.sum.iter_mut().zip(&t.embedding) {
             *s += w * x;
         }
         g.weight += w;
+        squares[slot] += w * w;
         g.members.push(i);
     }
     groups
@@ -648,11 +676,69 @@ mod tests {
     }
 
     #[test]
+    fn tracks_pinned_to_one_character_start_with_their_like() {
+        // Two faces along one direction and one along another, all pinned
+        // to character 3; one more like the first two, pinned to 4; one
+        // pinned to nobody; and one of 3's that is like both of its groups
+        // enough, more like the second.
+        let face = |start: u32, x: f32, y: f32, pin: Option<CharKey>| {
+            let mut t = at(start);
+            t.embedding = vec![x, y];
+            t.pin = pin;
+            t
+        };
+        let tracks = [
+            face(0, 1.0, 0.0, Some(3)),
+            face(100, 0.0, 1.0, Some(3)),
+            face(200, 0.96, 0.28, Some(3)),
+            face(300, 1.0, 0.0, Some(4)),
+            face(400, 1.0, 0.0, None),
+            face(500, 0.6, 0.8, Some(3)),
+        ];
+        let groups = initial_groups(&tracks, &[0, 1, 2, 3, 4, 5], &Params::default());
+        let members: Vec<(Vec<usize>, Option<CharKey>)> = groups.iter().map(|g| (g.members.clone(), g.pin)).collect();
+        assert_eq!(members, [(vec![0, 2], Some(3)), (vec![1, 5], Some(3)), (vec![3], Some(4)), (vec![4], None)]);
+    }
+
+    #[test]
+    fn a_pinned_track_far_less_like_a_group_than_the_group_is_itself_starts_apart() {
+        // Three faces 0.9 alike in pairs, and a fourth 0.5 like each of
+        // them, all pinned to one character. Over the link bar, the fourth
+        // starts with them; where two tight groups stay two (at 0.70 of a
+        // group's own cohesion), it starts apart. A second face is taken to
+        // a single one only if it is that like it.
+        let face = |start: u32, e: [f32; 4]| {
+            let mut t = at(start);
+            t.embedding = e.to_vec();
+            t.pin = Some(3);
+            t
+        };
+        let h = (0.1f32 / 3.0).sqrt();
+        let (r, q) = (0.9f32.sqrt(), 0.5 / 0.9f32.sqrt());
+        let tracks = [
+            face(0, [r, h * 2f32.sqrt(), 0.0, 0.0]),
+            face(100, [r, -h / 2f32.sqrt(), h * 1.5f32.sqrt(), 0.0]),
+            face(200, [r, -h / 2f32.sqrt(), -h * 1.5f32.sqrt(), 0.0]),
+            face(300, [q, 0.0, 0.0, (1.0 - q * q).sqrt()]),
+        ];
+        let starts = |p: &Params| -> Vec<Vec<usize>> {
+            initial_groups(&tracks, &[0, 1, 2, 3], p).into_iter().map(|g| g.members).collect()
+        };
+        assert_eq!(starts(&Params::default()), [vec![0, 1, 2, 3]]);
+        assert_eq!(starts(&Params { tight: 0.70, ..Params::default() }), [vec![0, 1, 2], vec![3]]);
+        // (0.9 of a single face's "cohesion" of 1 is over 0.70; 0.5 is not.)
+        assert_eq!(starts(&Params { tight: 0.95, ..Params::default() }), [vec![0], vec![1], vec![2], vec![3]]);
+    }
+
+    #[test]
     fn a_media_that_fits_in_one_run_goes_in_as_it_is() {
         // Not in time order: the run takes them in the order they came.
         let tracks: Vec<TrackIn> = [50, 10, 30, 20].map(at).into();
         for cap in [4, 5, usize::MAX] {
-            assert_eq!(firsts(&stretches(&tracks, initial_groups(&tracks, &[0, 1, 2, 3]), cap)), [[0, 1, 2, 3]]);
+            assert_eq!(
+                firsts(&stretches(&tracks, initial_groups(&tracks, &[0, 1, 2, 3], &Params::default()), cap)),
+                [[0, 1, 2, 3]]
+            );
         }
     }
 
@@ -661,7 +747,7 @@ mod tests {
         // 11 tracks, at most 4 a run: stretches of 4, 4 and 3, in time order.
         let tracks: Vec<TrackIn> = (0..11u32).map(|i| at(i * 7 % 11 * 100)).collect();
         let core: Vec<usize> = (0..11).collect();
-        let starts: Vec<Vec<u32>> = stretches(&tracks, initial_groups(&tracks, &core), 4)
+        let starts: Vec<Vec<u32>> = stretches(&tracks, initial_groups(&tracks, &core, &Params::default()), 4)
             .iter()
             .map(|p| p.iter().map(|g| tracks[g.members[0]].start).collect())
             .collect();

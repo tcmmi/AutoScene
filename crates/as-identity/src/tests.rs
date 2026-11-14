@@ -1642,6 +1642,108 @@ fn what_a_character_held_is_weighed_by_its_clear_faces() {
     assert_eq!(o.characters[one_character(&o, &a)].key, Some(1));
 }
 
+/// `n` more tracks of the person the tracks `like` are of, in media `media`.
+fn more_of(rng: &mut Rng, tracks: &mut Vec<TrackIn>, like: &[usize], media: u32, n: u32) -> Vec<usize> {
+    let first = tracks.len();
+    for i in 0..n {
+        let face = tracks[like[i as usize % like.len()]].embedding.clone();
+        tracks.push(track(media, i * 100, around(rng, &face, 0.95), 0.8));
+    }
+    (first..tracks.len()).collect()
+}
+
+#[test]
+fn a_merge_holds_when_the_merged_in_one_outgrows_the_character() {
+    // 2 (30 faces) was merged into 1 (40 faces) by hand: 2's faces are
+    // pinned to 1, and so are five of 1's own, as a merge pins them. Every
+    // episode then brings three times as many faces of the merged-in person
+    // as of the other: soon most of what 1 "held" is the merged-in one's.
+    // Both are held by pins, whatever grows.
+    let mut rng = Rng(52);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [40, 30]);
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(1));
+    b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let (mut all_a, mut all_b) = (a.clone(), b.clone());
+    for episode in 1..4 {
+        all_a.extend(more_of(&mut rng, &mut tracks, &a, episode, 20));
+        all_b.extend(more_of(&mut rng, &mut tracks, &b, episode, 60));
+        let o = identify(&tracks, &Params::default());
+        assert_eq!(o.characters.len(), 1, "episode {episode}");
+        assert!(!are_two(&o, &all_a, &all_b), "episode {episode}");
+        assert_eq!(o.characters[one_character(&o, &all_a)].key, Some(1));
+        remember(&mut tracks, &o);
+    }
+}
+
+#[test]
+fn faces_pinned_to_one_character_are_one_character_however_unlike() {
+    // Nothing but pins: thirty faces each of two people, all pinned to 4.
+    let mut rng = Rng(53);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [30, 30]);
+    tracks.iter_mut().for_each(|t| t.pin = Some(4));
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1);
+    assert!(!are_two(&o, &a, &b));
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(4));
+    // New faces of either join it, as they could not join one group of both.
+    let new_a = more_of(&mut rng, &mut tracks, &a, 1, 20);
+    let new_b = more_of(&mut rng, &mut tracks, &b, 2, 20);
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1);
+    assert!(!are_two(&o, &new_a, &new_b));
+    assert_eq!(o.tracks[new_a[0]].0.character(), o.tracks[a[0]].0.character());
+}
+
+#[test]
+fn characters_that_turn_out_to_be_one_person_still_become_one() {
+    // 2 was merged into 1 by hand (forty faces pinned to 1). A third
+    // character, 3, is that same person and groups with them now: twenty
+    // faces, fewer than the pins. It becomes 1 as well.
+    let mut rng = Rng(54);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [30, 40]);
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(1));
+    b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let c = more_of(&mut rng, &mut tracks, &b, 1, 20);
+    c.iter().for_each(|&i| tracks[i].previous = Some(3));
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1);
+    assert!(!are_two(&o, &b, &c));
+    // A named character with few faces of its own that a bigger, unnamed
+    // one of the same person groups with keeps its name over all of them:
+    // the group is the named one's own.
+    let mut rng = Rng(55);
+    let mut tracks: Vec<TrackIn> = Vec::new();
+    let one = rng.unit();
+    for i in 0..15u32 {
+        tracks.push(TrackIn { previous: Some(7), ..track(0, i * 100, around(&mut rng, &one, 0.85), 0.8) });
+    }
+    (0..5).for_each(|i| tracks[i].pin = Some(7));
+    for i in 0..40u32 {
+        tracks.push(TrackIn { previous: Some(9), ..track(1, i * 100, around(&mut rng, &one, 0.85), 0.8) });
+    }
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1);
+    assert_eq!(o.characters[0].key, Some(7));
+}
+
+#[test]
+fn a_character_made_of_a_few_faces_of_another_does_not_take_the_rest() {
+    // The user made a new character (9) of three faces the grouping had put
+    // on 2. They group with 2's forty faces again; 2 keeps its own.
+    let mut rng = Rng(56);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [30, 43]);
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    b.iter().for_each(|&i| tracks[i].previous = Some(2));
+    b[..3].iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(9), Some(9)));
+    let o = identify(&tracks, &Params::default());
+    assert!(are_two(&o, &b[..3], &b[3..]));
+    assert_eq!(o.characters[one_character(&o, &b[3..])].key, Some(2));
+    assert_eq!(o.characters[one_character(&o, &b[..3])].key, Some(9));
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(1));
+}
+
 /// Two selves of one person, the way a hero and the everyday self look to a
 /// face model: `per[s]` tracks around each of two centres that are `alike`
 /// to each other, each self's faces `fidelity[s]` like its centre, never in
@@ -1761,6 +1863,30 @@ fn a_merge_by_hand_of_two_selves_holds() {
     let all_a: Vec<usize> = a.iter().copied().chain(first_new..tracks.len()).collect();
     let o = identify(&tracks, &as_animation());
     assert!(!are_two(&o, &all_a, &b));
+}
+
+#[test]
+fn a_merge_of_two_selves_holds_when_the_merged_in_self_outgrows_the_other() {
+    // The second self (60 faces) was merged into the first (40) by hand, and
+    // five of the first self's own faces were pinned with the merge. The
+    // two are about as alike as the link bar asks: the five must not start
+    // among the sixty, or the first self's faces are held by nothing once
+    // later episodes bring far more of the merged-in self.
+    let mut rng = Rng(57);
+    let (mut tracks, [a, b]) = selves(&mut rng, [40, 60], 0.6, [0.85, 0.85]);
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(1));
+    b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let (mut all_a, mut all_b) = (a.clone(), b.clone());
+    for episode in 1..4 {
+        all_a.extend(more_of(&mut rng, &mut tracks, &a, episode, 10));
+        all_b.extend(more_of(&mut rng, &mut tracks, &b, episode, 60));
+        let o = identify(&tracks, &as_animation());
+        assert_eq!(o.characters.len(), 1, "episode {episode}");
+        assert!(!are_two(&o, &all_a, &all_b), "episode {episode}");
+        assert_eq!(o.characters[one_character(&o, &all_a)].key, Some(1));
+        remember(&mut tracks, &o);
+    }
 }
 
 #[test]

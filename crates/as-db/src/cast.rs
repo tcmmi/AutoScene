@@ -1233,11 +1233,6 @@ impl ProjectDb {
         })
     }
 
-    /// Everyone of `from` is `into`: its tracks are pinned there, its
-    /// suggestions, forbids and waiting decisions move along, `from` goes.
-    /// A face the user said isn't `into` doesn't follow; a face only its
-    /// body named follows as it is (never a pin). `into` takes `from`'s name
-    /// if it has none.
     /// Pin `anchors` to `c`, as naming a character does: only what is still its own.
     pub fn pin_character_anchors(&self, c: CharacterId, anchors: &[i64]) -> DbResult<()> {
         self.0.write(|tx| {
@@ -1246,12 +1241,21 @@ impl ProjectDb {
         })
     }
 
-    pub fn merge_characters(&self, from: CharacterId, into: CharacterId) -> DbResult<()> {
+    /// Everyone of `from` is `into`: its tracks are pinned there, its
+    /// suggestions, forbids and waiting decisions move along, `from` goes.
+    /// A face the user said isn't `into` doesn't follow; a face only its
+    /// body named follows as it is (never a pin). `into` takes `from`'s name
+    /// if it has none. `anchors` of `into`'s own faces are pinned to it as
+    /// well (as naming pins them): the merge is then held from both sides,
+    /// and a later grouping that finds the two too unlike to be one group
+    /// cannot leave `into`'s own faces without their character.
+    pub fn merge_characters(&self, from: CharacterId, into: CharacterId, anchors: &[i64]) -> DbResult<()> {
         if from == into {
             return Ok(());
         }
         self.0.write(|tx| {
             let (f, i) = (from.to_string(), into.to_string());
+            pin_anchors(tx, into, anchors)?;
             tx.execute(
                 "UPDATE tracks SET character_id = NULL, assign = 'none', score = 0
                   WHERE character_id = ?1 AND id IN (SELECT track_id FROM track_forbids WHERE character_id = ?2)",
@@ -1617,7 +1621,16 @@ pub(crate) mod tests {
         )
         .unwrap();
         db.rename_character(b, Some("Skyler"), &best(&db, b, 0)).unwrap();
-        db.merge_characters(b, a).unwrap();
+        // The one that stays has faces of its own pinned with the merge: of
+        // the ones asked for, those that are its own.
+        db.merge_characters(b, a, &[ids[0], ids[2]]).unwrap();
+        let now: Vec<(Option<CharacterId>, TrackAssign)> =
+            db.tracks_by_id(&ids).unwrap().into_iter().map(|t| (t.character_id, t.assign)).collect();
+        assert_eq!(
+            now,
+            [(Some(a), TrackAssign::Pinned), (Some(a), TrackAssign::Pinned), (Some(a), TrackAssign::Unsure)],
+            "its own face, the merged-in face, the merged-in guess"
+        );
         let rows = db.characters().unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!((rows[0].id, rows[0].name.as_deref(), rows[0].tracks, rows[0].unsure), (a, Some("Skyler"), 2, 1));
@@ -1665,7 +1678,7 @@ pub(crate) mod tests {
         assert_eq!(state(ids[3]), (Some(j), TrackAssign::Auto, true));
         db.set_character_hidden(j, false, &best(&db, j, 0)).unwrap();
         // A merge pins the character's own faces; the others follow as they were.
-        db.merge_characters(j, k).unwrap();
+        db.merge_characters(j, k, &[]).unwrap();
         assert_eq!(state(ids[2]), (Some(k), TrackAssign::Pinned, false));
         assert_eq!(state(ids[3]), (Some(k), TrackAssign::Auto, true));
         // The user's word makes a face theirs.
@@ -1712,7 +1725,7 @@ pub(crate) mod tests {
         assert_eq!(waiting.len(), 2);
         assert!(waiting.contains(&EditKind::Pin(a)) && waiting.contains(&EditKind::Pin(h)));
         // Merged meanwhile: the waiting decisions follow.
-        db.merge_characters(a, h).unwrap();
+        db.merge_characters(a, h, &[]).unwrap();
         assert!(db.track_edits(m).unwrap().iter().all(|e| e.kind == EditKind::Pin(h)));
     }
 
@@ -1923,7 +1936,7 @@ pub(crate) mod tests {
         db.rename_character(b, Some("B"), &best(&db, b, 0)).unwrap();
         // ids[1] is on b and the user said it is not a.
         db.forbid_tracks(&[ids[1]], a).unwrap();
-        db.merge_characters(b, a).unwrap();
+        db.merge_characters(b, a, &[]).unwrap();
         let t = &db.tracks_by_id(&[ids[1]]).unwrap()[0];
         assert_eq!((t.character_id, t.assign), (None, TrackAssign::None));
         assert_eq!(db.tracks(TrackFilter::Character(a)).unwrap().len(), 1);
@@ -2094,7 +2107,7 @@ pub(crate) mod tests {
         db.pin_tracks(&[ids[1]], b, Some(None)).unwrap();
         assert!(db.set_picked_covers(db.cast_rev().unwrap(), &[(a, ids[0]), (b, ids[1])], &[]).unwrap());
         assert_eq!(db.0.read(picked).unwrap(), 2);
-        db.merge_characters(b, a).unwrap();
+        db.merge_characters(b, a, &[]).unwrap();
         assert_eq!(db.0.read(picked).unwrap(), 1);
 
         // Faces found again: what was picked of them goes with them.

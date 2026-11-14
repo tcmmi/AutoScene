@@ -1616,7 +1616,12 @@ impl Project {
             CastEdit::Merge { from, into } => {
                 known(*from)?;
                 known(*into)?;
-                self.db().merge_characters(*from, *into)?;
+                // A few typical faces of the one that stays are pinned with
+                // the merge, as a name pins them: its own faces are then
+                // held by the user's word like the merged-in ones, whatever
+                // a later grouping makes of the two (`as_identity`).
+                let pins = anchors(&self.db().own_faces(*into)?, NAME_ANCHORS, &self.identity_params()?);
+                self.db().merge_characters(*from, *into, &pins)?;
             }
             CastEdit::SetCover { character_id, track } => {
                 self.db().set_character_cover(*character_id, *track as i64)?
@@ -1851,6 +1856,50 @@ pub(crate) mod tests {
         let fresh = end.iter().find(|c| c.0 == fresh).unwrap();
         assert_eq!((fresh.1, fresh.2.as_deref()), (4, None));
         assert_eq!(end.iter().find(|c| c.0 == ids[0]).unwrap().1, 1);
+    }
+
+    #[test]
+    fn a_merge_by_hand_holds_while_the_merged_in_one_outgrows_the_other() {
+        use crate::analysis::tests::project_with_episodes;
+
+        let frames = 8000;
+        let (_dir, project, media) =
+            project_with_episodes(&["Show - 01.mkv", "Show - 02.mkv", "Show - 03.mkv"], frames);
+        // An episode with `a` shots of one person and `b` of another, who look nothing alike.
+        let episode = |a: u32, b: u32| -> Vec<FaceTrack> {
+            let of = |who, at: u32| seen(who, at, at, at + 60, 0.1 * who as f32);
+            (0..a).map(|i| of(1, i * 100)).chain((0..b).map(|i| of(2, 3000 + i * 100))).collect()
+        };
+        let add = |m: MediaId, found: &[FaceTrack]| {
+            project.store_face_chunk(m, 0, frames, &tracks::encode(found), &[], &[]).unwrap();
+            project.finish_faces(m).unwrap();
+            project.recluster().unwrap()
+        };
+        assert_eq!(add(media[0], &episode(8, 40)), 2);
+        let cast = project.cast().unwrap().characters;
+        let (two, one) = (cast[0].id, cast[1].id);
+        assert_eq!((cast[0].tracks, cast[1].tracks), (40, 8));
+        // The bigger one is merged into the smaller: its forty faces are
+        // pinned there, and so are a few of the smaller one's own. (All of
+        // them as one group would be like the bigger one alone, and the
+        // smaller one's other faces could not join it.)
+        project.cast_edit(&CastEdit::Merge { from: two, into: one }).unwrap();
+        let pinned = |p: &Project| {
+            p.cast_tracks(TrackFilter::Character(one))
+                .unwrap()
+                .iter()
+                .filter(|t| t.assign == TrackAssign::Pinned)
+                .count()
+        };
+        assert_eq!(pinned(&project), 40 + NAME_ANCHORS);
+        assert_eq!(project.recluster().unwrap(), 1);
+        // Later episodes bring far more of the merged-in one than of the
+        // other: both stay the one character, whatever outweighs what.
+        assert_eq!(add(media[1], &episode(2, 12)), 1);
+        assert_eq!(add(media[2], &episode(2, 12)), 1);
+        let cast = project.cast().unwrap().characters;
+        assert_eq!((cast.len(), cast[0].id, cast[0].tracks), (1, one, 8 + 40 + 2 * (2 + 12)));
+        assert_eq!(pinned(&project), 40 + NAME_ANCHORS, "nothing more was pinned on the way");
     }
 
     #[test]

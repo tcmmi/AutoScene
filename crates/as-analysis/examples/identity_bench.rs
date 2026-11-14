@@ -1697,6 +1697,14 @@ fn env_params() -> Params {
         }
     }
     p.animated = std::env::var_os("ANIMATED").is_some_and(|v| v == "1");
+    // `TIGHT=<share>`: two tight groups stay two from this share on, in every
+    // space (0: nowhere); `TIGHT_TRACKS=<n>`: from that many tracks a group.
+    if let Some(v) = var("TIGHT") {
+        (p.tight, p.tight_animated) = (v, v);
+    }
+    if let Some(v) = var("TIGHT_TRACKS") {
+        p.tight_tracks = v as usize;
+    }
     p.adapt = std::env::var_os("ADAPT").is_none_or(|v| v != "0");
     if let Some(v) = var("CORE_QUALITY") {
         p.core_quality = v;

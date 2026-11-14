@@ -61,6 +61,13 @@ pub const VERSION: u32 = 4;
 /// `core_quality` 0.20).
 pub const ANIME_VERSION: u32 = VERSION + 1;
 
+/// [`VERSION`] for a cast of footage the user called (3D) animation, grouped
+/// in the space fitted to it. Kept apart so a change only that space sees
+/// can bump alone, and live action is not grouped again for it: +1, two
+/// tight groups with a gap between them stay two (a hero and the everyday
+/// self; [`Params::tight`]).
+pub const ANIMATION_VERSION: u32 = VERSION + 1;
+
 #[derive(Clone, Debug)]
 pub struct TrackIn {
     /// Media the track belongs to: tracks of one media on screen together can't be one person.
@@ -160,6 +167,26 @@ pub struct Params {
     /// anime embedder on anime) trusts its own geometry more. 1.0: as
     /// fitted.
     pub cl_cap: f32,
+    /// Two groups of at least `tight_tracks` tracks each stay two when they
+    /// are less alike to each other than this share of how alike the less
+    /// coherent of them is in itself: two tight groups with a gap between
+    /// them. A hero and the everyday self are never on screen together, so
+    /// no face seen beside another holds them apart, and in a space fitted
+    /// to animation the bar lies where strangers still look alike (see
+    /// `ahc`). 0: off, as it is outside that space.
+    pub tight: f32,
+    /// What `tight` is in the space fitted to footage the user called
+    /// animation ([`Fit::params`]). The room for it is narrow, and one
+    /// title set it (`bench/3d`): over two episodes of a 3D series in 42
+    /// amounts the grouping finds the hero and her everyday self 0.54 to
+    /// 0.68 of their own cohesion alike, and the least alike halves of one
+    /// figure it joins (15 tracks a side or more) 0.73. In one of thirteen
+    /// more episodes the two selves are over 0.70 alike and stay one.
+    pub tight_animated: f32,
+    /// Fewer tracks say too little about how alike a group's own faces
+    /// are. From 30 the rule misses the pair in a third of 42 amounts of
+    /// footage (a piece of one self joins the other first); from 15 in none.
+    pub tight_tracks: usize,
 }
 
 impl Default for Params {
@@ -197,6 +224,9 @@ impl Default for Params {
             table_dedup_cos: 0.98,
             merge_top: usize::MAX,
             cl_cap: 1.0,
+            tight: 0.0,
+            tight_animated: 0.70,
+            tight_tracks: 15,
         }
     }
 }
@@ -223,6 +253,9 @@ impl Params {
             copy_alike: 0.43,
             strangers_alone: 0.15,
             strangers_style: 0.30,
+            // Not measured for SFace: on one 3D episode of Fast Scan's
+            // tracks no share helped and 0.80 already cost.
+            tight_animated: 0.0,
             ..Self::default()
         }
     }

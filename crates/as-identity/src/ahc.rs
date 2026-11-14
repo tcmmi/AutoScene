@@ -26,6 +26,16 @@
 //!
 //! Pins are absolute: groups pinned to different characters never meet,
 //! and a pinned track never steps aside.
+//!
+//! Faces seen together hold two people apart; one person in two looks is
+//! never seen beside themself. In a space fitted to animation the bar lies
+//! where strangers still look alike, and a hero and the everyday self —
+//! two characters to the viewer — reach it. So where `Params::tight` is
+//! set, two groups that each hold enough tracks to know how alike their
+//! own faces are stay two when they are far less alike to each other: two
+//! tight groups with a gap between them, in both runs. The rule knows no
+//! pins: what the user merged by hand stays one character by its key
+//! (`keep_own_faces` in `identify`), whatever the groups here do.
 
 use std::collections::HashMap;
 
@@ -74,6 +84,14 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
 
 fn norm(v: &[f32]) -> f32 {
     dot(v, v).sqrt()
+}
+
+/// How alike the faces of a group are to one another: the weighted mean
+/// similarity of every two of them, from the length of their weighted sum,
+/// their total weight and the sum of their squared weights (unit-length
+/// faces: the sum over pairs is `|S|² − Σw²`).
+fn cohesion(norm: f32, weight: f32, squares: f32) -> f32 {
+    (norm * norm - squares) / (weight * weight - squares).max(1e-9)
 }
 
 /// How a run of the clustering takes faces seen together.
@@ -287,6 +305,8 @@ struct Merging<'a> {
     with: HashMap<usize, Vec<usize>>,
     /// The group each track is in (tracks that stepped aside are in none).
     owner: HashMap<usize, usize>,
+    /// Per group, the sum of its tracks' squared weights (for its cohesion).
+    squares: Vec<f32>,
 }
 
 impl Merging<'_> {
@@ -296,10 +316,22 @@ impl Merging<'_> {
         self.sim[a * k + b] * self.groups[a].weight * self.groups[b].weight / (self.norms[a] * self.norms[b]).max(1e-9)
     }
 
+    /// Two tight groups with a gap between them (`Params::tight`): each
+    /// holds enough tracks, and they are less alike to each other than that
+    /// share of the less coherent one's cohesion.
+    fn gap(&self, a: usize, b: usize) -> bool {
+        let (p, enough) = (self.p, self.p.tight_tracks.max(2));
+        if p.tight <= 0.0 || self.groups[a].members.len() < enough || self.groups[b].members.len() < enough {
+            return false;
+        }
+        let within = |g: usize| cohesion(self.norms[g], self.groups[g].weight, self.squares[g]);
+        self.sim[a * self.k + b] < p.tight * within(a).min(within(b))
+    }
+
     /// Whether `a` and `b` may become one group, and which tracks step aside
     /// for it: one of every pair of their faces seen together.
     fn allowed(&self, a: usize, b: usize) -> Option<Vec<usize>> {
-        if self.apart.get(a, b) {
+        if self.apart.get(a, b) || self.gap(a, b) {
             return None;
         }
         let Some(&clashes) = self.clash[a].get(&b).filter(|&&n| n > 0) else { return Some(Vec::new()) };
@@ -406,6 +438,8 @@ impl Merging<'_> {
         }
         ga.weight += gb.weight;
         ga.pin = ga.pin.or(gb.pin);
+        self.squares[a] += self.squares[b];
+        self.squares[b] = 0.0;
         // Pairs with b's faces are now a's.
         for (g, n) in std::mem::take(&mut self.clash[b]) {
             if g == a {
@@ -426,6 +460,7 @@ impl Merging<'_> {
                     *s -= w * x;
                 }
                 ga.weight -= w;
+                self.squares[a] -= w * w;
                 for &j in self.with.get(&t).into_iter().flatten() {
                     let Some(&g) = self.owner.get(&j) else { continue };
                     if g == a {
@@ -491,6 +526,8 @@ impl Merging<'_> {
         }
         let close = |x: f32, y: f32| (x - y).abs() <= 1e-3 * (1.0 + w);
         assert!(close(w, ga.weight), "weight of group {a}");
+        let squares: f32 = ga.members.iter().map(|&t| weight(&self.tracks[t]).powi(2)).sum();
+        assert!(close(squares, self.squares[a]), "squared weights of group {a}");
         assert!(sum.iter().zip(&ga.sum).all(|(&x, &y)| close(x, y)), "sum of group {a}");
         for x in (0..self.k).filter(|&x| x != a && self.alive[x]) {
             let v = dot(&ga.sum, &self.groups[x].sum) / (ga.weight * self.groups[x].weight);
@@ -532,6 +569,7 @@ fn merge(tracks: &[TrackIn], groups: Vec<Group>, p: &Params, together: Together,
         together,
         k,
         norms: groups.iter().map(|g| norm(&g.sum)).collect(),
+        squares: groups.iter().map(|g| g.members.iter().map(|&t| weight(&tracks[t]).powi(2)).sum()).collect(),
         apart: pinned_apart(tracks, &groups),
         groups,
         alive: vec![true; k],
@@ -588,6 +626,20 @@ mod tests {
             forbid: vec![],
             previous: None,
         }
+    }
+
+    #[test]
+    fn cohesion_is_the_mean_similarity_of_two_faces_whatever_they_weigh() {
+        // Two unit faces 0.4 alike, weighing 1 and 3: |S|² = 1 + 9 + 2·3·0.4.
+        let (w, v, alike) = (1.0f32, 3.0f32, 0.4f32);
+        let norm = (w * w + v * v + 2.0 * w * v * alike).sqrt();
+        assert!((cohesion(norm, w + v, w * w + v * v) - alike).abs() < 1e-6);
+        // Three faces all 0.25 alike, weights 1, 2, 2.
+        let ws = [1.0f32, 2.0, 2.0];
+        let squares: f32 = ws.iter().map(|x| x * x).sum();
+        let pairs = ws[0] * ws[1] + ws[0] * ws[2] + ws[1] * ws[2];
+        let norm = (squares + 2.0 * pairs * 0.25).sqrt();
+        assert!((cohesion(norm, ws.iter().sum(), squares) - 0.25).abs() < 1e-6);
     }
 
     /// The first track of each group, per stretch.

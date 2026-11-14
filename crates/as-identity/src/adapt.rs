@@ -132,9 +132,19 @@ impl Fit {
     /// `p` with the bars of the mixed space (the others as they are). The
     /// unsure bar is the link bar, above `assign`: a close call under it is
     /// as likely a stranger, and suggesting it was wrong more often than
-    /// right (measured on the Miraculous film).
+    /// right (measured on the Miraculous film). Where the user called the
+    /// footage animation, two tight groups stay two (`Params::tight`): the
+    /// link bar lies in the tail of its strangers, and a hero is never seen
+    /// beside the everyday self.
     pub fn params(&self, p: &Params) -> Params {
-        Params { link: self.link, unsure: self.link, copy_link: self.copy_link, copy_alike: self.copy_alike, ..*p }
+        Params {
+            link: self.link,
+            unsure: self.link,
+            copy_link: self.copy_link,
+            copy_alike: self.copy_alike,
+            tight: if p.animated { p.tight_animated } else { p.tight },
+            ..*p
+        }
     }
 }
 
@@ -393,7 +403,7 @@ pub fn fit(tracks: &[TrackIn], p: &Params) -> Option<(Fit, FitStats)> {
         .map(|t| TrackIn { quality: 1.0, pin: None, forbid: Vec::new(), previous: None, ..t.clone() })
         .collect();
     // A copy bar above any similarity: no copies phase.
-    let groups = cluster(&plain, &seeds_of, &Params { link: seed_bar, copy_link: 2.0, ..*p });
+    let groups = cluster(&plain, &seeds_of, &Params { link: seed_bar, copy_link: 2.0, tight: 0.0, ..*p });
     let pos: HashMap<usize, usize> = seeds_of.iter().enumerate().map(|(k, &i)| (i, k)).collect();
     let mut group = vec![usize::MAX; seeds_of.len()];
     for (gi, g) in groups.iter().enumerate() {

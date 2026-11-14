@@ -1308,10 +1308,17 @@ impl Project {
         Ok(media_with_faces > 0 && grouped < self.cast_version()?)
     }
 
-    /// The `as_identity` version this project's cast groups at (anime's
-    /// pipeline versions on its own).
+    /// The `as_identity` version this project's cast groups at. Anime's
+    /// pipeline versions on its own, and so does the space fitted to 3D
+    /// animation for the full scan's faces; Fast Scan's faces group there
+    /// as live action's do (the rule that version stands for is off for
+    /// them), so a cast of theirs is not grouped again for it.
     fn cast_version(&self) -> ProjectResult<u32> {
-        Ok(if self.content()? == ContentKind::Anime { as_identity::ANIME_VERSION } else { as_identity::VERSION })
+        Ok(match self.content()? {
+            ContentKind::Anime => as_identity::ANIME_VERSION,
+            ContentKind::Animation if !self.faces_found_fast()? => as_identity::ANIMATION_VERSION,
+            ContentKind::Animation | ContentKind::Live | ContentKind::Mixed => as_identity::VERSION,
+        })
     }
 
     /// The cast was grouped for other footage (the user said what it is
@@ -2627,6 +2634,14 @@ pub(crate) mod tests {
         assert!(!project.faces_found_fast().unwrap() && project.grids().unwrap().is_empty());
         assert!(!project.faces_outdated(id).unwrap());
         assert_eq!(project.identity_params().unwrap().link, Params::default().link);
+        // The full scan's cast of 3D animation groups at a version of its
+        // own: one grouped at live action's is grouped again.
+        assert_eq!(project.recluster().unwrap(), 1);
+        let animation = as_identity::ANIMATION_VERSION.to_string();
+        assert_eq!(project.db().meta(GROUPED_WITH).unwrap().as_deref(), Some(animation.as_str()));
+        assert!(!project.grouped_by_older_version().unwrap());
+        project.db().set_meta(GROUPED_WITH, &as_identity::VERSION.to_string()).unwrap();
+        assert!(project.grouped_by_older_version().unwrap());
 
         assert!(project.set_fast_scan(true).unwrap());
         assert!(!project.set_fast_scan(true).unwrap(), "the same again changes nothing");
@@ -2657,6 +2672,11 @@ pub(crate) mod tests {
         assert_eq!(project.identity_params().unwrap().link, Params::sface().link);
         assert!(project.identity_params().unwrap().animated);
         assert_eq!(project.recluster().unwrap(), 1);
+        // Fast Scan's faces group as before (the rule of 3D animation's own
+        // version is off for them): a cast of theirs stays at the common one.
+        let common = as_identity::VERSION.to_string();
+        assert_eq!(project.db().meta(GROUPED_WITH).unwrap().as_deref(), Some(common.as_str()));
+        assert!(!project.grouped_by_older_version().unwrap());
 
         // Kept when the project is opened again.
         let reopened = Project::open(project.id, project.dir.clone(), Arc::default()).unwrap();

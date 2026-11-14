@@ -1532,3 +1532,272 @@ fn a_group_that_was_mostly_another_character_does_not_follow_a_pin() {
     assert_eq!(o.characters[one_character(&o, &b)].key, Some(5));
     assert_eq!(o.characters[one_character(&o, &a)].key, Some(3));
 }
+
+/// Two selves of one person, the way a hero and the everyday self look to a
+/// face model: `per[s]` tracks around each of two centres that are `alike`
+/// to each other, each self's faces `fidelity[s]` like its centre, never in
+/// a frame together. Returns the tracks and each self's indices.
+fn selves(rng: &mut Rng, per: [u32; 2], alike: f32, fidelity: [f32; 2]) -> (Vec<TrackIn>, [Vec<usize>; 2]) {
+    let a = rng.unit();
+    let centres = [around(rng, &a, alike), a];
+    let mut tracks = Vec::new();
+    let mut ids = [Vec::new(), Vec::new()];
+    for i in 0..per[0].max(per[1]) {
+        for s in 0..2 {
+            if i < per[s] {
+                ids[s].push(tracks.len());
+                tracks.push(track(0, (2 * i + s as u32) * 100, around(rng, &centres[s], fidelity[s]), 0.8));
+            }
+        }
+    }
+    (tracks, ids)
+}
+
+/// 40 tracks a self, each self's faces about 0.72 alike.
+fn two_selves(rng: &mut Rng, alike: f32) -> (Vec<TrackIn>, [Vec<usize>; 2]) {
+    selves(rng, [40, 40], alike, [0.85, 0.85])
+}
+
+/// The grouping with the rule that keeps two tight groups apart at `tight`.
+fn tightly(tight: f32) -> Params {
+    Params { tight, ..Params::default() }
+}
+
+/// The rule as the space fitted to animation switches it on.
+fn as_animation() -> Params {
+    tightly(Params::default().tight_animated)
+}
+
+#[test]
+fn two_tight_groups_with_a_gap_between_them_stay_two() {
+    // Each self's faces are about 0.72 alike, the two selves 0.43 (0.6 of
+    // that): above the link bar, and never on screen together.
+    let mut rng = Rng(31);
+    let (tracks, [a, b]) = two_selves(&mut rng, 0.6);
+    // Without the rule they are one character ...
+    let plain = identify(&tracks, &Params::default());
+    assert_eq!(plain.characters.len(), 1);
+    assert!(!are_two(&plain, &a, &b));
+    // ... with it two, each whole.
+    let o = identify(&tracks, &as_animation());
+    assert_eq!(o.characters.len(), 2);
+    assert!(are_two(&o, &a, &b));
+    // A share under what they are alike lets them join again.
+    assert_eq!(identify(&tracks, &tightly(0.50)).characters.len(), 1);
+}
+
+#[test]
+fn two_looks_nearly_as_alike_as_each_is_in_itself_still_join() {
+    // A character in two lights: 0.8 of their own cohesion alike, above the
+    // share the space fitted to animation asks for.
+    let mut rng = Rng(32);
+    let (tracks, [a, b]) = two_selves(&mut rng, 0.8);
+    let o = identify(&tracks, &as_animation());
+    assert_eq!(o.characters.len(), 1);
+    assert!(!are_two(&o, &a, &b));
+}
+
+#[test]
+fn the_less_coherent_group_sets_the_bar() {
+    // One self tight (its faces 0.90 alike), the other loose (0.56); the two
+    // 0.43 alike: over 0.70 of the loose one's cohesion, under 0.70 of the
+    // tight one's. A loose group has no gap around it to speak of: they join.
+    let mut rng = Rng(35);
+    let (tracks, [a, b]) = selves(&mut rng, [40, 40], 0.6, [0.95, 0.75]);
+    let o = identify(&tracks, &as_animation());
+    assert!(!are_two(&o, &a, &b));
+}
+
+#[test]
+fn groups_too_small_to_know_their_cohesion_join_as_before() {
+    // 12 tracks a self: fewer than `tight_tracks`, so the rule keeps out.
+    let mut rng = Rng(33);
+    let p = as_animation();
+    let (tracks, [a, b]) = selves(&mut rng, [12, 12], 0.6, [0.85, 0.85]);
+    assert!(a.len() < p.tight_tracks);
+    assert!(!are_two(&identify(&tracks, &p), &a, &b));
+    // From as many tracks as they have, it holds them apart.
+    assert!(are_two(&identify(&tracks, &Params { tight_tracks: 12, ..p }), &a, &b));
+    // One large group and one small one: the small one is not judged.
+    let (tracks, [a, b]) = selves(&mut rng, [40, 12], 0.6, [0.85, 0.85]);
+    assert!(!are_two(&identify(&tracks, &p), &a, &b));
+}
+
+#[test]
+fn a_merge_by_hand_of_two_selves_holds() {
+    // The grouping made them two characters (1 and 2); the user merged 2
+    // into 1, as the cast stores it: 2's faces are pinned to 1, 1's own
+    // faces were 1 and are not pinned. The rule still holds the two groups
+    // apart; 1's own faces keep their character (`keep_own_faces`). (The
+    // merged self is the bigger one: what 1 held is counted without the
+    // pins, or its own faces would be under half of it.)
+    let mut rng = Rng(34);
+    let (mut tracks, [a, b]) = selves(&mut rng, [40, 60], 0.6, [0.85, 0.85]);
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let o = identify(&tracks, &as_animation());
+    assert_eq!(o.characters.len(), 1);
+    assert!(!are_two(&o, &a, &b));
+    // Also when new episodes have added three times as many faces of the
+    // first self as there were (few of the group's faces were the
+    // character): most of what the character held is in the group.
+    let more: Vec<TrackIn> = (0..120u32)
+        .map(|i| {
+            let like = tracks[a[i as usize % a.len()]].embedding.clone();
+            track(1, i * 100, around(&mut rng, &like, 0.95), 0.8)
+        })
+        .collect();
+    let first_new = tracks.len();
+    tracks.extend(more);
+    let all_a: Vec<usize> = a.iter().copied().chain(first_new..tracks.len()).collect();
+    let o = identify(&tracks, &as_animation());
+    assert!(!are_two(&o, &all_a, &b));
+}
+
+#[test]
+fn a_named_character_lets_the_other_self_go_and_keeps_its_name() {
+    // An older grouping made the two selves one character (7) and the user
+    // named it: five faces of the bigger self are pinned, every face was 7.
+    // The rule parts them; the name stays with the self it was pinned to,
+    // the other self goes on as a character of its own.
+    let mut rng = Rng(36);
+    let (mut tracks, [a, b]) = selves(&mut rng, [60, 40], 0.6, [0.85, 0.85]);
+    tracks.iter_mut().for_each(|t| t.previous = Some(7));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(7));
+    let o = identify(&tracks, &as_animation());
+    assert_eq!(o.characters.len(), 2);
+    assert!(are_two(&o, &a, &b));
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(7));
+    assert_ne!(o.characters[one_character(&o, &b)].key, Some(7));
+    // Had the five pinned faces been of the smaller self, the bigger one
+    // would be most of what 7 held: it keeps its character, and the two
+    // stay one rather than leave the name with the smaller self alone.
+    a[..5].iter().for_each(|&i| tracks[i].pin = None);
+    b[..5].iter().for_each(|&i| tracks[i].pin = Some(7));
+    let o = identify(&tracks, &as_animation());
+    assert_eq!(o.characters.len(), 1);
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(7));
+    assert!(!are_two(&o, &a, &b));
+}
+
+#[test]
+fn a_named_character_does_not_take_the_other_self_back() {
+    // The grouping keeps the two selves apart (7 and 8); the user named 7.
+    // The other self was never 7: the rule still holds it apart.
+    let mut rng = Rng(37);
+    let (mut tracks, [a, b]) = two_selves(&mut rng, 0.6);
+    a.iter().for_each(|&i| tracks[i].previous = Some(7));
+    b.iter().for_each(|&i| tracks[i].previous = Some(8));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(7));
+    let o = identify(&tracks, &as_animation());
+    assert!(are_two(&o, &a, &b));
+    // Nor because one stray face of the other self was once placed with 7.
+    tracks[b[0]].previous = Some(7);
+    let o = identify(&tracks, &as_animation());
+    assert!(are_two(&o, &a, &b[1..]));
+    // Nor because the user pinned one face of the other self there: that
+    // face stays where it was put, the rest is still a character of its own.
+    tracks[b[0]].pin = Some(7);
+    let o = identify(&tracks, &as_animation());
+    assert_eq!(o.tracks[b[0]].0.character(), Some(one_character(&o, &a)));
+    assert!(are_two(&o, &a, &b[1..]));
+}
+
+#[test]
+fn a_merged_character_keeps_its_faces_though_some_of_them_went_elsewhere() {
+    // The second self (60 faces) was merged into character 1 by hand. Of the
+    // 40 faces that were 1 before, 12 are someone else's (an older grouping
+    // put them there) and group apart now; new episodes made the first
+    // self's group mostly new faces (28 of 148 were 1). It still holds
+    // most of what 1 held besides the pins, and keeps its character.
+    let mut rng = Rng(39);
+    let (mut tracks, [a, b]) = selves(&mut rng, [28, 60], 0.6, [0.85, 0.85]);
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let other = rng.unit();
+    let first_stray = tracks.len();
+    for i in 0..12u32 {
+        tracks.push(TrackIn { previous: Some(1), ..track(0, 100_000 + i * 100, around(&mut rng, &other, 0.85), 0.8) });
+    }
+    let strays: Vec<usize> = (first_stray..tracks.len()).collect();
+    let first_new = tracks.len();
+    for i in 0..120u32 {
+        let like = tracks[a[i as usize % a.len()]].embedding.clone();
+        tracks.push(track(1, i * 100, around(&mut rng, &like, 0.95), 0.8));
+    }
+    let all_a: Vec<usize> = a.iter().copied().chain(first_new..tracks.len()).collect();
+    let o = identify(&tracks, &as_animation());
+    assert!(!are_two(&o, &all_a, &b));
+    assert!(are_two(&o, &strays, &b));
+}
+
+#[test]
+fn one_face_moved_to_an_unnamed_self_joins_the_two_as_without_the_rule() {
+    // A fresh cast: the selves are characters 7 and 8, nobody is named. The
+    // user moves one face of the second self to 7. With no other pin of 7,
+    // that face groups with its own self, whose group is then pinned to 7;
+    // the first self's group is most of what 7 held and keeps its
+    // character: the two are one. Not what the user asked for, and what
+    // happened without the rule: one pinned face has always carried its
+    // group.
+    let mut rng = Rng(42);
+    let (mut tracks, [a, b]) = two_selves(&mut rng, 0.6);
+    a.iter().for_each(|&i| tracks[i].previous = Some(7));
+    b.iter().for_each(|&i| tracks[i].previous = Some(8));
+    (tracks[b[0]].pin, tracks[b[0]].previous) = (Some(7), Some(7));
+    assert!(!are_two(&identify(&tracks, &as_animation()), &a, &b));
+    assert!(!are_two(&identify(&tracks, &Params::default()), &a, &b));
+}
+
+#[test]
+fn the_share_the_fitted_space_asks_for_parts_selves_a_little_under_it() {
+    // Two selves 0.66 of their own cohesion alike: under the 0.70 of the
+    // space fitted to animation, over 0.62.
+    let mut rng = Rng(43);
+    let (tracks, [a, b]) = two_selves(&mut rng, 0.66);
+    assert!(are_two(&identify(&tracks, &as_animation()), &a, &b));
+    assert!(!are_two(&identify(&tracks, &tightly(0.62)), &a, &b));
+}
+
+#[test]
+fn two_tight_groups_stay_two_when_a_big_cast_is_grouped_per_media() {
+    // Both selves in each of two episodes, the clustering forced to run per
+    // media first and then across them.
+    let mut rng = Rng(38);
+    let (mut tracks, [a, b]) = two_selves(&mut rng, 0.6);
+    a.iter().chain(&b).skip(1).step_by(2).for_each(|&i| tracks[i].media = 1);
+    let core: Vec<usize> = (0..tracks.len()).collect();
+    let levels = crate::ahc::Levels { single: 10, second: 1000 };
+    let whole = |g: &[Vec<usize>], ids: &[usize]| g.iter().any(|x| ids.iter().all(|i| x.contains(i)));
+    let groups = crate::ahc::cluster_in(&tracks, &core, &as_animation(), levels);
+    assert!(whole(&groups, &a) && whole(&groups, &b));
+    assert!(!groups.iter().any(|g| g.contains(&a[0]) && g.contains(&b[0])));
+    // (Without the rule the same run makes one group of them.)
+    let groups = crate::ahc::cluster_in(&tracks, &core, &Params::default(), levels);
+    assert!(groups.iter().any(|g| g.contains(&a[0]) && g.contains(&b[0])));
+}
+
+#[test]
+fn only_the_space_fitted_to_animation_holds_tight_groups_apart() {
+    let fit = Fit {
+        mean: vec![0.0; 4],
+        projection: vec![1.0, 0.0, 0.0, 0.0],
+        k: 1,
+        weight: 0.35,
+        link: 0.4,
+        copy_link: 0.7,
+        copy_alike: 0.6,
+    };
+    let p = Params::default();
+    // Off by default, and in a space fitted to footage nobody called animation.
+    assert_eq!(p.tight, 0.0);
+    assert_eq!(fit.params(&p).tight, 0.0);
+    // On where the user did.
+    let animated = fit.params(&Params { animated: true, ..p });
+    assert_eq!(animated.tight, p.tight_animated);
+    assert!(animated.tight > 0.0 && animated.tight < 1.0);
+    // Not for the anime embedder's footage (it is not `animated`), and not
+    // for Fast Scan's faces, for which nothing was measured.
+    assert_eq!(fit.params(&Params::anime()).tight, 0.0);
+    assert_eq!(fit.params(&Params { animated: true, ..Params::sface() }).tight, 0.0);
+}

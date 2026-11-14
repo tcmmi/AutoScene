@@ -1046,6 +1046,26 @@ impl ProjectDb {
         })
     }
 
+    /// A media's faces that are on a character (found or pinned there, not
+    /// through a body), each with its detections: who is in which frame, for
+    /// the picture the media's poster shows.
+    pub fn media_cast_dets(&self, id: MediaId) -> DbResult<Vec<(CharacterId, Vec<u8>)>> {
+        self.0.read(|c| {
+            let mut st = c.prepare(
+                "SELECT character_id, dets FROM tracks
+                  WHERE media_id = ?1 AND not_face = 0 AND via_body = 0 AND assign IN ('auto', 'pinned')
+                    AND character_id IS NOT NULL
+                  ORDER BY start, id",
+            )?;
+            let mut rows = st.query([id.to_string()])?;
+            let mut out = Vec::new();
+            while let Some(r) = rows.next()? {
+                out.push((parse_id(&r.get::<_, String>(0)?)?, r.get(1)?));
+            }
+            Ok(out)
+        })
+    }
+
     /// The shots a character is seen in, by media then time.
     pub fn character_shots(&self, c: CharacterId) -> DbResult<Vec<CharacterShotRow>> {
         self.0.read(|conn| {

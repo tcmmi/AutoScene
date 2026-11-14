@@ -194,6 +194,8 @@ pub fn queue_ingest(app: &AppHandle, project: &Arc<Project>, media_id: MediaId) 
         // A file that was missing is back (its faces' covers can get
         // portraits), or its analysis went with a new frame index.
         cast_changed(&app2, &project);
+        // Indexed again with its faces kept: the poster shows the cast again.
+        queue_poster_picks(&app2, &project);
         Ok(())
     });
 }
@@ -744,6 +746,11 @@ fn run_faces(
     let characters = project.recluster().map_err(stage_error)?;
     log::info!("faces found; the cast has {characters} characters");
     cast_changed(app, project);
+    // Its poster can now show the cast.
+    if let Err(e) = project.poster_pick_again(media_id) {
+        log::warn!("poster of {media_id}: {}", e.detail());
+    }
+    queue_poster_picks(app, project);
     crate::commands::anilist::look_up(app, project.id, true);
     Ok(())
 }
@@ -1121,6 +1128,65 @@ pub fn queue_posters(app: &AppHandle, project: &Arc<Project>, ids: Vec<MediaId>)
             }
             // The Library card first: the project refetched on `media:changed`
             // must not show a picture that was just removed.
+            sync_library_posters(&app2, &project);
+            media_changed(&app2, &project, Some(id));
+        }
+        Ok(())
+    });
+}
+
+/// Pick the frame each media's posters show, once its faces are found and
+/// grouped: the one with the most of the main cast, clearly (see
+/// [`Project::pick_poster`]). One media at a time on the upkeep worker; each
+/// media and the Library card show the new picture as soon as it exists.
+/// Which media are due is read when the job runs, and one job waiting is
+/// enough: one already running may have looked before the pass that queues
+/// this ended.
+pub fn queue_poster_picks(app: &AppHandle, project: &Arc<Project>) {
+    match project.posters_to_pick() {
+        Ok(ids) if ids.is_empty() => return,
+        Ok(_) => {}
+        Err(e) => return log::warn!("looking for posters to pick: {}", e.detail()),
+    }
+    let state = app.state::<AppState>();
+    let spec = JobSpec {
+        kind: JobKind::Posters,
+        class: Class::Upkeep,
+        title: msg!("job.sharpeningPosters", "Sharpening posters"),
+        subtitle: project.title().ok(),
+        project_id: Some(project.id),
+        media_id: None,
+        export_id: None,
+    };
+    let (app2, project) = (app.clone(), project.clone());
+    let pid = project.id;
+    let waiting =
+        move |j: &JobInfo| j.kind == JobKind::Posters && j.project_id == Some(pid) && j.state == JobState::Queued;
+    state.jobs.submit_unless(waiting, spec, move |ctx| {
+        let state = app2.state::<AppState>();
+        let tools = state.tools().map_err(|e| JobError::Failed(e.msg))?;
+        let ids = project.posters_to_pick().map_err(job_error)?;
+        for (i, &id) in ids.iter().enumerate() {
+            let stage =
+                msg!("job.stage.poster", "Poster {{n, number}} of {{total, number}}", n = i + 1, total = ids.len());
+            ctx.progress(&stage, i as f64 / ids.len() as f64);
+            match project.pick_poster(&tools, id, &ctx.cancel) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(ProjectError::Cancelled) => return Err(JobError::Cancelled),
+                // The poster stays as it is; the next launch tries again.
+                Err(e) => {
+                    log::warn!("picking the poster of {id}: {}", e.detail());
+                    continue;
+                }
+            }
+            // A project made in this session has only its first posters allowed.
+            if let Ok(m) = project.media(id) {
+                for poster in [&m.poster, &m.poster_small].into_iter().flatten() {
+                    crate::state::allow_asset(&app2, std::path::Path::new(poster));
+                }
+            }
+            // The Library card first, as in `queue_posters`.
             sync_library_posters(&app2, &project);
             media_changed(&app2, &project, Some(id));
         }
@@ -1644,6 +1710,8 @@ pub fn recover_all(app: &AppHandle) {
                     queue_proxy(app, &project, id);
                 }
                 queue_posters(app, &project, r.posters);
+                // Posters from before their frame was picked.
+                queue_poster_picks(app, &project);
             }
             Err(e) => log::warn!("recovering '{}': {}", summary.title, e.detail()),
         }

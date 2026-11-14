@@ -11,7 +11,7 @@ use as_api::{
     ProxyState, Relink, RelinkSummary,
 };
 use as_core::{
-    CancelToken, ExportId, FrameCount, FrameIndex, FrameRange, MediaId, Msg, ProjectId, Timecode, ToMsg, msg,
+    CancelToken, ExportId, FrameCount, FrameIdx, FrameIndex, FrameRange, MediaId, Msg, ProjectId, Timecode, ToMsg, msg,
 };
 use as_db::{IngestRecord, NewExportItem, ProjectDb, Relinked};
 use as_export::LosslessCodec;
@@ -364,22 +364,33 @@ impl Project {
         self.dir.join("tmp")
     }
 
-    /// Where a media's posters go: named after their sizes, so posters made
-    /// at new sizes get new names and the webview never shows a cached old one.
-    fn poster_paths(&self, id: MediaId) -> (PathBuf, PathBuf) {
+    /// Where a media's posters go: named after their sizes and, once the
+    /// frame they show was picked (`poster.rs`), after that frame, so new
+    /// pictures get new names and the webview never shows a cached old one.
+    pub(crate) fn poster_paths(&self, id: MediaId, picked: Option<FrameIdx>) -> (PathBuf, PathBuf) {
+        let at = picked.map(|f| format!("-f{f}")).unwrap_or_default();
         let name = |size: StillSize| match size {
-            StillSize::Height(h) => format!("{id}-{h}.jpg"),
-            StillSize::Cover(w, h) | StillSize::Region(_, w, h) => format!("{id}-{w}x{h}.jpg"),
+            StillSize::Height(h) => format!("{id}-{h}{at}.jpg"),
+            StillSize::Cover(w, h) | StillSize::Region(_, w, h) => format!("{id}-{w}x{h}{at}.jpg"),
         };
         (self.thumbs_dir().join(name(POSTER)), self.thumbs_dir().join(name(POSTER_SMALL)))
     }
 
-    /// Write both posters of a media (a tenth of the way in) from one decode.
-    fn write_posters(&self, tools: &Tools, id: MediaId, src: Source, cancel: &CancelToken) -> MediaResult<()> {
-        let (big, small) = self.poster_paths(id);
+    /// Write both posters of a media from one decode: of the frame `picked`
+    /// for them, else of the one a tenth of the way in (before the footage
+    /// is known, any frame past the opening will do).
+    pub(crate) fn write_posters(
+        &self,
+        tools: &Tools,
+        id: MediaId,
+        src: Source,
+        picked: Option<FrameIdx>,
+        cancel: &CancelToken,
+    ) -> MediaResult<()> {
+        let (big, small) = self.poster_paths(id, picked);
         let outs = [(POSTER, big.as_path()), (POSTER_SMALL, small.as_path())];
         let _one = self.posters.lock();
-        extract_frame_jpegs(tools, src, src.index.len() / 10, &outs, cancel)
+        extract_frame_jpegs(tools, src, picked.unwrap_or(src.index.len() / 10), &outs, cancel)
     }
 
     pub fn title(&self) -> ProjectResult<String> {
@@ -516,7 +527,9 @@ impl Project {
             info.video.field_order = m.info.as_ref().and_then(|i| i.video.field_order.clone());
         }
         let src = Source { path, info: &info, index: &index };
-        let made = extract_frame_jpegs(tools, src, index.len() / 10, &[(POSTER_SMALL, &probe)], &CancelToken::new());
+        // The frame the poster shows: the one picked for it, else a tenth of the way in.
+        let at = picked_frame(m).filter(|&f| f < index.len()).unwrap_or(index.len() / 10);
+        let made = extract_frame_jpegs(tools, src, at, &[(POSTER_SMALL, &probe)], &CancelToken::new());
         let score = made.ok().and_then(|()| as_media::poster::picture_similarity(tools, poster, &probe).ok());
         let _ = std::fs::remove_file(&probe);
         let score = score?;
@@ -596,9 +609,10 @@ impl Project {
         // Its pictures go: the ones it points at, and ones made under its
         // names that it doesn't point at yet (a poster upkeep it raced).
         self.remove_stale_posters(&m, [None, None]);
-        let (big, small) = self.poster_paths(id);
+        let (big, small) = self.poster_paths(id, None);
         let _ = std::fs::remove_file(big);
         let _ = std::fs::remove_file(small);
+        let _ = self.db.delete_meta(&crate::poster::picked_key(id));
         self.remove_proxies(id, None);
         let _ = std::fs::remove_dir_all(self.faces_dir().join(id.to_string()));
         Ok(())
@@ -615,7 +629,7 @@ impl Project {
     }
 
     fn posters_outdated(&self, m: &MediaItem) -> bool {
-        let (big, small) = self.poster_paths(m.id);
+        let (big, small) = self.poster_paths(m.id, picked_frame(m));
         posters_outdated(m, &big, &small)
     }
 
@@ -630,8 +644,10 @@ impl Project {
         };
         let (_, info, index) = self.ready_source(id)?;
         let path = PathBuf::from(&m.path);
-        self.write_posters(tools, id, Source { path: &path, info: &info, index: &index }, cancel)?;
-        let (big, small) = self.poster_paths(id);
+        // The same frame as before, at the new sizes.
+        let picked = picked_frame(&m).filter(|&f| f < index.len());
+        self.write_posters(tools, id, Source { path: &path, info: &info, index: &index }, picked, cancel)?;
+        let (big, small) = self.poster_paths(id, picked);
         let (big_s, small_s) = (big.display().to_string(), small.display().to_string());
         if !self.db.set_posters(id, &big_s, &small_s)? {
             // Removed while we worked.
@@ -645,7 +661,7 @@ impl Project {
 
     /// Delete the poster files `before` pointed at that the media no longer
     /// uses (`now`: its poster and small poster).
-    fn remove_stale_posters(&self, before: &MediaItem, now: [Option<&str>; 2]) {
+    pub(crate) fn remove_stale_posters(&self, before: &MediaItem, now: [Option<&str>; 2]) {
         let thumbs = self.thumbs_dir();
         for p in stale_posters([before.poster.as_deref(), before.poster_small.as_deref()], now, &thumbs) {
             let _ = std::fs::remove_file(p);
@@ -775,9 +791,9 @@ impl Project {
 
         progress(&msg!("job.stage.creatingPoster", "Creating poster"), 0.96, None);
         let src = Source { path: &path, info: &info, index: &index };
-        let (poster, poster_small) = match self.write_posters(tools, id, src, cancel) {
+        let (poster, poster_small) = match self.write_posters(tools, id, src, None, cancel) {
             Ok(()) => {
-                let (big, small) = self.poster_paths(id);
+                let (big, small) = self.poster_paths(id, None);
                 (Some(big.display().to_string()), Some(small.display().to_string()))
             }
             Err(e) if e.is_cancelled() => return Err(ProjectError::Cancelled),
@@ -810,6 +826,8 @@ impl Project {
         // Indexed again (a file that was missing): pictures it no longer
         // uses go, also when no poster could be made this time.
         self.remove_stale_posters(&m, [rec.poster.as_deref(), rec.poster_small.as_deref()]);
+        // The poster is a tenth of the way in again: its frame is picked anew.
+        let _ = self.db.delete_meta(&crate::poster::picked_key(id));
         self.indexes.lock().insert(id, Arc::new(index));
         self.media(id)
     }
@@ -2053,6 +2071,14 @@ impl Drop for WorkDir {
     }
 }
 
+/// The frame a media's posters show when it was picked for them
+/// (`poster.rs`): their file names end in `-f<frame>`. `None`: the frame a
+/// tenth of the way in.
+pub(crate) fn picked_frame(m: &MediaItem) -> Option<FrameIdx> {
+    let stem = Path::new(m.poster.as_deref()?).file_stem()?.to_str()?;
+    stem.rsplit_once("-f")?.1.parse().ok()
+}
+
 /// Does a media need its posters made again? A ready media does when either
 /// poster isn't the one of the current sizes (`big`, `small`) or its file is
 /// gone: the 360p posters from before the full-bleed artwork had other names
@@ -2818,6 +2844,19 @@ mod tests {
             scenes: as_api::StageState::Pending,
             scenes_error: None,
         }
+    }
+
+    #[test]
+    fn a_posters_name_says_which_frame_was_picked_for_it() {
+        let ready = MediaStatus::Ready;
+        let at = |name: &str| picked_frame(&media(ready, Some(Path::new(name)), None));
+        // An id whose parts begin with `f` is no frame.
+        let id = "01a1d9d7-f9be-72d9-afd1-f53d1ccd7cb6";
+        assert_eq!(at(&format!("thumbs/{id}-720.jpg")), None);
+        assert_eq!(at(&format!("thumbs/{id}-720-f1234.jpg")), Some(1234));
+        assert_eq!(at(&format!("thumbs/{id}-480x270-f0.jpg")), Some(0));
+        assert_eq!(at(&format!("thumbs/{id}-720-fx.jpg")), None);
+        assert_eq!(picked_frame(&media(ready, None, None)), None);
     }
 
     #[test]

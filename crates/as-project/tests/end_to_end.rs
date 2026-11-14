@@ -472,15 +472,15 @@ fn a_moved_episode_keeps_its_analysis() {
     let cancel = CancelToken::new();
     let m = project.ingest(&tools, id, "eng", &cancel, &|_, _, _| {}).unwrap();
 
-    // A face and a decision about it.
-    let det = |frame| FaceDet { frame, bbox: [0.4, 0.3, 0.55, 0.6], score: 0.9, norm: 22.0, quality: 0.8 };
+    // A face (clearest at frame 25) and a decision about it.
+    let det = |frame, quality| FaceDet { frame, bbox: [0.4, 0.3, 0.55, 0.6], score: 0.9, norm: 22.0, quality };
     let mut embedding = vec![0.0; tracks::DIM];
     embedding[0] = 1.0;
     let face = FaceTrack {
         start: 10,
         end: 40,
         shot: 0,
-        dets: vec![det(10), det(25)],
+        dets: vec![det(10, 0.8), det(25, 0.9)],
         embedding,
         quality: 0.8,
         thumb: vec![0xFF, 0xD8, 0xFF, 0xD9],
@@ -494,6 +494,24 @@ fn a_moved_episode_keeps_its_analysis() {
         .unwrap();
     let walters = |p: &Project| p.cast_tracks(TrackFilter::Character(walter)).unwrap().len();
     assert_eq!(walters(&project), 1);
+
+    // The poster can show the cast now: the frame where Walter is seen most
+    // clearly, not the one a tenth of the way in. From here on a file found
+    // again is compared with the episode at that frame.
+    let first = m.poster.clone().unwrap();
+    assert!(first.ends_with("-720.jpg") && m.frames.unwrap() / 10 != 25, "{first}");
+    assert_eq!(project.posters_to_pick().unwrap(), [id]);
+    assert!(project.pick_poster(&tools, id, &cancel).unwrap());
+    let picked = project.media(id).unwrap();
+    let (poster, small) = (picked.poster.unwrap(), picked.poster_small.unwrap());
+    assert!(poster.ends_with("-720-f25.jpg") && small.ends_with("-480x270-f25.jpg"), "{poster} {small}");
+    assert!(Path::new(&poster).is_file() && Path::new(&small).is_file());
+    assert!(!Path::new(&first).exists(), "the first poster goes");
+    assert_eq!(dimensions(&tools, Path::new(&small)), (480, 270));
+    assert!(project.posters_to_pick().unwrap().is_empty());
+    assert!(project.recover().unwrap().posters.is_empty(), "a picked poster is not an outdated one");
+    assert!(!project.pick_poster(&tools, id, &cancel).unwrap(), "picked once");
+    assert_eq!(project.media(id).unwrap().poster.as_deref(), Some(poster.as_str()));
 
     // The folder was renamed: missing, then found again where it went.
     let moved = tmp.path().join("Moved");
@@ -534,9 +552,15 @@ fn a_moved_episode_keeps_its_analysis() {
     assert!(remux.success());
     assert_ne!(std::fs::metadata(&copy).unwrap().len(), std::fs::metadata(&there).unwrap().len());
     assert_eq!(project.relink(&tools, id, &copy, false).unwrap(), Relink::Reindex);
-    project.ingest(&tools, id, "eng", &cancel, &|_, _, _| {}).unwrap();
+    let again = project.ingest(&tools, id, "eng", &cancel, &|_, _, _| {}).unwrap();
     assert_eq!(walters(&project), 1, "the same frames keep their analysis");
     assert_eq!(project.cast().unwrap().characters[0].name.as_deref(), Some("Walter"));
+    // Indexed again, its poster is the first one again, and its frame is
+    // picked anew from the faces that stayed.
+    assert!(again.poster.as_deref().is_some_and(|p| p.ends_with("-720.jpg")) && !Path::new(&poster).exists());
+    assert_eq!(project.posters_to_pick().unwrap(), [id]);
+    assert!(project.pick_poster(&tools, id, &cancel).unwrap());
+    assert!(project.media(id).unwrap().poster.is_some_and(|p| p.ends_with("-720-f25.jpg")));
 
     // As long, the same kind of file — but another picture: asked about first.
     let info = project.media(id).unwrap().info.unwrap();

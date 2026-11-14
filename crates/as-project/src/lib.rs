@@ -14,6 +14,7 @@ pub mod fandom;
 mod library;
 pub mod naming;
 mod pack;
+mod poster;
 mod project;
 mod rescan;
 pub mod scan;

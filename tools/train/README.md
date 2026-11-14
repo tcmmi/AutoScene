@@ -94,17 +94,18 @@ B=../../bench/models
 uv run triplets.py build <tracks dir> <pairs dir> --titles <order.tsv> --first 400 --fuse <fuse_signals.exe> --drop $B/stage2.drop.tsv
 uv run triplets.py look <tracks dir> <pairs dir> <sheets dir>
 uv run triplets.py leaks <tracks dir> <pairs dir> <first stage>/last.pt <leaks.tsv> jjk=<emb dir>/jjk.emb,<names.tsv> …
-uv run triplets.py sheets <tracks dir> <pairs dir> <sheets dir> <key.tsv>
+uv run triplets.py sheets <tracks dir> <pairs dir> <sheets dir> <key.tsv> --seed 8 --media <trailers dir> --ffmpeg <ffmpeg.exe>
 uv run triplets.py audit <key.tsv> <reader A's answers> <reader B's answers> [<a third reader's>]
 uv run train_tracks.py --from <first stage>/last.pt --tracks <tracks dir> --pairs <pairs dir> --out <run dir>
 ```
 
 - `build` takes the titles a list names (`n id seconds sha256_of_id channel
   title`, the first `--first` of them) and applies the rules of
-  `bench/models/README.md` and row 19 of `DECISIONS.md` (which also says why
-  each is there): a positive is at least a second apart, not one held
-  drawing, with no shot change between its two heads and no slip onto
-  another drawing; a negative was seen beside its anchor in at least two
+  `bench/models/README.md` and rows 19 and 20 of `DECISIONS.md` (which also
+  say why each is there): a positive is at least a second apart, not one
+  held drawing, with no shot change between its two heads and no slip onto
+  another drawing (the pixels differ too much, or the head's box changed
+  its shape); a negative was seen beside its anchor in at least two
   samples, is no second box on the same head and not alike to the pass's
   own embedder. A tenth of the shows (a key made from a title's name) is
   held out. `--drop` names the titles that never train.
@@ -115,7 +116,9 @@ uv run train_tracks.py --from <first stage>/last.pt --tracks <tracks dir> --pair
   their hashes in its `manifest.json`, and a run refuses to go on with
   others.
 - `sheets` and `audit` are the README's check of 300 pairs, drawn as
-  training draws them; the key stays where the readers don't look.
+  training draws them; the key stays where the readers don't look. With
+  `--media` each pair comes with the two frames its heads were cut from
+  (row 20: two crops alone do not show two figures standing in one frame).
 - `train_tracks.py` is one pass over a fixed draw of triplets from the first
   stage's weights. `--identity 0.02` keeps the first stage's task beside
   them (the weight is small for a reason: see the script). `dev.tsv` holds

@@ -5,7 +5,8 @@ samples is another one (the negative).
 
     uv run triplets.py build <tracks dir> <pairs dir> --titles <order.tsv> --fuse <fuse_signals.exe> [--first <n>]
                              [--drop <table>[,<table>…]] [--partial] [--kind h6] [--apart 1.0] [--held 8.0]
-                             [--slip 60.0] [--cut 0.1] [--together 2] [--cover 0.2] [--alike 0.5] [--dev 0.1]
+                             [--slip 50.0] [--shape 1.3] [--cut 0.1] [--together 2] [--cover 0.2] [--alike 0.5]
+                             [--dev 0.1]
         `<order.tsv>` lists the footage (`n id seconds sha256_of_id channel title`); the titles with `n` below
         `--first` are taken (all without it), and every one of them must be mined (`--partial`: the ones that
         are). `<tracks dir>` holds, per title, `in/<title>/bb.info.json` and `bb.sig` (the shot signals) and
@@ -16,7 +17,9 @@ samples is another one (the negative).
                          crops differ by less than `--held` of 255 on average), a shot change between the
                          two (a frame between them, three from either end left out, whose shot scores reach
                          `--cut`: a track that went on through a cut or a dissolve), and a box that slipped
-                         onto another drawing (the pixels differ by `--slip` or more);
+                         onto another drawing (the pixels differ by `--slip` or more, or the box's shape, its
+                         width over its height, changed by a factor of `--shape` or more: a head keeps the
+                         shape of its box over a second or two; row 20 of `DECISIONS.md`);
         `negatives.tsv`  two tracks seen together in at least `--together` samples, without the pairs that
                          may be one character: a second box on one head (the smaller box covered by more
                          than `--cover`), and a pair the pass's own embedder (CCIP) calls alike (cosine above
@@ -40,10 +43,13 @@ samples is another one (the negative).
         most alike title first, sixty a sheet.
 
     uv run triplets.py sheets <tracks dir> <pairs dir> <sheets dir> <key.tsv> [--pairs 300] [--seed 7]
+                              [--media <dir of <title>.mp4> --ffmpeg <ffmpeg.exe>]
         The check of the pairs (at most 2 % wrong among 300): half positives, half negatives, drawn as
         training draws them, shuffled, ten a sheet (`sheet_NN.jpg`). `<key.tsv>` says what each is and belongs
         somewhere the readers don't look. A reader answers per pair `s` (one character), `d` (two) or `?`
-        (cannot be told).
+        (cannot be told). With `--media`, each pair also shows the two frames its heads were cut from, the
+        left head's box in yellow and the right one's in cyan (six pairs a sheet): two crops alone do not
+        show that two heads alike stood in one picture as two figures (row 20).
 
     uv run triplets.py audit <key.tsv> <answers.tsv> [<answers.tsv> …]
         The readers' answers (`pair answer` per line; a later reader may answer some pairs only) against the
@@ -145,7 +151,13 @@ def shot_scores(root, title, fuse):
     return np.maximum(table[:, 1], table[:, 2])
 
 
-def build(root, out, listing, first, partial, kind, apart, held, slip, cut, together, cover, alike, dev, drop, fuse):
+def box_shape(row):
+    """A head box's width over its height, in the frame's own units (only ratios of two of them are used, and
+    the frame's own shape drops out of those)."""
+    return (float(row["x2"]) - float(row["x1"])) / max(float(row["y2"]) - float(row["y1"]), 1e-9)
+
+
+def build(root, out, listing, first, partial, kind, apart, held, slip, cut, together, cover, alike, dev, drop, fuse, shape=1.3):
     root, out = Path(root), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     everything = {title for _, title, _ in order_of(listing)}
@@ -164,7 +176,7 @@ def build(root, out, listing, first, partial, kind, apart, held, slip, cut, toge
     wanted = [(title, name) for title, name in wanted if title not in missing]
     pos = ["title\ttrack\ta\tb\tframes\tdifference"]
     neg = ["title\ta\tb\tsamples\tiou\tcover\tcosine"]
-    table = ["title\tshow\tside\ttracks\tcrops\tpositives\tnegatives\tanchors\tnear\theld\tcut\tslip\tbrief\tone_head\talike\tno_crop"]
+    table = ["title\tshow\tside\ttracks\tcrops\tpositives\tnegatives\tanchors\tnear\theld\tcut\tslip\tbrief\tone_head\talike\tno_crop\tshape"]
     for title, name in wanted:
         prefix = str(root / "crops" / f"{title}.{kind}")
         tracks, track, _, pixels, rows = crops.read(prefix)
@@ -173,7 +185,7 @@ def build(root, out, listing, first, partial, kind, apart, held, slip, cut, toge
         by_track = {}
         for i, t in enumerate(track.tolist()):
             by_track.setdefault(t, []).append(i)
-        n_pos = n_near = n_held = n_cut = n_slip = 0
+        n_pos = n_near = n_held = n_cut = n_slip = n_shape = 0
         with_pos = set()
         for t, mine in by_track.items():
             for x in range(len(mine)):
@@ -196,6 +208,11 @@ def build(root, out, listing, first, partial, kind, apart, held, slip, cut, toge
                     if difference >= slip:
                         n_slip += 1
                         continue
+                    # A box that went over to a neighbour, a body or a thing mostly has another shape there.
+                    turned = box_shape(rows[a]) / box_shape(rows[b])
+                    if max(turned, 1 / max(turned, 1e-9)) >= shape:
+                        n_shape += 1
+                        continue
                     pos.append(f"{title}\t{t}\t{a}\t{b}\t{frames}\t{difference:.2f}")
                     with_pos.add(t)
                     n_pos += 1
@@ -217,10 +234,11 @@ def build(root, out, listing, first, partial, kind, apart, held, slip, cut, toge
                 anchors |= {a, b} & with_pos
         show = show_key(name)
         table.append(f"{title}\t{show}\t{side(show, dev)}\t{tracks}\t{len(rows)}\t{n_pos}\t{n_neg}\t{len(anchors)}\t{n_near}\t{n_held}\t{n_cut}\t{n_slip}"
-                     f"\t{n_brief}\t{n_one}\t{n_alike}\t{n_none}")
+                     f"\t{n_brief}\t{n_one}\t{n_alike}\t{n_none}\t{n_shape}")
     for name, lines in (("positives.tsv", pos), ("negatives.tsv", neg), ("titles.tsv", table)):
         (out / name).write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
-    settings = {"kind": kind, "apart": apart, "held": held, "slip": slip, "cut": cut, "together": together, "cover": cover, "alike": alike, "dev": dev,
+    settings = {"kind": kind, "apart": apart, "held": held, "slip": slip, "shape": shape, "cut": cut, "together": together, "cover": cover, "alike": alike,
+                "dev": dev,
                 "titles": {"list": Path(listing).name, "sha256": file_sha256(listing), "first": first, "taken": len(wanted), "not_mined": len(missing)},
                 "dropped": dropped}
     (out / "settings.json").write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
@@ -230,7 +248,8 @@ def build(root, out, listing, first, partial, kind, apart, held, slip, cut, toge
         total = lambda k: sum(int(c[k]) for c in got)
         print(f"{which}: {len(got)} titles of {len({c[1] for c in got})} shows ({sum(1 for c in got if int(c[7]))} with a triplet), {total(3)} tracks, "
               f"{total(4)} crops, {total(5)} positives, {total(6)} negatives, {total(7)} anchor tracks; positives taken: {total(8)} too near, "
-              f"{total(9)} held, {total(10)} over a shot change, {total(11)} slipped; negatives taken: {total(12)} together too briefly, "
+              f"{total(9)} held, {total(10)} over a shot change, {total(11)} slipped, {total(16)} with a box of another shape; "
+              f"negatives taken: {total(12)} together too briefly, "
               f"{total(13)} one head, {total(14)} alike, {total(15)} without a crop")
     print(f"{len(dropped)} titles of the list never train (--drop); {len(missing)} not mined")
 
@@ -317,7 +336,66 @@ def look(root, out, where):
     print(f"{where}: {len(titles)} titles on {(len(titles) + 2 * rows_per - 1) // (2 * rows_per)} sheets")
 
 
-def sheets(root, out, where, key_path, pairs, seed):
+def frames_of(media, ffmpeg, title, wanted, height):
+    """Frames of `<media>/<title>.mp4` by their numbers as the pass counts them, scaled to `height`: one
+    decode of the file, `{number: picture}`."""
+    import subprocess
+    import tempfile
+
+    from PIL import Image
+
+    wanted = sorted(set(wanted))
+    pick = "+".join(f"eq(n\\,{n})" for n in wanted)
+    with tempfile.TemporaryDirectory() as tmp:
+        done = subprocess.run([ffmpeg, "-v", "error", "-i", str(Path(media) / f"{title}.mp4"), "-vf", f"select={pick},scale=-2:{height}",
+                               "-fps_mode", "passthrough", "-q:v", "3", str(Path(tmp) / "%05d.jpg")], capture_output=True, text=True)
+        files = sorted(Path(tmp).glob("*.jpg"))
+        assert done.returncode == 0 and len(files) == len(wanted), (title, len(files), len(wanted), done.stderr[-500:])
+        return {n: Image.open(f).convert("RGB") for n, f in zip(wanted, files)}
+
+
+def sheets_with_frames(root, kind, items, where, key_path, media, ffmpeg):
+    """The check's sheets with the frames beside the crops: per pair the two heads, then the frame of each
+    with that head's box (the left head's yellow, the right one's cyan; one box a frame, whatever the pair
+    is, so that the boxes do not say which kind it is)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    side_px, gap, label, per_sheet, wide = crops.CROP, 12, 34, 6, 400
+    font = ImageFont.load_default(size=26)
+    tables, wanted = {}, {}
+    for _, title, a, b, _, _ in items:
+        if title not in tables:
+            tables[title] = crops.read(str(Path(root) / "crops" / f"{title}.{kind}"))
+        rows = tables[title][4]
+        wanted.setdefault(title, set()).update((int(rows[a]["frame"]), int(rows[b]["frame"])))
+    frames = {}
+    for done, (title, numbers) in enumerate(sorted(wanted.items())):
+        frames[title] = frames_of(media, ffmpeg, title, numbers, side_px)
+        if done % 25 == 0:
+            print(f"frames of {done} of {len(wanted)} titles", flush=True)
+    key = ["pair\tsheet\tkind\ttitle\tcrop_a\tcrop_b\ttrack_a\ttrack_b"]
+    for s in range(0, len(items), per_sheet):
+        page = Image.new("RGB", (2 * side_px + 2 * wide + 3 * gap, per_sheet * (side_px + label + gap)), "black")
+        draw = ImageDraw.Draw(page)
+        for k, (what, title, a, b, ta, tb) in enumerate(items[s : s + per_sheet]):
+            y = k * (side_px + label + gap)
+            draw.text((4, y + 2), f"pair {s + k}", fill="yellow", font=font)
+            pixels, rows = tables[title][3], tables[title][4]
+            page.paste(Image.fromarray(np.asarray(pixels[a])), (0, y + label))
+            page.paste(Image.fromarray(np.asarray(pixels[b])), (side_px + 2, y + label))
+            for j, (crop, colour) in enumerate(((a, "yellow"), (b, "cyan"))):
+                frame = frames[title][int(rows[crop]["frame"])].copy()
+                w, h = frame.size
+                box = [float(rows[crop][c]) for c in ("x1", "y1", "x2", "y2")]
+                ImageDraw.Draw(frame).rectangle([box[0] * w - 2, box[1] * h - 2, box[2] * w + 2, box[3] * h + 2], outline=colour, width=2)
+                page.paste(frame.crop((0, 0, min(w, wide), h)), (2 * side_px + gap + j * (wide + gap), y + label))
+            key.append(f"{s + k}\t{s // per_sheet:02d}\t{what}\t{title}\t{a}\t{b}\t{ta}\t{tb}")
+        page.save(where / f"sheet_{s // per_sheet:02d}.jpg", quality=90)
+    Path(key_path).write_text("\n".join(key) + "\n", encoding="utf-8", newline="\n")
+    print(f"{where}: {len(items)} pairs with their frames on {(len(items) + per_sheet - 1) // per_sheet} sheets; the key is {key_path}")
+
+
+def sheets(root, out, where, key_path, pairs, seed, media=None, ffmpeg=None):
     from PIL import Image, ImageDraw, ImageFont
 
     where = Path(where)
@@ -336,6 +414,8 @@ def sheets(root, out, where, key_path, pairs, seed):
         seen.add(one)
         items.append(("positive", title, a, p, anchor, anchor) if positive else ("negative", title, a, n, anchor, other))
     rng.shuffle(items)
+    if media:
+        return sheets_with_frames(root, source.kind, items, where, key_path, media, ffmpeg)
     cache, font = {}, ImageFont.load_default(size=26)
     side_px, gap, label = crops.CROP, 12, 34
     key = ["pair\tsheet\tkind\ttitle\tcrop_a\tcrop_b\ttrack_a\ttrack_b"]
@@ -468,13 +548,14 @@ def main():
     plain = [x for k, x in enumerate(a) if not x.startswith("--") and (k == 0 or not a[k - 1].startswith("--") or a[k - 1] in lone)]
     if plain[0] == "build" and len(plain) == 3 and "--fuse" in a and "--titles" in a:
         build(plain[1], plain[2], flag("--titles", None), int(flag("--first", 0)) or None, "--partial" in a, flag("--kind", KIND),
-              float(flag("--apart", 1.0)), float(flag("--held", 8.0)), float(flag("--slip", 60.0)), float(flag("--cut", 0.1)),
+              float(flag("--apart", 1.0)), float(flag("--held", 8.0)), float(flag("--slip", 50.0)), float(flag("--cut", 0.1)),
               int(flag("--together", 2)), float(flag("--cover", 0.2)), float(flag("--alike", 0.5)), float(flag("--dev", 0.1)),
-              flag("--drop", None), flag("--fuse", None))
+              flag("--drop", None), flag("--fuse", None), float(flag("--shape", 1.3)))
     elif plain[0] == "look" and len(plain) == 4:
         look(plain[1], plain[2], plain[3])
     elif plain[0] == "sheets" and len(plain) == 5:
-        sheets(plain[1], plain[2], plain[3], plain[4], int(flag("--pairs", 300)), int(flag("--seed", 7)))
+        assert ("--media" in a) == ("--ffmpeg" in a), "--media and --ffmpeg go together"
+        sheets(plain[1], plain[2], plain[3], plain[4], int(flag("--pairs", 300)), int(flag("--seed", 7)), flag("--media", None), flag("--ffmpeg", None))
     elif plain[0] == "audit" and len(plain) >= 3:
         audit(plain[1], plain[2:])
     elif plain[0] == "leaks" and len(plain) >= 6:

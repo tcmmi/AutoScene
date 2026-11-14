@@ -160,10 +160,13 @@ people split and 118 characters holding two people before, 154 and 94 with
 it. On fifteen episodes of the series in 41 projects the two selves are one
 character in 10 without the rule and in 1 with it; of the 12 characters it
 parts there, two readers call 9 the two selves, 2 two different people and 1
-one figure parted wrongly; nine other 3D films group the same with and without
-it. The share has little room: the selves are 0.54 to 0.68 of their own
-cohesion alike on the tuning episodes (over 0.70 in one of thirteen others),
-the least alike halves of one figure that the grouping joins 0.73.
+one figure parted wrongly. The share has little room: the selves are 0.54 to
+0.68 of their own cohesion alike on the tuning episodes, the least alike
+halves of one figure that the grouping joins 0.73. And the rule needs a
+fitted space, which needs
+200 pairs of clear faces seen in one frame: two of fifteen episodes alone and
+all nine other 3D films tried have fewer, so the rule is not on for them (the
+one episode among them that joins the selves keeps them joined).
 `bench/3d/README.md` has the tables and what was laid down before the series
 was grouped.
 
@@ -193,8 +196,11 @@ was that character more than any other, goes on as that character together
 with the group pinned to it. The same project grouped again with it: one
 character, the name in place (119 + 111 faces, and 103 of the third
 episode). The heroine and her masked self merged by hand, either way round,
-stay one character at every later grouping, on two episodes and on five
-(where the two groups are under the bar and the merge was undone before).
+stay one character when the cast is grouped again, on two episodes and on
+five (where the two groups are under the bar and the merge was undone
+before). On the two tuning episodes every merge of two of the nine biggest
+characters (72, both ways round) keeps at least 0.9 of the target's own faces
+over two groupings; before, none did (the fourth reviewer's run).
 
 What it does not do, and what stays as it was:
 
@@ -209,20 +215,46 @@ What it does not do, and what stays as it was:
 - **A group that was mostly another character does not follow** a pin: a
   face once placed with a character the user made of three faces does not
   drag the forty faces of its real character along.
-- **One face moved to an unnamed character still carries its group.** The
-  moved face is that character's only pin; it groups with its own person,
-  whose group is then pinned to the character; and the character's own faces
-  are most of what it held: the two become one. That is what happened before
-  too (then by the grouping joining them, or by the moved face's group
-  taking the character from its own faces). A pinned group that was mostly
-  another character should leave the pinned face with the character and
-  keep its own; that is not built.
+- **A handful of stray faces is not a character's own faces.** The group
+  that follows must hold at least as many faces that were the character as
+  make a character (`Params::min_tracks`): one face once placed with a
+  character the user made by hand does not bring the group it now sits in.
+- **One face moved to another character moves alone.** Moved to a character
+  nobody named, the face is that character's only pin; it groups with its
+  own person, and that group is then pinned to the character. Before, the
+  pin carried the whole group over (and the character's own faces went on
+  as a new one); for a day of this work the two became one character. Now,
+  when a character's own faces follow a pinned group that was, pins aside,
+  more another character than this one, what that group holds besides the
+  pins and the character's earlier faces goes on as a group of its own: the
+  other person keeps their character, the moved face is where it was put.
+  On the two tuning episodes, one face moved between each two of the nine
+  biggest characters (72 moves): two characters as the user meant in all 72
+  (the fourth reviewer's run of this change).
+
+Limits that stay:
+
+- **A merged-in person who later outgrows the character.** What a character
+  "held" counts every earlier face of it that is not pinned, also new faces
+  of the merged-in person that the grouping has put with the pinned ones
+  since. When those outweigh the character's own group, that group is no
+  longer "most of what it held" and goes on as a new character, as before
+  this change. Seen on real tracks in 1 of 42 merges followed by one more
+  episode (59 faces merged into a character of 55, then 102 more of the
+  merged-in self against 30 of the other). Pins alone cannot tell a merge
+  from a name; the cast would have to remember that a merge was made.
+- A character with fewer clear faces of its own than make a character (two,
+  say) that another is merged into: its own faces are no group, and end
+  without a character at the next grouping, as before.
+- Own faces that group in several parts, none of them over half: none
+  follows, as before.
 
 Unit tests in `as-identity`: a merge of two unlike characters in three sizes,
 with new episodes and a second grouping after it; a named character that
-lets go; a group that was mostly another character. Six ways of breaking
-`keep_own_faces` each fail one (`never called`, any share, nearly all, the
-pins counted, the least of its earlier characters, the faces left behind).
+lets go; a group that was mostly another character; a stray face; a moved
+face in three sizes over three groupings, and one to ten faces moved to a
+named character; what a character held, weighed by its clear faces. Eleven
+ways of breaking `keep_own_faces` each fail one.
 Nothing changes without pins (the function returns at once), and the
 bench's runs have none: their scores are the same to the letter.
 

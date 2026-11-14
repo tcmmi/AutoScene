@@ -386,10 +386,22 @@ Run, Hero, Elephants Dream), each a project of its own.
 
 **Projects** (`miraculous.series.tsv`): each episode alone (15); neighbours
 in air order (14); far pairs, the first eight episodes each with the one
-seven places on (8); five in a row (3); all fifteen (10,736 tracks, large
-enough for the per-media path); the nine films. 31 of the series' 41 projects
-hold no tuning episode, 8 hold one of the two beside new footage, 2 are a
-tuning episode alone.
+seven places on (8); five in a row (3); all fifteen (10,736 tracks); the
+nine films. 31 of the series' 41 projects hold no tuning episode, 8 hold one
+of the two beside new footage, 2 are a tuning episode alone. The projects
+share episodes, so they are far fewer trials than their number: the seven
+projects of new footage in which the selves join rest on four of the thirteen
+new episodes (S01E08, S02E22, S04E06, S05E16). Each project is grouped on one
+timeline, as this bench groups (one media); a cast held as one media per
+episode, as the app holds it, is what the app test below and the reviewers'
+runs on the tuning episodes cover.
+
+**Where the rule is on at all.** It runs only in a fitted space, and a space
+is fitted only to footage with at least 200 pairs of clear faces seen in one
+frame (`as_identity::adapt`). That holds for 40 of the 51 projects. It does
+not for two episodes alone (S02E19 with 128 such pairs, S04E06 with 186) and
+for none of the nine films (0 to 102): there the rule is not on, with the app
+as it is.
 
 **Measures.** (1) Every character of the grouping without the rule that the
 grouping with it holds as two or more characters of at least 15 tracks each
@@ -424,7 +436,9 @@ nothing is joined that is two people.
 
 So the join is no accident of one project: on new footage alone the two
 selves are one character in 7 of 31 projects without the rule, and in 1 with
-it. In projects of five or fifteen episodes they are two either way.
+it. In projects of five or fifteen episodes they are two either way. Adrien
+and Cat Noir, the other pair the screen names, are never one character, with
+or without the rule, in any project.
 
 **The pages** (`miraculous.series.pages.tsv`; the two readers gave the same
 letter on all 16):
@@ -438,21 +452,27 @@ letter on all 16):
 | Two people or the two selves joined | 0 | |
 
 On new footage: seven projects with a right part, one of them (S05E01 +
-S05E16) also with the wrong one; no Blender film changed at all (their casts
-are one to five characters of 28 to 190 tracks); nothing was joined that is
-two people. **The bar is met.**
+S05E16) also with the wrong one; nothing was joined that is two people. No
+Blender film changed, but that says little: the rule was never on for them
+(no fitted space; their casts are one to five characters of 28 to 190
+tracks). Forced on in the embedder's own space at 0.70 and at 0.75 they group
+the same as well (the fourth reviewer's runs). **The bar is met**, its clause
+on the films emptily.
 
-**Where the rule misses.** S04E06 alone keeps the two selves on one
-character with the rule (82 and 73 named tracks): they are over 0.70 of their
-own cohesion alike there, and part only at 0.75, which is above the lowest
-right join seen on the tuning episodes (0.726). No one share parts every
-pair and keeps every figure whole on this series; 0.70 was not moved after
-this result.
+**Where the selves stay together.** S04E06 alone keeps the two selves on one
+character (82 and 73 named tracks): no space is fitted for that episode, so
+the rule is not on. Forced on in the embedder's own space it does not part
+them at 0.70 and does at 0.75, which is above the lowest right join seen on
+the tuning episodes (0.726). So a project too small for a fitted space (one
+sparse episode, a short film) keeps a hero and the everyday self as one
+character; whether the rule should run there, and at what share, was not
+measured. 0.70 was not moved after this result.
 
 ### In the running app
 
-A build of the app with the change, on a scratch library (2026-11-14), driven
-through its own commands; who is on which character was read from the
+Builds of the app with the change (and, for the rows on a moved face, with
+the correction of row 23), on a scratch library (2026-11-14), driven through
+its own commands; who is on which character was read from the
 project's database against the labels of this bench (the app's 1,818 tracks
 are the bench's).
 
@@ -461,8 +481,9 @@ are the bench's).
 | S01E11 + S05E21 as a 3D animation series, analysed and grouped by the build of 2026-11-12 | 32 characters; one holds Marinette (158 tracks) and Ladybug (94) |
 | That project opened by the new build | grouped again once at launch; 33 characters; Marinette keeps her character (157), Ladybug is a new one (94); no other character changes |
 | The older cast named "Marinette" in the older build, then opened by the new one | parted the same way; the name stays with Marinette |
-| The new cast: Marinette named, grouped again | still two |
-| ... one of Ladybug's faces moved to Marinette, grouped again | still two; the moved face stays where it was put |
+| The new cast, nobody named: one of Ladybug's faces moved to Marinette, grouped again, and once more | still two both times; the moved face stays with Marinette, Ladybug keeps her character (93 faces) |
+| ... one face of an unlike character (Nino) moved to Alya, grouped again | two; Alya has her 127 faces and the moved one, Nino his 118 |
+| ... Marinette named and one of Ladybug's faces moved to her, grouped again | still two; the moved face stays where it was put |
 | ... Ladybug merged into Marinette by hand, grouped again | one character (158 + 94) |
 | ... Marinette merged into Ladybug by hand, grouped again | one character |
 | Three episodes: two unlike characters merged by hand (one into a named other), grouped again | one character, the name in place; a build without the second change left the name on the merged-in faces and made the character's own 112 faces a new one |
@@ -478,7 +499,9 @@ character become two, also when the user had named that character: the name
 stays with the self the name's pinned faces are of (the bigger one, as a
 rule), and the other self goes on as a new character without a name, a
 cover picked anew and no scenepack. If the pinned faces are of the smaller
-self, the two stay one. Two selves merged by hand stay merged.
+self, the two stay one. Two selves merged by hand stay merged (with the
+limit `bench/identity/README.md` names: a merged-in self that later outgrows
+the character's own faces).
 
 Not verified here: a second labelled 3D title (the 0.70 and the 15 stand on
 this series); the readers of the pages are models, and the screen is the

@@ -1,52 +1,52 @@
 project	kind	footage	media	tracks	characters_off	characters_on	parted	joined	marinette	ladybug	selves_one_off	selves_one_on
-mir_s1e03	single	new	mir_s1e03	587	17	17	0	0	60	72	0	0
-mir_s1e08	single	new	mir_s1e08	700	26	27	1	0	42	60	1	0
-mir_s1e11	single	tuning	mir_s1e11	806	19	19	0	0	57	55	0	0
-mir_s2e13	single	new	mir_s2e13	1264	46	46	0	0	68	83	0	0
-mir_s2e19	single	new	mir_s2e19	410	17	17	0	0	63	58	0	0
-mir_s2e20	single	new	mir_s2e20	701	27	28	1	0	73	51	0	0
-mir_s2e22	single	new	mir_s2e22	798	42	43	1	0	57	59	1	0
-mir_s3e16	single	new	mir_s3e16	611	40	40	0	0	43	81	0	0
-mir_s3e17	single	new	mir_s3e17	652	38	38	0	0	66	43	0	0
-mir_s4e03	single	new	mir_s4e03	662	33	33	0	0	68	82	0	0
-mir_s4e06	single	new	mir_s4e06	579	14	14	0	0	83	73	1	1
-mir_s4e26	single	new	mir_s4e26	586	24	24	0	0	17	143	0	0
-mir_s5e01	single	new	mir_s5e01	665	24	24	0	0	12	116	0	0
-mir_s5e16	single	new	mir_s5e16	703	20	21	1	0	95	19	1	0
-mir_s5e21	single	tuning	mir_s5e21	1012	33	34	1	0	86	20	1	0
-n00	neighbours	new	mir_s1e03 mir_s1e08	1287	39	39	0	0	102	132	0	0
-n01	neighbours	one tuning episode	mir_s1e08 mir_s1e11	1506	32	33	1	0	99	115	1	0
-n02	neighbours	one tuning episode	mir_s1e11 mir_s2e13	2070	53	53	0	0	125	138	0	0
-n03	neighbours	new	mir_s2e13 mir_s2e19	1674	55	55	0	0	131	141	0	0
-n04	neighbours	new	mir_s2e19 mir_s2e20	1111	39	39	0	0	136	109	0	0
-n05	neighbours	new	mir_s2e20 mir_s2e22	1499	67	67	0	0	130	110	0	0
-n06	neighbours	new	mir_s2e22 mir_s3e16	1409	69	69	0	0	100	140	0	0
-n07	neighbours	new	mir_s3e16 mir_s3e17	1263	77	77	0	0	109	124	0	0
-n08	neighbours	new	mir_s3e17 mir_s4e03	1314	53	53	0	0	134	125	0	0
-n09	neighbours	new	mir_s4e03 mir_s4e06	1241	38	38	0	0	151	155	0	0
-n10	neighbours	new	mir_s4e06 mir_s4e26	1165	35	35	0	0	100	216	0	0
-n11	neighbours	new	mir_s4e26 mir_s5e01	1251	45	45	0	0	29	259	0	0
-n12	neighbours	new	mir_s5e01 mir_s5e16	1368	43	44	3	1	107	135	1	0
-n13	neighbours	one tuning episode	mir_s5e16 mir_s5e21	1715	41	41	1	1	181	39	1	0
-f00	far	new	mir_s1e03 mir_s3e16	1198	51	51	0	0	103	153	0	0
-f01	far	new	mir_s1e08 mir_s3e17	1352	47	48	1	0	108	103	1	0
-f02	far	one tuning episode	mir_s1e11 mir_s4e03	1468	36	36	0	0	125	137	0	0
-f03	far	new	mir_s2e13 mir_s4e06	1843	54	54	0	0	151	156	0	0
-f04	far	new	mir_s2e19 mir_s4e26	996	33	33	0	0	80	201	0	0
-f05	far	new	mir_s2e20 mir_s5e01	1366	55	55	0	0	85	167	0	0
-f06	far	new	mir_s2e22 mir_s5e16	1501	46	46	1	1	152	78	1	0
-f07	far	one tuning episode	mir_s3e16 mir_s5e21	1623	59	59	0	0	129	101	0	0
-five0	five	one tuning episode	mir_s1e03 mir_s1e08 mir_s1e11 mir_s2e13 mir_s2e19	3767	77	77	0	0	290	328	0	0
-five1	five	new	mir_s2e20 mir_s2e22 mir_s3e16 mir_s3e17 mir_s4e03	3424	121	121	0	0	307	316	0	0
-five2	five	one tuning episode	mir_s4e06 mir_s4e26 mir_s5e01 mir_s5e16 mir_s5e21	3545	75	75	0	0	293	371	0	0
-all15	all	one tuning episode	mir_s1e03 mir_s1e08 mir_s1e11 mir_s2e13 mir_s2e19 mir_s2e20 mir_s2e22 mir_s3e16 mir_s3e17 mir_s4e03 mir_s4e06 mir_s4e26 mir_s5e01 mir_s5e16 mir_s5e21	10736	187	187	0	0	890	1015	0	0
-ref	tuning	tuning	mir_s1e11 mir_s5e21	1818	33	34	1	0	143	75	1	0
-bl_sintel	blender	new	bl_sintel	149	3	3	0	0	0	0	0	0
-bl_sprite_fright	blender	new	bl_sprite_fright	190	5	5	0	0	0	0	0	0
-bl_charge	blender	new	bl_charge	69	2	2	0	0	0	0	0	0
-bl_spring	blender	new	bl_spring	45	2	2	0	0	0	0	0	0
-bl_agent_327	blender	new	bl_agent_327	111	6	6	0	0	0	0	0	0
-bl_cosmos_laundromat	blender	new	bl_cosmos_laundromat	64	2	2	0	0	0	0	0	0
-bl_coffee_run	blender	new	bl_coffee_run	28	2	2	0	0	0	0	0	0
-bl_hero	blender	new	bl_hero	87	4	4	0	0	0	0	0	0
-bl_elephants_dream	blender	new	bl_elephants_dream	177	3	3	0	0	0	0	0	0
+mir_s1e03	single	new	mir_s1e03	587	16	16	0	0	60	72	0	0
+mir_s1e08	single	new	mir_s1e08	700	25	26	1	0	42	60	1	0
+mir_s1e11	single	tuning	mir_s1e11	806	18	18	0	0	57	55	0	0
+mir_s2e13	single	new	mir_s2e13	1264	45	45	0	0	68	83	0	0
+mir_s2e19	single	new	mir_s2e19	410	16	16	0	0	63	58	0	0
+mir_s2e20	single	new	mir_s2e20	701	26	27	1	0	73	51	0	0
+mir_s2e22	single	new	mir_s2e22	798	41	42	1	0	57	59	1	0
+mir_s3e16	single	new	mir_s3e16	611	39	39	0	0	43	81	0	0
+mir_s3e17	single	new	mir_s3e17	652	37	37	0	0	66	43	0	0
+mir_s4e03	single	new	mir_s4e03	662	32	32	0	0	68	82	0	0
+mir_s4e06	single	new	mir_s4e06	579	13	13	0	0	83	73	1	1
+mir_s4e26	single	new	mir_s4e26	586	23	23	0	0	17	143	0	0
+mir_s5e01	single	new	mir_s5e01	665	23	23	0	0	12	116	0	0
+mir_s5e16	single	new	mir_s5e16	703	19	20	1	0	95	19	1	0
+mir_s5e21	single	tuning	mir_s5e21	1012	32	33	1	0	86	20	1	0
+n00	neighbours	new	mir_s1e03 mir_s1e08	1287	38	38	0	0	102	132	0	0
+n01	neighbours	one tuning episode	mir_s1e08 mir_s1e11	1506	31	32	1	0	99	115	1	0
+n02	neighbours	one tuning episode	mir_s1e11 mir_s2e13	2070	52	52	0	0	125	138	0	0
+n03	neighbours	new	mir_s2e13 mir_s2e19	1674	54	54	0	0	131	141	0	0
+n04	neighbours	new	mir_s2e19 mir_s2e20	1111	38	38	0	0	136	109	0	0
+n05	neighbours	new	mir_s2e20 mir_s2e22	1499	66	66	0	0	130	110	0	0
+n06	neighbours	new	mir_s2e22 mir_s3e16	1409	68	68	0	0	100	140	0	0
+n07	neighbours	new	mir_s3e16 mir_s3e17	1263	76	76	0	0	109	124	0	0
+n08	neighbours	new	mir_s3e17 mir_s4e03	1314	52	52	0	0	134	125	0	0
+n09	neighbours	new	mir_s4e03 mir_s4e06	1241	37	37	0	0	151	155	0	0
+n10	neighbours	new	mir_s4e06 mir_s4e26	1165	34	34	0	0	100	216	0	0
+n11	neighbours	new	mir_s4e26 mir_s5e01	1251	44	44	0	0	29	259	0	0
+n12	neighbours	new	mir_s5e01 mir_s5e16	1368	42	43	3	1	107	135	1	0
+n13	neighbours	one tuning episode	mir_s5e16 mir_s5e21	1715	40	40	1	1	181	39	1	0
+f00	far	new	mir_s1e03 mir_s3e16	1198	50	50	0	0	103	153	0	0
+f01	far	new	mir_s1e08 mir_s3e17	1352	46	47	1	0	108	103	1	0
+f02	far	one tuning episode	mir_s1e11 mir_s4e03	1468	35	35	0	0	125	137	0	0
+f03	far	new	mir_s2e13 mir_s4e06	1843	53	53	0	0	151	156	0	0
+f04	far	new	mir_s2e19 mir_s4e26	996	32	32	0	0	80	201	0	0
+f05	far	new	mir_s2e20 mir_s5e01	1366	54	54	0	0	85	167	0	0
+f06	far	new	mir_s2e22 mir_s5e16	1501	45	45	1	1	152	78	1	0
+f07	far	one tuning episode	mir_s3e16 mir_s5e21	1623	58	58	0	0	129	101	0	0
+five0	five	one tuning episode	mir_s1e03 mir_s1e08 mir_s1e11 mir_s2e13 mir_s2e19	3767	76	76	0	0	290	328	0	0
+five1	five	new	mir_s2e20 mir_s2e22 mir_s3e16 mir_s3e17 mir_s4e03	3424	120	120	0	0	307	316	0	0
+five2	five	one tuning episode	mir_s4e06 mir_s4e26 mir_s5e01 mir_s5e16 mir_s5e21	3545	74	74	0	0	293	371	0	0
+all15	all	one tuning episode	mir_s1e03 mir_s1e08 mir_s1e11 mir_s2e13 mir_s2e19 mir_s2e20 mir_s2e22 mir_s3e16 mir_s3e17 mir_s4e03 mir_s4e06 mir_s4e26 mir_s5e01 mir_s5e16 mir_s5e21	10736	186	186	0	0	890	1015	0	0
+ref	tuning	tuning	mir_s1e11 mir_s5e21	1818	32	33	1	0	143	75	1	0
+bl_sintel	blender	new	bl_sintel	149	2	2	0	0	0	0	0	0
+bl_sprite_fright	blender	new	bl_sprite_fright	190	4	4	0	0	0	0	0	0
+bl_charge	blender	new	bl_charge	69	1	1	0	0	0	0	0	0
+bl_spring	blender	new	bl_spring	45	1	1	0	0	0	0	0	0
+bl_agent_327	blender	new	bl_agent_327	111	5	5	0	0	0	0	0	0
+bl_cosmos_laundromat	blender	new	bl_cosmos_laundromat	64	1	1	0	0	0	0	0	0
+bl_coffee_run	blender	new	bl_coffee_run	28	1	1	0	0	0	0	0	0
+bl_hero	blender	new	bl_hero	87	3	3	0	0	0	0	0	0
+bl_elephants_dream	blender	new	bl_elephants_dream	177	2	2	0	0	0	0	0	0

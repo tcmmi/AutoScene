@@ -177,86 +177,116 @@ it; twelve ways of breaking the rule each fail one.
 ## A merge by hand holds
 
 Merging character B into character A pins B's faces to A (`as-db`
-`merge_characters`); A's own faces stay as the grouping found them. When the
-cast was grouped again (an episode added, a newer version of the grouping),
-B's pinned faces were one group and held A, and A's own faces were mostly too
-unlike them to join that group: had the two been alike, the grouping would
-have made one character of them, and nobody would have merged them by hand.
-A's own faces then went on as a new character, and A's name stayed with the
-faces that had been merged in. Seen in the running app on 2026-11-14 (three
-episodes of the 3D series, footage type animation; the code is the same for
-every kind of footage): a character named after one girl, a boy's character
-merged into it, the cast grouped again: the name was on the boy's 119 faces
-and four of hers, and her other 112 faces were a new, unnamed character.
+`merge_characters`). Until 2026-11-14 that was all, and A's own faces stayed
+as the grouping found them. When the cast was grouped again (an episode
+added, a newer version of the grouping), B's pinned faces were one group and
+held A, and A's own faces were mostly too unlike them to join that group:
+had the two been alike, the grouping would have made one character of them,
+and nobody would have merged them by hand. A's own faces then went on as a
+new character, and A's name stayed with the faces that had been merged in.
+Seen in the running app (three episodes of the 3D series, footage type
+animation; the code is the same for every kind of footage): a character
+named after one girl, a boy's character merged into it, the cast grouped
+again: the name was on the boy's 119 faces and four of hers, and her other
+112 faces were a new, unnamed character.
 
-Now a character the user pinned faces to keeps the faces it had
-(`keep_own_faces` in `as_identity::identify`): the unpinned group that holds
-most of what a character held besides the pins (over half, by quality), and
-was that character more than any other, goes on as that character together
-with the group pinned to it. The same project grouped again with it: one
-character, the name in place (119 + 111 faces, and 103 of the third
-episode). The heroine and her masked self merged by hand, either way round,
-stay one character when the cast is grouped again, on two episodes and on
-five (where the two groups are under the bar and the merge was undone
-before). On the two tuning episodes every merge of two of the nine biggest
-characters (72, both ways round) keeps at least 0.9 of the target's own faces
-over two groupings; before, none did (the fourth reviewer's run).
+Three things hold a merge now.
+
+**The cast remembers it by pins on both sides.** A merge also pins a few
+typical faces of the character that stays (`NAME_ANCHORS`, as naming a
+character pins them): A's own faces are then held by the user's word like
+B's.
+
+**Pinned faces start with their like, and end as one character.** The
+grouping used to start with all faces pinned to one character as a single
+group. Of two unlike people that group is like neither (forty faces of one
+and five of the other look like the forty), so the unpinned faces of the
+smaller side could not join it. Now a pinned face starts with the group of
+its character's pinned faces it is most like, when it is like that group as
+two groups must be alike to join: on average over the link bar and, where
+two tight groups stay two, not that much less alike than the group is in
+itself (`ahc::initial_groups`; that second part has no floor of tracks
+there, so that the five faces pinned of a heroine do not start among the
+sixty merged-in faces of her masked self, which they are about as like as
+the bar asks). Each such group gathers its own person's faces, and after the
+clustering the groups pinned to one character become one (`pins_together`
+in `as_identity::identify`).
+
+**A character without pins of its own keeps its own faces**
+(`keep_own_faces`): for merges made before, and for a name whose pinned
+faces are in the smaller part of its character. The unpinned group that
+holds most of what a character held besides the pins (over half, by
+quality), was that character more than any other and holds as many of its
+earlier faces as make a character, goes on as that character together with
+the group pinned to it.
 
 What it does not do, and what stays as it was:
 
-- **A group that is not most of the character does not follow.** A named
+- **One face moved to another character moves alone.** It groups with its
+  own person, and that group is then pinned to the character it was moved
+  to. Before, the pin carried the whole group over. Now a pinned group that
+  is not the character's own (it holds no more than half of what the
+  character held besides the pins) lets go of what it swept up of another
+  character, when that outweighs its pins and the character's earlier faces
+  in it; what it lets go of is a group of its own again. So does a new
+  character the user made of a few faces of another.
+- **Characters that turn out to be one person still become one.** A group of
+  pinned faces that fewer faces of another character join keeps them, and a
+  named character's own group keeps a bigger unnamed one that joins it.
+- **A part of a named character that is not most of it can leave.** A named
   character (a few of its typical faces are pinned) whose faces a better
   grouping parts in two keeps the part its pinned faces are in; the other
-  part goes on as a new character, as before. So a wrong join inside a named
-  character can still come apart, and so do a hero and the everyday self
-  that an older grouping had put on one named character. If the pinned faces
-  are in the smaller part, the bigger one is most of the character: the two
-  stay one, where before the name went with the smaller part alone.
-- **A group that was mostly another character does not follow** a pin: a
-  face once placed with a character the user made of three faces does not
-  drag the forty faces of its real character along.
-- **A handful of stray faces is not a character's own faces.** The group
-  that follows must hold at least as many faces that were the character as
-  make a character (`Params::min_tracks`): one face once placed with a
-  character the user made by hand does not bring the group it now sits in.
-- **One face moved to another character moves alone.** Moved to a character
-  nobody named, the face is that character's only pin; it groups with its
-  own person, and that group is then pinned to the character. Before, the
-  pin carried the whole group over (and the character's own faces went on
-  as a new one); for a day of this work the two became one character. Now,
-  when a character's own faces follow a pinned group that was, pins aside,
-  more another character than this one, what that group holds besides the
-  pins and the character's earlier faces goes on as a group of its own: the
-  other person keeps their character, the moved face is where it was put.
-  On the two tuning episodes, one face moved between each two of the nine
-  biggest characters (72 moves): two characters as the user meant in all 72
-  (the fourth reviewer's run of this change).
+  part goes on as a new character. So a wrong join inside a named character
+  can still come apart, and so do a hero and the everyday self that an
+  older grouping had put on one named character. If the pinned faces are in
+  the smaller part, the bigger one is most of the character and the two
+  stay one.
+- **A group that was mostly another character does not follow** a pin, and a
+  handful of stray faces is not a character's own faces.
+
+On the real tracks of the two tuning episodes (3D, the rule on; scratch
+`E:\as-ownmodels\3d\glue`, `real5.rs` and `real5b.log`):
+
+| What was done | Holds |
+|---|---|
+| S01E11 grouped; one of its seven biggest characters merged into another (42 ways); S05E21 added; grouped three times: both sides keep 0.8 of their faces on the character | 42 of 42 with the pins a merge makes now; 41 of 42 for a merge made before (the bigger self merged into the smaller: its own 55 faces are a new character from the second grouping on) |
+| Both episodes; one of the nine biggest merged into another (72 ways), grouped twice: both keep 0.9 | 72 of 72 (before 2026-11-14: none) |
+| ... one face of one moved to another that nobody named (72 ways), grouped three times: both keep 0.9 of their own under their own characters, the moved face where it was put | 72 of 72 |
+| ... the same, to a named character | 72 of 72 |
+
+In the running app (scratch library, the same two episodes): the bigger self
+merged into the smaller pins 157 faces (152 merged in, five of the other's
+own) and is one character after two more groupings; a face moved to a
+character nobody named, of the other self or of an unlike character, moves
+alone.
 
 Limits that stay:
 
-- **A merged-in person who later outgrows the character.** What a character
-  "held" counts every earlier face of it that is not pinned, also new faces
-  of the merged-in person that the grouping has put with the pinned ones
-  since. When those outweigh the character's own group, that group is no
-  longer "most of what it held" and goes on as a new character, as before
-  this change. Seen on real tracks in 1 of 42 merges followed by one more
-  episode (59 faces merged into a character of 55, then 102 more of the
-  merged-in self against 30 of the other). Pins alone cannot tell a merge
-  from a name; the cast would have to remember that a merge was made.
-- A character with fewer clear faces of its own than make a character (two,
-  say) that another is merged into: its own faces are no group, and end
-  without a character at the next grouping, as before.
-- Own faces that group in several parts, none of them over half: none
-  follows, as before.
+- **A merge made before 2026-11-14 into a character without a name** has no
+  pins on that character's own faces. It holds by `keep_own_faces` alone,
+  and that lets go when later episodes bring so many faces of the merged-in
+  person that the character's own group is no longer most of what it held
+  (the 1 of 42 above). Naming the character, or merging something into it
+  again, pins its own faces.
+- Own faces that group in several parts without a pin in them, none of them
+  over half: none follows.
+- A merge cannot be taken apart again short of moving the faces back.
+- A long series with a merge of two big characters starts its grouping with
+  more pinned groups than before (one per look of each side, not one in
+  all); how that weighs on a cast of many thousand pinned faces was not
+  timed.
 
 Unit tests in `as-identity`: a merge of two unlike characters in three sizes,
-with new episodes and a second grouping after it; a named character that
-lets go; a group that was mostly another character; a stray face; a moved
-face in three sizes over three groupings, and one to ten faces moved to a
-named character; what a character held, weighed by its clear faces. Eleven
-ways of breaking `keep_own_faces` each fail one.
-Nothing changes without pins (the function returns at once), and the
-bench's runs have none: their scores are the same to the letter.
+with new episodes and a second grouping after it; a merge whose merged-in
+side outgrows the other over three episodes, of two unlike people and of the
+two selves; faces of two people all pinned to one character; characters that
+turn out to be one person; a new character made of a few faces of another; a
+named character that lets go; a moved face in three sizes over three
+groupings, and one to ten faces moved to a named character; a stray face;
+what a character held, weighed by its clear faces; how pinned faces start.
+In `as-project`: the bigger of two characters merged into the smaller, then
+two episodes with far more of the merged-in one (it fails on the code
+before). Twenty ways of breaking the three parts each fail a test.
 
 ## Rescan
 

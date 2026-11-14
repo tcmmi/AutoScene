@@ -488,8 +488,9 @@ are the bench's).
 | ... Marinette merged into Ladybug by hand, grouped again | one character |
 | Three episodes: two unlike characters merged by hand (one into a named other), grouped again | one character, the name in place; a build without the second change left the name on the merged-in faces and made the character's own 112 faces a new one |
 
-A merge by hand holds because of a second change made with the rule: a
-character the user pinned faces to keeps its own faces
+A merge by hand holds because of changes made with the rule and after it
+(rows 22 to 24): the cast remembers a merge by pins on both sides, and what
+is pinned to one character is one character however its faces group
 (`bench/identity/README.md`, "A merge by hand holds"). The rule itself knows
 no pins.
 
@@ -499,9 +500,10 @@ character become two, also when the user had named that character: the name
 stays with the self the name's pinned faces are of (the bigger one, as a
 rule), and the other self goes on as a new character without a name, a
 cover picked anew and no scenepack. If the pinned faces are of the smaller
-self, the two stay one. Two selves merged by hand stay merged (with the
-limit `bench/identity/README.md` names: a merged-in self that later outgrows
-the character's own faces).
+self, the two stay one. Two selves merged by hand stay merged: a merge pins
+faces of both sides since row 24 (`bench/identity/README.md`, "A merge by
+hand holds"; a merge made before that into a character without a name can
+still come undone when the merged-in self outgrows the other).
 
 Not verified here: a second labelled 3D title (the 0.70 and the 15 stand on
 this series); the readers of the pages are models, and the screen is the

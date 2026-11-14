@@ -16,8 +16,8 @@ pub mod naming;
 mod pack;
 mod project;
 mod rescan;
-mod scenes;
 pub mod scan;
+mod scenes;
 pub mod tvmaze;
 mod verdicts;
 

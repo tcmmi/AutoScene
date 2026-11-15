@@ -3,6 +3,11 @@
 //! pipeline says it is — six to a JPEG sheet, numbered, to look at.
 //! `cargo run --release -p as-analysis --example bodies_render -- <ffmpeg_dir> <dir with
 //! bb.index/bb.info.json/bb.path> <items.tsv> <out_dir>`
+//! `GRID=<cols>x<rows>` sets the cells of a sheet (2x3). A cell whose frame
+//! is `-` has no picture: its small pictures fill it (a body enlarged, a
+//! gallery entry). An eighth column gives the number drawn on a cell in
+//! place of its place in the sheet (`-`: none). `NAME=<word>` names the
+//! sheets `<word>_000.jpg` (`sheet`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -16,16 +21,38 @@ use as_vision::image;
 const CW: usize = 640;
 const CH: usize = 360;
 const INSET: usize = 110;
-/// Cells per sheet: 2 across, 3 down.
-const COLS: usize = 2;
-const ROWS: usize = 3;
+/// Cells per sheet: 2 across, 3 down, unless `GRID` says otherwise.
+fn grid() -> (usize, usize) {
+    std::env::var("GRID").ok().map_or((2, 3), |v| {
+        let (c, r) = v.split_once('x').expect("GRID=<cols>x<rows>");
+        (c.parse().unwrap(), r.parse().unwrap())
+    })
+}
 
 struct Item {
     sheet: usize,
     cell: usize,
-    frame: u32,
+    /// `None`: a cell without a picture, filled by its small pictures.
+    frame: Option<u32>,
     boxes: Vec<([f32; 4], [u8; 3], usize)>,
     insets: Vec<(u32, [f32; 4])>,
+    /// The number drawn on the cell (`None`: none).
+    mark: Option<usize>,
+}
+
+impl Item {
+    /// The size a small picture of a box `bw` × `bh` pixels (with its
+    /// margin) is drawn at: [`INSET`] high over a picture, as large as fits
+    /// side by side with the others in a cell without one.
+    fn inset_size(&self, bw: f32, bh: f32) -> (usize, usize) {
+        if self.frame.is_some() {
+            return (((INSET as f32 * bw / bh).round() as usize).clamp(24, 2 * INSET), INSET);
+        }
+        let n = self.insets.len().max(1);
+        let (max_w, max_h) = ((CW - 4 - 8 * n) / n, CH - 8);
+        let w = (max_h as f32 * bw / bh).round() as usize;
+        if w <= max_w { (w.max(8), max_h) } else { (max_w, ((max_w as f32 * bh / bw).round() as usize).clamp(8, max_h)) }
+    }
 }
 
 fn quad(s: &str) -> [f32; 4] {
@@ -61,12 +88,18 @@ fn read_items(path: &Path) -> Vec<Item> {
                     (f.parse().unwrap(), quad(b))
                 })
                 .collect();
+            let cell: usize = v[1].parse().unwrap();
             Item {
                 sheet: v[0].parse().unwrap(),
-                cell: v[1].parse().unwrap(),
-                frame: v[3].parse().unwrap(),
+                cell,
+                frame: (v[3] != "-").then(|| v[3].parse().unwrap()),
                 boxes,
                 insets,
+                mark: match v.get(7).map(|m| m.trim()) {
+                    None | Some("") => Some(cell),
+                    Some("-") => None,
+                    Some(n) => Some(n.parse().unwrap()),
+                },
             }
         })
         .collect()
@@ -153,18 +186,20 @@ fn main() {
     let ((w, h), _) = frame_sizes(&info, &params);
 
     // What each needed frame gives: a cell picture, and insets.
+    let (cols, rows) = grid();
     let mut cells_at: HashMap<u32, Vec<usize>> = HashMap::new();
     let mut insets_at: HashMap<u32, Vec<(usize, usize)>> = HashMap::new();
     for (i, it) in items.iter().enumerate() {
-        cells_at.entry(it.frame).or_default().push(i);
+        if let Some(f) = it.frame {
+            cells_at.entry(f).or_default().push(i);
+        }
         for (k, (f, _)) in it.insets.iter().enumerate() {
             insets_at.entry(*f).or_default().push((i, k));
         }
     }
     let mut pictures: HashMap<usize, Vec<u8>> = HashMap::new();
-    let mut small: HashMap<(usize, usize), (Vec<u8>, usize)> = HashMap::new();
-    let last =
-        items.iter().flat_map(|it| std::iter::once(it.frame).chain(it.insets.iter().map(|x| x.0))).max().unwrap_or(0);
+    let mut small: HashMap<(usize, usize), (Vec<u8>, usize, usize)> = HashMap::new();
+    let last = items.iter().flat_map(|it| it.frame.into_iter().chain(it.insets.iter().map(|x| x.0))).max().unwrap_or(0);
     let cancel = CancelToken::new();
     as_media::frames::decode_samples(
         &tools,
@@ -189,9 +224,8 @@ fn main() {
                     let pad = 0.15 * bw.max(bh);
                     let region =
                         [b[0] * w as f32 - pad, b[1] * h as f32 - pad, b[2] * w as f32 + pad, b[3] * h as f32 + pad];
-                    let iw =
-                        ((INSET as f32 * (bw + 2.0 * pad) / (bh + 2.0 * pad)).round() as usize).clamp(24, 2 * INSET);
-                    small.insert((i, k), (image::resize_region(rgb, (w, h), region, (iw, INSET)), iw));
+                    let (iw, ih) = items[i].inset_size(bw + 2.0 * pad, bh + 2.0 * pad);
+                    small.insert((i, k), (image::resize_region(rgb, (w, h), region, (iw, ih)), iw, ih));
                 }
             }
             if f % 6000 == 0 {
@@ -204,51 +238,60 @@ fn main() {
     eprintln!();
     std::fs::create_dir_all(out).unwrap();
     let sheets = items.iter().map(|it| it.sheet).max().map_or(0, |s| s + 1);
-    let (sw, sh) = (CW * COLS, CH * ROWS);
+    let name = std::env::var("NAME").unwrap_or_else(|_| "sheet".into());
+    let (sw, sh) = (CW * cols, CH * rows);
     for s in 0..sheets {
         let mut sheet = vec![32u8; sw * sh * 3];
         for (i, it) in items.iter().enumerate().filter(|(_, it)| it.sheet == s) {
-            let Some(mut p) = pictures.remove(&i) else { continue };
+            let mut p = match it.frame {
+                Some(_) => match pictures.remove(&i) {
+                    Some(p) => p,
+                    None => continue,
+                },
+                None => vec![32u8; CW * CH * 3],
+            };
             for &(b, c, t) in &it.boxes {
                 let px = [b[0] * CW as f32, b[1] * CH as f32, b[2] * CW as f32, b[3] * CH as f32];
                 rect(&mut p, (CW, CH), px, c, t.max(1) / 2 + 1);
             }
             let mut x = 4;
             for k in 0..it.insets.len() {
-                if let Some((img, iw)) = small.get(&(i, k)) {
+                if let Some((img, iw, ih)) = small.get(&(i, k)) {
                     if x + iw + 4 > CW {
                         break;
                     }
                     rect(
                         &mut p,
                         (CW, CH),
-                        [x as f32 - 2.0, 2.0, (x + iw + 1) as f32, (INSET + 5) as f32],
+                        [x as f32 - 2.0, 2.0, (x + iw + 1) as f32, (ih + 5) as f32],
                         [255, 255, 255],
                         2,
                     );
-                    paste(&mut p, CW, img, (*iw, INSET), (x, 4));
+                    paste(&mut p, CW, img, (*iw, *ih), (x, 4));
                     x += iw + 8;
                 }
             }
-            number(&mut p, CW, it.cell, (0, CH - 7 * 4 - 4), 4);
-            let (cx, cy) = (it.cell % COLS * CW, it.cell / COLS * CH);
+            if let Some(mark) = it.mark {
+                number(&mut p, CW, mark, (0, CH - 7 * 4 - 4), 4);
+            }
+            let (cx, cy) = (it.cell % cols * CW, it.cell / cols * CH);
             for r in 0..CH {
                 let d = ((cy + r) * sw + cx) * 3;
                 sheet[d..d + CW * 3].copy_from_slice(&p[r * CW * 3..(r + 1) * CW * 3]);
             }
         }
         // Cell borders.
-        for c in 1..COLS {
+        for c in 1..cols {
             for y in 0..sh {
                 let d = (y * sw + c * CW) * 3;
                 sheet[d..d + 6].copy_from_slice(&[255, 255, 255, 255, 255, 255]);
             }
         }
-        for r in 1..ROWS {
+        for r in 1..rows {
             let d = r * CH * sw * 3;
             sheet[d..d + sw * 3 * 2].fill(255);
         }
-        std::fs::write(out.join(format!("sheet_{s:03}.jpg")), image::jpeg(&sheet, sw, sh, 82)).unwrap();
+        std::fs::write(out.join(format!("{name}_{s:03}.jpg")), image::jpeg(&sheet, sw, sh, 82)).unwrap();
     }
     println!("{sheets} sheets in {}", out.display());
 }

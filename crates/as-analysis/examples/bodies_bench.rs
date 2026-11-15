@@ -5,8 +5,31 @@
 //! `cargo run --release -p as-analysis --example bodies_bench -- <cmd> <faces.tracks> <run.bodies> <bb_dir>
 //! <labels.tsv> [out_dir]` with `<cmd>`: `recall`, `tracks`, `score`, `reid`, `presence`, `sheets`.
 //! `<run.bodies>` may be a `.found` file instead (`faces_run` with `PEOPLE=`): the people as the
-//! app's face pass found them (`tracks`, `score`, `presence`).
+//! app's face pass found them (every command but `recall`).
 //! `bodies_bench audit <items.tsv> <verdicts.tsv>` scores the verdicts given on the sheets.
+//!
+//! The test set of bodies whose face does not show (`bench/bodies/README.md`, "The test set"):
+//! - `pools … <out_prefix>` writes every query of an episode (`<out_prefix>.pools.tsv`) and
+//!   what today's pass answers (`<out_prefix>.today.tsv`): E, a body with a face asked by its
+//!   sightings without one; B, the body under a named `back` head track of the labels; N,
+//!   bodies of extras; and, from `HARD=<title.hard.tsv>`, the bodies readers named: M (a
+//!   face of that figure is labelled in the shot), H (none is), N (someone outside the cast).
+//! - `back …` lists pool B alone.
+//! - `draw … <out_dir>` draws body tracks without any face for the readers (`DRAW=<m>,<o>`:
+//!   how many from shots that hold a labelled face of the main cast, the candidates for pool
+//!   M, and from the other shots; 100,100 by default), and writes `draw.tsv`, `items.tsv`
+//!   (one sheet a track, `GRID=3x2 bodies_render`), `gallery.items.tsv` and `gallery.txt`.
+//! - `bodies_bench audit <draw.tsv> <reader_a.tsv> <reader_b.tsv> <third.tsv|-> <out.hard.tsv>`
+//!   joins the readers' answers (`item answer [note]`) into the hard file.
+//! - `bodies_bench table <title>=<today.tsv>[,<today.tsv>…] …` prints the pools per title
+//!   and pooled, with intervals drawn over characters.
+//!
+//! Env for labels of the animation benches: `GALLERY=<gallery.tsv>` counts a figure's looks
+//! as one name; `SPANS=<spans.tsv>` leaves opening, ending and the like out;
+//! `EPISODE=<first>,<end>` takes one episode's frames out of a project's timeline;
+//! `KEY=<episode>` names the episode in what is written; `ANIME=1` groups the tracks as the
+//! anime scans do (with `GRID=6,10`), `ANIMATED=1` as 3D animation; `INFO=<bb.info.json>`
+//! gives the frame rate.
 //!
 //! Env: `BODY_STRIDE=3|6|12` uses every 1st/2nd/4th body sample; `HALF=first|second` keeps
 //! the queries of one half of the episode (`reid`); `WINDOW_S` (180), `REID_MIN` (0.65),
@@ -15,12 +38,14 @@
 //! embeddings join the tracks afterwards); `REID_TOP=n` keeps the appearance of a
 //! track's n clearest sightings only; `DETAIL=1` lists cases.
 
+#[path = "common/anime.rs"]
+mod anime;
 #[path = "common/bodyfile.rs"]
 mod bodyfile;
 #[path = "common/labels.rs"]
 mod labels;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -32,9 +57,8 @@ use as_core::FrameRange;
 use as_identity::bodies::{BodyAssign, BodyIn, BodyOutcome, BodyParams, FaceOn, propagate};
 use as_identity::metrics::bcubed;
 use as_identity::{Outcome, Params, TrackIn, identify};
-use labels::{
-    Kind, Label, STRIDE, character_names, found_faces, fps, input, kind, label_screen, members, named, names_of,
-};
+use anime::{Gallery, Level, Spans, at_level};
+use labels::{Kind, Label, STRIDE, box_iou, character_names, found_faces, fps, input, kind, members, named, names_of};
 
 fn env<T: std::str::FromStr>(name: &str, default: T) -> T {
     std::env::var(name).ok().map_or(default, |v| v.parse().ok().unwrap_or_else(|| panic!("{name}")))
@@ -75,9 +99,14 @@ struct World<'a> {
     char_name: HashMap<usize, &'a str>,
     /// Main cast: named in the labels with 30 s or more.
     main: HashSet<&'a str>,
+    /// Opening, ending and the like: nothing inside them is asked.
+    spans: &'a Spans,
     shots: Vec<FrameRange>,
     samples: Vec<bodyfile::Sample>,
     body_stride: u32,
+    /// The people are the app's own (a `.found` file): sightings carry no
+    /// appearance of their own, only the track does.
+    from_app: bool,
     bodies: Vec<BodyTrack>,
     /// Per body: (face track, samples tied).
     faces_on: Vec<Vec<(usize, u32)>>,
@@ -110,16 +139,72 @@ fn body_params() -> BodyParams {
     }
 }
 
-fn build<'a>(tracks_path: &str, bodies_path: &str, dir: &Path, labels: &'a [Label]) -> World<'a> {
+/// What the labels say: every label of the episode, the main cast of the
+/// title, and the spans left out.
+struct Truth {
+    labels: Vec<Label>,
+    main: HashSet<String>,
+    spans: Spans,
+}
+
+/// The labels of `path` as the bench reads them. With `GALLERY` a figure's
+/// looks are one name. The main cast is every named figure with 30 s or more
+/// in the whole file (all its episodes; at 23.976 frames a second, so that
+/// the episodes of one title agree on it), labels inside a span of `SPANS`
+/// left out. With `EPISODE=<first>,<end>` only the labels that start in
+/// those frames stay, counted from `first` (one episode of a project's
+/// timeline, on its own frames).
+fn read_truth(path: &str) -> Truth {
+    let gallery = std::env::var("GALLERY").ok().map(|p| Gallery::read(&p));
+    let mut labels = labels::read_labels(path);
+    if let Some(g) = &gallery {
+        for l in &mut labels {
+            l.name = at_level(&l.name, Some(g), Level::Figure);
+        }
+    }
+    let mut spans = std::env::var("SPANS").ok().map_or_else(Spans::default, |p| Spans::read(&p));
+    let mut screen: HashMap<&str, u32> = HashMap::new();
+    for l in labels.iter().filter(|l| spans.mostly_in(l.span.0, l.span.1).is_none()) {
+        *screen.entry(l.name.as_str()).or_default() += l.span.1 - l.span.0;
+    }
+    let main: HashSet<String> = screen
+        .iter()
+        .filter(|(n, f)| named(n).is_some() && **f as f64 / labels::FPS >= 30.0)
+        .map(|(n, _)| n.to_string())
+        .collect();
+    if let Ok(v) = std::env::var("EPISODE") {
+        let (first, end) = v.split_once(',').expect("EPISODE=<first>,<end>");
+        let (first, end): (u32, u32) = (first.trim().parse().unwrap(), end.trim().parse().unwrap());
+        labels.retain(|l| (first..end).contains(&l.span.0));
+        for l in &mut labels {
+            l.span = (l.span.0 - first, l.span.1 - first);
+            l.boxes.iter_mut().for_each(|b| b.0 -= first);
+        }
+        spans.0.retain(|s| s.0 < end && first < s.1);
+        for s in &mut spans.0 {
+            (s.0, s.1) = (s.0.saturating_sub(first), s.1.min(end) - first);
+        }
+    }
+    Truth { labels, main, spans }
+}
+
+/// The grouping the app uses for the footage: the anime scans' with
+/// `ANIME=1`, 3D animation's with `ANIMATED=1`, live action's otherwise.
+fn identity_params() -> Params {
+    let mut p = if std::env::var_os("ANIME").is_some() { Params::anime() } else { Params::default() };
+    p.animated = std::env::var_os("ANIMATED").is_some_and(|v| v == "1");
+    p
+}
+
+fn build<'a>(tracks_path: &str, bodies_path: &str, dir: &Path, said: &'a Truth) -> World<'a> {
+    let labels = &said.labels[..];
     let tracks = labels::read_tracks(tracks_path);
     let truth = names_of(&tracks, labels);
     let input = input(&tracks);
-    let outcome = identify(&input, &Params::default());
+    let outcome = identify(&input, &identity_params());
     let got = members(&outcome);
     let char_name = character_names(&tracks, &truth, &got);
-    let screen = label_screen(labels);
-    let main: HashSet<&str> =
-        screen.iter().filter(|(n, f)| named(n).is_some() && **f as f64 / fps() >= 30.0).map(|(n, _)| *n).collect();
+    let main: HashSet<&str> = said.main.iter().map(String::as_str).collect();
     let shots = read_shots(dir);
     if bodies_path.ends_with(".found") {
         // The app's own: tracked, tied and embedded in the face pass.
@@ -162,9 +247,11 @@ fn build<'a>(tracks_path: &str, bodies_path: &str, dir: &Path, labels: &'a [Labe
             truth,
             char_name,
             main,
+            spans: &said.spans,
             shots,
             samples: Vec::new(),
             body_stride: people.stride,
+            from_app: true,
             bodies,
             faces_on,
             body_in,
@@ -184,7 +271,8 @@ fn build<'a>(tracks_path: &str, bodies_path: &str, dir: &Path, labels: &'a [Labe
     tp.max_gap = tp.max_gap.max(2 * body_stride);
     let track_reid = env("TRACK_REID", 1) != 0;
     let reid_top: usize = env("REID_TOP", usize::MAX);
-    let lp = LinkParams { max_interp: 24.max(2 * body_stride), ..LinkParams::default() };
+    // The faces' own sample grid says when two of them are on a body at once.
+    let lp = LinkParams { max_interp: 24.max(2 * body_stride), stride: labels::grid().0, ..LinkParams::default() };
     let gap = (24 / body_stride).max(1);
     let (mut bodies, mut faces_on) = (Vec::new(), Vec::new());
     let mut s = 0;
@@ -284,9 +372,11 @@ fn build<'a>(tracks_path: &str, bodies_path: &str, dir: &Path, labels: &'a [Labe
         truth,
         char_name,
         main,
+        spans: &said.spans,
         shots,
         samples,
         body_stride,
+        from_app: false,
         bodies,
         faces_on,
         body_in,
@@ -318,6 +408,38 @@ impl World<'_> {
     fn shot_of(&self, frame: u32) -> Option<FrameRange> {
         let i = self.shots.partition_point(|s| s.end <= frame);
         self.shots.get(i).filter(|s| s.contains(frame)).copied()
+    }
+
+    /// The sightings of body `b` while none of its faces shows: where the
+    /// run kept an appearance per sighting, only those that have one.
+    fn away(&self, b: usize) -> Vec<&BodyDet> {
+        let face_at = |f: u32| {
+            self.faces_on[b].iter().any(|&(t, _)| self.input[t].spans.iter().any(|&(a, z)| a <= f && f < z))
+        };
+        let body = &self.bodies[b];
+        body.dets
+            .iter()
+            .zip(&body.reids)
+            .filter(|(d, e)| (self.from_app || e.is_some()) && !face_at(d.frame))
+            .map(|(d, _)| d)
+            .collect()
+    }
+
+    /// Whether body `b` lies mostly inside an opening, ending or the like.
+    fn in_span(&self, b: usize) -> bool {
+        self.spans.mostly_in(self.bodies[b].start, self.bodies[b].end).is_some()
+    }
+
+    /// The body track of shot `shot` whose box at `frame` is `bbox` (IoU of
+    /// 0.5 or more; the most alike of several).
+    fn body_at(&self, shot: u32, frame: u32, bbox: &[f32; 4]) -> Option<usize> {
+        let gap = 24.max(2 * self.body_stride);
+        (0..self.bodies.len())
+            .filter(|&b| self.bodies[b].shot == shot)
+            .filter_map(|b| self.bodies[b].box_at(frame, gap).map(|x| (box_iou(&x, bbox), b)))
+            .filter(|&(iou, _)| iou >= 0.5)
+            .max_by(|x, y| x.0.total_cmp(&y.0).then(y.1.cmp(&x.1)))
+            .map(|(_, b)| b)
     }
 }
 
@@ -657,17 +779,7 @@ fn reid(w: &World) {
         let truth = w.body_truth(b);
         match (w.res.bodies[b], truth) {
             (BodyAssign::Face(_), Some(n)) if w.main.contains(n) => {
-                let away = body
-                    .dets
-                    .iter()
-                    .zip(&body.reids)
-                    .filter(|(d, e)| {
-                        e.is_some()
-                            && !w.faces_on[b]
-                                .iter()
-                                .any(|&(f, _)| w.input[f].spans.iter().any(|&(a, z)| a <= d.frame && d.frame < z))
-                    })
-                    .count();
+                let away = w.away(b).len();
                 if let Some(v) = w.body_in[b].reid_away.as_ref().filter(|_| away >= 3) {
                     q1.push((b, n, v));
                 }
@@ -733,6 +845,784 @@ fn reid(w: &World) {
                 );
             }
             println!("{line}");
+        }
+    }
+}
+
+/// One query of the test set: a body, the name the labels or the readers
+/// give it, and what it is asked by.
+struct Query {
+    /// `E`, `B`, `M`, `H` or `N`.
+    pool: &'static str,
+    /// The run's body track (a reader's item may sit on none in another run).
+    body: Option<usize>,
+    shot: u32,
+    start: u32,
+    end: u32,
+    /// A sighting to find the body by in another run.
+    frame: u32,
+    bbox: [f32; 4],
+    /// The figure; `?` for an extra.
+    name: String,
+    flags: Vec<&'static str>,
+    /// E and B: the appearance the query is asked by (`None`: nothing to embed).
+    asked_by: Option<Vec<f32>>,
+}
+
+/// An answer: the name of the pass's character, its likeness, the runner-up's.
+type Answer = Option<(String, f32, f32)>;
+
+fn anchors_of<'v>(w: &'v World) -> Vec<Anchor<'v>> {
+    (0..w.bodies.len())
+        .filter_map(|b| match w.res.bodies[b] {
+            BodyAssign::Face(c) => Some(Anchor {
+                body: b,
+                character: c,
+                shot: w.bodies[b].shot,
+                first: w.bodies[b].start,
+                last: w.bodies[b].end,
+                reid: [w.body_in[b].reid.as_ref(), w.body_in[b].reid_away.as_ref()],
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Today's rule for clothes on an appearance `q` of body `own`: the most
+/// alike character among the bodies with a face within the window, if alike
+/// enough and clear of the next one. `own` itself is never asked, and with
+/// `skip_shot` no body of its shot. The rule "not where the character already
+/// is" is left out: the body asked is that character's.
+fn ask(w: &World, anchors: &[Anchor], q: &[f32], own: usize, skip_shot: bool) -> Answer {
+    let body = &w.bodies[own];
+    let window = (f64::from(w.params.window_s) * fps()).round() as u32;
+    let (c, s, s2) = rank(q, body.start, body.end, body.shot, own, anchors, window, skip_shot)?;
+    (s >= w.params.reid_min && s - s2 >= w.params.reid_margin).then(|| (w.name(c).to_string(), s, s2))
+}
+
+/// What the pass itself made of a body by its clothes.
+fn passed(w: &World, b: usize) -> Answer {
+    match w.res.bodies[b] {
+        BodyAssign::Reid { character, score, runner_up } => Some((w.name(character).to_string(), score, runner_up)),
+        _ => None,
+    }
+}
+
+/// Pool E: bodies with a face of the main cast, asked by their sightings
+/// without one (at least 3).
+fn easy(w: &World) -> Vec<Query> {
+    let mut out = Vec::new();
+    for (b, body) in w.bodies.iter().enumerate() {
+        let (BodyAssign::Face(_), Some(n)) = (w.res.bodies[b], w.body_truth(b)) else { continue };
+        if !w.main.contains(n) || w.in_span(b) {
+            continue;
+        }
+        let away = w.away(b);
+        let Some(v) = w.body_in[b].reid_away.as_ref().filter(|_| away.len() >= 3) else { continue };
+        let d = away[away.len() / 2];
+        // `mixed`: its faces are more than one named figure's, so the name
+        // (the one most of their samples have) is less sure.
+        let figures: HashSet<&str> = w.faces_on[b].iter().filter_map(|&(f, _)| w.truth[f].and_then(named)).collect();
+        out.push(Query {
+            pool: "E",
+            body: Some(b),
+            shot: body.shot,
+            start: body.start,
+            end: body.end,
+            frame: d.frame,
+            bbox: d.visible,
+            name: n.to_string(),
+            flags: if figures.len() > 1 { vec!["mixed"] } else { Vec::new() },
+            asked_by: Some(v.clone()),
+        });
+    }
+    out
+}
+
+/// Pool N from the labels: bodies whose faces are extras' (`?`, `?e`, `n`)
+/// and that the face pass named no one. Any name is wrong.
+fn extras(w: &World) -> Vec<Query> {
+    let mut out = Vec::new();
+    for (b, body) in w.bodies.iter().enumerate() {
+        let unnamed = matches!(w.res.bodies[b], BodyAssign::None | BodyAssign::Reid { .. });
+        if !unnamed || w.in_span(b) || !w.body_truth(b).is_some_and(|n| matches!(kind(n), Kind::OwnPerson)) {
+            continue;
+        }
+        let d = body.dets[body.dets.len() / 2];
+        out.push(Query {
+            pool: "N",
+            body: Some(b),
+            shot: body.shot,
+            start: body.start,
+            end: body.end,
+            frame: d.frame,
+            bbox: d.visible,
+            name: "?".into(),
+            flags: vec!["face"],
+            asked_by: None,
+        });
+    }
+    out
+}
+
+fn is_back(l: &Label) -> bool {
+    l.flags.iter().any(|f| f == "back")
+}
+
+/// Whether a face (not the back of the head) of `name` is labelled in `shot`.
+fn face_in_shot(labels: &[Label], name: &str, shot: FrameRange) -> bool {
+    labels.iter().any(|l| l.name == name && !is_back(l) && l.span.0 < shot.end && shot.start < l.span.1)
+}
+
+/// Pool B: the named `back` head tracks of the labels (main cast, outside
+/// the spans), each on the body track most of its boxes sit on, asked by
+/// that body's appearance while the back of the head shows. Flags: `far`,
+/// no face of the figure is labelled within 48 frames of the track; `cut`,
+/// none in its shot; `own`, the body carries a face of the figure at
+/// another moment. Also: how many such labels there are, and how many sit
+/// on no body.
+fn back(w: &World, labels: &[Label]) -> (Vec<Query>, usize, usize) {
+    const NEAR: u32 = 48;
+    let lp = LinkParams::default();
+    let gap = 24.max(2 * w.body_stride);
+    let mut by_shot: HashMap<u32, Vec<usize>> = HashMap::new();
+    for (b, body) in w.bodies.iter().enumerate() {
+        by_shot.entry(body.shot).or_default().push(b);
+    }
+    let on_body = |hb: &[f32; 4], f: u32, b: usize| w.bodies[b].box_at(f, gap).and_then(|bb| fit(hb, &bb, &lp));
+    let (mut out, mut all, mut bare) = (Vec::new(), 0, 0);
+    for l in labels.iter().filter(|l| {
+        is_back(l) && w.main.contains(l.name.as_str()) && w.spans.mostly_in(l.span.0, l.span.1).is_none()
+    }) {
+        all += 1;
+        let mut votes: BTreeMap<usize, u32> = BTreeMap::new();
+        for (f, hb) in &l.boxes {
+            let Some(shot) = w.shot_of(*f) else { continue };
+            let best = by_shot
+                .get(&shot.start)
+                .into_iter()
+                .flatten()
+                .filter_map(|&b| on_body(hb, *f, b).map(|s| (s, b)))
+                .max_by(|x, y| x.0.total_cmp(&y.0).then(y.1.cmp(&x.1)));
+            if let Some((_, b)) = best {
+                *votes.entry(b).or_default() += 1;
+            }
+        }
+        let total: u32 = votes.values().sum();
+        let best = votes.iter().max_by_key(|&(&b, &n)| (n, std::cmp::Reverse(b))).map(|(&b, &n)| (b, n));
+        let Some((b, _)) = best.filter(|&(_, n)| n >= 2.min(l.boxes.len() as u32) && n as f32 >= 0.6 * total as f32)
+        else {
+            bare += 1;
+            continue;
+        };
+        let body = &w.bodies[b];
+        let within = |d: &BodyDet| l.span.0 <= d.frame && d.frame < l.span.1;
+        let mid = (l.span.0 + l.span.1) / 2;
+        let d = body.dets.iter().min_by_key(|d| (!within(d), d.frame.abs_diff(mid))).expect("a sighting");
+        let face_near = labels.iter().any(|o| {
+            o.name == l.name && !is_back(o) && o.span.0 < l.span.1 + NEAR && l.span.0 < o.span.1 + NEAR
+        });
+        let shot = w.shot_of(mid).unwrap_or(FrameRange::new(body.shot, body.end));
+        let own = labels.iter().any(|o| {
+            o.name == l.name
+                && !is_back(o)
+                && o.boxes.iter().any(|(f, hb)| (body.start..body.end).contains(f) && on_body(hb, *f, b).is_some())
+        });
+        let mut flags = Vec::new();
+        if !face_near {
+            flags.push("far");
+        }
+        if !face_in_shot(labels, &l.name, shot) {
+            flags.push("cut");
+        }
+        if own {
+            flags.push("own");
+        }
+        out.push(Query {
+            pool: "B",
+            body: Some(b),
+            shot: body.shot,
+            start: l.span.0.max(body.start),
+            end: l.span.1.min(body.end),
+            frame: d.frame,
+            bbox: d.visible,
+            name: l.name.clone(),
+            flags,
+            // The app's people keep one appearance a track, not one a sighting.
+            asked_by: if w.from_app { None } else { body.appearance(within) },
+        });
+    }
+    (out, all, bare)
+}
+
+fn quad(s: &str) -> [f32; 4] {
+    let v: Vec<f32> = s.split(',').map(|x| x.trim().parse().expect("a box")).collect();
+    [v[0], v[1], v[2], v[3]]
+}
+
+fn quad_text(b: &[f32; 4]) -> String {
+    format!("{:.4},{:.4},{:.4},{:.4}", b[0], b[1], b[2], b[3])
+}
+
+/// Pools M, H and N from the readers (`<title>.hard.tsv`, the rows of
+/// episode `key`): a body they named is M when a face of that figure is
+/// labelled in its shot and H when none is; one they call a person outside
+/// the cast (`e`) or no person (`n`) is an extra. `x` (cannot tell) and
+/// figures outside the main cast are in no pool.
+fn from_readers(w: &World, labels: &[Label], path: &str, key: &str) -> Vec<Query> {
+    let mut out = Vec::new();
+    for v in labels::tsv_rows(path).into_iter().filter(|v| v[0] == key && v[2] != "e") {
+        let (shot, start, end, frame): (u32, u32, u32, u32) =
+            (v[3].parse().unwrap(), v[4].parse().unwrap(), v[5].parse().unwrap(), v[6].parse().unwrap());
+        let (bbox, name) = (quad(&v[7]), v[8].as_str());
+        let range = w.shot_of(frame).unwrap_or(FrameRange::new(shot, end));
+        let (pool, name, mut flags) = match name {
+            "x" => continue,
+            "e" => ("N", "?", vec!["e"]),
+            "n" => ("N", "?", vec!["n"]),
+            n if !w.main.contains(n) => continue,
+            n if face_in_shot(labels, n, range) => ("M", n, Vec::new()),
+            n => ("H", n, Vec::new()),
+        };
+        let body = w.body_at(shot, frame, &bbox);
+        // `clip`: the body shows enough to be a clip of its own in a pack.
+        if body.is_some_and(|b| w.bodies[b].showing(16.0 / 9.0).prominent()) {
+            flags.push("clip");
+        }
+        out.push(Query { pool, body, shot, start, end, frame, bbox, name: name.into(), flags, asked_by: None });
+    }
+    out
+}
+
+fn key() -> String {
+    std::env::var("KEY").unwrap_or_else(|_| "-".into())
+}
+
+/// Every query of the episode and today's answer to each.
+fn pools(w: &World, labels: &[Label], out: &Path) {
+    let key = key();
+    let anchors = anchors_of(w);
+    let mut qs = easy(w);
+    let (b, back_labels, bare) = back(w, labels);
+    // The app's people keep no appearance per sighting: nothing to ask a
+    // back of the head by.
+    if !w.from_app {
+        qs.extend(b);
+    }
+    qs.extend(extras(w));
+    if let Ok(hard) = std::env::var("HARD") {
+        qs.extend(from_readers(w, labels, &hard, &key));
+    }
+    let mut set = String::from("pool\tkey\tshot\tstart\tend\tframe\tbox\tname\tflags\n");
+    let mut today =
+        String::from("pool\tkey\tshot\tframe\tname\tflags\tgot\tscore\tnext\tgot_other_shots\tscore\tnext\n");
+    let text = |a: &Answer| match a {
+        Some((n, s, s2)) => format!("{n}\t{s:.3}\t{s2:.3}"),
+        None => "-\t\t".into(),
+    };
+    // Per pool: queries, then answered and right, with the same shot's help and without.
+    let mut sums: BTreeMap<String, [usize; 5]> = BTreeMap::new();
+    for q in &qs {
+        let (any, other) = match (q.pool, &q.asked_by, q.body) {
+            ("E" | "B", Some(v), Some(b)) => (ask(w, &anchors, v, b, false), ask(w, &anchors, v, b, true)),
+            ("E" | "B", ..) => (None, None),
+            (pool, _, body) => {
+                // An extra called a character outside the main cast was given
+                // no cast name: written `~name`, and not counted as answered.
+                let a = body.and_then(|b| passed(w, b)).map(|(n, s, s2)| {
+                    if pool == "N" && !w.main.contains(n.as_str()) { (format!("~{n}"), s, s2) } else { (n, s, s2) }
+                });
+                (a.clone(), a)
+            }
+        };
+        let flags = q.flags.join(",");
+        let _ = writeln!(
+            set,
+            "{}\t{key}\t{}\t{}\t{}\t{}\t{}\t{}\t{flags}",
+            q.pool,
+            q.shot,
+            q.start,
+            q.end,
+            q.frame,
+            quad_text(&q.bbox),
+            q.name
+        );
+        let _ = writeln!(
+            today,
+            "{}\t{key}\t{}\t{}\t{}\t{flags}\t{}\t{}",
+            q.pool,
+            q.shot,
+            q.frame,
+            q.name,
+            text(&any),
+            text(&other)
+        );
+        let far = if q.pool == "B" && q.flags.contains(&"far") { " far" } else { "" };
+        let e = sums.entry(format!("{}{far}", q.pool)).or_default();
+        e[0] += 1;
+        for (k, a) in [(1, &any), (3, &other)] {
+            if let Some((n, ..)) = a.as_ref().filter(|a| !a.0.starts_with('~')) {
+                e[k] += 1;
+                e[k + 1] += usize::from(*n == q.name);
+            }
+        }
+    }
+    let with = |ext: &str| {
+        let mut p = out.as_os_str().to_owned();
+        p.push(ext);
+        std::path::PathBuf::from(p)
+    };
+    std::fs::write(with(".pools.tsv"), set).unwrap();
+    std::fs::write(with(".today.tsv"), today).unwrap();
+    println!(
+        "{key}: {} bodies, {} with a face ({} anchors); back labels of the main cast {back_labels}, on no body {bare}",
+        w.bodies.len(),
+        w.faces_on.iter().filter(|f| !f.is_empty()).count(),
+        anchors.len()
+    );
+    for (pool, [n, a, r, a2, r2]) in sums {
+        println!("  {pool:6} {n:4} queries | answered {a:4} right {r:4} | without the same shot: answered {a2:4} right {r2:4}");
+    }
+    // Pool E's names come through the tie of faces to bodies: the readers'
+    // names for a sample of its bodies (the draw's group `e`) check them.
+    if let Ok(hard) = std::env::var("HARD") {
+        let (mut same, mut other, mut open) = (0, 0, 0);
+        for v in labels::tsv_rows(&hard).into_iter().filter(|v| v[0] == key && v[2] == "e") {
+            let body = w.body_at(v[3].parse().unwrap(), v[6].parse().unwrap(), &quad(&v[7]));
+            let truth = body.and_then(|b| w.body_truth(b));
+            match v[8].as_str() {
+                "x" => open += 1,
+                n if Some(n) == truth => same += 1,
+                n => {
+                    other += 1;
+                    println!("    pool E, item {}: the labels say {}, the readers {n}", v[1], truth.unwrap_or("-"));
+                }
+            }
+        }
+        if same + other + open > 0 {
+            println!("  pool E's names read again: {same} the same, {other} another answer, {open} cannot tell");
+        }
+    }
+}
+
+/// Pool B alone, to look at.
+fn back_cmd(w: &World, labels: &[Label]) {
+    let (qs, all, bare) = back(w, labels);
+    let anchors = anchors_of(w);
+    println!("{all} back labels of the main cast outside the spans; {bare} on no body track; {} queries", qs.len());
+    for flag in ["far", "cut", "own"] {
+        println!("  {flag}: {}", qs.iter().filter(|q| q.flags.contains(&flag)).count());
+    }
+    let (mut answered, mut right, mut bare_vec) = (0, 0, 0);
+    for q in &qs {
+        let a = match (&q.asked_by, q.body) {
+            (Some(v), Some(b)) => ask(w, &anchors, v, b, false),
+            _ => {
+                bare_vec += 1;
+                None
+            }
+        };
+        if let Some((n, s, s2)) = &a {
+            answered += 1;
+            right += usize::from(*n == q.name);
+            if detail() {
+                println!("    {} {}-{} {:?}: {n} {s:.3} (next {s2:.3})", q.name, q.start, q.end, q.flags);
+            }
+        }
+    }
+    println!("  answered {answered}, right {right}; nothing to embed {bare_vec}");
+}
+
+/// The frame of `shot` to show it by: the sample nearest its middle.
+fn shot_frame(shot: &FrameRange) -> Option<u32> {
+    let mid = (shot.start + (shot.end - shot.start) / 2).next_multiple_of(6);
+    [mid, shot.start.next_multiple_of(6)].into_iter().find(|f| shot.contains(*f))
+}
+
+/// Body tracks without any face, drawn for the readers; and the gallery
+/// they name them from.
+fn draw(w: &World, labels: &[Label], out: &Path) {
+    std::fs::create_dir_all(out).unwrap();
+    let key = key();
+    let (n_m, n_o, n_e): (usize, usize, usize) = std::env::var("DRAW").ok().map_or((100, 100, 0), |v| {
+        let n: Vec<usize> = v.split(',').map(|x| x.trim().parse().expect("DRAW=<m>,<o>[,<e>]")).collect();
+        (n[0], n[1], n.get(2).copied().unwrap_or(0))
+    });
+    let main_face = |shot: FrameRange| {
+        labels.iter().any(|l| {
+            w.main.contains(l.name.as_str()) && !is_back(l) && l.span.0 < shot.end && shot.start < l.span.1
+        })
+    };
+    // Every track that may be drawn, in the order they come on screen:
+    // without a face tied (whatever the pass made of it), 15 % of the frame
+    // high or more, outside the spans.
+    let (mut m, mut o) = (Vec::new(), Vec::new());
+    for (b, body) in w.bodies.iter().enumerate() {
+        if !w.faces_on[b].is_empty() || body.height() < as_analysis::bodies::CLIP_MIN_HEIGHT || w.in_span(b) {
+            continue;
+        }
+        let Some(shot) = w.shot_of(body.start) else { continue };
+        if main_face(shot) { m.push(b) } else { o.push(b) }
+    }
+    let mut rng = Rng(0x0B0D_1E5D_2A77);
+    let mut picked: Vec<(usize, &str)> = rng.pick(&m, n_m).into_iter().map(|b| (b, "m")).collect();
+    picked.extend(rng.pick(&o, n_o).into_iter().map(|b| (b, "o")));
+    // A third group, to check the names of pool E: bodies with a face, shown
+    // at their moments without one.
+    let e: Vec<usize> = easy(w).iter().filter_map(|q| q.body).collect();
+    picked.extend(rng.pick(&e, n_e).into_iter().map(|b| (b, "e")));
+    picked.sort_by_key(|&(b, _)| (w.bodies[b].start, b));
+    println!(
+        "{key}: {} body tracks, {} without a face; of those 15 % high or more, outside the spans: {} in a shot with a labelled face of the main cast, {} in other shots; drawn {} and {}; of pool E's {} bodies {}",
+        w.bodies.len(),
+        w.faces_on.iter().filter(|f| f.is_empty()).count(),
+        m.len(),
+        o.len(),
+        picked.iter().filter(|p| p.1 == "m").count(),
+        picked.iter().filter(|p| p.1 == "o").count(),
+        e.len(),
+        picked.iter().filter(|p| p.1 == "e").count()
+    );
+
+    let mut list = String::from("item\tkey\tstratum\tshot\tstart\tend\tframe\tbox\n");
+    let mut items = String::from("sheet\tcell\tstratum\tframe\tboxes\tinsets\tinfo\tmark\n");
+    let orange = |b: &[f32; 4]| format!("{},ff8800,4", quad_text(b));
+    let inset = |f: u32, b: &[f32; 4]| format!("{f}:{}", quad_text(b));
+    let plain = |f: Option<u32>| f.map_or("-".to_string(), |f| f.to_string());
+    for (i, &(b, stratum)) in picked.iter().enumerate() {
+        let body = &w.bodies[b];
+        // A body of pool E is shown where none of its faces is.
+        let seen: Vec<BodyDet> =
+            if stratum == "e" { w.away(b).into_iter().copied().collect() } else { body.dets.clone() };
+        let mid = seen[seen.len() / 2];
+        let (first, last) = (seen[0], seen[seen.len() - 1]);
+        let other = if mid.frame - first.frame >= last.frame - mid.frame { first } else { last };
+        let shot = w.shot_of(body.start).expect("a shot");
+        let _ = writeln!(
+            list,
+            "{i}\t{key}\t{stratum}\t{}\t{}\t{}\t{}\t{}",
+            body.shot,
+            body.start,
+            body.end,
+            mid.frame,
+            quad_text(&mid.visible)
+        );
+        // The same shot at another moment: where a labelled face of the main
+        // cast shows, as far from the body's moment as there is one; without
+        // such a face, the shot's sample furthest from it.
+        let faces: Vec<u32> = labels
+            .iter()
+            .filter(|l| w.main.contains(l.name.as_str()) && !is_back(l))
+            .flat_map(|l| l.boxes.iter().map(|x| x.0))
+            .filter(|f| shot.contains(*f) && f.is_multiple_of(3))
+            .collect();
+        let ends = [shot.start.next_multiple_of(6), (shot.end - 1) / 6 * 6];
+        let elsewhere = faces
+            .into_iter()
+            .max_by_key(|f| f.abs_diff(mid.frame))
+            .or_else(|| ends.into_iter().filter(|f| shot.contains(*f)).max_by_key(|f| f.abs_diff(mid.frame)))
+            .filter(|f| *f != mid.frame);
+        let at = w.shots.partition_point(|s| s.end <= body.start);
+        let before = at.checked_sub(1).and_then(|k| shot_frame(&w.shots[k]));
+        let after = w.shots.get(at + 1).and_then(shot_frame);
+        let mut zoom = vec![first, mid, last];
+        zoom.dedup_by_key(|d| d.frame);
+        let cells: [(String, String, String, String); 6] = [
+            (mid.frame.to_string(), orange(&mid.visible), String::new(), i.to_string()),
+            (
+                plain((other.frame != mid.frame).then_some(other.frame)),
+                if other.frame == mid.frame { String::new() } else { orange(&other.visible) },
+                String::new(),
+                "-".into(),
+            ),
+            (
+                "-".into(),
+                String::new(),
+                zoom.iter().map(|d| inset(d.frame, &d.visible)).collect::<Vec<_>>().join(";"),
+                "-".into(),
+            ),
+            (plain(elsewhere), String::new(), String::new(), "-".into()),
+            (plain(before), String::new(), String::new(), "-".into()),
+            (plain(after), String::new(), String::new(), "-".into()),
+        ];
+        for (c, (frame, boxes, insets, mark)) in cells.into_iter().enumerate() {
+            let _ = writeln!(items, "{i}\t{c}\t{stratum}\t{frame}\t{boxes}\t{insets}\titem {i} body {b}\t{mark}");
+        }
+    }
+    std::fs::write(out.join("draw.tsv"), list).unwrap();
+    std::fs::write(out.join("items.tsv"), items).unwrap();
+
+    // The gallery: every figure of the main cast the episode's labels show,
+    // by its clearest faces of three parts of the episode; for animation
+    // (one outfit a figure) two of its bodies too.
+    let animation = std::env::var_os("ANIME").is_some() || std::env::var_os("ANIMATED").is_some();
+    let notes: HashMap<String, String> = std::env::var("GALLERY").ok().map_or_else(HashMap::new, |p| {
+        let g = Gallery::read(&p);
+        let mut by: HashMap<String, String> = HashMap::new();
+        for v in labels::tsv_rows(&p) {
+            let figure = at_level(&v[0], Some(&g), Level::Figure);
+            let note = v.get(3).cloned().unwrap_or_default();
+            let e = by.entry(figure).or_default();
+            if e.is_empty() || v[2] == "base" {
+                *e = note;
+            }
+        }
+        by
+    });
+    let mut screen: BTreeMap<&str, u32> = BTreeMap::new();
+    for l in labels.iter().filter(|l| {
+        w.main.contains(l.name.as_str()) && !is_back(l) && w.spans.mostly_in(l.span.0, l.span.1).is_none()
+    }) {
+        *screen.entry(l.name.as_str()).or_default() += l.span.1 - l.span.0;
+    }
+    let mut figures: Vec<(&str, u32)> = screen.into_iter().collect();
+    figures.sort_by_key(|&(n, f)| (std::cmp::Reverse(f), n));
+    let length = w.shots.last().map_or(1, |s| s.end).max(1);
+    let mut gallery = String::from("sheet\tcell\tstratum\tframe\tboxes\tinsets\tinfo\tmark\n");
+    let mut names = String::from("number\tname\tseconds\tnote\n");
+    let mut cell = 0;
+    for (g, &(name, frames)) in figures.iter().enumerate() {
+        let mut faces = Vec::new();
+        for part in 0..3 {
+            let clearest = (0..w.tracks.len())
+                .filter(|&i| w.truth[i] == Some(name) && w.tracks[i].start * 3 / length == part)
+                .filter_map(|i| tracks::clearest(&w.tracks[i].dets))
+                .max_by(|x, y| x.quality.total_cmp(&y.quality));
+            if let Some(d) = clearest {
+                faces.push(inset(d.frame, &d.bbox));
+            }
+        }
+        let mut cells = vec![faces];
+        if animation {
+            // Bodies all of whose faces are the figure's, the best attested
+            // and tallest of each half of the episode: a cell of their own.
+            let mut bodies = Vec::new();
+            for part in 0..2 {
+                let weight = |b: usize| w.faces_on[b].iter().map(|f| f.1).sum::<u32>() as f32 * w.bodies[b].height();
+                let best = (0..w.bodies.len())
+                    .filter(|&b| {
+                        !w.faces_on[b].is_empty()
+                            && w.faces_on[b].iter().all(|&(f, _)| w.truth[f] == Some(name))
+                            && w.bodies[b].start * 2 / length == part
+                            && w.bodies[b].showing(16.0 / 9.0).prominent()
+                    })
+                    .max_by(|&x, &y| weight(x).total_cmp(&weight(y)));
+                if let Some(b) = best {
+                    let d = w.bodies[b].dets[w.bodies[b].dets.len() / 2];
+                    bodies.push(inset(d.frame, &d.visible));
+                }
+            }
+            cells.push(bodies);
+        }
+        for insets in cells {
+            let _ = writeln!(gallery, "{}\t{}\tg\t-\t\t{}\t{name}\t{}", cell / 6, cell % 6, insets.join(";"), g + 1);
+            cell += 1;
+        }
+        let _ = writeln!(
+            names,
+            "{}\t{name}\t{:.0}\t{}",
+            g + 1,
+            f64::from(frames) / fps(),
+            notes.get(name).map_or("", String::as_str)
+        );
+    }
+    std::fs::write(out.join("gallery.items.tsv"), gallery).unwrap();
+    std::fs::write(out.join("gallery.txt"), names).unwrap();
+    println!("{} tracks → {}; {} figures in the gallery", picked.len(), out.join("items.tsv").display(), figures.len());
+}
+
+/// The readers' answers joined: `item answer [note]` per line. Where the two
+/// readers agree that is the name; where they differ the third reader's
+/// answer is, and `x` without one.
+fn join_readers(draw: &str, a: &str, b: &str, third: &str, out: &str) {
+    let answers = |path: &str| -> HashMap<String, String> {
+        if path == "-" {
+            return HashMap::new();
+        }
+        std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("{path}: {e}"))
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#') && !l.starts_with("item"))
+            .map(|l| {
+                let v: Vec<&str> = l.split('\t').collect();
+                (v[0].trim().to_string(), v.get(1).unwrap_or_else(|| panic!("{path}: {l}")).trim().to_string())
+            })
+            .collect()
+    };
+    let known: Option<HashSet<String>> =
+        std::env::var("NAMES").ok().map(|p| labels::tsv_rows(&p).into_iter().map(|v| v[1].clone()).collect());
+    let (a, b, third) = (answers(a), answers(b), answers(third));
+    for (who, set) in [("first", &a), ("second", &b), ("third", &third)] {
+        for (item, name) in set {
+            let ok = matches!(name.as_str(), "e" | "n" | "x") || known.as_ref().is_none_or(|k| k.contains(name));
+            assert!(ok, "the {who} reader's answer for item {item} is no name of the gallery: {name}");
+        }
+    }
+    let mut text = String::from("key\titem\tstratum\tshot\tstart\tend\tframe\tbox\tname\tfirst\tsecond\thow\n");
+    let (mut same, mut decided, mut open) = (0, 0, 0);
+    let mut by: BTreeMap<&str, usize> = BTreeMap::new();
+    for v in labels::tsv_rows(draw) {
+        let item = &v[0];
+        let (x, y) = (
+            a.get(item).unwrap_or_else(|| panic!("the first reader left out item {item}")),
+            b.get(item).unwrap_or_else(|| panic!("the second reader left out item {item}")),
+        );
+        let (name, how) = if x == y {
+            same += 1;
+            (x.as_str(), "same")
+        } else if let Some(z) = third.get(item) {
+            decided += 1;
+            (z.as_str(), "third")
+        } else {
+            open += 1;
+            ("x", "open")
+        };
+        *by.entry(match name {
+            "e" => "a person outside the gallery",
+            "n" => "no person",
+            "x" => "cannot tell",
+            _ => "named",
+        })
+        .or_default() += 1;
+        let _ = writeln!(
+            text,
+            "{}\t{item}\t{}\t{}\t{}\t{}\t{}\t{}\t{name}\t{x}\t{y}\t{how}",
+            v[1], v[2], v[3], v[4], v[5], v[6], v[7]
+        );
+    }
+    std::fs::write(out, text).unwrap();
+    println!("{} items: both readers the same {same}, decided by the third {decided}, left open {open}", same + decided + open);
+    println!("  {by:?}");
+}
+
+/// One query's result, as `pools` wrote it.
+struct Scored {
+    title: String,
+    pool: String,
+    name: String,
+    flags: Vec<String>,
+    /// Answered and right, with any anchor and without the same shot's.
+    got: [(bool, bool); 2],
+}
+
+/// The 2.5 % and 97.5 % points of `v` (`None` without any value).
+fn interval(mut v: Vec<f64>) -> Option<(f64, f64)> {
+    v.retain(|x| x.is_finite());
+    v.sort_by(f64::total_cmp);
+    let at = |q: f64| v[((v.len() - 1) as f64 * q).round() as usize];
+    (!v.is_empty()).then(|| (at(0.025), at(0.975)))
+}
+
+/// Queries, answered and right of `rows`; then the share answered, the share
+/// right among the answered, and right of all queries.
+fn shares(counts: [usize; 3]) -> [f64; 3] {
+    let [n, a, r] = counts.map(|x| x as f64);
+    [a / n, r / a, r / n]
+}
+
+/// The pools per title and pooled: counts, shares, and intervals drawn over
+/// characters (each title's figures redrawn with all their queries, 2,000
+/// times; extras have no character and get a Wilson interval on the share
+/// answered).
+fn table(args: &[String]) {
+    let mut rows: Vec<Scored> = Vec::new();
+    let mut titles: Vec<String> = Vec::new();
+    for arg in args {
+        let (title, files) = arg.split_once('=').expect("<title>=<today.tsv>[,<today.tsv>…]");
+        titles.push(title.to_string());
+        for file in files.split(',') {
+            for v in labels::tsv_rows(file) {
+                // `-`: no answer; `~name`: an extra called no one of the main cast.
+                let yes = |k: usize| {
+                    let got = v.get(k).map_or("-", String::as_str);
+                    (got != "-" && !got.starts_with('~'), got == v[4])
+                };
+                rows.push(Scored {
+                    title: title.to_string(),
+                    pool: v[0].clone(),
+                    name: v[4].clone(),
+                    flags: v[5].split(',').map(String::from).collect(),
+                    got: [yes(6), yes(9)],
+                });
+            }
+        }
+    }
+    // A line of the table: its name, which rows, and whether pools E and B
+    // are read without the same shot's anchors.
+    type Pick = fn(&Scored) -> bool;
+    let lines: [(&str, Pick, usize); 11] = [
+        ("E, as today", |r| r.pool == "E", 0),
+        ("E, no help from the same shot", |r| r.pool == "E", 1),
+        ("B, back of the head", |r| r.pool == "B", 0),
+        ("B, no help from the same shot", |r| r.pool == "B", 1),
+        ("B far, no face within 2 s", |r| r.pool == "B" && r.flags.iter().any(|f| f == "far"), 0),
+        ("B far, no help from the same shot", |r| r.pool == "B" && r.flags.iter().any(|f| f == "far"), 1),
+        ("M, face in the shot", |r| r.pool == "M", 0),
+        ("H, no face in the shot", |r| r.pool == "H", 0),
+        ("H, bodies that would make a clip", |r| r.pool == "H" && r.flags.iter().any(|f| f == "clip"), 0),
+        ("E + M + H (E without the same shot)", |r| matches!(r.pool.as_str(), "E" | "M" | "H"), 1),
+        ("N, extras", |r| r.pool == "N", 0),
+    ];
+    let mut scopes: Vec<(String, Vec<&str>)> = titles.iter().map(|t| (t.clone(), vec![t.as_str()])).collect();
+    scopes.push(("all titles".into(), titles.iter().map(String::as_str).collect()));
+    println!("| Title | Pool | Queries | Characters | Answered | Right | Share answered | Share right | Right of all |");
+    println!("|---|---|---|---|---|---|---|---|---|");
+    let mut rng = Rng(0x7AB1_E0FB_0D1E);
+    for (scope, of) in &scopes {
+        for (line, pick, variant) in &lines {
+            let here: Vec<&Scored> = rows.iter().filter(|r| of.contains(&r.title.as_str()) && pick(r)).collect();
+            if here.is_empty() {
+                continue;
+            }
+            // Per title, per character: queries, answered, right.
+            let mut by: BTreeMap<&str, BTreeMap<&str, [usize; 3]>> = BTreeMap::new();
+            for r in &here {
+                let e = by.entry(r.title.as_str()).or_default().entry(r.name.as_str()).or_default();
+                let (answered, right) = r.got[*variant];
+                e[0] += 1;
+                e[1] += usize::from(answered);
+                e[2] += usize::from(right);
+            }
+            let groups: Vec<Vec<[usize; 3]>> = by.values().map(|c| c.values().copied().collect()).collect();
+            let sum = |v: &[[usize; 3]]| v.iter().fold([0; 3], |a, x| [a[0] + x[0], a[1] + x[1], a[2] + x[2]]);
+            let total = sum(&groups.concat());
+            let characters: usize = groups.iter().map(Vec::len).sum();
+            let s = shares(total);
+            let cell = |x: f64, ci: Option<(f64, f64)>| match ci {
+                _ if !x.is_finite() => "–".to_string(),
+                Some((lo, hi)) => format!("{x:.2} [{lo:.2}, {hi:.2}]"),
+                None => format!("{x:.2}"),
+            };
+            let extras = here.iter().all(|r| r.name == "?");
+            let cis: [Option<(f64, f64)>; 3] = if extras {
+                [Some(wilson(total[1], total[0])), None, None]
+            } else {
+                let mut drawn: [Vec<f64>; 3] = Default::default();
+                for _ in 0..2000 {
+                    let mut again = Vec::new();
+                    for g in &groups {
+                        again.extend((0..g.len()).map(|_| g[(rng.next() % g.len() as u64) as usize]));
+                    }
+                    for (k, x) in shares(sum(&again)).into_iter().enumerate() {
+                        drawn[k].push(x);
+                    }
+                }
+                drawn.map(interval)
+            };
+            if extras {
+                // No name is right for an extra: only how many got one.
+                println!("| {scope} | {line} | {} | – | {} | – | {} | – | – |", total[0], total[1], cell(s[0], cis[0]));
+                continue;
+            }
+            println!(
+                "| {scope} | {line} | {} | {characters} | {} | {} | {} | {} | {} |",
+                total[0],
+                total[1],
+                total[2],
+                cell(s[0], cis[0]),
+                cell(s[1], cis[1]),
+                cell(s[2], cis[2])
+            );
         }
     }
 }
@@ -891,11 +1781,19 @@ fn flags(w: &World, b: usize) -> (bool, bool) {
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     if a[0] == "audit" {
-        return audit(&a[1], &a[2]);
+        return match a.len() {
+            3 => audit(&a[1], &a[2]),
+            6 => join_readers(&a[1], &a[2], &a[3], &a[4], &a[5]),
+            _ => panic!("audit <items.tsv> <verdicts.tsv>, or audit <draw.tsv> <first> <second> <third|-> <out>"),
+        };
     }
-    let labels = labels::read_labels(&a[4]);
+    if a[0] == "table" {
+        return table(&a[1..]);
+    }
+    let said = read_truth(&a[4]);
+    let labels = &said.labels[..];
     let t = std::time::Instant::now();
-    let w = build(&a[1], &a[2], Path::new(&a[3]), &labels);
+    let w = build(&a[1], &a[2], Path::new(&a[3]), &said);
     let found = w.res.bodies.iter().filter(|x| matches!(x, BodyAssign::Reid { .. })).count();
     let face = w.res.bodies.iter().filter(|x| matches!(x, BodyAssign::Face(_))).count();
     eprintln!(
@@ -906,12 +1804,15 @@ fn main() {
     );
     let out = a.get(5).map(Path::new);
     match a[0].as_str() {
-        "recall" => recall(&w, &labels),
+        "recall" => recall(&w, labels),
         "tracks" => tracks_cmd(&w),
-        "score" => score(&w, &labels),
+        "score" => score(&w, labels),
         "reid" => reid(&w),
         "presence" => presence(&w, out),
         "sheets" => sheets(&w, out.expect("out_dir")),
+        "back" => back_cmd(&w, labels),
+        "draw" => draw(&w, labels, out.expect("out_dir")),
+        "pools" => pools(&w, labels, out.expect("out_prefix")),
         other => panic!("unknown command {other}"),
     }
 }
@@ -1151,5 +2052,66 @@ fn audit(items: &str, verdicts: &str) {
             100.0 * lo,
             100.0 * hi
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn label(name: &str, span: (u32, u32), flags: &[&str]) -> Label {
+        Label {
+            span,
+            boxes: vec![(span.0, [0.4, 0.1, 0.5, 0.3])],
+            name: name.into(),
+            flags: flags.iter().map(|f| f.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn the_back_of_a_head_is_no_face_in_the_shot() {
+        let labels = [label("ann", (100, 160), &[]), label("bob", (100, 160), &["back"]), label("bob", (400, 460), &[])];
+        let shot = FrameRange::new(90, 200);
+        assert!(face_in_shot(&labels, "ann", shot));
+        // Bob's head is in the shot, from behind only: his face is in another.
+        assert!(!face_in_shot(&labels, "bob", shot));
+        assert!(face_in_shot(&labels, "bob", FrameRange::new(380, 470)));
+        // A label that ends where the shot starts is not in it.
+        assert!(!face_in_shot(&labels, "ann", FrameRange::new(160, 300)));
+    }
+
+    #[test]
+    fn shares_are_of_all_queries_and_of_the_answered() {
+        // 84 queries, 24 answered, 21 right: what the README once called
+        // "25 % answered" is right answers of all queries.
+        let [answered, right, of_all] = shares([84, 24, 21]);
+        assert!((answered - 24.0 / 84.0).abs() < 1e-12);
+        assert!((right - 0.875).abs() < 1e-12);
+        assert!((of_all - 0.25).abs() < 1e-12);
+        // Nothing answered: no share right to give.
+        assert!(shares([10, 0, 0])[1].is_nan());
+    }
+
+    #[test]
+    fn an_interval_leaves_out_what_is_no_number() {
+        let v: Vec<f64> = (0..=100).map(f64::from).chain([f64::NAN]).collect();
+        assert_eq!(interval(v), Some((3.0, 98.0)));
+        assert_eq!(interval(vec![f64::NAN]), None);
+        assert_eq!(interval(vec![0.5]), Some((0.5, 0.5)));
+    }
+
+    #[test]
+    fn a_shot_is_shown_by_a_sample_inside_it() {
+        assert_eq!(shot_frame(&FrameRange::new(100, 160)), Some(132));
+        // The middle's sample lies past a short shot's end: its first sample.
+        assert_eq!(shot_frame(&FrameRange::new(5, 11)), Some(6));
+        // No sample at all in a shot of a few frames.
+        assert_eq!(shot_frame(&FrameRange::new(7, 11)), None);
+    }
+
+    #[test]
+    fn boxes_read_back_as_written() {
+        let b = [0.1234, 0.5, 0.75, 1.0];
+        assert_eq!(quad(&quad_text(&b)), b);
     }
 }

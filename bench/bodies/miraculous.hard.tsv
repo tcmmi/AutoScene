@@ -1,0 +1,201 @@
+key	item	stratum	shot	start	end	frame	box	name	first	second	how
+mir_s1e11	0	m	768	822	924	876	0.1815,0.3197,0.4317,0.6931	mylene haprele	mylene haprele	mylene haprele	same
+mir_s1e11	1	m	768	1074	1122	1098	0.5862,0.1346,0.9668,0.7725	mylene haprele	mylene haprele	mylene haprele	same
+mir_s1e11	2	m	1428	1512	1528	1518	0.0420,0.1806,0.0867,0.3344	alix kubdel	alix kubdel	alix kubdel	same
+mir_s1e11	3	m	1887	1890	2020	1956	0.0001,0.0019,0.4842,0.9663	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s1e11	4	o	3041	3072	3078	3072	0.3175,0.4784,0.3666,0.6727	mylene haprele	mylene haprele	mylene haprele	same
+mir_s1e11	5	o	3219	3282	3386	3336	0.1777,0.6309,0.2505,0.8750	ivan bruel	ivan bruel	ivan bruel	same
+mir_s1e11	6	o	4894	4896	4971	4932	0.6071,0.2091,0.6873,0.5575	HAWK_MOTH	HAWK_MOTH	HAWK_MOTH	same
+mir_s1e11	7	m	5109	5148	5166	5160	0.6554,0.5000,0.8434,1.0000	x	x	x	same
+mir_s1e11	8	m	6023	6024	6096	6060	0.5390,0.5212,0.7240,1.0000	sabrina raincomprix	sabrina raincomprix	sabrina raincomprix	same
+mir_s1e11	9	m	6263	6264	6270	6264	0.0000,0.5431,0.0758,0.7294	max kante	max kante	max kante	same
+mir_s1e11	10	m	7558	7560	8147	7854	0.7990,0.0005,1.0000,1.0000	ivan bruel	ivan bruel	ivan bruel	same
+mir_s1e11	11	m	8206	8208	8311	8262	0.6566,0.4083,0.7518,0.8026	mylene haprele	mylene haprele	mylene haprele	same
+mir_s1e11	12	o	9220	9222	9289	9258	0.7060,0.3601,0.8272,0.8828	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	13	m	9477	9546	9552	9546	0.8659,0.3214,1.0000,1.0000	alya cesaire	alya cesaire	alya cesaire	same
+mir_s1e11	14	m	10548	10548	10700	10626	0.6094,0.2673,0.7098,0.9023	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	15	m	10548	10608	10674	10638	0.4243,0.2820,0.4850,0.5014	alix kubdel	alix kubdel	alix kubdel	same
+mir_s1e11	16	m	10700	10746	10774	10758	0.5647,0.0013,0.9581,0.9910	adrien agreste	adrien agreste	adrien agreste	same
+mir_s1e11	17	m	10774	10776	10914	10842	0.2045,0.0084,0.4556,1.0000	nino lahiffe	x	nino lahiffe	third
+mir_s1e11	18	o	12121	12150	12189	12174	0.5582,0.4641,0.6101,0.7097	x	x	x	same
+mir_s1e11	19	m	12189	12228	12287	12258	0.4787,0.3555,0.5388,0.5314	nathaniel kurtzberg	nathaniel kurtzberg	nathaniel kurtzberg	same
+mir_s1e11	20	m	12805	12810	12870	12840	0.5177,0.0001,0.6467,0.4162	ivan bruel	ivan bruel	x	third
+mir_s1e11	21	o	12870	12900	12924	12912	0.4376,0.4229,0.4919,0.5805	x	x	x	same
+mir_s1e11	22	o	12870	13020	13032	13026	0.7148,0.2343,0.7534,0.3862	x	x	x	same
+mir_s1e11	23	m	13486	13488	13512	13500	0.3507,0.2173,0.5073,0.6108	n	n	n	same
+mir_s1e11	24	m	14323	14580	14629	14604	0.6331,0.1340,0.9917,1.0000	adrien agreste	adrien agreste	adrien agreste	same
+mir_s1e11	25	o	15259	15264	15299	15282	0.6335,0.3816,0.7511,0.9873	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s1e11	26	o	15259	15264	15299	15282	0.8043,0.6133,0.9301,1.0000	nathaniel kurtzberg	nathaniel kurtzberg	nathaniel kurtzberg	same
+mir_s1e11	27	o	15259	15264	15299	15282	0.8193,0.2493,0.8937,0.6484	adrien agreste	adrien agreste	adrien agreste	same
+mir_s1e11	28	o	15259	15264	15299	15282	0.4378,0.1652,0.4874,0.3689	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	29	o	15259	15264	15299	15282	0.5319,0.4552,0.6028,0.8303	alix kubdel	alix kubdel	alix kubdel	same
+mir_s1e11	30	m	15395	15396	15402	15396	0.0010,0.3167,0.1657,1.0000	nathaniel kurtzberg	nathaniel kurtzberg	nathaniel kurtzberg	same
+mir_s1e11	31	o	15468	15480	15492	15486	0.4418,0.0632,0.6543,0.9642	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	32	m	15667	15672	15695	15684	0.1469,0.7380,0.2555,1.0000	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s1e11	33	o	15695	15696	15702	15696	0.0003,0.0079,0.2562,0.9949	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	34	m	17141	17154	17160	17154	0.0000,0.3632,0.7525,0.7571	x	x	x	same
+mir_s1e11	35	o	17444	17448	17517	17484	0.4056,0.0853,0.4541,0.3789	x	x	x	same
+mir_s1e11	36	o	17444	17478	17517	17496	0.4608,0.1422,0.5030,0.3787	alya cesaire	alya cesaire	alya cesaire	same
+mir_s1e11	37	m	17517	17538	17544	17538	0.1237,0.2510,0.2486,0.7793	alix kubdel	alix kubdel	alix kubdel	same
+mir_s1e11	38	o	17649	17652	17714	17682	0.0006,0.0000,0.7542,0.9934	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	39	o	17822	17826	17862	17844	0.0003,0.0000,1.0000,0.9787	x	x	x	same
+mir_s1e11	40	m	17862	17874	17928	17898	0.2161,0.0000,0.7665,0.9843	x	x	x	same
+mir_s1e11	41	m	17862	18000	18036	18018	0.2295,0.0168,0.8158,0.9825	x	x	x	same
+mir_s1e11	42	m	18155	18180	18186	18180	0.4926,0.0000,0.5860,0.5096	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s1e11	43	m	18250	18372	18384	18378	0.1400,0.0000,0.8060,0.6165	n	n	n	same
+mir_s1e11	44	m	18804	18948	19017	18984	0.5647,0.2542,0.7582,1.0000	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s1e11	45	m	19059	19098	19134	19110	0.6426,0.4397,0.7465,0.8138	sabrina raincomprix	sabrina raincomprix	sabrina raincomprix	same
+mir_s1e11	46	m	19184	19194	19200	19194	0.0916,0.5974,0.2382,0.9569	LADYBUG	LADYBUG	LADYBUG	same
+mir_s1e11	47	m	19374	19434	19452	19446	0.1546,0.4296,0.3424,0.7982	CAT_NOIR	CAT_NOIR	CAT_NOIR	same
+mir_s1e11	48	m	19513	19518	19561	19542	0.1854,0.1076,0.3321,1.0000	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s1e11	49	o	21053	21054	21097	21078	0.8390,0.4269,0.9998,0.9968	n	n	n	same
+mir_s1e11	50	m	21385	21420	21455	21438	0.0139,0.4418,0.1088,0.7871	x	x	x	same
+mir_s1e11	51	o	21749	21750	21795	21774	0.4592,0.4779,0.5229,0.7564	LADYBUG	LADYBUG	LADYBUG	same
+mir_s1e11	52	o	21749	21750	21795	21774	0.3443,0.5673,0.4101,0.8236	alya cesaire	alya cesaire	alya cesaire	same
+mir_s1e11	53	m	21858	21864	21880	21870	0.2171,0.6225,0.2831,0.8969	rose lavillant	x	rose lavillant	third
+mir_s1e11	54	o	21960	21960	21992	21978	0.6384,0.6271,0.7123,0.8883	CAT_NOIR	CAT_NOIR	CAT_NOIR	same
+mir_s1e11	55	o	21960	21960	21992	21978	0.2910,0.6153,0.3433,0.8864	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s1e11	56	o	22145	22146	22157	22152	0.0019,0.0002,0.9986,0.9906	e	e	e	same
+mir_s1e11	57	m	22618	22626	22638	22632	0.2568,0.6529,0.4453,0.9446	CAT_NOIR	CAT_NOIR	CAT_NOIR	same
+mir_s1e11	58	m	22618	22638	22656	22644	0.1362,0.0000,0.9004,0.9228	e	e	x	third
+mir_s1e11	59	o	22766	22776	22827	22800	0.2091,0.1947,0.8692,0.9215	e	e	e	same
+mir_s1e11	60	m	22827	22830	22853	22842	0.3979,0.2612,0.6224,0.8902	ivan bruel	ivan bruel	ivan bruel	same
+mir_s1e11	61	o	23034	23034	23064	23058	0.2329,0.3493,0.3844,0.7369	x	x	x	same
+mir_s1e11	62	o	23237	23238	23253	23244	0.1974,0.0002,0.9996,0.9928	e	e	e	same
+mir_s1e11	63	o	23334	23334	23350	23346	0.2297,0.6792,0.2611,0.8404	x	x	x	same
+mir_s1e11	64	o	23334	23334	23350	23340	0.0034,0.0017,0.9989,0.9852	e	e	e	same
+mir_s1e11	65	o	23334	23334	23350	23346	0.2539,0.6515,0.3003,0.8433	ivan bruel	ivan bruel	ivan bruel	same
+mir_s1e11	66	o	23350	23382	23390	23388	0.1702,0.0000,1.0000,0.9771	e	e	e	same
+mir_s1e11	67	m	23623	23646	23657	23652	0.4847,0.0005,1.0000,0.9806	e	e	e	same
+mir_s1e11	68	o	23922	23922	23934	23928	0.0208,0.0000,0.9929,0.9988	n	n	n	same
+mir_s1e11	69	o	24041	24042	24112	24078	0.0680,0.2805,0.1683,0.4436	CAT_NOIR	CAT_NOIR	CAT_NOIR	same
+mir_s1e11	70	o	24511	24516	24522	24516	0.1115,0.5537,0.1781,0.8260	LADYBUG	LADYBUG	LADYBUG	same
+mir_s1e11	71	m	24540	24540	24546	24540	0.0000,0.4429,0.1481,0.9962	LADYBUG	LADYBUG	LADYBUG	same
+mir_s1e11	72	m	24540	24558	24666	24600	0.6167,0.5349,0.7356,1.0000	CAT_NOIR	CAT_NOIR	CAT_NOIR	same
+mir_s1e11	73	m	24797	24804	24828	24810	0.0000,0.2694,0.1521,0.7263	x	x	x	same
+mir_s1e11	74	m	24841	24846	24913	24882	0.0000,0.0023,0.2480,0.9999	alya cesaire	alya cesaire	alya cesaire	same
+mir_s1e11	75	o	25609	25626	25644	25638	0.4467,0.6296,0.5149,0.8319	x	x	x	same
+mir_s1e11	76	m	25831	25878	25896	25884	0.5218,0.1558,0.6030,0.4902	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s1e11	77	o	25967	25968	26018	25992	0.5766,0.5445,0.7087,0.8928	HAWK_MOTH	HAWK_MOTH	HAWK_MOTH	same
+mir_s1e11	78	o	27104	27114	27128	27126	0.6648,0.5038,0.8694,0.9983	LADYBUG	LADYBUG	LADYBUG	same
+mir_s1e11	79	m	27301	27360	27443	27402	0.1735,0.4204,0.3179,0.6861	n	n	n	same
+mir_s1e11	80	o	27468	27468	27506	27486	0.1206,0.0000,0.9995,0.9909	LADYBUG	LADYBUG	LADYBUG	same
+mir_s1e11	81	o	28075	28080	28103	28086	0.0000,0.0023,0.9825,0.9787	e	e	e	same
+mir_s1e11	82	o	28151	28152	28222	28200	0.2852,0.4001,0.7288,0.9906	e	e	e	same
+mir_s1e11	83	o	28334	28338	28374	28356	0.7325,0.0982,1.0000,0.9980	e	e	e	same
+mir_s1e11	84	m	28564	28668	28703	28686	0.4910,0.1344,0.7337,1.0000	ivan bruel	ivan bruel	ivan bruel	same
+mir_s1e11	85	m	28703	28770	28816	28794	0.5178,0.2133,0.9212,0.9965	LADYBUG	LADYBUG	LADYBUG	same
+mir_s1e11	86	o	28835	28836	28848	28842	0.2746,0.0000,0.9978,0.9788	n	n	n	same
+mir_s1e11	87	m	28887	28908	28952	28932	0.0003,0.0000,0.4198,0.9926	n	n	n	same
+mir_s1e11	88	m	28887	28914	28950	28932	0.3648,0.1539,0.5705,0.6756	CAT_NOIR	CAT_NOIR	CAT_NOIR	same
+mir_s1e11	89	m	29180	29184	29214	29196	0.7927,0.0000,0.9279,0.5174	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s1e11	90	m	29214	29214	29231	29220	0.8371,0.0000,0.9999,0.9856	alya cesaire	alya cesaire	alya cesaire	same
+mir_s1e11	91	o	29321	29322	29352	29334	0.0000,0.0000,0.3379,1.0000	ivan bruel	ivan bruel	ivan bruel	same
+mir_s1e11	92	o	29321	29322	29354	29340	0.1223,0.0000,0.9988,1.0000	ivan bruel	ivan bruel	ivan bruel	same
+mir_s1e11	93	o	29922	29922	29949	29934	0.0000,0.0000,0.9892,0.9847	e	e	e	same
+mir_s1e11	94	m	30516	30558	30563	30558	0.6154,0.4241,1.0000,0.8681	x	x	x	same
+mir_s1e11	95	o	30778	30780	30832	30804	0.5979,0.2689,0.6550,0.5247	HAWK_MOTH	HAWK_MOTH	HAWK_MOTH	same
+mir_s1e11	96	o	31245	31248	31295	31272	0.1745,0.1413,0.3709,1.0000	e	e	e	same
+mir_s1e11	97	o	31245	31248	31295	31272	0.5657,0.6389,0.6085,0.8505	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s1e11	98	o	31245	31248	31295	31272	0.5130,0.6440,0.5514,0.8476	alya cesaire	alya cesaire	alya cesaire	same
+mir_s1e11	99	o	31245	31248	31295	31272	0.4928,0.6430,0.5230,0.8465	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s5e21	0	m	2521	2526	2563	2544	0.5745,0.0548,0.8761,1.0000	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s5e21	1	m	2563	2646	2716	2682	0.6204,0.0813,0.7658,0.2981	ivan bruel	ivan bruel	ivan bruel	same
+mir_s5e21	2	m	4345	4350	4416	4380	0.6020,0.0000,0.9997,1.0000	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s5e21	3	m	5875	5886	6109	6000	0.0000,0.0004,0.3547,1.0000	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s5e21	4	m	6528	6528	6576	6552	0.7080,0.1016,0.9786,0.9887	lila rossi	lila rossi	lila rossi	same
+mir_s5e21	5	o	6906	6924	6942	6930	0.4620,0.2440,0.4881,0.3990	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	6	o	7013	7014	7075	7044	0.4782,0.3225,0.5657,0.6698	ivan bruel	ivan bruel	ivan bruel	same
+mir_s5e21	7	m	7508	7512	7566	7536	0.3040,0.2707,0.4249,0.6661	adrien agreste	adrien agreste	adrien agreste	same
+mir_s5e21	8	m	7508	7518	7566	7542	0.4198,0.0953,0.5273,0.4156	ivan bruel	ivan bruel	ivan bruel	same
+mir_s5e21	9	o	8019	8022	8061	8040	0.4752,0.3060,0.5532,0.6589	ivan bruel	ivan bruel	ivan bruel	same
+mir_s5e21	10	m	8278	8280	8375	8328	0.4256,0.4958,0.6357,1.0000	mylene haprele	mylene haprele	mylene haprele	same
+mir_s5e21	11	m	8278	8280	8375	8328	0.5768,0.1284,0.9753,1.0000	ivan bruel	ivan bruel	ivan bruel	same
+mir_s5e21	12	m	8447	8574	8626	8598	0.0000,0.0011,0.2069,1.0000	ivan bruel	ivan bruel	ivan bruel	same
+mir_s5e21	13	m	8898	8898	8961	8928	0.5645,0.3941,0.7186,0.9975	le chien kim	le chien kim	le chien kim	same
+mir_s5e21	14	m	8898	8898	8961	8928	0.3023,0.2692,0.4261,0.7491	adrien agreste	adrien agreste	adrien agreste	same
+mir_s5e21	15	o	9048	9084	9128	9108	0.2655,0.6099,0.3094,0.8052	adrien agreste	adrien agreste	adrien agreste	same
+mir_s5e21	16	o	9320	9324	9357	9342	0.4599,0.0000,0.9995,0.9662	lila rossi	lila rossi	lila rossi	same
+mir_s5e21	17	o	9320	9330	9357	9354	0.4567,0.0000,0.6824,0.7155	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s5e21	18	o	9320	9336	9357	9348	0.0001,0.2658,0.4039,0.7715	x	x	x	same
+mir_s5e21	19	o	9693	9696	9714	9702	0.3238,0.3965,0.3720,0.6075	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s5e21	20	o	9693	9696	9723	9714	0.3703,0.4190,0.4042,0.6111	x	x	x	same
+mir_s5e21	21	o	9693	9696	9723	9708	0.3171,0.3983,0.3437,0.5855	sabrina raincomprix	sabrina raincomprix	sabrina raincomprix	same
+mir_s5e21	22	m	9723	9762	9780	9774	0.0844,0.5854,0.1611,0.8323	x	x	x	same
+mir_s5e21	23	o	9861	9876	9899	9888	0.0045,0.2397,0.5130,0.9871	x	x	x	same
+mir_s5e21	24	m	12080	12084	12142	12114	0.0012,0.7799,0.1207,0.9968	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	25	m	12142	12150	12295	12222	0.7988,0.3224,0.9560,0.6347	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	26	m	12525	12558	12588	12570	0.4064,0.2178,0.4766,0.4155	le chien kim	le chien kim	le chien kim	same
+mir_s5e21	27	o	12865	12870	12882	12876	0.6012,0.5491,0.6649,0.7507	MONARCH	MONARCH	MONARCH	same
+mir_s5e21	28	o	12865	12888	12996	12942	0.5958,0.5423,0.6797,0.8741	MONARCH	MONARCH	MONARCH	same
+mir_s5e21	29	o	13057	13062	13068	13062	0.0000,0.0000,0.3227,0.9771	MONARCH	MONARCH	MONARCH	same
+mir_s5e21	30	o	13473	13476	13521	13500	0.2802,0.0000,0.9967,0.8927	x	x	x	same
+mir_s5e21	31	o	13648	13650	13686	13668	0.0466,0.0002,0.8796,1.0000	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	32	o	13648	13692	13761	13728	0.0674,0.1913,0.4640,0.5345	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	33	o	14137	14166	14214	14190	0.0000,0.5701,0.5419,0.9869	MONARCH	MONARCH	MONARCH	same
+mir_s5e21	34	o	14506	14508	14520	14514	0.6841,0.1104,0.9164,0.9957	rose lavillant	rose lavillant	rose lavillant	same
+mir_s5e21	35	o	14506	14520	14565	14544	0.3479,0.3191,0.4738,0.6692	x	x	x	same
+mir_s5e21	36	o	14506	14532	14565	14550	0.2416,0.3583,0.3622,0.9901	nathaniel kurtzberg	nathaniel kurtzberg	nathaniel kurtzberg	same
+mir_s5e21	37	o	15522	15546	15606	15570	0.0006,0.0000,0.9770,0.9797	e	e	e	same
+mir_s5e21	38	o	15796	15804	15822	15810	0.2921,0.3623,0.5852,1.0000	e	e	e	same
+mir_s5e21	39	o	15796	15810	15816	15810	0.6263,0.4424,0.7667,0.7185	e	e	e	same
+mir_s5e21	40	o	15889	15894	15912	15900	0.5514,0.3427,0.6333,0.6892	x	alya cesaire	x	third
+mir_s5e21	41	m	16118	16206	16230	16224	0.4421,0.5579,0.5223,0.9536	LADYBUG	LADYBUG	LADYBUG	same
+mir_s5e21	42	o	16603	16608	16667	16638	0.2847,0.0000,1.0000,0.9953	LADYBUG	LADYBUG	LADYBUG	same
+mir_s5e21	43	o	17373	17376	17412	17394	0.0017,0.0000,0.9912,1.0000	e	e	x	third
+mir_s5e21	44	o	17493	17496	17507	17502	0.6356,0.0077,0.9997,0.9921	e	e	e	same
+mir_s5e21	45	o	17660	17670	17713	17694	0.7984,0.4457,0.8561,0.6310	LADYBUG	LADYBUG	LADYBUG	same
+mir_s5e21	46	m	17777	17928	17946	17940	0.3975,0.4464,0.8602,0.9858	x	x	x	same
+mir_s5e21	47	m	18457	18528	18561	18546	0.0035,0.0000,0.5644,0.9929	LADYBUG	LADYBUG	LADYBUG	same
+mir_s5e21	48	o	18561	18564	18630	18594	0.0017,0.0239,0.8674,1.0000	x	x	x	same
+mir_s5e21	49	m	18929	19008	19032	19020	0.4310,0.0387,0.6715,1.0000	rose lavillant	rose lavillant	rose lavillant	same
+mir_s5e21	50	o	19452	19452	19472	19464	0.0014,0.0000,0.4016,0.9071	x	x	x	same
+mir_s5e21	51	o	19452	19458	19472	19464	0.8080,0.0021,1.0000,0.9937	x	x	x	same
+mir_s5e21	52	m	20278	20280	20286	20280	0.2512,0.1732,0.4501,1.0000	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s5e21	53	m	20703	20706	20757	20730	0.0045,0.4546,0.3273,1.0000	x	x	x	same
+mir_s5e21	54	m	21887	21888	21983	21936	0.6738,0.1236,0.9907,1.0000	adrien agreste	adrien agreste	adrien agreste	same
+mir_s5e21	55	m	23463	23508	23538	23520	0.2177,0.2457,0.3328,0.8368	nathaniel kurtzberg	nathaniel kurtzberg	nathaniel kurtzberg	same
+mir_s5e21	56	m	23633	23634	23662	23646	0.4472,0.4100,0.5635,1.0000	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	57	m	23633	23634	23662	23646	0.4117,0.4160,0.4922,0.9693	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s5e21	58	m	24074	24078	24116	24096	0.3921,0.5692,0.5208,0.8037	e	e	e	same
+mir_s5e21	59	o	25654	25656	25687	25674	0.0898,0.0004,0.3952,0.4714	mr damocles	x	mr damocles	third
+mir_s5e21	60	o	25915	25926	25932	25926	0.4592,0.4962,0.7175,0.9972	x	x	x	same
+mir_s5e21	61	m	26107	26112	26137	26124	0.5756,0.0000,0.9992,0.9875	sabrina raincomprix	sabrina raincomprix	sabrina raincomprix	same
+mir_s5e21	62	o	26188	26190	26207	26196	0.4876,0.0000,0.9991,0.7055	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	63	m	26609	26628	26656	26640	0.5094,0.5637,0.9854,0.9970	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s5e21	64	m	26906	26952	26986	26970	0.0696,0.2676,0.2370,1.0000	lila rossi	lila rossi	lila rossi	same
+mir_s5e21	65	m	26986	26988	27042	27012	0.2169,0.2340,0.3887,0.9937	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s5e21	66	m	26986	26988	27048	27018	0.1971,0.1440,0.3272,0.8837	ivan bruel	ivan bruel	ivan bruel	same
+mir_s5e21	67	m	26986	26988	27049	27018	0.2575,0.3886,0.3836,1.0000	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s5e21	68	m	26986	26988	27049	27018	0.6078,0.3444,0.7194,1.0000	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	69	m	27084	27084	27108	27096	0.0969,0.1801,0.2834,1.0000	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s5e21	70	m	27084	27084	27115	27102	0.0013,0.1867,0.2843,1.0000	x	x	x	same
+mir_s5e21	71	m	27084	27084	27115	27102	0.2559,0.0000,0.9852,1.0000	ivan bruel	ivan bruel	ivan bruel	same
+mir_s5e21	72	m	27439	27444	27461	27450	0.0000,0.0553,0.4582,1.0000	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	73	m	27807	27810	27842	27828	0.1617,0.5116,0.3266,1.0000	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s5e21	74	m	27807	27810	27842	27828	0.3312,0.2534,0.3896,0.5338	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	75	o	27913	27918	27941	27930	0.2115,0.0517,0.5303,1.0000	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	76	m	28010	28026	28032	28026	0.4257,0.0924,0.5589,0.6287	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	77	m	28010	28032	28074	28050	0.0937,0.6136,0.2376,1.0000	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s5e21	78	m	28010	28032	28074	28050	0.2087,0.6738,0.3677,1.0000	alya cesaire	alya cesaire	alya cesaire	same
+mir_s5e21	79	m	28506	28524	28554	28530	0.6476,0.4164,0.7863,1.0000	x	x	x	same
+mir_s5e21	80	m	28506	28692	28704	28698	0.4610,0.0136,0.5954,0.4138	CAT_NOIR	CAT_NOIR	CAT_NOIR	same
+mir_s5e21	81	m	28506	28722	28756	28740	0.8125,0.3424,0.9958,1.0000	x	x	x	same
+mir_s5e21	82	o	28823	28824	28862	28842	0.4460,0.0000,0.9969,0.9797	n	n	n	same
+mir_s5e21	83	o	28823	28836	28862	28848	0.0673,0.0000,0.9986,0.9827	n	n	n	same
+mir_s5e21	84	o	29064	29064	29106	29082	0.1626,0.0000,0.9991,0.9889	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	85	m	29106	29106	29252	29178	0.6094,0.3048,0.8919,1.0000	x	x	x	same
+mir_s5e21	86	m	29106	29148	29252	29202	0.4194,0.3718,0.7874,1.0000	x	x	x	same
+mir_s5e21	87	m	30060	30060	30098	30078	0.6639,0.2325,0.8270,1.0000	le chien kim	le chien kim	le chien kim	same
+mir_s5e21	88	o	30444	30444	30467	30456	0.3293,0.0000,0.9993,0.9723	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	89	o	30862	30864	30966	30918	0.4656,0.1969,0.9977,1.0000	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	90	o	30862	30864	30972	30918	0.0379,0.3973,0.1066,0.6484	le chien kim	le chien kim	le chien kim	same
+mir_s5e21	91	o	30862	30864	30972	30918	0.3285,0.2424,0.3657,0.4261	adrien agreste	adrien agreste	adrien agreste	same
+mir_s5e21	92	o	30862	30864	30972	30918	0.3004,0.2522,0.3391,0.4618	nathaniel kurtzberg	nathaniel kurtzberg	nathaniel kurtzberg	same
+mir_s5e21	93	o	30862	30882	30972	30924	0.2352,0.2744,0.2897,0.5466	x	x	x	same
+mir_s5e21	94	m	31526	31530	31598	31566	0.7528,0.2512,0.8778,0.9806	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s5e21	95	o	32613	32616	32667	32640	0.2877,0.0001,0.7648,1.0000	x	x	x	same
+mir_s5e21	96	o	32667	32670	32694	32682	0.5018,0.0004,0.9998,0.9749	e	e	x	third
+mir_s5e21	97	o	32667	32688	32699	32694	0.0000,0.3034,0.4769,0.9898	n	n	n	same
+mir_s5e21	98	o	32746	32748	32824	32784	0.6443,0.5751,0.7005,0.9237	e	e	e	same
+mir_s5e21	99	o	32746	32748	32824	32784	0.4248,0.6287,0.4644,0.9161	e	e	e	same

@@ -52,6 +52,85 @@ woman (a guest at the party), now both `teary`; the two `?` faces
 at 50976 and 50988 are Walter (his reflection in a glass door, and him in
 the dark).
 
+Label corrections (2026-11-15; row 30 of `bench/models/DECISIONS.md`). Found
+by the reviewer of the conversation bench (`bench/scenes`). Checked on
+frames of the 960×540 proxy and against the stored cast of the project the
+scenes bench reads (the app's own analysis of that proxy), which had all of
+them right:
+
+- `wavy_guest` is Skyler: four tracks at the party (15573–15643,
+  15648–15671, 17325–17460, 17580–17740; 131 boxes, 16 s). At the door the
+  face of the row before them (`skyler`, 15552–15576, its first six boxes)
+  goes on as the first of them, and one face track of the app holds both.
+  In the two wide shots the face is 28 pixels wide; the row stays on one
+  woman, in the grey cardigan over a pregnant belly, beside Marie, and no
+  other row there is Skyler's.
+- The `jesse` at 10437–10470 is a passer-by in front of the school, a
+  blurred face under a beanie that crosses the frame in 1.4 s: now `?`. The
+  face itself cannot be told; Jesse is not in that scene, and the app's cast
+  gives the track to no one.
+- The `?` at 73512–73568 is Jesse, lying in the sand in the red vest, with
+  the bruised eye, while Walter lifts him. 16 of the row's 19 boxes are on a
+  track the app's cast has on Jesse; the first three, where an arm covers
+  the face, on a short track it gives to no one.
+
+Six names changed, no box. A reader who was shown only unnamed crops beside
+a gallery of the main cast, with six rows nobody questions mixed in, gave
+the new name for four of the six rows and could not tell the two wide shots
+at that size; there the name rests on what the shot shows around the face
+and on the app's cast. A reviewer without context looked at frames of its
+own and came to the same six names.
+
+Left as they are, for the owner: the last two boxes of the `skyler` row at
+the door (15570 and 15573) sit on Walter's face during the kiss; and five
+`?` rows in the RV are faces behind a gas mask (73857–73896, 74028–74040,
+74190–74232 and 74235–74241 Walter's, 74505–74510 Jesse's by the red vest),
+which the rule above would call `x`. As `x` they change no score.
+
+The app's face pass with its people on the proxy, as run for `bench/bodies`
+on 2026-11-15 (1,126 tracks; `score` with its defaults), with the labels
+before and after:
+
+| Labels | main cast per track P / R / F | screen time P / R / F | everyone named, per track P / R / F | in a track | on their character | over time: in a track, on their character |
+|---|---|---|---|---|---|---|
+| before | 0.990 / 0.906 / 0.946 | 0.994 / 0.960 / 0.977 | 0.985 / 0.898 / 0.939 | 0.970 | 0.955 | 0.962, 0.941 |
+| corrected | 0.996 / 0.909 / 0.951 | 1.000 / 0.961 / 0.980 | 0.994 / 0.900 / 0.945 | 0.970 | 0.956 | 0.962, 0.942 |
+
+Most of the precision the pass seemed to lack was these labels: Skyler's
+character held the four tracks of the "guest" (94 % of it hers before, 100 %
+now) and Jesse's the track of the shot in the sand (99 %, now 100 %); the
+passer-by counted as a face of Jesse's that the pass had left unassigned.
+`stress` gives the same 27 runs with both (4 people split, no character
+holding two).
+
+Every Breaking Bad number of this file dated before 2026-11-15 was measured
+with the labels of its day and stays as it was. What else reads the labels,
+run again on the same inputs with programs built from one commit (with the
+labels before, each gave the tables and files on record again):
+
+| Bench | Before | Corrected |
+|---|---|---|
+| Scenes (`bench/scenes`), a character's scenes: DINOv2-small, 40 s, own best threshold | 0.931 | 0.934 |
+| ... step A, 40 s | 0.892 | 0.894 |
+| ... the four-title table's row: own best, one threshold for all (0.675), the others' | 0.930, 0.917, 0.917 | 0.935, 0.921, 0.921 |
+| ... the app's own pictures at 0.675 | 0.931 | 0.936 |
+| ... the labelled scenes with the stored cast | 0.994 | 1.000 |
+| ... each half with the other half's threshold | 0.839, 0.912 | 0.932, 0.915 |
+| Conversations (`bench/scenes`): the two readings with the stored cast | | no number changes |
+| ... the labels for both: the walk's added shots with a speaker, speaker shots held | 0.986, 0.788 | 0.986, 0.782 |
+| Bodies, the test set (`bench/bodies`): Breaking Bad's pools M and H | 28, 59 | 29, 58 (one unanswered query) |
+| Rescan (below): faces on the wrong character that went unnoticed | 17 | 12 |
+
+The first half of the episode read 0.839 because the passer-by made Jesse a
+character of a half he is not in, with no scene found. No gate, bar or
+threshold that was decided changes, and the shared scenes threshold stays
+0.675. The numbers that rest on the app's cast rose. Those that take the
+labels for the cast as well moved a little both ways: the conversation
+walk's held share 0.788 to 0.782, a character's scenes by the true cast
+0.929 to 0.928 at the first line's threshold. The body bench's draft gate,
+which is not decided, reads 0.21 for 0.20 on one of its lines (107 of 521
+for 107 of 522).
+
 ## One person, one character
 
 Two faces found in the same frame are two people — except when they are
@@ -309,7 +388,9 @@ from a hard disk. **Live action is unproven:** no original was at hand.
 Stored faces alone, all pins and labels of five casts: 209 clear verdicts
 right, 6 wrong; on Breaking Bad no stranger got a clear match, but none of the
 17 faces on the wrong character was noticed, and a "maybe" is right less than
-half the time. Those stay suggestions for the person.
+half the time. Those stay suggestions for the person. (With the labels as
+corrected on 2026-11-15 the 17 are 12: five were slips of the labels, see
+"Label corrections" above.)
 
 A summary of a character hides its rare looks (Wang Fu's disguise, 13 of his
 34 tracks, went unrecognised), so every face is now compared with every shot:

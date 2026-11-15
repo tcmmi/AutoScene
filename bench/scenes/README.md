@@ -172,6 +172,39 @@ Its unit tests run with `cargo test -p as-project --example scenes_bench`.
 - Three frames per shot cost 36 s to decode and 38 s through DINOv2-small on
   the development PC's graphics card for this episode.
 
+**After the label corrections of 2026-11-15** (`bench/identity`: three slips
+in the face labels, six names; row 30 of `bench/models/DECISIONS.md`). The
+Breaking Bad numbers of this file dated 2026-11-12 were measured with the
+labels of that day and stay as they were. The same commands with the
+corrected labels, a character's scenes by the stored cast:
+
+| | 2026-11-12 | Corrected labels |
+|---|---|---|
+| DINOv2-small, short pieces join first (the bold row above) | 0.931 | 0.934 |
+| Step A, short pieces join first | 0.892 | 0.894 |
+| The labelled scenes, stored cast | 0.994 | 1.000 |
+| The other half's threshold: first half, second half | 0.839, 0.912 | 0.932, 0.915 |
+| Four episodes (row 8): own best threshold, one for all, the others' | 0.930, 0.917, 0.917 | 0.935, 0.921, 0.921 |
+| ... the means of the four | 0.908, 0.887, 0.875 | 0.909, 0.888, 0.877 |
+| The app's own pictures at 0.675 (row 12) | 0.931 | 0.936 |
+
+Two bullets above read differently now: the one on the other half's
+threshold and the one on a wrong face. The first half's 0.84 was a label
+slip, not the threshold: a passer-by in front of the school was labelled
+Jesse, so Jesse counted in a half he is not in, with no scene found. Without
+that row the half reads 0.93 (the second half is then read at 0.600, not
+0.575). And the wrong face behind 0.994 was the labels', not the cast's:
+they had Jesse as `?` where Walter lifts him in the sand. The boundaries,
+the scenes found and the shared threshold (0.675) are the same, and no gate
+changes. By the true cast the same lines move less, and both ways (the bold
+row 0.929 to 0.928).
+
+The conversation section at the end of this file was written the same day,
+before the correction. Its numbers with the stored cast did not move; its
+reading with the labels for both, and that reading's 30 rows in
+`bb_s01e01.conversation.tsv`, are there as they are with the corrected
+labels.
+
 ## Results across four episodes (2026-11-12, row 8)
 
 DINOv2-small's class token (weight 1) with the share of characters two shots
@@ -462,8 +495,9 @@ shots held of those asked for):
 The two other readings give the same picture. With the stored cast and the
 labelled scenes: walk 0.985 and 0.779 held, bridged walk without the
 stepped-over shots 0.973 and 0.959, (g) 0.971 and 0.982, (f) 0.932 and
-0.993, whole scenes 0.701 and 1. With the labels for both: 0.986 and 0.788,
-0.976 and 0.973, 0.977 and 0.991, 0.940 and 1, 0.704 and 1. So neither the
+0.993, whole scenes 0.701 and 1. With the labels for both, as corrected on
+2026-11-15 (see "What they cannot say"): 0.986 and 0.782, 0.974 and 0.972,
+0.974 and 0.991, 0.939 and 1, 0.701 and 1. So neither the
 stored cast nor the scenes the app finds cost much here: 57 of the 926
 speaker shots lie in a scene the recipe cut apart from the own shots (34 of
 Emilio's, 23 of Jesse's).
@@ -545,11 +579,17 @@ sight of a speaker earns all their seconds.
   bodies: 8 sure faces were placed that way. Without them no count changes
   (the review's check). The two flash cuts a default pack leaves out are
   counted.
-- The review found three slips in `bench/identity`'s labels, not corrected
-  here: `wavy_guest` is Skyler (four tracks at the party), the `jesse` at
-  frame 10437 is a passer-by, and Jesse in shot 729 is `?`. They move no
-  mean here by more than the third decimal. Jesse has 191 asked-for shots
-  with the stored cast and 169 by the labels for that reason.
+- The review found three slips in `bench/identity`'s labels: `wavy_guest`
+  is Skyler (four tracks at the party), the `jesse` at frame 10437 is a
+  passer-by, and Jesse in shot 729 was `?`. They were corrected on
+  2026-11-15 (row 30), after this section was written. No number of the two
+  readings with the stored cast changed. The reading with the labels for
+  both is given above as it is with the corrected labels (before: 0.986 and
+  0.788, 0.976 and 0.973, 0.977 and 0.991, 0.940 and 1, 0.704 and 1), and
+  those 30 of the 288 rows of `bb_s01e01.conversation.tsv` were made again.
+  Jesse has 191 asked-for shots with the stored cast and 192 by the labels
+  (169 before: the labels did not have him in the scene of shot 729, and
+  had him in front of the school).
 
 ### The review
 

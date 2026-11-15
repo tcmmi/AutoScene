@@ -291,7 +291,8 @@ run.)
   times; pooled, within each title. **Under about 15 characters they are
   not to be trusted**: they read [0.00, 0.00] where a handful of characters
   all got nothing and [1.00, 1.00] where none had a wrong answer, their ends
-  move with the seed (Breaking Bad's pool H: 0.00 or 0.03), and they are too
+  move with the seed (Breaking Bad's pool H, when it held 59 queries: 0.00
+  or 0.03), and they are too
   narrow where one character holds most of the queries (Re:Zero's pool B).
   A redraw in which nothing was answered has no share right and is left out
   (a third of the redraws for Re:Zero's pool E). Beside the share answered
@@ -348,7 +349,8 @@ an answer of the pass, a group of the draw, or the other reader's answers.
   two groups are drawn at different shares. Weighted by those shares pool
   H's numbers move a little (the reviewer's count: answered 0.123 for 0.119
   on Breaking Bad, 0.220 for 0.211 on Miraculous; Miraculous' share right
-  0.80 for 0.85). The tables are not weighted.
+  0.80 for 0.85; counted the same way after the label correction below,
+  Breaking Bad's pair is 0.126 for 0.121). The tables are not weighted.
 - "A reader" is several agent runs of one model, each on 38 to 50 sheets.
   Two such readers reading the same sheets agree easily: their agreement is
   not accuracy.
@@ -364,25 +366,25 @@ an answer of the pass, a group of the draw, or the other reader's answers.
 
 | Title | E | B | B `far` | M | H | H `clip` | N from the labels | N from the readers | Characters with a query |
 |---|---|---|---|---|---|---|---|---|---|
-| Breaking Bad S01E01 (proxy) | 76 | – | – | 28 | 59 | 42 | 68 | 99 | 12 |
+| Breaking Bad S01E01 (proxy) | 76 | – | – | 29 | 58 | 41 | 68 | 99 | 12 |
 | Miraculous S01E11 + S05E21 | 154 | – | – | 39 | 95 | 85 | 8 | 31 | 21 |
 | Jujutsu Kaisen S2E03 + E04 | 19 | 68 | 30 | – | – | – | 41 | – | 7 |
 | Re:Zero 31 + 33 | 14 | 70 | 17 | – | – | – | 13 | – | 9 |
 | One Piece Wano A, B, C | 45 | 22 | 11 | 42 | 40 | 23 | 62 | 75 | 12 |
-| all | 308 | 160 | 58 | 109 | 194 | 150 | 192 | 205 | |
+| all | 308 | 160 | 58 | 110 | 193 | 149 | 192 | 205 | |
 
-- Pools E, M and H together: 611 queries on five titles, 194 of them hard,
+- Pools E, M and H together: 611 queries on five titles, 193 of them hard,
   on three titles. Without the readers' pools the three kinds of footage
   hold 76, 154 and 78 easy queries.
-- **Pool M is mostly not a body without a face.** For 89 of its 109 queries
+- **Pool M is mostly not a body without a face.** For 90 of its 110 queries
   a face of the figure is labelled while the body is on screen (`now`:
-  Breaking Bad 25 of 28, Miraculous 31 of 39, One Piece 33 of 42), and for
-  60 that face sits on the body itself (`on`: 21, 24, 15): the body shows
+  Breaking Bad 26 of 29, Miraculous 31 of 39, One Piece 33 of 42), and for
+  61 that face sits on the body itself (`on`: 22, 24, 15): the body shows
   its face, the pass did not put the two together. There the rule "not
   where the character already is" has to give no answer, and it does (2 of
-  the 89 answered). Only 20 queries of pool M are what the proposal meant,
+  the 90 answered). Only 20 queries of pool M are what the proposal meant,
   a face at another moment of the shot (3, 8 and 9). The table has a line
-  for them and one for E + M + H without the 89.
+  for them and one for E + M + H without the 90.
 - **Pool E's "without a face" is the pass's.** It means that no face track
   tied to the body is on screen. For 51 of the 308 queries a labelled face
   of the figure sits on the body at the query's moment all the same
@@ -425,12 +427,12 @@ of a share is drawn over characters, the second is Wilson's per query (see
 |---|---|---|---|---|---|---|---|---|---|
 | Breaking Bad | E, as today | 76 | 12 | 20 | 16 | 0.26 [0.19, 0.34] | [0.18, 0.37] | 0.80 [0.50, 1.00] | 0.21 [0.12, 0.27] |
 | Breaking Bad | E, no help from the same shot | 76 | 12 | 19 | 16 | 0.25 [0.15, 0.30] | [0.17, 0.36] | 0.84 [0.67, 1.00] | 0.21 [0.12, 0.26] |
-| Breaking Bad | M, face in the shot | 28 | 9 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.12] | – | 0.00 [0.00, 0.00] |
+| Breaking Bad | M, face in the shot | 29 | 9 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.12] | – | 0.00 [0.00, 0.00] |
 | Breaking Bad | M, the face only at another moment | 3 | 2 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.56] | – | 0.00 [0.00, 0.00] |
-| Breaking Bad | H, no face in the shot | 59 | 8 | 7 | 7 | 0.12 [0.03, 0.27] | [0.06, 0.23] | 1.00 [1.00, 1.00] | 0.12 [0.03, 0.27] |
-| Breaking Bad | H, bodies that would make a clip | 42 | 7 | 6 | 6 | 0.14 [0.05, 0.30] | [0.07, 0.28] | 1.00 [1.00, 1.00] | 0.14 [0.05, 0.30] |
+| Breaking Bad | H, no face in the shot | 58 | 8 | 7 | 7 | 0.12 [0.04, 0.27] | [0.06, 0.23] | 1.00 [1.00, 1.00] | 0.12 [0.04, 0.27] |
+| Breaking Bad | H, bodies that would make a clip | 41 | 7 | 6 | 6 | 0.15 [0.06, 0.31] | [0.07, 0.28] | 1.00 [1.00, 1.00] | 0.15 [0.06, 0.31] |
 | Breaking Bad | E + M + H (E without the same shot) | 163 | 12 | 26 | 23 | 0.16 [0.09, 0.22] | [0.11, 0.22] | 0.88 [0.71, 1.00] | 0.14 [0.08, 0.20] |
-| Breaking Bad | E + M + H without M's bodies whose face shows meanwhile | 138 | 12 | 26 | 23 | 0.19 [0.13, 0.25] | [0.13, 0.26] | 0.88 [0.71, 1.00] | 0.17 [0.11, 0.23] |
+| Breaking Bad | E + M + H without M's bodies whose face shows meanwhile | 137 | 12 | 26 | 23 | 0.19 [0.14, 0.25] | [0.13, 0.26] | 0.88 [0.71, 1.00] | 0.17 [0.11, 0.23] |
 | Breaking Bad | N, extras | 167 | – | 3 | – | 0.02 | [0.01, 0.05] | – | – |
 | Miraculous | E, as today | 154 | 19 | 52 | 42 | 0.34 [0.25, 0.41] | [0.27, 0.42] | 0.81 [0.64, 0.93] | 0.27 [0.17, 0.37] |
 | Miraculous | E, no help from the same shot | 154 | 19 | 52 | 42 | 0.34 [0.25, 0.42] | [0.27, 0.42] | 0.81 [0.64, 0.93] | 0.27 [0.17, 0.37] |
@@ -474,12 +476,12 @@ of a share is drawn over characters, the second is Wilson's per query (see
 | One Piece | N, extras | 137 | – | 1 | – | 0.01 | [0.00, 0.04] | – | – |
 | live action and 3D | E, as today | 230 | 31 | 72 | 58 | 0.31 [0.25, 0.38] | [0.26, 0.38] | 0.81 [0.67, 0.90] | 0.25 [0.18, 0.33] |
 | live action and 3D | E, no help from the same shot | 230 | 31 | 71 | 58 | 0.31 [0.25, 0.38] | [0.25, 0.37] | 0.82 [0.69, 0.91] | 0.25 [0.19, 0.33] |
-| live action and 3D | M, face in the shot | 67 | 25 | 5 | 5 | 0.07 [0.02, 0.16] | [0.03, 0.16] | 1.00 [1.00, 1.00] | 0.07 [0.02, 0.16] |
+| live action and 3D | M, face in the shot | 68 | 25 | 5 | 5 | 0.07 [0.02, 0.16] | [0.03, 0.16] | 1.00 [1.00, 1.00] | 0.07 [0.02, 0.16] |
 | live action and 3D | M, the face only at another moment | 11 | 9 | 3 | 3 | 0.27 [0.09, 0.50] | [0.10, 0.57] | 1.00 [1.00, 1.00] | 0.27 [0.09, 0.50] |
-| live action and 3D | H, no face in the shot | 154 | 27 | 27 | 24 | 0.18 [0.09, 0.28] | [0.12, 0.24] | 0.89 [0.67, 1.00] | 0.16 [0.07, 0.27] |
-| live action and 3D | H, bodies that would make a clip | 127 | 26 | 26 | 23 | 0.20 [0.11, 0.32] | [0.14, 0.28] | 0.88 [0.65, 1.00] | 0.18 [0.09, 0.30] |
+| live action and 3D | H, no face in the shot | 153 | 27 | 27 | 24 | 0.18 [0.09, 0.29] | [0.12, 0.24] | 0.89 [0.67, 1.00] | 0.16 [0.07, 0.27] |
+| live action and 3D | H, bodies that would make a clip | 126 | 26 | 26 | 23 | 0.21 [0.11, 0.32] | [0.14, 0.29] | 0.88 [0.65, 1.00] | 0.18 [0.09, 0.30] |
 | live action and 3D | E + M + H (E without the same shot) | 451 | 33 | 103 | 87 | 0.23 [0.18, 0.29] | [0.19, 0.27] | 0.84 [0.73, 0.92] | 0.19 [0.14, 0.26] |
-| live action and 3D | E + M + H without M's bodies whose face shows meanwhile | 395 | 33 | 101 | 85 | 0.26 [0.20, 0.33] | [0.22, 0.30] | 0.84 [0.73, 0.92] | 0.22 [0.16, 0.29] |
+| live action and 3D | E + M + H without M's bodies whose face shows meanwhile | 394 | 33 | 101 | 85 | 0.26 [0.20, 0.33] | [0.22, 0.30] | 0.84 [0.73, 0.92] | 0.22 [0.16, 0.29] |
 | live action and 3D | N, extras | 206 | – | 3 | – | 0.01 | [0.00, 0.04] | – | – |
 | anime | E, as today | 78 | 20 | 6 | 3 | 0.08 [0.03, 0.13] | [0.04, 0.16] | 0.50 [0.00, 1.00] | 0.04 [0.00, 0.08] |
 | anime | E, no help from the same shot | 78 | 20 | 6 | 3 | 0.08 [0.03, 0.13] | [0.04, 0.16] | 0.50 [0.00, 1.00] | 0.04 [0.00, 0.08] |
@@ -500,19 +502,19 @@ of a share is drawn over characters, the second is Wilson's per query (see
 | all titles | B, no help from the same shot | 160 | 24 | 12 | 12 | 0.07 [0.03, 0.12] | [0.04, 0.13] | 1.00 [1.00, 1.00] | 0.07 [0.03, 0.12] |
 | all titles | B far, no face within 2 s | 58 | 18 | 5 | 5 | 0.09 [0.04, 0.13] | [0.04, 0.19] | 1.00 [1.00, 1.00] | 0.09 [0.04, 0.13] |
 | all titles | B far, no help from the same shot | 58 | 18 | 5 | 5 | 0.09 [0.04, 0.13] | [0.04, 0.19] | 1.00 [1.00, 1.00] | 0.09 [0.04, 0.13] |
-| all titles | M, face in the shot | 109 | 36 | 5 | 5 | 0.05 [0.01, 0.10] | [0.02, 0.10] | 1.00 [1.00, 1.00] | 0.05 [0.01, 0.10] |
+| all titles | M, face in the shot | 110 | 36 | 5 | 5 | 0.05 [0.01, 0.10] | [0.02, 0.10] | 1.00 [1.00, 1.00] | 0.05 [0.01, 0.10] |
 | all titles | M, the face only at another moment | 20 | 11 | 3 | 3 | 0.15 [0.05, 0.27] | [0.05, 0.36] | 1.00 [1.00, 1.00] | 0.15 [0.05, 0.27] |
-| all titles | H, no face in the shot | 194 | 34 | 27 | 24 | 0.14 [0.07, 0.23] | [0.10, 0.19] | 0.89 [0.67, 1.00] | 0.12 [0.05, 0.21] |
-| all titles | H, bodies that would make a clip | 150 | 32 | 26 | 23 | 0.17 [0.09, 0.27] | [0.12, 0.24] | 0.88 [0.67, 1.00] | 0.15 [0.07, 0.26] |
+| all titles | H, no face in the shot | 193 | 34 | 27 | 24 | 0.14 [0.07, 0.23] | [0.10, 0.20] | 0.89 [0.67, 1.00] | 0.12 [0.05, 0.21] |
+| all titles | H, bodies that would make a clip | 149 | 32 | 26 | 23 | 0.17 [0.09, 0.28] | [0.12, 0.24] | 0.88 [0.67, 1.00] | 0.15 [0.07, 0.26] |
 | all titles | E + M + H (E without the same shot) | 611 | 56 | 109 | 90 | 0.18 [0.14, 0.23] | [0.15, 0.21] | 0.83 [0.72, 0.91] | 0.15 [0.10, 0.20] |
-| all titles | E + M + H without M's bodies whose face shows meanwhile | 522 | 54 | 107 | 88 | 0.20 [0.16, 0.26] | [0.17, 0.24] | 0.82 [0.71, 0.91] | 0.17 [0.12, 0.23] |
+| all titles | E + M + H without M's bodies whose face shows meanwhile | 521 | 54 | 107 | 88 | 0.21 [0.16, 0.26] | [0.17, 0.24] | 0.82 [0.71, 0.91] | 0.17 [0.12, 0.23] |
 | all titles | N, extras | 397 | – | 4 | – | 0.01 | [0.00, 0.03] | – | – |
 
 What the table says, and no more than it:
 
 - **Live action** (one title). Of the easy queries a quarter get a name
-  (20 of 76), and 16 of those 20 are right. Of the hard ones 7 of 59 get a
-  name, all 7 right. Pool M gets none (0 of 28); 25 of those 28 have their
+  (20 of 76), and 16 of those 20 are right. Of the hard ones 7 of 58 get a
+  name, all 7 right. Pool M gets none (0 of 29); 26 of those 29 have their
   figure's face labelled while they are on screen.
 - **3D animation** (one title). A third of the easy queries get a name
   (52 of 154), 42 right. Of the hard ones 20 of 95, 17 right.
@@ -522,8 +524,8 @@ What the table says, and no more than it:
 - **Pooled.** E + M + H: 109 of 611 answered (0.18), 90 right (0.83). That
   number mixes three things: without anime, which the app does not run, it
   is 103 of 451 (0.23) and 0.84 right; without pool M's bodies whose face
-  shows meanwhile it is 107 of 522 (0.20) and 0.82 right; without both, 101
-  of 395 (0.26) and 0.84 right.
+  shows meanwhile it is 107 of 521 (0.21) and 0.82 right; without both, 101
+  of 394 (0.26) and 0.84 right.
 - **Help from the same shot** hardly matters to today's rule: without it 3
   easy answers are lost and 2 others come (78 answers, then 77).
 - **Extras**: 7 of 397 get a name. 4 are wrong by the labels (bodies whose
@@ -612,7 +614,7 @@ Not counted:
   a body is in pool H.
 - The readers name a part of a person (a hand, an arm, legs) when the scene
   makes clear whose it is. Such a body is a query, with or without the flag
-  `clip`: 44 of the 194 hard queries are no clip by the app's own test.
+  `clip`: 44 of the 193 hard queries are no clip by the app's own test.
   These names are the least sure. One the author looked at (Breaking Bad,
   item 156: a forearm at a mortar, on which the two readers differed and the
   third decided) may well be the other person of the scene; it was left as
@@ -654,7 +656,7 @@ today's numbers beside it. None of it is decided.
 |---|---|
 | Rules are judged on the pooled set, and reported per footage type beside it | pooled E + M + H: 611 queries, 56 characters. Live action 163, 3D 288, anime 160 (pool B's 160 are not in that sum) |
 | A live-action model is judged only after a second live-action title is labelled | one title: Breaking Bad |
-| At least +10 points answered, against today's pass on the same queries | today 0.18 answered over E + M + H (0.14 to 0.23 over characters); +10 points is 0.28. Without anime 0.23; without pool M's bodies whose face shows meanwhile 0.20; without both 0.26 |
+| At least +10 points answered, against today's pass on the same queries | today 0.18 answered over E + M + H (0.14 to 0.23 over characters); +10 points is 0.28. Without anime 0.23; without pool M's bodies whose face shows meanwhile 0.21; without both 0.26 |
 | ... at no less than today's share right, the interval drawn over characters | today 0.83 (0.72 to 0.91), on 109 answers |
 | ... and not lower on pool H alone | today 0.14 answered (0.07 to 0.23), 0.89 right (0.67 to 1.00), on 27 answers |
 | Extras named (pool N) do not rise | today 4 of 397 wrong by the labels, 3 more not judged |
@@ -663,7 +665,7 @@ today's numbers beside it. None of it is decided.
 
 What the owner has to settle before the gate can be used:
 
-1. **Which queries the +10 points are counted on.** 89 queries of pool M are
+1. **Which queries the +10 points are counted on.** 90 queries of pool M are
    bodies whose face shows meanwhile: no rule should name them, and they
    hold the pooled share down. 160 are anime, which the app does not run.
 2. **What "no less than today's share right" means** when today's share is
@@ -690,7 +692,8 @@ no scoring error: the pools of all ten episodes and the table came out the
 same from its own runs and recounts. Changed after it:
 
 - Pool M: the flags `now` and `on`, the two table lines without those
-  bodies, and the plain statement that 89 of 109 are no body without a face.
+  bodies, and the plain statement that most of it (then 89 of 109) is no
+  body without a face.
 - Intervals: the warning for few characters, and Wilson's interval beside.
 - Pool B: one query per body and figure (171 rows became 160; one row was
   there twice), the flag `bare`, the rule for which body a head sits on
@@ -709,6 +712,32 @@ same from its own runs and recounts. Changed after it:
 
 Not done: a second review after these changes; tests of the episode cut,
 of finding a body again by frame and box, and of the redraw.
+
+### The label correction (2026-11-15)
+
+Three slips in Breaking Bad's face labels were corrected after this part was
+written (`bench/identity/README.md`; row 30 of `bench/models/DECISIONS.md`).
+One query changed its pool. The body in the wide shot of the party (frames
+17586 to 17740), which one reader had called a person outside the gallery,
+the second unreadable and the third Skyler, stands under a face that the
+labels called a guest and now call Skyler. So a face of its figure is
+labelled in its shot, on the body itself: it left pool H for pool M (`now`,
+`on`, `clip`). It had no answer and has none. Nothing else in the pools
+moved: the three bodies drawn from the passer-by's shot were extras by the
+readers already, and the shot in the sand adds no query.
+
+`bb.pools.tsv` and `bb.today.tsv` were made again (one row each), and every
+count and table line above is as it comes out with the corrected labels.
+Before: Breaking Bad's pool M 28 and pool H 59 (42 of them a clip), all
+titles 109 and 194 (150); 89 of 109 with the face on screen meanwhile; the
+pooled line without those bodies 107 of 522 (0.20), which is the line the
+draft gate quotes: 0.21 now, a step of rounding.
+
+The draw is as it was drawn, on the labels of that day. Its two groups were
+told apart by whether a shot holds a labelled face of the main cast, and
+the passer-by's shot counted as such a shot then. With the corrected labels
+14 of the 745 tracks to draw from would be in the other group (480 and 265
+for 494 and 251). The 200 tracks the readers read stay the 200.
 
 ### Commands
 

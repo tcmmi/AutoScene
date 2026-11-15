@@ -8,6 +8,7 @@
 //! `conversation_bench <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <pictures.emb> [out.tsv]`
 //! `conversation_bench shots <project_copy_dir> <scenes.tsv> <shot labels.tsv> <cast.tsv> <pictures.emb> [out.tsv]`
 //! `conversation_bench agree <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <shot labels.tsv>`
+//! `conversation_bench compare <project_copy_dir> <scenes.tsv> <first shot labels.tsv> <second shot labels.tsv> <cast.tsv>`
 //!
 //! `<scenes.tsv>` holds the labelled scenes with the seconds of speech per
 //! speaker (`bench/scenes`), `<identity labels.tsv>` who is to be seen where
@@ -41,7 +42,8 @@
 //! who speaks, `<cast.tsv>` which stored characters each of their names is;
 //! the reading with labels for both is left out, shot labels carry no times.
 //! `agree` checks such shot labels against the hand labels and the speakers'
-//! seconds of an episode that has both.
+//! seconds of an episode that has both. `compare` sets two readings of the
+//! same shots against each other (row 33).
 //!
 //! `MEDIA=<n>` picks the n-th media of a project with several (from 0),
 //! `SURE=1` leaves out the speakers whose face label is unsure,
@@ -1646,15 +1648,144 @@ fn agree(args: &[String]) {
     print_readers(&read);
 }
 
+/// The names both readers of one reading give in a field of a shot's row,
+/// the unnamed left out.
+fn agreed(lists: &[Vec<String>; 2]) -> BTreeSet<&str> {
+    lists[0].iter().filter(|p| lists[1].contains(p) && p.as_str() != OTHER).map(String::as_str).collect()
+}
+
+/// Of the shots with a second of heard speech or more in which both readers
+/// see exactly one named person: how many, and in how many both mark that
+/// person speaking. A gauge for readers who mark whoever is in the picture.
+fn marks_the_one_seen(read: &[Option<Read>]) -> (u32, u32) {
+    let (mut shots, mut marked) = (0, 0);
+    for r in read.iter().flatten().filter(|r| r.speech >= 1.0) {
+        let seen = agreed(&r.faces);
+        if seen.len() == 1 {
+            shots += 1;
+            marked += u32::from(agreed(&r.speaks) == seen);
+        }
+    }
+    (shots, marked)
+}
+
+/// Row 33: two readings of the same shots against each other.
+fn compare(args: &[String]) {
+    let ep = load(Path::new(&args[0]));
+    let (shots, _) = shots_of(&ep);
+    let n = shots.len();
+    let fps = ep.fps();
+    let (cuts, _) = scene_labels(Path::new(&args[1]), &shots);
+    let cast = cast_sheet(Path::new(&args[4]), &ep);
+    let names: Vec<&str> = cast.iter().map(|c| c.0.as_str()).collect();
+    let number: HashMap<&str, usize> = names.iter().enumerate().map(|(i, &x)| (x, i)).collect();
+    let secs: Vec<f64> = shots.iter().map(|s| f64::from(s.end - s.start) / fps).collect();
+    let read = [shot_labels(Path::new(&args[2]), &shots), shot_labels(Path::new(&args[3]), &shots)];
+    assert!(read.iter().all(|r| r.iter().all(Option::is_some)), "both readings hold every shot");
+    let truth: Vec<Truth> = read.iter().map(|r| readers_truth(r, scene_ids(&cuts), &number, secs.clone())).collect();
+    println!("{n} shots, read twice; the first reading is {}, the second {}", args[2], args[3]);
+
+    let c = answers((0..n).map(|s| (truth[0].shows_speaker(s), truth[1].shows_speaker(s))));
+    let (same, kappa) = agreement(c);
+    println!(
+        "shows a speaker of its scene: both yes {}, only the first {}, only the second {}, both no {}; the same answer in {same:.3}, kappa {kappa:.3}; yes by the first {:.3}, by the second {:.3}",
+        c[0],
+        c[1],
+        c[2],
+        c[3],
+        f64::from(c[0] + c[1]) / n as f64,
+        f64::from(c[0] + c[2]) / n as f64
+    );
+
+    // Who speaks in each scene.
+    let scenes = truth[0].speech.len();
+    let (mut both, mut first, mut second) = (0, 0, 0);
+    let mut apart = Vec::new();
+    for scene in 0..scenes {
+        let of = |t: &Truth| -> BTreeSet<usize> {
+            t.speech[scene].iter().flat_map(|(who, _)| who.iter().copied()).collect()
+        };
+        let (a, b) = (of(&truth[0]), of(&truth[1]));
+        both += a.intersection(&b).count();
+        first += a.difference(&b).count();
+        second += b.difference(&a).count();
+        for &p in a.symmetric_difference(&b) {
+            apart.push(format!(
+                "{} in scene {} ({})",
+                names[p],
+                scene + 1,
+                if a.contains(&p) { "first" } else { "second" }
+            ));
+        }
+    }
+    println!(
+        "speakers of the scenes: {both} named by both readings, {first} only by the first, {second} only by the second{}{}",
+        if apart.is_empty() { "" } else { ": " },
+        apart.join(", ")
+    );
+
+    // Who is seen and who speaks in each shot, by the names both readers of a reading give.
+    let rows = |k: usize, s: usize| read[k][s].as_ref().expect("every shot is read");
+    let per_shot = |what: &str, of: &dyn Fn(&Read) -> &[Vec<String>; 2]| -> Vec<usize> {
+        let (mut common, mut either, mut differ) = (0, 0, Vec::new());
+        for s in 0..n {
+            let (a, b) = (agreed(of(rows(0, s))), agreed(of(rows(1, s))));
+            let shared = a.intersection(&b).count();
+            common += shared;
+            either += a.len() + b.len() - shared;
+            if a != b {
+                differ.push(s);
+            }
+        }
+        println!(
+            "{what}: the same names in {} of {n} shots ({:.3}); of {either} names either reading gives, {common} are given by both ({:.3})",
+            n - differ.len(),
+            (n - differ.len()) as f64 / n as f64,
+            common as f64 / either.max(1) as f64
+        );
+        differ
+    };
+    per_shot("who is seen", &|r| &r.faces);
+    let differ = per_shot("who speaks", &|r| &r.speaks);
+    for (k, what) in ["first", "second"].iter().enumerate() {
+        let (seen, marked) = marks_the_one_seen(&read[k]);
+        println!(
+            "the {what} reading: {seen} shots with 1 s of speech or more and one named person seen by both readers; both mark that person speaking in {marked} ({:.3})",
+            f64::from(marked) / f64::from(seen.max(1))
+        );
+        let named: f64 =
+            truth[k].speech.iter().flatten().filter(|(who, _)| !who.is_empty()).map(|(_, secs)| secs).sum();
+        println!("  {named:.0} s of heard speech in shots in which both readers mark the same named person");
+    }
+
+    // The shots for a look by eye: of those that differ on who speaks, every k-th in shot order, 40 at most.
+    let step = (differ.len() / 40).max(1);
+    let sample: Vec<String> = differ.iter().step_by(step).take(40).map(usize::to_string).collect();
+    println!(
+        "{} shots differ on who speaks; every {step}. of them in shot order, {} shots: {}",
+        differ.len(),
+        sample.len(),
+        sample.join(" ")
+    );
+    println!("shot\tspeech_s\tfirst reading\tsecond reading");
+    for &s in &differ {
+        let show = |r: &Read| format!("{} | {}", r.speaks[0].join(","), r.speaks[1].join(","));
+        println!("{s}\t{:.1}\t{}\t{}", rows(0, s).speech, show(rows(0, s)), show(rows(1, s)));
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("shots") if (6..=7).contains(&args.len()) => by_readers(&args[1..]),
         Some("agree") if args.len() == 6 => agree(&args[1..]),
-        Some(first) if first != "shots" && first != "agree" && (5..=6).contains(&args.len()) => by_labels(&args),
+        Some("compare") if args.len() == 6 => compare(&args[1..]),
+        Some(first) if !["shots", "agree", "compare"].contains(&first) && (5..=6).contains(&args.len()) => {
+            by_labels(&args)
+        }
         _ => {
             eprintln!(
-                "usage: conversation_bench <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <pictures.emb> [out.tsv]\n       conversation_bench shots <project_copy_dir> <scenes.tsv> <shot labels.tsv> <cast.tsv> <pictures.emb> [out.tsv]\n       conversation_bench agree <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <shot labels.tsv>"
+                "usage: conversation_bench <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <pictures.emb> [out.tsv]\n       conversation_bench shots <project_copy_dir> <scenes.tsv> <shot labels.tsv> <cast.tsv> <pictures.emb> [out.tsv]\n       conversation_bench agree <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <shot labels.tsv>\n       conversation_bench compare <project_copy_dir> <scenes.tsv> <first shot labels.tsv> <second shot labels.tsv> <cast.tsv>"
             );
             std::process::exit(2);
         }
@@ -1826,6 +1957,28 @@ mod tests {
         assert_eq!(t.speech[1], vec![(vec![0], 0.0), (vec![], 3.5)]);
         let shown: Vec<bool> = (0..6).map(|s| t.shows_speaker(s)).collect();
         assert_eq!(shown, vec![true, true, true, true, false, false]);
+    }
+
+    #[test]
+    fn the_one_person_seen_is_marked_or_not() {
+        let read = |speech: f64, faces: [&[&str]; 2], speaks: [&[&str]; 2]| {
+            let v = |x: &[&str]| x.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+            Some(Read { speech, faces: [v(faces[0]), v(faces[1])], speaks: [v(speaks[0]), v(speaks[1])] })
+        };
+        let rows = vec![
+            // One named person by both readers, marked by both: counted and marked.
+            read(2.0, [&["ann"], &["ann", "other"]], [&["ann"], &["ann"]]),
+            // Marked by one reader only: counted, not marked.
+            read(1.0, [&["ann"], &["ann"]], [&["ann"], &[]]),
+            // Under a second of speech, two named people, nobody named by both: not counted.
+            read(0.9, [&["ann"], &["ann"]], [&["ann"], &["ann"]]),
+            read(3.0, [&["ann", "bob"], &["ann", "bob"]], [&["ann"], &["ann"]]),
+            read(3.0, [&["ann"], &["bob"]], [&[], &[]]),
+            None,
+        ];
+        assert_eq!(marks_the_one_seen(&rows), (2, 1));
+        let lists = [vec!["ann".to_owned(), "other".to_owned()], vec!["other".to_owned(), "ann".to_owned()]];
+        assert_eq!(agreed(&lists).into_iter().collect::<Vec<_>>(), ["ann"]);
     }
 
     #[test]

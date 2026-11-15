@@ -13,6 +13,13 @@ speech are heard in it (the 0.48 s steps whose speech score is 0.5 or more).
 Five rows per sheet (`sheet_000.jpg`, …); a shot is never cut by a sheet's
 end. `rows.tsv` lists `sheet shot start end speech_s` (frames).
 
+`LINES=<dir>` (the folder `speak_lines.py` wrote) puts the subtitle lines
+shown during a shot under its pictures, in their order: a line that is on
+screen for a quarter of a second of the shot, or for half of the line or of
+the shot. `<<` before a line says that it began before the shot, `>>` after
+it that it goes on after the shot. The sheets are then as high as five rows
+at most and hold as many shots as fit.
+
 The video is decoded once, every frame from frame 0, and the run stops when
 the number of frames is not the project's.
 """
@@ -75,6 +82,34 @@ def speech(path, rows, fps):
     return out
 
 
+MARK, GAP = 30, 8
+
+
+def spoken(folder, rows, fps):
+    """Per shot: where its subtitle lines go under its pictures, `[(file, x, y, before, after)]`, and
+    how high that part is (0 without lines)."""
+    out = [([], 0) for _ in rows]
+    if not folder:
+        return out
+    lines = []
+    for row in list(open(os.path.join(folder, "lines.tsv"), encoding="utf-8"))[1:]:
+        k, start, end, _, _, width, height = row.rstrip("\n").split("\t")
+        if int(width) > 0:
+            lines.append((int(start), int(end), os.path.join(folder, f"line_{int(k):04d}.jpg"), int(width), int(height)))
+    for i, (start, end) in enumerate(rows):
+        placed, x, y, tall = [], MARK, GAP, 0
+        for a, b, file, width, height in lines:
+            both = min(end, b) - max(start, a)
+            if both <= 0 or (both < 0.25 * fps and 2 * both < b - a and 2 * both < end - start):
+                continue
+            if x + width + MARK > COLS * W and x > MARK:
+                x, y, tall = MARK, y + tall + GAP, 0
+            placed.append((file, x, y, a < start - 2, b > end + 2))
+            x, tall = x + width + 2 * MARK, max(tall, height)
+        out[i] = (placed, y + tall + GAP if placed else 0)
+    return out
+
+
 def decode(ffmpeg, video, want, total):
     out = {}
     cmd = [ffmpeg, "-v", "error", "-i", video, "-map", "0:v:0", "-vf", f"scale={W}:{H}:flags=bicubic",
@@ -113,17 +148,21 @@ def main():
     pictures = decode(ffmpeg, video, {f for _, lines in blocks for line in lines for f in line}, total)
     os.makedirs(out, exist_ok=True)
     font = ImageFont.load_default(size=17)
+    said = spoken(os.environ.get("LINES"), rows, fps)
+    high = ROWS * (H + STRIP)
     sheets, at = [[]], 0
     for shot, lines in blocks:
-        if at + len(lines) > ROWS:
+        need = len(lines) * (H + STRIP) + said[shot][1]
+        if at + need > high and sheets[-1]:
             sheets.append([])
             at = 0
         sheets[-1].append((shot, lines))
-        at += len(lines)
+        at += need
     with open(os.path.join(out, "rows.tsv"), "w", encoding="utf-8", newline="\n") as f:
         f.write("sheet\tshot\tstart\tend\tspeech_s\n")
         for s, sheet in enumerate(sheets):
-            page = Image.new("RGB", (COLS * W, ROWS * (H + STRIP)), (16, 16, 16))
+            used = sum(len(lines) * (H + STRIP) + said[shot][1] for shot, lines in sheet)
+            page = Image.new("RGB", (COLS * W, max(high, used)), (16, 16, 16))
             draw = ImageDraw.Draw(page)
             y = 0
             for shot, lines in sheet:
@@ -135,6 +174,14 @@ def main():
                         page.paste(Image.fromarray(pictures[frame]), (k * W, y))
                     draw.text((4, y + H + 2), text if r == 0 else f"shot {shot} goes on", fill=(255, 220, 90), font=font)
                     y += H + STRIP
+                for file, x, dy, before, after in said[shot][0]:
+                    piece = Image.open(file)
+                    if before:
+                        draw.text((x - MARK + 2, y + dy + 4), "<<", fill=(120, 200, 255), font=font)
+                    page.paste(piece, (x, y + dy))
+                    if after:
+                        draw.text((x + piece.width + 4, y + dy + 4), ">>", fill=(120, 200, 255), font=font)
+                y += said[shot][1]
                 f.write(f"{s}\t{shot}\t{start}\t{end}\t{heard[shot]:.2f}\n")
             page.save(os.path.join(out, f"sheet_{s:03d}.jpg"), quality=88)
     print(f"{len(blocks)} shots on {len(sheets)} sheets in {out}")

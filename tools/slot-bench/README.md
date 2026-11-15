@@ -77,6 +77,19 @@ to each other, follow `speak_reader.md`; `speak_merge.py` checks their files
 and writes the shot label file that `conversation_bench shots` and
 `conversation_bench agree` read.
 
+With the subtitle lines under the shots (row 33), for a video that carries
+subtitles, as pictures or as text:
+
+```sh
+uv run speak_lines.py <ffmpeg> <ffprobe> <video> <subtitle> <frames> <lines_dir>
+LINES=<lines_dir> uv run speak_sheets.py <ffmpeg> <video> <project_copy_dir> <media> <sound.tsv> <sheets_dir>
+```
+
+`speak_lines.py` cuts every subtitle line out of a frame from its middle,
+wherever in the frame it stands; with `LINES` the sheets show under each
+shot the lines on screen during it. The pictures of the shots may come from
+another file of the same frames (the proxy) than the lines (the original).
+
 ## Expressions: `sound_events.py`, `crop_sheets.py`
 
 `sound_events.py <ffmpeg> <video> <yamnet.onnx> <yamnet_class_map.csv> <out.tsv>`

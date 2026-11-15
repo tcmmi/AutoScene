@@ -63,6 +63,34 @@ nobody you listed speaks.
 - Everyone you write under speaks must also stand under faces.
 - When you cannot tell whether a mouth moves, leave the person out.
 
+## Subtitle lines under a shot (only on sheets that have them)
+
+Under a shot's pictures may stand the subtitle lines that are on screen
+during it, in their order, cut from the film. `<<` before a line: it began
+before this shot. `>>` after a line: it goes on after this shot. A shot with
+no lines under it has none on screen.
+
+- A line tells you that someone speaks at that time, and what is said. It
+  does not tell you who, unless a name stands before the words.
+- The rule stays the mouth: mark a person as speaking when the pictures show
+  them talking.
+- Use the words to tell a speaker from a listener. When the line is said TO
+  the person in the picture (it names them, asks them, answers what they
+  said in the shot before) and their mouth is closed, they listen: do not
+  mark them.
+- When the mouth cannot be read (too small, turned away, hidden) and the
+  words can only be theirs, mark them. When you cannot tell, leave them out.
+  A line under the shot is no reason by itself to mark whoever is in the
+  picture.
+- A name in capitals before the words (`OFFICER 2: Go.`) says who speaks
+  them. Subtitles do that mostly when the speaker is not in the picture.
+- Two lines that each begin with a dash are two speakers. Slanted letters
+  are usually a voice that is not in the room: a telephone, a loudspeaker,
+  a television, a thought, someone outside the picture.
+- A line with `<<` or `>>` may belong mostly to the shot beside this one.
+- The caption still counts: with `speech 0.0 s` write `-`, even when a line
+  stands under the shot.
+
 You may know the series. Use that only to recognise a face, and only with
 the labels of the cast pages. Label what the pictures show, not what the
 story suggests.

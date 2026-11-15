@@ -255,8 +255,8 @@ What else reads the labels, before and after the read:
   characters, for 925, and most cells move in the third decimal; the check
   of that bench's readers finds 322 of their 334 names in the labels, which
   give 421 (before 321 and 419). The conversation sections, their file of
-  counts and row 29's result cell still carry the numbers of the labels
-  before this read, until that bench's session makes them again.
+  counts and row 29's result cell were made again with these labels in
+  `d3ed173c`, with the same numbers.
 - Bodies (`bench/bodies`): four bodies leave the pool of extras (155 for 159
   on Breaking Bad). Two of them had been named Walter by the pass and
   counted as wrong; they are Walter's.

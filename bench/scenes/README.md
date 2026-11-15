@@ -220,8 +220,8 @@ the first half's threshold, is 0.912 by the stored cast, and with one more
 row named, a face of three frames (Skyler at 16335 or at 16389, both kept
 as `?`), it would be 0.831, because the first half's best threshold is a
 near tie between 0.350 and 0.100. The conversation sections below, their
-file of counts and row 29's result cell still carry the numbers of the
-labels before this read, until that bench makes them again.
+file of counts and row 29's result cell were made again with these labels
+in `d3ed173c`.
 
 ## Results across four episodes (2026-11-12, row 8)
 

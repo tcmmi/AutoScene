@@ -1,0 +1,60 @@
+page	footage	stratum	key	frame	pool	reader_1	note_1	reader_2	note_2
+1	3d	held to C1 0.05, new to the reference	mir_s5e21	11881	1602	changed	eye opens, face outline shifts, small	changed	eye opens, face outline shifts, small
+2	live	held to C1 0.05, new to the reference	bb_s01e01	83390	5	repeat	only dim blocky fuzz on title text	repeat	only blocky noise in title letters
+3	live	held to C1 0.2, new to the reference	bb_s01e01	82306	126	changed	text fades, whole text brightness	changed	text brightens (fade in), text area
+4	anime	new to C1 0.2, a repeat to the reference	op_a	24790	10988	changed	glow streak across the light changes, medium area	changed	light glow streak changes, middle of picture
+5	live	new to C1 0.05, a repeat to the reference	bb_s01e01	22030	3593	repeat	only noise, faint edge fuzz	repeat	only noise and faint edge fuzz
+6	live	new to C1 0.05, a repeat to the reference	bb_s01e01	80495	3593	changed	all edges outlined, whole picture shifts slightly (camera)	changed	outlines across whole picture, slight camera shift
+7	live	new to C1 0.2, a repeat to the reference	bb_s01e01	26160	3461	cannot tell	film grain everywhere, faint face and sleeve outline maybe	repeat	film grain only
+8	live	new to C1 0.2, a repeat to the reference	bb_s01e01	26088	3461	changed	collar and mouth outline shift, small (breathing/head)	changed	head outline arc shifts slightly, small
+9	live	new to C1 0.05, a repeat to the reference	bb_s01e01	32534	3593	changed	all edges outlined, whole picture shifts slightly (camera)	changed	whole picture shifts slightly (camera)
+10	3d	held to C1 0.05, new to the reference	mir_s1e11	26849	1602	changed	arm of small figure far away moves	changed	small figure far away moves arm/leg
+11	live	held to C1 0.2, new to the reference	bb_s01e01	27700	126	changed	edges outlined across room, whole picture shifts slightly	cannot tell	edge fuzz over whole scene, blocky, no clear motion
+12	3d	held to C1 0.05, new to the reference	mir_s5e21	5138	1602	changed	head with sunglasses and ponytail moves, small	changed	head and sunglasses outline shift, small
+13	anime	new to C1 0.2, a repeat to the reference	rz_33	28755	10988	cannot tell	dim smear along cloud edges, clouds may drift slowly	cannot tell	faint shaped difference on clouds/sky, very dim
+14	3d	new to C1 0.05, a repeat to the reference	mir_s1e11	2424	1592	repeat	only dim speckle on fabric texture	repeat	only noise
+15	anime	new to C1 0.2, a repeat to the reference	rz_31	34651	10988	changed	shard outlines doubled across floor, small shift	changed	glass shards outlines shift, small objects
+16	3d	new to C1 0.05, a repeat to the reference	mir_s5e21	24671	1592	changed	pigtails and second girl's sunglasses move, small	changed	pigtail outlines shift, small
+17	live	new to C1 0.2, a repeat to the reference	bb_s01e01	46966	3461	cannot tell	speckle on fine tree branches, wind or compression	changed	tree branches and scene shift (camera or wind), whole picture
+18	anime	held to C1 0.2, new to the reference	jjk_s2e04	1452	16061	changed	patch only noise; a few tiny bright specks change (dust), tiny	cannot tell	dim blocks plus a few tiny bright dots (dust?)
+19	live	held to C1 0.2, new to the reference	bb_s01e01	5915	126	changed	text fades out, dim	changed	text fades out, text area
+20	anime	held to C1 0.2, new to the reference	op_a	8025	16061	changed	sparks/embers move, small	changed	sparks/embers move, small
+21	3d	new to C1 0.05, a repeat to the reference	mir_s5e21	1392	1592	changed	mouth opens plus all edges outlined (camera), medium	changed	mouth opens plus outlines across scene
+22	anime	new to C1 0.2, a repeat to the reference	op_a	12336	10988	repeat	only dim blocky noise	repeat	only blocky noise
+23	anime	held to C1 0.2, new to the reference	jjk_s2e03	1640	16061	changed	all edges outlined, whole picture shifts (camera)	changed	whole picture shifts (camera move)
+24	anime	held to C1 0.2, new to the reference	rz_31	2495	16061	changed	fire flickers, small area	changed	fire flickers, small area
+25	live	new to C1 0.05, a repeat to the reference	bb_s01e01	19493	3593	changed	edges outlined across picture, whole picture shifts slightly	changed	foil and scene outlines shift, large area
+26	3d	new to C1 0.05, a repeat to the reference	mir_s1e11	21203	1592	cannot tell	faint arcs at small far head, rest noise	cannot tell	faint outline on tiny distant head, mostly blocks
+27	live	new to C1 0.2, a repeat to the reference	bb_s01e01	80876	3461	cannot tell	speckle on blanket, faint sheet edge line, maybe breathing	repeat	only faint edge fuzz and blocks
+28	live	new to C1 0.05, a repeat to the reference	bb_s01e01	80352	3593	repeat	film grain only	repeat	film grain only
+29	anime	held to C1 0.2, new to the reference	op_a	19444	16061	changed	mouth and face lines move, medium	changed	mouth/teeth change, small
+30	anime	new to C1 0.2, a repeat to the reference	rz_33	28003	10988	cannot tell	dim outlines along cloud edges, clouds may drift slowly	cannot tell	faint shaped cloud outlines over sky, very dim
+31	live	held to C1 0.2, new to the reference	bb_s01e01	6068	126	cannot tell	fine speckle over gravel and faint edges of house, maybe tiny shift or grain	cannot tell	gravel texture and edges over whole dark picture, could be grain or slight camera shift
+32	3d	new to C1 0.05, a repeat to the reference	mir_s5e21	20497	1592	changed	mouth and chin move, small	changed	mouth and chin outline move, small
+33	anime	held to C1 0.2, new to the reference	op_7	20232	16061	cannot tell	faint outlines everywhere, one lantern edge maybe shifts, dim	repeat	only faint edge fuzz and blocks
+34	anime	held to C1 0.2, new to the reference	jjk_s2e04	28646	16061	changed	thin falling streak moves, small	changed	thin falling streak lines appear, small
+35	anime	new to C1 0.2, a repeat to the reference	jjk_s2e03	13572	10988	repeat	only blocky noise	repeat	only blocky noise
+36	live	held to C1 0.05, new to the reference	bb_s01e01	83384	5	cannot tell	only title letters differ, texture flicker, rest still	cannot tell	fine fuzz on title letters only, no clear shift
+37	anime	held to C1 0.2, new to the reference	jjk_s2e04	1388	16061	changed	small sparks move and face of small figure, small	changed	figure's fists and face shift, sparks move, small
+38	anime	new to C1 0.2, a repeat to the reference	op_a	17548	10988	repeat	blocky noise over whole picture	repeat	only blocky noise
+39	anime	new to C1 0.2, a repeat to the reference	op_a	19152	10988	repeat	blocky compression noise	repeat	blocky noise, faint glow streaks
+40	anime	held to C1 0.2, new to the reference	rz_31	19222	16061	changed	mouth only, small	changed	mouth only, small
+41	anime	held to C1 0.2, new to the reference	jjk_s2e04	23726	16061	changed	dark stain on leg changes shape, small	changed	leg and dark stain shift, small figure part
+42	live	new to C1 0.05, a repeat to the reference	bb_s01e01	20265	3593	changed	edges across whole picture shift slightly, man and blanket	changed	outlines of people and bedding shift slightly, whole picture
+43	anime	held to C1 0.2, new to the reference	rz_33	6932	16061	changed	mouth only, small	changed	mouth only, small
+44	live	held to C1 0.2, new to the reference	bb_s01e01	83373	126	repeat	faint speckle on title only, grain	repeat	only faint speckle on title text
+45	anime	new to C1 0.2, a repeat to the reference	rz_31	27018	10988	repeat	only blocky noise	repeat	only blocky noise
+46	anime	new to C1 0.2, a repeat to the reference	jjk_s2e04	28087	10988	changed	faded overlay changes, whole picture (crossfade)	changed	faint overlaid image changes (dissolve), whole picture
+47	3d	new to C1 0.05, a repeat to the reference	mir_s5e21	12610	1592	changed	background light streaks change, faint face edges, large area	changed	background light streaks change, large background area
+48	3d	held to C1 0.05, new to the reference	mir_s1e11	28450	1602	changed	eye blink, small	changed	eye blink, small
+49	live	new to C1 0.2, a repeat to the reference	bb_s01e01	80644	3461	changed	face and body edges, small movement	changed	face moves, small
+50	live	new to C1 0.2, a repeat to the reference	bb_s01e01	42377	3461	changed	jacket edges shift, figure moves slightly	changed	shoulder and coat outlines shift slightly, large figure
+51	3d	held to C1 0.05, new to the reference	mir_s5e21	7564	1602	changed	propeller of small robot turns, small object	changed	propeller of small robot spins, small object
+52	3d	held to C1 0.05, new to the reference	mir_s5e21	24767	1602	changed	mouth and brows move, small	changed	mouth closes and brows move, face only
+53	live	held to C1 0.05, new to the reference	bb_s01e01	83379	5	repeat	faint speckle on title only, grain	repeat	only faint speckle on title text
+54	live	held to C1 0.2, new to the reference	bb_s01e01	45980	126	changed	whole picture shifts, camera move	changed	all outlines doubled, whole picture shifts
+55	anime	new to C1 0.2, a repeat to the reference	rz_33	19795	10988	changed	outlines everywhere shift, camera move	changed	all outlines shift, camera or figure move, whole picture
+56	live	held to C1 0.05, new to the reference	bb_s01e01	83373	5	repeat	faint speckle on title only, grain	repeat	only faint speckle on title text
+57	anime	held to C1 0.2, new to the reference	jjk_s2e04	12858	16061	changed	cloud reflection drifts, faint, large area	changed	cloud reflection drifts on sign, dim, medium area
+58	anime	new to C1 0.2, a repeat to the reference	rz_33	30915	10988	repeat	blocky noise, thin line at top edge	repeat	only blocky noise
+59	live	held to C1 0.05, new to the reference	bb_s01e01	45993	5	changed	small highlight at figure edge moves, small	changed	small highlight on dark object moves, small

@@ -1,0 +1,97 @@
+page	footage	stratum	key	frame	pool	reader_1	note_1	reader_2	note_2
+1	live	kept by all three	bb_s01e01	17912	70887	changed	TV picture changes, curtain edge shifts	changed	whole picture shifts, outlines doubled
+2	anime	dropped by loose, kept by default	jjk_s2e04	29210	17649	changed	rain	changed	rain
+3	3d	dropped by strict	mir_s1e11	20549	1439	repeat	only faint blocky noise	repeat	only faint blocky noise
+4	anime	kept by all three	jjk_s2e03	30335	128588	changed	character moves	changed	girl moves, head and hair
+5	3d	dropped by loose, kept by default	mir_s5e21	31936	3357	cannot tell	faint hair speckle, dim outline of face and jacket	repeat	faint fuzz in hair, no shape
+6	live	dropped by strict	bb_s01e01	83326	1164	repeat	only noise	repeat	only noise
+7	live	dropped by default, kept by strict	bb_s01e01	229	3518	changed	rock outlines doubled, slight camera shift	changed	whole picture shifts, rock edges doubled
+8	anime	dropped by default, kept by strict	op_7	11800	27774	changed	outlines doubled across picture, slight shift	changed	slight whole-picture shift, outlines doubled
+9	anime	dropped by default, kept by strict	jjk_s2e04	32597	27774	repeat	only blocky noise in crowd	repeat	only faint blocks
+10	anime	dropped by strict	rz_33	7121	62599	repeat	only noise	repeat	only noise
+11	anime	dropped by loose, kept by default	op_a	27035	17649	changed	hat outline shifts	changed	hat outline shifts
+12	3d	dropped by default, kept by strict	mir_s1e11	4233	2190	changed	feather hair moves	changed	feathered hair moves
+13	anime	kept by all three	op_a	15670	128588	changed	water and light change	changed	water and light change
+14	live	dropped by default, kept by strict	bb_s01e01	80059	3518	repeat	film grain only	repeat	film grain only
+15	live	dropped by strict	bb_s01e01	82505	1164	repeat	black, no difference	repeat	black, no difference
+16	anime	dropped by default, kept by strict	jjk_s2e03	30511	27774	changed	face and ear outlines shift	changed	face outlines shift
+17	3d	kept by all three	mir_s1e11	5909	57699	changed	arms and figures move	changed	girl and paper move
+18	anime	kept by all three	op_7	23192	128588	changed	glow light changes	changed	fire light changes, edges shift
+19	3d	dropped by strict	mir_s1e11	17359	1439	repeat	no difference at all	repeat	no difference
+20	3d	dropped by default, kept by strict	mir_s5e21	10170	2190	changed	paper edge and hair outlines shift slightly	changed	faint outline shift, paper edge and hair
+21	live	dropped by strict	bb_s01e01	82527	1164	repeat	no difference at all	repeat	no difference
+22	3d	kept by all three	mir_s1e11	11680	57699	changed	face and eye move	changed	face and eye move
+23	anime	kept by all three	op_6	21152	128588	changed	figure outlines doubled	changed	figure and mace move
+24	anime	dropped by loose, kept by default	jjk_s2e03	1570	17649	changed	arm and hand outline shifts	changed	arm outline shifts
+25	3d	kept by all three	mir_s1e11	13629	57699	changed	head and figure move	changed	girl moves, head and arms
+26	anime	dropped by strict	rz_31	29902	62599	repeat	only faint blocks	repeat	only faint blocks
+27	anime	kept by all three	op_7	12734	128588	changed	shape at right moves, outlines shift	changed	yellow shape moves
+28	live	dropped by default, kept by strict	bb_s01e01	113	3518	changed	cactus outlines doubled, slight camera shift	changed	cactus outlines shift
+29	live	dropped by strict	bb_s01e01	83332	1164	repeat	no difference at all	repeat	no difference
+30	anime	kept by all three	jjk_s2e03	26317	128588	changed	whole picture shifts	changed	camera move, roofs shift
+31	3d	dropped by loose, kept by default	mir_s5e21	7872	3357	changed	head outline shifts	changed	head edge moves
+32	live	dropped by loose, kept by default	bb_s01e01	21145	5714	changed	faint outlines everywhere, slight camera shift	cannot tell	grain plus faint outlines everywhere
+33	3d	dropped by default, kept by strict	mir_s5e21	439	2190	repeat	only blocky noise	repeat	only faint blocks
+34	anime	dropped by strict	op_a	20946	62599	repeat	only noise	repeat	only faint blocks
+35	anime	dropped by strict	rz_31	37372	62599	repeat	only noise	repeat	only faint blocks
+36	anime	dropped by default, kept by strict	rz_33	29525	27774	repeat	only faint blotchy noise	repeat	faint diffuse noise in clouds
+37	3d	dropped by loose, kept by default	mir_s5e21	31005	3357	changed	face and moustache move	changed	face and moustache move
+38	anime	kept by all three	op_7	1475	128588	changed	explosion light changes	changed	light burst changes
+39	anime	dropped by default, kept by strict	jjk_s2e04	21845	27774	changed	arm and body outlines shift	changed	arm outline shifts
+40	anime	dropped by loose, kept by default	rz_33	2953	17649	changed	mouth	changed	mouth
+41	anime	dropped by strict	op_a	21220	62599	repeat	only noise	repeat	only faint blocks
+42	anime	dropped by strict	rz_31	21913	62599	repeat	only noise	repeat	only faint blocks
+43	3d	kept by all three	mir_s1e11	11034	57699	changed	all figures move	changed	people move, arm and bracelets
+44	live	dropped by strict	bb_s01e01	82504	1164	repeat	no difference at all	repeat	no difference
+45	anime	dropped by loose, kept by default	op_a	10261	17649	changed	mouth	changed	mouth
+46	3d	dropped by loose, kept by default	mir_s5e21	21679	3357	changed	hair, eyes and hand move	changed	hair and glasses move
+47	live	dropped by loose, kept by default	bb_s01e01	31207	5714	changed	whole picture shifts	changed	camera shift, all edges doubled
+48	3d	kept by all three	mir_s5e21	4144	57699	changed	hair, eye and figures move	changed	face and hair move
+49	anime	dropped by strict	rz_33	17311	62599	repeat	only noise, dim blocks	repeat	only noise in fog, blocky
+50	live	kept by all three	bb_s01e01	75983	70887	changed	whole picture shifts	changed	body and shirt move, outlines doubled
+51	3d	dropped by loose, kept by default	mir_s5e21	25320	3357	changed	beard and mouth move	changed	mouth and beard move
+52	3d	dropped by default, kept by strict	mir_s1e11	29548	2190	cannot tell	faint outline on head spikes only	changed	head spikes outline shifts slightly
+53	anime	dropped by loose, kept by default	op_a	10201	17649	changed	mouth	changed	mouth
+54	3d	dropped by strict	mir_s5e21	15470	1439	repeat	only noise	repeat	only noise, few blocks
+55	anime	dropped by default, kept by strict	op_7	30545	27774	repeat	only noise	cannot tell	faint sky texture, spire line faint
+56	live	dropped by default, kept by strict	bb_s01e01	26329	3518	changed	glasses and mouth	changed	glasses and mouth outlines
+57	live	kept by all three	bb_s01e01	51145	70887	changed	camera move, person walking	changed	person walks, frame edges shift
+58	3d	dropped by strict	mir_s1e11	3752	1439	repeat	only noise	repeat	only noise, nearly zero
+59	anime	dropped by strict	jjk_s2e03	32851	62599	repeat	only noise	repeat	only noise, blocky speckle
+60	anime	dropped by default, kept by strict	op_7	11045	27774	changed	outlines shift slightly	changed	whole picture shifts, all outlines
+61	live	kept by all three	bb_s01e01	69401	70887	changed	hand moves	changed	hand moves
+62	3d	dropped by strict	mir_s1e11	3238	1439	repeat	identical	repeat	no difference
+63	anime	dropped by loose, kept by default	jjk_s2e03	10536	17649	cannot tell	faint sea sparkle blobs	changed	water sparkles shimmer, faint
+64	anime	dropped by default, kept by strict	jjk_s2e04	2079	27774	cannot tell	title outlines, maybe slow zoom	cannot tell	thin outlines on title text, maybe slight zoom
+65	anime	dropped by default, kept by strict	rz_33	27998	27774	changed	cloud edges drift	changed	cloud edges drift, faint
+66	live	dropped by loose, kept by default	bb_s01e01	78157	5714	changed	whole picture shifts	changed	head and arm move
+67	anime	dropped by loose, kept by default	rz_31	32020	17649	changed	outlines shift	changed	whole picture shifts, all outlines
+68	live	dropped by default, kept by strict	bb_s01e01	27247	3518	repeat	film grain only	repeat	film grain only
+69	anime	dropped by strict	jjk_s2e03	33833	62599	repeat	only noise	repeat	only noise, blocks
+70	3d	dropped by strict	mir_s5e21	30572	1439	repeat	only noise	repeat	only noise, blocks
+71	anime	dropped by loose, kept by default	op_a	23837	17649	changed	smoke edge moves	changed	cloud or smoke edge moves
+72	anime	dropped by loose, kept by default	rz_31	8815	17649	changed	eye highlights change	changed	eye highlight changes
+73	anime	kept by all three	jjk_s2e04	28476	128588	changed	fish swim	changed	fish move
+74	anime	kept by all three	jjk_s2e03	26271	128588	changed	whole picture shifts	changed	whole picture shifts, strong outlines
+75	anime	dropped by default, kept by strict	jjk_s2e04	1527	27774	changed	smoke drifts faintly	cannot tell	faint blobs near steam, maybe smoke
+76	anime	kept by all three	op_6	32834	128588	changed	characters move	changed	hat and figure move
+77	anime	dropped by strict	jjk_s2e03	14372	62599	repeat	only noise	repeat	only noise
+78	anime	dropped by loose, kept by default	rz_33	17874	17649	changed	whole picture shifts slightly	changed	fade, faint outlines everywhere
+79	anime	dropped by loose, kept by default	jjk_s2e03	29116	17649	changed	object at left edge, figure outlines	changed	figures outline and spot at edge
+80	anime	dropped by default, kept by strict	rz_31	31837	27774	changed	outlines shift	changed	whole picture shifts, all outlines
+81	live	dropped by loose, kept by default	bb_s01e01	29232	5714	changed	body and paper move	changed	arm and paper move
+82	anime	kept by all three	op_6	16712	128588	changed	dark shape and light move	changed	dark corner vignette moves
+83	anime	dropped by strict	rz_31	36811	62599	repeat	only noise	repeat	only noise, blocks
+84	3d	kept by all three	mir_s5e21	8067	57699	changed	whole picture shifts	changed	whole picture shifts, strong outlines
+85	3d	dropped by default, kept by strict	mir_s5e21	28488	2190	changed	hair moves	changed	hair strands move
+86	live	kept by all three	bb_s01e01	79308	70887	changed	people walk, camera shift	changed	person walks, camera shift
+87	live	kept by all three	bb_s01e01	57425	70887	changed	branches shift	changed	branches shift, camera move
+88	3d	dropped by loose, kept by default	mir_s5e21	25458	3357	changed	head and body move	changed	body and eyelids move
+89	3d	dropped by default, kept by strict	mir_s5e21	18186	2190	cannot tell	tiny speck changes	changed	tiny dot changes
+90	live	dropped by loose, kept by default	bb_s01e01	20670	5714	changed	head moves	changed	head and mouth move
+91	live	dropped by strict	bb_s01e01	82853	1164	repeat	black, identical	repeat	no difference, static credits
+92	anime	dropped by strict	rz_33	9579	62599	repeat	only noise	repeat	only noise, blocks
+93	live	dropped by loose, kept by default	bb_s01e01	80978	5714	cannot tell	faint edge outlines, maybe slight shift	cannot tell	faint edge fuzz on lamp and people
+94	anime	dropped by default, kept by strict	rz_31	32850	27774	changed	faint outlines, slight camera move	cannot tell	faint thin outlines on window edges
+95	anime	kept by all three	op_7	16529	128588	changed	figure moves	changed	figure moves, outlines doubled
+96	live	dropped by default, kept by strict	bb_s01e01	61419	3518	changed	smoke and slight shift	changed	smoke moves, slight shift

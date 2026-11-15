@@ -49,6 +49,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
+use anime::{Gallery, Level, Spans, at_level};
 use as_analysis::bodies::{BodyDet, BodyObs, BodyTrack};
 use as_analysis::body_tracker::{BodyTrackerParams, track_bodies};
 use as_analysis::link::{LinkParams, fit, link_shot};
@@ -57,7 +58,6 @@ use as_core::FrameRange;
 use as_identity::bodies::{BodyAssign, BodyIn, BodyOutcome, BodyParams, FaceOn, propagate};
 use as_identity::metrics::bcubed;
 use as_identity::{Outcome, Params, TrackIn, identify};
-use anime::{Gallery, Level, Spans, at_level};
 use labels::{Kind, Label, STRIDE, box_iou, character_names, found_faces, fps, input, kind, members, named, names_of};
 
 fn env<T: std::str::FromStr>(name: &str, default: T) -> T {
@@ -413,9 +413,8 @@ impl World<'_> {
     /// The sightings of body `b` while none of its faces shows: where the
     /// run kept an appearance per sighting, only those that have one.
     fn away(&self, b: usize) -> Vec<&BodyDet> {
-        let face_at = |f: u32| {
-            self.faces_on[b].iter().any(|&(t, _)| self.input[t].spans.iter().any(|&(a, z)| a <= f && f < z))
-        };
+        let face_at =
+            |f: u32| self.faces_on[b].iter().any(|&(t, _)| self.input[t].spans.iter().any(|&(a, z)| a <= f && f < z));
         let body = &self.bodies[b];
         body.dets
             .iter()
@@ -908,9 +907,26 @@ fn passed(w: &World, b: usize) -> Answer {
     }
 }
 
+/// Whether a labelled face (not the back of a head) of `name` sits on body
+/// `b` at some frame of `frames`, by the tie's own test of a face on a body.
+fn face_on_body(w: &World, labels: &[Label], name: &str, b: usize, frames: std::ops::Range<u32>) -> bool {
+    let (lp, gap) = (LinkParams::default(), 24.max(2 * w.body_stride));
+    labels.iter().filter(|l| l.name == name && !is_back(l) && l.span.0 < frames.end && frames.start < l.span.1).any(
+        |l| {
+            l.boxes.iter().any(|(f, hb)| {
+                frames.contains(f) && w.bodies[b].box_at(*f, gap).and_then(|bb| fit(hb, &bb, &lp)).is_some()
+            })
+        },
+    )
+}
+
 /// Pool E: bodies with a face of the main cast, asked by their sightings
-/// without one (at least 3).
-fn easy(w: &World) -> Vec<Query> {
+/// without one (at least 3). "Without one" is what the pass knows: no face
+/// track tied to the body is on screen then. Flags: `mixed`, the body's
+/// faces are more than one named figure's; `shown`, a labelled face of the
+/// figure sits on the body at the query's frame all the same (within 6
+/// frames: a face track the tie did not put on this body).
+fn easy(w: &World, labels: &[Label]) -> Vec<Query> {
     let mut out = Vec::new();
     for (b, body) in w.bodies.iter().enumerate() {
         let (BodyAssign::Face(_), Some(n)) = (w.res.bodies[b], w.body_truth(b)) else { continue };
@@ -923,6 +939,13 @@ fn easy(w: &World) -> Vec<Query> {
         // `mixed`: its faces are more than one named figure's, so the name
         // (the one most of their samples have) is less sure.
         let figures: HashSet<&str> = w.faces_on[b].iter().filter_map(|&(f, _)| w.truth[f].and_then(named)).collect();
+        let mut flags = Vec::new();
+        if figures.len() > 1 {
+            flags.push("mixed");
+        }
+        if face_on_body(w, labels, n, b, d.frame.saturating_sub(6)..d.frame + 7) {
+            flags.push("shown");
+        }
         out.push(Query {
             pool: "E",
             body: Some(b),
@@ -932,20 +955,22 @@ fn easy(w: &World) -> Vec<Query> {
             frame: d.frame,
             bbox: d.visible,
             name: n.to_string(),
-            flags: if figures.len() > 1 { vec!["mixed"] } else { Vec::new() },
+            flags,
             asked_by: Some(v.clone()),
         });
     }
     out
 }
 
-/// Pool N from the labels: bodies whose faces are extras' (`?`, `?e`, `n`)
-/// and that the face pass named no one. Any name is wrong.
+/// Pool N from the labels: bodies whose faces are extras' (`?`, `?e`) or
+/// no character's head (`n`, flagged `n`), and that the face pass named no
+/// one. Any name is wrong.
 fn extras(w: &World) -> Vec<Query> {
     let mut out = Vec::new();
     for (b, body) in w.bodies.iter().enumerate() {
         let unnamed = matches!(w.res.bodies[b], BodyAssign::None | BodyAssign::Reid { .. });
-        if !unnamed || w.in_span(b) || !w.body_truth(b).is_some_and(|n| matches!(kind(n), Kind::OwnPerson)) {
+        let Some(label) = w.body_truth(b).filter(|n| matches!(kind(n), Kind::OwnPerson)) else { continue };
+        if !unnamed || w.in_span(b) {
             continue;
         }
         let d = body.dets[body.dets.len() / 2];
@@ -958,7 +983,7 @@ fn extras(w: &World) -> Vec<Query> {
             frame: d.frame,
             bbox: d.visible,
             name: "?".into(),
-            flags: vec!["face"],
+            flags: if label == "n" { vec!["face", "n"] } else { vec!["face"] },
             asked_by: None,
         });
     }
@@ -975,12 +1000,15 @@ fn face_in_shot(labels: &[Label], name: &str, shot: FrameRange) -> bool {
 }
 
 /// Pool B: the named `back` head tracks of the labels (main cast, outside
-/// the spans), each on the body track most of its boxes sit on, asked by
-/// that body's appearance while the back of the head shows. Flags: `far`,
-/// no face of the figure is labelled within 48 frames of the track; `cut`,
-/// none in its shot; `own`, the body carries a face of the figure at
-/// another moment. Also: how many such labels there are, and how many sit
-/// on no body.
+/// the spans), each on the body track it sits on: the one that holds the
+/// most of its boxes, if those are at least 2 (all of a head with fewer)
+/// and 0.6 of the boxes that sit on any body. Several such heads of one
+/// figure on one body are one query. It is asked by that body's appearance
+/// while a back of the head shows. Flags: `far`, no face of the figure is
+/// labelled within 48 frames of any of its heads; `cut`, none in their
+/// shots; `own`, the body carries a face of the figure at another moment;
+/// `bare`, nothing to ask it by. Also: how many such labels there are, and
+/// how many sit on no body.
 fn back(w: &World, labels: &[Label]) -> (Vec<Query>, usize, usize) {
     const NEAR: u32 = 48;
     let lp = LinkParams::default();
@@ -991,9 +1019,12 @@ fn back(w: &World, labels: &[Label]) -> (Vec<Query>, usize, usize) {
     }
     let on_body = |hb: &[f32; 4], f: u32, b: usize| w.bodies[b].box_at(f, gap).and_then(|bb| fit(hb, &bb, &lp));
     let (mut out, mut all, mut bare) = (Vec::new(), 0, 0);
-    for l in labels.iter().filter(|l| {
-        is_back(l) && w.main.contains(l.name.as_str()) && w.spans.mostly_in(l.span.0, l.span.1).is_none()
-    }) {
+    // (body, figure) → its back heads, in the labels' order.
+    let mut on: BTreeMap<(usize, &str), Vec<&Label>> = BTreeMap::new();
+    for l in labels
+        .iter()
+        .filter(|l| is_back(l) && w.main.contains(l.name.as_str()) && w.spans.mostly_in(l.span.0, l.span.1).is_none())
+    {
         all += 1;
         let mut votes: BTreeMap<usize, u32> = BTreeMap::new();
         for (f, hb) in &l.boxes {
@@ -1015,41 +1046,55 @@ fn back(w: &World, labels: &[Label]) -> (Vec<Query>, usize, usize) {
             bare += 1;
             continue;
         };
+        on.entry((b, l.name.as_str())).or_default().push(l);
+    }
+    for ((b, name), heads) in on {
         let body = &w.bodies[b];
-        let within = |d: &BodyDet| l.span.0 <= d.frame && d.frame < l.span.1;
-        let mid = (l.span.0 + l.span.1) / 2;
+        let within = |d: &BodyDet| heads.iter().any(|l| l.span.0 <= d.frame && d.frame < l.span.1);
+        let (first, last) = (
+            heads.iter().map(|l| l.span.0).min().expect("a head"),
+            heads.iter().map(|l| l.span.1).max().expect("a head"),
+        );
+        let mid = (first + last) / 2;
         let d = body.dets.iter().min_by_key(|d| (!within(d), d.frame.abs_diff(mid))).expect("a sighting");
-        let face_near = labels.iter().any(|o| {
-            o.name == l.name && !is_back(o) && o.span.0 < l.span.1 + NEAR && l.span.0 < o.span.1 + NEAR
+        let face_near = heads.iter().any(|l| {
+            labels
+                .iter()
+                .any(|o| o.name == l.name && !is_back(o) && o.span.0 < l.span.1 + NEAR && l.span.0 < o.span.1 + NEAR)
         });
-        let shot = w.shot_of(mid).unwrap_or(FrameRange::new(body.shot, body.end));
-        let own = labels.iter().any(|o| {
-            o.name == l.name
-                && !is_back(o)
-                && o.boxes.iter().any(|(f, hb)| (body.start..body.end).contains(f) && on_body(hb, *f, b).is_some())
+        let face_in_a_shot = heads.iter().any(|l| {
+            let shot = w.shot_of((l.span.0 + l.span.1) / 2).unwrap_or(FrameRange::new(body.shot, body.end));
+            face_in_shot(labels, name, shot)
         });
+        let own = face_on_body(w, labels, name, b, body.start..body.end);
         let mut flags = Vec::new();
         if !face_near {
             flags.push("far");
         }
-        if !face_in_shot(labels, &l.name, shot) {
+        if !face_in_a_shot {
             flags.push("cut");
         }
         if own {
             flags.push("own");
         }
+        // The app's people keep one appearance a track, not one a sighting.
+        let asked_by = if w.from_app { None } else { body.appearance(within) };
+        // `bare`: no sighting has an appearance while the back of the head
+        // shows (too small, too dark, not among the clearest of its track).
+        if asked_by.is_none() {
+            flags.push("bare");
+        }
         out.push(Query {
             pool: "B",
             body: Some(b),
             shot: body.shot,
-            start: l.span.0.max(body.start),
-            end: l.span.1.min(body.end),
+            start: first.max(body.start),
+            end: last.min(body.end),
             frame: d.frame,
             bbox: d.visible,
-            name: l.name.clone(),
+            name: name.to_string(),
             flags,
-            // The app's people keep one appearance a track, not one a sighting.
-            asked_by: if w.from_app { None } else { body.appearance(within) },
+            asked_by,
         });
     }
     (out, all, bare)
@@ -1068,7 +1113,10 @@ fn quad_text(b: &[f32; 4]) -> String {
 /// episode `key`): a body they named is M when a face of that figure is
 /// labelled in its shot and H when none is; one they call a person outside
 /// the cast (`e`) or no person (`n`) is an extra. `x` (cannot tell) and
-/// figures outside the main cast are in no pool.
+/// figures outside the main cast are in no pool. Flags of pool M: `now`, a
+/// face of the figure is labelled while the body is on screen (not only at
+/// another moment of the shot); `on`, such a face sits on the body itself
+/// (the body does show its face: the tie did not put the two together).
 fn from_readers(w: &World, labels: &[Label], path: &str, key: &str) -> Vec<Query> {
     let mut out = Vec::new();
     for v in labels::tsv_rows(path).into_iter().filter(|v| v[0] == key && v[2] != "e") {
@@ -1085,6 +1133,14 @@ fn from_readers(w: &World, labels: &[Label], path: &str, key: &str) -> Vec<Query
             n => ("H", n, Vec::new()),
         };
         let body = w.body_at(shot, frame, &bbox);
+        if pool == "M" {
+            if face_in_shot(labels, name, FrameRange::new(start, end)) {
+                flags.push("now");
+            }
+            if body.is_some_and(|b| face_on_body(w, labels, name, b, start..end)) {
+                flags.push("on");
+            }
+        }
         // `clip`: the body shows enough to be a clip of its own in a pack.
         if body.is_some_and(|b| w.bodies[b].showing(16.0 / 9.0).prominent()) {
             flags.push("clip");
@@ -1102,7 +1158,7 @@ fn key() -> String {
 fn pools(w: &World, labels: &[Label], out: &Path) {
     let key = key();
     let anchors = anchors_of(w);
-    let mut qs = easy(w);
+    let mut qs = easy(w, labels);
     let (b, back_labels, bare) = back(w, labels);
     // The app's people keep no appearance per sighting: nothing to ask a
     // back of the head by.
@@ -1127,10 +1183,14 @@ fn pools(w: &World, labels: &[Label], out: &Path) {
             ("E" | "B", Some(v), Some(b)) => (ask(w, &anchors, v, b, false), ask(w, &anchors, v, b, true)),
             ("E" | "B", ..) => (None, None),
             (pool, _, body) => {
-                // An extra called a character outside the main cast was given
-                // no cast name: written `~name`, and not counted as answered.
+                // A person the readers call outside the gallery may be a
+                // minor character: called by a name outside the main cast,
+                // the answer cannot be judged. Written `~name`, not counted.
+                // (An extra by the labels, or no person at all: any name is
+                // wrong.)
+                let open = pool == "N" && q.flags.contains(&"e");
                 let a = body.and_then(|b| passed(w, b)).map(|(n, s, s2)| {
-                    if pool == "N" && !w.main.contains(n.as_str()) { (format!("~{n}"), s, s2) } else { (n, s, s2) }
+                    if open && !w.main.contains(n.as_str()) { (format!("~{n}"), s, s2) } else { (n, s, s2) }
                 });
                 (a.clone(), a)
             }
@@ -1181,7 +1241,9 @@ fn pools(w: &World, labels: &[Label], out: &Path) {
         anchors.len()
     );
     for (pool, [n, a, r, a2, r2]) in sums {
-        println!("  {pool:6} {n:4} queries | answered {a:4} right {r:4} | without the same shot: answered {a2:4} right {r2:4}");
+        println!(
+            "  {pool:6} {n:4} queries | answered {a:4} right {r:4} | without the same shot: answered {a2:4} right {r2:4}"
+        );
     }
     // Pool E's names come through the tie of faces to bodies: the readers'
     // names for a sample of its bodies (the draw's group `e`) check them.
@@ -1193,7 +1255,9 @@ fn pools(w: &World, labels: &[Label], out: &Path) {
         for v in read.into_iter().filter(|v| v[0] == key && v[2] == "e") {
             let body = w.body_at(v[3].parse().unwrap(), v[6].parse().unwrap(), &quad(&v[7]));
             let truth = body.and_then(|b| w.body_truth(b));
-            match v[8].as_str() {
+            // The name both readers gave; where they differ, nobody's (also
+            // where a third reader decided, as in a draw's own file).
+            match if v[9] == v[10] { v[9].as_str() } else { "x" } {
                 "x" => open += 1,
                 n if Some(n) == truth => same += 1,
                 n => {
@@ -1252,9 +1316,9 @@ fn draw(w: &World, labels: &[Label], out: &Path) {
         (n[0], n[1], n.get(2).copied().unwrap_or(0))
     });
     let main_face = |shot: FrameRange| {
-        labels.iter().any(|l| {
-            w.main.contains(l.name.as_str()) && !is_back(l) && l.span.0 < shot.end && shot.start < l.span.1
-        })
+        labels
+            .iter()
+            .any(|l| w.main.contains(l.name.as_str()) && !is_back(l) && l.span.0 < shot.end && shot.start < l.span.1)
     };
     // Every track that may be drawn, in the order they come on screen:
     // without a face tied (whatever the pass made of it), 15 % of the frame
@@ -1272,7 +1336,7 @@ fn draw(w: &World, labels: &[Label], out: &Path) {
     picked.extend(rng.pick(&o, n_o).into_iter().map(|b| (b, "o")));
     // A third group, to check the names of pool E: bodies with a face, shown
     // at their moments without one.
-    let e: Vec<usize> = easy(w).iter().filter_map(|q| q.body).collect();
+    let e: Vec<usize> = easy(w, labels).iter().filter_map(|q| q.body).collect();
     picked.extend(rng.pick(&e, n_e).into_iter().map(|b| (b, "e")));
     picked.sort_by_key(|&(b, _)| (w.bodies[b].start, b));
     println!(
@@ -1373,9 +1437,10 @@ fn draw(w: &World, labels: &[Label], out: &Path) {
         by
     });
     let mut screen: BTreeMap<&str, u32> = BTreeMap::new();
-    for l in labels.iter().filter(|l| {
-        w.main.contains(l.name.as_str()) && !is_back(l) && w.spans.mostly_in(l.span.0, l.span.1).is_none()
-    }) {
+    for l in labels
+        .iter()
+        .filter(|l| w.main.contains(l.name.as_str()) && !is_back(l) && w.spans.mostly_in(l.span.0, l.span.1).is_none())
+    {
         *screen.entry(l.name.as_str()).or_default() += l.span.1 - l.span.0;
     }
     let mut figures: Vec<(&str, u32)> = screen.into_iter().collect();
@@ -1494,7 +1559,10 @@ fn join_readers(draw: &str, a: &str, b: &str, third: &str, out: &str) {
         );
     }
     std::fs::write(out, text).unwrap();
-    println!("{} items: both readers the same {same}, decided by the third {decided}, left open {open}", same + decided + open);
+    println!(
+        "{} items: both readers the same {same}, decided by the third {decided}, left open {open}",
+        same + decided + open
+    );
     println!("  {by:?}");
 }
 
@@ -1525,13 +1593,21 @@ fn shares(counts: [usize; 3]) -> [f64; 3] {
 
 /// The pools per title and pooled: counts, shares, and intervals drawn over
 /// characters (each title's figures redrawn with all their queries, 2,000
-/// times; extras have no character and get a Wilson interval on the share
-/// answered).
+/// times; a redraw in which nothing was answered has no share right and is
+/// left out of that interval). Beside the share answered, Wilson's interval
+/// with each query as a draw of its own; extras have no character and get
+/// only that one.
 fn table(args: &[String]) {
     let mut rows: Vec<Scored> = Vec::new();
     let mut titles: Vec<String> = Vec::new();
+    // `+<name>=<title>,<title>…`: one more scope, of titles given before it.
+    let mut groups_of: Vec<(String, Vec<String>)> = Vec::new();
     for arg in args {
         let (title, files) = arg.split_once('=').expect("<title>=<today.tsv>[,<today.tsv>…]");
+        if let Some(name) = title.strip_prefix('+') {
+            groups_of.push((name.to_string(), files.split(',').map(String::from).collect()));
+            continue;
+        }
         titles.push(title.to_string());
         for file in files.split(',') {
             for v in labels::tsv_rows(file) {
@@ -1553,7 +1629,7 @@ fn table(args: &[String]) {
     // A line of the table: its name, which rows, and whether pools E and B
     // are read without the same shot's anchors.
     type Pick = fn(&Scored) -> bool;
-    let lines: [(&str, Pick, usize); 11] = [
+    let lines: [(&str, Pick, usize); 13] = [
         ("E, as today", |r| r.pool == "E", 0),
         ("E, no help from the same shot", |r| r.pool == "E", 1),
         ("B, back of the head", |r| r.pool == "B", 0),
@@ -1561,15 +1637,26 @@ fn table(args: &[String]) {
         ("B far, no face within 2 s", |r| r.pool == "B" && r.flags.iter().any(|f| f == "far"), 0),
         ("B far, no help from the same shot", |r| r.pool == "B" && r.flags.iter().any(|f| f == "far"), 1),
         ("M, face in the shot", |r| r.pool == "M", 0),
+        ("M, the face only at another moment", |r| r.pool == "M" && !r.flags.iter().any(|f| f == "now"), 0),
         ("H, no face in the shot", |r| r.pool == "H", 0),
         ("H, bodies that would make a clip", |r| r.pool == "H" && r.flags.iter().any(|f| f == "clip"), 0),
         ("E + M + H (E without the same shot)", |r| matches!(r.pool.as_str(), "E" | "M" | "H"), 1),
+        (
+            "E + M + H without M's bodies whose face shows meanwhile",
+            |r| matches!(r.pool.as_str(), "E" | "H") || (r.pool == "M" && !r.flags.iter().any(|f| f == "now")),
+            1,
+        ),
         ("N, extras", |r| r.pool == "N", 0),
     ];
     let mut scopes: Vec<(String, Vec<&str>)> = titles.iter().map(|t| (t.clone(), vec![t.as_str()])).collect();
+    for (name, of) in &groups_of {
+        scopes.push((name.clone(), of.iter().map(String::as_str).collect()));
+    }
     scopes.push(("all titles".into(), titles.iter().map(String::as_str).collect()));
-    println!("| Title | Pool | Queries | Characters | Answered | Right | Share answered | Share right | Right of all |");
-    println!("|---|---|---|---|---|---|---|---|---|");
+    println!(
+        "| Title | Pool | Queries | Characters | Answered | Right | Share answered | ... by Wilson, per query | Share right | Right of all |"
+    );
+    println!("|---|---|---|---|---|---|---|---|---|---|");
     let mut rng = Rng(0x7AB1_E0FB_0D1E);
     for (scope, of) in &scopes {
         for (line, pick, variant) in &lines {
@@ -1612,13 +1699,21 @@ fn table(args: &[String]) {
                 }
                 drawn.map(interval)
             };
+            // The same share with each query as a draw of its own: narrower
+            // than is true where one character holds many queries, but no
+            // empty interval where a handful of characters all got nothing.
+            let (lo, hi) = wilson(total[1], total[0]);
+            let per_query = format!("[{:.2}, {:.2}]", lo.max(0.0), hi.min(1.0));
             if extras {
                 // No name is right for an extra: only how many got one.
-                println!("| {scope} | {line} | {} | – | {} | – | {} | – | – |", total[0], total[1], cell(s[0], cis[0]));
+                println!(
+                    "| {scope} | {line} | {} | – | {} | – | {:.2} | {per_query} | – | – |",
+                    total[0], total[1], s[0]
+                );
                 continue;
             }
             println!(
-                "| {scope} | {line} | {} | {characters} | {} | {} | {} | {} | {} |",
+                "| {scope} | {line} | {} | {characters} | {} | {} | {} | {per_query} | {} | {} |",
                 total[0],
                 total[1],
                 total[2],
@@ -2073,7 +2168,8 @@ mod tests {
 
     #[test]
     fn the_back_of_a_head_is_no_face_in_the_shot() {
-        let labels = [label("ann", (100, 160), &[]), label("bob", (100, 160), &["back"]), label("bob", (400, 460), &[])];
+        let labels =
+            [label("ann", (100, 160), &[]), label("bob", (100, 160), &["back"]), label("bob", (400, 460), &[])];
         let shot = FrameRange::new(90, 200);
         assert!(face_in_shot(&labels, "ann", shot));
         // Bob's head is in the shot, from behind only: his face is in another.
@@ -2110,6 +2206,16 @@ mod tests {
         assert_eq!(shot_frame(&FrameRange::new(5, 11)), Some(6));
         // No sample at all in a shot of a few frames.
         assert_eq!(shot_frame(&FrameRange::new(7, 11)), None);
+    }
+
+    #[test]
+    fn wilson_leaves_room_where_nothing_was_answered() {
+        // 0 of 28 answered: not "0.00 to 0.00".
+        let (lo, hi) = wilson(0, 28);
+        assert!(lo.abs() < 1e-9 && (hi - 0.1206).abs() < 1e-3, "{lo} {hi}");
+        // The README's 21 right of 24 answered: 0.69 to 0.96.
+        let (lo, hi) = wilson(21, 24);
+        assert!((lo - 0.690).abs() < 2e-3 && (hi - 0.957).abs() < 2e-3, "{lo} {hi}");
     }
 
     #[test]

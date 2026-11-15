@@ -24,9 +24,11 @@ up to $300 a month.
 | 3D, normal | `glintr100` + the per-title fitted space | the anime recipe on cartoon and CGI data | a labelled 3D set exists and the pass is embedder-bound |
 | 3D, Fast | SFace | a small student of the 3D model | the Fast Scan oracle shows a gain on 3D |
 
-Not trained: a body model (the bodies bench holds 84 queries, too few to tell
+Not trained: a body model (the bodies bench held 84 queries, too few to tell
 models apart; ready-made ones come first, on at least 3 titles and 300
-queries).
+queries). Since 2026-11-15 that test exists (`bench/bodies`, "The test set";
+row 26 of `DECISIONS.md`): 611 queries on five tuning titles, one of them
+live action, so a live-action model still waits for a second such title.
 
 Two slots that are not about identity were added on 2026-11-12; rows 5 and 6
 of `DECISIONS.md` hold their labels, checks and gates:

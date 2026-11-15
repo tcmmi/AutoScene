@@ -1,22 +1,21 @@
 pool	key	shot	frame	name	flags	got	score	next	got_other_shots	score	next
 E	jjk_s2e03	6915	6954	riko amanai		-			-		
-E	jjk_s2e03	10834	10848	suguru geto		-			-		
+E	jjk_s2e03	10834	10848	suguru geto	shown	-			-		
 E	jjk_s2e03	16514	16596	satoru gojo		-			-		
-E	jjk_s2e03	17043	17142	satoru gojo		-			-		
+E	jjk_s2e03	17043	17142	satoru gojo	shown	-			-		
 E	jjk_s2e03	18868	18918	toji fushiguro		-			-		
 E	jjk_s2e03	21332	21342	satoru gojo		-			-		
 E	jjk_s2e03	23484	23526	toji fushiguro		-			-		
 E	jjk_s2e03	24179	24198	satoru gojo		satoru gojo	0.653	0.397	satoru gojo	0.653	0.397
 E	jjk_s2e03	30419	30474	riko amanai		-			-		
 B	jjk_s2e03	746	768	satoru gojo	cut	-			-		
-B	jjk_s2e03	1837	1950	riko amanai	far,cut	-			-		
-B	jjk_s2e03	3089	3150	riko amanai	far,cut	-			-		
+B	jjk_s2e03	1837	1950	riko amanai	far,cut,bare	-			-		
+B	jjk_s2e03	3089	3150	riko amanai	far,cut,bare	-			-		
 B	jjk_s2e03	9167	9312	suguru geto	far,cut	suguru geto	0.671	0.460	suguru geto	0.671	0.460
 B	jjk_s2e03	9167	9312	misato kuroi	far,cut	-			-		
 B	jjk_s2e03	9825	9918	satoru gojo	far,cut	satoru gojo	0.700	0.283	satoru gojo	0.700	0.283
-B	jjk_s2e03	11759	11808	satoru gojo	cut	satoru gojo	0.700	0.363	satoru gojo	0.700	0.363
 B	jjk_s2e03	11759	11808	misato kuroi	cut	-			-		
-B	jjk_s2e03	12636	12636	riko amanai	cut	-			-		
+B	jjk_s2e03	11759	11808	satoru gojo	cut	satoru gojo	0.700	0.363	satoru gojo	0.700	0.363
 B	jjk_s2e03	12636	12684	riko amanai	cut	-			-		
 B	jjk_s2e03	14707	14742	suguru geto	cut	-			-		
 B	jjk_s2e03	15597	15642	satoru gojo	cut	-			-		
@@ -34,14 +33,14 @@ B	jjk_s2e03	22600	22638	toji fushiguro	cut	-			-
 B	jjk_s2e03	22843	22914	toji fushiguro	far,cut	-			-		
 B	jjk_s2e03	23072	23118	satoru gojo	cut	-			-		
 B	jjk_s2e03	24605	24654	suguru geto	far,cut	-			-		
-B	jjk_s2e03	25929	26004	riko amanai	cut	-			-		
 B	jjk_s2e03	25929	26004	suguru geto	cut	-			-		
+B	jjk_s2e03	25929	26004	riko amanai	cut	-			-		
 B	jjk_s2e03	26358	26424	suguru geto	cut	-			-		
-B	jjk_s2e03	29087	29136	riko amanai	cut	-			-		
 B	jjk_s2e03	29087	29136	misato kuroi	far,cut	-			-		
+B	jjk_s2e03	29087	29136	riko amanai	cut	-			-		
 B	jjk_s2e03	30419	30462	riko amanai	cut	-			-		
 B	jjk_s2e03	30585	30672	suguru geto	cut	-			-		
-B	jjk_s2e03	31000	31038	toji fushiguro	cut	-			-		
+B	jjk_s2e03	31000	31038	toji fushiguro	cut,bare	-			-		
 N	jjk_s2e03	7372	7440	?	face	-			-		
 N	jjk_s2e03	7473	7494	?	face	-			-		
 N	jjk_s2e03	8695	8796	?	face	-			-		
@@ -53,10 +52,10 @@ N	jjk_s2e03	13282	13356	?	face	-			-
 N	jjk_s2e03	13282	13356	?	face	-			-		
 N	jjk_s2e03	13282	13356	?	face	-			-		
 N	jjk_s2e03	13282	13356	?	face	-			-		
-N	jjk_s2e03	17043	17100	?	face	-			-		
-N	jjk_s2e03	19244	19428	?	face	-			-		
-N	jjk_s2e03	19550	19572	?	face	-			-		
-N	jjk_s2e03	23960	23970	?	face	-			-		
+N	jjk_s2e03	17043	17100	?	face,n	-			-		
+N	jjk_s2e03	19244	19428	?	face,n	-			-		
+N	jjk_s2e03	19550	19572	?	face,n	-			-		
+N	jjk_s2e03	23960	23970	?	face,n	-			-		
 N	jjk_s2e03	28723	28854	?	face	-			-		
 N	jjk_s2e03	29545	29592	?	face	-			-		
 N	jjk_s2e03	29545	29592	?	face	-			-		
@@ -65,22 +64,19 @@ E	jjk_s2e04	5457	5598	toji fushiguro		suguru geto	0.774	0.417	suguru geto	0.774	
 E	jjk_s2e04	5962	6072	toji fushiguro		-			-		
 E	jjk_s2e04	6181	6246	toji fushiguro		-			-		
 E	jjk_s2e04	6941	6948	suguru geto		-			-		
-E	jjk_s2e04	10032	10068	toji fushiguro		-			-		
+E	jjk_s2e04	10032	10068	toji fushiguro	shown	-			-		
 E	jjk_s2e04	10425	10584	toji fushiguro		suguru geto	0.705	0.539	suguru geto	0.705	0.539
 E	jjk_s2e04	13492	13518	shigeru sonoda		-			-		
 E	jjk_s2e04	15362	15480	shigeru sonoda		-			-		
 E	jjk_s2e04	20417	20430	toji fushiguro		-			-		
 E	jjk_s2e04	21860	21894	toji fushiguro		-			-		
 B	jjk_s2e04	134	198	riko amanai	cut	-			-		
-B	jjk_s2e04	134	210	riko amanai	cut	-			-		
 B	jjk_s2e04	562	600	suguru geto	far,cut	-			-		
-B	jjk_s2e04	1045	1110	suguru geto		-			-		
-B	jjk_s2e04	1045	1140	suguru geto	far	-			-		
-B	jjk_s2e04	1045	1140	suguru geto	far	-			-		
-B	jjk_s2e04	1256	1284	suguru geto	cut	-			-		
+B	jjk_s2e04	1045	1140	suguru geto	bare	-			-		
+B	jjk_s2e04	1256	1284	suguru geto	cut,bare	-			-		
 B	jjk_s2e04	1385	1440	suguru geto	own	-			-		
 B	jjk_s2e04	1455	1500	suguru geto	cut	-			-		
-B	jjk_s2e04	4143	4176	suguru geto	far,cut	-			-		
+B	jjk_s2e04	4143	4176	suguru geto	far,cut,bare	-			-		
 B	jjk_s2e04	4309	4350	suguru geto	far,cut	-			-		
 B	jjk_s2e04	4707	4752	suguru geto	far,cut	-			-		
 B	jjk_s2e04	4872	4896	suguru geto	cut	-			-		
@@ -105,19 +101,18 @@ B	jjk_s2e04	21291	21306	toji fushiguro	cut	-			-
 B	jjk_s2e04	21580	21636	toji fushiguro	cut	-			-		
 B	jjk_s2e04	25142	25176	satoru gojo	far,cut	-			-		
 B	jjk_s2e04	31053	31140	suguru geto	cut	-			-		
-B	jjk_s2e04	31053	31116	suguru geto	far,cut	-			-		
 B	jjk_s2e04	33169	33258	satoru gojo	cut	-			-		
 B	jjk_s2e04	33475	33516	satoru gojo	cut	-			-		
 B	jjk_s2e04	33475	33516	suguru geto	far,cut	-			-		
 B	jjk_s2e04	33883	33966	suguru geto	cut	-			-		
-N	jjk_s2e04	1045	1140	?	face	-			-		
-N	jjk_s2e04	8474	8520	?	face	-			-		
+N	jjk_s2e04	1045	1140	?	face,n	-			-		
+N	jjk_s2e04	8474	8520	?	face,n	-			-		
 N	jjk_s2e04	9580	9618	?	face	-			-		
-N	jjk_s2e04	11018	11058	?	face	-			-		
+N	jjk_s2e04	11018	11058	?	face,n	-			-		
 N	jjk_s2e04	12340	12354	?	face	-			-		
-N	jjk_s2e04	19488	19632	?	face	-			-		
-N	jjk_s2e04	22488	22506	?	face	-			-		
-N	jjk_s2e04	25322	25464	?	face	-			-		
+N	jjk_s2e04	19488	19632	?	face,n	-			-		
+N	jjk_s2e04	22488	22506	?	face,n	-			-		
+N	jjk_s2e04	25322	25464	?	face,n	-			-		
 N	jjk_s2e04	27481	27546	?	face	-			-		
 N	jjk_s2e04	31415	31494	?	face	-			-		
 N	jjk_s2e04	31415	31506	?	face	-			-		
@@ -129,6 +124,6 @@ N	jjk_s2e04	32689	32778	?	face	-			-
 N	jjk_s2e04	32689	32790	?	face	-			-		
 N	jjk_s2e04	32689	32820	?	face	-			-		
 N	jjk_s2e04	32689	32826	?	face	-			-		
-N	jjk_s2e04	32965	33048	?	face	-			-		
-N	jjk_s2e04	32965	33150	?	face	-			-		
+N	jjk_s2e04	32965	33048	?	face,n	-			-		
+N	jjk_s2e04	32965	33150	?	face,n	-			-		
 N	jjk_s2e04	33883	33954	?	face	-			-		

@@ -1,22 +1,22 @@
 pool	key	shot	frame	name	flags	got	score	next	got_other_shots	score	next
 E	bb	1447	1524	walter		-			-		
-E	bb	1820	1908	walter		-			-		
+E	bb	1820	1908	walter	shown	-			-		
 E	bb	2215	2292	walter		walter	0.655	-1.000	walter	0.655	-1.000
 E	bb	2307	2340	walter		-			-		
-E	bb	2418	2544	walter		-			-		
-E	bb	2759	2952	walter		-			-		
+E	bb	2418	2544	walter	shown	-			-		
+E	bb	2759	2952	walter	shown	-			-		
 E	bb	7703	7770	skyler		-			-		
 E	bb	9835	10230	walter		-			-		
 E	bb	11212	11352	walter		-			-		
-E	bb	13457	13728	walter		-			-		
+E	bb	13457	13728	walter	shown	-			-		
 E	bb	14051	14112	bogdan		-			-		
 E	bb	14353	14424	walter		-			-		
-E	bb	14431	14448	walter		-			-		
+E	bb	14431	14448	walter	shown	-			-		
 E	bb	14921	15090	walter		-			-		
-E	bb	15671	16008	marie		-			-		
+E	bb	15671	16008	marie	shown	-			-		
 E	bb	16772	16830	hank		-			-		
 E	bb	16772	16824	waltjr		-			-		
-E	bb	17578	17712	denim		hank	0.748	0.341	hank	0.748	0.341
+E	bb	17578	17712	denim	shown	hank	0.748	0.341	hank	0.748	0.341
 E	bb	17740	17754	skyler		-			-		
 E	bb	18127	18222	walter		-			-		
 E	bb	18283	18384	mustache		mustache	0.732	0.485	mustache	0.732	0.485
@@ -28,17 +28,17 @@ E	bb	28249	28290	walter		-			-
 E	bb	28249	28656	skyler		-			-		
 E	bb	30571	30732	walter		-			-		
 E	bb	34377	34452	hank		-			-		
-E	bb	35981	35994	emilio		-			-		
+E	bb	35981	35994	emilio	shown	-			-		
 E	bb	36865	36966	gomez		-			-		
 E	bb	37459	37602	walter		-			-		
 E	bb	38025	38040	jesse		-			-		
-E	bb	38447	38466	walter		-			-		
+E	bb	38447	38466	walter	shown	-			-		
 E	bb	43406	43422	marie		-			-		
 E	bb	45581	45642	walter		-			-		
 E	bb	46635	46776	jesse		-			-		
 E	bb	47813	47892	jesse		jesse	0.818	0.300	jesse	0.818	0.300
-E	bb	47957	48066	jesse		-			-		
-E	bb	48496	48588	jesse		jesse	0.780	0.235	jesse	0.780	0.235
+E	bb	47957	48066	jesse	shown	-			-		
+E	bb	48496	48588	jesse	shown	jesse	0.780	0.235	jesse	0.780	0.235
 E	bb	51280	51354	walter		-			-		
 E	bb	51891	51930	walter		-			-		
 E	bb	52180	52248	walter		walter	0.683	0.330	walter	0.683	0.330
@@ -50,26 +50,26 @@ E	bb	54362	54426	skyler		-			-
 E	bb	54574	54744	walter		-			-		
 E	bb	54990	55074	skyler		skyler	0.709	0.458	skyler	0.709	0.458
 E	bb	56734	56904	walter		walter	0.838	0.568	walter	0.838	0.460
-E	bb	57005	57024	skyler		skyler	0.941	0.564	skyler	0.941	0.564
+E	bb	57005	57024	skyler	shown	skyler	0.941	0.564	skyler	0.941	0.564
 E	bb	57686	57798	walter		-			-		
 E	bb	58136	58236	walter		-			-		
-E	bb	58400	58422	jesse		jesse	0.653	0.310	jesse	0.653	0.310
+E	bb	58400	58422	jesse	shown	jesse	0.653	0.310	jesse	0.653	0.310
 E	bb	59071	59202	walter		-			-		
 E	bb	61444	61500	jesse		-			-		
 E	bb	62286	62430	jesse		-			-		
-E	bb	63493	63636	jesse		-			-		
+E	bb	63493	63636	jesse	shown	-			-		
 E	bb	63647	63702	krazy8		-			-		
 E	bb	64246	64272	krazy8		-			-		
 E	bb	64456	64536	krazy8		-			-		
 E	bb	64659	64698	krazy8		-			-		
 E	bb	66630	66756	walter		-			-		
-E	bb	67740	67788	krazy8		krazy8	0.828	0.374	krazy8	0.828	0.374
+E	bb	67740	67788	krazy8	shown	krazy8	0.828	0.374	krazy8	0.828	0.374
 E	bb	68508	68526	walter		walter	0.707	0.336	walter	0.707	0.336
 E	bb	72360	72648	walter		walter	0.691	0.508	walter	0.691	0.508
-E	bb	73048	73068	walter		walter	0.666	0.367	walter	0.666	0.367
+E	bb	73048	73068	walter	shown	walter	0.666	0.367	walter	0.666	0.367
 E	bb	73163	73188	walter		-			-		
 E	bb	73263	73326	walter		-			-		
-E	bb	75729	75924	walter		-			-		
+E	bb	75729	75924	walter	shown	-			-		
 E	bb	77297	77382	jesse		-			-		
 E	bb	77978	78036	jesse		-			-		
 E	bb	78484	78510	walter		jesse	0.919	0.214	jesse	0.797	0.214
@@ -83,7 +83,7 @@ N	bb	10474	10542	?	face	-			-
 N	bb	10607	10656	?	face	-			-		
 N	bb	10607	10656	?	face	-			-		
 N	bb	11212	11304	?	face	-			-		
-N	bb	11805	11850	?	face	~blonde_student	0.824	0.385	~blonde_student	0.824	0.385
+N	bb	11805	11850	?	face	blonde_student	0.824	0.385	blonde_student	0.824	0.385
 N	bb	12616	12732	?	face	-			-		
 N	bb	13182	13320	?	face	-			-		
 N	bb	14353	14376	?	face	-			-		
@@ -148,9 +148,9 @@ H	bb	623	648	walter	clip	-			-
 H	bb	702	714	jesse	clip	-			-		
 H	bb	882	888	walter	clip	-			-		
 N	bb	900	924	?	n	-			-		
-M	bb	2307	2364	walter	clip	-			-		
-M	bb	2665	2712	walter	clip	-			-		
-M	bb	3405	3492	walter	clip	-			-		
+M	bb	2307	2364	walter	now,clip	-			-		
+M	bb	2665	2712	walter	now,on,clip	-			-		
+M	bb	3405	3492	walter	now,on,clip	-			-		
 H	bb	4662	4698	walter	clip	-			-		
 N	bb	5561	5766	?	n,clip	-			-		
 N	bb	6711	6786	?	n	-			-		
@@ -218,38 +218,38 @@ N	bb	14353	14370	?	e,clip	-			-
 N	bb	14431	14532	?	e,clip	-			-		
 H	bb	15171	15186	walter		-			-		
 H	bb	15240	15258	walter		walter	0.697	0.493	walter	0.697	0.493
-M	bb	15416	15432	waltjr	clip	-			-		
-M	bb	15416	15432	skyler	clip	-			-		
-M	bb	16293	16350	walter	clip	-			-		
-M	bb	16430	16458	hank	clip	-			-		
-M	bb	16430	16482	waltjr	clip	-			-		
+M	bb	15416	15432	waltjr	now,on,clip	-			-		
+M	bb	15416	15432	skyler	now,clip	-			-		
+M	bb	16293	16350	walter	now,on,clip	-			-		
+M	bb	16430	16458	hank	now,on,clip	-			-		
+M	bb	16430	16482	waltjr	now,clip	-			-		
 N	bb	16530	16548	?	e,clip	-			-		
 H	bb	17578	17664	skyler	clip	-			-		
 N	bb	17740	17796	?	e,clip	-			-		
 N	bb	18057	18096	?	e,clip	-			-		
 H	bb	18127	18186	skyler	clip	-			-		
-M	bb	18525	18540	hank	clip	-			-		
-M	bb	19047	19068	hank	clip	-			-		
-M	bb	19252	19278	waltjr	clip	-			-		
-M	bb	19337	19356	marie	clip	-			-		
-M	bb	19337	19356	hank	clip	-			-		
+M	bb	18525	18540	hank	now,on,clip	-			-		
+M	bb	19047	19068	hank	now,on,clip	-			-		
+M	bb	19252	19278	waltjr	now,on,clip	-			-		
+M	bb	19337	19356	marie	now,on,clip	-			-		
+M	bb	19337	19356	hank	now,on,clip	-			-		
 N	bb	19337	19356	?	e	-			-		
 H	bb	19372	19428	skyler		-			-		
 H	bb	23302	23388	walter	clip	-			-		
 N	bb	23998	24024	?	e,clip	-			-		
-M	bb	24456	24474	walter	clip	-			-		
+M	bb	24456	24474	walter	now,on,clip	-			-		
 N	bb	24456	24558	?	e,clip	~paramedic	0.787	0.471	~paramedic	0.787	0.471
-M	bb	24456	24486	walter	clip	-			-		
+M	bb	24456	24486	walter	now,on,clip	-			-		
 H	bb	24663	24762	walter		-			-		
-M	bb	24783	24846	walter	clip	-			-		
+M	bb	24783	24846	walter	now,on,clip	-			-		
 H	bb	24886	24924	walter		-			-		
 H	bb	25415	25452	walter	clip	-			-		
 N	bb	29681	29700	?	e,clip	-			-		
 N	bb	30571	30756	?	e,clip	-			-		
 N	bb	30571	30768	?	e,clip	-			-		
-M	bb	32822	33042	gomez	clip	-			-		
-M	bb	33346	33408	walter	clip	-			-		
-M	bb	33911	33942	gomez	clip	-			-		
+M	bb	32822	33042	gomez	now,on,clip	-			-		
+M	bb	33346	33408	walter	now,on,clip	-			-		
+M	bb	33911	33942	gomez	now,on,clip	-			-		
 H	bb	34121	34134	hank	clip	-			-		
 N	bb	34176	34182	?	n	-			-		
 N	bb	34351	34368	?	e,clip	-			-		
@@ -266,18 +266,18 @@ N	bb	35734	35772	?	e,clip	-			-
 N	bb	35886	35898	?	e,clip	-			-		
 N	bb	35930	35946	?	e,clip	-			-		
 N	bb	36012	36024	?	e,clip	-			-		
-M	bb	36865	36948	walter	clip	-			-		
+M	bb	36865	36948	walter	now,on,clip	-			-		
 H	bb	37703	37728	walter	clip	-			-		
 H	bb	46794	46860	jesse	clip	-			-		
 H	bb	46794	46956	jesse	clip	-			-		
 H	bb	47957	47994	walter	clip	-			-		
-M	bb	48094	48162	walter	clip	-			-		
+M	bb	48094	48162	walter	now,clip	-			-		
 M	bb	49313	49368	walter	clip	-			-		
 H	bb	50257	50310	walter	clip	-			-		
 H	bb	51044	51072	walter	clip	walter	0.811	0.237	walter	0.811	0.237
 H	bb	51044	51168	walter	clip	-			-		
 H	bb	51280	51348	jesse	clip	-			-		
-M	bb	52118	52170	jesse	clip	-			-		
+M	bb	52118	52170	jesse	now,on,clip	-			-		
 N	bb	55631	55716	?	e,clip	-			-		
 N	bb	55631	55884	?	e,clip	-			-		
 N	bb	56051	56076	?	e,clip	-			-		
@@ -299,13 +299,13 @@ H	bb	61911	61950	walter		-			-
 H	bb	62116	62148	walter		-			-		
 N	bb	63377	63402	?	n	-			-		
 N	bb	63493	63624	?	n,clip	-			-		
-M	bb	63647	63654	jesse	clip	-			-		
+M	bb	63647	63654	jesse	now,on,clip	-			-		
 N	bb	63721	63738	?	n	-			-		
 H	bb	63821	63858	krazy8	clip	-			-		
 H	bb	63955	64002	krazy8	clip	-			-		
 H	bb	64863	64884	krazy8	clip	krazy8	0.886	0.407	krazy8	0.886	0.407
 H	bb	66097	66150	emilio	clip	-			-		
-M	bb	66097	66150	krazy8	clip	-			-		
+M	bb	66097	66150	krazy8	now,on,clip	-			-		
 H	bb	66161	66174	krazy8	clip	krazy8	0.764	0.532	krazy8	0.764	0.532
 H	bb	66344	66360	krazy8	clip	krazy8	0.781	0.337	krazy8	0.781	0.337
 N	bb	66630	66852	?	n,clip	-			-		
@@ -326,6 +326,6 @@ H	bb	73944	73992	walter	clip	-			-
 H	bb	74241	74256	walter		-			-		
 H	bb	74241	74262	walter		-			-		
 H	bb	74547	74562	walter		-			-		
-M	bb	76752	77022	walter	clip	-			-		
+M	bb	76752	77022	walter	now,on,clip	-			-		
 N	bb	77118	77124	?	e,clip	-			-		
 H	bb	79258	79320	jesse	clip	jesse	0.731	0.429	jesse	0.731	0.429

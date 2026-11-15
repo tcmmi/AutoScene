@@ -19,10 +19,10 @@ E	mir_s1e11	5385	5412	alya cesaire		alya cesaire	0.816	0.444	alya cesaire	0.816	
 E	mir_s1e11	5691	5796	marinette dupain-cheng		-			-		
 E	mir_s1e11	5867	5982	ivan bruel		-			juleka couffaine	0.723	0.498
 E	mir_s1e11	5867	5892	alya cesaire		-			-		
-E	mir_s1e11	6023	6210	chloe bourgeois		-			-		
+E	mir_s1e11	6023	6210	chloe bourgeois	shown	-			-		
 E	mir_s1e11	6849	6924	chloe bourgeois		adrien agreste	0.906	0.427	adrien agreste	0.757	0.427
 E	mir_s1e11	7558	7812	juleka couffaine		-			-		
-E	mir_s1e11	7558	7698	marinette dupain-cheng		-			-		
+E	mir_s1e11	7558	7698	marinette dupain-cheng	shown	-			-		
 E	mir_s1e11	7558	7962	rose lavillant		rose lavillant	0.886	0.493	rose lavillant	0.689	0.493
 E	mir_s1e11	9166	9198	marinette dupain-cheng		-			-		
 E	mir_s1e11	9477	9648	marinette dupain-cheng		-			-		
@@ -32,17 +32,17 @@ E	mir_s1e11	10548	10686	chloe bourgeois		chloe bourgeois	0.874	0.574	chloe bourg
 E	mir_s1e11	10774	10872	chloe bourgeois		marinette dupain-cheng	0.784	0.364	marinette dupain-cheng	0.735	0.364
 E	mir_s1e11	10774	10842	nino lahiffe		alya cesaire	0.883	0.621	alya cesaire	0.883	0.621
 E	mir_s1e11	11416	11562	ivan bruel		ivan bruel	0.808	0.327	ivan bruel	0.808	0.327
-E	mir_s1e11	11416	11568	chloe bourgeois		chloe bourgeois	0.874	0.531	chloe bourgeois	0.874	0.531
+E	mir_s1e11	11416	11568	chloe bourgeois	shown	chloe bourgeois	0.874	0.531	chloe bourgeois	0.874	0.531
 E	mir_s1e11	11745	11790	alix kubdel		-			alix kubdel	0.656	0.326
 E	mir_s1e11	11745	11886	ivan bruel		-			-		
 E	mir_s1e11	11745	11790	marinette dupain-cheng		-			-		
-E	mir_s1e11	12189	12276	adrien agreste		adrien agreste	0.751	0.404	adrien agreste	0.751	0.404
+E	mir_s1e11	12189	12276	adrien agreste	shown	adrien agreste	0.751	0.404	adrien agreste	0.751	0.404
 E	mir_s1e11	12189	12198	alya cesaire		-			-		
 E	mir_s1e11	12189	12252	marinette dupain-cheng		-			-		
 E	mir_s1e11	13431	13470	marinette dupain-cheng		marinette dupain-cheng	0.650	0.453	marinette dupain-cheng	0.650	0.453
 E	mir_s1e11	13978	13986	adrien agreste		-			-		
 E	mir_s1e11	14267	14286	juleka couffaine		juleka couffaine	0.892	0.517	juleka couffaine	0.892	0.517
-E	mir_s1e11	15299	15378	marinette dupain-cheng		marinette dupain-cheng	0.672	0.494	marinette dupain-cheng	0.672	0.494
+E	mir_s1e11	15299	15378	marinette dupain-cheng	shown	marinette dupain-cheng	0.672	0.494	marinette dupain-cheng	0.672	0.494
 E	mir_s1e11	15723	15798	chloe bourgeois		nino lahiffe	0.804	0.490	nino lahiffe	0.804	0.490
 E	mir_s1e11	15868	15942	nathaniel kurtzberg		nathaniel kurtzberg	0.745	0.384	nathaniel kurtzberg	0.745	0.384
 E	mir_s1e11	15868	15888	alya cesaire		-			-		
@@ -50,12 +50,12 @@ E	mir_s1e11	15868	15918	juleka couffaine		-			-
 E	mir_s1e11	15868	15882	rose lavillant		rose lavillant	0.664	0.449	rose lavillant	0.664	0.449
 E	mir_s1e11	16237	16290	adrien agreste		-			-		
 E	mir_s1e11	16681	16704	adrien agreste		-			-		
-E	mir_s1e11	16994	17064	adrien agreste		-			-		
-E	mir_s1e11	17141	17166	CAT_NOIR		-			-		
+E	mir_s1e11	16994	17064	adrien agreste	shown	-			-		
+E	mir_s1e11	17141	17166	CAT_NOIR	shown	-			-		
 E	mir_s1e11	17208	17256	CAT_NOIR		-			-		
 E	mir_s1e11	17517	17538	marinette dupain-cheng		marinette dupain-cheng	0.737	0.452	marinette dupain-cheng	0.737	0.452
 E	mir_s1e11	17714	17730	marinette dupain-cheng		-			-		
-E	mir_s1e11	17862	18108	LADYBUG		-			-		
+E	mir_s1e11	17862	18108	LADYBUG	shown	-			-		
 E	mir_s1e11	18250	18270	alya cesaire		alya cesaire	0.659	0.505	alya cesaire	0.659	0.505
 E	mir_s1e11	18645	18744	juleka couffaine		-			-		
 E	mir_s1e11	18645	18780	chloe bourgeois		-			-		
@@ -70,14 +70,14 @@ E	mir_s1e11	21664	21678	nino lahiffe		nino lahiffe	0.691	0.423	nino lahiffe	0.69
 E	mir_s1e11	21795	21828	CAT_NOIR		-			-		
 E	mir_s1e11	21929	21948	alix kubdel		-			-		
 E	mir_s1e11	22278	22374	CAT_NOIR		-			-		
-E	mir_s1e11	22923	22944	LADYBUG		LADYBUG	0.671	0.409	LADYBUG	0.671	0.409
+E	mir_s1e11	22923	22944	LADYBUG	shown	LADYBUG	0.671	0.409	LADYBUG	0.671	0.409
 E	mir_s1e11	22923	22992	CAT_NOIR		-			-		
 E	mir_s1e11	23468	23532	ivan bruel		-			-		
 E	mir_s1e11	24797	24822	rose lavillant		rose lavillant	0.722	0.401	rose lavillant	0.722	0.401
 E	mir_s1e11	25654	25680	CAT_NOIR		-			-		
 E	mir_s1e11	25654	25722	LADYBUG		LADYBUG	0.765	0.434	LADYBUG	0.765	0.434
-E	mir_s1e11	25831	25878	nino lahiffe		-			-		
-E	mir_s1e11	25831	25866	ivan bruel		-			-		
+E	mir_s1e11	25831	25878	nino lahiffe	shown	-			-		
+E	mir_s1e11	25831	25866	ivan bruel	shown	-			-		
 E	mir_s1e11	26879	26910	rose lavillant		-			-		
 E	mir_s1e11	27577	27612	LADYBUG		-			-		
 E	mir_s1e11	27826	27954	CAT_NOIR		-			-		
@@ -94,24 +94,24 @@ E	mir_s1e11	30305	30336	LADYBUG		-			-
 E	mir_s1e11	30614	30720	CAT_NOIR		-			-		
 N	mir_s1e11	31245	31272	?	face	-			-		
 N	mir_s1e11	31245	31272	?	face	-			-		
-M	mir_s1e11	768	876	mylene haprele	clip	mylene haprele	0.766	0.544	mylene haprele	0.766	0.544
+M	mir_s1e11	768	876	mylene haprele	now,clip	mylene haprele	0.766	0.544	mylene haprele	0.766	0.544
 M	mir_s1e11	768	1098	mylene haprele	clip	mylene haprele	0.826	0.485	mylene haprele	0.826	0.485
 H	mir_s1e11	1428	1518	alix kubdel	clip	-			-		
 H	mir_s1e11	1887	1956	nino lahiffe	clip	-			-		
 H	mir_s1e11	3041	3072	mylene haprele	clip	-			-		
 H	mir_s1e11	3219	3336	ivan bruel	clip	ivan bruel	0.829	0.234	ivan bruel	0.829	0.234
 H	mir_s1e11	4894	4932	HAWK_MOTH	clip	-			-		
-M	mir_s1e11	6023	6060	sabrina raincomprix	clip	-			-		
-M	mir_s1e11	6263	6264	max kante	clip	-			-		
+M	mir_s1e11	6023	6060	sabrina raincomprix	now,on,clip	-			-		
+M	mir_s1e11	6263	6264	max kante	now,on,clip	-			-		
 H	mir_s1e11	7558	7854	ivan bruel		-			-		
-M	mir_s1e11	8206	8262	mylene haprele	clip	-			-		
+M	mir_s1e11	8206	8262	mylene haprele	now,clip	-			-		
 H	mir_s1e11	9220	9258	marinette dupain-cheng	clip	marinette dupain-cheng	0.734	0.486	marinette dupain-cheng	0.734	0.486
-M	mir_s1e11	9477	9546	alya cesaire		-			-		
+M	mir_s1e11	9477	9546	alya cesaire	now	-			-		
 H	mir_s1e11	10548	10626	marinette dupain-cheng	clip	marinette dupain-cheng	0.823	0.541	marinette dupain-cheng	0.823	0.541
 H	mir_s1e11	10548	10638	alix kubdel	clip	-			-		
-M	mir_s1e11	10700	10758	adrien agreste	clip	-			-		
+M	mir_s1e11	10700	10758	adrien agreste	now,on,clip	-			-		
 M	mir_s1e11	10774	10842	nino lahiffe	clip	-			-		
-M	mir_s1e11	12189	12258	nathaniel kurtzberg	clip	-			-		
+M	mir_s1e11	12189	12258	nathaniel kurtzberg	now,on,clip	-			-		
 H	mir_s1e11	12805	12840	ivan bruel		-			-		
 N	mir_s1e11	13486	13500	?	n,clip	-			-		
 M	mir_s1e11	14323	14604	adrien agreste	clip	adrien agreste	0.709	0.420	adrien agreste	0.709	0.420
@@ -120,19 +120,19 @@ H	mir_s1e11	15259	15282	nathaniel kurtzberg	clip	-			-
 H	mir_s1e11	15259	15282	adrien agreste	clip	-			-		
 H	mir_s1e11	15259	15282	marinette dupain-cheng	clip	marinette dupain-cheng	0.768	0.526	marinette dupain-cheng	0.768	0.526
 H	mir_s1e11	15259	15282	alix kubdel	clip	-			-		
-M	mir_s1e11	15395	15396	nathaniel kurtzberg	clip	-			-		
+M	mir_s1e11	15395	15396	nathaniel kurtzberg	now,on,clip	-			-		
 H	mir_s1e11	15468	15486	marinette dupain-cheng	clip	marinette dupain-cheng	0.747	0.507	marinette dupain-cheng	0.747	0.507
-M	mir_s1e11	15667	15684	chloe bourgeois	clip	-			-		
+M	mir_s1e11	15667	15684	chloe bourgeois	now,on,clip	-			-		
 H	mir_s1e11	15695	15696	marinette dupain-cheng	clip	-			-		
 H	mir_s1e11	17444	17496	alya cesaire	clip	-			-		
 H	mir_s1e11	17517	17538	alix kubdel	clip	-			-		
 H	mir_s1e11	17649	17682	marinette dupain-cheng	clip	-			-		
 M	mir_s1e11	18155	18180	chloe bourgeois		-			-		
 N	mir_s1e11	18250	18378	?	n	-			-		
-M	mir_s1e11	18804	18984	nino lahiffe	clip	-			-		
-M	mir_s1e11	19059	19110	sabrina raincomprix	clip	-			-		
+M	mir_s1e11	18804	18984	nino lahiffe	now,on,clip	-			-		
+M	mir_s1e11	19059	19110	sabrina raincomprix	now,on,clip	-			-		
 H	mir_s1e11	19184	19194	LADYBUG	clip	-			-		
-M	mir_s1e11	19374	19446	CAT_NOIR	clip	-			-		
+M	mir_s1e11	19374	19446	CAT_NOIR	now,clip	-			-		
 H	mir_s1e11	19513	19542	chloe bourgeois	clip	-			-		
 N	mir_s1e11	21053	21078	?	n	-			-		
 H	mir_s1e11	21749	21774	LADYBUG	clip	LADYBUG	0.747	0.393	LADYBUG	0.747	0.393
@@ -144,7 +144,7 @@ N	mir_s1e11	22145	22152	?	e	-			-
 H	mir_s1e11	22618	22632	CAT_NOIR	clip	-			-		
 N	mir_s1e11	22618	22644	?	e,clip	-			-		
 N	mir_s1e11	22766	22800	?	e,clip	-			-		
-M	mir_s1e11	22827	22842	ivan bruel	clip	-			-		
+M	mir_s1e11	22827	22842	ivan bruel	now,on,clip	-			-		
 N	mir_s1e11	23237	23244	?	e,clip	-			-		
 N	mir_s1e11	23334	23340	?	e,clip	-			-		
 H	mir_s1e11	23334	23346	ivan bruel	clip	ivan bruel	0.716	0.263	ivan bruel	0.716	0.263
@@ -164,11 +164,11 @@ H	mir_s1e11	27468	27486	LADYBUG	clip	-			-
 N	mir_s1e11	28075	28086	?	e	-			-		
 N	mir_s1e11	28151	28200	?	e,clip	-			-		
 N	mir_s1e11	28334	28356	?	e	-			-		
-M	mir_s1e11	28564	28686	ivan bruel	clip	-			-		
+M	mir_s1e11	28564	28686	ivan bruel	now,on,clip	-			-		
 H	mir_s1e11	28703	28794	LADYBUG	clip	LADYBUG	0.678	0.377	LADYBUG	0.678	0.377
 N	mir_s1e11	28835	28842	?	n,clip	-			-		
 N	mir_s1e11	28887	28932	?	n,clip	-			-		
-M	mir_s1e11	28887	28932	CAT_NOIR	clip	-			-		
+M	mir_s1e11	28887	28932	CAT_NOIR	now,on,clip	-			-		
 H	mir_s1e11	29180	29196	nino lahiffe		-			-		
 H	mir_s1e11	29214	29220	alya cesaire	clip	-			-		
 H	mir_s1e11	29321	29334	ivan bruel		-			-		
@@ -185,19 +185,19 @@ E	mir_s5e21	4416	4482	marinette dupain-cheng		marinette dupain-cheng	0.819	0.487
 E	mir_s5e21	4508	4518	caline bustier		-			-		
 E	mir_s5e21	6234	6258	lila rossi		-			-		
 E	mir_s5e21	6683	6732	max kante		max kante	0.776	0.565	max kante	0.776	0.565
-E	mir_s5e21	6683	6732	juleka couffaine		-			-		
+E	mir_s5e21	6683	6732	juleka couffaine	shown	-			-		
 E	mir_s5e21	6746	6882	mr damocles		-			-		
-E	mir_s5e21	8626	8640	rose lavillant		-			-		
+E	mir_s5e21	8626	8640	rose lavillant	shown	-			-		
 E	mir_s5e21	9593	9648	lila rossi		-			-		
-E	mir_s5e21	9593	9612	chloe bourgeois		-			-		
+E	mir_s5e21	9593	9612	chloe bourgeois	shown	-			-		
 E	mir_s5e21	10310	10368	sabrina raincomprix		-			-		
-E	mir_s5e21	11162	11214	mr damocles		mr damocles	0.817	0.656	mr damocles	0.817	0.656
+E	mir_s5e21	11162	11214	mr damocles	shown	mr damocles	0.817	0.656	mr damocles	0.817	0.656
 E	mir_s5e21	12666	12708	juleka couffaine		-			-		
 E	mir_s5e21	13528	13590	juleka couffaine		-			-		
 E	mir_s5e21	15072	15084	rose lavillant		rose lavillant	0.732	0.551	rose lavillant	0.732	0.551
 E	mir_s5e21	16118	16176	LADYBUG		-			-		
-E	mir_s5e21	16667	16704	CAT_NOIR		-			-		
-E	mir_s5e21	17777	18012	LADYBUG		-			-		
+E	mir_s5e21	16667	16704	CAT_NOIR	shown	-			-		
+E	mir_s5e21	17777	18012	LADYBUG	shown	-			-		
 E	mir_s5e21	18027	18048	LADYBUG		-			-		
 E	mir_s5e21	18729	18762	nino lahiffe		-			-		
 E	mir_s5e21	19175	19350	marinette dupain-cheng		-			-		
@@ -206,18 +206,18 @@ E	mir_s5e21	19175	19350	alya cesaire		-			-
 E	mir_s5e21	19851	19938	lila rossi		marinette dupain-cheng	0.734	0.523	marinette dupain-cheng	0.734	0.523
 E	mir_s5e21	20757	20814	sabrina raincomprix		sabrina raincomprix	0.802	0.473	sabrina raincomprix	0.802	0.473
 E	mir_s5e21	20836	20850	sabrina raincomprix		sabrina raincomprix	0.834	0.529	sabrina raincomprix	0.834	0.521
-E	mir_s5e21	21698	21708	sabrina raincomprix		sabrina raincomprix	0.675	0.431	sabrina raincomprix	0.675	0.431
+E	mir_s5e21	21698	21708	sabrina raincomprix	shown	sabrina raincomprix	0.675	0.431	sabrina raincomprix	0.675	0.431
 E	mir_s5e21	22354	22368	lila rossi		-			-		
 E	mir_s5e21	22570	22710	chloe bourgeois		-			-		
 E	mir_s5e21	22930	22938	lila rossi		-			-		
 E	mir_s5e21	22930	23040	chloe bourgeois		-			-		
 E	mir_s5e21	24014	24042	marinette dupain-cheng		-			-		
-E	mir_s5e21	24074	24084	marinette dupain-cheng		-			-		
+E	mir_s5e21	24074	24084	marinette dupain-cheng	shown	-			-		
 E	mir_s5e21	24074	24096	mr damocles		-			-		
 E	mir_s5e21	24116	24144	marinette dupain-cheng		-			-		
 E	mir_s5e21	26042	26082	mr damocles		-			-		
 E	mir_s5e21	26397	26460	mr damocles		-			-		
-E	mir_s5e21	26483	26544	chloe bourgeois		-			-		
+E	mir_s5e21	26483	26544	chloe bourgeois	shown	-			-		
 E	mir_s5e21	26656	26676	mr damocles		-			-		
 E	mir_s5e21	27049	27072	lila rossi		-			-		
 E	mir_s5e21	27084	27096	nathaniel kurtzberg		-			-		
@@ -230,31 +230,31 @@ E	mir_s5e21	27716	27798	ivan bruel		-			-
 E	mir_s5e21	27716	27750	mr damocles		-			-		
 E	mir_s5e21	28010	28146	mr damocles		-			-		
 E	mir_s5e21	28506	28542	marinette dupain-cheng		marinette dupain-cheng	0.731	0.547	marinette dupain-cheng	0.731	0.547
-E	mir_s5e21	28506	28638	mr damocles	mixed	mr damocles	0.793	0.481	mr damocles	0.793	0.481
+E	mir_s5e21	28506	28638	mr damocles	mixed,shown	mr damocles	0.793	0.481	mr damocles	0.793	0.481
 E	mir_s5e21	28506	28716	max kante		-			-		
-E	mir_s5e21	29106	29184	rose lavillant		-			-		
+E	mir_s5e21	29106	29184	rose lavillant	shown	-			-		
 E	mir_s5e21	29106	29124	caline bustier		ivan bruel	0.757	0.439	ivan bruel	0.757	0.439
 E	mir_s5e21	29106	29244	juleka couffaine		-			-		
 E	mir_s5e21	30247	30306	le chien kim		-			-		
 E	mir_s5e21	30247	30276	caline bustier		-			-		
-E	mir_s5e21	30337	30384	caline bustier		-			-		
+E	mir_s5e21	30337	30384	caline bustier	shown	-			-		
 E	mir_s5e21	30972	31020	mr damocles		-			-		
 E	mir_s5e21	31484	31518	LADYBUG		LADYBUG	0.804	0.500	LADYBUG	0.804	0.500
-N	mir_s5e21	15413	15468	?	face	-			-		
+N	mir_s5e21	15413	15468	?	face,n	-			-		
 N	mir_s5e21	16948	16962	?	face	-			-		
 N	mir_s5e21	18341	18372	?	face	-			-		
 N	mir_s5e21	32746	32784	?	face	-			-		
 N	mir_s5e21	32746	32784	?	face	-			-		
 N	mir_s5e21	32746	32784	?	face	-			-		
 H	mir_s5e21	2521	2544	marinette dupain-cheng	clip	marinette dupain-cheng	0.675	0.523	marinette dupain-cheng	0.675	0.523
-M	mir_s5e21	2563	2682	ivan bruel	clip	-			-		
+M	mir_s5e21	2563	2682	ivan bruel	now,on,clip	-			-		
 H	mir_s5e21	4345	4380	marinette dupain-cheng		-			-		
 H	mir_s5e21	5875	6000	chloe bourgeois		-			-		
-M	mir_s5e21	6528	6552	lila rossi	clip	-			-		
+M	mir_s5e21	6528	6552	lila rossi	now,on,clip	-			-		
 H	mir_s5e21	6906	6930	mr damocles	clip	-			-		
 H	mir_s5e21	7013	7044	ivan bruel	clip	-			-		
 H	mir_s5e21	7508	7536	adrien agreste	clip	rose lavillant	0.801	0.552	rose lavillant	0.801	0.552
-M	mir_s5e21	7508	7542	ivan bruel	clip	-			-		
+M	mir_s5e21	7508	7542	ivan bruel	now,on,clip	-			-		
 H	mir_s5e21	8019	8040	ivan bruel	clip	-			-		
 H	mir_s5e21	8278	8328	mylene haprele	clip	-			-		
 H	mir_s5e21	8278	8328	ivan bruel	clip	-			-		
@@ -285,11 +285,11 @@ H	mir_s5e21	16603	16638	LADYBUG	clip	-			-
 N	mir_s5e21	17373	17394	?	e	-			-		
 N	mir_s5e21	17493	17502	?	e,clip	-			-		
 H	mir_s5e21	17660	17694	LADYBUG	clip	-			-		
-M	mir_s5e21	18457	18546	LADYBUG	clip	-			-		
-M	mir_s5e21	18929	19020	rose lavillant	clip	-			-		
-M	mir_s5e21	20278	20280	chloe bourgeois	clip	-			-		
+M	mir_s5e21	18457	18546	LADYBUG	now,on,clip	-			-		
+M	mir_s5e21	18929	19020	rose lavillant	now,on,clip	-			-		
+M	mir_s5e21	20278	20280	chloe bourgeois	now,on,clip	-			-		
 H	mir_s5e21	21887	21936	adrien agreste	clip	-			-		
-M	mir_s5e21	23463	23520	nathaniel kurtzberg	clip	-			-		
+M	mir_s5e21	23463	23520	nathaniel kurtzberg	now,on,clip	-			-		
 H	mir_s5e21	23633	23646	mr damocles	clip	-			-		
 H	mir_s5e21	23633	23646	marinette dupain-cheng	clip	-			-		
 N	mir_s5e21	24074	24096	?	e,clip	-			-		
@@ -297,25 +297,25 @@ H	mir_s5e21	25654	25674	mr damocles		-			-
 H	mir_s5e21	26107	26124	sabrina raincomprix	clip	-			-		
 H	mir_s5e21	26188	26196	mr damocles	clip	-			-		
 H	mir_s5e21	26609	26640	chloe bourgeois		-			-		
-M	mir_s5e21	26906	26970	lila rossi	clip	-			-		
+M	mir_s5e21	26906	26970	lila rossi	now,on,clip	-			-		
 H	mir_s5e21	26986	27012	nino lahiffe	clip	-			-		
-M	mir_s5e21	26986	27018	ivan bruel	clip	-			-		
+M	mir_s5e21	26986	27018	ivan bruel	now,on,clip	-			-		
 H	mir_s5e21	26986	27018	nino lahiffe	clip	-			-		
 H	mir_s5e21	26986	27018	juleka couffaine	clip	-			-		
-M	mir_s5e21	27084	27096	chloe bourgeois	clip	-			-		
-M	mir_s5e21	27084	27102	ivan bruel	clip	-			-		
-M	mir_s5e21	27439	27450	mr damocles	clip	-			-		
+M	mir_s5e21	27084	27096	chloe bourgeois	now,on,clip	-			-		
+M	mir_s5e21	27084	27102	ivan bruel	now,on,clip	-			-		
+M	mir_s5e21	27439	27450	mr damocles	now,on,clip	-			-		
 H	mir_s5e21	27807	27828	nino lahiffe	clip	-			-		
 H	mir_s5e21	27807	27828	juleka couffaine	clip	-			-		
 H	mir_s5e21	27913	27930	juleka couffaine	clip	-			-		
-M	mir_s5e21	28010	28026	juleka couffaine	clip	-			-		
-M	mir_s5e21	28010	28050	nino lahiffe	clip	-			-		
+M	mir_s5e21	28010	28026	juleka couffaine	now,clip	-			-		
+M	mir_s5e21	28010	28050	nino lahiffe	now,clip	-			-		
 M	mir_s5e21	28010	28050	alya cesaire	clip	-			-		
-M	mir_s5e21	28506	28698	CAT_NOIR	clip	CAT_NOIR	0.782	0.427	CAT_NOIR	0.782	0.427
+M	mir_s5e21	28506	28698	CAT_NOIR	now,clip	CAT_NOIR	0.782	0.427	CAT_NOIR	0.782	0.427
 N	mir_s5e21	28823	28842	?	n	-			-		
 N	mir_s5e21	28823	28848	?	n	-			-		
 H	mir_s5e21	29064	29082	mr damocles	clip	-			-		
-M	mir_s5e21	30060	30078	le chien kim	clip	-			-		
+M	mir_s5e21	30060	30078	le chien kim	now,on,clip	-			-		
 H	mir_s5e21	30444	30456	mr damocles	clip	-			-		
 H	mir_s5e21	30862	30918	mr damocles	clip	-			-		
 H	mir_s5e21	30862	30918	le chien kim	clip	le chien kim	0.667	0.412	le chien kim	0.667	0.412

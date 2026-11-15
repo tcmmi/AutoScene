@@ -51,7 +51,11 @@ impl Item {
         let n = self.insets.len().max(1);
         let (max_w, max_h) = ((CW - 4 - 8 * n) / n, CH - 8);
         let w = (max_h as f32 * bw / bh).round() as usize;
-        if w <= max_w { (w.max(8), max_h) } else { (max_w, ((max_w as f32 * bh / bw).round() as usize).clamp(8, max_h)) }
+        if w <= max_w {
+            (w.max(8), max_h)
+        } else {
+            (max_w, ((max_w as f32 * bh / bw).round() as usize).clamp(8, max_h))
+        }
     }
 }
 

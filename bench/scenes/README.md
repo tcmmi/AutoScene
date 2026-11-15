@@ -618,3 +618,288 @@ scene of theirs" was added, which row 25 did not register.
 - Not answered by any number here: whether a conversation pack should keep
   the shots without a face that lie inside a conversation.
 - Before a port: a second title, and a look by eye at one such pack.
+
+## Conversations on a second title: Prison Break S01E01 (2026-11-15, row 29)
+
+The owner's answer to the question above: a second title first. Prison Break
+S01E01 (584 shots, 40 labelled scenes, 43 min), read from a copy of the
+owner's project: five episodes, the cast grouped over all five, 138 stored
+characters, 53 of them in this episode. The same tool, the same eight sets,
+the same measures. Row 29 fixed all of it, and what counts as the same
+finding, before any label was made.
+
+### Labels made by readers
+
+The episode has no identity labels and no speaker labels, and the file with
+its subtitles is no longer on the PC. Pictures and sound come from the
+project's 960 × 540 proxy, decoded read only.
+
+- **Sound**: `sound_events.py` (YAMNet) scores speech every 0.48 s; a step
+  with 0.5 or more counts as speech heard: 1,376 s of the episode's 2,588 s.
+- **Sheets** (`tools/slot-bench/speak_sheets.py`): every shot as a row of six
+  pictures spread over it (two rows from 6 s, three from 12 s), with the
+  seconds of speech heard in it.
+- **Cast pages** (`speak_cast.py`, `pb_s01e01.cast.tsv`), made by eye before
+  any reading: 39 labels for the stored characters with three face tracks or
+  more in the episode, the project's names where set (13), a few words on
+  the look for the others. Two stored characters taken for one woman share a
+  label. Five of the 45 were left off: their pictures show more than one
+  person, or no face a reader could tell (characters 39, 40, 89, 104, 134;
+  row 29 had not foreseen that).
+- **Two readers** (AI agents; each reading split over 13 agents of 12
+  sheets; rules in `tools/slot-bench/speak_reader.md`) wrote per shot whose
+  face is seen, by a cast label or `other`, and who of them speaks: speech
+  is heard and the mouth changes between the pictures. Blind to each other,
+  to where the cast puts anyone and to every result. Their own lines are in
+  `check/pb_s01e01.speak.a.tsv` and `.b.tsv`; `pb_s01e01.shots.tsv` holds
+  both per shot (`speak_merge.py` had nothing to mend).
+- **What counts as true**: a shot shows the names both readers give. A
+  person speaks in a scene when each reader marks them speaking in a shot of
+  it. `other` is never credited, as `?` and `unknown` above.
+
+The two readers give the same list of faces in 542 of the 584 shots (0.928)
+and the same list of speakers in 550 (0.942). Of the 1,376 s of heard
+speech, 1,044 s lie in shots in which both mark the same named person
+speaking, 44 s in shots in which both mark someone unnamed, 236 s in shots
+in which neither marks anyone (a voice from outside the picture, or a mouth
+they could not read).
+
+### The readers against Breaking Bad's labels
+
+Checked first, as row 29 asks. Two more readers read the 374 shots of the 17
+odd-numbered labelled scenes of Breaking Bad S01E01 in the same way, with
+cast pages of the 43 names of `bench/identity` that had three tracks or
+more (`check/bb_s01e01.cast.tsv`, `.shots.tsv`, `.speak.a.tsv`, `.b.tsv`).
+The hand labels are those corrected the same day (row 30); the pages were
+drawn before, with `wavy_guest` still on them, a name no reader used. The
+correction moves only the last line of the table (0.955 and 0.760 before).
+
+| Question | Readers against the hand labels and Serial Speakers |
+|---|---|
+| Does the shot show a speaker of its scene? | the same answer in 353 of 374 shots: **0.944** (the bar: 0.90), kappa 0.879 |
+| How often is the answer yes? | labels 0.636, readers 0.634 |
+| The same, in the 252 shots in which the cast is sure of someone | the same answer in 0.956; yes by the labels 0.937, by the readers 0.893 (11 shots only the labels, none only the readers) |
+| Who speaks in the scenes? | the readers find 21 of the labels' 27 speakers, 0.943 of their 407 s of speech; all 21 they name speak by the labels |
+| Who is seen in a shot? | of 334 names both readers give, 320 are the labels' (0.958); the labels give 418 (0.766 found) |
+
+The bar is met. The readers err on the careful side: they miss small
+speakers and small faces, and name no speaker who is none. What row 29
+feared, a listener taken for the speaker, did not show: where the cast shows
+a face, the readers say "speaker" less often than the labels, not more. So
+measure (1) on Prison Break is more likely a little too low than too high.
+
+```sh
+cargo run --release -p as-project --example conversation_bench -- agree <bb_project_copy_dir> bench/scenes/bb_s01e01.scenes.tsv bench/identity/bb_s01e01.labels.tsv bench/scenes/bb_s01e01.speakers.tsv bench/scenes/check/bb_s01e01.shots.tsv
+MEDIA=0 cargo run --release -p as-project --example conversation_bench -- shots <pb_project_copy_dir> bench/scenes/pb_s01e01.scenes.tsv bench/scenes/pb_s01e01.shots.tsv bench/scenes/pb_s01e01.cast.tsv <pictures.emb> bench/scenes/pb_s01e01.conversation.tsv
+```
+
+### Results, as the app has it
+
+The app's recipe finds 31 scenes for the 40 labelled (15 of its 30
+boundaries are labelled ones). 18 main characters: the cast labels whose
+stored character has at least 30 s of faces in the episode; their own shots
+are 30.3 on average (172 s). A speaker of their scene is shown by 439 of the
+487 shots in which the cast is sure of someone (0.901). Mean over the 18
+characters (95 % interval), then pooled:
+
+| Set | Shots | Seconds | Added shots | (1) show a speaker | (1) in a scene of theirs | (4) speaker shots held |
+|---|---|---|---|---|---|---|
+| groups (b) | 46.0 | 217 | 15.7 | 0.918 (0.851 to 0.972), 0.866 | 0.918, 0.866 | 0.491 (0.351 to 0.633), 0.410 |
+| **walk (c)** | 55.1 | 274 | 24.8 | 0.950 (0.924 to 0.974), 0.919 | 0.948 (0.919 to 0.973), 0.915 | **0.769** (0.637 to 0.891), 0.687 |
+| bridged walk (e), with the stepped-over shots | 65.7 | 306 | 35.4 | 0.880 (0.817 to 0.934), 0.812 | 0.870, 0.794 | 0.898 (0.823 to 0.962), 0.853 |
+| bridged walk (e), without them | 58.3 | 288 | 28.1 | 0.938 (0.906 to 0.967), 0.903 | 0.928 (0.889 to 0.962), 0.885 | 0.824 (0.710 to 0.926), 0.751 |
+| scenes, partners (g) | 63.4 | 311 | 33.1 | 0.936 (0.904 to 0.966), 0.893 | 0.880 (0.810 to 0.942), 0.810 | 0.861 (0.764 to 0.944), 0.813 |
+| **scenes, anyone (f)** | 75.9 | 356 | 45.7 | **0.892** (0.854 to 0.930), 0.855 | 0.800 (0.710 to 0.882), 0.713 | **0.990** (0.983 to 0.996), 0.990 |
+| whole scenes (d) | 88.2 | 386 | 57.9 | 0.743 (0.688 to 0.797), 0.686 | 0.671 (0.579 to 0.755), 0.570 | 1.000 |
+
+The same as shots, over all 18 characters together (578 shots of their
+scenes show a speaker and not the character):
+
+| Set | Added shots | with a speaker | faces that do not speak | no face both readers see | in a scene the character is not in | of the 578 held |
+|---|---|---|---|---|---|---|
+| groups (b) | 283 | 245 | 21 | 17 | 0 | 237 |
+| walk (c) | 446 | 410 | 36 | 0 | 6 | 397 |
+| bridged walk (e), with the stepped-over shots | 637 | 517 | 86 | 34 | 17 | 493 |
+| bridged walk (e), without them | 505 | 456 | 49 | 0 | 13 | 434 |
+| scenes, partners (g) | 596 | 532 | 64 | 0 | 54 | 470 |
+| scenes, anyone (f) | 822 | 703 | 117 | 2 | 145 | 572 |
+| whole scenes (d) | 1,043 | 716 | 154 | 173 | 197 | 578 |
+
+Per character (added shots, (1), speaker shots held of those asked for):
+
+| Character | Own shots | Walk (c) | Scenes, partners (g) | Scenes, anyone (f) | Whole scenes (d) |
+|---|---|---|---|---|---|
+| michael | 191 | 119, 0.87, 97/117 | 128, 0.84, 99/117 | 176, 0.85, 117/117 | 236, 0.64, 117/117 |
+| sucre | 46 | 27, 0.93, 24/25 | 39, 0.82, 25/25 | 53, 0.72, 25/25 | 73, 0.52, 25/25 |
+| veronica | 45 | 29, 0.97, 27/48 | 45, 0.93, 34/48 | 66, 0.92, 48/48 | 73, 0.84, 48/48 |
+| lincoln | 46 | 33, 0.85, 27/74 | 74, 0.88, 49/74 | 117, 0.86, 74/74 | 142, 0.72, 74/74 |
+| pope | 17 | 11, 1.00, 11/11 | 11, 1.00, 11/11 | 11, 1.00, 11/11 | 14, 0.79, 11/11 |
+| westmoreland | 14 | 48, 0.92, 44/59 | 68, 0.90, 58/59 | 72, 0.85, 58/59 | 90, 0.70, 59/59 |
+| lj | 34 | 10, 1.00, 8/32 | 12, 1.00, 10/32 | 39, 0.85, 31/32 | 45, 0.76, 32/32 |
+| abruzzi | 27 | 42, 0.93, 39/45 | 61, 0.85, 44/45 | 73, 0.79, 44/45 | 100, 0.60, 45/45 |
+| sara | 25 | 14, 0.93, 13/13 | 25, 0.84, 13/13 | 41, 0.80, 13/13 | 60, 0.55, 13/13 |
+| bishop | 15 | 11, 1.00, 11/11 | 11, 1.00, 11/11 | 11, 1.00, 11/11 | 17, 0.65, 11/11 |
+| kellerman | 18 | 17, 1.00, 17/17 | 17, 1.00, 17/17 | 17, 1.00, 17/17 | 19, 0.89, 17/17 |
+| home_man | 13 | 10, 1.00, 10/10 | 10, 1.00, 10/10 | 10, 1.00, 10/10 | 11, 0.91, 10/10 |
+| blonde_woman | 14 | 8, 1.00, 8/27 | 16, 1.00, 16/27 | 30, 0.87, 26/27 | 32, 0.84, 27/27 |
+| maricruz | 9 | 7, 1.00, 7/7 | 7, 1.00, 7/7 | 8, 0.88, 7/7 | 8, 0.88, 7/7 |
+| cap_inmate | 5 | 18, 0.83, 15/27 | 22, 0.86, 19/27 | 35, 0.83, 26/27 | 46, 0.67, 27/27 |
+| lean_inmate | 7 | 12, 0.92, 11/27 | 20, 0.95, 19/27 | 33, 0.88, 26/27 | 44, 0.70, 27/27 |
+| hoodie_inmate | 9 | 5, 1.00, 4/4 | 5, 1.00, 4/4 | 5, 1.00, 4/4 | 6, 0.83, 4/4 |
+| hale | 10 | 25, 0.96, 24/24 | 25, 0.96, 24/24 | 25, 0.96, 24/24 | 27, 0.89, 24/24 |
+
+With the stored cast and the labelled scenes, (1) and the speaker shots
+held: walk 0.953 and 0.768, bridged walk without the stepped-over shots
+0.937 and 0.824, (g) 0.924 and 0.861, (f) 0.893 and 0.990, whole scenes
+0.743 and 1. Measure (2) is coarse here (speech counts for a person only in
+shots in which both readers see them speak) and is not set beside Breaking
+Bad's: the others' speech whose speaker is seen in the added shots is 0.627
+for the walk and 0.676 for (f) and whole scenes.
+
+### The three conditions of row 29
+
+| Condition | Result | Holds |
+|---|---|---|
+| (i) the walk holds fewer speaker shots than (f): (f) minus the walk on (4), character by character, interval above 0 | +0.221 (+0.104 to +0.349) | yes |
+| (ii) (f) holds 0.90 or more of the speaker shots | 0.990 (0.983 to 0.996) | yes |
+| (iii) (f) meets 0.80 on (1), and whole scenes lie below (f) | 0.892; whole scenes 0.743, (f) minus whole scenes +0.149 (+0.111 to +0.187) | yes |
+
+All three hold as registered. The review (below) shows that each says less
+than it seems:
+
+- **(i)**: the walk is inside (f), so the difference can only be 0 or more;
+  the condition asks whether the walk misses anything for four characters or
+  more, not which way. Its size is fed by scenes the character never speaks
+  in: 168 of the 578 asked-for shots lie in such scenes (Lincoln far away in
+  two shots of the yard scene: 14 asked for). Over only the scenes in which
+  the character speaks it is **+0.141** (+0.049 to +0.252; 16 characters).
+- **(ii)**: the cast pages were made from the stored characters, so the
+  readers can only name people the cast already has. Of the 442 speaker
+  shots the cast shows nobody in 3. (f) keeps every shot in which the cast
+  shows anyone, so it is near 1 by that alone. With `other` credited as one
+  person it is 0.974.
+- **(iii)**: it holds on plain (1) only. Counted strictly ("in a scene of
+  theirs") (f) is **0.800** (0.710 to 0.882), pooled **0.713**, and 10 of
+  the 18 characters reach 0.80. Plain (1) is close to a base rate: in 29 of
+  the 32 scenes with named speech every shot with a named face shows a
+  speaker, and any shot in which the cast is sure of someone scores 0.901.
+  That whole scenes lie below (f) could hardly fail: the shots they hold
+  beyond (f) are those in which the cast shows nobody.
+
+### What the second title says
+
+- **0.1's walk again leaves out about a quarter of the speaker shots**:
+  held 0.769, against 0.778 on Breaking Bad.
+- **For another reason.** On Breaking Bad the walk stopped at a shot without
+  a known partner, and partners who never share a frame with the character
+  were rare (4 of 245 missed shots). Here 102 of the 181 it leaves out show
+  only such people, 73 lie behind such a shot, 6 show nobody the cast knows.
+  Prison Break cuts conversations as single faces: the judge speaking to
+  Michael and Veronica (0 of 6 and 1 of 12 shots held),
+  the bank teller (0 of 6), Lincoln behind the mesh with LJ (1 of 12), a
+  phone call. This is the limit the proposal named for the walk; one title
+  showed it rarely, the other often.
+- **So the partner rule is not safe.** (g) holds 0.861 and the bridged walk
+  0.824 here, against 0.956 and 0.947 on Breaking Bad. Partners are counted
+  inside the episode; counted over the project's five episodes the walk
+  holds 0.790 and the gap to (f) is +0.200 (the review's count).
+- **(f) holds nearly every speaker shot on both titles** (0.990 here, 0.960
+  there), in part by the way the labels were made here. It does not ask who
+  shares a frame with whom.
+- **Its price is paid in the scenes.** The app's recipe joins two labelled
+  scenes nine times here (apartment and bank, meat plant and infirmary,
+  death-row cell and visit, and six more), and (f) takes every face of the
+  joined scene: 145 of its 822 added shots lie in a scene the character has
+  no shot in ((g) 54, the walk 6). Sara: 21 of her 41 added shots are the
+  mobsters' scene, joined to the infirmary. Counted strictly, (f) is 0.800
+  against the walk's 0.948: about +0.22 of the speaker shots for −0.15 of
+  the added shots that show a speaker of the character's own scene. With
+  the labelled scenes (f) is 0.893 and the walk 0.953.
+- **Against whole scenes** (f) is the better set on every count: it drops
+  221 added shots, 13 of them with a speaker, and scores 0.892 against 0.743
+  (strict 0.800 against 0.671).
+- **Against shot groups**: groups hold 0.491 of the speaker shots (0.288 on
+  Breaking Bad).
+- With either reader alone as the truth the picture is the same: the walk
+  0.959 and 0.950 on (1), 0.771 and 0.768 held; (f) 0.899 and 0.892, 0.992
+  and 0.990 (not registered: a check of the rule that both must agree).
+
+### What it cannot say
+
+- **One more episode of one more live-action series.** Nothing on anime or
+  3D animation, where the cast is weaker and no speaker labels exist.
+- **Not 18 draws.** Two of the 18 main characters are extras the readers
+  never name (`cap_inmate`, `lean_inmate`: they stand behind Michael and
+  Westmoreland in two long shots), with the same sets from the bridged walk
+  on; Kellerman and Hale share six of eight sets; eight characters have one
+  or two scenes. Without the two extras: (i) +0.189, (ii) 0.993, (iii)
+  0.897, strict 0.805. When the scenes are drawn anew in place of the
+  characters (the review's count): (i) +0.090 to +0.319, (ii) 0.984 to
+  1.000, (f) on (1) 0.747 to 0.938, strict 0.587 to 0.869. So "(f) meets
+  0.80" is a point, not a secured bound.
+- **The labels are readers' work from 320 × 180 stills.** Small faces become
+  `other`: 7 of the 39 labels are never used by either reader, the yard's
+  inmates among them, so in the yard the truth knows Michael, Westmoreland,
+  Abruzzi and nobody else. Someone unnamed is never credited (44 s of
+  speech). One speaker was lost by the cast page: the plant boss on the
+  phone is `hairnet_man` without his hairnet, and both readers wrote
+  `other` (that counts against (f)). Two speaker marks by both readers are
+  not borne out by the pictures (Westmoreland in shot 137, LJ in shot 54);
+  without them (iii) is 0.885, strict 0.794.
+- **What the check on Breaking Bad does not cover**: other readers made the
+  Prison Break labels, from cast pages made from the stored cast and not
+  from hand labels; they mark the one named person in the picture as
+  speaking in 0.78 of the shots with speech, the Breaking Bad readers in
+  0.70; the check did not use the app's scenes. What it does cover beyond
+  the single shot (the review's count): the sets of Breaking Bad's read
+  scenes scored by the readers in place of the hand labels give the walk
+  0.840 held for 0.852 and (f) 0.983 for 0.995.
+- **Joined scenes only add shots.** No speaker shot lies in a scene found
+  apart here, so this episode cannot show what a wrongly split scene costs
+  (f); Breaking Bad is the only evidence for that (57 of 926 shots).
+- **A scene counts as a character's when the cast shows them in it once**,
+  and the labelled scenes are coarse: two of them start at an act break
+  graphic and hold a whole dialogue after it.
+- "As the app has it" is after the owner's own corrections of this cast (23
+  pinned tracks in the episode, 16 names).
+- Only faces count, here too: nothing says whether a pack should keep the
+  shots without a face that lie inside a conversation. Measure (2) cannot be
+  read here.
+
+### The review
+
+A reviewer without context got the row, the tool, the label files and
+copies of both projects, and no conclusion. Recomputed with scripts of
+their own: every number of the readers' check (with the labels as they were
+and as corrected), all 4,896 cells of `pb_s01e01.conversation.tsv`, every
+mean, interval, pooled share and paired difference. No difference. They
+looked at twenty-odd shots on the sheets: who is seen was right wherever
+they could tell and errs toward `other`; who speaks was right or not to be
+told from stills, and doubtful in the two shots named above.
+
+Taken from the review into this section: what each condition can and cannot
+show, the strict count beside the bar, the base rate, the scenes in which
+the character does not speak, the scenes drawn anew, the lost speaker, the
+limits of the check. Deviations from row 29 it names, all stated here: five
+stored characters left off the cast pages; partners counted inside the
+episode; the truth's scenes are always the labelled ones; the row does not
+say whether the mean or the pooled share meets a bar (both do on the
+registered measures). `speak_merge.py` would have mended two kinds of rows
+and mended none. The order of the work: the row was committed at 14:59, the
+sheets drawn at 15:01, the cast pages at 15:07, the first reading at 15:10.
+
+### For the owner, after two titles
+
+- **0.1's walk and the partner rule: not to port.** On the second title
+  they miss real conversations, because people who talk to each other are
+  often never in one frame.
+- **The filter on "Whole scenes"** (only the shots in which the cast shows
+  someone) is better than "Whole scenes" as it is on both titles, needs no
+  walk and no new query, and holds nearly every shot that shows a speaker.
+- **It is as good as the scenes are.** Where the scenes pass joins two
+  scenes, the filter takes the other scene's faces too: on Prison Break 18
+  in 100 of the shots it adds lie in a scene the character is not in.
+  A walk is cleaner there and pays for it with a quarter of the speaker
+  shots. Fewer joined scenes would help the filter more than any walk.
+- Still open: a look by eye at one such pack; the shots without a face
+  inside a conversation; animation.

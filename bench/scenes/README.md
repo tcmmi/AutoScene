@@ -211,6 +211,18 @@ door, and seventeen faces behind gas masks marked as not to be told) moves
 no number of the scenes tables above; the conversation section says what it
 changes there.
 
+The `?` rows of the labels were then read again (row 34: 37 rows got a name
+of the main cast). No number of this file by the stored cast moves, and the
+four-episode table is the same. By the true cast "every shot its own scene"
+reads 0.447 for 0.444. One number of the bench's output, which this file
+does not quote, proved fragile on the way: step A's second half, read with
+the first half's threshold, is 0.912 by the stored cast, and with one more
+row named, a face of three frames (Skyler at 16335 or at 16389, both kept
+as `?`), it would be 0.831, because the first half's best threshold is a
+near tie between 0.350 and 0.100. The conversation sections below, their
+file of counts and row 29's result cell still carry the numbers of the
+labels before this read, until that bench makes them again.
+
 ## Results across four episodes (2026-11-12, row 8)
 
 DINOv2-small's class token (weight 1) with the share of characters two shots

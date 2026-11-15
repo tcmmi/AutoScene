@@ -46,7 +46,7 @@ E	bb	53396	53466	walter		-			-
 E	bb	53512	54312	walter	mixed	waltjr	0.719	0.444	waltjr	0.719	0.444
 E	bb	54362	54420	waltjr		-			-		
 E	bb	54362	54390	walter		-			-		
-E	bb	54362	54426	skyler		-			-		
+E	bb	54362	54426	skyler	shown	-			-		
 E	bb	54574	54744	walter		-			-		
 E	bb	54990	55074	skyler		skyler	0.709	0.458	skyler	0.709	0.458
 E	bb	56734	56904	walter		walter	0.838	0.568	walter	0.838	0.460
@@ -102,7 +102,6 @@ N	bb	16530	16560	?	face	-			-
 N	bb	16979	17010	?	face	-			-		
 N	bb	17259	17358	?	face	-			-		
 N	bb	17259	17358	?	face	-			-		
-N	bb	17259	17358	?	face	-			-		
 N	bb	17259	17364	?	face	-			-		
 N	bb	17259	17448	?	face	-			-		
 N	bb	17578	17658	?	face	-			-		
@@ -122,8 +121,6 @@ N	bb	35867	35874	?	face	-			-
 N	bb	35930	35940	?	face	-			-		
 N	bb	36080	36096	?	face	-			-		
 N	bb	37913	37950	?	face	-			-		
-N	bb	49313	49452	?	face	-			-		
-N	bb	50088	50172	?	face	walter	0.732	0.230	walter	0.732	0.230
 N	bb	53396	53430	?	face	-			-		
 N	bb	55390	55512	?	face	-			-		
 N	bb	55390	55446	?	face	-			-		
@@ -133,7 +130,6 @@ N	bb	56471	56514	?	face	-			-
 N	bb	56537	56616	?	face	-			-		
 N	bb	56734	56844	?	face	-			-		
 N	bb	57105	57174	?	face	-			-		
-N	bb	59297	59316	?	face	walter	0.717	0.241	walter	0.717	0.241
 N	bb	68538	68544	?	face	-			-		
 N	bb	347	414	?	n	-			-		
 H	bb	623	648	walter	clip	-			-		
@@ -150,7 +146,7 @@ H	bb	7047	7080	walter	clip	-			-
 H	bb	7366	7452	walter	clip	-			-		
 H	bb	7615	7632	skyler	clip	-			-		
 H	bb	8334	8370	skyler		-			-		
-H	bb	8859	8880	waltjr	clip	-			-		
+M	bb	8859	8880	waltjr	now,on,clip	-			-		
 H	bb	9470	9486	skyler	clip	-			-		
 N	bb	9835	10140	?	e,clip	-			-		
 N	bb	10271	10332	?	e,clip	-			-		
@@ -264,7 +260,7 @@ H	bb	46794	46860	jesse	clip	-			-
 H	bb	46794	46956	jesse	clip	-			-		
 H	bb	47957	47994	walter	clip	-			-		
 M	bb	48094	48162	walter	now,clip	-			-		
-M	bb	49313	49368	walter	clip	-			-		
+M	bb	49313	49368	walter	now,on,clip	-			-		
 H	bb	50257	50310	walter	clip	-			-		
 H	bb	51044	51072	walter	clip	walter	0.811	0.237	walter	0.811	0.237
 H	bb	51044	51168	walter	clip	-			-		

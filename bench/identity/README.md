@@ -173,6 +173,130 @@ hard to see. Emilio from the front at 70020–70035 and in the beanie at
 name some of them already. Where the pass puts such a face on its
 character, the bench counts a stranger on that character. Apart from the
 cold open, the first two thirds of the file were not looked at this way.
+(They were, in the read that follows.)
+
+All `?` rows read again (2026-11-15; rows 32 and 34 of
+`bench/models/DECISIONS.md`). Rows 30 and 31 had found faces of the main
+cast under `?`, so every `?` row was read: 322 rows. Two readers each saw
+one sheet per row (the whole frame with the box at the first and the last
+sighting, the box enlarged at up to four) and cast pages of the 42 names
+with three rows or more. They saw nothing of the labels, of the app's cast
+or of each other. A third read the 48 rows on which the two differed (43 `?`
+rows and 5 controls). Sixty rows that have a name were mixed in as controls.
+The readers are a model (Claude Opus); no person has checked them.
+`bb_s01e01.read.tsv` holds every answer, what the rule made of it and what
+was written.
+
+| | Rows |
+|---|---|
+| `?` rows read | 322 |
+| both readers the same label | 87: 58 of the main cast, 29 of other names |
+| both `e` (a person on no cast page), both `n` (no real face), both `x` (cannot tell) | 49, 31, 112 |
+| the two differ | 43; in 5 the third gave a label that one of them had given |
+| a label of the main cast by the rule of row 32 | 59 |
+| ... written into the file | 37: Walter 23, Walt Jr. 6, Jesse 3, Emilio 2, Gomez 2, Skyler 1 |
+| ... kept `?` by the author | 22: the face cannot be read, or the box lies on two heads, and only the place and the clothes tell (16); a reader had marked the name a guess (5); the author is not sure of the man (1) |
+| a label outside the main cast by the rule, not written | 33 |
+
+The author's line. A row is named when the face can be read at one sighting
+at least, or when it is the same face three frames from such a sighting in
+the row beside it. It is also named when the head is seen near and sharp
+but turned away, in a shot where it can be no one else: hair, ear and jaw
+are seen, the face is not. A row keeps `?` when the head is covered (a
+hood, a beanie, an arm), dark, blurred or far, so that only the place and
+the clothes tell, and when the box lies on two heads.
+
+Eight of the 37 are named with the face turned away: all six of Walt Jr.
+(8859–8868, 16473–16497, 17259–17277, 17271–17280, 17424–17460,
+54219–54234) and two of Walter (54312–54315, 59778–59814). The file
+already names such rows (Walt Jr. in the striped shirt).
+
+The line is a judgement, and two reviews moved rows across it. The first
+found seven named rows that it keeps: six faces that cannot be read and one
+box that lies mostly on another head. The second found four more, of
+Emilio, and two kept rows of Jesse whose profile can be read; the author
+found one more box on two heads. The numbers here are of the state after
+both. With the eight turned-away rows kept as `?` too, the main cast would
+read R 0.896 and F 0.944 per track, for the 0.893 and 0.943 below.
+
+One of the new names makes a second row of one name in a frame: Walt Jr. at
+17271, where the same head was found twice. The file has that kind already
+(11 such pairs for 10).
+
+On the 60 controls (20 of them Walter) no reader gave a wrong label: 109 of
+their 120 answers were the row's label and 11 were `x`. By the rule 53
+controls get their label and 7 none, six of the seven with a face lower than
+the median `?` face. So the read errs towards leaving a face unnamed, not
+towards a wrong name. How often it would name a stranger is not measured:
+every control has a name.
+
+The app's face pass on the proxy as above, with the labels before and after
+the read:
+
+| Labels | main cast per track P / R / F | screen time P / R / F | everyone named, per track P / R / F | in a track | on their character | over time: in a track, on their character |
+|---|---|---|---|---|---|---|
+| before the read | 0.996 / 0.909 / 0.951 | 1.000 / 0.961 / 0.980 | 0.994 / 0.900 / 0.945 | 0.970 | 0.955 | 0.962, 0.942 |
+| after | 0.998 / 0.893 / 0.943 | 1.000 / 0.955 / 0.977 | 0.995 / 0.887 / 0.938 | 0.968 | 0.948 | 0.960, 0.934 |
+
+Recall falls and precision rises a little. The 37 rows add eight scored
+tracks of the main cast, and the pass has one of them on its character
+(Gomez's, which is the rise in precision): the faces that got a name are
+mostly hard ones, in profile, dim, small or turned away. The bench was
+kinder to the pass on recall than it is now, and it is still kind, as the
+list below shows. `stress` gives the same 27 runs. Numbers of this file
+dated before the read stay as they were measured.
+
+What else reads the labels, before and after the read:
+
+- Scenes (`bench/scenes`): of the numbers that file quotes one moves
+  ("every shot its own scene" by the true cast, 0.447 for 0.444); nothing
+  by the stored cast, and the four-title table is the same.
+- Conversations (`bench/scenes`): 921 speaker shots are asked for over all
+  characters, for 925, and most cells move in the third decimal; the check
+  of that bench's readers finds 322 of their 334 names in the labels, which
+  give 421 (before 321 and 419). The conversation sections, their file of
+  counts and row 29's result cell still carry the numbers of the labels
+  before this read, until that bench's session makes them again.
+- Bodies (`bench/bodies`): four bodies leave the pool of extras (155 for 159
+  on Breaking Bad). Two of them had been named Walter by the pass and
+  counted as wrong; they are Walter's.
+- Rescan (below): of the faces in Everyone else 17 are people of the cast
+  and 99 strangers, for 16 and 100; of the unsure ones 7 and 24, for 6 and
+  25; 9 faces on the wrong character went unnoticed, for 12.
+
+Left for the owner:
+
+- The 22 rows the readers named and the author kept as `?`: frames
+  7989–7998 and 54279–54282 as Walt Jr.; 9957–9990, 10008–10032,
+  15087–15090, 16383–16389, 17754–17760, 28032–28038, 34623–34626,
+  37335–37338, 49323–49326, 59553–59556, 59562–59565 and 73305–73308 as
+  Walter; 16335–16338 and 16389–16392 as Skyler; 16797–16800 as Hank;
+  68436–68439, 68541–68544, 68562–68585 and 68571–68574 as Emilio (the man
+  in the beanie at the car: the scene tells who he is, the face does not);
+  16938–16979 as Gomez (a clear profile; a pin of the owner has it as a
+  character of its own). By the rule at the top of this file a face that
+  cannot be told is `x`.
+- The eight rows named with the face turned away (above), if such rows
+  should rather be `x`.
+- Ten rows that one reader named and the third did not: 7047–7109,
+  30630–30636, 30720–30729, 81984–82008 and 82041–82050 as Walter;
+  34605–34608 as Gomez; 39660–39663, 41019–41028 and 41910–41913 as Jesse;
+  55932–55947 as Walt Jr. The first reviewer of this read calls the two at
+  the car wash (30630, 30720), the two in bed (81984, 82041) and the Gomez
+  row plain faces of theirs.
+- The 33 rows on which the readers agree on a name outside the main cast
+  (`store_bully` 6, `chad` 5, `beard_glasses` 4, `suit_man` 3, and ten
+  names with one or two).
+- The 112 rows both readers could not tell, which the file still calls `?`:
+  where the pass puts one of them on a character, the bench counts a
+  stranger on that character. 64 of them are from the raid (34233–36099):
+  faces behind gas masks in 43 by the readers' notes, the rest helmets from
+  behind, a face in a mirror and drivers behind glass. The second reviewer
+  sees Walter in two of the 64 (34317, 34320) and Emilio in one
+  (35463–35503), none to be told by the face. By the rule at the top such
+  rows are `x`. This read gave out no `x`.
+- Rows that have a name were not read (but for the 60 controls), so a wrong
+  name like the passer-by of the first correction can still be in the file.
 
 ## One person, one character
 
@@ -433,7 +557,7 @@ right, 6 wrong; on Breaking Bad no stranger got a clear match, but none of the
 17 faces on the wrong character was noticed, and a "maybe" is right less than
 half the time. Those stay suggestions for the person. (With the labels as
 corrected on 2026-11-15 the 17 are 12: five were slips of the labels, see
-"Label corrections" above.)
+"Label corrections" above; 9 since the `?` rows were read again.)
 
 A summary of a character hides its rare looks (Wang Fu's disguise, 13 of his
 34 tracks, went unrecognised), so every face is now compared with every shot:
@@ -448,7 +572,8 @@ guesses 22 right 2 wrong and 31 right 4 wrong. Everyone else: 32 clear. Actors
 need stricter bars (`Tuning::of`): on Breaking Bad's stored faces 1 stranger
 of 106 in Everyone else gets a guess, and none a clear answer. (Of 100 since
 2026-11-15: six of the 106 were faces behind gas masks, which the labels
-now leave out.)
+now leave out. Of 99 since the `?` rows were read again: one more is a
+person of the cast.)
 
 Two groups, clearest 8 faces each (`likeness`): one person split by looks
 0.33-0.79 (median about 0.65) in live action, people seen together 0.06 at the

@@ -242,7 +242,7 @@ nearly what the app's own people give. Pools M, H and N: the same counts and
 the same answers on all three episodes. Pool E: 76, 93 and 61 queries with
 the app's people, 75, 92 and 61 with the bench's; answered 20, 37, 15
 against 19, 36, 15; right 16, 29, 13 against 15, 28, 13. (Matched by pool,
-frame and name, 275, 167 and 139 queries are in both runs and each has the
+frame and name, 272, 167 and 139 queries are in both runs and each has the
 same answer in both. That match is loose: the key is not unique among
 extras, and 19, 11 and 3 easy queries sit on another frame in the other
 run.)
@@ -366,29 +366,29 @@ an answer of the pass, a group of the draw, or the other reader's answers.
 
 | Title | E | B | B `far` | M | H | H `clip` | N from the labels | N from the readers | Characters with a query |
 |---|---|---|---|---|---|---|---|---|---|
-| Breaking Bad S01E01 (proxy) | 76 | – | – | 29 | 58 | 41 | 60 | 99 | 12 |
+| Breaking Bad S01E01 (proxy) | 76 | – | – | 30 | 57 | 40 | 56 | 99 | 12 |
 | Miraculous S01E11 + S05E21 | 154 | – | – | 39 | 95 | 85 | 8 | 31 | 21 |
 | Jujutsu Kaisen S2E03 + E04 | 19 | 68 | 30 | – | – | – | 41 | – | 7 |
 | Re:Zero 31 + 33 | 14 | 70 | 17 | – | – | – | 13 | – | 9 |
 | One Piece Wano A, B, C | 45 | 22 | 11 | 42 | 40 | 23 | 62 | 75 | 12 |
-| all | 308 | 160 | 58 | 110 | 193 | 149 | 184 | 205 | |
+| all | 308 | 160 | 58 | 111 | 192 | 148 | 180 | 205 | |
 
-- Pools E, M and H together: 611 queries on five titles, 193 of them hard,
+- Pools E, M and H together: 611 queries on five titles, 192 of them hard,
   on three titles. Without the readers' pools the three kinds of footage
   hold 76, 154 and 78 easy queries.
-- **Pool M is mostly not a body without a face.** For 90 of its 110 queries
+- **Pool M is mostly not a body without a face.** For 92 of its 111 queries
   a face of the figure is labelled while the body is on screen (`now`:
-  Breaking Bad 26 of 29, Miraculous 31 of 39, One Piece 33 of 42), and for
-  61 that face sits on the body itself (`on`: 22, 24, 15): the body shows
+  Breaking Bad 28 of 30, Miraculous 31 of 39, One Piece 33 of 42), and for
+  63 that face sits on the body itself (`on`: 24, 24, 15): the body shows
   its face, the pass did not put the two together. There the rule "not
   where the character already is" has to give no answer, and it does (2 of
-  the 90 answered). Only 20 queries of pool M are what the proposal meant,
-  a face at another moment of the shot (3, 8 and 9). The table has a line
-  for them and one for E + M + H without the 90.
+  the 92 answered). Only 19 queries of pool M are what the proposal meant,
+  a face at another moment of the shot (2, 8 and 9). The table has a line
+  for them and one for E + M + H without the 92.
 - **Pool E's "without a face" is the pass's.** It means that no face track
-  tied to the body is on screen. For 51 of the 308 queries a labelled face
+  tied to the body is on screen. For 52 of the 308 queries a labelled face
   of the figure sits on the body at the query's moment all the same
-  (`shown`: Breaking Bad 17, Miraculous 23, anime 11). On anime the "face"
+  (`shown`: Breaking Bad 18, Miraculous 23, anime 11). On anime the "face"
   a body is tied to can itself be a back of the head; one body of Re:Zero
   is in pool E and in pool B.
 - **Anime has far fewer easy queries than the proposal guessed** (78; the
@@ -408,11 +408,11 @@ an answer of the pass, a group of the draw, or the other reader's answers.
 - Miraculous has 12 such labels. The app's people keep no appearance per
   sighting, so they are no queries there; with the bench's bodies 7 of the
   12 sit on a body, and 3 of those 7 get a name, all 3 right.
-- **Pool N.** Of the 184 from the labels, 36 rest on `n` labels (no
+- **Pool N.** Of the 180 from the labels, 36 rest on `n` labels (no
   character's head: an object, a poster); of the 205 from the readers, 133
   are a person outside the gallery and 72 no person.
 - **In no pool**: bodies of the main cast whose faces the face pass left
-  unnamed (7 on Breaking Bad, 45 on Miraculous, 74, 22 and 82 on the three
+  unnamed (8 on Breaking Bad, 45 on Miraculous, 74, 22 and 82 on the three
   anime titles, as `bodies_bench reid` counts them). On anime they are more
   than the easy queries.
 
@@ -427,44 +427,44 @@ of a share is drawn over characters, the second is Wilson's per query (see
 |---|---|---|---|---|---|---|---|---|---|
 | Breaking Bad | E, as today | 76 | 12 | 20 | 16 | 0.26 [0.19, 0.34] | [0.18, 0.37] | 0.80 [0.50, 1.00] | 0.21 [0.12, 0.27] |
 | Breaking Bad | E, no help from the same shot | 76 | 12 | 19 | 16 | 0.25 [0.15, 0.30] | [0.17, 0.36] | 0.84 [0.67, 1.00] | 0.21 [0.12, 0.26] |
-| Breaking Bad | M, face in the shot | 29 | 9 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.12] | – | 0.00 [0.00, 0.00] |
-| Breaking Bad | M, the face only at another moment | 3 | 2 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.56] | – | 0.00 [0.00, 0.00] |
-| Breaking Bad | H, no face in the shot | 58 | 8 | 7 | 7 | 0.12 [0.04, 0.27] | [0.06, 0.23] | 1.00 [1.00, 1.00] | 0.12 [0.04, 0.27] |
-| Breaking Bad | H, bodies that would make a clip | 41 | 7 | 6 | 6 | 0.15 [0.06, 0.31] | [0.07, 0.28] | 1.00 [1.00, 1.00] | 0.15 [0.06, 0.31] |
-| Breaking Bad | E + M + H (E without the same shot) | 163 | 12 | 26 | 23 | 0.16 [0.09, 0.22] | [0.11, 0.22] | 0.88 [0.71, 1.00] | 0.14 [0.08, 0.20] |
-| Breaking Bad | E + M + H without M's bodies whose face shows meanwhile | 137 | 12 | 26 | 23 | 0.19 [0.14, 0.25] | [0.13, 0.26] | 0.88 [0.71, 1.00] | 0.17 [0.11, 0.23] |
-| Breaking Bad | N, extras | 159 | – | 3 | – | 0.02 | [0.01, 0.05] | – | – |
-| Miraculous | E, as today | 154 | 19 | 52 | 42 | 0.34 [0.25, 0.41] | [0.27, 0.42] | 0.81 [0.64, 0.93] | 0.27 [0.17, 0.37] |
-| Miraculous | E, no help from the same shot | 154 | 19 | 52 | 42 | 0.34 [0.25, 0.42] | [0.27, 0.42] | 0.81 [0.64, 0.93] | 0.27 [0.17, 0.37] |
+| Breaking Bad | M, face in the shot | 30 | 9 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.11] | – | 0.00 [0.00, 0.00] |
+| Breaking Bad | M, the face only at another moment | 2 | 2 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.66] | – | 0.00 [0.00, 0.00] |
+| Breaking Bad | H, no face in the shot | 57 | 7 | 7 | 7 | 0.12 [0.04, 0.28] | [0.06, 0.23] | 1.00 [1.00, 1.00] | 0.12 [0.04, 0.28] |
+| Breaking Bad | H, bodies that would make a clip | 40 | 6 | 6 | 6 | 0.15 [0.07, 0.31] | [0.07, 0.29] | 1.00 [1.00, 1.00] | 0.15 [0.07, 0.31] |
+| Breaking Bad | E + M + H (E without the same shot) | 163 | 12 | 26 | 23 | 0.16 [0.10, 0.21] | [0.11, 0.22] | 0.88 [0.71, 1.00] | 0.14 [0.08, 0.20] |
+| Breaking Bad | E + M + H without M's bodies whose face shows meanwhile | 135 | 12 | 26 | 23 | 0.19 [0.13, 0.25] | [0.13, 0.27] | 0.88 [0.72, 1.00] | 0.17 [0.10, 0.23] |
+| Breaking Bad | N, extras | 155 | – | 1 | – | 0.01 | [0.00, 0.04] | – | – |
+| Miraculous | E, as today | 154 | 19 | 52 | 42 | 0.34 [0.25, 0.42] | [0.27, 0.42] | 0.81 [0.64, 0.93] | 0.27 [0.17, 0.37] |
+| Miraculous | E, no help from the same shot | 154 | 19 | 52 | 42 | 0.34 [0.25, 0.42] | [0.27, 0.42] | 0.81 [0.65, 0.93] | 0.27 [0.18, 0.37] |
 | Miraculous | M, face in the shot | 39 | 16 | 5 | 5 | 0.13 [0.03, 0.26] | [0.06, 0.27] | 1.00 [1.00, 1.00] | 0.13 [0.03, 0.26] |
-| Miraculous | M, the face only at another moment | 8 | 7 | 3 | 3 | 0.38 [0.00, 0.67] | [0.14, 0.69] | 1.00 [1.00, 1.00] | 0.38 [0.00, 0.67] |
+| Miraculous | M, the face only at another moment | 8 | 7 | 3 | 3 | 0.38 [0.12, 0.67] | [0.14, 0.69] | 1.00 [1.00, 1.00] | 0.38 [0.12, 0.67] |
 | Miraculous | H, no face in the shot | 95 | 19 | 20 | 17 | 0.21 [0.08, 0.34] | [0.14, 0.30] | 0.85 [0.50, 1.00] | 0.18 [0.05, 0.31] |
-| Miraculous | H, bodies that would make a clip | 85 | 19 | 20 | 17 | 0.24 [0.09, 0.38] | [0.16, 0.34] | 0.85 [0.50, 1.00] | 0.20 [0.05, 0.35] |
-| Miraculous | E + M + H (E without the same shot) | 288 | 21 | 77 | 64 | 0.27 [0.20, 0.35] | [0.22, 0.32] | 0.83 [0.69, 0.93] | 0.22 [0.14, 0.32] |
-| Miraculous | E + M + H without M's bodies whose face shows meanwhile | 257 | 21 | 75 | 62 | 0.29 [0.21, 0.38] | [0.24, 0.35] | 0.83 [0.69, 0.93] | 0.24 [0.15, 0.34] |
+| Miraculous | H, bodies that would make a clip | 85 | 19 | 20 | 17 | 0.24 [0.10, 0.38] | [0.16, 0.34] | 0.85 [0.50, 1.00] | 0.20 [0.06, 0.35] |
+| Miraculous | E + M + H (E without the same shot) | 288 | 21 | 77 | 64 | 0.27 [0.19, 0.34] | [0.22, 0.32] | 0.83 [0.70, 0.93] | 0.22 [0.14, 0.31] |
+| Miraculous | E + M + H without M's bodies whose face shows meanwhile | 257 | 21 | 75 | 62 | 0.29 [0.21, 0.38] | [0.24, 0.35] | 0.83 [0.68, 0.93] | 0.24 [0.15, 0.34] |
 | Miraculous | N, extras | 39 | – | 0 | – | 0.00 | [0.00, 0.09] | – | – |
 | Jujutsu Kaisen | E, as today | 19 | 5 | 3 | 1 | 0.16 [0.00, 0.22] | [0.06, 0.38] | 0.33 [0.00, 1.00] | 0.05 [0.00, 0.19] |
-| Jujutsu Kaisen | E, no help from the same shot | 19 | 5 | 3 | 1 | 0.16 [0.00, 0.22] | [0.06, 0.38] | 0.33 [0.00, 1.00] | 0.05 [0.00, 0.19] |
-| Jujutsu Kaisen | B, back of the head | 68 | 7 | 5 | 5 | 0.07 [0.01, 0.17] | [0.03, 0.16] | 1.00 [1.00, 1.00] | 0.07 [0.01, 0.17] |
-| Jujutsu Kaisen | B, no help from the same shot | 68 | 7 | 5 | 5 | 0.07 [0.01, 0.18] | [0.03, 0.16] | 1.00 [1.00, 1.00] | 0.07 [0.01, 0.18] |
-| Jujutsu Kaisen | B far, no face within 2 s | 30 | 7 | 3 | 3 | 0.10 [0.04, 0.19] | [0.03, 0.26] | 1.00 [1.00, 1.00] | 0.10 [0.04, 0.19] |
+| Jujutsu Kaisen | E, no help from the same shot | 19 | 5 | 3 | 1 | 0.16 [0.00, 0.22] | [0.06, 0.38] | 0.33 [0.00, 1.00] | 0.05 [0.00, 0.16] |
+| Jujutsu Kaisen | B, back of the head | 68 | 7 | 5 | 5 | 0.07 [0.01, 0.18] | [0.03, 0.16] | 1.00 [1.00, 1.00] | 0.07 [0.01, 0.18] |
+| Jujutsu Kaisen | B, no help from the same shot | 68 | 7 | 5 | 5 | 0.07 [0.01, 0.17] | [0.03, 0.16] | 1.00 [1.00, 1.00] | 0.07 [0.01, 0.17] |
+| Jujutsu Kaisen | B far, no face within 2 s | 30 | 7 | 3 | 3 | 0.10 [0.03, 0.20] | [0.03, 0.26] | 1.00 [1.00, 1.00] | 0.10 [0.03, 0.20] |
 | Jujutsu Kaisen | B far, no help from the same shot | 30 | 7 | 3 | 3 | 0.10 [0.03, 0.19] | [0.03, 0.26] | 1.00 [1.00, 1.00] | 0.10 [0.03, 0.19] |
 | Jujutsu Kaisen | E + M + H (E without the same shot) | 19 | 5 | 3 | 1 | 0.16 [0.00, 0.22] | [0.06, 0.38] | 0.33 [0.00, 1.00] | 0.05 [0.00, 0.19] |
 | Jujutsu Kaisen | E + M + H without M's bodies whose face shows meanwhile | 19 | 5 | 3 | 1 | 0.16 [0.00, 0.22] | [0.06, 0.38] | 0.33 [0.00, 1.00] | 0.05 [0.00, 0.19] |
 | Jujutsu Kaisen | N, extras | 41 | – | 0 | – | 0.00 | [0.00, 0.09] | – | – |
-| Re:Zero | E, as today | 14 | 7 | 1 | 1 | 0.07 [0.00, 0.43] | [0.01, 0.31] | 1.00 [1.00, 1.00] | 0.07 [0.00, 0.43] |
+| Re:Zero | E, as today | 14 | 7 | 1 | 1 | 0.07 [0.00, 0.29] | [0.01, 0.31] | 1.00 [1.00, 1.00] | 0.07 [0.00, 0.29] |
 | Re:Zero | E, no help from the same shot | 14 | 7 | 1 | 1 | 0.07 [0.00, 0.43] | [0.01, 0.31] | 1.00 [1.00, 1.00] | 0.07 [0.00, 0.43] |
 | Re:Zero | B, back of the head | 70 | 8 | 4 | 4 | 0.06 [0.00, 0.07] | [0.02, 0.14] | 1.00 [1.00, 1.00] | 0.06 [0.00, 0.07] |
 | Re:Zero | B, no help from the same shot | 70 | 8 | 4 | 4 | 0.06 [0.00, 0.07] | [0.02, 0.14] | 1.00 [1.00, 1.00] | 0.06 [0.00, 0.07] |
 | Re:Zero | B far, no face within 2 s | 17 | 6 | 1 | 1 | 0.06 [0.00, 0.10] | [0.01, 0.27] | 1.00 [1.00, 1.00] | 0.06 [0.00, 0.10] |
-| Re:Zero | B far, no help from the same shot | 17 | 6 | 1 | 1 | 0.06 [0.00, 0.11] | [0.01, 0.27] | 1.00 [1.00, 1.00] | 0.06 [0.00, 0.11] |
-| Re:Zero | E + M + H (E without the same shot) | 14 | 7 | 1 | 1 | 0.07 [0.00, 0.29] | [0.01, 0.31] | 1.00 [1.00, 1.00] | 0.07 [0.00, 0.29] |
+| Re:Zero | B far, no help from the same shot | 17 | 6 | 1 | 1 | 0.06 [0.00, 0.10] | [0.01, 0.27] | 1.00 [1.00, 1.00] | 0.06 [0.00, 0.10] |
+| Re:Zero | E + M + H (E without the same shot) | 14 | 7 | 1 | 1 | 0.07 [0.00, 0.43] | [0.01, 0.31] | 1.00 [1.00, 1.00] | 0.07 [0.00, 0.43] |
 | Re:Zero | E + M + H without M's bodies whose face shows meanwhile | 14 | 7 | 1 | 1 | 0.07 [0.00, 0.43] | [0.01, 0.31] | 1.00 [1.00, 1.00] | 0.07 [0.00, 0.43] |
 | Re:Zero | N, extras | 13 | – | 0 | – | 0.00 | [0.00, 0.23] | – | – |
 | One Piece | E, as today | 45 | 8 | 2 | 1 | 0.04 [0.00, 0.09] | [0.01, 0.15] | 0.50 [0.00, 1.00] | 0.02 [0.00, 0.04] |
 | One Piece | E, no help from the same shot | 45 | 8 | 2 | 1 | 0.04 [0.00, 0.09] | [0.01, 0.15] | 0.50 [0.00, 1.00] | 0.02 [0.00, 0.04] |
-| One Piece | B, back of the head | 22 | 9 | 3 | 3 | 0.14 [0.00, 0.36] | [0.05, 0.33] | 1.00 [1.00, 1.00] | 0.14 [0.00, 0.36] |
-| One Piece | B, no help from the same shot | 22 | 9 | 3 | 3 | 0.14 [0.00, 0.38] | [0.05, 0.33] | 1.00 [1.00, 1.00] | 0.14 [0.00, 0.38] |
+| One Piece | B, back of the head | 22 | 9 | 3 | 3 | 0.14 [0.00, 0.35] | [0.05, 0.33] | 1.00 [1.00, 1.00] | 0.14 [0.00, 0.35] |
+| One Piece | B, no help from the same shot | 22 | 9 | 3 | 3 | 0.14 [0.00, 0.37] | [0.05, 0.33] | 1.00 [1.00, 1.00] | 0.14 [0.00, 0.37] |
 | One Piece | B far, no face within 2 s | 11 | 5 | 1 | 1 | 0.09 [0.00, 0.17] | [0.02, 0.38] | 1.00 [1.00, 1.00] | 0.09 [0.00, 0.17] |
 | One Piece | B far, no help from the same shot | 11 | 5 | 1 | 1 | 0.09 [0.00, 0.17] | [0.02, 0.38] | 1.00 [1.00, 1.00] | 0.09 [0.00, 0.17] |
 | One Piece | M, face in the shot | 42 | 11 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.08] | – | 0.00 [0.00, 0.00] |
@@ -475,18 +475,18 @@ of a share is drawn over characters, the second is Wilson's per query (see
 | One Piece | E + M + H without M's bodies whose face shows meanwhile | 94 | 9 | 2 | 1 | 0.02 [0.00, 0.04] | [0.01, 0.07] | 0.50 [0.00, 1.00] | 0.01 [0.00, 0.03] |
 | One Piece | N, extras | 137 | – | 1 | – | 0.01 | [0.00, 0.04] | – | – |
 | live action and 3D | E, as today | 230 | 31 | 72 | 58 | 0.31 [0.25, 0.38] | [0.26, 0.38] | 0.81 [0.67, 0.90] | 0.25 [0.18, 0.33] |
-| live action and 3D | E, no help from the same shot | 230 | 31 | 71 | 58 | 0.31 [0.25, 0.38] | [0.25, 0.37] | 0.82 [0.69, 0.91] | 0.25 [0.19, 0.33] |
-| live action and 3D | M, face in the shot | 68 | 25 | 5 | 5 | 0.07 [0.02, 0.16] | [0.03, 0.16] | 1.00 [1.00, 1.00] | 0.07 [0.02, 0.16] |
-| live action and 3D | M, the face only at another moment | 11 | 9 | 3 | 3 | 0.27 [0.09, 0.50] | [0.10, 0.57] | 1.00 [1.00, 1.00] | 0.27 [0.09, 0.50] |
-| live action and 3D | H, no face in the shot | 153 | 27 | 27 | 24 | 0.18 [0.09, 0.29] | [0.12, 0.24] | 0.89 [0.67, 1.00] | 0.16 [0.07, 0.27] |
-| live action and 3D | H, bodies that would make a clip | 126 | 26 | 26 | 23 | 0.21 [0.11, 0.32] | [0.14, 0.29] | 0.88 [0.65, 1.00] | 0.18 [0.09, 0.30] |
+| live action and 3D | E, no help from the same shot | 230 | 31 | 71 | 58 | 0.31 [0.25, 0.38] | [0.25, 0.37] | 0.82 [0.69, 0.92] | 0.25 [0.19, 0.33] |
+| live action and 3D | M, face in the shot | 69 | 25 | 5 | 5 | 0.07 [0.02, 0.16] | [0.03, 0.16] | 1.00 [1.00, 1.00] | 0.07 [0.02, 0.16] |
+| live action and 3D | M, the face only at another moment | 10 | 9 | 3 | 3 | 0.30 [0.10, 0.55] | [0.11, 0.60] | 1.00 [1.00, 1.00] | 0.30 [0.10, 0.55] |
+| live action and 3D | H, no face in the shot | 152 | 26 | 27 | 24 | 0.18 [0.09, 0.29] | [0.13, 0.25] | 0.89 [0.68, 1.00] | 0.16 [0.08, 0.27] |
+| live action and 3D | H, bodies that would make a clip | 125 | 25 | 26 | 23 | 0.21 [0.10, 0.32] | [0.15, 0.29] | 0.88 [0.65, 1.00] | 0.18 [0.08, 0.30] |
 | live action and 3D | E + M + H (E without the same shot) | 451 | 33 | 103 | 87 | 0.23 [0.18, 0.29] | [0.19, 0.27] | 0.84 [0.73, 0.92] | 0.19 [0.14, 0.26] |
-| live action and 3D | E + M + H without M's bodies whose face shows meanwhile | 394 | 33 | 101 | 85 | 0.26 [0.20, 0.33] | [0.22, 0.30] | 0.84 [0.73, 0.92] | 0.22 [0.16, 0.29] |
-| live action and 3D | N, extras | 198 | – | 3 | – | 0.02 | [0.01, 0.04] | – | – |
+| live action and 3D | E + M + H without M's bodies whose face shows meanwhile | 392 | 33 | 101 | 85 | 0.26 [0.20, 0.33] | [0.22, 0.30] | 0.84 [0.73, 0.92] | 0.22 [0.15, 0.29] |
+| live action and 3D | N, extras | 194 | – | 1 | – | 0.01 | [0.00, 0.03] | – | – |
 | anime | E, as today | 78 | 20 | 6 | 3 | 0.08 [0.03, 0.13] | [0.04, 0.16] | 0.50 [0.00, 1.00] | 0.04 [0.00, 0.08] |
 | anime | E, no help from the same shot | 78 | 20 | 6 | 3 | 0.08 [0.03, 0.13] | [0.04, 0.16] | 0.50 [0.00, 1.00] | 0.04 [0.00, 0.08] |
 | anime | B, back of the head | 160 | 24 | 12 | 12 | 0.07 [0.03, 0.12] | [0.04, 0.13] | 1.00 [1.00, 1.00] | 0.07 [0.03, 0.12] |
-| anime | B, no help from the same shot | 160 | 24 | 12 | 12 | 0.07 [0.04, 0.12] | [0.04, 0.13] | 1.00 [1.00, 1.00] | 0.07 [0.04, 0.12] |
+| anime | B, no help from the same shot | 160 | 24 | 12 | 12 | 0.07 [0.03, 0.12] | [0.04, 0.13] | 1.00 [1.00, 1.00] | 0.07 [0.03, 0.12] |
 | anime | B far, no face within 2 s | 58 | 18 | 5 | 5 | 0.09 [0.04, 0.13] | [0.04, 0.19] | 1.00 [1.00, 1.00] | 0.09 [0.04, 0.13] |
 | anime | B far, no help from the same shot | 58 | 18 | 5 | 5 | 0.09 [0.04, 0.13] | [0.04, 0.19] | 1.00 [1.00, 1.00] | 0.09 [0.04, 0.13] |
 | anime | M, face in the shot | 42 | 11 | 0 | 0 | 0.00 [0.00, 0.00] | [0.00, 0.08] | – | 0.00 [0.00, 0.00] |
@@ -496,25 +496,25 @@ of a share is drawn over characters, the second is Wilson's per query (see
 | anime | E + M + H (E without the same shot) | 160 | 23 | 6 | 3 | 0.04 [0.01, 0.07] | [0.02, 0.08] | 0.50 [0.00, 1.00] | 0.02 [0.00, 0.04] |
 | anime | E + M + H without M's bodies whose face shows meanwhile | 127 | 21 | 6 | 3 | 0.05 [0.02, 0.08] | [0.02, 0.10] | 0.50 [0.00, 1.00] | 0.02 [0.00, 0.05] |
 | anime | N, extras | 191 | – | 1 | – | 0.01 | [0.00, 0.03] | – | – |
-| all titles | E, as today | 308 | 51 | 78 | 61 | 0.25 [0.20, 0.31] | [0.21, 0.30] | 0.78 [0.65, 0.89] | 0.20 [0.14, 0.26] |
-| all titles | E, no help from the same shot | 308 | 51 | 77 | 61 | 0.25 [0.20, 0.30] | [0.20, 0.30] | 0.79 [0.67, 0.90] | 0.20 [0.14, 0.25] |
+| all titles | E, as today | 308 | 51 | 78 | 61 | 0.25 [0.20, 0.31] | [0.21, 0.30] | 0.78 [0.66, 0.88] | 0.20 [0.14, 0.25] |
+| all titles | E, no help from the same shot | 308 | 51 | 77 | 61 | 0.25 [0.20, 0.30] | [0.20, 0.30] | 0.79 [0.67, 0.90] | 0.20 [0.14, 0.26] |
 | all titles | B, back of the head | 160 | 24 | 12 | 12 | 0.07 [0.03, 0.12] | [0.04, 0.13] | 1.00 [1.00, 1.00] | 0.07 [0.03, 0.12] |
 | all titles | B, no help from the same shot | 160 | 24 | 12 | 12 | 0.07 [0.03, 0.12] | [0.04, 0.13] | 1.00 [1.00, 1.00] | 0.07 [0.03, 0.12] |
 | all titles | B far, no face within 2 s | 58 | 18 | 5 | 5 | 0.09 [0.04, 0.13] | [0.04, 0.19] | 1.00 [1.00, 1.00] | 0.09 [0.04, 0.13] |
 | all titles | B far, no help from the same shot | 58 | 18 | 5 | 5 | 0.09 [0.04, 0.13] | [0.04, 0.19] | 1.00 [1.00, 1.00] | 0.09 [0.04, 0.13] |
-| all titles | M, face in the shot | 110 | 36 | 5 | 5 | 0.05 [0.01, 0.10] | [0.02, 0.10] | 1.00 [1.00, 1.00] | 0.05 [0.01, 0.10] |
-| all titles | M, the face only at another moment | 20 | 11 | 3 | 3 | 0.15 [0.05, 0.27] | [0.05, 0.36] | 1.00 [1.00, 1.00] | 0.15 [0.05, 0.27] |
-| all titles | H, no face in the shot | 193 | 34 | 27 | 24 | 0.14 [0.07, 0.23] | [0.10, 0.20] | 0.89 [0.67, 1.00] | 0.12 [0.05, 0.21] |
-| all titles | H, bodies that would make a clip | 149 | 32 | 26 | 23 | 0.17 [0.09, 0.28] | [0.12, 0.24] | 0.88 [0.67, 1.00] | 0.15 [0.07, 0.26] |
-| all titles | E + M + H (E without the same shot) | 611 | 56 | 109 | 90 | 0.18 [0.14, 0.23] | [0.15, 0.21] | 0.83 [0.72, 0.91] | 0.15 [0.10, 0.20] |
-| all titles | E + M + H without M's bodies whose face shows meanwhile | 521 | 54 | 107 | 88 | 0.21 [0.16, 0.26] | [0.17, 0.24] | 0.82 [0.71, 0.91] | 0.17 [0.12, 0.23] |
-| all titles | N, extras | 389 | – | 4 | – | 0.01 | [0.00, 0.03] | – | – |
+| all titles | M, face in the shot | 111 | 36 | 5 | 5 | 0.05 [0.01, 0.09] | [0.02, 0.10] | 1.00 [1.00, 1.00] | 0.05 [0.01, 0.09] |
+| all titles | M, the face only at another moment | 19 | 11 | 3 | 3 | 0.16 [0.05, 0.28] | [0.06, 0.38] | 1.00 [1.00, 1.00] | 0.16 [0.05, 0.28] |
+| all titles | H, no face in the shot | 192 | 33 | 27 | 24 | 0.14 [0.07, 0.23] | [0.10, 0.20] | 0.89 [0.65, 1.00] | 0.12 [0.05, 0.21] |
+| all titles | H, bodies that would make a clip | 148 | 31 | 26 | 23 | 0.18 [0.09, 0.27] | [0.12, 0.24] | 0.88 [0.65, 1.00] | 0.16 [0.07, 0.25] |
+| all titles | E + M + H (E without the same shot) | 611 | 56 | 109 | 90 | 0.18 [0.14, 0.23] | [0.15, 0.21] | 0.83 [0.71, 0.91] | 0.15 [0.10, 0.20] |
+| all titles | E + M + H without M's bodies whose face shows meanwhile | 519 | 54 | 107 | 88 | 0.21 [0.16, 0.26] | [0.17, 0.24] | 0.82 [0.70, 0.90] | 0.17 [0.12, 0.23] |
+| all titles | N, extras | 385 | – | 2 | – | 0.01 | [0.00, 0.02] | – | – |
 
 What the table says, and no more than it:
 
 - **Live action** (one title). Of the easy queries a quarter get a name
-  (20 of 76), and 16 of those 20 are right. Of the hard ones 7 of 58 get a
-  name, all 7 right. Pool M gets none (0 of 29); 26 of those 29 have their
+  (20 of 76), and 16 of those 20 are right. Of the hard ones 7 of 57 get a
+  name, all 7 right. Pool M gets none (0 of 30); 28 of those 30 have their
   figure's face labelled while they are on screen.
 - **3D animation** (one title). A third of the easy queries get a name
   (52 of 154), 42 right. Of the hard ones 20 of 95, 17 right.
@@ -524,14 +524,16 @@ What the table says, and no more than it:
 - **Pooled.** E + M + H: 109 of 611 answered (0.18), 90 right (0.83). That
   number mixes three things: without anime, which the app does not run, it
   is 103 of 451 (0.23) and 0.84 right; without pool M's bodies whose face
-  shows meanwhile it is 107 of 521 (0.21) and 0.82 right; without both, 101
-  of 394 (0.26) and 0.84 right.
+  shows meanwhile it is 107 of 519 (0.21) and 0.82 right; without both, 101
+  of 392 (0.26) and 0.84 right.
 - **Help from the same shot** hardly matters to today's rule: without it 3
   easy answers are lost and 2 others come (78 answers, then 77).
-- **Extras**: 7 of 389 get a name. 4 are wrong by the labels (bodies whose
-  faces the labels call an extra's: two called Walter, one called a minor
-  character, one called Yamato). 3 are bodies the readers call a person
-  outside the gallery, called a minor character: not judged.
+- **Extras**: 5 of 385 get a name. 2 are wrong by the labels (bodies whose
+  faces the labels call an extra's: one called a minor character, one
+  called Yamato). 3 are bodies the readers call a person outside the
+  gallery, called a minor character: not judged. (Two more counted as
+  wrong until the labels were read again, see the end of this part: bodies
+  called Walter under faces the labels had as `?`. They are Walter's.)
 - Every share right rests on few answers: 109 pooled, 27 on pool H, 20 on
   Breaking Bad's easy queries.
 - The three wrong answers of pool H are all on Miraculous (two bodies of
@@ -614,7 +616,7 @@ Not counted:
   a body is in pool H.
 - The readers name a part of a person (a hand, an arm, legs) when the scene
   makes clear whose it is. Such a body is a query, with or without the flag
-  `clip`: 44 of the 193 hard queries are no clip by the app's own test.
+  `clip`: 44 of the 192 hard queries are no clip by the app's own test.
   These names are the least sure. One the author looked at (Breaking Bad,
   item 156: a forearm at a mortar, on which the two readers differed and the
   third decided) may well be the other person of the scene; it was left as
@@ -657,19 +659,19 @@ today's numbers beside it. None of it is decided.
 | Rules are judged on the pooled set, and reported per footage type beside it | pooled E + M + H: 611 queries, 56 characters. Live action 163, 3D 288, anime 160 (pool B's 160 are not in that sum) |
 | A live-action model is judged only after a second live-action title is labelled | one title: Breaking Bad |
 | At least +10 points answered, against today's pass on the same queries | today 0.18 answered over E + M + H (0.14 to 0.23 over characters); +10 points is 0.28. Without anime 0.23; without pool M's bodies whose face shows meanwhile 0.21; without both 0.26 |
-| ... at no less than today's share right, the interval drawn over characters | today 0.83 (0.72 to 0.91), on 109 answers |
-| ... and not lower on pool H alone | today 0.14 answered (0.07 to 0.23), 0.89 right (0.67 to 1.00), on 27 answers |
-| Extras named (pool N) do not rise | today 4 of 389 wrong by the labels, 3 more not judged |
+| ... at no less than today's share right, the interval drawn over characters | today 0.83 (0.71 to 0.91), on 109 answers |
+| ... and not lower on pool H alone | today 0.14 answered (0.07 to 0.23), 0.89 right (0.65 to 1.00), on 27 answers |
+| Extras named (pool N) do not rise | today 2 of 385 wrong by the labels, 3 more not judged |
 | "On their character" of the identity bench does not fall; within +25 % of the people pass's time | not measured for this row |
 | A rule and a model are judged apart | – |
 
 What the owner has to settle before the gate can be used:
 
-1. **Which queries the +10 points are counted on.** 90 queries of pool M are
+1. **Which queries the +10 points are counted on.** 92 queries of pool M are
    bodies whose face shows meanwhile: no rule should name them, and they
    hold the pooled share down. 160 are anime, which the app does not run.
 2. **What "no less than today's share right" means** when today's share is
-   known only to within 0.72 to 0.91: the point (0.83), the lower end, or a
+   known only to within 0.71 to 0.91: the point (0.83), the lower end, or a
    paired count on the same queries.
 3. **How the pools weigh.** Pooled, pool E is half of the 611 queries and
    Miraculous is 288 of them; pool E is also the pool whose names are least
@@ -752,6 +754,34 @@ the eight had a name from the pass, so no answer and no other pool changes.
 The run on the app's people and the run on the bench's own bodies ("Titles
 and runs") match on 275 queries for 283. `bb.pools.tsv` and `bb.today.tsv`
 were made again (eight rows less each).
+
+The labels were then read again (row 34: every `?` row, by two readers and a
+third; 37 rows got a name of the main cast). What that does to this set:
+
+- Four bodies leave pool N, because the faces on them have a name now. The
+  part of pool N that comes from the labels is 56 on Breaking Bad and 180
+  over all titles; pool N as a whole is 155 and 385.
+- Two of the four had a name from the pass, Walter both times, and had
+  counted as wrong answers on extras. They are Walter's bodies. The wrong
+  names on extras are 2 now, not 4.
+- One body of Walt Jr.'s left pool H for pool M, because the face on it has
+  his name now. One more body of pool M got the flags `now` and `on`, and
+  one of pool E the flag `shown`. Breaking Bad's pool M is 30 and pool H 57;
+  over all titles 111 and 192.
+- No answer of pools E, M and H changes. The run on the app's people and
+  the run on the bench's own bodies match on 272 queries.
+- With the labels as they are now, 13 of the 745 tracks to draw from would
+  be in the other group of the draw (481 and 264 for 494 and 251), and
+  pool H's pair weighted by the draw's shares (see "The draw and the
+  readers") is 0.130 for 0.123 on Breaking Bad.
+
+The counts, the table and the sentences above are as they come out now. The
+table's intervals over characters were drawn anew with it, and all titles
+share one stream of random numbers, so some ends moved on titles whose
+queries did not change: by 0.01 on most lines, by 0.03 on one line of
+Jujutsu Kaisen, by 0.12 on one of Miraculous (pool M, the face only at
+another moment) and by 0.14 on one of Re:Zero (pool E as today). See
+"Intervals": their ends move with the draw.
 
 ### Commands
 

@@ -467,26 +467,26 @@ the 12 characters (95 % interval), then pooled:
 
 | Set | Shots | Seconds | Added shots | (1) show a speaker | (1) in a scene of theirs | (4) speaker shots held |
 |---|---|---|---|---|---|---|
-| groups (b) | 94.4 | 415 | 34.7 | 0.819 (0.708 to 0.921), 0.752 | 0.819, 0.752 | 0.288 (0.195 to 0.382), 0.330 |
-| **walk (c)** | 119.9 | 540 | 60.2 | **0.985** (0.964 to 1.000), 0.965 | 0.972 (0.949 to 0.993), 0.957 | **0.778** (0.656 to 0.895), 0.735 |
-| bridged walk (e), with the stepped-over shots | 152.8 | 641 | 93.1 | 0.829 (0.765 to 0.890), 0.795 | 0.787, 0.774 | 0.954 (0.895 to 0.997), 0.920 |
-| bridged walk (e), without them | 135.0 | 603 | 75.2 | 0.982 (0.960 to 0.999), 0.966 | 0.951 (0.907 to 0.987), 0.948 | 0.947 (0.885 to 0.994), 0.912 |
-| scenes, partners (g) | 138.9 | 621 | 79.2 | 0.968 (0.941 to 0.990), 0.941 | 0.912 (0.825 to 0.975), 0.914 | 0.956 (0.901 to 0.995), 0.925 |
-| scenes, anyone (f) | 143.4 | 636 | 83.7 | 0.927 (0.882 to 0.968), 0.909 | 0.857 (0.751 to 0.939), 0.870 | 0.960 (0.905 to 0.999), 0.930 |
-| whole scenes (d) | 190.0 | 741 | 130.2 | 0.692 (0.591 to 0.791), 0.592 | 0.629 (0.528 to 0.731), 0.566 | 0.967 (0.912 to 1.000), 0.938 |
+| groups (b) | 94.4 | 415 | 34.7 | 0.819 (0.708 to 0.920), 0.752 | 0.819, 0.752 | 0.289 (0.197 to 0.387), 0.330 |
+| **walk (c)** | 119.9 | 540 | 60.2 | **0.986** (0.966 to 1.000), 0.968 | 0.973 (0.950 to 0.994), 0.960 | **0.778** (0.657 to 0.894), 0.734 |
+| bridged walk (e), with the stepped-over shots | 152.8 | 641 | 93.1 | 0.830 (0.765 to 0.891), 0.797 | 0.788, 0.776 | 0.954 (0.896 to 0.997), 0.920 |
+| bridged walk (e), without them | 135.0 | 603 | 75.2 | 0.983 (0.962 to 0.999), 0.968 | 0.952 (0.908 to 0.988), 0.950 | 0.947 (0.886 to 0.994), 0.912 |
+| scenes, partners (g) | 138.9 | 621 | 79.2 | 0.969 (0.943 to 0.990), 0.943 | 0.913 (0.825 to 0.975), 0.916 | 0.956 (0.901 to 0.995), 0.925 |
+| scenes, anyone (f) | 143.4 | 636 | 83.7 | 0.928 (0.881 to 0.969), 0.911 | 0.858 (0.752 to 0.939), 0.872 | 0.960 (0.906 to 0.999), 0.929 |
+| whole scenes (d) | 190.0 | 741 | 130.2 | 0.692 (0.593 to 0.791), 0.593 | 0.629 (0.526 to 0.731), 0.567 | 0.967 (0.912 to 1.000), 0.938 |
 
-The same as shots, over all 12 characters together (925 shots of their
+The same as shots, over all 12 characters together (921 shots of their
 scenes show a speaker and not the character):
 
-| Set | Added shots | with a speaker | faces that do not speak | no labelled face | in a scene the character is not in | of the 925 held |
+| Set | Added shots | with a speaker | faces that do not speak | no labelled face | in a scene the character is not in | of the 921 held |
 |---|---|---|---|---|---|---|
-| groups (b) | 416 | 313 | 34 | 69 | 0 | 305 |
-| walk (c) | 722 | 697 | 25 | 0 | 6 | 680 |
-| bridged walk (e), with the stepped-over shots | 1,117 | 888 | 90 | 139 | 24 | 851 |
-| bridged walk (e), without them | 903 | 872 | 31 | 0 | 17 | 844 |
-| scenes, partners (g) | 950 | 894 | 56 | 0 | 34 | 856 |
-| scenes, anyone (f) | 1,004 | 913 | 91 | 0 | 49 | 860 |
-| whole scenes (d) | 1,563 | 925 | 229 | 409 | 77 | 868 |
+| groups (b) | 416 | 313 | 34 | 69 | 0 | 304 |
+| walk (c) | 722 | 699 | 23 | 0 | 6 | 676 |
+| bridged walk (e), with the stepped-over shots | 1,117 | 890 | 88 | 139 | 24 | 847 |
+| bridged walk (e), without them | 903 | 874 | 29 | 0 | 17 | 840 |
+| scenes, partners (g) | 950 | 896 | 54 | 0 | 34 | 852 |
+| scenes, anyone (f) | 1,004 | 915 | 89 | 0 | 49 | 856 |
+| whole scenes (d) | 1,563 | 927 | 227 | 409 | 77 | 864 |
 
 Measure (2), the others' speech whose speaker is seen in the added shots and
 in the set at all: own –, 0.783; groups 0.779, 0.906; walk 0.865, 0.907;
@@ -497,11 +497,11 @@ shots held of those asked for):
 
 | Character | Own shots | Walk (c) | Bridged walk, without the stepped-over shots | Scenes, anyone (f) | Whole scenes (d) |
 |---|---|---|---|---|---|
-| walter | 300 | 198, 0.89, 167/175 | 205, 0.89, 172/175 | 217, 0.85, 174/175 | 416, 0.45, 175/175 |
-| jesse | 122 | 112, 0.99, 111/191 | 167, 0.98, 163/191 | 180, 0.93, 166/191 | 301, 0.56, 168/191 |
+| walter | 300 | 198, 0.90, 164/172 | 205, 0.89, 169/172 | 217, 0.85, 171/172 | 416, 0.45, 172/172 |
+| jesse | 122 | 112, 1.00, 112/192 | 167, 0.99, 164/192 | 180, 0.93, 167/192 | 301, 0.56, 169/192 |
 | skyler | 66 | 82, 1.00, 77/81 | 93, 1.00, 80/81 | 109, 0.96, 81/81 | 123, 0.85, 81/81 |
 | hank | 39 | 21, 1.00, 21/42 | 42, 1.00, 42/42 | 56, 0.75, 42/42 | 97, 0.43, 42/42 |
-| waltjr | 42 | 68, 1.00, 67/71 | 71, 1.00, 70/71 | 76, 0.95, 71/71 | 88, 0.82, 71/71 |
+| waltjr | 42 | 68, 1.00, 65/69 | 71, 1.00, 68/69 | 76, 0.95, 69/69 | 88, 0.82, 69/69 |
 | krazy8 | 46 | 44, 0.93, 41/60 | 57, 0.93, 53/60 | 62, 0.92, 57/60 | 110, 0.55, 60/60 |
 | gomez | 19 | 36, 1.00, 36/62 | 62, 1.00, 62/62 | 76, 0.82, 62/62 | 117, 0.53, 62/62 |
 | marie | 22 | 45, 1.00, 45/45 | 45, 1.00, 45/45 | 45, 1.00, 45/45 | 50, 0.90, 45/45 |
@@ -511,33 +511,33 @@ shots held of those asked for):
 | bogdan | 8 | 11, 1.00, 10/10 | 13, 1.00, 10/10 | 27, 1.00, 10/10 | 30, 0.90, 10/10 |
 
 The two other readings give the same picture. With the stored cast and the
-labelled scenes: walk 0.985 and 0.779 held, bridged walk without the
-stepped-over shots 0.973 and 0.959, (g) 0.971 and 0.982, (f) 0.932 and
-0.993, whole scenes 0.701 and 1. With the labels for both, as corrected on
+labelled scenes: walk 0.986 and 0.779 held, bridged walk without the
+stepped-over shots 0.974 and 0.959, (g) 0.972 and 0.982, (f) 0.932 and
+0.993, whole scenes 0.702 and 1. With the labels for both, as corrected on
 2026-11-15 (see "What they cannot say"): 0.986 and 0.782, 0.974 and 0.972,
-0.974 and 0.991, 0.939 and 1, 0.701 and 1. So neither the
-stored cast nor the scenes the app finds cost much here: 57 of the 925
+0.974 and 0.991, 0.938 and 1, 0.700 and 1. So neither the
+stored cast nor the scenes the app finds cost much here: 57 of the 921
 speaker shots lie in a scene the recipe cut apart from the own shots (34 of
 Emilio's, 23 of Jesse's).
 
 ### What the numbers say
 
-- **The walk meets the draft bar (0.985 against 0.80), and the bar says
-  little.** Of the 579 shots in which the cast is sure of someone, 527 show
-  a speaker of their scene (0.910). The walk can only add shots with such a
+- **The walk meets the draft bar (0.986 against 0.80), and the bar says
+  little.** Of the 579 shots in which the cast is sure of someone, 528 show
+  a speaker of their scene (0.912). The walk can only add shots with such a
   face, so any rule of that kind passes. What counts is the gap to "any
   face" (f): 0.06.
 - **0.1's walk leaves out about a quarter of the shots that show a speaker
-  of the character's scenes** (held 0.778, pooled 0.735). Of the 245 it
+  of the character's scenes** (held 0.778, pooled 0.734). Of the 245 it
   leaves out, 176 lie behind a shot that stops it: one in which the cast
   shows nobody, or nobody who shares a frame with the character. 57 lie in a
   scene found apart, 8 show nobody the cast knows, 4 only strangers to the
   character. A partner who never shares a frame with the character, which
   the proposal named as the walk's limit, is rare here.
 - **The 6-second bridge closes that gap** (row 27): 0.947 held, at the same
-  share of added shots with a speaker (0.982). Character by character
-  against the walk: +0.169 held (+0.079 to +0.267), −0.002 on (1). With its
-  stepped-over shots in the set, (1) is 0.829 and under 0.80 for 5 of the 12
+  share of added shots with a speaker (0.983). Character by character
+  against the walk: +0.169 held (+0.078 to +0.267), −0.003 on (1). With its
+  stepped-over shots in the set, (1) is 0.830 and under 0.80 for 5 of the 12
   characters: those shots hold nobody the measure can credit (16 of 214
   show a speaker).
 - **A walk is not needed for that** (row 28). Whole scenes with only the
@@ -545,7 +545,7 @@ Emilio's, 23 of Jesse's).
   (0.960), and need no new query: a pack's shot already carries how many
   characters the cast shows in it. The partner rule (g) and the bridged walk
   add fewer shots without a speaker: (f) minus the bridged walk is −0.055 on
-  (1) (−0.101 to −0.018). That gap sits in the party scene (Hank 0.75
+  (1) (−0.102 to −0.017). That gap sits in the party scene (Hank 0.75
   against 1.00, Gomez 0.82 against 1.00) and where the recipe joins two
   scenes: (f) then takes every face of the wrong scene (49 added shots in a
   scene the character is not in, against 17).
@@ -553,7 +553,7 @@ Emilio's, 23 of Jesse's).
   speaker (0.195 no labelled face, 0.113 faces that do not speak). The
   filtered sets drop those and keep 0.95 to 0.96 of the speaker shots, with
   under two thirds of the added shots.
-- **Against shot groups**: groups hold 0.288 of the speaker shots. They
+- **Against shot groups**: groups hold 0.289 of the speaker shots. They
   bridge between two own shots only, so a scene in which the character is
   seen once gets nothing.
 - 0.1's cap of 180 s removes no shot here (the longest stretch is 174 s).
@@ -573,10 +573,10 @@ sight of a speaker earns all their seconds.
   have the same sets from the bridged walk on, Denim and Mustache too; these
   four have most of their shots in the party scene, and Denim and Mustache
   are guests who never speak. The intervals are too narrow for another
-  title. Without Denim and Mustache the means of (1) and (4) are 0.982 and
-  0.759 for the walk, 0.979 and 0.937 for the bridged walk, 0.913 and 0.953
-  for (f); for Walter, Jesse and Skyler alone 0.962 and 0.829, 0.957 and
-  0.941, 0.913 and 0.954.
+  title. Without Denim and Mustache the means of (1) and (4) are 0.983 and
+  0.759 for the walk, 0.980 and 0.937 for the bridged walk, 0.914 and 0.953
+  for (f); for Walter, Jesse and Skyler alone 0.966 and 0.829, 0.960 and
+  0.941, 0.916 and 0.955.
 - **Speakers are seconds per scene, not turns.** A speaker's face in a shot
   does not say that they speak in it, or with the character. A listener who
   never speaks counts as nobody. A scene the character only passes through
@@ -614,7 +614,15 @@ sight of a speaker earns all their seconds.
   they come out now
   (pooled, the bridged walk without its stepped-over shots holds 0.912 for
   0.913; no mean of the tables moved). It also marks seventeen faces behind
-  gas masks as not to be told, which changes no count here.
+  gas masks as not to be told, which changes no count here. A third change
+  the same day (row 34) gave 37 unnamed faces a name of the main cast, and
+  the tables and sentences of this section are now what the tool writes
+  with those labels: 921 asked-for shots for 925, Walter 172 for 175,
+  Walt Jr. 69 for 71, Jesse 192 for 191; two more added shots with a
+  speaker for every set but the groups; no mean moved by more than 0.004
+  (the walk's (1) 0.986 for 0.985, the three leading characters' 0.966 for
+  0.962). The cells of rows 25, 27 and 28 hold the numbers of the run as it
+  was, before the three corrections.
 
 ### The review
 
@@ -702,7 +710,7 @@ Checked first, as row 29 asks. Two more readers read the 374 shots of the 17
 odd-numbered labelled scenes of Breaking Bad S01E01 in the same way, with
 cast pages of the 43 names of `bench/identity` that had three tracks or
 more (`check/bb_s01e01.cast.tsv`, `.shots.tsv`, `.speak.a.tsv`, `.b.tsv`).
-The hand labels are those corrected the same day (rows 30 and 31); the pages
+The hand labels are those corrected the same day (rows 30, 31 and 34); the pages
 were drawn before, with `wavy_guest` still on them, a name no reader used.
 The corrections move only the last line of the table (0.955 and 0.760 before
 them).
@@ -713,7 +721,7 @@ them).
 | How often is the answer yes? | labels 0.636, readers 0.634 |
 | The same, in the 252 shots in which the cast is sure of someone | the same answer in 0.956; yes by the labels 0.937, by the readers 0.893 (11 shots only the labels, none only the readers) |
 | Who speaks in the scenes? | the readers find 21 of the labels' 27 speakers, 0.943 of their 407 s of speech; all 21 they name speak by the labels |
-| Who is seen in a shot? | of 334 names both readers give, 321 are the labels' (0.961); the labels give 419 (0.766 found) |
+| Who is seen in a shot? | of 334 names both readers give, 322 are the labels' (0.964); the labels give 421 (0.765 found) |
 
 The bar is met. The readers err on the careful side: they miss small
 speakers and small faces, and name no speaker who is none. What row 29
@@ -851,7 +859,7 @@ than it seems:
 - **Against whole scenes** (f) is the better set on every count: it drops
   221 added shots, 13 of them with a speaker, and scores 0.892 against 0.743
   (strict 0.800 against 0.671).
-- **Against shot groups**: groups hold 0.491 of the speaker shots (0.288 on
+- **Against shot groups**: groups hold 0.491 of the speaker shots (0.289 on
   Breaking Bad).
 - With either reader alone as the truth the picture is the same: the walk
   0.959 and 0.950 on (1), 0.771 and 0.768 held; (f) 0.899 and 0.892, 0.992
@@ -889,7 +897,7 @@ than it seems:
   0.840 held for 0.852 and (f) 0.983 for 0.995.
 - **Joined scenes only add shots.** No speaker shot lies in a scene found
   apart here, so this episode cannot show what a wrongly split scene costs
-  (f); Breaking Bad is the only evidence for that (57 of 926 shots).
+  (f); Breaking Bad is the only evidence for that (57 of 921 shots).
 - **A scene counts as a character's when the cast shows them in it once**,
   and the labelled scenes are coarse: two of them start at an act break
   graphic and hold a whole dialogue after it.

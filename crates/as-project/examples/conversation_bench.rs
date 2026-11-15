@@ -751,7 +751,8 @@ struct Tally {
 fn tally(set: &[bool], own: &[bool], me: usize, t: &Truth) -> Tally {
     let n = set.len();
     let mut x = Tally::default();
-    let mine: HashSet<usize> = (0..n).filter(|&s| own[s]).map(|s| t.scene[s]).collect();
+    // In order, so that the seconds below are added up the same way in every run.
+    let mine: BTreeSet<usize> = (0..n).filter(|&s| own[s]).map(|s| t.scene[s]).collect();
     for s in 0..n {
         let speaker = t.shows_speaker(s);
         if set[s] {

@@ -6,6 +6,8 @@
 //! own), which is opened read only.
 //!
 //! `conversation_bench <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <pictures.emb> [out.tsv]`
+//! `conversation_bench shots <project_copy_dir> <scenes.tsv> <shot labels.tsv> <cast.tsv> <pictures.emb> [out.tsv]`
+//! `conversation_bench agree <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <shot labels.tsv>`
 //!
 //! `<scenes.tsv>` holds the labelled scenes with the seconds of speech per
 //! speaker (`bench/scenes`), `<identity labels.tsv>` who is to be seen where
@@ -33,6 +35,13 @@
 //! Three readings: the stored cast with the app's scenes (what a port would
 //! give), the stored cast with the labelled scenes, and the labels for both.
 //! Who is truly in a shot, and so every score, comes from the labels.
+//!
+//! `shots` is the same run on a title without hand labels (row 29): two
+//! readers' shot labels (`bench/scenes`, `*.shots.tsv`) say who is seen and
+//! who speaks, `<cast.tsv>` which stored characters each of their names is;
+//! the reading with labels for both is left out, shot labels carry no times.
+//! `agree` checks such shot labels against the hand labels and the speakers'
+//! seconds of an episode that has both.
 //!
 //! `MEDIA=<n>` picks the n-th media of a project with several (from 0),
 //! `SURE=1` leaves out the speakers whose face label is unsure,
@@ -90,6 +99,8 @@ struct Episode {
     tracks: Vec<Track>,
     /// What the cast calls each character, and whether it hides them.
     characters: Vec<(String, bool)>,
+    /// Each character's number in the project (`Character <number>`).
+    numbers: Vec<u32>,
 }
 
 impl Episode {
@@ -125,6 +136,7 @@ fn load(dir: &Path) -> Episode {
 
     let mut index = HashMap::new();
     let mut characters = Vec::new();
+    let mut numbers = Vec::new();
     let mut st = db.prepare("SELECT id, number, name, hidden FROM characters ORDER BY number").unwrap();
     let mut rows = st.query([]).unwrap();
     while let Some(r) = rows.next().unwrap() {
@@ -132,6 +144,7 @@ fn load(dir: &Path) -> Episode {
             (r.get(0).unwrap(), r.get(1).unwrap(), r.get(2).unwrap(), r.get(3).unwrap());
         index.insert(cid, characters.len());
         characters.push((name.unwrap_or_else(|| format!("Character {number}")), hidden));
+        numbers.push(number);
     }
     let mut tracks = Vec::new();
     let mut st = db
@@ -161,7 +174,7 @@ fn load(dir: &Path) -> Episode {
             dets: dets_from_bytes(&dets).expect("stored detections"),
         });
     }
-    Episode { rate: (num, den), segments, tracks, characters }
+    Episode { rate: (num, den), segments, tracks, characters, numbers }
 }
 
 /// The project's shots and what lies between them, each with the characters
@@ -227,7 +240,9 @@ fn pictures_of(path: &Path, shots: &[Shot]) -> Vec<Vec<Vec<f32>>> {
 fn scene_labels(path: &Path, shots: &[Shot]) -> (Vec<bool>, Vec<Vec<(String, f64)>>) {
     let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let header: Vec<&str> = text.lines().next().expect("scene labels").split('\t').collect();
-    assert_eq!(header, ["frame", "source_s", "speakers"], "{}: scene labels with speakers", path.display());
+    // Scenes with the speakers' seconds (Serial Speakers), or scenes alone (`frame sure note`).
+    let with_speakers = header == ["frame", "source_s", "speakers"];
+    assert!(with_speakers || header == ["frame", "sure", "note"], "{}: scene labels", path.display());
     let mut cuts = vec![false; shots.len() - 1];
     let mut rows = Vec::new();
     for line in text.lines().skip(1).filter(|l| !l.trim().is_empty()) {
@@ -239,7 +254,7 @@ fn scene_labels(path: &Path, shots: &[Shot]) -> (Vec<bool>, Vec<Vec<(String, f64
             assert!(!cuts[s - 1], "two scenes start at frame {frame}");
             cuts[s - 1] = true;
         }
-        let said = f.get(2).copied().unwrap_or_default();
+        let said = if with_speakers { f.get(2).copied().unwrap_or_default() } else { "" };
         let said: Vec<(String, f64)> = said
             .split(';')
             .filter(|x| !x.trim().is_empty())
@@ -336,6 +351,148 @@ fn speaker_labels(path: &Path, sure_only: bool) -> HashMap<String, Vec<String>> 
         }
     }
     out
+}
+
+// -- labels two readers made ---------------------------------------------------
+
+/// The readers' label for someone who is not on their cast sheet: never
+/// credited, as `?` in the hand labels.
+const OTHER: &str = "other";
+
+/// What two readers wrote for one shot: the seconds of speech heard in it,
+/// whose face each of them sees, and who of those each takes to speak.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Read {
+    speech: f64,
+    faces: [Vec<String>; 2],
+    speaks: [Vec<String>; 2],
+}
+
+/// A file of two readers' shot labels (`frame speech_s faces_a faces_b
+/// speaks_a speaks_b`; names with commas between them, `-` for nobody): each
+/// shot's row, `None` for a shot that was not read.
+fn shot_labels(path: &Path, shots: &[Shot]) -> Vec<Option<Read>> {
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let header: Vec<&str> = text.lines().next().expect("shot labels").split('\t').collect();
+    assert_eq!(header, ["frame", "speech_s", "faces_a", "faces_b", "speaks_a", "speaks_b"], "{}", path.display());
+    let list = |x: &str| -> Vec<String> {
+        let mut v: Vec<String> =
+            x.split(',').map(str::trim).filter(|n| !n.is_empty() && *n != "-").map(str::to_owned).collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let mut out = vec![None; shots.len()];
+    for line in text.lines().skip(1).filter(|l| !l.trim().is_empty()) {
+        let f: Vec<&str> = line.split('\t').collect();
+        assert_eq!(f.len(), 6, "shot labels: six columns, not `{line}`");
+        let frame: u32 = f[0].parse().expect("shot labels: a frame first");
+        let s = shots
+            .binary_search_by_key(&frame, |s| s.start)
+            .unwrap_or_else(|_| panic!("shot labels: no shot starts at frame {frame}"));
+        assert!(out[s].is_none(), "shot labels: two rows for the shot at frame {frame}");
+        let read = Read {
+            speech: f[1].parse().expect("seconds of speech"),
+            faces: [list(f[2]), list(f[3])],
+            speaks: [list(f[4]), list(f[5])],
+        };
+        for r in 0..2 {
+            assert!(
+                read.speaks[r].iter().all(|p| read.faces[r].contains(p)),
+                "frame {frame}: a reader's speaker is not among the faces that reader sees"
+            );
+        }
+        out[s] = Some(read);
+    }
+    out
+}
+
+/// The readers' labels as what is true (row 29). A shot shows the names both
+/// readers give. A person speaks in a scene when each reader marks them
+/// speaking in a shot of it (not needfully the same shot). Their seconds are
+/// the heard speech of the shots in which both readers mark them, split
+/// evenly where several are marked; the rest of the scene's heard speech
+/// belongs to nobody known. A shot that was not read shows nobody.
+/// `number` gives each cast sheet label its number.
+fn readers_truth(read: &[Option<Read>], scene: Vec<usize>, number: &HashMap<&str, usize>, secs: Vec<f64>) -> Truth {
+    let known = |name: &String| -> Option<usize> {
+        (name != OTHER)
+            .then(|| *number.get(name.as_str()).unwrap_or_else(|| panic!("{name}: not a label of the cast sheet")))
+    };
+    let both =
+        |a: &[String], b: &[String]| -> Vec<usize> { a.iter().filter(|p| b.contains(p)).filter_map(known).collect() };
+    let n = read.len();
+    let scenes = scene.last().map_or(0, |&s| s + 1);
+    let mut faces = vec![Vec::new(); n];
+    let mut any_face = vec![false; n];
+    // Per scene: who each reader marks speaking, the seconds of those both
+    // mark in one shot, and the heard speech of nobody known.
+    let mut marked: Vec<[BTreeSet<usize>; 2]> = vec![Default::default(); scenes];
+    let mut theirs: Vec<BTreeMap<usize, f64>> = vec![BTreeMap::new(); scenes];
+    let mut unknown = vec![0.0; scenes];
+    for s in 0..n {
+        let Some(r) = &read[s] else { continue };
+        faces[s] = both(&r.faces[0], &r.faces[1]);
+        any_face[s] = !r.faces[0].is_empty() && !r.faces[1].is_empty();
+        for k in 0..2 {
+            marked[scene[s]][k].extend(r.speaks[k].iter().filter_map(known));
+        }
+        let speaking = both(&r.speaks[0], &r.speaks[1]);
+        if speaking.is_empty() {
+            unknown[scene[s]] += r.speech;
+        }
+        for &p in &speaking {
+            *theirs[scene[s]].entry(p).or_default() += r.speech / speaking.len() as f64;
+        }
+    }
+    let speech = (0..scenes)
+        .map(|c| {
+            let mut rows: Vec<(Vec<usize>, f64)> = marked[c][0]
+                .intersection(&marked[c][1])
+                .map(|&p| (vec![p], theirs[c].get(&p).copied().unwrap_or(0.0)))
+                .collect();
+            if unknown[c] > 0.0 {
+                rows.push((Vec::new(), unknown[c]));
+            }
+            rows
+        })
+        .collect();
+    Truth { scene, faces, any_face, speech, secs }
+}
+
+/// The readers' cast sheet (`label keys note`): each label with the stored
+/// characters that are that person (`c<number>`, commas between them).
+fn cast_sheet(path: &Path, ep: &Episode) -> Vec<(String, Vec<usize>)> {
+    let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let header: Vec<&str> = text.lines().next().expect("cast sheet").split('\t').collect();
+    assert_eq!(header, ["label", "keys", "note"], "{}", path.display());
+    let mut taken = HashSet::new();
+    text.lines()
+        .skip(1)
+        .filter(|l| !l.trim().is_empty())
+        .map(|line| {
+            let f: Vec<&str> = line.split('\t').collect();
+            let characters = f[1]
+                .split(',')
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .map(|k| {
+                    let number: u32 = k
+                        .strip_prefix('c')
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or_else(|| panic!("cast sheet: {k} is not c<number>"));
+                    let c = ep
+                        .numbers
+                        .iter()
+                        .position(|&x| x == number)
+                        .unwrap_or_else(|| panic!("cast sheet: no character {number} in the project"));
+                    assert!(taken.insert(c), "cast sheet: {k} stands under two labels");
+                    c
+                })
+                .collect();
+            (f[0].to_owned(), characters)
+        })
+        .collect()
 }
 
 // -- who is where ------------------------------------------------------------
@@ -918,7 +1075,7 @@ fn print_pairs(what: &str, lines: &[Line]) {
         ("(4) speaker shots held", |x| x.held.into(), |x| x.wanted.into()),
     ];
     println!("\n{what}: one set against another, character by character (mean difference, 95 % interval, characters):");
-    for (a, b) in [(KEPT, WALK), (PARTNERS, KEPT), (ANY, PARTNERS), (ANY, KEPT), (SCENES, ANY)] {
+    for (a, b) in [(KEPT, WALK), (PARTNERS, KEPT), (ANY, PARTNERS), (ANY, KEPT), (ANY, WALK), (SCENES, ANY)] {
         let cells: Vec<String> = measures
             .iter()
             .map(|(name, part, whole)| {
@@ -1001,31 +1158,36 @@ fn tsv(out: &mut String, reading: &str, lines: &[Line]) {
     }
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if !(5..=6).contains(&args.len()) {
-        eprintln!(
-            "usage: conversation_bench <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <pictures.emb> [out.tsv]"
-        );
-        std::process::exit(2);
-    }
-    let ep = load(Path::new(&args[0]));
-    let (shots, between) = shots_of(&ep);
+/// What the hand labels (`bench/identity`) and the speakers' seconds
+/// (`bench/scenes`) say of an episode.
+struct Gold {
+    /// The people the labels name, in the order of their names.
+    names: Vec<String>,
+    by_label: Who,
+    truth: Truth,
+    /// Whether a labelled scene starts after each shot but the last.
+    cuts: Vec<bool>,
+}
+
+fn gold(shots: &[Shot], fps: f64, scenes: &Path, labels: &[Label], speakers_path: &Path, sure_only: bool) -> Gold {
     let n = shots.len();
-    let fps = ep.fps();
-    let (truth_cuts, said) = scene_labels(Path::new(&args[1]), &shots);
-    let labels = face_labels(Path::new(&args[2]));
-    let sure_only = std::env::var("SURE").is_ok();
-    let speakers = speaker_labels(Path::new(&args[3]), sure_only);
+    let (cuts, said) = scene_labels(scenes, shots);
+    let speakers = speaker_labels(speakers_path, sure_only);
 
     // The people the labels name, numbered by name.
-    let names: Vec<&str> =
-        labels.iter().map(|l| l.name.as_str()).filter(|x| named(x)).collect::<BTreeSet<_>>().into_iter().collect();
-    let number: HashMap<&str, usize> = names.iter().enumerate().map(|(i, &x)| (x, i)).collect();
+    let names: Vec<String> = labels
+        .iter()
+        .map(|l| l.name.as_str())
+        .filter(|x| named(x))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let number: HashMap<&str, usize> = names.iter().enumerate().map(|(i, x)| (x.as_str(), i)).collect();
     let mut by_label = Who { shots: vec![Vec::new(); n], spans: vec![Vec::new(); names.len()] };
     let mut any_face = vec![false; n];
-    for l in &labels {
-        for s in shots_under(&shots, l) {
+    for l in labels {
+        for s in shots_under(shots, l) {
             any_face[s] = true;
             if let Some(&p) = number.get(l.name.as_str())
                 && !by_label.shots[s].contains(&p)
@@ -1044,8 +1206,9 @@ fn main() {
             scene
                 .iter()
                 .map(|(who, secs)| {
-                    let faces =
-                        speakers.get(who).unwrap_or_else(|| panic!("{who}: a speaker without a row in {}", args[3]));
+                    let faces = speakers
+                        .get(who)
+                        .unwrap_or_else(|| panic!("{who}: a speaker without a row in {}", speakers_path.display()));
                     let faces = faces
                         .iter()
                         .map(|f| *number.get(f.as_str()).unwrap_or_else(|| panic!("{f}: no such face label")))
@@ -1056,17 +1219,27 @@ fn main() {
         })
         .collect();
     let truth = Truth {
-        scene: scene_ids(&truth_cuts),
+        scene: scene_ids(&cuts),
         faces: by_label.shots.clone(),
         any_face,
         speech,
         secs: shots.iter().map(|s| f64::from(s.end - s.start) / fps).collect(),
     };
+    Gold { names, by_label, truth, cuts }
+}
 
-    // The scenes the app would find.
-    let vectors = pictures_of(Path::new(&args[4]), &shots);
-    let secs32: Vec<f32> = shots.iter().map(|s| (f64::from(s.end - s.start) / fps) as f32).collect();
-    let found = scenes::scenes(&shots, &between, &secs32, None, &vectors, &Recipe::LIVE);
+/// The scenes the app would find: its live-action recipe on its pictures of
+/// the shots.
+fn found_scenes(pictures: &Path, shots: &[Shot], between: &[Between], fps: f64) -> Vec<usize> {
+    let vectors = pictures_of(pictures, shots);
+    let secs: Vec<f32> = shots.iter().map(|s| (f64::from(s.end - s.start) / fps) as f32).collect();
+    scenes::scenes(shots, between, &secs, None, &vectors, &Recipe::LIVE)
+}
+
+/// What every run prints first: the shots, the scenes on both sides, the
+/// cast, and what any shot scores on measure (1) with no rule at all.
+fn print_head(ep: &Episode, shots: &[Shot], truth: &Truth, cuts: &[bool], found: &[usize], sure_only: bool) {
+    let n = shots.len();
     let found_cuts: Vec<bool> = found.windows(2).map(|w| w[0] != w[1]).collect();
     if let Ok(path) = std::env::var("FOUND") {
         let mut out = String::from("shot\tstart\tend\tlabelled_scene\tfound_scene\n");
@@ -1075,8 +1248,8 @@ fn main() {
         }
         std::fs::write(&path, out).unwrap_or_else(|e| panic!("{path}: {e}"));
     }
-    let both = (0..n - 1).filter(|&g| found_cuts[g] && truth_cuts[g]).count();
-    let (cut, labelled) = (found_cuts.iter().filter(|&&c| c).count(), truth_cuts.iter().filter(|&&c| c).count());
+    let both = (0..n - 1).filter(|&g| found_cuts[g] && cuts[g]).count();
+    let (cut, labelled) = (found_cuts.iter().filter(|&&c| c).count(), cuts.iter().filter(|&&c| c).count());
     println!(
         "{n} shots, {:.1} s; {} labelled scenes, {} of them with speech of someone who has a face label; the app's recipe finds {} scenes ({both} of its {cut} boundaries are labelled ones, of {labelled})",
         truth.secs.iter().sum::<f64>(),
@@ -1104,6 +1277,128 @@ fn main() {
         rate(&|s| !truth.faces[s].is_empty()),
         rate(&|_| true)
     );
+}
+
+/// A run's readings with the stored cast: printed, and written as a table.
+struct Run<'a> {
+    ep: &'a Episode,
+    shots: &'a [Shot],
+    truth: &'a Truth,
+    /// The names the truth numbers people by.
+    names: &'a [&'a str],
+    who: &'a Who,
+    main: &'a [Main],
+    found: &'a [usize],
+}
+
+impl Run<'_> {
+    /// `by_label`: who is where by labels that carry times, for the reading
+    /// with labels for both; shot labels carry none.
+    fn report(&self, by_label: Option<&Who>, out: Option<&String>) {
+        let (ep, shots, truth, who, main, found) = (self.ep, self.shots, self.truth, self.who, self.main, self.found);
+        let n = shots.len();
+        let fps = ep.fps();
+        let bench = Bench { ep, shots, fades: fades_of(ep), truth, main };
+        let app = bench.reading(who, found, false, false);
+        let cast_labelled = bench.reading(who, &truth.scene, false, false);
+        let labelled_both = by_label.map(|w| bench.reading(w, &truth.scene, true, false));
+        print_reading("as the app has it: the stored cast, the app's scenes", &app);
+        print_reading("the stored cast, the labelled scenes", &cast_labelled);
+        if let Some(lines) = &labelled_both {
+            print_reading("the labels: who is where, and the scenes", lines);
+        }
+
+        println!();
+        let stored_of: Vec<usize> = main.iter().filter_map(|m| m.stored).collect();
+        let label_of_main: Vec<usize> = main.iter().map(|m| m.label).collect();
+        for k in [WALK, KEPT] {
+            print_misses("as the app has it", k, &app, who, &stored_of, fps, truth);
+            print_misses("the stored cast, the labelled scenes", k, &cast_labelled, who, &stored_of, fps, truth);
+            if let (Some(lines), Some(w)) = (&labelled_both, by_label) {
+                print_misses("the labels", k, lines, w, &label_of_main, fps, truth);
+            }
+        }
+
+        print_pairs("as the app has it", &app);
+        print_pairs("the stored cast, the labelled scenes", &cast_labelled);
+
+        // Side figures: 0.1's cap, and groups that leave their scenes.
+        let capped = bench.reading(who, found, false, true);
+        let cut_off: usize =
+            app.iter().zip(&capped).map(|(a, b)| (0..n).filter(|&s| a.sets[WALK][s] && !b.sets[WALK][s]).count()).sum();
+        let s = summary(&capped, WALK);
+        println!(
+            "\nwith 0.1's cap of {CAP_SEC} s per clip (as the app has it): {cut_off} shots fewer over the main cast; speaker {} ({}), pooled {}",
+            show(s.speaker.mean),
+            s.speaker.ci.map_or_else(|| "–".to_owned(), |(a, b)| format!("{a:.3} to {b:.3}")),
+            show(s.speaker.pooled)
+        );
+        let outside: usize =
+            app.iter().map(|l| (0..n).filter(|&s| l.sets[GROUPS][s] && !l.sets[SCENES][s]).count()).sum();
+        let in_groups: usize = app.iter().map(|l| l.tallies[GROUPS].added as usize).sum();
+        println!(
+            "shot groups (as the app has it): {outside} of their {in_groups} added shots lie outside the character's scenes"
+        );
+
+        if let Ok(name) = std::env::var("DETAIL") {
+            let l = app.iter().find(|l| l.name == name).expect("DETAIL=<a main character's label, one the cast holds>");
+            println!("\n{name}, as the app has it: every shot of the labelled and found scenes with an own shot");
+            println!("shot\tframe\tsecs\tscene\tfound\tsets\tspeaker\tcast\tlabels");
+            let mine: HashSet<usize> = (0..n).filter(|&s| l.sets[0][s]).map(|s| truth.scene[s]).collect();
+            for s in (0..n).filter(|&s| mine.contains(&truth.scene[s]) || l.sets[SCENES][s]) {
+                // own, groups, walk, bridged, kept of the bridged, scenes with anyone, with a partner, scenes
+                let flags: String =
+                    (0..SETS.len()).map(|k| if l.sets[k][s] { b"ogwbkaps"[k] as char } else { '-' }).collect();
+                let cast: Vec<&str> = who.shots[s].iter().map(|&c| ep.characters[c].0.as_str()).collect();
+                let seen: Vec<&str> = truth.faces[s].iter().map(|&p| self.names[p]).collect();
+                println!(
+                    "{s}\t{}\t{:.1}\t{}\t{}\t{flags}\t{}\t{}\t{}",
+                    shots[s].start,
+                    truth.secs[s],
+                    truth.scene[s],
+                    found[s],
+                    if truth.shows_speaker(s) {
+                        "speaker"
+                    } else if truth.any_face[s] {
+                        "quiet"
+                    } else {
+                        "empty"
+                    },
+                    cast.join(","),
+                    seen.join(",")
+                );
+            }
+        }
+
+        if let Some(path) = out {
+            let mut out = String::from(
+                "reading\tcharacter\tset\tshots\tseconds\tadded_shots\tadded_seconds\tspeaker_shots\tspeaker_seconds\tadded_in_scenes_with_speech\tfaces_no_speaker\tno_face\town_face_missed\tothers_speech_s\tothers_speech_seen_in_added_s\tothers_speech_seen_in_set_s\tspeaker_shots_of_their_scenes\tof_them_held\tadded_outside_their_scenes\tspeaker_shots_added_in_their_scenes\n",
+            );
+            tsv(&mut out, "app", &app);
+            tsv(&mut out, "cast_labelled_scenes", &cast_labelled);
+            if let Some(lines) = &labelled_both {
+                tsv(&mut out, "labels", lines);
+            }
+            std::fs::write(path, out).unwrap_or_else(|e| panic!("{path}: {e}"));
+        }
+    }
+}
+
+/// The run of rows 25, 27 and 28: hand labels say who is where, and a file
+/// of speakers' seconds who speaks in each scene.
+fn by_labels(args: &[String]) {
+    let ep = load(Path::new(&args[0]));
+    let (shots, between) = shots_of(&ep);
+    let fps = ep.fps();
+    let labels = face_labels(Path::new(&args[2]));
+    let sure_only = std::env::var("SURE").is_ok();
+    let Gold { names, by_label, truth, cuts } =
+        gold(&shots, fps, Path::new(&args[1]), &labels, Path::new(&args[3]), sure_only);
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let number: HashMap<&str, usize> = names.iter().enumerate().map(|(i, &x)| (x, i)).collect();
+
+    let found = found_scenes(Path::new(&args[4]), &shots, &between, fps);
+    print_head(&ep, &shots, &truth, &cuts, &found, sure_only);
 
     // The main cast, and the stored character most of each one's faces are on.
     let who = stored(&ep, &shots);
@@ -1152,81 +1447,216 @@ fn main() {
         main.push(Main { name: name.to_owned(), label, stored });
     }
 
-    let bench = Bench { ep: &ep, shots: &shots, fades: fades_of(&ep), truth: &truth, main: &main };
-    let app = bench.reading(&who, &found, false, false);
-    let cast_labelled = bench.reading(&who, &truth.scene, false, false);
-    let labelled_both = bench.reading(&by_label, &truth.scene, true, false);
-    print_reading("as the app has it: the stored cast, the app's scenes", &app);
-    print_reading("the stored cast, the labelled scenes", &cast_labelled);
-    print_reading("the labels: who is where, and the scenes", &labelled_both);
+    let run = Run { ep: &ep, shots: &shots, truth: &truth, names: &names, who: &who, main: &main, found: &found };
+    run.report(Some(&by_label), args.get(5));
+}
 
-    println!();
-    let stored_of: Vec<usize> = main.iter().filter_map(|m| m.stored).collect();
-    let label_of_main: Vec<usize> = main.iter().map(|m| m.label).collect();
-    for k in [WALK, KEPT] {
-        print_misses("as the app has it", k, &app, &who, &stored_of, fps, &truth);
-        print_misses("the stored cast, the labelled scenes", k, &cast_labelled, &who, &stored_of, fps, &truth);
-        print_misses("the labels", k, &labelled_both, &by_label, &label_of_main, fps, &truth);
-    }
+/// The run of row 29, on a title without hand labels: two readers' shot
+/// labels say who is seen and who speaks, a cast sheet which stored
+/// characters each of their names is.
+fn by_readers(args: &[String]) {
+    let ep = load(Path::new(&args[0]));
+    let (shots, between) = shots_of(&ep);
+    let fps = ep.fps();
+    let (cuts, _) = scene_labels(Path::new(&args[1]), &shots);
+    let cast = cast_sheet(Path::new(&args[3]), &ep);
+    let names: Vec<&str> = cast.iter().map(|c| c.0.as_str()).collect();
+    let number: HashMap<&str, usize> = names.iter().enumerate().map(|(i, &x)| (x, i)).collect();
+    assert_eq!(number.len(), names.len(), "a label stands twice on the cast sheet");
+    let read = shot_labels(Path::new(&args[2]), &shots);
+    assert!(read.iter().all(Option::is_some), "a shot without a row in {}", args[2]);
+    let secs: Vec<f64> = shots.iter().map(|s| f64::from(s.end - s.start) / fps).collect();
+    let truth = readers_truth(&read, scene_ids(&cuts), &number, secs);
 
-    print_pairs("as the app has it", &app);
-    print_pairs("the stored cast, the labelled scenes", &cast_labelled);
-
-    // Side figures: 0.1's cap, and groups that leave their scenes.
-    let capped = bench.reading(&who, &found, false, true);
-    let cut_off: usize =
-        app.iter().zip(&capped).map(|(a, b)| (0..n).filter(|&s| a.sets[WALK][s] && !b.sets[WALK][s]).count()).sum();
-    let s = summary(&capped, WALK);
+    let found = found_scenes(Path::new(&args[4]), &shots, &between, fps);
+    print_head(&ep, &shots, &truth, &cuts, &found, false);
+    let heard: f64 = read.iter().flatten().map(|r| r.speech).sum();
+    let known: f64 = truth.speech.iter().flatten().filter(|(who, _)| !who.is_empty()).map(|(_, secs)| secs).sum();
     println!(
-        "\nwith 0.1's cap of {CAP_SEC} s per clip (as the app has it): {cut_off} shots fewer over the main cast; speaker {} ({}), pooled {}",
-        show(s.speaker.mean),
-        s.speaker.ci.map_or_else(|| "–".to_owned(), |(a, b)| format!("{a:.3} to {b:.3}")),
-        show(s.speaker.pooled)
+        "{heard:.0} s of speech heard; {known:.0} s of it in shots in which both readers mark the same person speaking"
     );
-    let outside: usize = app.iter().map(|l| (0..n).filter(|&s| l.sets[GROUPS][s] && !l.sets[SCENES][s]).count()).sum();
-    let in_groups: usize = app.iter().map(|l| l.tallies[GROUPS].added as usize).sum();
+    print_readers(&read);
+
+    // The main cast: the people of the cast sheet whose stored character has
+    // faces for long enough; of two stored characters the one with more.
+    let who = stored(&ep, &shots);
+    let on_screen = |c: usize| who.spans[c].iter().map(|&(a, b)| f64::from(b - a)).sum::<f64>() / fps;
+    let mut rows: Vec<(f64, usize, usize)> = cast
+        .iter()
+        .enumerate()
+        .filter_map(|(label, (_, characters))| {
+            let (secs, c) = characters
+                .iter()
+                .filter(|&&c| !ep.characters[c].1)
+                .map(|&c| (on_screen(c), c))
+                .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)))?;
+            (secs >= MAIN_SEC).then_some((secs, label, c))
+        })
+        .collect();
+    rows.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
     println!(
-        "shot groups (as the app has it): {outside} of their {in_groups} added shots lie outside the character's scenes"
+        "\nmain cast (the people of the cast sheet whose stored character has at least {MAIN_SEC} s of faces), who they share frames with by the cast:"
     );
-
-    if let Ok(name) = std::env::var("DETAIL") {
-        let l = app.iter().find(|l| l.name == name).expect("DETAIL=<a main character's label, one the cast holds>");
-        println!("\n{name}, as the app has it: every shot of the labelled and found scenes with an own shot");
-        println!("shot\tframe\tsecs\tscene\tfound\tsets\tspeaker\tcast\tlabels");
-        let mine: HashSet<usize> = (0..n).filter(|&s| l.sets[0][s]).map(|s| truth.scene[s]).collect();
-        for s in (0..n).filter(|&s| mine.contains(&truth.scene[s]) || l.sets[SCENES][s]) {
-            // own, groups, walk, bridged, kept of the bridged, scenes with anyone, with a partner, scenes
-            let flags: String =
-                (0..SETS.len()).map(|k| if l.sets[k][s] { b"ogwbkaps"[k] as char } else { '-' }).collect();
-            let cast: Vec<&str> = who.shots[s].iter().map(|&c| ep.characters[c].0.as_str()).collect();
-            let seen: Vec<&str> = truth.faces[s].iter().map(|&p| names[p]).collect();
-            println!(
-                "{s}\t{}\t{:.1}\t{}\t{}\t{flags}\t{}\t{}\t{}",
-                shots[s].start,
-                truth.secs[s],
-                truth.scene[s],
-                found[s],
-                if truth.shows_speaker(s) {
-                    "speaker"
-                } else if truth.any_face[s] {
-                    "quiet"
-                } else {
-                    "empty"
-                },
-                cast.join(","),
-                seen.join(",")
-            );
-        }
-    }
-
-    if let Some(path) = args.get(5) {
-        let mut out = String::from(
-            "reading\tcharacter\tset\tshots\tseconds\tadded_shots\tadded_seconds\tspeaker_shots\tspeaker_seconds\tadded_in_scenes_with_speech\tfaces_no_speaker\tno_face\town_face_missed\tothers_speech_s\tothers_speech_seen_in_added_s\tothers_speech_seen_in_set_s\tspeaker_shots_of_their_scenes\tof_them_held\tadded_outside_their_scenes\tspeaker_shots_added_in_their_scenes\n",
+    let together = (TOGETHER_SEC * fps).ceil() as u32;
+    let mut main = Vec::new();
+    for (secs, label, c) in rows {
+        println!(
+            "  {:12} {secs:6.1} s, in {:3} shots by both readers and {:3} by the cast ({}); partners by the cast: {}",
+            names[label],
+            truth.faces.iter().filter(|s| s.contains(&label)).count(),
+            who.shots.iter().filter(|s| s.contains(&c)).count(),
+            ep.characters[c].0,
+            who.partners(c, together).len()
         );
-        tsv(&mut out, "app", &app);
-        tsv(&mut out, "cast_labelled_scenes", &cast_labelled);
-        tsv(&mut out, "labels", &labelled_both);
-        std::fs::write(path, out).unwrap_or_else(|e| panic!("{path}: {e}"));
+        main.push(Main { name: names[label].to_owned(), label, stored: Some(c) });
+    }
+
+    let run = Run { ep: &ep, shots: &shots, truth: &truth, names: &names, who: &who, main: &main, found: &found };
+    run.report(None, args.get(5));
+}
+
+/// How far the two readers agree with each other, over the shots they read.
+fn print_readers(read: &[Option<Read>]) {
+    let rows: Vec<&Read> = read.iter().flatten().collect();
+    let same = |of: &dyn Fn(&Read) -> &[Vec<String>; 2]| {
+        let equal = rows.iter().filter(|r| of(r)[0] == of(r)[1]).count();
+        let (mut common, mut either) = (0, 0);
+        for r in &rows {
+            let [a, b] = of(r);
+            let shared = a.iter().filter(|p| b.contains(p)).count();
+            common += shared;
+            either += a.len() + b.len() - shared;
+        }
+        format!(
+            "the same list in {equal} of {} shots ({:.3}); of {either} names either gives, {common} are given by both ({:.3})",
+            rows.len(),
+            equal as f64 / rows.len().max(1) as f64,
+            common as f64 / either.max(1) as f64
+        )
+    };
+    println!("the two readers, who is seen: {}", same(&|r| &r.faces));
+    println!("the two readers, who speaks: {}", same(&|r| &r.speaks));
+}
+
+/// Two yes-or-no answers over the same shots: both yes, only the first, only
+/// the second, both no.
+fn answers(pairs: impl Iterator<Item = (bool, bool)>) -> [u32; 4] {
+    let mut c = [0; 4];
+    for (a, b) in pairs {
+        c[match (a, b) {
+            (true, true) => 0,
+            (true, false) => 1,
+            (false, true) => 2,
+            (false, false) => 3,
+        }] += 1;
+    }
+    c
+}
+
+/// The share of equal answers, and Cohen's kappa (the agreement beyond what
+/// two answerers with these yes rates reach by chance).
+fn agreement(c: [u32; 4]) -> (f64, f64) {
+    let n = f64::from(c.iter().sum::<u32>());
+    let same = f64::from(c[0] + c[3]) / n;
+    let (first, second) = (f64::from(c[0] + c[1]) / n, f64::from(c[0] + c[2]) / n);
+    let chance = first * second + (1.0 - first) * (1.0 - second);
+    (same, if chance < 1.0 { (same - chance) / (1.0 - chance) } else { 1.0 })
+}
+
+/// Row 29's check of the readers: their shot labels against the hand labels
+/// and the speakers' seconds, on the shots they read.
+fn agree(args: &[String]) {
+    let ep = load(Path::new(&args[0]));
+    let (shots, _) = shots_of(&ep);
+    let n = shots.len();
+    let fps = ep.fps();
+    let labels = face_labels(Path::new(&args[2]));
+    let sure_only = std::env::var("SURE").is_ok();
+    let gold = gold(&shots, fps, Path::new(&args[1]), &labels, Path::new(&args[3]), sure_only);
+    let number: HashMap<&str, usize> = gold.names.iter().enumerate().map(|(i, x)| (x.as_str(), i)).collect();
+    let read = shot_labels(Path::new(&args[4]), &shots);
+    let readers = readers_truth(&read, gold.truth.scene.clone(), &number, gold.truth.secs.clone());
+    let at: Vec<usize> = (0..n).filter(|&s| read[s].is_some()).collect();
+    let scenes: BTreeSet<usize> = at.iter().map(|&s| gold.truth.scene[s]).collect();
+    assert!(
+        (0..n).all(|s| read[s].is_some() == scenes.contains(&gold.truth.scene[s])),
+        "the readers read whole labelled scenes"
+    );
+    println!("{} shots of {} labelled scenes read by both readers ({n} shots in the episode)", at.len(), scenes.len());
+    if sure_only {
+        println!("SURE=1: the speakers whose face label is unsure have no face here");
+    }
+
+    // The atom of measures (1) and (4): does the shot show a speaker of its scene?
+    let print = |what: &str, of: &dyn Fn(usize) -> bool| {
+        let c =
+            answers(at.iter().filter(|&&s| of(s)).map(|&s| (gold.truth.shows_speaker(s), readers.shows_speaker(s))));
+        let (same, kappa) = agreement(c);
+        let all: u32 = c.iter().sum();
+        println!(
+            "{what}: {all} shots; shows a speaker of its scene: both yes {}, only the labels {}, only the readers {}, both no {}; the same answer in {same:.3}, kappa {kappa:.3}; yes by the labels {:.3}, by the readers {:.3}",
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+            f64::from(c[0] + c[1]) / f64::from(all.max(1)),
+            f64::from(c[0] + c[2]) / f64::from(all.max(1))
+        );
+    };
+    print("all shots read", &|_| true);
+    print("shots in which the cast is sure of someone", &|s| !shots[s].cast.is_empty());
+    print("shots with a named face label", &|s| !gold.truth.faces[s].is_empty());
+
+    // Who speaks in each scene.
+    let (mut asked, mut found, mut asked_secs, mut found_secs, mut named_by, mut right) = (0, 0, 0.0, 0.0, 0, 0);
+    for &scene in &scenes {
+        let theirs: HashSet<usize> = readers.speech[scene].iter().flat_map(|(who, _)| who.iter().copied()).collect();
+        let truly: HashSet<usize> = gold.truth.speech[scene].iter().flat_map(|(who, _)| who.iter().copied()).collect();
+        for (who, secs) in gold.truth.speech[scene].iter().filter(|(who, _)| !who.is_empty()) {
+            let hit = who.iter().any(|w| theirs.contains(w));
+            asked += 1;
+            asked_secs += secs;
+            found += u32::from(hit);
+            found_secs += if hit { *secs } else { 0.0 };
+        }
+        named_by += theirs.len();
+        right += theirs.iter().filter(|w| truly.contains(w)).count();
+    }
+    println!(
+        "speakers of the scenes: the labels name {asked} (with a face label), the readers find {found} of them ({:.3}; {:.3} of their {asked_secs:.0} s of speech); the readers name {named_by}, {right} of them speak by the labels ({:.3})",
+        f64::from(found) / f64::from(asked.max(1)),
+        found_secs / asked_secs.max(1e-9),
+        right as f64 / named_by.max(1) as f64
+    );
+
+    // Who is seen in each shot.
+    let (mut seen, mut both, mut given) = (0, 0, 0);
+    for &s in &at {
+        seen += gold.truth.faces[s].len();
+        given += readers.faces[s].len();
+        both += readers.faces[s].iter().filter(|p| gold.truth.faces[s].contains(p)).count();
+    }
+    println!(
+        "names per shot: the labels give {seen}, both readers {given}, {both} of them the same: precision {:.3}, recall {:.3}",
+        both as f64 / given.max(1) as f64,
+        both as f64 / seen.max(1) as f64
+    );
+
+    print_readers(&read);
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("shots") if (6..=7).contains(&args.len()) => by_readers(&args[1..]),
+        Some("agree") if args.len() == 6 => agree(&args[1..]),
+        Some(first) if first != "shots" && first != "agree" && (5..=6).contains(&args.len()) => by_labels(&args),
+        _ => {
+            eprintln!(
+                "usage: conversation_bench <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <pictures.emb> [out.tsv]\n       conversation_bench shots <project_copy_dir> <scenes.tsv> <shot labels.tsv> <cast.tsv> <pictures.emb> [out.tsv]\n       conversation_bench agree <project_copy_dir> <scenes.tsv> <identity labels.tsv> <speakers.tsv> <shot labels.tsv>"
+            );
+            std::process::exit(2);
+        }
     }
 }
 
@@ -1364,5 +1794,47 @@ mod tests {
         assert!(a < 0.6 && 0.6 < b && a >= 0.2 && b <= 1.0, "{a} {b}");
         assert_eq!(interval(&v), interval(&v));
         assert!(interval(&[0.5]).is_none());
+    }
+
+    #[test]
+    fn two_readers_make_one_truth() {
+        // Six shots: a scene of two and a scene of four. Labels: 0 is ann, 1 is bob.
+        let number: HashMap<&str, usize> = [("ann", 0), ("bob", 1)].into_iter().collect();
+        let read = |speech: f64, faces: [&[&str]; 2], speaks: [&[&str]; 2]| {
+            let v = |x: &[&str]| x.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+            Some(Read { speech, faces: [v(faces[0]), v(faces[1])], speaks: [v(speaks[0]), v(speaks[1])] })
+        };
+        let rows = vec![
+            // Both see ann and mark her speaking: the 2 s are hers. Someone unnamed is never credited.
+            read(2.0, [&["ann"], &["ann", "other"]], [&["ann"], &["ann"]]),
+            // Only the first reader sees bob and marks him: he is not shown, and the 1 s is nobody's.
+            read(1.0, [&["ann", "bob"], &["ann"]], [&["bob"], &[]]),
+            // The readers mark different people: nobody's 3 s.
+            read(3.0, [&["ann", "bob"], &["ann", "bob"]], [&["ann"], &["bob"]]),
+            // The second reader marks ann in another shot of the scene than the first did:
+            // she speaks in the scene, with no seconds of her own.
+            read(0.5, [&["ann"], &["ann"]], [&[], &["ann"]]),
+            // bob alone: seen by both, a speaker by one reader only.
+            read(0.0, [&["bob"], &["bob"]], [&[], &[]]),
+            None,
+        ];
+        let t = readers_truth(&rows, vec![0, 0, 1, 1, 1, 1], &number, vec![1.0; 6]);
+        assert_eq!(t.faces, vec![vec![0], vec![0], vec![0, 1], vec![0], vec![1], vec![]]);
+        assert_eq!(t.any_face, vec![true, true, true, true, true, false]);
+        assert_eq!(t.speech[0], vec![(vec![0], 2.0), (vec![], 1.0)]);
+        assert_eq!(t.speech[1], vec![(vec![0], 0.0), (vec![], 3.5)]);
+        let shown: Vec<bool> = (0..6).map(|s| t.shows_speaker(s)).collect();
+        assert_eq!(shown, vec![true, true, true, true, false, false]);
+    }
+
+    #[test]
+    fn agreement_beyond_chance() {
+        let c = answers([(true, true), (true, true), (false, false), (true, false)].into_iter());
+        assert_eq!(c, [2, 1, 0, 1]);
+        let (same, kappa) = agreement(c);
+        assert!((same - 0.75).abs() < 1e-12);
+        // By chance: 0.75 × 0.5 + 0.25 × 0.5 = 0.5.
+        assert!((kappa - 0.5).abs() < 1e-12);
+        assert_eq!(agreement([3, 0, 0, 0]), (1.0, 1.0));
     }
 }

@@ -54,6 +54,29 @@ file of `bench/scenes` (frames in place of shot numbers).
 scenes bench over several episodes and says what one threshold for all of
 them gives, and what each would get with the threshold of the others.
 
+## Conversations: `speak_sheets.py`, `speak_cast.py`, `speak_merge.py`
+
+Labels of who is seen and who speaks in each shot, for an episode that has
+neither identity nor speaker labels (`bench/scenes/README.md`,
+"Conversations on a second title"; row 29):
+
+```sh
+uv run sound_events.py <ffmpeg> <video> <yamnet.onnx> <yamnet_class_map.csv> <sound.tsv>
+uv run speak_sheets.py <ffmpeg> <video> <project_copy_dir> <media> <sound.tsv> <sheets_dir> [<scenes.tsv> odd]
+uv run speak_cast.py project <ffmpeg> <video> <project_copy_dir> <media> <cast_dir>
+uv run speak_cast.py sheet <cast_dir> <cast.tsv> <cast_prefix>
+uv run speak_merge.py <sheets_dir>/rows.tsv <reader_a_dir> <reader_b_dir> <cast.tsv> <out.shots.tsv> [<a.tsv> <b.tsv>]
+```
+
+`speak_sheets.py` draws every shot as a row of six pictures with the seconds
+of speech heard in it. `speak_cast.py project` cuts face pictures of the
+stored characters with three face tracks or more (`labels` does the same for
+the names of an identity label file); from them a table `label keys note` is
+made by eye, and `sheet` draws the pages the readers get. Two readers, blind
+to each other, follow `speak_reader.md`; `speak_merge.py` checks their files
+and writes the shot label file that `conversation_bench shots` and
+`conversation_bench agree` read.
+
 ## Expressions: `sound_events.py`, `crop_sheets.py`
 
 `sound_events.py <ffmpeg> <video> <yamnet.onnx> <yamnet_class_map.csv> <out.tsv>`

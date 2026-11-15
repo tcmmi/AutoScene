@@ -944,3 +944,145 @@ sheets drawn at 15:01, the cast pages at 15:07, the first reading at 15:10.
   shots. Fewer joined scenes would help the filter more than any walk.
 - Still open: a look by eye at one such pack; the shots without a face
   inside a conversation; animation.
+
+## The second title read again with its subtitle lines (2026-11-15, row 33)
+
+Row 29's correction said what was missed: the Prison Break file with its
+subtitles is on the PC. The owner asked for the speaker labels again, with
+the lines on the sheets. Row 33 fixed the reading and its rule before any
+new sheet was read. No check against Breaking Bad is possible this time: its
+file with subtitles is gone, so nothing here measures the new marks against
+labels made by hand.
+
+### What was read
+
+- **Lines**: `tools/slot-bench/speak_lines.py` cuts each of the 602 English
+  subtitle lines (pictures, PGS) out of a frame of the 1080p file, wherever
+  in the frame it stands (24 lines of the opening credits stand at the top).
+- **Sheets**: the first reading's pictures, unchanged (without `LINES` the
+  tool writes the first sheets byte for byte), and under each shot the lines
+  on screen during it; `<<` and `>>` mark a line that began before the shot
+  or goes on after it. The cast pages are the first reading's.
+- **Readers**: two new ones, blind to each other and to the first labels
+  (each reading split over 19 agents of 12 sheets), with the rules of the
+  first reading and a section on lines (`speak_reader.md`): the mouth
+  decides; the words tell a speaker from a listener who is spoken to; a
+  person whose mouth cannot be read is marked when the words can only be
+  theirs.
+- **Files**: `pb_s01e01.lines.shots.tsv` (both readers per shot; the merge
+  had nothing to mend), the readers' own lines in
+  `check/pb_s01e01.lines.speak.c.tsv` and `.d.tsv`, the table in
+  `pb_s01e01.lines.conversation.tsv`.
+
+```sh
+MEDIA=0 cargo run --release -p as-project --example conversation_bench -- compare <pb_project_copy_dir> bench/scenes/pb_s01e01.scenes.tsv bench/scenes/pb_s01e01.shots.tsv bench/scenes/pb_s01e01.lines.shots.tsv bench/scenes/pb_s01e01.cast.tsv
+MEDIA=0 cargo run --release -p as-project --example conversation_bench -- shots <pb_project_copy_dir> bench/scenes/pb_s01e01.scenes.tsv bench/scenes/pb_s01e01.lines.shots.tsv bench/scenes/pb_s01e01.cast.tsv <pictures.emb> bench/scenes/pb_s01e01.lines.conversation.tsv
+```
+
+### The two readings against each other
+
+| | First reading (pictures) | Second reading (pictures and lines) |
+|---|---|---|
+| The two readers of a reading give the same faces / the same speakers | 0.928 / 0.942 of 584 shots | 0.920 / 0.949 |
+| Seconds of heard speech in shots in which both mark the same named person | 1,044 of 1,376 | 1,091 |
+| Both mark the one named person in the picture as speaking (1 s of speech or more) | 192 of 245 (0.784) | 195 of 256 (0.762) |
+| A shot shows a speaker of its scene | 0.757 of the shots | 0.745 |
+
+- "Shows a speaker of its scene": the same answer in 571 of 584 shots
+  (0.978, kappa 0.941).
+- Who speaks in which scene: 67 pairs of person and scene are in both
+  readings, 3 only in the first, 2 only in the second.
+- Who is seen: the same names in 551 shots (0.943).
+- Who speaks, shot by shot: the same names in 519 shots (0.889). Over the
+  313 shots in which either reading has a mark it is 248 (0.792): **65 shots
+  differ**. The second reading adds a mark in 42, drops one in 21, names
+  another person in 2.
+
+### The table with the new labels
+
+As the app has it, mean over the 18 characters (first reading in brackets):
+
+| Set | (1) show a speaker | (1) in a scene of theirs | (4) speaker shots held |
+|---|---|---|---|
+| groups (b) | 0.942 (0.918) | 0.942 (0.918) | 0.497 (0.491) |
+| walk (c) | 0.954 (0.950) | 0.952 (0.948) | 0.778 (0.769) |
+| bridged walk (e), without the stepped-over shots | 0.934 (0.938) | 0.924 (0.928) | 0.831 (0.824) |
+| scenes, partners (g) | 0.933 (0.936) | 0.877 (0.880) | 0.866 (0.861) |
+| scenes, anyone (f) | 0.887 (0.892) | 0.795 (0.800) | 0.990 (0.990) |
+| whole scenes (d) | 0.739 (0.743) | 0.667 (0.671) | 1.000 |
+
+572 shots are asked for (578). Row 33's rule:
+
+| What row 33 asks | Result | Holds |
+|---|---|---|
+| (i) (f) minus the walk on (4), interval above 0 | +0.212 (+0.098 to +0.336) | yes |
+| (ii) (f) holds 0.90 or more on (4) | 0.990 (0.983 to 0.996) | yes |
+| (iii) (f) meets 0.80 on (1), whole scenes below it | 0.887; whole scenes 0.148 below (0.110 to 0.186) | yes |
+| The walk's and (f)'s mean on (4), (f)'s on (1) and "in a scene of theirs" move by 0.05 at most | +0.010, 0.000, −0.005, −0.005 | yes |
+
+By the rule as registered, row 29 holds. Counted strictly, (f) is now just
+under the bar it sat on (0.795).
+
+### What the review found
+
+A reviewer without context recomputed every line of the three printouts and
+both tables with a script of their own (no difference), and looked at all 65
+shots in which the readings differ, on the second readers' sheets.
+
+- **The rule could hardly have failed.** The table uses a mark once per
+  person and scene: 69 such pairs carry it, and the 65 shots move 5 of them.
+  With every face a reader sees marked as speaking whenever speech is heard,
+  the four numbers move by −0.005, 0.000, +0.032 and +0.018 and all three
+  conditions stay true. (f) on (4) cannot move at all: it depends on faces
+  and cast, not on who speaks. So "row 29 holds" says that the table does
+  not feel the shot-by-shot marks. It does not confirm the labels.
+- **The two readings agreeing is no evidence that either is right.** They
+  share pictures, cast pages and blind spots. Two readers of one reading
+  agree on who speaks in 0.94 to 0.95 of the shots; two readers of different
+  readings in 0.87 to 0.88.
+- **The look at the 65 shots: the sheets bear out the second reading in 58,
+  the first in 4, and cannot tell in 3.** In 30 of the 58 only the words
+  show it, the same words the second readers had; where a picture is part
+  of the evidence it is 28 to 4.
+- **What the first reading got wrong: listeners.** In 16 shots both first
+  readers marked a person whose mouth is still while a line is said to or
+  about them: the judge while counsel speaks, Michael while the judge passes
+  sentence, Westmoreland while two others talk about him. This is what row
+  29 feared, and the check on Breaking Bad did not show it. Three of these
+  marks had made someone a speaker of a scene in which he says nothing; all
+  five scene lists that differ go the second reading's way.
+- **What the second reading adds**: 42 speakers, 40 of them borne out, 24 by
+  the words alone (a mouth too small, turned away, behind a mesh).
+- **Its own errors**: one mark pulled by a line onto the man in the picture
+  (shot 402, a line that runs over a cut), one name from the story where no
+  face can be matched (shot 352), three right marks dropped, one of them
+  because the line under the shot was someone else's (shot 553).
+- **The gauge shows little.** 0.784 against 0.762 is the net of 15 marks
+  gone and 12 new ones on the same shots, and most new marks are in shots
+  with several people, where it does not look. It shows only that the second
+  readers did not mark the one person in the picture wholesale.
+- **The seconds of heard speech are often wrong, and the rules let them
+  overrule the lines**: 34 shots have a line under them and 0.0 s measured,
+  so that nobody may be marked there (26 of them with a second or more of
+  line); 19 shots have a second or more measured and no line. Row 33 did not
+  say that the old rule "with 0.0 s nobody speaks" stays; the reader rules
+  kept it. This matters little for the table and much for any use of the
+  marks shot by shot.
+- **Row 33's sample was not a spread.** "Every k-th of them" came out of the
+  tool as the first 40 of the 65 (a whole-number step); three of the four
+  shots that speak for the first reading lie in the other 25. The reviewer
+  looked at all 65; the tool now spreads its picks evenly.
+
+### What follows
+
+- **For the port, nothing changes.** The table and its conditions are the
+  same with either reading, because they rest on who speaks in a scene and
+  not on who speaks in a shot.
+- **For the labels**: the second reading is the better supported of the two
+  on the shots where they differ, and not proven better: nothing here checks
+  either against sound. Row 29's numbers stay the registered ones; both
+  label files are in the repository.
+- **What would test the marks**: a check against sound on a sample of shots,
+  those in which the readings agree among them; or a title with hand labels
+  and subtitles. The rule that 0.0 s of measured speech forbids a mark should
+  go before any such reading is used shot by shot.

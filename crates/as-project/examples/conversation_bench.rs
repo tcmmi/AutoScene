@@ -1758,11 +1758,14 @@ fn compare(args: &[String]) {
         println!("  {named:.0} s of heard speech in shots in which both readers mark the same named person");
     }
 
-    // The shots for a look by eye: of those that differ on who speaks, every k-th in shot order, 40 at most.
-    let step = (differ.len() / 40).max(1);
-    let sample: Vec<String> = differ.iter().step_by(step).take(40).map(usize::to_string).collect();
+    // The shots for a look by eye: 40 of those that differ on who speaks,
+    // spread evenly over them in shot order (all of them when there are
+    // fewer). The run of row 33 took every k-th with a whole-number k, which
+    // was the first 40 of 65; its reviewer looked at all 65.
+    let picks = differ.len().min(40);
+    let sample: Vec<String> = (0..picks).map(|i| differ[i * differ.len() / picks].to_string()).collect();
     println!(
-        "{} shots differ on who speaks; every {step}. of them in shot order, {} shots: {}",
+        "{} shots differ on who speaks; {} of them, spread evenly in shot order: {}",
         differ.len(),
         sample.len(),
         sample.join(" ")

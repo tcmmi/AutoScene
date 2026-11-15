@@ -643,9 +643,16 @@ finding, before any label was made.
 
 ### Labels made by readers
 
-The episode has no identity labels and no speaker labels, and the file with
-its subtitles is no longer on the PC. Pictures and sound come from the
-project's 960 × 540 proxy, decoded read only.
+The episode has no identity labels and no speaker labels. Pictures and sound
+come from the project's 960 × 540 proxy, decoded read only.
+
+Row 29 says the file with its subtitles was no longer on the PC. **That was
+wrong**: it had been moved into the library's folder, and the search by name
+that found it ended after the run. The labels are still what the row
+registered. What was missed: the file is 1920 × 1080 and carries English
+subtitles as pictures (PGS). They say when a line is shown and what it says,
+not who says it; drawn onto the readers' sheets they could make the speaker
+marks surer than stills alone. Not tried.
 
 - **Sound**: `sound_events.py` (YAMNet) scores speech every 0.48 s; a step
   with 0.5 or more counts as speech heard: 1,376 s of the episode's 2,588 s.

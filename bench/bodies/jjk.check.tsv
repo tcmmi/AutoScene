@@ -1,0 +1,20 @@
+key	item	stratum	shot	start	end	frame	box	name	first	second	how
+jjk_s2e03	0	e	6915	6942	7033	6954	0.0018,0.3472,0.1949,0.8583	satoru gojo	satoru gojo	satoru gojo	same
+jjk_s2e03	1	e	10834	10836	10962	10848	0.0006,0.0895,1.0000,0.9861	x	suguru geto	x	open
+jjk_s2e03	2	e	16514	16548	16633	16596	0.3087,0.0004,0.8310,0.9865	satoru gojo	satoru gojo	satoru gojo	same
+jjk_s2e03	3	e	17043	17046	17151	17142	0.0668,0.0002,0.6098,1.0000	satoru gojo	satoru gojo	satoru gojo	same
+jjk_s2e03	4	e	18868	18876	18928	18918	0.3460,0.0000,0.9962,1.0000	toji fushiguro	toji fushiguro	toji fushiguro	same
+jjk_s2e03	5	e	21332	21336	21390	21342	0.2989,0.0001,1.0000,1.0000	satoru gojo	satoru gojo	satoru gojo	same
+jjk_s2e03	6	e	23484	23520	23545	23526	0.3119,0.3658,0.9991,0.9905	toji fushiguro	toji fushiguro	toji fushiguro	same
+jjk_s2e03	7	e	24179	24180	24254	24198	0.1251,0.0002,0.8711,1.0000	satoru gojo	satoru gojo	satoru gojo	same
+jjk_s2e03	8	e	30419	30420	30522	30474	0.0664,0.0011,0.9625,1.0000	x	x	riko amanai	open
+jjk_s2e04	0	e	5457	5484	5672	5598	0.0022,0.0004,0.9946,0.9758	n	n	n	same
+jjk_s2e04	1	e	5962	5964	6093	6072	0.3845,0.3532,0.8421,0.9885	x	toji fushiguro	n	open
+jjk_s2e04	2	e	6181	6186	6258	6246	0.3729,0.1023,1.0000,0.9868	x	toji fushiguro	x	open
+jjk_s2e04	3	e	6941	6942	7030	6948	0.4170,0.0028,1.0000,0.9861	suguru geto	suguru geto	suguru geto	same
+jjk_s2e04	4	e	10032	10032	10077	10068	0.2609,0.0000,0.9983,0.9834	toji fushiguro	toji fushiguro	toji fushiguro	same
+jjk_s2e04	5	e	10425	10476	10672	10584	0.0005,0.0107,0.7054,0.9884	e	e	e	same
+jjk_s2e04	6	e	13492	13500	13620	13518	0.0042,0.0000,0.9434,0.9845	x	x	riko amanai	open
+jjk_s2e04	7	e	15362	15366	15521	15480	0.2038,0.7512,0.9989,0.9889	n	n	n	same
+jjk_s2e04	8	e	20417	20418	20513	20430	0.2015,0.0000,0.8118,0.9975	toji fushiguro	toji fushiguro	toji fushiguro	same
+jjk_s2e04	9	e	21860	21876	22064	21894	0.0488,0.0012,0.9799,0.9950	toji fushiguro	toji fushiguro	toji fushiguro	same

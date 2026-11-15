@@ -1,0 +1,41 @@
+key	item	stratum	shot	start	end	frame	box	name	first	second	how
+mir_s1e11	0	e	768	822	1074	996	0.5888,0.2978,0.9356,0.9920	adrien agreste	adrien agreste	adrien agreste	same
+mir_s1e11	1	e	2113	2118	2190	2148	0.0000,0.0013,0.0937,1.0000	x	ivan bruel	x	open
+mir_s1e11	2	e	2686	2688	2870	2796	0.6769,0.1809,0.8527,1.0000	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	3	e	2978	2982	3041	3000	0.0438,0.1349,0.4262,1.0000	adrien agreste	adrien agreste	adrien agreste	same
+mir_s1e11	4	e	3156	3156	3186	3162	0.1068,0.0160,0.4559,1.0000	ivan bruel	ivan bruel	ivan bruel	same
+mir_s1e11	5	e	3616	3618	3762	3630	0.4897,0.0418,0.7602,0.9968	mylene haprele	mylene haprele	mylene haprele	same
+mir_s1e11	6	e	5691	5694	5867	5796	0.5478,0.0000,1.0000,0.9994	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	7	e	5867	5868	6023	5892	0.7042,0.2456,0.8564,1.0000	x	x	x	same
+mir_s1e11	8	e	7558	7572	8147	7812	0.0016,0.0845,0.1795,1.0000	x	juleka couffaine	x	open
+mir_s1e11	9	e	9166	9168	9220	9198	0.2005,0.0269,0.4997,0.8652	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	10	e	9477	9480	9756	9648	0.2555,0.0071,0.5226,1.0000	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	11	e	11745	11748	12079	11790	0.4027,0.2343,0.5907,1.0000	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	12	e	12189	12192	12287	12198	0.5746,0.3087,0.6877,1.0000	alya cesaire	alya cesaire	alya cesaire	same
+mir_s1e11	13	e	12189	12192	12287	12252	0.6439,0.0006,1.0000,1.0000	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s1e11	14	e	18645	18690	18804	18780	0.1735,0.2205,0.3627,0.9894	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s1e11	15	e	26879	26880	26930	26910	0.4084,0.4909,0.5469,1.0000	nino lahiffe	nino lahiffe	nino lahiffe	same
+mir_s1e11	16	e	28282	28284	28334	28296	0.1491,0.1380,0.4159,0.9917	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s1e11	17	e	29772	29772	29809	29784	0.6727,0.0000,0.8088,0.6522	rose lavillant	rose lavillant	rose lavillant	same
+mir_s1e11	18	e	29772	29772	29809	29784	0.0035,0.0001,0.2369,0.6975	x	x	x	same
+mir_s1e11	19	e	30305	30306	30392	30336	0.0002,0.2334,0.3847,0.9939	x	x	LADYBUG	open
+mir_s5e21	0	e	1534	1536	1603	1542	0.4904,0.0500,0.7624,1.0000	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s5e21	1	e	2868	2868	2965	2916	0.1468,0.0460,0.5316,1.0000	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	2	e	4416	4416	4508	4482	0.4574,0.4376,0.6103,0.8201	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s5e21	3	e	6683	6684	6746	6732	0.5651,0.4260,0.7250,0.9964	le chien kim	le chien kim	le chien kim	same
+mir_s5e21	4	e	10310	10314	10406	10368	0.5165,0.0000,0.9999,0.9807	sabrina raincomprix	sabrina raincomprix	sabrina raincomprix	same
+mir_s5e21	5	e	11162	11166	11373	11214	0.1694,0.1475,0.8666,0.9959	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	6	e	12666	12666	12725	12708	0.1893,0.0000,0.9994,0.9826	juleka couffaine	juleka couffaine	juleka couffaine	same
+mir_s5e21	7	e	16667	16698	16740	16704	0.3005,0.0718,0.4681,1.0000	CAT_NOIR	CAT_NOIR	CAT_NOIR	same
+mir_s5e21	8	e	18729	18732	18782	18762	0.6444,0.2797,0.7352,0.9141	x	x	x	same
+mir_s5e21	9	e	19175	19176	19382	19350	0.1904,0.0572,0.4956,1.0000	lila rossi	lila rossi	lila rossi	same
+mir_s5e21	10	e	19175	19176	19382	19350	0.0192,0.0605,0.3320,1.0000	alya cesaire	alya cesaire	alya cesaire	same
+mir_s5e21	11	e	21698	21702	21732	21708	0.3721,0.0813,0.6868,1.0000	sabrina raincomprix	sabrina raincomprix	sabrina raincomprix	same
+mir_s5e21	12	e	22930	23022	23082	23040	0.7394,0.0000,1.0000,1.0000	chloe bourgeois	chloe bourgeois	chloe bourgeois	same
+mir_s5e21	13	e	24116	24120	24154	24144	0.7777,0.4871,0.9725,1.0000	marinette dupain-cheng	marinette dupain-cheng	marinette dupain-cheng	same
+mir_s5e21	14	e	27619	27624	27716	27684	0.3912,0.4323,0.5506,1.0000	le chien kim	le chien kim	le chien kim	same
+mir_s5e21	15	e	28010	28098	28185	28146	0.2159,0.0067,0.8550,0.9800	mr damocles	mr damocles	mr damocles	same
+mir_s5e21	16	e	29106	29196	29252	29244	0.7076,0.3057,0.9884,1.0000	rose lavillant	rose lavillant	rose lavillant	same
+mir_s5e21	17	e	30247	30264	30330	30306	0.7270,0.0168,1.0000,1.0000	x	x	x	same
+mir_s5e21	18	e	30247	30270	30337	30276	0.2608,0.1972,0.5337,1.0000	x	x	x	same
+mir_s5e21	19	e	30337	30342	30399	30384	0.0023,0.3094,0.8584,0.9896	x	x	n	open

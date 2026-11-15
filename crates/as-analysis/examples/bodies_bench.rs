@@ -1185,9 +1185,12 @@ fn pools(w: &World, labels: &[Label], out: &Path) {
     }
     // Pool E's names come through the tie of faces to bodies: the readers'
     // names for a sample of its bodies (the draw's group `e`) check them.
-    if let Ok(hard) = std::env::var("HARD") {
+    // (`HARD`, or a file of their own: `CHECK=<title.check.tsv>`.)
+    let read: Vec<Vec<String>> =
+        ["HARD", "CHECK"].iter().filter_map(|k| std::env::var(k).ok()).flat_map(|p| labels::tsv_rows(&p)).collect();
+    {
         let (mut same, mut other, mut open) = (0, 0, 0);
-        for v in labels::tsv_rows(&hard).into_iter().filter(|v| v[0] == key && v[2] == "e") {
+        for v in read.into_iter().filter(|v| v[0] == key && v[2] == "e") {
             let body = w.body_at(v[3].parse().unwrap(), v[6].parse().unwrap(), &quad(&v[7]));
             let truth = body.and_then(|b| w.body_truth(b));
             match v[8].as_str() {

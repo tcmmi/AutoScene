@@ -1,0 +1,288 @@
+pool	key	shot	frame	name	flags	got	score	next	got_other_shots	score	next
+E	op_6	6605	6648	LUFFY_G5		-			-		
+E	op_6	10447	10518	LUFFY_G5		-			-		
+E	op_6	10628	10668	LUFFY_G5		-			-		
+E	op_6	11462	11538	LUFFY_G5		-			-		
+E	op_6	13645	13734	LUFFY_G5		-			-		
+E	op_6	14629	14748	LUFFY_G5		LUFFY_G5	0.733	0.568	LUFFY_G5	0.733	0.568
+E	op_6	16505	16536	eustass kid		-			-		
+E	op_6	16966	17016	eustass kid		-			-		
+E	op_6	23424	23496	LUFFY_G5		-			-		
+E	op_6	23515	23754	LUFFY_G5		-			-		
+E	op_6	24706	24768	LUFFY_G5		-			-		
+E	op_6	25414	25440	KAIDO_HYBRID		-			-		
+E	op_6	26051	26094	KAIDO_HYBRID		-			-		
+E	op_6	27419	27486	KAIDO_HYBRID		-			-		
+E	op_6	27636	27714	LUFFY_G5		-			-		
+E	op_6	28785	28848	LUFFY_G5		-			-		
+B	op_6	12314	12354	yamato	cut	-			-		
+B	op_6	20565	20616	monkey d. luffy	far,cut	-			-		
+B	op_6	21373	21384	monkey d. luffy	far,cut	-			-		
+B	op_6	21373	21444	monkey d. luffy	far,cut	-			-		
+B	op_6	21533	21630	monkey d. luffy	cut	-			-		
+B	op_6	22043	22080	monkey d. luffy	far,cut	-			-		
+B	op_6	22250	22278	monkey d. luffy	far,cut	monkey d. luffy	0.708	0.406	monkey d. luffy	0.708	0.406
+B	op_6	25414	25458	KAIDO_HYBRID	cut	-			-		
+B	op_6	30880	30906	KAIDO_HYBRID	cut	-			-		
+N	op_6	6371	6402	?	face	-			-		
+N	op_6	7219	7278	?	face	-			-		
+N	op_6	8246	8274	?	face	-			-		
+N	op_6	8875	8916	?	face	-			-		
+N	op_6	12551	12600	?	face	-			-		
+N	op_6	14860	14976	?	face	-			-		
+N	op_6	15181	15204	?	face	-			-		
+N	op_6	15216	15252	?	face	-			-		
+N	op_6	15299	15312	?	face	-			-		
+N	op_6	22749	22764	?	face	-			-		
+N	op_6	22954	22974	?	face	-			-		
+N	op_6	23021	23028	?	face	-			-		
+N	op_6	25166	25176	?	face	-			-		
+N	op_6	28082	28122	?	face	-			-		
+N	op_6	30274	30330	?	face	-			-		
+N	op_6	30375	30390	?	face	-			-		
+N	op_6	5997	6024	?	e,clip	-			-		
+N	op_6	6067	6240	?	e	-			-		
+H	op_6	6836	6864	LUFFY_G5	clip	-			-		
+N	op_6	8990	9018	?	e	-			-		
+N	op_6	9839	9852	?	n	-			-		
+N	op_6	10844	10860	?	e	-			-		
+M	op_6	11407	11448	LUFFY_G5	clip	-			-		
+M	op_6	11462	11520	LUFFY_G5	clip	-			-		
+N	op_6	11660	11670	?	n	-			-		
+N	op_6	11975	12066	?	n	-			-		
+H	op_6	12314	12378	yamato	clip	-			-		
+N	op_6	12922	12972	?	n	-			-		
+N	op_6	13079	13104	?	e,clip	-			-		
+N	op_6	13225	13278	?	n,clip	-			-		
+M	op_6	13394	13428	LUFFY_G5	clip	-			-		
+N	op_6	14272	14280	?	n,clip	-			-		
+M	op_6	15566	15618	eustass kid	clip	-			-		
+N	op_6	15890	15906	?	e,clip	-			-		
+N	op_6	15974	16002	?	e,clip	-			-		
+N	op_6	16155	16170	?	n,clip	-			-		
+N	op_6	19221	19236	?	n,clip	-			-		
+N	op_6	20038	20394	?	n,clip	-			-		
+H	op_6	21373	21432	monkey d. luffy		-			-		
+H	op_6	21964	22002	monkey d. luffy	clip	-			-		
+N	op_6	23064	23100	?	n,clip	-			-		
+M	op_6	23276	23382	KAIDO_HYBRID	clip	-			-		
+N	op_6	23826	23922	?	n	-			-		
+M	op_6	23971	23988	LUFFY_G5		-			-		
+M	op_6	24229	24252	KAIDO_HYBRID	clip	-			-		
+N	op_6	24706	24714	?	n,clip	-			-		
+H	op_6	24706	24792	KAIDO_HYBRID	clip	-			-		
+H	op_6	24957	25092	KAIDO_HYBRID	clip	-			-		
+N	op_6	25120	25140	?	n	-			-		
+H	op_6	25166	25176	KAIDO_HYBRID		-			-		
+H	op_6	25742	25764	LUFFY_G5	clip	-			-		
+H	op_6	26506	26526	LUFFY_G5		-			-		
+H	op_6	26785	26796	KAIDO_HYBRID	clip	-			-		
+N	op_6	26850	26994	?	n	-			-		
+N	op_6	26850	27000	?	n,clip	-			-		
+H	op_6	27260	27270	LUFFY_G5	clip	-			-		
+M	op_6	27281	27306	KAIDO_HYBRID		-			-		
+M	op_6	27326	27348	LUFFY_G5		-			-		
+H	op_6	27951	28050	LUFFY_G5	clip	-			-		
+M	op_6	28213	28260	LUFFY_G5	clip	-			-		
+H	op_6	28417	28434	KAIDO_HYBRID		-			-		
+H	op_6	28720	28764	KAIDO_HYBRID		-			-		
+M	op_6	28785	28842	LUFFY_G5		-			-		
+N	op_6	29579	29610	?	n,clip	-			-		
+N	op_6	29579	29658	?	n	-			-		
+N	op_6	29579	29670	?	n	-			-		
+H	op_6	29786	29832	KAIDO_HYBRID	clip	-			-		
+N	op_6	29971	29982	?	e	-			-		
+H	op_6	29994	30018	KAIDO_HYBRID		-			-		
+N	op_6	30274	30282	?	n,clip	-			-		
+N	op_6	30274	30312	?	n,clip	-			-		
+N	op_6	30404	30450	?	e	-			-		
+N	op_6	30490	30576	?	n,clip	-			-		
+M	op_6	30682	30696	LUFFY_G5		-			-		
+M	op_6	30682	30714	LUFFY_G5		-			-		
+E	op_7	5531	5556	MOMO_DRAGON		-			-		
+E	op_7	13051	13128	MOMO_DRAGON		-			-		
+E	op_7	13195	13296	MOMO_DRAGON		-			-		
+E	op_7	13825	13890	LUFFY_G5		-			-		
+E	op_7	14169	14316	KAIDO_HYBRID	mixed	LUFFY_G5	0.844	0.685	LUFFY_G5	0.844	0.685
+E	op_7	14702	14754	LUFFY_G5		-			-		
+E	op_7	14925	15108	KAIDO_HYBRID		-			-		
+E	op_7	16143	16464	LUFFY_G5		-			-		
+E	op_7	16608	16830	LUFFY_G5	mixed	-			-		
+E	op_7	18080	18102	LUFFY_G5		-			-		
+E	op_7	18225	18378	LUFFY_G5		-			-		
+E	op_7	26494	26616	usopp		-			-		
+E	op_7	31301	31464	LUFFY_G5		-			-		
+B	op_7	7432	7470	kozuki hiyori	far,cut	-			-		
+B	op_7	9123	9174	kozuki hiyori	far,cut	-			-		
+B	op_7	10781	10806	kozuki toki	far,cut	-			-		
+B	op_7	11740	11790	kozuki momonosuke	far,cut	-			-		
+B	op_7	21287	21306	KAIDO_HYBRID	cut	-			-		
+B	op_7	26421	26430	usopp	cut	-			-		
+B	op_7	26421	26460	usopp	cut	usopp	0.742	0.478	usopp	0.742	0.478
+B	op_7	26657	26682	usopp	cut	usopp	0.666	0.409	usopp	0.666	0.409
+N	op_7	11740	11766	?	face	-			-		
+N	op_7	12961	13008	?	face	-			-		
+N	op_7	14925	15120	?	face	-			-		
+N	op_7	16608	17118	?	face	-			-		
+N	op_7	17287	17388	?	face	-			-		
+N	op_7	17603	17784	?	face	-			-		
+N	op_7	19522	19566	?	face	-			-		
+N	op_7	19522	19560	?	face	-			-		
+N	op_7	19954	19992	?	face	-			-		
+N	op_7	20030	20082	?	face	-			-		
+N	op_7	20090	20172	?	face	-			-		
+N	op_7	20360	20388	?	face	-			-		
+N	op_7	23064	23100	?	face	-			-		
+N	op_7	24063	24102	?	face	-			-		
+N	op_7	24374	24432	?	face	-			-		
+N	op_7	24487	24504	?	face	-			-		
+N	op_7	24487	24564	?	face	-			-		
+N	op_7	24723	24750	?	face	-			-		
+N	op_7	24939	24954	?	face	-			-		
+N	op_7	24939	25026	?	face	-			-		
+N	op_7	25031	25158	?	face	-			-		
+N	op_7	25031	25158	?	face	-			-		
+N	op_7	25706	25734	?	face	-			-		
+N	op_7	25869	25938	?	face	-			-		
+N	op_7	27293	27312	?	face	-			-		
+N	op_7	27536	27612	?	face	-			-		
+N	op_7	28362	28368	?	face	-			-		
+N	op_7	28594	28602	?	face	-			-		
+N	op_7	28594	28608	?	face	-			-		
+N	op_7	28594	28608	?	face	-			-		
+N	op_7	28594	28614	?	face	-			-		
+N	op_7	28594	28608	?	face	-			-		
+N	op_7	28633	28650	?	face	-			-		
+N	op_7	29092	29118	?	face	-			-		
+N	op_7	29397	29418	?	face	-			-		
+N	op_7	29433	29454	?	face	-			-		
+N	op_7	29499	29514	?	face	-			-		
+N	op_7	29536	29574	?	face	-			-		
+M	op_7	5348	5418	MOMO_DRAGON		-			-		
+H	op_7	5435	5460	MOMO_DRAGON		-			-		
+N	op_7	5639	5658	?	n	-			-		
+M	op_7	7173	7212	kozuki momonosuke		-			-		
+M	op_7	7350	7356	kozuki momonosuke		-			-		
+M	op_7	8435	8568	kozuki hiyori	clip	-			-		
+M	op_7	8710	8730	kozuki momonosuke	clip	-			-		
+H	op_7	11835	11868	kozuki momonosuke	clip	-			-		
+N	op_7	13337	13356	?	n,clip	-			-		
+N	op_7	13401	13416	?	n	-			-		
+M	op_7	13825	13860	LUFFY_G5		-			-		
+N	op_7	13983	14016	?	n,clip	-			-		
+N	op_7	14037	14076	?	n	-			-		
+H	op_7	14452	14508	KAIDO_HYBRID	clip	-			-		
+N	op_7	14602	14616	?	n	-			-		
+N	op_7	14925	15168	?	n,clip	-			-		
+M	op_7	15240	15258	KAIDO_HYBRID	clip	-			-		
+N	op_7	15542	15594	?	n	-			-		
+N	op_7	15542	15606	?	n	-			-		
+N	op_7	15542	15618	?	n	-			-		
+N	op_7	15695	15708	?	n	-			-		
+N	op_7	15695	15714	?	n	-			-		
+N	op_7	15913	15978	?	n,clip	-			-		
+N	op_7	16143	16452	?	n,clip	-			-		
+M	op_7	16608	16668	KAIDO_HYBRID	clip	-			-		
+N	op_7	18121	18150	?	n	-			-		
+M	op_7	21138	21210	KAIDO_HYBRID		-			-		
+M	op_7	21381	21414	KAIDO_HYBRID	clip	-			-		
+M	op_7	21381	21462	KAIDO_HYBRID	clip	-			-		
+M	op_7	21654	21768	KAIDO_HYBRID		-			-		
+N	op_7	21654	21744	?	n,clip	-			-		
+N	op_7	22259	22290	?	e,clip	-			-		
+N	op_7	22503	22518	?	n,clip	-			-		
+M	op_7	22614	22638	LUFFY_G5		-			-		
+M	op_7	22614	22662	LUFFY_G5	clip	-			-		
+N	op_7	23434	23472	?	n	-			-		
+N	op_7	23529	23538	?	n	-			-		
+N	op_7	26165	26226	?	n,clip	-			-		
+M	op_7	26355	26370	usopp	clip	-			-		
+N	op_7	27194	27246	?	e,clip	-			-		
+N	op_7	27440	27516	?	n	-			-		
+N	op_7	27851	27918	?	e,clip	-			-		
+N	op_7	28321	28332	?	e,clip	-			-		
+N	op_7	30683	30708	?	e	-			-		
+N	op_7	31516	31548	?	n,clip	-			-		
+E	op_a	11332	11622	portgas d. ace		-			-		
+E	op_a	13849	13896	portgas d. ace		-			-		
+E	op_a	15233	15336	yamato		-			-		
+E	op_a	17255	17268	yamato		-			-		
+E	op_a	17457	17544	portgas d. ace		-			-		
+E	op_a	17861	17958	yamato		-			-		
+E	op_a	20899	20946	yamato		-			-		
+E	op_a	23258	23316	eustass kid		-			-		
+E	op_a	23525	23610	eustass kid		-			-		
+E	op_a	23792	23910	eustass kid		-			-		
+E	op_a	25283	25362	yamato		-			-		
+E	op_a	25797	25812	monkey d. luffy		-			-		
+E	op_a	27126	27144	monkey d. luffy		-			-		
+E	op_a	30143	30174	eustass kid		-			-		
+E	op_a	30323	30432	monkey d. luffy		-			-		
+E	op_a	32014	32124	monkey d. luffy		-			-		
+B	op_a	9356	9396	portgas d. ace	cut	-			-		
+B	op_a	9529	9678	portgas d. ace	far,cut	-			-		
+B	op_a	15058	15114	portgas d. ace	far,cut	-			-		
+B	op_a	24008	24066	eustass kid	own	-			-		
+B	op_a	27872	27900	monkey d. luffy	cut	-			-		
+B	op_a	31335	31356	monkey d. luffy		-			-		
+N	op_a	8058	8112	?	face	-			-		
+N	op_a	22869	22896	?	face	-			-		
+N	op_a	28061	28092	?	face	yamato	0.888	0.305	yamato	0.888	0.305
+N	op_a	29167	29214	?	face	-			-		
+N	op_a	30794	30810	?	face	-			-		
+N	op_a	30838	30888	?	face	-			-		
+N	op_a	31050	31062	?	face	-			-		
+N	op_a	31093	31104	?	face	-			-		
+H	op_a	3771	3786	yamato	clip	-			-		
+M	op_a	3862	4038	yamato	clip	-			-		
+H	op_a	4713	4764	yamato		-			-		
+M	op_a	4875	4902	portgas d. ace		-			-		
+H	op_a	5574	5646	yamato	clip	-			-		
+M	op_a	5746	5874	yamato	clip	-			-		
+H	op_a	8017	8040	portgas d. ace	clip	-			-		
+H	op_a	8058	8160	yamato	clip	-			-		
+M	op_a	9433	9456	yamato	clip	-			-		
+M	op_a	10761	10782	yamato	clip	-			-		
+N	op_a	10971	11046	?	e,clip	-			-		
+N	op_a	10971	11046	?	e,clip	-			-		
+M	op_a	12595	12666	yamato	clip	-			-		
+H	op_a	14250	14274	yamato		-			-		
+H	op_a	15023	15042	yamato	clip	-			-		
+M	op_a	15393	15426	portgas d. ace	clip	-			-		
+N	op_a	15442	15486	?	n,clip	-			-		
+M	op_a	15685	15720	portgas d. ace		-			-		
+H	op_a	15825	15840	yamato	clip	-			-		
+H	op_a	15902	15918	yamato		-			-		
+H	op_a	16367	16464	yamato	clip	-			-		
+H	op_a	16708	16746	yamato		-			-		
+N	op_a	16942	17022	?	n	-			-		
+H	op_a	17766	17814	yamato	clip	-			-		
+H	op_a	18845	18912	yamato	clip	-			-		
+H	op_a	18982	19056	yamato		-			-		
+M	op_a	19239	19296	monkey d. luffy	clip	-			-		
+H	op_a	19338	19374	yamato	clip	-			-		
+H	op_a	19455	19500	yamato		-			-		
+H	op_a	19544	19596	yamato		-			-		
+N	op_a	21541	21570	?	n	-			-		
+N	op_a	22589	22644	?	n	-			-		
+M	op_a	23258	23310	KILLER	clip	-			-		
+M	op_a	23258	23316	eustass kid		-			-		
+M	op_a	23525	23538	eustass kid		-			-		
+N	op_a	24901	24972	?	e,clip	-			-		
+M	op_a	25498	25530	kozuki momonosuke	clip	-			-		
+N	op_a	25947	26064	?	n	-			-		
+N	op_a	25947	26100	?	e,clip	-			-		
+N	op_a	27872	27900	?	e,clip	-			-		
+M	op_a	27924	27954	monkey d. luffy	clip	-			-		
+N	op_a	28061	28092	?	e,clip	-			-		
+N	op_a	28406	28422	?	e,clip	-			-		
+N	op_a	29082	29136	?	n,clip	-			-		
+H	op_a	29796	29850	monkey d. luffy		-			-		
+N	op_a	30957	31002	?	e,clip	-			-		
+N	op_a	31093	31134	?	e,clip	-			-		
+H	op_a	31815	31884	monkey d. luffy	clip	-			-		
+N	op_a	32499	32532	?	e,clip	-			-		
+H	op_a	32499	32616	monkey d. luffy		-			-		
+N	op_a	32923	32946	?	e,clip	-			-		
+H	op_a	32970	33042	monkey d. luffy		-			-		
+N	op_a	33141	33162	?	e	-			-		

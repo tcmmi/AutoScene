@@ -1,0 +1,103 @@
+pool	key	shot	frame	name	flags	got	score	next	got_other_shots	score	next
+E	rz_31	584	624	emilia		-			-		
+E	rz_31	14994	15030	petra leyte		petra leyte	0.722	0.555	petra leyte	0.722	0.555
+E	rz_31	15046	15090	subaru natsuki		-			-		
+E	rz_31	20648	20694	subaru natsuki		-			-		
+E	rz_31	22299	22326	subaru natsuki		-			-		
+E	rz_31	28597	28650	frederica baumann		-			-		
+E	rz_31	33069	33180	subaru natsuki		-			-		
+B	rz_31	4610	4722	otto suwen	far,cut	-			-		
+B	rz_31	4958	5058	subaru natsuki	cut	-			-		
+B	rz_31	4958	5040	subaru natsuki	cut	-			-		
+B	rz_31	5446	5496	emilia	cut	-			-		
+B	rz_31	6663	6756	subaru natsuki	cut	-			-		
+B	rz_31	6842	6864	garfiel tinsel	cut	-			-		
+B	rz_31	8053	8172	subaru natsuki	own	-			-		
+B	rz_31	10115	10176	ram	far,cut	-			-		
+B	rz_31	10478	10572	subaru natsuki	cut	subaru natsuki	0.703	0.478	subaru natsuki	0.703	0.478
+B	rz_31	10805	10878	garfiel tinsel	cut	-			-		
+B	rz_31	11146	11226	garfiel tinsel	cut	-			-		
+B	rz_31	13047	13062	subaru natsuki	cut	-			-		
+B	rz_31	17544	17634	subaru natsuki	cut	-			-		
+B	rz_31	18061	18156	subaru natsuki	cut	-			-		
+B	rz_31	18061	18156	ram	cut	-			-		
+B	rz_31	18252	18486	subaru natsuki	own	-			-		
+B	rz_31	18487	18540	subaru natsuki	cut	-			-		
+B	rz_31	20648	20694	subaru natsuki	cut	-			-		
+B	rz_31	20648	20886	subaru natsuki	cut	-			-		
+B	rz_31	21137	21216	frederica baumann	far,cut	-			-		
+B	rz_31	21623	21720	subaru natsuki	cut	-			-		
+B	rz_31	21903	22002	subaru natsuki	cut	-			-		
+B	rz_31	23339	23490	subaru natsuki	cut	-			-		
+B	rz_31	23709	23718	subaru natsuki	cut	-			-		
+B	rz_31	23709	23736	subaru natsuki	cut	-			-		
+B	rz_31	23887	23922	subaru natsuki	far,cut	-			-		
+B	rz_31	23887	23976	subaru natsuki	cut	-			-		
+B	rz_31	24167	24180	frederica baumann	far,cut	-			-		
+B	rz_31	25024	25032	subaru natsuki	cut	-			-		
+B	rz_31	25186	25206	subaru natsuki	cut	-			-		
+B	rz_31	25225	25236	subaru natsuki	cut	-			-		
+B	rz_31	26263	26394	ram	cut	-			-		
+B	rz_31	27140	27216	subaru natsuki	cut	-			-		
+B	rz_31	30405	30420	subaru natsuki	cut	-			-		
+B	rz_31	30591	30636	subaru natsuki	far,cut	-			-		
+B	rz_31	30795	30816	subaru natsuki	far,cut	subaru natsuki	0.716	0.554	subaru natsuki	0.716	0.554
+B	rz_31	31602	31686	subaru natsuki	own	subaru natsuki	0.828	0.561	subaru natsuki	0.828	0.561
+B	rz_31	31697	31716	subaru natsuki	cut	-			-		
+B	rz_31	31736	31758	subaru natsuki	cut	subaru natsuki	0.669	0.513	subaru natsuki	0.669	0.513
+B	rz_31	32695	32778	subaru natsuki	cut	-			-		
+B	rz_31	33069	33114	subaru natsuki	cut	-			-		
+B	rz_31	35373	35388	petra leyte	far,cut	-			-		
+B	rz_31	36184	36330	subaru natsuki	cut	-			-		
+N	rz_31	60	102	?	face	-			-		
+N	rz_31	7260	7350	?	face	-			-		
+N	rz_31	24494	24516	?	face	-			-		
+N	rz_31	24552	24600	?	face	-			-		
+N	rz_31	31229	31248	?	face	-			-		
+N	rz_31	37453	37488	?	face	-			-		
+E	rz_33	11411	11454	garfiel tinsel		-			-		
+E	rz_33	18661	18702	otto suwen	mixed	-			-		
+E	rz_33	20165	20178	subaru natsuki		-			-		
+E	rz_33	20329	20340	subaru natsuki		-			-		
+E	rz_33	27337	27444	subaru natsuki		-			-		
+E	rz_33	30331	30342	echidna		-			-		
+E	rz_33	31406	31500	subaru natsuki		-			-		
+B	rz_33	363	480	otto suwen	cut	-			-		
+B	rz_33	363	480	subaru natsuki	cut	-			-		
+B	rz_33	3836	3924	subaru natsuki	cut	-			-		
+B	rz_33	4514	4614	subaru natsuki	cut	-			-		
+B	rz_33	6055	6216	subaru natsuki	cut	-			-		
+B	rz_33	9246	9324	subaru natsuki	far,cut	-			-		
+B	rz_33	11654	11760	patrasche	far,cut	-			-		
+B	rz_33	12271	12414	ram	far,cut	-			-		
+B	rz_33	13169	13188	ram	cut	-			-		
+B	rz_33	13296	13434	otto suwen	far,cut	-			-		
+B	rz_33	15060	15078	ram	far,cut	-			-		
+B	rz_33	15125	15138	subaru natsuki	cut	-			-		
+B	rz_33	17345	17388	subaru natsuki	cut	-			-		
+B	rz_33	18314	18384	subaru natsuki	far,cut	-			-		
+B	rz_33	18314	18414	subaru natsuki	far,cut	-			-		
+B	rz_33	19233	19248	subaru natsuki	cut	-			-		
+B	rz_33	19501	19542	subaru natsuki	cut	-			-		
+B	rz_33	21042	21120	subaru natsuki	cut	-			-		
+B	rz_33	22654	22824	subaru natsuki		-			-		
+B	rz_33	23650	23694	subaru natsuki	cut	-			-		
+B	rz_33	26989	27018	subaru natsuki	cut	-			-		
+B	rz_33	27337	27366	subaru natsuki	own	-			-		
+B	rz_33	29097	29160	subaru natsuki	cut	-			-		
+B	rz_33	29374	29388	emilia		-			-		
+B	rz_33	30134	30156	subaru natsuki	cut	-			-		
+B	rz_33	31065	31170	subaru natsuki	far,cut	-			-		
+B	rz_33	31215	31224	subaru natsuki	cut	-			-		
+B	rz_33	31328	31380	subaru natsuki	cut	-			-		
+B	rz_33	31406	31464	subaru natsuki	far,cut	-			-		
+B	rz_33	31525	31584	subaru natsuki	far,cut	-			-		
+B	rz_33	32372	32436	subaru natsuki	cut	-			-		
+B	rz_33	32693	32754	subaru natsuki	far,cut	-			-		
+N	rz_33	16057	16074	?	face	-			-		
+N	rz_33	16057	16074	?	face	-			-		
+N	rz_33	16285	16314	?	face	-			-		
+N	rz_33	16339	16368	?	face	-			-		
+N	rz_33	16663	16764	?	face	-			-		
+N	rz_33	32144	32154	?	face	-			-		
+N	rz_33	32163	32172	?	face	-			-		

@@ -339,3 +339,242 @@ are.
 Not measured yet: more titles of each kind (the animation settings rest on
 four episodes), a larger picture network, who speaks across the cut (step C),
 scenes across the episodes of one project.
+
+## Conversations from who is in which shot (2026-11-15, rows 25, 27, 28)
+
+Asked by the speech research (`research_notes/Speech and dialogue`, rung 0):
+can a pack hold a character's conversations from what a project already
+stores, with no sound? Version 0.1 did it with a walk over the shots. This
+is a bench only: nothing in the pack code or the app changed.
+
+### The sets
+
+For each main character of Breaking Bad S01E01 (the 12 of `bench/identity`
+with at least 30 s on screen, each taken as the stored character most of
+their faces are on):
+
+| Set | What it holds |
+|---|---|
+| own (a) | the shots the cast shows the character in, by a face it is sure of |
+| groups (b) | own, and the shots between two own shots of one of the app's shot groups (at most 6 s apart, no fade or black between) |
+| walk (c) | 0.1's rule: from every own shot out both ways, shot by shot, while the next shot is in the same scene and holds the character or a partner |
+| bridged walk (e) | the walk, which also steps over a stretch of up to 6 s that holds neither, when a shot that does follows in the same scene with no fade between; counted with the stepped-over shots and without them |
+| scenes, partners (g) | every shot of the character's scenes that holds the character or a partner |
+| scenes, anyone (f) | every shot of the character's scenes in which the cast shows anyone |
+| whole scenes (d) | every shot of the character's scenes (the app's "Whole scenes") |
+
+A partner is anyone whose face is on screen at the same time as one of the
+character's for at least 0.2 s, anywhere in the episode (0.1's rule). (a) to
+(d) were fixed before the first run (row 25). (e) was named after that run,
+(f) and (g) after the run of (e), each before its own run (rows 27 and 28):
+what they gain on this episode flatters them.
+
+Each set is inside the next from the bridged walk without its stepped-over
+shots on: that walk, (g), (f), (d).
+
+### How it is scored
+
+Who is truly in a shot comes from `bench/identity`, who speaks in a scene
+from the `speakers` column above, and `bb_s01e01.speakers.tsv` says which
+face label each speaker is (matched by hand from the contact sheets; two
+matches are unsure, 7 s of speech). Over the shots a set adds to the own
+ones:
+
+1. the share that show a speaker of their labelled scene (a labelled face of
+   someone who speaks there). The draft bar of the proposal is on this one:
+   at least 0.80 for the walk. "In a scene of theirs" is the same share when
+   an added shot in a scene the character has no shot in counts as no
+   speaker (added after the review, see below);
+2. of the seconds the others speak in the character's scenes, the share
+   whose speaker is seen in the added shots, and in the set at all;
+3. the share with nobody of the conversation: faces that do not speak in
+   that scene, and no labelled face;
+4. of the shots of the character's scenes that show a speaker and not the
+   character, the share the set holds.
+
+Three readings: as the app has it (the stored cast, and the scenes of the
+live-action recipe on the app's own pictures: 31 scenes for the 33
+labelled), the stored cast with the labelled scenes, and the labels for
+both. Each number is the mean over the 12 characters, with the 95 % interval
+of that mean when the characters are drawn anew, and pooled over all shots.
+
+```sh
+cargo run --release -p as-project --example conversation_bench -- <project_copy_dir> bench/scenes/bb_s01e01.scenes.tsv bench/identity/bb_s01e01.labels.tsv bench/scenes/bb_s01e01.speakers.tsv <pictures.emb> bench/scenes/bb_s01e01.conversation.tsv
+```
+
+`<pictures.emb>` is the app's pictures of the shots (`scenes_run`). The
+project copy is opened read only. `bb_s01e01.conversation.tsv` holds every
+count per reading, character and set (there `br-kept` is the bridged walk
+without its stepped-over shots, `sc-part` is (g), `sc-any` is (f)). `SURE=1`
+leaves out the unsure name matches, `DETAIL=<label>` lists a character's
+shots. Unit tests: `cargo test -p as-project --example conversation_bench`.
+
+### Results, as the app has it
+
+794 shots; a character's own shots are 59.8 on average (332 s). Mean over
+the 12 characters (95 % interval), then pooled:
+
+| Set | Shots | Seconds | Added shots | (1) show a speaker | (1) in a scene of theirs | (4) speaker shots held |
+|---|---|---|---|---|---|---|
+| groups (b) | 94.4 | 415 | 34.7 | 0.819 (0.708 to 0.921), 0.752 | 0.819, 0.752 | 0.288 (0.195 to 0.383), 0.330 |
+| **walk (c)** | 119.9 | 540 | 60.2 | **0.985** (0.964 to 1.000), 0.965 | 0.972 (0.949 to 0.993), 0.957 | **0.778** (0.656 to 0.895), 0.735 |
+| bridged walk (e), with the stepped-over shots | 152.8 | 641 | 93.1 | 0.829 (0.765 to 0.890), 0.795 | 0.787, 0.774 | 0.954 (0.895 to 0.997), 0.920 |
+| bridged walk (e), without them | 135.0 | 603 | 75.2 | 0.982 (0.960 to 0.999), 0.966 | 0.951 (0.907 to 0.987), 0.948 | 0.947 (0.885 to 0.994), 0.913 |
+| scenes, partners (g) | 138.9 | 621 | 79.2 | 0.968 (0.941 to 0.990), 0.941 | 0.912 (0.825 to 0.975), 0.914 | 0.956 (0.901 to 0.995), 0.925 |
+| scenes, anyone (f) | 143.4 | 636 | 83.7 | 0.927 (0.882 to 0.968), 0.909 | 0.857 (0.751 to 0.939), 0.870 | 0.960 (0.905 to 0.999), 0.930 |
+| whole scenes (d) | 190.0 | 741 | 130.2 | 0.692 (0.591 to 0.791), 0.592 | 0.629 (0.528 to 0.731), 0.566 | 0.967 (0.912 to 1.000), 0.938 |
+
+The same as shots, over all 12 characters together (926 shots of their
+scenes show a speaker and not the character):
+
+| Set | Added shots | with a speaker | faces that do not speak | no labelled face | in a scene the character is not in | of the 926 held |
+|---|---|---|---|---|---|---|
+| groups (b) | 416 | 313 | 34 | 69 | 0 | 306 |
+| walk (c) | 722 | 697 | 25 | 0 | 6 | 681 |
+| bridged walk (e), with the stepped-over shots | 1,117 | 888 | 90 | 139 | 24 | 852 |
+| bridged walk (e), without them | 903 | 872 | 31 | 0 | 17 | 845 |
+| scenes, partners (g) | 950 | 894 | 56 | 0 | 34 | 857 |
+| scenes, anyone (f) | 1,004 | 913 | 91 | 0 | 49 | 861 |
+| whole scenes (d) | 1,563 | 925 | 229 | 409 | 77 | 869 |
+
+Measure (2), the others' speech whose speaker is seen in the added shots and
+in the set at all: own –, 0.783; groups 0.779, 0.906; walk 0.865, 0.907;
+bridged walk 0.901, 0.925; (g), (f) and whole scenes 0.933, 0.958.
+
+Per character, the walk and what would replace it (added shots, (1), speaker
+shots held of those asked for):
+
+| Character | Own shots | Walk (c) | Bridged walk, without the stepped-over shots | Scenes, anyone (f) | Whole scenes (d) |
+|---|---|---|---|---|---|
+| walter | 300 | 198, 0.89, 168/176 | 205, 0.89, 173/176 | 217, 0.85, 175/176 | 416, 0.45, 176/176 |
+| jesse | 122 | 112, 0.99, 111/191 | 167, 0.98, 163/191 | 180, 0.93, 166/191 | 301, 0.56, 168/191 |
+| skyler | 66 | 82, 1.00, 77/81 | 93, 1.00, 80/81 | 109, 0.96, 81/81 | 123, 0.85, 81/81 |
+| hank | 39 | 21, 1.00, 21/42 | 42, 1.00, 42/42 | 56, 0.75, 42/42 | 97, 0.43, 42/42 |
+| waltjr | 42 | 68, 1.00, 67/71 | 71, 1.00, 70/71 | 76, 0.95, 71/71 | 88, 0.82, 71/71 |
+| krazy8 | 46 | 44, 0.93, 41/60 | 57, 0.93, 53/60 | 62, 0.92, 57/60 | 110, 0.55, 60/60 |
+| gomez | 19 | 36, 1.00, 36/62 | 62, 1.00, 62/62 | 76, 0.82, 62/62 | 117, 0.53, 62/62 |
+| marie | 22 | 45, 1.00, 45/45 | 45, 1.00, 45/45 | 45, 1.00, 45/45 | 50, 0.90, 45/45 |
+| emilio | 26 | 50, 1.00, 50/125 | 85, 0.99, 84/125 | 93, 0.96, 89/125 | 158, 0.58, 91/125 |
+| denim | 14 | 23, 1.00, 23/31 | 31, 1.00, 31/31 | 31, 1.00, 31/31 | 36, 0.86, 31/31 |
+| mustache | 13 | 32, 1.00, 32/32 | 32, 1.00, 32/32 | 32, 1.00, 32/32 | 37, 0.86, 32/32 |
+| bogdan | 8 | 11, 1.00, 10/10 | 13, 1.00, 10/10 | 27, 1.00, 10/10 | 30, 0.90, 10/10 |
+
+The two other readings give the same picture. With the stored cast and the
+labelled scenes: walk 0.985 and 0.779 held, bridged walk without the
+stepped-over shots 0.973 and 0.959, (g) 0.971 and 0.982, (f) 0.932 and
+0.993, whole scenes 0.701 and 1. With the labels for both: 0.986 and 0.788,
+0.976 and 0.973, 0.977 and 0.991, 0.940 and 1, 0.704 and 1. So neither the
+stored cast nor the scenes the app finds cost much here: 57 of the 926
+speaker shots lie in a scene the recipe cut apart from the own shots (34 of
+Emilio's, 23 of Jesse's).
+
+### What the numbers say
+
+- **The walk meets the draft bar (0.985 against 0.80), and the bar says
+  little.** Of the 579 shots in which the cast is sure of someone, 527 show
+  a speaker of their scene (0.910). The walk can only add shots with such a
+  face, so any rule of that kind passes. What counts is the gap to "any
+  face" (f): 0.06.
+- **0.1's walk leaves out about a quarter of the shots that show a speaker
+  of the character's scenes** (held 0.778, pooled 0.735). Of the 245 it
+  leaves out, 176 lie behind a shot that stops it: one in which the cast
+  shows nobody, or nobody who shares a frame with the character. 57 lie in a
+  scene found apart, 8 show nobody the cast knows, 4 only strangers to the
+  character. A partner who never shares a frame with the character, which
+  the proposal named as the walk's limit, is rare here.
+- **The 6-second bridge closes that gap** (row 27): 0.947 held, at the same
+  share of added shots with a speaker (0.982). Character by character
+  against the walk: +0.169 held (+0.079 to +0.267), −0.002 on (1). With its
+  stepped-over shots in the set, (1) is 0.829 and under 0.80 for 5 of the 12
+  characters: those shots hold nobody the measure can credit (16 of 214
+  show a speaker).
+- **A walk is not needed for that** (row 28). Whole scenes with only the
+  shots in which the cast shows anyone (f) hold as many speaker shots
+  (0.960), and need no new query: a pack's shot already carries how many
+  characters the cast shows in it. The partner rule (g) and the bridged walk
+  add fewer shots without a speaker: (f) minus the bridged walk is −0.055 on
+  (1) (−0.101 to −0.018). That gap sits in the party scene (Hank 0.75
+  against 1.00, Gomez 0.82 against 1.00) and where the recipe joins two
+  scenes: (f) then takes every face of the wrong scene (49 added shots in a
+  scene the character is not in, against 17).
+- **Against whole scenes**: 0.31 of the shots whole scenes add show no
+  speaker (0.195 no labelled face, 0.113 faces that do not speak). The
+  filtered sets drop those and keep 0.95 to 0.96 of the speaker shots, with
+  under two thirds of the added shots.
+- **Against shot groups**: groups hold 0.288 of the speaker shots. They
+  bridge between two own shots only, so a scene in which the character is
+  seen once gets nothing.
+- 0.1's cap of 180 s removes no shot here (the longest stretch is 174 s).
+  Without the two unsure name matches measure (1) is the same to three
+  decimals.
+
+True by the way a set is built, so no result: the walk, the bridged walk
+without its stepped-over shots, (g) and (f) add no shot without a labelled
+face; (4) cannot fall from the bridged walk to (g) to (f) to whole scenes;
+whole scenes hold every asked-for shot when the scenes are the labelled
+ones; measure (2) is the same for (g), (f) and whole scenes, because one
+sight of a speaker earns all their seconds.
+
+### What they cannot say
+
+- **One episode, and 12 characters that are not 12 draws.** Hank and Gomez
+  have the same sets from the bridged walk on, Denim and Mustache too; these
+  four have most of their shots in the party scene, and Denim and Mustache
+  are guests who never speak. The intervals are too narrow for another
+  title. Without Denim and Mustache the means of (1) and (4) are 0.982 and
+  0.759 for the walk, 0.979 and 0.937 for the bridged walk, 0.913 and 0.953
+  for (f); for Walter, Jesse and Skyler alone 0.962 and 0.829, 0.957 and
+  0.941, 0.913 and 0.954.
+- **Speakers are seconds per scene, not turns.** A speaker's face in a shot
+  does not say that they speak in it, or with the character. A listener who
+  never speaks counts as nobody. A scene the character only passes through
+  counts as theirs: Jesse is seen for 10 s in the ride-along scene, and its
+  shots of Hank, Walter and Gomez are asked for.
+- **Only tracked faces count.** A shot of the conversation without a face
+  (a back, a wide shot, hands, an insert) counts against a set whatever it
+  shows. So (1) cannot rank whole scenes, groups or the bridged walk with
+  its stepped-over shots against the sets that add only shots with a face,
+  and nothing here says whether an editor wants those shots.
+- (e), (f) and (g) were thought of after seeing this episode. The numbers
+  cannot choose between them: the gaps are 0.015 to 0.055 and rest on a few
+  characters.
+- The speaker `unknown` (13 s) stays in what the others speak and can never
+  be seen. The column of (1) over "scenes with speech" leaves out the one
+  scene in which only `unknown` speaks.
+- The copy was analysed while characters were also looked for by their
+  bodies: 8 sure faces were placed that way. Without them no count changes
+  (the review's check). The two flash cuts a default pack leaves out are
+  counted.
+- The review found three slips in `bench/identity`'s labels, not corrected
+  here: `wavy_guest` is Skyler (four tracks at the party), the `jesse` at
+  frame 10437 is a passer-by, and Jesse in shot 729 is `?`. They move no
+  mean here by more than the third decimal. Jesse has 191 asked-for shots
+  with the stored cast and 169 by the labels for that reason.
+
+### The review
+
+A reviewer without context read the rows, the tool and the code it follows,
+and recomputed every count with a script of their own, written from the
+rows: no difference in 288 rows, nor in any mean. The name matches hold on
+the contact sheets they looked at. Taken from the review into this section:
+the base rate beside the bar, what is true by construction, and no ranking
+by (1) across sets that do and do not add shots without a face. Changed in
+the tool after it: (4) no longer asks for shots that show the character
+where the cast missed them (16 of 942; the row said so, the code did not);
+every measure has its interval and its pooled share; and the count "in a
+scene of theirs" was added, which row 25 did not register.
+
+### For the owner
+
+- 0.1's walk as it was is not what to port: it stops at the first shot
+  without a known partner and loses a quarter of the speaker shots.
+- The idea holds. The cheapest form is a filter on "Whole scenes": only the
+  shots in which the cast shows someone. It needs no walk and no new query.
+- Stricter forms, at the price of one query for who shares frames with whom:
+  only shots with the character or a partner, or the bridged walk. They keep
+  strangers of a crowd scene out, and the walk also stays closer to the
+  character where two scenes were joined. This episode cannot say whether
+  that is worth it.
+- Not answered by any number here: whether a conversation pack should keep
+  the shots without a face that lie inside a conversation.
+- Before a port: a second title, and a look by eye at one such pack.

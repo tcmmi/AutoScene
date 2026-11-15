@@ -75,9 +75,6 @@ E	bb	77978	78036	jesse		-			-
 E	bb	78484	78510	walter		jesse	0.919	0.214	jesse	0.797	0.214
 E	bb	78623	78960	walter		walter	0.670	0.150	walter	0.670	0.150
 E	bb	81157	81942	walter		-			-		
-N	bb	667	684	?	face	-			-		
-N	bb	731	750	?	face	-			-		
-N	bb	988	1014	?	face	-			-		
 N	bb	9835	10026	?	face	-			-		
 N	bb	10474	10542	?	face	-			-		
 N	bb	10607	10656	?	face	-			-		
@@ -137,12 +134,7 @@ N	bb	56537	56616	?	face	-			-
 N	bb	56734	56844	?	face	-			-		
 N	bb	57105	57174	?	face	-			-		
 N	bb	59297	59316	?	face	walter	0.717	0.241	walter	0.717	0.241
-N	bb	61005	61038	?	face	-			-		
-N	bb	61081	61092	?	face	-			-		
-N	bb	61119	61152	?	face	-			-		
 N	bb	68538	68544	?	face	-			-		
-N	bb	74190	74214	?	face	-			-		
-N	bb	74491	74502	?	face	-			-		
 N	bb	347	414	?	n	-			-		
 H	bb	623	648	walter	clip	-			-		
 H	bb	702	714	jesse	clip	-			-		

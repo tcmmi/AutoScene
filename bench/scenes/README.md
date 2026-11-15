@@ -200,10 +200,16 @@ changes. By the true cast the same lines move less, and both ways (the bold
 row 0.929 to 0.928).
 
 The conversation section at the end of this file was written the same day,
-before the correction. Its numbers with the stored cast did not move; its
+before the correction. Its numbers with the stored cast did not move with
+that correction; its
 reading with the labels for both, and that reading's 30 rows in
 `bb_s01e01.conversation.tsv`, are there as they are with the corrected
 labels.
+
+A second correction the same day (row 31: Walter's face in the shot at the
+door, and seventeen faces behind gas masks marked as not to be told) moves
+no number of the scenes tables above; the conversation section says what it
+changes there.
 
 ## Results across four episodes (2026-11-12, row 8)
 
@@ -449,26 +455,26 @@ the 12 characters (95 % interval), then pooled:
 
 | Set | Shots | Seconds | Added shots | (1) show a speaker | (1) in a scene of theirs | (4) speaker shots held |
 |---|---|---|---|---|---|---|
-| groups (b) | 94.4 | 415 | 34.7 | 0.819 (0.708 to 0.921), 0.752 | 0.819, 0.752 | 0.288 (0.195 to 0.383), 0.330 |
+| groups (b) | 94.4 | 415 | 34.7 | 0.819 (0.708 to 0.921), 0.752 | 0.819, 0.752 | 0.288 (0.195 to 0.382), 0.330 |
 | **walk (c)** | 119.9 | 540 | 60.2 | **0.985** (0.964 to 1.000), 0.965 | 0.972 (0.949 to 0.993), 0.957 | **0.778** (0.656 to 0.895), 0.735 |
 | bridged walk (e), with the stepped-over shots | 152.8 | 641 | 93.1 | 0.829 (0.765 to 0.890), 0.795 | 0.787, 0.774 | 0.954 (0.895 to 0.997), 0.920 |
-| bridged walk (e), without them | 135.0 | 603 | 75.2 | 0.982 (0.960 to 0.999), 0.966 | 0.951 (0.907 to 0.987), 0.948 | 0.947 (0.885 to 0.994), 0.913 |
+| bridged walk (e), without them | 135.0 | 603 | 75.2 | 0.982 (0.960 to 0.999), 0.966 | 0.951 (0.907 to 0.987), 0.948 | 0.947 (0.885 to 0.994), 0.912 |
 | scenes, partners (g) | 138.9 | 621 | 79.2 | 0.968 (0.941 to 0.990), 0.941 | 0.912 (0.825 to 0.975), 0.914 | 0.956 (0.901 to 0.995), 0.925 |
 | scenes, anyone (f) | 143.4 | 636 | 83.7 | 0.927 (0.882 to 0.968), 0.909 | 0.857 (0.751 to 0.939), 0.870 | 0.960 (0.905 to 0.999), 0.930 |
 | whole scenes (d) | 190.0 | 741 | 130.2 | 0.692 (0.591 to 0.791), 0.592 | 0.629 (0.528 to 0.731), 0.566 | 0.967 (0.912 to 1.000), 0.938 |
 
-The same as shots, over all 12 characters together (926 shots of their
+The same as shots, over all 12 characters together (925 shots of their
 scenes show a speaker and not the character):
 
-| Set | Added shots | with a speaker | faces that do not speak | no labelled face | in a scene the character is not in | of the 926 held |
+| Set | Added shots | with a speaker | faces that do not speak | no labelled face | in a scene the character is not in | of the 925 held |
 |---|---|---|---|---|---|---|
-| groups (b) | 416 | 313 | 34 | 69 | 0 | 306 |
-| walk (c) | 722 | 697 | 25 | 0 | 6 | 681 |
-| bridged walk (e), with the stepped-over shots | 1,117 | 888 | 90 | 139 | 24 | 852 |
-| bridged walk (e), without them | 903 | 872 | 31 | 0 | 17 | 845 |
-| scenes, partners (g) | 950 | 894 | 56 | 0 | 34 | 857 |
-| scenes, anyone (f) | 1,004 | 913 | 91 | 0 | 49 | 861 |
-| whole scenes (d) | 1,563 | 925 | 229 | 409 | 77 | 869 |
+| groups (b) | 416 | 313 | 34 | 69 | 0 | 305 |
+| walk (c) | 722 | 697 | 25 | 0 | 6 | 680 |
+| bridged walk (e), with the stepped-over shots | 1,117 | 888 | 90 | 139 | 24 | 851 |
+| bridged walk (e), without them | 903 | 872 | 31 | 0 | 17 | 844 |
+| scenes, partners (g) | 950 | 894 | 56 | 0 | 34 | 856 |
+| scenes, anyone (f) | 1,004 | 913 | 91 | 0 | 49 | 860 |
+| whole scenes (d) | 1,563 | 925 | 229 | 409 | 77 | 868 |
 
 Measure (2), the others' speech whose speaker is seen in the added shots and
 in the set at all: own –, 0.783; groups 0.779, 0.906; walk 0.865, 0.907;
@@ -479,7 +485,7 @@ shots held of those asked for):
 
 | Character | Own shots | Walk (c) | Bridged walk, without the stepped-over shots | Scenes, anyone (f) | Whole scenes (d) |
 |---|---|---|---|---|---|
-| walter | 300 | 198, 0.89, 168/176 | 205, 0.89, 173/176 | 217, 0.85, 175/176 | 416, 0.45, 176/176 |
+| walter | 300 | 198, 0.89, 167/175 | 205, 0.89, 172/175 | 217, 0.85, 174/175 | 416, 0.45, 175/175 |
 | jesse | 122 | 112, 0.99, 111/191 | 167, 0.98, 163/191 | 180, 0.93, 166/191 | 301, 0.56, 168/191 |
 | skyler | 66 | 82, 1.00, 77/81 | 93, 1.00, 80/81 | 109, 0.96, 81/81 | 123, 0.85, 81/81 |
 | hank | 39 | 21, 1.00, 21/42 | 42, 1.00, 42/42 | 56, 0.75, 42/42 | 97, 0.43, 42/42 |
@@ -498,7 +504,7 @@ stepped-over shots 0.973 and 0.959, (g) 0.971 and 0.982, (f) 0.932 and
 0.993, whole scenes 0.701 and 1. With the labels for both, as corrected on
 2026-11-15 (see "What they cannot say"): 0.986 and 0.782, 0.974 and 0.972,
 0.974 and 0.991, 0.939 and 1, 0.701 and 1. So neither the
-stored cast nor the scenes the app finds cost much here: 57 of the 926
+stored cast nor the scenes the app finds cost much here: 57 of the 925
 speaker shots lie in a scene the recipe cut apart from the own shots (34 of
 Emilio's, 23 of Jesse's).
 
@@ -589,7 +595,14 @@ sight of a speaker earns all their seconds.
   those 30 of the 288 rows of `bb_s01e01.conversation.tsv` were made again.
   Jesse has 191 asked-for shots with the stored cast and 192 by the labels
   (169 before: the labels did not have him in the scene of shot 729, and
-  had him in front of the school).
+  had him in front of the school). A second correction the same day (row
+  31) gave Walter's face in the shot at the door its name, so that shot is
+  no longer asked of him: 925 speaker shots for 926 over all characters,
+  every set but the own shots holds one less, and the tables above are as
+  they come out now
+  (pooled, the bridged walk without its stepped-over shots holds 0.912 for
+  0.913; no mean of the tables moved). It also marks seventeen faces behind
+  gas masks as not to be told, which changes no count here.
 
 ### The review
 
@@ -670,9 +683,10 @@ Checked first, as row 29 asks. Two more readers read the 374 shots of the 17
 odd-numbered labelled scenes of Breaking Bad S01E01 in the same way, with
 cast pages of the 43 names of `bench/identity` that had three tracks or
 more (`check/bb_s01e01.cast.tsv`, `.shots.tsv`, `.speak.a.tsv`, `.b.tsv`).
-The hand labels are those corrected the same day (row 30); the pages were
-drawn before, with `wavy_guest` still on them, a name no reader used. The
-correction moves only the last line of the table (0.955 and 0.760 before).
+The hand labels are those corrected the same day (rows 30 and 31); the pages
+were drawn before, with `wavy_guest` still on them, a name no reader used.
+The corrections move only the last line of the table (0.955 and 0.760 before
+them).
 
 | Question | Readers against the hand labels and Serial Speakers |
 |---|---|
@@ -680,7 +694,7 @@ correction moves only the last line of the table (0.955 and 0.760 before).
 | How often is the answer yes? | labels 0.636, readers 0.634 |
 | The same, in the 252 shots in which the cast is sure of someone | the same answer in 0.956; yes by the labels 0.937, by the readers 0.893 (11 shots only the labels, none only the readers) |
 | Who speaks in the scenes? | the readers find 21 of the labels' 27 speakers, 0.943 of their 407 s of speech; all 21 they name speak by the labels |
-| Who is seen in a shot? | of 334 names both readers give, 320 are the labels' (0.958); the labels give 418 (0.766 found) |
+| Who is seen in a shot? | of 334 names both readers give, 321 are the labels' (0.961); the labels give 419 (0.766 found) |
 
 The bar is met. The readers err on the careful side: they miss small
 speakers and small faces, and name no speaker who is none. What row 29

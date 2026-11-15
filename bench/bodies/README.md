@@ -242,7 +242,7 @@ nearly what the app's own people give. Pools M, H and N: the same counts and
 the same answers on all three episodes. Pool E: 76, 93 and 61 queries with
 the app's people, 75, 92 and 61 with the bench's; answered 20, 37, 15
 against 19, 36, 15; right 16, 29, 13 against 15, 28, 13. (Matched by pool,
-frame and name, 283, 167 and 139 queries are in both runs and each has the
+frame and name, 275, 167 and 139 queries are in both runs and each has the
 same answer in both. That match is loose: the key is not unique among
 extras, and 19, 11 and 3 easy queries sit on another frame in the other
 run.)
@@ -366,12 +366,12 @@ an answer of the pass, a group of the draw, or the other reader's answers.
 
 | Title | E | B | B `far` | M | H | H `clip` | N from the labels | N from the readers | Characters with a query |
 |---|---|---|---|---|---|---|---|---|---|
-| Breaking Bad S01E01 (proxy) | 76 | – | – | 29 | 58 | 41 | 68 | 99 | 12 |
+| Breaking Bad S01E01 (proxy) | 76 | – | – | 29 | 58 | 41 | 60 | 99 | 12 |
 | Miraculous S01E11 + S05E21 | 154 | – | – | 39 | 95 | 85 | 8 | 31 | 21 |
 | Jujutsu Kaisen S2E03 + E04 | 19 | 68 | 30 | – | – | – | 41 | – | 7 |
 | Re:Zero 31 + 33 | 14 | 70 | 17 | – | – | – | 13 | – | 9 |
 | One Piece Wano A, B, C | 45 | 22 | 11 | 42 | 40 | 23 | 62 | 75 | 12 |
-| all | 308 | 160 | 58 | 110 | 193 | 149 | 192 | 205 | |
+| all | 308 | 160 | 58 | 110 | 193 | 149 | 184 | 205 | |
 
 - Pools E, M and H together: 611 queries on five titles, 193 of them hard,
   on three titles. Without the readers' pools the three kinds of footage
@@ -408,7 +408,7 @@ an answer of the pass, a group of the draw, or the other reader's answers.
 - Miraculous has 12 such labels. The app's people keep no appearance per
   sighting, so they are no queries there; with the bench's bodies 7 of the
   12 sit on a body, and 3 of those 7 get a name, all 3 right.
-- **Pool N.** Of the 192 from the labels, 36 rest on `n` labels (no
+- **Pool N.** Of the 184 from the labels, 36 rest on `n` labels (no
   character's head: an object, a poster); of the 205 from the readers, 133
   are a person outside the gallery and 72 no person.
 - **In no pool**: bodies of the main cast whose faces the face pass left
@@ -433,7 +433,7 @@ of a share is drawn over characters, the second is Wilson's per query (see
 | Breaking Bad | H, bodies that would make a clip | 41 | 7 | 6 | 6 | 0.15 [0.06, 0.31] | [0.07, 0.28] | 1.00 [1.00, 1.00] | 0.15 [0.06, 0.31] |
 | Breaking Bad | E + M + H (E without the same shot) | 163 | 12 | 26 | 23 | 0.16 [0.09, 0.22] | [0.11, 0.22] | 0.88 [0.71, 1.00] | 0.14 [0.08, 0.20] |
 | Breaking Bad | E + M + H without M's bodies whose face shows meanwhile | 137 | 12 | 26 | 23 | 0.19 [0.14, 0.25] | [0.13, 0.26] | 0.88 [0.71, 1.00] | 0.17 [0.11, 0.23] |
-| Breaking Bad | N, extras | 167 | – | 3 | – | 0.02 | [0.01, 0.05] | – | – |
+| Breaking Bad | N, extras | 159 | – | 3 | – | 0.02 | [0.01, 0.05] | – | – |
 | Miraculous | E, as today | 154 | 19 | 52 | 42 | 0.34 [0.25, 0.41] | [0.27, 0.42] | 0.81 [0.64, 0.93] | 0.27 [0.17, 0.37] |
 | Miraculous | E, no help from the same shot | 154 | 19 | 52 | 42 | 0.34 [0.25, 0.42] | [0.27, 0.42] | 0.81 [0.64, 0.93] | 0.27 [0.17, 0.37] |
 | Miraculous | M, face in the shot | 39 | 16 | 5 | 5 | 0.13 [0.03, 0.26] | [0.06, 0.27] | 1.00 [1.00, 1.00] | 0.13 [0.03, 0.26] |
@@ -482,7 +482,7 @@ of a share is drawn over characters, the second is Wilson's per query (see
 | live action and 3D | H, bodies that would make a clip | 126 | 26 | 26 | 23 | 0.21 [0.11, 0.32] | [0.14, 0.29] | 0.88 [0.65, 1.00] | 0.18 [0.09, 0.30] |
 | live action and 3D | E + M + H (E without the same shot) | 451 | 33 | 103 | 87 | 0.23 [0.18, 0.29] | [0.19, 0.27] | 0.84 [0.73, 0.92] | 0.19 [0.14, 0.26] |
 | live action and 3D | E + M + H without M's bodies whose face shows meanwhile | 394 | 33 | 101 | 85 | 0.26 [0.20, 0.33] | [0.22, 0.30] | 0.84 [0.73, 0.92] | 0.22 [0.16, 0.29] |
-| live action and 3D | N, extras | 206 | – | 3 | – | 0.01 | [0.00, 0.04] | – | – |
+| live action and 3D | N, extras | 198 | – | 3 | – | 0.02 | [0.01, 0.04] | – | – |
 | anime | E, as today | 78 | 20 | 6 | 3 | 0.08 [0.03, 0.13] | [0.04, 0.16] | 0.50 [0.00, 1.00] | 0.04 [0.00, 0.08] |
 | anime | E, no help from the same shot | 78 | 20 | 6 | 3 | 0.08 [0.03, 0.13] | [0.04, 0.16] | 0.50 [0.00, 1.00] | 0.04 [0.00, 0.08] |
 | anime | B, back of the head | 160 | 24 | 12 | 12 | 0.07 [0.03, 0.12] | [0.04, 0.13] | 1.00 [1.00, 1.00] | 0.07 [0.03, 0.12] |
@@ -508,7 +508,7 @@ of a share is drawn over characters, the second is Wilson's per query (see
 | all titles | H, bodies that would make a clip | 149 | 32 | 26 | 23 | 0.17 [0.09, 0.28] | [0.12, 0.24] | 0.88 [0.67, 1.00] | 0.15 [0.07, 0.26] |
 | all titles | E + M + H (E without the same shot) | 611 | 56 | 109 | 90 | 0.18 [0.14, 0.23] | [0.15, 0.21] | 0.83 [0.72, 0.91] | 0.15 [0.10, 0.20] |
 | all titles | E + M + H without M's bodies whose face shows meanwhile | 521 | 54 | 107 | 88 | 0.21 [0.16, 0.26] | [0.17, 0.24] | 0.82 [0.71, 0.91] | 0.17 [0.12, 0.23] |
-| all titles | N, extras | 397 | – | 4 | – | 0.01 | [0.00, 0.03] | – | – |
+| all titles | N, extras | 389 | – | 4 | – | 0.01 | [0.00, 0.03] | – | – |
 
 What the table says, and no more than it:
 
@@ -528,7 +528,7 @@ What the table says, and no more than it:
   of 394 (0.26) and 0.84 right.
 - **Help from the same shot** hardly matters to today's rule: without it 3
   easy answers are lost and 2 others come (78 answers, then 77).
-- **Extras**: 7 of 397 get a name. 4 are wrong by the labels (bodies whose
+- **Extras**: 7 of 389 get a name. 4 are wrong by the labels (bodies whose
   faces the labels call an extra's: two called Walter, one called a minor
   character, one called Yamato). 3 are bodies the readers call a person
   outside the gallery, called a minor character: not judged.
@@ -659,7 +659,7 @@ today's numbers beside it. None of it is decided.
 | At least +10 points answered, against today's pass on the same queries | today 0.18 answered over E + M + H (0.14 to 0.23 over characters); +10 points is 0.28. Without anime 0.23; without pool M's bodies whose face shows meanwhile 0.21; without both 0.26 |
 | ... at no less than today's share right, the interval drawn over characters | today 0.83 (0.72 to 0.91), on 109 answers |
 | ... and not lower on pool H alone | today 0.14 answered (0.07 to 0.23), 0.89 right (0.67 to 1.00), on 27 answers |
-| Extras named (pool N) do not rise | today 4 of 397 wrong by the labels, 3 more not judged |
+| Extras named (pool N) do not rise | today 4 of 389 wrong by the labels, 3 more not judged |
 | "On their character" of the identity bench does not fall; within +25 % of the people pass's time | not measured for this row |
 | A rule and a model are judged apart | – |
 
@@ -738,6 +738,20 @@ told apart by whether a shot holds a labelled face of the main cast, and
 the passer-by's shot counted as such a shot then. With the corrected labels
 14 of the 745 tracks to draw from would be in the other group (480 and 265
 for 494 and 251). The 200 tracks the readers read stay the 200.
+
+A second correction the same day (row 31) took eight bodies out of pool N.
+Seventeen rows of faces behind a gas mask were `?` in the labels, which
+made the bodies under them extras, for whom any name is a wrong answer.
+They are Walter and Jesse, in the cold open, at the cook and in the RV, and
+the rows are `x` now. Eight such bodies were in the pool: four of Walter's
+(at frames 684, 750, 1014 and 74214) and four of Jesse's (61038, 61092,
+61152 and 74502). The part of pool N that comes from the labels is 60 on
+Breaking Bad and 184 over all titles (68 and 192 before); pool N as a whole,
+from the labels and from the readers, is 159 and 389 (167 and 397). None of
+the eight had a name from the pass, so no answer and no other pool changes.
+The run on the app's people and the run on the bench's own bodies ("Titles
+and runs") match on 275 queries for 283. `bb.pools.tsv` and `bb.today.tsv`
+were made again (eight rows less each).
 
 ### Commands
 

@@ -7,7 +7,8 @@ person gave by looking at every face track.
 
 Labels for the BluRay remux of the pilot (58 min, 1080p, 23.976 fps, 83,593
 frames) — the file itself is not in the repository. One row per face track
-of the face pass of 2026-10-14: `start end name boxes` (frames on the
+of the face pass of 2026-10-14 (since 2026-11-15 one of them is cut in two:
+1,415 rows): `start end name boxes` (frames on the
 decoded frame grid; `boxes` holds every detection as `frame:x0,y0,x1,y1`, a
 share of the frame). `?` is someone unnamed (an extra, a photo, not a face),
 `x` a face nobody could tell (gas masks, dark backs of heads) — left out of
@@ -60,8 +61,8 @@ them right:
 
 - `wavy_guest` is Skyler: four tracks at the party (15573–15643,
   15648–15671, 17325–17460, 17580–17740; 131 boxes, 16 s). At the door the
-  face of the row before them (`skyler`, 15552–15576, its first six boxes)
-  goes on as the first of them, and one face track of the app holds both.
+  face of the `skyler` row before them (15552–15570) goes on as the first of
+  them, and in the stored project one face track of the app holds both.
   In the two wide shots the face is 28 pixels wide; the row stays on one
   woman, in the grey cardigan over a pregnant belly, beside Marie, and no
   other row there is Skyler's.
@@ -81,11 +82,10 @@ at that size; there the name rests on what the shot shows around the face
 and on the app's cast. A reviewer without context looked at frames of its
 own and came to the same six names.
 
-Left as they are, for the owner: the last two boxes of the `skyler` row at
-the door (15570 and 15573) sit on Walter's face during the kiss; and five
-`?` rows in the RV are faces behind a gas mask (73857–73896, 74028–74040,
-74190–74232 and 74235–74241 Walter's, 74505–74510 Jesse's by the red vest),
-which the rule above would call `x`. As `x` they change no score.
+Left at that point, and corrected next ("A second correction" below): the
+last two boxes of the `skyler` row at the door (15570 and 15573), which sit
+on Walter's face during the kiss; and five `?` rows in the RV that are faces
+behind a gas mask, which the rule above calls `x`.
 
 The app's face pass with its people on the proxy, as run for `bench/bodies`
 on 2026-11-15 (1,126 tracks; `score` with its defaults), with the labels
@@ -130,6 +130,49 @@ walk's held share 0.788 to 0.782, a character's scenes by the true cast
 0.929 to 0.928 at the first line's threshold. The body bench's draft gate,
 which is not decided, reads 0.21 for 0.20 on one of its lines (107 of 521
 for 107 of 522).
+
+A second correction the same day (row 31), on the owner's word again. It
+started from the two things the reviewer of the first had found, the row at
+the door and five gas-mask rows, and takes in what a look at their scenes
+turned up.
+
+- The `skyler` row at the door ended on Walter's face. Its last two boxes
+  (15570 and 15573, during the kiss) are a row of their own now, `walter`
+  (15570–15576), and the `skyler` row ends at 15570 with its six boxes. The
+  `?` at 15642 in the same shot is his face too, as he turns: `walter`. A
+  pin of the owner in the project has that track on a character of Walter's
+  faces.
+- Seventeen rows of faces behind a gas mask were `?` and are `x`, as the
+  rule above says: four in the cold open (669–1008), six in the cook
+  (60843–61177) and seven in the RV as it is driven off (73857–74510), the
+  scene the cold open shows first. They are Walter's and Jesse's. Every `?`
+  and `x` row of the cold open and of the last third of the episode was
+  looked at; no row with a name there is a masked face.
+
+No box changed. The file has 1,415 rows now, one more than the pass of
+2026-10-14 had tracks. With the app's face pass on the proxy as above: the
+main cast's P, R and F are the same to three decimals, and `stress` is the
+same. `x` leaves out 18 tracks for 9. Of the labelled faces of the main cast
+0.955 are on their character for 0.956, a step of rounding: the face at
+15642 is one more labelled face of Walter's, and that pass has no track on
+it, nor on the two boxes at the kiss.
+
+What else reads the labels: no number of the scenes tables moves. The
+conversation bench asks one speaker shot less of Walter, whom the shot at
+the door shows now: 925 for 926 over all characters. Eight bodies under
+masked faces leave the body bench's pool of extras, four of Walter's and
+four of Jesse's (159 for 167 on Breaking Bad). Rescan counts 100 strangers
+in Everyone else for 106. (Row 30 said of five of these rows that as `x`
+they change no score. That held for this bench's scores only.)
+
+Left for the owner, seen in passing and not changed: at least thirteen `?`
+rows of the last third are faces of the main cast, and not all of them are
+hard to see. Emilio from the front at 70020–70035 and in the beanie at
+68436–68585; Walter at the RV at 59301–59325, at 59778–59814 and at
+78537–78543; faces in bed at 81159–82050. The owner's pins in the project
+name some of them already. Where the pass puts such a face on its
+character, the bench counts a stranger on that character. Apart from the
+cold open, the first two thirds of the file were not looked at this way.
 
 ## One person, one character
 
@@ -403,7 +446,9 @@ A reading far below the stored face's quality is dropped. Miraculous, 74 hard
 and 226 clear pins asked blind: clear 33 right 1 wrong and 176 right 2 wrong,
 guesses 22 right 2 wrong and 31 right 4 wrong. Everyone else: 32 clear. Actors
 need stricter bars (`Tuning::of`): on Breaking Bad's stored faces 1 stranger
-of 106 in Everyone else gets a guess, and none a clear answer.
+of 106 in Everyone else gets a guess, and none a clear answer. (Of 100 since
+2026-11-15: six of the 106 were faces behind gas masks, which the labels
+now leave out.)
 
 Two groups, clearest 8 faces each (`likeness`): one person split by looks
 0.33-0.79 (median about 0.65) in live action, people seen together 0.06 at the

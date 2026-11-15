@@ -1039,11 +1039,14 @@ shots in which the readings differ, on the second readers' sheets.
 - **The two readings agreeing is no evidence that either is right.** They
   share pictures, cast pages and blind spots. Two readers of one reading
   agree on who speaks in 0.94 to 0.95 of the shots; two readers of different
-  readings in 0.87 to 0.88.
+  readings in 0.87 to 0.88. In 18 shots drawn from those in which the
+  readings agree, the reviewer found both kinds of shared error once each:
+  a likely listener whom all four readers marked (shot 241), and a speaker
+  all four missed (shot 305).
 - **The look at the 65 shots: the sheets bear out the second reading in 58,
-  the first in 4, and cannot tell in 3.** In 30 of the 58 only the words
+  the first in 4, and cannot tell in 3.** In 28 of the 58 only the words
   show it, the same words the second readers had; where a picture is part
-  of the evidence it is 28 to 4.
+  of the evidence it is 30 to 4.
 - **What the first reading got wrong: listeners.** In 16 shots both first
   readers marked a person whose mouth is still while a line is said to or
   about them: the judge while counsel speaks, Michael while the judge passes
@@ -1051,7 +1054,7 @@ shots in which the readings differ, on the second readers' sheets.
   29 feared, and the check on Breaking Bad did not show it. Three of these
   marks had made someone a speaker of a scene in which he says nothing; all
   five scene lists that differ go the second reading's way.
-- **What the second reading adds**: 42 speakers, 40 of them borne out, 24 by
+- **What the second reading adds**: 42 speakers, 40 of them borne out, 22 by
   the words alone (a mouth too small, turned away, behind a mesh).
 - **Its own errors**: one mark pulled by a line onto the man in the picture
   (shot 402, a line that runs over a cut), one name from the story where no

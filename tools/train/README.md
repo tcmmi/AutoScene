@@ -126,6 +126,15 @@ uv run train_tracks.py --from <first stage>/last.pt --tracks <tracks dir> --pair
   to `embed.py`, `sweep.py` and `export.py` as a first-stage checkpoint
   does.
 
+**Result (row 36 of `bench/models/DECISIONS.md`): not adopted.** Of the
+first 400 trailers 340 were taken (60 never train) and 217 gave training
+triplets. The gate's three seeds read 0.639, 0.624 and 0.630 for the first
+stage's 0.655: a gain of −0.024 where +0.01 was needed. The triplets alone
+reach a mean precision of 0.95 at no bar. The held-out triplets of `dev.tsv`
+rose in every run and the gate's F in none: over these runs nothing showed
+that they track the bench. The first stage's model stays the one the work
+goes on with.
+
 ## Before the data trains anything
 
 - **Bench franchises** (`audit.py names`, `leaks.py`): their characters

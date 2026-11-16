@@ -90,6 +90,17 @@ wherever in the frame it stands; with `LINES` the sheets show under each
 shot the lines on screen during it. The pictures of the shots may come from
 another file of the same frames (the proxy) than the lines (the original).
 
+## Conversations: `pack_look.py`
+
+A look by eye at what a filter on "Whole scenes" would give
+(`bench/scenes/README.md`, "A look by eye at the filter's packs"; row 35):
+`drops` draws every shot in which the cast shows nobody between its
+neighbours, for two readers who sort them by `pack_look_reader.md`; `pack`
+makes, from what `DETAIL=<character> conversation_bench …` prints, sheets
+and two videos of a character's whole scenes with the kept and the left-out
+shots marked; `tally` counts what the filter leaves out, the holes that
+makes and what the readers call it.
+
 ## Expressions: `sound_events.py`, `crop_sheets.py`
 
 `sound_events.py <ffmpeg> <video> <yamnet.onnx> <yamnet_class_map.csv> <out.tsv>`

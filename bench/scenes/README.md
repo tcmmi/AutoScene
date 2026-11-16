@@ -1090,3 +1090,137 @@ shots in which the readings differ, on the second readers' sheets.
   those in which the readings agree among them; or a title with hand labels
   and subtitles. The rule that 0.0 s of measured speech forbids a mark should
   go before any such reading is used shot by shot.
+
+## A look by eye at the filter's packs (2026-11-16, row 35)
+
+The owner's answer to "Port the filter on Whole scenes now?": eye check
+first. Row 35 fixed the look before any sheet or video was made: six
+characters by a rule on the tables (per title the two with the most own
+shots, and the one whose (f) is lowest "in a scene of theirs": walter, jesse
+and bogdan; michael, sucre and sara), what is made for the owner to watch,
+what is counted, and one line that would speak against the plain filter.
+
+### What was made
+
+- **For the owner's eye** (`tools/slot-bench/pack_look.py pack`, outside the
+  repository, in `E:\as-ownmodels\scenes\eye\packs\`): for each of the six
+  characters sheets of their whole scenes in order (green frame: an own
+  shot; yellow: added by the filter; dimmed with a red bar: left out by it),
+  and two videos cut from the proxy, `<title>_<character>.filter.mp4` (what
+  the filter gives) and `.scenes.mp4` (whole scenes), with the same colours
+  as a bar at the top of the picture. Nothing of the pack code is used.
+- **For the count**: two readers (AI agents), blind to each other and to
+  every result, sorted every shot of both episodes in which the cast shows
+  nobody (97 and 215 shots), each seen between the shot before and the shot
+  after it, into `talk`, `place`, `other` and `nothing`
+  (`pack_look_reader.md`; their files are `check/pb_s01e01.drops.a.tsv`,
+  `.b.tsv` and the same for `bb`). They give the same kind in 91 of 97
+  shots (0.938) and in 210 of 215 (0.977).
+
+```sh
+DETAIL=<character> cargo run --release -p as-project --example conversation_bench -- … > <detail.tsv>   # from its "<character>, as the app has it" line on
+uv run pack_look.py drops <ffmpeg> <video> <project_copy_dir> <media> <sheets_dir>
+uv run pack_look.py pack <ffmpeg> <video> <project_copy_dir> <media> <detail.tsv> <out_prefix>
+uv run pack_look.py tally <project_copy_dir> <media> <reader_a.tsv> <reader_b.tsv> <detail.tsv> [...]
+```
+
+### The count
+
+| Character | Whole scenes | Left out by the filter | of it `talk` by both readers | Holes (median; up to 6 s) |
+|---|---|---|---|---|
+| michael | 427 shots, 1,905 s | 60 shots, 144 s (7.6 %) | 76 s (0.525) | 23 (3.1 s; 19) |
+| sucre | 119 shots, 564 s | 20 shots, 52 s (9.3 %) | 35 s (0.669) | 10 (3.4 s; 9) |
+| sara | 85 shots, 304 s | 19 shots, 39 s (12.9 %) | 17 s (0.430) | 8 (2.7 s; 7) |
+| walter | 716 shots, 3,146 s | 199 shots, 496 s (15.8 %) | 330 s (0.665) | 66 (3.0 s; 54) |
+| jesse | 423 shots, 1,544 s | 121 shots, 273 s (17.7 %) | 225 s (0.825) | 47 (2.4 s; 41) |
+| bogdan | 38 shots, 244 s | 3 shots, 18 s (7.4 %) | 9 s (0.478) | 1 (8.7 s; 0) |
+
+A hole is a left-out stretch between two kept shots of one found scene. Of
+the seconds the filter leaves out, `talk` by both readers is 0.541 for the
+three of Prison Break, 0.716 for the three of Breaking Bad and 0.676 for
+all six (with each shot counted once: 0.525, 0.673, 0.641). Row 35's line
+was a third. **By the row, the look speaks against porting the plain
+filter.**
+
+### Why that number says less than the row claims
+
+A reviewer without context recomputed every number of the tally (no
+difference), judged 40 evenly spread shots per title and every shot on which
+the readers differ, and read all sheets of three characters.
+
+- **`talk` was drawn too wide, and that is the author's rule, not the
+  readers'.** The readers were told: part of the conversation *or action*
+  around it, also when the picture shows what someone does, holds or looks
+  at. Under that rule every faceless shot that belongs to the story is
+  `talk`; left for the other kinds are opening views, titles, credits and
+  black. So the line could hardly not be crossed, and "the plain filter cuts
+  into conversations" does not follow from it. The readers themselves were
+  right by their rules in about nine of ten sampled shots and never far off.
+- **Read strictly** (a person of the scene, or their hands, is in the
+  picture) the share is about 0.32 to 0.38 of the left-out seconds, with a
+  span of 0.19 to 0.49 from the sample: at a third, not above it.
+- **Inside scenes of people talking** the reviewer's sample gives about a
+  tenth to a quarter of the left-out seconds, on seven shots. Most `talk`
+  seconds lie in action, in scenes of one person alone and in one montage.
+- **Six characters are two overlapping sets.** Every left-out shot of sucre
+  and of sara is also michael's; walter's whole scenes are 716 of the
+  episode's 794 shots. The tool's total counted a shared shot once per
+  character; it now also prints each shot once.
+- **The count of holes up to 6 s** was not in the row. Carried through by
+  the reviewer it speaks against such a rule: it would take back under half
+  of the `talk` seconds (46 % and 38 %), and about a quarter of them lie
+  before the first or after the last kept shot of a scene, where no hole
+  rule reaches.
+
+### What the sheets show
+
+From the reviewer's reading of all sheets of sara, sucre and jesse, and the
+author's of two:
+
+- **Where two people talk, the filter keeps nearly every shot.** Sara's two
+  infirmary scenes lose one shot of 5 s. Sucre's cell scenes lose none.
+  Jesse's long two-person scenes are nearly whole.
+- **What it cuts inside talk**: single wide or from-behind shots of the two
+  speakers (Jesse: six shots of 3 to 9 s), and cutaways (a dog five times, a
+  licence plate; in Sucre's yard scene the tower and the man they talk
+  about). A viewer would notice a jump in picture and sound each time.
+- **What it guts**: stretches in which faces are hidden. Of the cook's 44
+  shots 10 stay; of the drive in the gas mask 1 of 25.
+- **What it rightly leaves out**: opening views, titles, the police outside
+  the bank. The filter leaves out 7 to 18 % of whole scenes by seconds.
+- **The fault an eye meets first is not the filter's**: scenes that are not
+  the character's. Sara's pack opens with Michael's wall of clippings and
+  the whole bank robbery, because her photo hangs on that wall; the meat
+  plant is joined to her infirmary scene. Sucre's pack holds Michael's visit
+  to Lincoln, and a yard scene in which the reviewer could not find him. Jesse's holds the raid through one face that is not his. Of a
+  filtered pack, the shots from labelled scenes in which the character has
+  no own shot are 55 % for bogdan, 30 % for sara, 13 % for sucre and 7 % for
+  michael. "Whole scenes" has all of them as well.
+- Part of what is left out shows a face the cast did not give to anyone
+  (walter: 24 shots, 73 s).
+
+### What it cannot say
+
+- Two episodes, in effect two leads' scene sets; the third character of each
+  title was picked as the filter's worst case.
+- Stills without sound: whether speech runs over a left-out shot is what
+  matters for a conversation pack, and nobody measured it here.
+- A line of "a third" for which the row gave no reason.
+- No pack that keeps holes was made or looked at.
+
+### For the owner
+
+- **Watch two of the videos before deciding**:
+  `E:\as-ownmodels\scenes\eye\packs\pb_sucre.filter.mp4` (8.5 min) and
+  `bb_jesse.filter.mp4` (21 min), each beside its `.scenes.mp4`. Your eye on
+  these counts more than any number above.
+- **What the look supports**: in talk the filter does what it was meant to
+  do and loses single faceless shots; in action and montage it loses whole
+  stretches; and the packs carry scenes that are not the character's,
+  filter or not.
+- **What it does not support**: that the filter "cuts into conversations" as
+  a measured fact, or that keeping short holes is the fix.
+- **Two things worth their own rows**, neither tried here: keep the shots
+  without a face over which the conversation goes on, chosen by the speech
+  marks the bench has and not by a length; and do not let one face on a
+  photo, or one wrong face, make a scene the character's.

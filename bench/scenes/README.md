@@ -1146,7 +1146,8 @@ filter.**
 
 A reviewer without context recomputed every number of the tally (no
 difference), judged 40 evenly spread shots per title and every shot on which
-the readers differ, and read all sheets of three characters.
+the readers differ, then all 182 left-out shots both readers call `talk`,
+and read all sheets of three characters.
 
 - **`talk` was drawn too wide, and that is the author's rule, not the
   readers'.** The readers were told: part of the conversation *or action*
@@ -1157,11 +1158,15 @@ the readers differ, and read all sheets of three characters.
   into conversations" does not follow from it. The readers themselves were
   right by their rules in about nine of ten sampled shots and never far off.
 - **Read strictly** (a person of the scene, or their hands, is in the
-  picture) the share is about 0.32 to 0.38 of the left-out seconds, with a
-  span of 0.19 to 0.49 from the sample: at a third, not above it.
-- **Inside scenes of people talking** the reviewer's sample gives about a
-  tenth to a quarter of the left-out seconds, on seven shots. Most `talk`
-  seconds lie in action, in scenes of one person alone and in one montage.
+  picture) the share is 0.40 to 0.46 of the left-out seconds, each shot
+  counted once: 0.23 to 0.31 on Prison Break, under a third, and 0.45 to
+  0.50 on Breaking Bad, where much of it is one man alone (Walter driving
+  in a gas mask) and the cook; without the masked and hidden people Breaking
+  Bad is near 0.35. One judge, from stills.
+- **Inside scenes of people talking** it is 0.14 of the left-out seconds
+  (0.11 and 0.15). Of the `talk` seconds a fifth lie in such scenes; the
+  rest in scenes of one person alone (54 % and 41 %), in action (19 % and
+  22 %) and in montage (6 % and 15 %).
 - **Six characters are two overlapping sets.** Every left-out shot of sucre
   and of sara is also michael's; walter's whole scenes are 716 of the
   episode's 794 shots. The tool's total counted a shared shot once per

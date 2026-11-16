@@ -213,11 +213,13 @@ already names such rows (Walt Jr. in the striped shirt).
 
 The line is a judgement, and two reviews moved rows across it. The first
 found seven named rows that it keeps: six faces that cannot be read and one
-box that lies mostly on another head. The second found four more, of
-Emilio, and two kept rows of Jesse whose profile can be read; the author
-found one more box on two heads. The numbers here are of the state after
-both. With the eight turned-away rows kept as `?` too, the main cast would
-read R 0.896 and F 0.944 per track, for the 0.893 and 0.943 below.
+box that lies mostly on another head. The second found three more, of
+Emilio, called a fourth borderline, and found two kept rows of Jesse whose
+profile can be read; the author took back all four and one more box on two
+heads. The numbers here are of the state after both. A third review then
+checked the counts and numbers of that state and judged no face again.
+With the eight turned-away rows kept as `?` too, the main cast would read
+R 0.896 and F 0.944 per track, for the 0.893 and 0.943 below.
 
 One of the new names makes a second row of one name in a frame: Walt Jr. at
 17271, where the same head was found twice. The file has that kind already
@@ -248,15 +250,15 @@ dated before the read stay as they were measured.
 
 What else reads the labels, before and after the read:
 
-- Scenes (`bench/scenes`): of the numbers that file quotes one moves
-  ("every shot its own scene" by the true cast, 0.447 for 0.444); nothing
-  by the stored cast, and the four-title table is the same.
+- Scenes (`bench/scenes`): no number of that file's scenes tables moves,
+  and the four-title table is the same. In the bench's own output "every
+  shot its own scene" by the true cast reads 0.447 for 0.444.
 - Conversations (`bench/scenes`): 921 speaker shots are asked for over all
-  characters, for 925, and most cells move in the third decimal; the check
-  of that bench's readers finds 322 of their 334 names in the labels, which
-  give 421 (before 321 and 419). The conversation sections, their file of
-  counts and row 29's result cell were made again with these labels in
-  `d3ed173c`, with the same numbers.
+  characters, for 925, and where a cell of that bench's tables moves, it
+  moves in the third decimal; the check of that bench's readers finds 322
+  of their 334 names in the labels, which give 421 (before 321 and 419).
+  The conversation sections, their file of counts and row 29's result cell
+  were made again with these labels in `d3ed173c`, with the same numbers.
 - Bodies (`bench/bodies`): four bodies leave the pool of extras (155 for 159
   on Breaking Bad). Two of them had been named Walter by the pass and
   counted as wrong; they are Walter's.
@@ -278,8 +280,9 @@ Left for the owner:
   cannot be told is `x`.
 - The eight rows named with the face turned away (above), if such rows
   should rather be `x`.
-- Ten rows that one reader named and the third did not: 7047–7109,
-  30630–30636, 30720–30729, 81984–82008 and 82041–82050 as Walter;
+- Ten rows to which one reader gave a name of the main cast and the third
+  did not: 7047–7109, 30630–30636, 30720–30729, 81984–82008 and
+  82041–82050 as Walter;
   34605–34608 as Gomez; 39660–39663, 41019–41028 and 41910–41913 as Jesse;
   55932–55947 as Walt Jr. The first reviewer of this read calls the two at
   the car wash (30630, 30720), the two in bed (81984, 82041) and the Gomez

@@ -212,10 +212,11 @@ no number of the scenes tables above; the conversation section says what it
 changes there.
 
 The `?` rows of the labels were then read again (row 34: 37 rows got a name
-of the main cast). No number of this file by the stored cast moves, and the
-four-episode table is the same. By the true cast "every shot its own scene"
-reads 0.447 for 0.444. One number of the bench's output, which this file
-does not quote, proved fragile on the way: step A's second half, read with
+of the main cast). No number of this file's scenes tables moves, and the
+four-episode table is the same. In the bench's output "every shot its own
+scene" by the true cast reads 0.447 for 0.444. Another number of that
+output, which this file does not quote either, proved fragile on the way:
+step A's second half, read with
 the first half's threshold, is 0.912 by the stored cast, and with one more
 row named, a face of three frames (Skyler at 16335 or at 16389, both kept
 as `?`), it would be 0.831, because the first half's best threshold is a

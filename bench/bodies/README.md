@@ -780,8 +780,8 @@ table's intervals over characters were drawn anew with it, and all titles
 share one stream of random numbers, so some ends moved on titles whose
 queries did not change: by 0.01 on most lines, by 0.03 on one line of
 Jujutsu Kaisen, by 0.12 on one of Miraculous (pool M, the face only at
-another moment) and by 0.14 on one of Re:Zero (pool E as today). See
-"Intervals": their ends move with the draw.
+another moment) and by 0.14 on two of Re:Zero (pool E as today, and E + M
++ H). See "Intervals": their ends move with the draw.
 
 ### Commands
 

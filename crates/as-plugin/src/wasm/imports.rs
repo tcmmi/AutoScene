@@ -14,7 +14,7 @@ use crate::manifest::{Manifest, Permission, cut};
 
 /// The minor of `autoscene:plugin@1` this AutoScene serves.
 pub const WORLD_MINOR: u64 = 1;
-/// The newest WASI 0.2 patch this AutoScene offers (wasmtime 50.0.1
+/// The newest WASI 0.2 patch this AutoScene offers (wasmtime 50.0.3
 /// carries `wasi:*@0.2.12`).
 pub const WASI_PATCH: u64 = 12;
 /// The WASI packages it offers: all of WASI 0.2 (its sockets turned off in

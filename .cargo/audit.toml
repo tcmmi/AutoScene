@@ -41,4 +41,14 @@ ignore = [
     # Windows too). The archive is the signed update, see above; the worst case
     # is the updater stopping.
     "RUSTSEC-2026-0429",
+    # AES entries handed out without checking their authentication code. This
+    # zip is built without AES (Cargo.lock: no aes crate among its
+    # dependencies), so it refuses such entries, and the archive is the
+    # signed update, see above. Checked 2026-11-20.
+    "RUSTSEC-2026-0545",
+    # ZipStreamReader extracting under local-header names. The updater reads
+    # the update with zip::ZipArchive only (tauri-plugin-updater 3.0.0-alpha.2
+    # src/updater.rs), never ZipStreamReader, and only after its signature
+    # check. Checked 2026-11-20.
+    "RUSTSEC-2026-0548",
 ]

@@ -25,6 +25,14 @@
 //!   overlap of their boxes there (over their union, and over the smaller
 //!   box: a second box on one head), and how alike the pass's own
 //!   embeddings are.
+//!
+//! `PASS=faces`: the tracks are the full face pass's (`faces_run`, as for 3D
+//! animation): its samples are decoded at its own size and stride
+//! (`FaceParams::animated`), so an anime embedder can be scored on 3D tracks.
+//! `PAD=<share>`: each side of the box is widened by this share of its size
+//! (default `berkeley::PAD`, the Best scan's own). A face box is tighter than
+//! a head box: 0.7 crops 2.4 times the face box, about a head with its hair
+//! padded as the Best scan pads a head.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Seek, SeekFrom, Write};
@@ -61,8 +69,21 @@ fn main() {
     let info: MediaInfo = serde_json::from_str(&std::fs::read_to_string(dir.join("bb.info.json")).unwrap()).unwrap();
     let path = PathBuf::from(std::fs::read_to_string(dir.join("bb.path")).unwrap().trim());
     let tools = Tools::locate(Some(Path::new(ffmpeg))).unwrap();
-    let params = Params::anime();
-    let (w, h) = anime::frame_size(&info, &params);
+    let faces_pass = match std::env::var("PASS").as_deref() {
+        Ok("faces") => true,
+        Ok("anime") | Err(_) => false,
+        Ok(other) => panic!("PASS=faces|anime, not {other}"),
+    };
+    let ((w, h), stride) = if faces_pass {
+        let params = as_analysis::FaceParams::animated();
+        (as_analysis::frame_sizes(&info, &params).0, params.stride)
+    } else {
+        let params = Params::anime();
+        (anime::frame_size(&info, &params), params.stride)
+    };
+    // Widen each box so that the crop's own `berkeley::PAD` comes to `PAD` in all.
+    let pad: f32 = env("PAD", berkeley::PAD);
+    let widen = ((1.0 + 2.0 * pad) / (1.0 + 2.0 * berkeley::PAD) - 1.0) / 2.0;
     let all = tracks::decode(&std::fs::read(file).expect("tracks file")).expect("readable tracks");
 
     // The heads to crop, by the sample they are in: the crop's number and
@@ -83,9 +104,11 @@ fn main() {
             }
         }
         for (rank, d) in kept.into_iter().enumerate() {
-            assert_eq!(d.frame % params.stride, 0, "a head between the pass's samples");
+            assert_eq!(d.frame % stride, 0, "a head between the pass's samples");
             let b = d.bbox;
-            let px = [b[0] * w as f32, b[1] * h as f32, b[2] * w as f32, b[3] * h as f32];
+            let (bw, bh) = (b[2] - b[0], b[3] - b[1]);
+            let g = [b[0] - widen * bw, b[1] - widen * bh, b[2] + widen * bw, b[3] + widen * bh];
+            let px = [g[0] * w as f32, g[1] * h as f32, g[2] * w as f32, g[3] * h as f32];
             wanted.entry(d.frame).or_default().push((rows.len(), px));
             rows.push(format!(
                 "{}\t{i}\t{rank}\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -133,28 +156,20 @@ fn main() {
     let src = Source { path: &path, info: &info, index: &index };
     let (t0, mut done) = (Instant::now(), 0usize);
     let last = wanted.keys().copied().max().unwrap_or(0);
-    as_media::frames::decode_samples(
-        &tools,
-        src,
-        0,
-        params.stride,
-        (w as u32, h as u32),
-        &CancelToken::new(),
-        |f, rgb| {
-            for &(n, px) in wanted.get(&f).map_or(&[][..], |v| v) {
-                blob.seek(SeekFrom::Start((n * berkeley::CROP_BYTES) as u64)).unwrap();
-                blob.write_all(&berkeley::crop(rgb, w, h, px)).unwrap();
-                done += 1;
-            }
-            Ok(f < last)
-        },
-    )
+    as_media::frames::decode_samples(&tools, src, 0, stride, (w as u32, h as u32), &CancelToken::new(), |f, rgb| {
+        for &(n, px) in wanted.get(&f).map_or(&[][..], |v| v) {
+            blob.seek(SeekFrom::Start((n * berkeley::CROP_BYTES) as u64)).unwrap();
+            blob.write_all(&berkeley::crop(rgb, w, h, px)).unwrap();
+            done += 1;
+        }
+        Ok(f < last)
+    })
     .unwrap();
     assert_eq!(done, rows.len(), "every chosen head is in a decoded sample");
     let head = format!(
         "# tracks {} size {w} {h} stride {}\ncrop\ttrack\trank\tframe\tx1\ty1\tx2\ty2\tquality\n",
         all.len(),
-        params.stride
+        stride
     );
     std::fs::write(format!("{out}.crops.tsv"), head + &rows.join("\n") + "\n").unwrap();
     println!(

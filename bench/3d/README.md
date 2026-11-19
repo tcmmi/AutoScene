@@ -511,6 +511,50 @@ embedder's own; the name look-up that follows a regrouping (it was off in
 the app test: whether it proposes the new character back into the old one
 was not seen); Fast Scan with the rule.
 
+## The own anime embedder on 3D (row 37)
+
+Registered before any vector was made (row 37 of `bench/models/DECISIONS.md`):
+`run1c-b`, the own anime embedder of row 18 (trained on iCartoonFace's
+cartoon faces, never on Miraculous), scored on the pass's own tracks against
+the pass's `glintr100`. Its crops come from the pass's face boxes, four per
+track as the Best scan picks them, each box widened to 2.4 times its size
+(the head with its hair):
+
+```
+PASS=faces PAD=0.7 anime_crops <ffmpeg_dir> in/<episode> run/<episode>.std.tracks emb/crops/<episode>.p0.7
+```
+
+The vectors go in as `EMB_OVERRIDE` (made as the Best scan makes a track's:
+its heads' unit vectors weighted by quality). Both embedders were scored over
+the same 42 settings (link 0.10 to 0.60 by 0.025, the fitted space on and
+off), the scorer built from `fe899550` (the rule of row 22 included). Main
+cast, per track, each at its highest F with a precision of at least 0.95:
+
+| | Precision | Recall | F | Settings | Over all 42 |
+|---|---|---|---|---|---|
+| `glintr100` (the pass) | 0.967 | 0.809 | **0.881** | link 0.275 to 0.325, fitted space on (= the app's own) | 0.353 to 0.881 |
+| `run1c-b`, crops of 2.4 face boxes | 0.977 | 0.921 | **0.948** | link 0.425 to 0.475, fitted space off | 0.878 to 0.948 |
+| `run1c-b`, crops of 1.5 face boxes (beside) | 0.971 | 0.934 | 0.952 | link 0.55 to 0.60, fitted space on | 0.877 to 0.952 |
+| Perfect embeddings (row 16) | 1.000 | 0.953 | 0.976 | | |
+
+Paired over the 26 figures (2,000 draws): `run1c-b` − `glintr100` +0.067,
+95 % [+0.047, +0.097]; screen-time F 0.942 to 0.973; at the app's own bars
+`run1c-b` reads 0.937 (+0.056 [+0.035, +0.083]). Per episode S01E11 0.870 to
+0.953, S05E21 0.871 to 0.942. Without the three figures that have two selves
+the two read 0.883 and 0.954. Controls on the same crops: a colour histogram
+reaches at most F 0.199, plain DINOv2 ViT-B/14 at most 0.388.
+
+Leaks: no Miraculous name among iCartoonFace's identities (also searched in
+Chinese); by CCIP's look the nearest training identities are other shows'
+look-alikes (the 15 strongest looked at by eye). iCartoonFace holds some 3D
+series too. A reviewer without context checked the alignment of tracks,
+labels and vectors, ran the cells again and found nothing above low severity.
+
+What this is not: `run1c-b` in the app's 3D scan. Provisional for the reasons
+below (one series, model labellers), and the bars were chosen on this set for
+both embedders alike; with the fitted space on, `run1c-b`'s lowest F is above
+`glintr100`'s highest.
+
 ## Not verified
 
 - Anything outside these two episodes of one series. The intervals redraw

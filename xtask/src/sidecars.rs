@@ -132,14 +132,12 @@ const BUNDLES: &[Bundle] = &[
     },
     Bundle {
         dir: "onnxruntime",
-        // Microsoft's osx-arm64 build of ONNX Runtime 1.31.1 (CPU + CoreML EPs).
+        // Microsoft's osx-arm64 build of ONNX Runtime 1.31.1 (CPU + CoreML EPs), from
+        // NuGet: github.com/microsoft/onnxruntime answers 404 since November 2026.
         archives: &[Archive {
-            url: "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-osx-arm64-1.31.1.tgz",
-            sha256: "2e1344a1926ee50eb25b38153cb6992c3567515aef0e677a1a520a1798896d6f",
-            pick: Pick::Files(&[(
-                "onnxruntime-osx-arm64-1.31.1/lib/libonnxruntime.1.31.1.dylib",
-                "libonnxruntime.dylib",
-            )]),
+            url: "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.31.1/microsoft.ml.onnxruntime.1.31.1.nupkg",
+            sha256: "6871ccbc97f3d5bdb4095a1dcec33aa78d56f6ed8de5980ef5fa1d9f2e7c679a",
+            pick: Pick::Files(&[("runtimes/osx-arm64/native/libonnxruntime.dylib", "libonnxruntime.dylib")]),
         }],
         required: &[("libonnxruntime.dylib", false)],
         vc_runtime: false,
@@ -178,11 +176,11 @@ const BUNDLES: &[Bundle] = &[
     },
     Bundle {
         dir: "onnxruntime",
-        // Microsoft's linux-x64 build of ONNX Runtime 1.31.1 (CPU).
+        // Microsoft's linux-x64 build of ONNX Runtime 1.31.1 (CPU), from NuGet as on macOS.
         archives: &[Archive {
-            url: "https://github.com/microsoft/onnxruntime/releases/download/v1.31.1/onnxruntime-linux-x64-1.31.1.tgz",
-            sha256: "c849e36a1ef3e22d4ff217b9d1ce4a3cf5b9467b975610913ae959ad5b16bdc9",
-            pick: Pick::Files(&[("onnxruntime-linux-x64-1.31.1/lib/libonnxruntime.so.1.31.1", "libonnxruntime.so")]),
+            url: "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.31.1/microsoft.ml.onnxruntime.1.31.1.nupkg",
+            sha256: "6871ccbc97f3d5bdb4095a1dcec33aa78d56f6ed8de5980ef5fa1d9f2e7c679a",
+            pick: Pick::Files(&[("runtimes/linux-x64/native/libonnxruntime.so", "libonnxruntime.so")]),
         }],
         required: &[("libonnxruntime.so", false)],
         vc_runtime: false,
@@ -240,8 +238,13 @@ fn fetch_bundle(b: &Bundle, dest: &Path) -> Result<()> {
         // An empty, fresh folder per archive; nothing from it runs before the copy below.
         let out = work.join(format!("part{i}.x"));
         fs::create_dir_all(&out)?;
-        // bsdtar reads zip (NuGet packages are zips) and tgz on Windows 10+ and macOS.
-        run(Command::new("tar").arg("-xf").arg(&archive).arg("-C").arg(&out))?;
+        // bsdtar reads zip (NuGet packages are zips) and tgz on Windows 10+ and macOS;
+        // GNU tar on Linux reads no zip.
+        if cfg!(target_os = "linux") && (a.url.ends_with(".nupkg") || a.url.ends_with(".zip")) {
+            run(Command::new("unzip").arg("-q").arg(&archive).arg("-d").arg(&out))?;
+        } else {
+            run(Command::new("tar").arg("-xf").arg(&archive).arg("-C").arg(&out))?;
+        }
         let copy = |from: &Path, name: &str| -> Result<()> {
             fs::copy(from, staging.join(name)).with_context(|| format!("copying {}", from.display()))?;
             #[cfg(unix)]

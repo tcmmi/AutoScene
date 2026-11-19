@@ -18,6 +18,7 @@ pub mod config;
 pub mod crypto;
 pub mod db;
 pub mod dispatch;
+pub mod pricing;
 pub mod stripe;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -31,8 +32,8 @@ use as_cloud::admin::{self, AccountView, CodeWorth};
 use as_cloud::engine::{self, Event, Op};
 use as_cloud::{
     Account, ApiError, CheckoutReply, CheckoutRequest, CloseReply, ErrorCode, EventsReply, Info, JobsRequest, Micros,
-    ReadyReply, RedeemReply, RedeemRequest, RegisterReply, RegisterRequest, ScanKind, SessionReply, SessionRequest,
-    Stage, TOP_UPS_CENTS, UploadState, WorkerDone, WorkerEvents, WorkerJobs, WorkerLaunch, path,
+    Prices, ReadyReply, RedeemReply, RedeemRequest, RegisterReply, RegisterRequest, ScanKind, SessionReply,
+    SessionRequest, Stage, TOP_UPS_CENTS, UploadState, WorkerDone, WorkerEvents, WorkerJobs, WorkerLaunch, path,
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State};
@@ -48,6 +49,7 @@ use tokio::sync::Notify;
 use crate::config::Config;
 use crate::db::{AccountRow, Db, DbError, Priced, Redeem, RedeemError};
 use crate::dispatch::{Backend, Prober};
+use crate::pricing::Book;
 use crate::stripe::{Action, Payments};
 
 /// Request bodies: small JSON by default; an upload chunk; jobs (a long
@@ -148,6 +150,12 @@ struct Live {
     id: String,
     account: i64,
     kind: ScanKind,
+    /// The prices when it opened: its estimate and its price both use them,
+    /// whatever the prices do meanwhile.
+    rates: Prices,
+    /// What an hour of its worker cost when it opened (micro-euros): its
+    /// charge's GPU-time floor.
+    gpu_per_hour: Micros,
     beta: bool,
     size: u64,
     sha256: String,
@@ -289,9 +297,14 @@ pub struct Gateway {
     payments: Box<dyn Payments>,
     limits: Mutex<HashMap<String, (i64, u32)>>,
     uploads: PathBuf,
+    /// The prices in force (`crate::pricing`).
+    book: Mutex<Book>,
 }
 
 pub type Shared = Arc<Gateway>;
+
+/// Where the last prices read are kept across restarts.
+const BOOK_SETTING: &str = "pricing_book";
 
 impl Gateway {
     pub fn new(
@@ -303,7 +316,18 @@ impl Gateway {
     ) -> std::io::Result<Shared> {
         let uploads = cfg.data_dir.join("uploads");
         std::fs::create_dir_all(&uploads)?;
+        let fixed = Book { prices: cfg.prices, gpu_per_hour: cfg.guard.gpu_per_hour, basis: None };
+        // The last prices read, while pricing follows the GPU service.
+        let stored = match &cfg.pricing {
+            Some(_) => db
+                .setting(BOOK_SETTING)
+                .map_err(std::io::Error::other)?
+                .and_then(|s| serde_json::from_str::<Book>(&s).ok())
+                .filter(Book::sane),
+            None => None,
+        };
         let gw = Gateway {
+            book: Mutex::new(stored.unwrap_or(fixed)),
             cfg,
             db: Mutex::new(db),
             live: Mutex::new(HashMap::new()),
@@ -330,6 +354,77 @@ impl Gateway {
         Ok(Arc::new(gw))
     }
 
+    /// The prices in force now.
+    pub fn book(&self) -> Book {
+        *self.book.lock()
+    }
+
+    /// Read the GPU service's and the ECB's rates and price from them (with
+    /// `[pricing]`; without it nothing changes). A failed read keeps the
+    /// prices in force.
+    ///
+    /// Whether the rates could be read: a failed read is tried again soon.
+    pub fn refresh_prices(&self) -> bool {
+        let Some(cfg) = &self.cfg.pricing else { return true };
+        if cfg.runpod_key.is_empty() {
+            tracing::warn!("no RunPod key to read its rates: the prices stay as they are");
+            return true;
+        }
+        let basis = match pricing::read_basis(cfg, &cfg.runpod_key, now()) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!("prices stay as they are: {e}");
+                return false;
+            }
+        };
+        let old = self.book();
+        let next = match cfg.next(&old, basis) {
+            Ok(next) => next,
+            Err(e) => {
+                tracing::error!("{e}");
+                self.alert(format!("AutoScene Cloud: {e}"));
+                return true;
+            }
+        };
+        if next.prices != old.prices {
+            tracing::info!(
+                "prices a minute now {} standard, {} Fast, {} Best (GPU ${:.2}/h, ${:.4}/€)",
+                next.prices.standard,
+                next.prices.fast,
+                next.prices.best,
+                basis.gpu_usd_per_hour,
+                basis.usd_per_eur
+            );
+        }
+        match serde_json::to_string(&next) {
+            Ok(json) => {
+                if let Err(e) = self.db.lock().set_setting(BOOK_SETTING, &json) {
+                    tracing::warn!("keeping the prices: {e}");
+                }
+            }
+            Err(e) => tracing::warn!("keeping the prices: {e}"),
+        }
+        *self.book.lock() = next;
+        true
+    }
+
+    /// A line to the owner's alert webhook, when there is one.
+    fn alert(&self, text: String) {
+        if let Some(hook) = self.cfg.guard.alert_webhook.clone() {
+            std::thread::spawn(move || {
+                let body = serde_json::json!({ "content": text }).to_string();
+                let _ = ureq::post(&hook).header("Content-Type", "application/json").send(body.as_bytes());
+            });
+        }
+    }
+
+    /// What an hour of a worker counts for in the month's budget: never less
+    /// than the settings say, so a cheaper rate today can't shrink what the
+    /// month already spent.
+    fn budget_gpu_per_hour(&self) -> Micros {
+        self.book().gpu_per_hour.max(self.cfg.guard.gpu_per_hour)
+    }
+
     /// One more call under `key` this hour, if under `max`.
     fn allow(&self, key: &str, max: u32) -> bool {
         let t = now();
@@ -347,7 +442,7 @@ impl Gateway {
 
     fn month_gpu_spend(&self, db: &Db) -> Result<Micros> {
         let (.., gpu) = db.month(month_start(now()))?;
-        Ok((gpu * self.cfg.guard.gpu_per_hour as f64 / 3600.0).ceil() as Micros)
+        Ok((gpu * self.budget_gpu_per_hour() as f64 / 3600.0).ceil() as Micros)
     }
 
     fn paused(&self, db: &Db) -> Result<bool> {
@@ -376,7 +471,7 @@ impl Gateway {
             balance: db.balance(a.id)? - db.held(a.id)?,
             beta_until: a.beta_until.filter(|&u| u > now()),
             blocked: a.blocked,
-            prices: self.cfg.prices,
+            prices: self.book().prices,
             open,
             paused,
             top_ups: TOP_UPS_CENTS.to_vec(),
@@ -425,7 +520,7 @@ impl Gateway {
             // The replies the charge saw are the ones the app gets.
             st.cut = Some(st.worker_lines);
             let floor = if st.launched_at > 0 {
-                ((now() - st.launched_at).max(0) as f64 * self.cfg.guard.gpu_per_hour as f64 / 3600.0).ceil() as Micros
+                ((now() - st.launched_at).max(0) as f64 * live.gpu_per_hour as f64 / 3600.0).ceil() as Micros
             } else {
                 0
             };
@@ -525,8 +620,9 @@ async fn account(State(gw): State<Shared>, headers: HeaderMap) -> Result<Json<Ac
 
 /// How far the cloud is open, for an app that has no account yet.
 async fn info(State(gw): State<Shared>) -> Result<Json<Info>> {
+    let book = gw.book();
     let db = gw.db.lock();
-    Ok(Json(Info { stage: gw.stage(&db)? }))
+    Ok(Json(Info { stage: gw.stage(&db)?, prices: Some(book.prices), price_basis: book.basis }))
 }
 
 async fn redeem(
@@ -620,13 +716,17 @@ async fn open_session(
     // The estimate takes the app's length, but never less than the file's
     // size suggests: a claimed zero holds nothing.
     let floor_ms = req.size.saturating_mul(1000) / MIN_BYTES_PER_SEC;
-    let estimate = gw.cfg.prices.price(&req.kind, req.duration_ms.max(floor_ms));
+    let book = gw.book();
+    let rates = book.prices;
+    let estimate = rates.price(&req.kind, req.duration_ms.max(floor_ms));
     let id = uuid::Uuid::new_v4().simple().to_string();
     let file = gw.uploads.join(format!("{id}.bin"));
     let live = Arc::new(Live {
         id: id.clone(),
         account: a.id,
         kind: req.kind,
+        rates,
+        gpu_per_hour: book.gpu_per_hour,
         beta,
         size: req.size,
         sha256: req.sha256.to_ascii_lowercase(),
@@ -827,7 +927,7 @@ async fn ready(State(gw): State<Shared>, Path(id): Path<String>, headers: Header
     if let Some(no) = hidden(&gw)? {
         return Err(no);
     }
-    let price = gw.cfg.prices.price(&live.kind, duration);
+    let price = live.rates.price(&live.kind, duration);
     // The database lock must be gone before `drop_session` takes it again.
     let priced = gw.db.lock().price_session(&id, duration, price, live.beta)?;
     match priced {
@@ -1424,6 +1524,7 @@ async fn admin_stage(
 
 async fn admin_stats(State(gw): State<Shared>, headers: HeaderMap) -> Result<Json<admin::Stats>> {
     admin_auth(&gw, &headers)?;
+    let book = gw.book();
     let db = gw.db.lock();
     let (paid, refunded, charged, sessions, gpu) = db.month(month_start(now()))?;
     let open = gw.live.lock().values().filter(|l| l.st.lock().phase != Phase::Closed).count() as u64;
@@ -1441,6 +1542,8 @@ async fn admin_stats(State(gw): State<Shared>, headers: HeaderMap) -> Result<Jso
         open_sessions: open,
         stage: gw.stage(&db)?,
         live_payments: gw.cfg.stripe.live(),
+        prices: Some(book.prices),
+        price_basis: book.basis,
     }))
 }
 
@@ -1554,18 +1657,12 @@ pub fn upkeep(gw: &Gateway) {
             let month = month_start(t).to_string();
             if spend >= cfg.guard.alert && db.setting("alerted").ok().flatten().as_deref() != Some(month.as_str()) {
                 let _ = db.set_setting("alerted", &month);
-                if let Some(hook) = cfg.guard.alert_webhook.clone() {
-                    let text = format!(
-                        "AutoScene Cloud: this month's GPU spend is about {} (alert at {}, stop at {}).",
-                        as_cloud::euros(spend),
-                        as_cloud::euros(cfg.guard.alert),
-                        as_cloud::euros(cfg.guard.stop)
-                    );
-                    std::thread::spawn(move || {
-                        let body = serde_json::json!({ "content": text }).to_string();
-                        let _ = ureq::post(&hook).header("Content-Type", "application/json").send(body.as_bytes());
-                    });
-                }
+                gw.alert(format!(
+                    "AutoScene Cloud: this month's GPU spend is about {} (alert at {}, stop at {}).",
+                    as_cloud::euros(spend),
+                    as_cloud::euros(cfg.guard.alert),
+                    as_cloud::euros(cfg.guard.stop)
+                ));
             }
         }
     }
@@ -1606,6 +1703,17 @@ pub async fn serve_on(
     stop: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
     tracing::info!("listening on {:?} (admin {:?})", public.local_addr(), admin.local_addr());
+    if let Some(pricing) = &gw.cfg.pricing {
+        let every = Duration::from_secs(pricing.refresh_hours * 3600);
+        let reader = gw.clone();
+        tokio::spawn(async move {
+            loop {
+                let gw = reader.clone();
+                let read = tokio::task::spawn_blocking(move || gw.refresh_prices()).await.unwrap_or(false);
+                tokio::time::sleep(if read { every } else { Duration::from_secs(pricing::RETRY_SECS) }).await;
+            }
+        });
+    }
     let keeper = gw.clone();
     tokio::spawn(async move {
         loop {

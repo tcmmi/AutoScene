@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{Micros, Prices, ScanKind, Switch};
+use crate::{Micros, PriceBasis, Prices, ScanKind, Switch};
 
 /// The gateway's addresses, relative to its base URL.
 pub mod path {
@@ -145,9 +145,15 @@ impl Stage {
 }
 
 /// What anyone may ask before having an account.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Info {
     pub stage: Stage,
+    /// What a minute of video costs now (absent from older gateways).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prices: Option<Prices>,
+    /// What those prices follow, when they follow the GPU service's rates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price_basis: Option<PriceBasis>,
 }
 
 /// A device asks for its account. The same hardware gets the same account
@@ -496,5 +502,10 @@ pub mod admin {
         pub stage: Stage,
         /// Stripe's key is a live one: payments are real money.
         pub live_payments: bool,
+        /// What a minute of video costs now, and what that follows.
+        #[serde(default)]
+        pub prices: Option<Prices>,
+        #[serde(default)]
+        pub price_basis: Option<PriceBasis>,
     }
 }

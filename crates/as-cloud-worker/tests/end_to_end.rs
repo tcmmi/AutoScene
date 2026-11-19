@@ -8,10 +8,11 @@ use std::time::Duration;
 
 use as_cloud::admin;
 use as_cloud::client::{Client, ClientError, file_sha256};
-use as_cloud::{Depth, ErrorCode, Footage, RegisterRequest, ScanKind, SessionRequest, Stage, Switch};
+use as_cloud::{Depth, ErrorCode, Footage, Prices, RegisterRequest, ScanKind, SessionRequest, Stage, Switch};
 use as_cloud_gateway::config::{self, Config};
 use as_cloud_gateway::db::Db;
 use as_cloud_gateway::dispatch::{Local, Prober};
+use as_cloud_gateway::pricing::{PricingConfig, SecsPerMin};
 use as_cloud_gateway::stripe::Payments;
 use as_cloud_gateway::{Gateway, crypto, serve_on};
 use serde_json::{Value, json};
@@ -60,18 +61,18 @@ fn start_with(prober: Box<dyn Prober>) -> Cloud {
 /// `verify`: the worker reads the file itself and refuses jobs that don't fit it.
 /// The cloud is open: Stripe's test mode may sell here.
 fn start_opts(prober: Box<dyn Prober>, verify: bool) -> Cloud {
-    let cloud = start_cfg(prober, verify, None, |c| c.stripe.test_mode_ok = true);
+    let cloud = start_cfg(prober, verify, &[], |c| c.stripe.test_mode_ok = true);
     let (status, stats) = admin_post(&cloud, admin::STAGE, json!({"stage": "open"}));
     assert_eq!((status, stats["stage"].as_str()), (200, Some("open")));
     cloud
 }
 
-/// A gateway with `tweak` made to its settings, its database holding `stored` as
-/// the launch stage (none: it starts hidden).
+/// A gateway with `tweak` made to its settings, its database holding the
+/// `stored` settings (without a `stage`, it starts hidden).
 fn start_cfg(
     prober: Box<dyn Prober>,
     verify: bool,
-    stored: Option<&'static str>,
+    stored: &'static [(&'static str, &'static str)],
     tweak: impl FnOnce(&mut Config) + Send + 'static,
 ) -> Cloud {
     let data = tempfile::tempdir().unwrap();
@@ -100,6 +101,7 @@ fn start_cfg(
                 worker_idle_secs: 10,
                 worker_timeout_secs: 300,
                 prices: Default::default(),
+                pricing: None,
                 guard: Default::default(),
                 stripe: config::Stripe { webhook_secret: WEBHOOK.into(), ..Default::default() },
                 backend: config::Backend::None,
@@ -120,8 +122,8 @@ fn start_cfg(
                 .concat(),
             });
             let db = Db::open(&dir.join("gateway.db")).unwrap();
-            if let Some(stage) = stored {
-                db.set_setting("stage", stage).unwrap();
+            for (key, value) in stored {
+                db.set_setting(key, value).unwrap();
             }
             let gw = Gateway::new(cfg, db, backend, prober, Box::new(NoStripe)).unwrap();
             tx.send((pa, aa)).unwrap();
@@ -504,7 +506,7 @@ fn the_launch_stage_decides_what_the_cloud_takes() {
         c.stripe.secret_key = "sk_test_for_the_tests".into();
         c.stripe.test_mode_ok = false;
     };
-    let cloud = start_cfg(Box::new(TwoMinutes), false, None, test_key);
+    let cloud = start_cfg(Box::new(TwoMinutes), false, &[], test_key);
     let nobody = Client::new(cloud.base.clone(), None);
     assert_eq!(nobody.info().unwrap().stage, Stage::Hidden, "hidden until the owner moves it");
     let reg = RegisterRequest { hwid: format!("{:064x}", 1), platform: "test".into(), app_version: "1.0.6".into() };
@@ -547,7 +549,7 @@ fn the_launch_stage_decides_what_the_cloud_takes() {
     assert_eq!(code(app.checkout(500).unwrap_err()), ErrorCode::Closed);
 
     // `open` stored while the key is a test one (swapped after opening): it acts as the beta.
-    let swapped = start_cfg(Box::new(TwoMinutes), false, Some("open"), test_key);
+    let swapped = start_cfg(Box::new(TwoMinutes), false, &[("stage", "open")], test_key);
     assert_eq!(Client::new(swapped.base.clone(), None).info().unwrap().stage, Stage::Beta);
     assert_eq!(admin_get(&swapped, admin::STATS)["stage"], "beta");
     assert_eq!(code(device(&swapped, 1).checkout(500).unwrap_err()), ErrorCode::Closed);
@@ -556,4 +558,51 @@ fn the_launch_stage_decides_what_the_cloud_takes() {
     let open = start();
     assert_eq!(Client::new(open.base.clone(), None).info().unwrap().stage, Stage::Open);
     assert_eq!(device(&open, 1).checkout(500).unwrap(), "https://checkout.test/500");
+}
+
+/// The prices a gateway following its GPU service read last, as its database
+/// keeps them: what the app shows and what a session is priced at.
+const BOOK: &str = r#"{"prices":{"standard":12000,"fast":6000,"best":30000},"gpu_per_hour":1250000,
+    "basis":{"gpu_usd_per_hour":1.34,"usd_per_eur":1.08,"at":1795000000}}"#;
+
+#[test]
+fn prices_that_follow_the_gpu_service_are_shown_and_charged() {
+    let follow = |c: &mut Config| {
+        c.stripe.test_mode_ok = true;
+        // No RunPod key: nothing is read, the stored prices stay.
+        c.pricing = Some(PricingConfig {
+            pools: vec!["ADA_24".into()],
+            gpu_secs_per_min: SecsPerMin { standard: 20.0, fast: 10.0, best: 40.0 },
+            markup: 2.0,
+            step: 500,
+            refresh_hours: 6,
+            runpod_key: String::new(),
+        });
+    };
+    let cloud = start_cfg(Box::new(TwoMinutes), false, &[("stage", "open"), ("pricing_book", BOOK)], follow);
+    let want = Prices { standard: 12_000, fast: 6_000, best: 30_000 };
+
+    let info = Client::new(cloud.base.clone(), None).info().unwrap();
+    assert_eq!(info.prices, Some(want));
+    let basis = info.price_basis.expect("the basis is public");
+    assert_eq!((basis.gpu_usd_per_hour, basis.usd_per_eur, basis.at), (1.34, 1.08, 1_795_000_000));
+    let stats = admin_get(&cloud, admin::STATS);
+    assert_eq!(stats["prices"]["standard"], 12_000);
+    assert_eq!(stats["price_basis"]["gpu_usd_per_hour"], 1.34);
+
+    let app = funded(&cloud, 1);
+    assert_eq!(app.account().unwrap().prices, want);
+    let ep = file(cloud.data.path(), 1 << 20);
+    let sha = file_sha256(&ep, |_| true).unwrap();
+    let kind = ScanKind { footage: Footage::Live, depth: Depth::Standard, people: false, scenes: false };
+    let s = app.open_session(&SessionRequest { kind, size: 1 << 20, sha256: sha, duration_ms: 120_000 }).unwrap();
+    // Two minutes at €0.012.
+    assert_eq!(s.estimate, 24_000);
+
+    // Without [pricing], the fixed prices are in force whatever is stored.
+    let fixed = start_cfg(Box::new(TwoMinutes), false, &[("stage", "open"), ("pricing_book", BOOK)], |c| {
+        c.stripe.test_mode_ok = true
+    });
+    let info = Client::new(fixed.base.clone(), None).info().unwrap();
+    assert_eq!((info.prices, info.price_basis), (Some(Prices::default()), None));
 }

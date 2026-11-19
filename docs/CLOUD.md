@@ -33,7 +33,7 @@ Scans on a rented GPU instead of the user's computer, paid from a prepaid balanc
    | The faces pass finished | The whole price |
    | Anything else (the app stopped, a job failed, the cloud failed) | The share the faces pass reached as the engine reported it; 10% if only shots or scenes moved |
 
-   - A charge is never less than the GPU time the session held (`guard.gpu_per_hour` × seconds since the worker's launch) and never more than the price. A job failure is never free, because the app can cause one.
+   - A charge is never less than the GPU time the session held (the GPU's hourly rate × seconds since the worker's launch: `guard.gpu_per_hour`, or RunPod's with `[pricing]`) and never more than the price. A job failure is never free, because the app can cause one.
    - The rest of the hold is given back, and the upload is deleted.
    - The app gets the replies the charge saw and no later ones.
    - A gateway restart charges each open session the share saved in the database.
@@ -79,7 +79,18 @@ The owner moves the cloud through three stages with the Discord bot (`/cloud sta
 
 ## Prices and money
 
-- Prices per video-minute: €0.01 standard, €0.005 Fast Scan, €0.0125 Best (`Prices`). They can be overridden in the config.
+- Prices per video-minute, by depth: standard, Fast Scan and Best (`Prices`). People and the scenes pass are in every price.
+- **Prices follow the GPU service** with `[pricing]` (`crates/as-cloud-gateway/src/pricing.rs`). Every `refresh_hours` (6) the gateway reads:
+  - RunPod's serverless rate of every GPU in the endpoint's `pools`, from `GET https://api.runpod.io/v2/catalog/gpus` (a key with `catalog:read`: `RUNPOD_API_KEY`, else the HTTP backend's key). The dearest counts, because a scan may land on any of them.
+  - The euro's US dollar rate of the day from the European Central Bank (public).
+
+  A depth's price is `gpu_secs_per_min × rate × markup`, rounded up to `step` (€0.0005). `gpu_secs_per_min` is the GPU time RunPod bills for a minute of video on the heaviest footage of that depth, start and idle time included. A new price within 3% (or one rounding step) of the one in force doesn't replace it, so the dollar's drift doesn't move what people see; `price_basis` then shows the latest read, which the prices in force are within that band of.
+- The prices in force and what they were worked out from are public: `GET /v1/info` gives `prices` (micro-euros a minute) and `price_basis` (`gpu_usd_per_hour`, `usd_per_eur`, `at`). The app shows the account's `prices` in **Settings → Cloud**. `/admin/stats` has both too.
+- The last prices read are kept in the database (`pricing_book`), so a restart, or a gateway that can't reach RunPod or the ECB, goes on with them. Without `[pricing]`, or before its first read, the fixed `[prices]` (default €0.01, €0.005 and €0.0125) and `guard.gpu_per_hour` are in force.
+- A rate outside sane bounds (a GPU between $0.05 and $20 an hour, a euro between $0.50 and $2), or one that moved by more than half since the last read, changes nothing: the prices in force stay and the alert webhook hears about it. A failed read is tried again after 15 minutes.
+- The same GPU rate, in euros, prices the GPU-time floor of a charge (at the rate the session opened with). The month's budget counts the higher of that rate and `guard.gpu_per_hour`, so a cheaper rate today can't shrink what the month already spent.
+- RunPod's rate is for one GPU: the endpoint gives each worker one.
+- A session keeps the prices it was opened at: its estimate and its price both use them.
 - Top-ups are €5, €10 and €20 (`TOP_UPS_CENTS`). Checkout sells the Stripe catalog's price for the amount (lookup key `cloud_topup_<cents>`, product "AutoScene Cloud balance" with its picture) when there is one in euros for exactly that amount, else the amount itself. The live account and the sandbox both have the three prices.
 - The ledger counts micro-euros and only ever grows: `topup`, `code`, `charge`, `refund`, `adjust`, `transfer_in`, `transfer_out`.
 - What a user can spend is the ledger sum less the holds of running scans.
@@ -108,7 +119,14 @@ ffprobe = "/usr/bin/ffprobe"
 [guard]
 alert = 25_000_000        # €25 of GPU this month: post to the alert webhook
 stop = 75_000_000         # €75: open no more sessions
-gpu_per_hour = 740_000    # what an hour of a worker costs, in micro-euros
+gpu_per_hour = 740_000    # what an hour of a worker costs, in micro-euros (the budget never counts less)
+
+[pricing]                 # prices that follow RunPod (leave it out for the fixed [prices])
+pools = ["AMPERE_24", "ADA_24"]
+gpu_secs_per_min = { standard = 16.0, fast = 11.0, best = 17.0 }
+markup = 2.0              # 1.1 at least
+# step = 500              # round up to €0.0005
+# refresh_hours = 6       # a failed read is tried again after 15 minutes
 
 [stripe]
 success_url = "https://cloud.example.com/paid"

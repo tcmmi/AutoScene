@@ -49,6 +49,19 @@ impl Prices {
     }
 }
 
+/// What a gateway's prices follow, shown to anyone who asks: the GPU
+/// service's rate and the euro's, as read at `at`. A gateway with fixed
+/// prices has none.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PriceBasis {
+    /// The dearest GPU a scan may run on, in US dollars an hour.
+    pub gpu_usd_per_hour: f64,
+    /// US dollars for a euro (the European Central Bank's reference rate).
+    pub usd_per_eur: f64,
+    /// When both were read (Unix seconds).
+    pub at: i64,
+}
+
 /// `m` as people read it: euros with two decimals, rounded down, so a
 /// balance never shows money that isn't there ("€4.99", "-€0.20").
 pub fn euros(m: Micros) -> String {

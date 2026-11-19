@@ -7,7 +7,7 @@
 //! ```text
 //! cargo run -p as-cloud-worker --example cloud_smoke -- --file EPISODE
 //!     [--gateway https://api.autoscene.io] [--code CODE] [--ffmpeg DIR]
-//!     [--anime] [--fast] [--slice SECONDS]
+//!     [--anime | --animated] [--fast | --best] [--people] [--slice SECONDS]
 //!     [--local ENGINE --ort DIR --models DIR]
 //! ```
 //!
@@ -34,7 +34,10 @@ struct Opts {
     code: Option<String>,
     ffmpeg: Option<PathBuf>,
     anime: bool,
+    animated: bool,
     fast: bool,
+    best: bool,
+    people: bool,
     slice: f64,
     local: Option<PathBuf>,
     ort: Option<PathBuf>,
@@ -52,7 +55,10 @@ fn opts() -> Res<Opts> {
             "--code" => o.code = Some(val()?),
             "--ffmpeg" => o.ffmpeg = Some(val()?.into()),
             "--anime" => o.anime = true,
+            "--animated" => o.animated = true,
             "--fast" => o.fast = true,
+            "--best" => o.best = true,
+            "--people" => o.people = true,
             "--slice" => o.slice = val()?.parse()?,
             "--local" => o.local = Some(val()?.into()),
             "--ort" => o.ort = Some(val()?.into()),
@@ -122,7 +128,8 @@ fn jobs(o: &Opts, info: &Value, index: &str, frames: u32, fps: f64, path: &str) 
     vec![
         json!({"op": "shots", "id": 1, "path": path, "info": info, "index": index, "resume": 0, "chunk": 2400}),
         json!({"op": "faces", "id": 2, "path": path, "info": info, "index": index, "shots": shots,
-               "resume": 0, "chunk": 2400, "anime": o.anime, "fast": o.fast}),
+               "resume": 0, "chunk": 2400, "anime": o.anime, "fast": o.fast,
+               "best": o.best, "animated": o.animated, "bodies": o.people}),
     ]
 }
 
@@ -136,9 +143,21 @@ fn cloud(o: &Opts, jobs: &[Value], duration_ms: u64) -> Res<Tally> {
         println!("cloud: code redeemed (added {})", euros(r.added));
     }
     let kind = ScanKind {
-        footage: if o.anime { Footage::Anime } else { Footage::Live },
-        depth: if o.fast { Depth::Fast } else { Depth::Standard },
-        people: false,
+        footage: if o.anime {
+            Footage::Anime
+        } else if o.animated {
+            Footage::Animated
+        } else {
+            Footage::Live
+        },
+        depth: if o.fast {
+            Depth::Fast
+        } else if o.best {
+            Depth::Best
+        } else {
+            Depth::Standard
+        },
+        people: o.people,
         scenes: false,
     };
     let size = std::fs::metadata(&o.file)?.len();

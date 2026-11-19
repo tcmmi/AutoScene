@@ -8,6 +8,18 @@ data_dir = "/var/lib/autoscene-cloud"
 trust_proxy = true
 ffprobe = "/usr/bin/ffprobe"
 
+[pricing]
+# Prices follow RunPod's serverless rate (docs/CLOUD.md, "Prices and money").
+# The key that reads the catalog (catalog:read) is RUNPOD_API_KEY in gateway.env.
+pools = ["AMPERE_24", "ADA_24"]
+# GPU seconds RunPod bills for a minute of video, heaviest footage first.
+# Measured on the endpoint 2026-11-20: anime 12.6 s/min standard and 14 s/min
+# Best (a 24-minute episode), 3D standard about 12 and Fast about 7 a minute
+# past the start; plus a session's start and idle time spread over 20 minutes
+# (3 s) and the scenes pass (1 s).
+gpu_secs_per_min = { standard = 16.0, fast = 11.0, best = 17.0 }
+markup = 2.0
+
 [stripe]
 success_url = "https://autoscene.io/paid"
 cancel_url = "https://autoscene.io/cancelled"

@@ -24,5 +24,5 @@ mod wire;
 pub mod client;
 
 pub use kind::{Depth, FacesFlags, Footage, ScanKind, Switch};
-pub use money::{MICROS_PER_CENT, MICROS_PER_EURO, Micros, Prices, TOP_UPS_CENTS, euros};
+pub use money::{MICROS_PER_CENT, MICROS_PER_EURO, Micros, PriceBasis, Prices, TOP_UPS_CENTS, euros};
 pub use wire::*;

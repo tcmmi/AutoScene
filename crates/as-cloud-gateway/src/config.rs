@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use as_cloud::{Micros, Prices};
 use serde::Deserialize;
 
+use crate::pricing::PricingConfig;
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -50,8 +52,13 @@ pub struct Config {
     /// A worker not heard from for this long has failed.
     #[serde(default = "worker_timeout")]
     pub worker_timeout_secs: u64,
+    /// Fixed prices: in force without `[pricing]`, and until it has read
+    /// its first rates.
     #[serde(default)]
     pub prices: Prices,
+    /// Prices that follow the GPU service's rates (`crate::pricing`).
+    #[serde(default)]
+    pub pricing: Option<PricingConfig>,
     #[serde(default)]
     pub guard: Guard,
     #[serde(default)]
@@ -67,7 +74,8 @@ pub struct Guard {
     pub alert: Micros,
     /// … and open no more sessions past this.
     pub stop: Micros,
-    /// What an hour of a worker costs, in micro-euros.
+    /// What an hour of a worker costs, in micro-euros (until `[pricing]`
+    /// has read the GPU service's rate).
     pub gpu_per_hour: Micros,
     /// A Discord webhook the alerts go to (or `AS_CLOUD_ALERT_WEBHOOK`).
     #[serde(default)]
@@ -196,6 +204,16 @@ impl Config {
         if self.guard.alert_webhook.is_none() {
             self.guard.alert_webhook = env("AS_CLOUD_ALERT_WEBHOOK");
         }
+        if let Some(pricing) = &mut self.pricing {
+            fill(&mut pricing.runpod_key, "RUNPOD_API_KEY");
+            // The HTTP backend's own key, when it is RunPod's.
+            if pricing.runpod_key.is_empty()
+                && let Backend::Http { url, authorization: Some(auth), .. } = &self.backend
+                && url.contains(".runpod.ai/")
+            {
+                pricing.runpod_key = auth.trim_start_matches("Bearer ").trim().to_string();
+            }
+        }
     }
 
     pub fn check(&self) -> Result<(), ConfigError> {
@@ -205,6 +223,41 @@ impl Config {
         if self.pepper.len() < 24 {
             return Err(ConfigError::Missing("pepper must be set (24 characters or more)"));
         }
+        if let Some(pricing) = &self.pricing {
+            pricing.check().map_err(ConfigError::Missing)?;
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_example_settings_read_and_pass() {
+        let text = include_str!("../../../deploy/cloud/gateway.toml.example");
+        let mut cfg: Config = toml::from_str(text).unwrap();
+        let env = |k: &str| match k {
+            "AS_CLOUD_ADMIN_TOKEN" | "AS_CLOUD_PEPPER" => Some("x".repeat(32)),
+            "RUNPOD_API_KEY" => Some("rpa_example".into()),
+            _ => None,
+        };
+        cfg.secrets_from_env(env);
+        cfg.check().unwrap();
+        let pricing = cfg.pricing.expect("the example follows RunPod");
+        assert_eq!(pricing.runpod_key, "rpa_example");
+    }
+
+    #[test]
+    fn pricing_takes_runpods_backend_key_when_it_has_none() {
+        let text = "listen = \"127.0.0.1:1\"\nadmin_listen = \"127.0.0.1:2\"\npublic_base = \"https://x\"\n\
+                    data_dir = \"/tmp\"\n[pricing]\npools = [\"ADA_24\"]\nmarkup = 2.0\n\
+                    gpu_secs_per_min = { standard = 16.0, fast = 11.0, best = 17.0 }\n\
+                    [backend]\nkind = \"http\"\nurl = \"https://api.runpod.ai/v2/abc/run\"\n\
+                    authorization = \"Bearer rpa_backend\"\n";
+        let mut cfg: Config = toml::from_str(text).unwrap();
+        cfg.secrets_from_env(|_| None);
+        assert_eq!(cfg.pricing.unwrap().runpod_key, "rpa_backend");
     }
 }

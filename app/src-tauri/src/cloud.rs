@@ -27,8 +27,8 @@ use sha2::{Digest, Sha256};
 pub const KEY_ENABLED: &str = "cloud.enabled";
 /// The gateway's address, when it isn't the built-in one.
 pub const KEY_GATEWAY: &str = "cloud.gateway";
-/// The gateway AutoScene uses when nothing else is set; none until it runs.
-const DEFAULT_GATEWAY: Option<&str> = None;
+/// The gateway AutoScene uses when nothing else is set.
+const DEFAULT_GATEWAY: Option<&str> = Some("https://autoscene.io");
 /// A computer without a machine id the system gives keeps one of its own.
 const KEY_DEVICE: &str = "cloud.device";
 /// The keychain's service for the device token.

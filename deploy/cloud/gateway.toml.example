@@ -2,16 +2,15 @@
 # /etc/autoscene-cloud/gateway.env, not here.
 listen = "127.0.0.1:8740"
 admin_listen = "127.0.0.1:8741"
-# The address the GPU worker reaches the gateway at: set once a hostname
-# points here (nginx + certbot), with the Stripe URLs below.
-public_base = "https://cloud.invalid"
+# The address the GPU worker and Stripe reach the gateway at.
+public_base = "https://autoscene.io"
 data_dir = "/var/lib/autoscene-cloud"
 trust_proxy = true
 ffprobe = "/usr/bin/ffprobe"
 
 [stripe]
-success_url = "https://github.com/tcmmi/AutoScene"
-cancel_url = "https://github.com/tcmmi/AutoScene"
+success_url = "https://autoscene.io/paid"
+cancel_url = "https://autoscene.io/cancelled"
 
 [backend]
 # No GPU provider yet: scans stay paused (POST /admin/pause).

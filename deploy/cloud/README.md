@@ -1,6 +1,9 @@
 # Deploying the AutoScene Cloud gateway
 
-The gateway runs on the owner's VDS as `autoscene-cloud.service` (user `autoscene-cloud`), behind nginx.
+The gateway runs on the owner's VDS as `autoscene-cloud.service` (user `autoscene-cloud`), behind nginx at
+**https://autoscene.io**. The domain is on Cloudflare (proxied, SSL mode Full). The origin has its own Let's Encrypt
+certificate, issued with `certbot certonly --webroot -w /var/www/autoscene.io -d autoscene.io`, renewed by certbot's
+timer with an nginx reload.
 
 | Path | What |
 |---|---|
@@ -8,6 +11,7 @@ The gateway runs on the owner's VDS as `autoscene-cloud.service` (user `autoscen
 | `/opt/autoscene-cloud/toolchain` | its own Rust toolchain (rustup, stable), used only to build it |
 | `/etc/autoscene-cloud/gateway.toml` | settings (`gateway.toml.example` here) |
 | `/etc/autoscene-cloud/gateway.env` | secrets, root only: `AS_CLOUD_ADMIN_TOKEN`, `AS_CLOUD_PEPPER` (never change it), `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| `/etc/nginx/sites-available/autoscene.io`, `/etc/nginx/snippets/autoscene-cloud.conf` | the site (copies here: `nginx-*.conf`), with Cloudflare's real client address from `snippets/cloudflare-real-ip.conf` |
 | `/var/lib/autoscene-cloud` | `gateway.db`, uploads, daily backups (14 kept; copy them off the machine) |
 
 ## Build and install a new version
@@ -30,6 +34,17 @@ The gateway runs on the owner's VDS as `autoscene-cloud.service` (user `autoscen
    ```
 
 A restart closes open scan sessions and charges each what it had done.
+
+## Stripe
+
+- The sandbox webhook endpoint `we_1Udc6eBPP05aCPabANLSfKKv` (account "AutoScene sandbox") sends four events to `https://autoscene.io/v1/stripe/webhook`: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `charge.refunded` and `charge.dispute.created`. Its signing secret is `STRIPE_WEBHOOK_SECRET`.
+- Going live means repeating this on the live "AutoScene" account, and swapping the live `sk_live_` key and that endpoint's secret into `gateway.env`.
+- Buyers come back to `/paid` or `/cancelled`, two pages nginx serves itself.
+
+## Limits from Cloudflare (free plan)
+
+- A request body may be at most 100 MB. Upload chunks are 8 MB and jobs at most 64 MB, so both fit.
+- A request may wait at most 100 s for an answer. Long-polls wait 25 to 30 s. `ready` measures the file and can take longer for very large films, which would answer 524. If that happens, make `ready` answer at once and be polled, or put the gateway on a DNS-only name.
 
 ## Admin
 

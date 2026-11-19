@@ -80,7 +80,7 @@ The owner moves the cloud through three stages with the Discord bot (`/cloud sta
 ## Prices and money
 
 - Prices per video-minute: €0.01 standard, €0.005 Fast Scan, €0.0125 Best (`Prices`). They can be overridden in the config.
-- Top-ups are €5, €10 and €20 (`TOP_UPS_CENTS`).
+- Top-ups are €5, €10 and €20 (`TOP_UPS_CENTS`). Checkout sells the Stripe catalog's price for the amount (lookup key `cloud_topup_<cents>`, product "AutoScene Cloud balance" with its picture) when there is one in euros for exactly that amount, else the amount itself. The live account and the sandbox both have the three prices.
 - The ledger counts micro-euros and only ever grows: `topup`, `code`, `charge`, `refund`, `adjust`, `transfer_in`, `transfer_out`.
 - What a user can spend is the ledger sum less the holds of running scans.
 - Payments, codes, charges and refunds each count once (unique indexes), so a replayed Stripe event changes nothing.

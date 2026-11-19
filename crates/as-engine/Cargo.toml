@@ -30,3 +30,7 @@ tracing-subscriber = { version = "=0.3.23", default-features = false, features =
 [dev-dependencies]
 as-testkit.workspace = true
 tempfile.workspace = true
+
+[features]
+# The engine of AutoScene Cloud's GPU worker: sessions on NVIDIA's CUDA (as-infer).
+cuda = ["as-infer/cuda"]

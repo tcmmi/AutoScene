@@ -73,7 +73,7 @@ pub fn verdict(device: Device, worst: Option<f32>, coreml: OnCoreMl) -> Verdict 
         Device::Cpu => Verdict::Fail,
         Device::CoreMl if coreml == OnCoreMl::Log => Verdict::KeepLogged,
         Device::NvRtx => Verdict::WithoutAccel,
-        Device::DirectMl | Device::CoreMl => Verdict::OnCpu,
+        Device::DirectMl | Device::CoreMl | Device::Cuda => Verdict::OnCpu,
     }
 }
 

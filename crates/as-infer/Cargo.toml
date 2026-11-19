@@ -37,3 +37,8 @@ libc.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true
+
+[features]
+# NVIDIA's CUDA, for AutoScene Cloud's GPU worker on Linux: sessions try it
+# first (`Device::Cuda`). The app's own builds leave it off.
+cuda = ["ort/cuda"]

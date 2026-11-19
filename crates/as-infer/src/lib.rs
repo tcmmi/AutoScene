@@ -83,6 +83,8 @@ pub enum Device {
     NvRtx,
     DirectMl,
     CoreMl,
+    /// NVIDIA's CUDA, in AutoScene Cloud's GPU worker (feature `cuda`, Linux).
+    Cuda,
     Cpu,
 }
 
@@ -92,10 +94,15 @@ impl Device {
             Self::NvRtx => "GPU (TensorRT for RTX)",
             Self::DirectMl => "GPU (DirectML)",
             Self::CoreMl => "Apple Neural Engine / GPU (Core ML)",
+            Self::Cuda => "GPU (CUDA)",
             Self::Cpu => "CPU",
         }
     }
 }
+
+/// Sessions try NVIDIA's CUDA first: the cloud worker's build (feature `cuda`)
+/// on Linux, where no other GPU provider is bundled.
+const CUDA_FIRST: bool = cfg!(all(feature = "cuda", not(any(windows, target_os = "macos"))));
 
 /// File name of the runtime library in the bundle folder.
 pub const LIBRARY: &str = if cfg!(windows) {
@@ -312,6 +319,13 @@ impl Runtime {
             hardware::Using::Processor => Target::Cpu,
             _ => Target::Gpu(hardware.adapter()),
         };
+        // The cloud worker's build: the GPU unless told the processor. A card
+        // CUDA can't use leaves each session on the processor ([`Runtime::devices`]).
+        let target =
+            if CUDA_FIRST && placement.gpu != computer::Choice::Processor { Target::Gpu(None) } else { target };
+        if CUDA_FIRST && target != Target::Cpu {
+            tracing::info!("sessions try NVIDIA's CUDA first");
+        }
         tracing::info!(runtime = %name(&lib), "onnxruntime loaded; analysis runs on {hardware}");
         let (accel_state, accel) = match &placement.accel {
             // Never for the processor only: the pack is for a graphics card.
@@ -384,6 +398,7 @@ impl Runtime {
         match self.target {
             Target::Gpu(_) if cfg!(windows) => Device::DirectMl,
             Target::Gpu(_) if cfg!(target_os = "macos") => Device::CoreMl,
+            Target::Gpu(_) if CUDA_FIRST => Device::Cuda,
             _ => Device::Cpu,
         }
     }
@@ -557,6 +572,17 @@ impl Runtime {
                     .fold(ort::ep::CoreML::default(), |ep, (name, value)| ep.with_arbitrary_config(name, value));
                 b = b.with_execution_providers([ep.build().error_on_failure()]).map_err(|e| err(e.to_string()))?;
             }
+            #[cfg(feature = "cuda")]
+            Device::Cuda => {
+                // fp32 throughout, no TF32: the embeddings stay what the
+                // person's own GPU computes (the goldens hold them to it).
+                // cuDNN's quick pick of convolution methods: the exhaustive
+                // search costs every new input shape seconds.
+                let cuda = ort::ep::CUDA::default()
+                    .with_tf32(false)
+                    .with_conv_algorithm_search(ort::ep::cuda::ConvAlgorithmSearch::Heuristic);
+                b = b.with_execution_providers([cuda.build().error_on_failure()]).map_err(|e| err(e.to_string()))?;
+            }
             _ => {}
         }
         match bytes {
@@ -727,12 +753,15 @@ mod tests {
 
     #[test]
     fn sessions_try_nvidias_engine_first_only_where_it_may_take_them() {
-        use Device::{CoreMl, Cpu, DirectMl, NvRtx};
+        use Device::{CoreMl, Cpu, Cuda, DirectMl, NvRtx};
         // Registered, and the session may use it: then DirectML, then the processor.
         assert_eq!(chain(Some(DirectMl), true), [NvRtx, DirectMl, Cpu]);
         // Not registered, or a model never allowed on it (`without_accel`).
         assert_eq!(chain(Some(DirectMl), false), [DirectMl, Cpu]);
         assert_eq!(chain(Some(CoreMl), false), [CoreMl, Cpu]);
+        // The cloud worker: CUDA, then the processor if a session won't build there.
+        assert_eq!(chain(Some(Cuda), false), [Cuda, Cpu]);
+        assert_eq!(Cuda.label(), "GPU (CUDA)");
         // The processor only: no graphics card, so no engine for one either.
         assert_eq!(chain(None, true), [Cpu]);
         assert_eq!(chain(None, false), [Cpu]);

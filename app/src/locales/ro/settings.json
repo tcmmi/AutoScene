@@ -8,7 +8,8 @@
     "shortcuts": "Comenzi rapide",
     "updates": "Actualizări",
     "about": "Despre",
-    "contributors": "Contribuitori"
+    "contributors": "Contribuitori",
+    "cloud": "Cloud"
   },
   "saveFailed": "Nu s-a putut salva setarea",
   "reveal": "Arată",
@@ -306,5 +307,44 @@
       "moongetsu": "Design de interfață, meniuri contextuale proprii și finisaj vizual",
       "ihyledd": "Varianta pentru macOS, noul design al setărilor și structura proiectului"
     }
+  },
+  "cloud": {
+    "title": "AutoScene Cloud",
+    "description": "Analizează pe un GPU rapid din cloud în loc de acest calculator. Plătești pe minut de video, dintr-un sold plătit în avans.",
+    "unavailable": "AutoScene Cloud nu este încă disponibil.",
+    "use": {
+      "label": "Analizează în cloud",
+      "description": "Analizele noi încarcă episodul, rulează pe un GPU din cloud și revin aici. Fișierul este șters din cloud imediat după."
+    },
+    "balance": {
+      "label": "Sold",
+      "minutes_one": "Aproximativ {{count}} minut de video",
+      "minutes_few": "Aproximativ {{count}} minute de video",
+      "minutes_other": "Aproximativ {{count}} de minute de video",
+      "beta": "Permis beta: scanări gratuite până la {{date}}",
+      "blocked": "Acest cont este blocat. Contactează asistența și spune ID-ul de asistență.",
+      "paused": "Scanările în cloud sunt oprite momentan."
+    },
+    "supportId": {
+      "label": "ID de asistență",
+      "description": "Spune-l când ceri ajutor. Nu este secret.",
+      "copy": "Copiază"
+    },
+    "addFunds": {
+      "label": "Adaugă fonduri",
+      "description": "Deschide în browser o pagină de plată securizată (card sau PayPal). Soldul se actualizează după ce ai plătit."
+    },
+    "redeem": {
+      "label": "Folosește un cod",
+      "description": "Un cod de reîncărcare sau beta, de forma ABCD-EFGH-JKMN-PQRS.",
+      "placeholder": "XXXX-XXXX-XXXX-XXXX",
+      "action": "Folosește",
+      "done": "Cod folosit"
+    },
+    "prices": {
+      "label": "Prețuri pe minut de video",
+      "line": "Standard {{standard}} · Scanare rapidă {{fast}} · Cel mai bun {{best}}"
+    },
+    "failed": "Nu s-a putut contacta AutoScene Cloud"
   }
 }

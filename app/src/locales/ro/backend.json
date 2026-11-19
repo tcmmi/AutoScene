@@ -74,7 +74,8 @@
     "crashed": "Motorul de analiză s-a oprit neașteptat. Detaliile sunt în jurnal.",
     "noEmbedding": "Motorul nu a dat niciun embedding.",
     "reinstall": "Motorul de analiză nu a putut porni. Reinstalează AutoScene.",
-    "savingFailed": "Salvarea analizei a eșuat."
+    "savingFailed": "Salvarea analizei a eșuat.",
+    "cloudStart": "Cloudul nu a putut porni analiza."
   },
   "episode": {
     "fileNotFound": "Fișierul nu se găsește.",
@@ -248,7 +249,10 @@
       "readingFile": "Se citește fișierul",
       "rendering": "Se randează",
       "rescanning": "Se citesc din nou fețele",
-      "comparingCharacters": "Se compară personajele"
+      "comparingCharacters": "Se compară personajele",
+      "cloudChecking": "Se pregătește încărcarea",
+      "cloudMeasuring": "Se pornește GPU-ul din cloud",
+      "cloudUploading": "Se încarcă în AutoScene Cloud"
     },
     "unexpectedError": "eroare neașteptată",
     "rescanning": "Se rescanează fețele"
@@ -547,5 +551,28 @@
   },
   "rescan": {
     "notWithBest": "Rescanarea nu funcționează încă cu modelul anime Cel mai bun. Alege Standard în Setări → General → Personaje anime ca s-o folosești."
+  },
+  "cloud": {
+    "balance": "Soldul din cloud nu acoperă această scanare. Adaugă fonduri în Setări → Cloud.",
+    "blocked": "Contul tău din cloud este blocat. Contactează asistența.",
+    "browser": "Pagina de plată nu s-a putut deschide în browser.",
+    "busy": "Cloudul este ocupat. Încearcă din nou peste câteva minute.",
+    "codeInvalid": "Codul nu există sau a expirat.",
+    "codeUsed": "Codul a fost deja folosit.",
+    "gatewayHttps": "Adresa trebuie să înceapă cu https://.",
+    "keychain": "AutoScene nu a putut folosi seiful sistemului.",
+    "kind": "Tipul scanării nu a putut fi citit: {{e}}",
+    "kindOff": "Acest tip de scanare nu este oferit momentan în cloud.",
+    "offline": "AutoScene Cloud nu a putut fi contactat. Verifică conexiunea.",
+    "paused": "Scanările în cloud sunt oprite momentan. Încearcă mai târziu.",
+    "rateLimited": "Prea multe încercări. Așteaptă o oră și încearcă din nou.",
+    "settingFailed": "Setarea nu a putut fi salvată.",
+    "tooLarge": "Acest fișier este prea mare pentru cloud.",
+    "unavailable": "AutoScene Cloud nu este încă disponibil.",
+    "unreadable": "Cloudul nu a putut citi acest fișier ca video.",
+    "cancelled": "Scanarea în cloud a fost oprită.",
+    "checksum": "Încărcarea a ajuns deteriorată. Încearcă din nou.",
+    "gone": "Scanarea în cloud s-a încheiat mai devreme. Încearcă din nou.",
+    "server": "AutoScene Cloud a avut o problemă. Încearcă mai târziu."
   }
 }

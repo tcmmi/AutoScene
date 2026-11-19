@@ -28,6 +28,7 @@ export {
   Checks,
   CircleNotch,
   ClipboardText,
+  Cloud,
   Clock,
   Compass,
   Copy,

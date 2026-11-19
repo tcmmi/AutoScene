@@ -16,7 +16,8 @@ use as_api::{
 use as_core::{CancelToken, ExportId, MediaId, Msg, ProjectId, ToMsg, msg};
 use as_engine::protocol::{Blob, RescanFaceIn};
 use as_engine::{
-    Devices, EngineError, FacesEvent, FacesInput, RescanEvent, RescanInput, ScenesEvent, ScenesInput, ShotsEvent,
+    Devices, Engine, EngineError, FacesEvent, FacesInput, RescanEvent, RescanInput, ScenesEvent, ScenesInput,
+    ShotsEvent,
 };
 use as_jobs::{Class, JobCtx, JobError, JobResult, JobRunner, JobSpec};
 use as_models::ModelError;
@@ -474,19 +475,46 @@ fn submit_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, o
             media_changed(&app2, &project, Some(media_id));
         };
         let recorded = |stage: fn(&MediaItem) -> StageState| project.media(media_id).ok().map(|m| stage(&m));
-        let shots = guarded(|| recorded(|m| m.shots), || run_shots(&app2, &state, &project, media_id, ctx));
+        // In the cloud when the setting says so and there is work for an engine.
+        let cloud = if crate::cloud::enabled(&state.library) && engine_work(&project, media_id) {
+            match begin_cloud(&state, &project, media_id, ctx) {
+                Ok(run) => Some(run),
+                Err(e) => {
+                    // A restart asked for during the upload still happens.
+                    if let Some(stage) = running.finish() {
+                        restart_analysis(&app2, &project, media_id, stage);
+                        return ended_for_restart(&ctx.cancel);
+                    }
+                    return Err(e.into());
+                }
+            }
+        } else {
+            None
+        };
+        let (engine, local) = match &cloud {
+            Some(run) => (&run.engine, false),
+            None => (&*state.engine, true),
+        };
+        let shots =
+            guarded(|| recorded(|m| m.shots), || run_shots(&app2, &state, engine, local, &project, media_id, ctx));
         record_stage(&state, &shots, |s, e| project.set_shots_state(media_id, s, e));
         notify();
         let result = shots.and_then(|()| {
             let cast: Result<(), StageError> = (|| {
-                let faces = guarded(|| recorded(|m| m.faces), || run_faces(&app2, &state, &project, media_id, ctx));
+                let faces = guarded(
+                    || recorded(|m| m.faces),
+                    || run_faces(&app2, &state, engine, local, &project, media_id, ctx),
+                );
                 record_stage(&state, &faces, |s, e| project.set_faces_state(media_id, s, e));
                 notify();
                 faces?;
                 if !project.finds_bodies() {
                     return Ok(());
                 }
-                let bodies = guarded(|| recorded(|m| m.bodies), || run_bodies(&app2, &state, &project, media_id, ctx));
+                let bodies = guarded(
+                    || recorded(|m| m.bodies),
+                    || run_bodies(&app2, &state, engine, local, &project, media_id, ctx),
+                );
                 record_stage(&state, &bodies, |s, e| project.set_bodies_state(media_id, s, e));
                 notify();
                 bodies
@@ -496,11 +524,21 @@ fn submit_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, o
             if !project.finds_scenes() || ctx.cancel.is_cancelled() {
                 return cast;
             }
-            let scenes = guarded(|| recorded(|m| m.scenes), || run_scenes(&app2, &state, &project, media_id, ctx));
+            let scenes = guarded(
+                || recorded(|m| m.scenes),
+                || run_scenes(&app2, &state, engine, local, &project, media_id, ctx),
+            );
             record_stage(&state, &scenes, |s, e| project.set_scenes_state(media_id, s, e));
             notify();
             cast.and(scenes)
         });
+        if let Some(run) = cloud {
+            match run.finish() {
+                Ok(charged) => log::info!("the cloud scan cost {}", as_cloud::euros(charged)),
+                Err(e) => log::warn!("closing the cloud session: {}", e.detail()),
+            }
+            let _ = crate::events::CloudChanged.emit(&app2);
+        }
         // Asked to start over while this ran: now nothing writes any more.
         // (The new analysis is the one plugins are told of.)
         if let Some(stage) = running.finish() {
@@ -583,6 +621,49 @@ fn analysis_due(project: &Project, media_id: MediaId) -> bool {
         || project.faces_by_other_model(project.face_embedder()).is_ok_and(|ids| ids.contains(&media_id))
 }
 
+/// Whether an analysis of `media_id` has anything for an engine to do (a
+/// cloud session is opened only then).
+fn engine_work(project: &Project, media_id: MediaId) -> bool {
+    let scenes = project.finds_scenes() && project.media(media_id).is_ok_and(|m| m.scenes != StageState::Ready);
+    analysis_due(project, media_id) || scenes
+}
+
+/// Upload `media_id` to a cloud session and have it priced, with the job's
+/// progress. A failure fails the job before any stage runs: its stages wait
+/// as they were.
+fn begin_cloud(
+    state: &AppState,
+    project: &Project,
+    media_id: MediaId,
+    ctx: &JobCtx,
+) -> Result<crate::cloud::Run, StageError> {
+    let failed = |e: crate::cloud::CloudError| {
+        log::warn!("cloud: {}", e.detail());
+        StageError::Failed(e.msg())
+    };
+    let plan = project.shots_plan(media_id).map_err(stage_error)?;
+    let kind = crate::cloud::scan_kind(project, project.finds_bodies(), project.finds_scenes())
+        .map_err(|e| StageError::Failed(msg!("cloud.kind", "The kind of scan couldn't be read: {{e}}", e = e)))?;
+    let duration_ms = (plan.info.duration_sec.unwrap_or(0.0).max(0.0) * 1000.0) as u64;
+    let checking = msg!("job.stage.cloudChecking", "Preparing the upload");
+    let uploading = msg!("job.stage.cloudUploading", "Uploading to AutoScene Cloud");
+    let measuring = msg!("job.stage.cloudMeasuring", "Starting the cloud GPU");
+    let run = crate::cloud::Run::begin(&state.library, &plan.path, kind, duration_ms, &ctx.cancel, |p| match p {
+        crate::cloud::Preparing::Checking(f) => ctx.progress(&checking, f),
+        crate::cloud::Preparing::Uploading(f) => ctx.progress(&uploading, f),
+        crate::cloud::Preparing::Measuring => ctx.stage(&measuring),
+    });
+    match run {
+        Ok(run) => {
+            log::info!("cloud scan priced at {}", as_cloud::euros(run.price));
+            Ok(run)
+        }
+        Err(crate::cloud::CloudError::Cancelled) => Err(StageError::Cancelled),
+        Err(_) if ctx.cancel.is_cancelled() => Err(StageError::Cancelled),
+        Err(e) => Err(failed(e)),
+    }
+}
+
 /// Clear a media's results from `stage` on and analyse it again. Only call
 /// it when no analysis of the media runs (see [`AnalysisRuns`]).
 pub fn restart_analysis(app: &AppHandle, project: &Arc<Project>, media_id: MediaId, stage: AnalysisStage) {
@@ -604,6 +685,8 @@ pub fn restart_analysis(app: &AppHandle, project: &Arc<Project>, media_id: Media
 fn run_shots(
     app: &AppHandle,
     state: &AppState,
+    engine: &Engine,
+    local: bool,
     project: &Project,
     media_id: MediaId,
     ctx: &JobCtx,
@@ -611,7 +694,9 @@ fn run_shots(
     if project.media(media_id).map_err(stage_error)?.shots == StageState::Ready {
         return Ok(());
     }
-    install_models(state, &[as_models::ids::TRANSNET], ctx)?;
+    if local {
+        install_models(state, &[as_models::ids::TRANSNET], ctx)?;
+    }
     project.set_shots_state(media_id, StageState::Running, None).map_err(stage_error)?;
     media_changed(app, project, Some(media_id));
     let plan = project.shots_plan(media_id).map_err(stage_error)?;
@@ -619,8 +704,7 @@ fn run_shots(
     if plan.resume < plan.frames {
         ctx.progress(&finding, plan.resume as f64 / plan.frames as f64);
         let mut stage = finding.clone();
-        state
-            .engine
+        engine
             .shots(plan.path, plan.info, plan.index, plan.resume, plan.chunk, &ctx.cancel, |e| match e {
                 ShotsEvent::Devices { devices, resume } => {
                     stage = devices_reported(project, media_id, Pass::Shots, &finding, &devices, resume);
@@ -638,13 +722,15 @@ fn run_shots(
     }
     ctx.stage(&finding);
     let shots = project.finish_shots(media_id).map_err(stage_error)?;
-    log::info!("{shots} shots found (engine prefers {})", state.engine.device().unwrap_or_default());
+    log::info!("{shots} shots found (engine prefers {})", engine.device().unwrap_or_default());
     Ok(())
 }
 
 fn run_faces(
     app: &AppHandle,
     state: &AppState,
+    engine: &Engine,
+    local: bool,
     project: &Arc<Project>,
     media_id: MediaId,
     ctx: &JobCtx,
@@ -658,7 +744,9 @@ fn run_faces(
     if ready && !outdated.contains(&media_id) {
         return Ok(());
     }
-    if ready {
+    if !local {
+        // The cloud has the models.
+    } else if ready {
         // Its old faces stay until the new model is here: a failed or
         // cancelled download leaves the cast as it was (and tries again on
         // the next launch).
@@ -684,11 +772,12 @@ fn run_faces(
     let mut people = model != as_models::ids::SFACE
         && !as_project::anime_embedder(model)
         && project.finds_bodies()
-        && match install_models(state, &as_models::ids::BODIES, ctx) {
-            Ok(()) => true,
-            Err(StageError::Cancelled) => return Err(StageError::Cancelled),
-            Err(_) => false,
-        };
+        && (!local
+            || match install_models(state, &as_models::ids::BODIES, ctx) {
+                Ok(()) => true,
+                Err(StageError::Cancelled) => return Err(StageError::Cancelled),
+                Err(_) => false,
+            });
     project.set_faces_state(media_id, StageState::Running, None).map_err(stage_error)?;
     media_changed(app, project, Some(media_id));
     let finding = msg!("job.stage.findingCharacters", "Finding characters");
@@ -713,7 +802,7 @@ fn run_faces(
             best: plan.best,
         };
         let mut stage = finding.clone();
-        let found = state.engine.faces(job, &ctx.cancel, |e| match e {
+        let found = engine.faces(job, &ctx.cancel, |e| match e {
             FacesEvent::Devices { devices, resume } => {
                 stage = devices_reported(project, media_id, Pass::Faces, &finding, &devices, resume);
                 Ok(())
@@ -743,7 +832,7 @@ fn run_faces(
     // while this pass ran: its faces are found again the new way.
     if project.faces_outdated(media_id).map_err(stage_error)? {
         log::info!("faces are now found another way; finding them again");
-        return run_faces(app, state, project, media_id, ctx);
+        return run_faces(app, state, engine, local, project, media_id, ctx);
     }
     ctx.stage(&grouping());
     project.finish_faces(media_id).map_err(stage_error)?;
@@ -771,6 +860,8 @@ fn grouping() -> Msg {
 fn run_bodies(
     app: &AppHandle,
     state: &AppState,
+    engine: &Engine,
+    local: bool,
     project: &Arc<Project>,
     media_id: MediaId,
     ctx: &JobCtx,
@@ -779,7 +870,9 @@ fn run_bodies(
     if m.bodies == StageState::Ready || m.faces != StageState::Ready {
         return Ok(());
     }
-    install_models(state, &as_models::ids::BODIES, ctx)?;
+    if local {
+        install_models(state, &as_models::ids::BODIES, ctx)?;
+    }
     project.set_bodies_state(media_id, StageState::Running, None).map_err(stage_error)?;
     media_changed(app, project, Some(media_id));
     let plan = project.bodies_plan(media_id).map_err(stage_error)?;
@@ -801,8 +894,7 @@ fn run_bodies(
             best: false,
         };
         let mut stage = finding.clone();
-        state
-            .engine
+        engine
             .faces(job, &ctx.cancel, |e| match e {
                 FacesEvent::Devices { devices, resume } => {
                     stage = devices_reported(project, media_id, Pass::People, &finding, &devices, resume);
@@ -831,6 +923,8 @@ fn run_bodies(
 fn run_scenes(
     app: &AppHandle,
     state: &AppState,
+    engine: &Engine,
+    local: bool,
     project: &Arc<Project>,
     media_id: MediaId,
     ctx: &JobCtx,
@@ -839,7 +933,9 @@ fn run_scenes(
     if m.scenes == StageState::Ready || m.shots != StageState::Ready {
         return Ok(());
     }
-    install_models(state, &as_models::ids::SCENES, ctx)?;
+    if local {
+        install_models(state, &as_models::ids::SCENES, ctx)?;
+    }
     project.set_scenes_state(media_id, StageState::Running, None).map_err(stage_error)?;
     media_changed(app, project, Some(media_id));
     let plan = project.scenes_plan(media_id).map_err(stage_error)?;
@@ -850,8 +946,7 @@ fn run_scenes(
         ctx.progress(&reading, done);
         let job = ScenesInput { path: plan.path, info: plan.info, index: plan.index, shots: plan.shots };
         let mut stage = reading.clone();
-        state
-            .engine
+        engine
             .scenes(job, &ctx.cancel, |e| match e {
                 ScenesEvent::Devices(devices) => {
                     let on_cpu = devices.on_cpu();

@@ -1167,6 +1167,27 @@ const MODELS: ModelInfo[] = [
 
 // -- handlers -----------------------------------------------------------------
 
+const cloud = { enabled: false, cents: 420 }
+
+function cloudStatus() {
+  const euros = (cents: number) => `€${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`
+  return {
+    available: true,
+    enabled: cloud.enabled,
+    account: {
+      balance: euros(cloud.cents),
+      minutes: cloud.cents,
+      supportId: "AS-7F3K-29QD",
+      betaUntil: null,
+      blocked: false,
+      paused: false,
+      prices: { standard: "€0.01", fast: "€0.005", best: "€0.0125" },
+      topUps: [500, 1000, 2000].map((cents) => ({ cents, label: euros(cents) })),
+    },
+    error: null,
+  }
+}
+
 const handlers: Record<string, Handler> = {
   app_info: () => appInfo,
   reveal_path: () => null,
@@ -1183,6 +1204,21 @@ const handlers: Record<string, Handler> = {
   media_tools: () => ({ ready: true, version: "8.0.1-full_build-www.gyan.dev", path: String.raw`C:\ffmpeg\bin\ffmpeg.exe`, error: null }),
   models: () => MODELS,
   discord_view: () => null,
+  // A cloud account with a little money on it, as `commands::cloud` answers.
+  cloud_status: () => cloudStatus(),
+  cloud_set_enabled: ({ on }) => {
+    cloud.enabled = Boolean(on)
+    return cloudStatus()
+  },
+  cloud_redeem: ({ code }) => {
+    if (String(code).replace(/[\s-]/g, "").length !== 16) {
+      throw { key: "cloud.codeInvalid", text: "That code doesn't exist or has expired." }
+    }
+    cloud.cents += 500
+    return cloudStatus()
+  },
+  cloud_add_funds: () => null,
+  cloud_set_gateway: () => cloudStatus(),
   // As `discord::preview` says it.
   discord_preview: ({ show }) => {
     const s = show as DiscordRpcSettings

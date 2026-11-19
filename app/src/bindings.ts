@@ -474,6 +474,19 @@ export const commands = {
 	 *  episode, in a scenepack.
 	 */
 	discordPreview: (show: DiscordRpcSettings) => __TAURI_INVOKE<DiscordLines[]>("discord_preview", { show }),
+	/**  The balance and what the cloud offers. */
+	cloudStatus: () => __TAURI_INVOKE<CloudStatus>("cloud_status"),
+	/**  Send analyses to the cloud, or keep them on this computer. */
+	cloudSetEnabled: (on: boolean) => __TAURI_INVOKE<CloudStatus>("cloud_set_enabled", { on }),
+	/**  Redeem a top-up code (or a beta pass). */
+	cloudRedeem: (code: string) => __TAURI_INVOKE<CloudStatus>("cloud_redeem", { code }),
+	/**
+	 *  Open Stripe's payment page for a top-up of `cents` in the browser. The
+	 *  balance grows once Stripe tells the gateway it was paid.
+	 */
+	cloudAddFunds: (cents: number) => __TAURI_INVOKE<null>("cloud_add_funds", { cents }),
+	/**  Point AutoScene at another gateway (empty: the built-in one). */
+	cloudSetGateway: (url: string) => __TAURI_INVOKE<CloudStatus>("cloud_set_gateway", { url }),
 	/**  Newest first. Live updates arrive as `job:changed` / `job:progress`. */
 	jobsList: () => __TAURI_INVOKE<JobInfo[]>("jobs_list"),
 	jobCancel: (jobId: JobId) => __TAURI_INVOKE<void>("job_cancel", { jobId }),
@@ -508,6 +521,7 @@ export const events = {
 	castChanged: makeEvent<CastChanged>("cast:changed"),
 	catalogChanged: makeEvent<CatalogChanged>("catalog:changed"),
 	catalogProgress: makeEvent<CatalogProgress>("catalog:progress"),
+	cloudChanged: makeEvent<CloudChanged>("cloud:changed"),
 	exportChanged: makeEvent<ExportChanged>("export:changed"),
 	hardwareChanged: makeEvent<HardwareChanged>("hardware:changed"),
 	jobChanged: makeEvent<JobChanged>("job:changed"),
@@ -1120,6 +1134,50 @@ export type ClipRequest = {
 	end: number,
 	/**  Output file name without extension; generated when empty. */
 	name: string | null,
+};
+
+/**  This computer's cloud account as Settings shows it: a balance, never a key. */
+export type CloudAccount = {
+	/**  "€4.99". */
+	balance: string,
+	/**  About how many minutes of a standard scan it pays for. */
+	minutes: number,
+	supportId: string,
+	/**  Scans are free and unlimited until then (unix seconds). */
+	betaUntil: number | null,
+	blocked: boolean,
+	paused: boolean,
+	prices: CloudPrices,
+	topUps: CloudTopUp[],
+};
+
+/**
+ *  The cloud balance may have changed: a cloud scan ended, a code was
+ *  redeemed, a payment page closed (`cloud_status` answers anew).
+ */
+export type CloudChanged = null;
+
+/**  What one minute of video costs, as people read it. */
+export type CloudPrices = {
+	standard: string,
+	fast: string,
+	best: string,
+};
+
+export type CloudStatus = {
+	/**  A gateway is set up for this build (or by the person). */
+	available: boolean,
+	/**  Analyses run in the cloud. */
+	enabled: boolean,
+	account: CloudAccount | null,
+	/**  Why the account couldn't be read. */
+	error: Msg | null,
+};
+
+/**  A top-up on offer. */
+export type CloudTopUp = {
+	cents: number,
+	label: string,
 };
 
 /**  An entry of the command palette. */

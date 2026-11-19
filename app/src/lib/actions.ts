@@ -51,7 +51,7 @@ function currentProjectId(): string | undefined {
   return m?.[1]
 }
 
-export const SETTINGS_SECTIONS = ["general", "discord", "shortcuts", "updates", "about", "contributors"] as const
+export const SETTINGS_SECTIONS = ["general", "cloud", "discord", "shortcuts", "updates", "about", "contributors"] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 /**
  * What an old link names in Settings: its Plugins section, or a plugin's

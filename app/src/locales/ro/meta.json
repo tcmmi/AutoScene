@@ -9254,5 +9254,201 @@
   "settings:general.characters.scenes.description": {
     "state": "draft",
     "en": "637fac4a"
+  },
+  "settings:section.cloud": {
+    "state": "draft",
+    "en": "c0821b1e"
+  },
+  "settings:cloud.title": {
+    "state": "draft",
+    "en": "61dec6b7"
+  },
+  "settings:cloud.description": {
+    "state": "draft",
+    "en": "d6e5cf27"
+  },
+  "settings:cloud.unavailable": {
+    "state": "draft",
+    "en": "ff23804f"
+  },
+  "settings:cloud.use.label": {
+    "state": "draft",
+    "en": "7464eedb"
+  },
+  "settings:cloud.use.description": {
+    "state": "draft",
+    "en": "bc5346b4"
+  },
+  "settings:cloud.balance.label": {
+    "state": "draft",
+    "en": "4b7a788b"
+  },
+  "settings:cloud.balance.minutes": {
+    "state": "draft",
+    "en": "9cac458c"
+  },
+  "settings:cloud.balance.beta": {
+    "state": "draft",
+    "en": "3b785ba6"
+  },
+  "settings:cloud.balance.blocked": {
+    "state": "draft",
+    "en": "306b9056"
+  },
+  "settings:cloud.balance.paused": {
+    "state": "draft",
+    "en": "1b848db0"
+  },
+  "settings:cloud.supportId.label": {
+    "state": "draft",
+    "en": "51fb9d25"
+  },
+  "settings:cloud.supportId.description": {
+    "state": "draft",
+    "en": "ecbd653c"
+  },
+  "settings:cloud.supportId.copy": {
+    "state": "draft",
+    "en": "658f3664"
+  },
+  "settings:cloud.addFunds.label": {
+    "state": "draft",
+    "en": "aa4a5d18"
+  },
+  "settings:cloud.addFunds.description": {
+    "state": "draft",
+    "en": "5ac26b77"
+  },
+  "settings:cloud.redeem.label": {
+    "state": "draft",
+    "en": "ea4393a3"
+  },
+  "settings:cloud.redeem.description": {
+    "state": "draft",
+    "en": "cae2f23d"
+  },
+  "settings:cloud.redeem.placeholder": {
+    "state": "draft",
+    "en": "9ab6d946"
+  },
+  "settings:cloud.redeem.action": {
+    "state": "draft",
+    "en": "87443ed5"
+  },
+  "settings:cloud.redeem.done": {
+    "state": "draft",
+    "en": "c15433a1"
+  },
+  "settings:cloud.prices.label": {
+    "state": "draft",
+    "en": "a7246ca6"
+  },
+  "settings:cloud.prices.line": {
+    "state": "draft",
+    "en": "f9a97a3e"
+  },
+  "settings:cloud.failed": {
+    "state": "draft",
+    "en": "9f751a38"
+  },
+  "backend:cloud.balance": {
+    "state": "draft",
+    "en": "aa65cf6f"
+  },
+  "backend:cloud.blocked": {
+    "state": "draft",
+    "en": "480045e5"
+  },
+  "backend:cloud.browser": {
+    "state": "draft",
+    "en": "67beee25"
+  },
+  "backend:cloud.busy": {
+    "state": "draft",
+    "en": "238e1800"
+  },
+  "backend:cloud.codeInvalid": {
+    "state": "draft",
+    "en": "0f330d1e"
+  },
+  "backend:cloud.codeUsed": {
+    "state": "draft",
+    "en": "5cb94f31"
+  },
+  "backend:cloud.gatewayHttps": {
+    "state": "draft",
+    "en": "f8f2e090"
+  },
+  "backend:cloud.keychain": {
+    "state": "draft",
+    "en": "894efee1"
+  },
+  "backend:cloud.kind": {
+    "state": "draft",
+    "en": "a1d9af76"
+  },
+  "backend:cloud.kindOff": {
+    "state": "draft",
+    "en": "c2c9dbde"
+  },
+  "backend:cloud.offline": {
+    "state": "draft",
+    "en": "47fa1f21"
+  },
+  "backend:cloud.paused": {
+    "state": "draft",
+    "en": "87219ccb"
+  },
+  "backend:cloud.rateLimited": {
+    "state": "draft",
+    "en": "4cf12ab9"
+  },
+  "backend:cloud.settingFailed": {
+    "state": "draft",
+    "en": "04fc9d72"
+  },
+  "backend:cloud.tooLarge": {
+    "state": "draft",
+    "en": "c869d297"
+  },
+  "backend:cloud.unavailable": {
+    "state": "draft",
+    "en": "ff23804f"
+  },
+  "backend:cloud.unreadable": {
+    "state": "draft",
+    "en": "ef08ed1e"
+  },
+  "backend:engine.cloudStart": {
+    "state": "draft",
+    "en": "d4b4899e"
+  },
+  "backend:job.stage.cloudChecking": {
+    "state": "draft",
+    "en": "0be5a35d"
+  },
+  "backend:job.stage.cloudMeasuring": {
+    "state": "draft",
+    "en": "f879e0ed"
+  },
+  "backend:job.stage.cloudUploading": {
+    "state": "draft",
+    "en": "ef8d781d"
+  },
+  "backend:cloud.cancelled": {
+    "state": "draft",
+    "en": "7320345c"
+  },
+  "backend:cloud.checksum": {
+    "state": "draft",
+    "en": "6064f1f0"
+  },
+  "backend:cloud.gone": {
+    "state": "draft",
+    "en": "a2bf8d1e"
+  },
+  "backend:cloud.server": {
+    "state": "draft",
+    "en": "81d0e2d3"
   }
 }

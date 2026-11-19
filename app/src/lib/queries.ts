@@ -20,6 +20,7 @@ export const qk = {
   scanDefaults: ["scanDefaults"] as const,
   discordPreview: (show: DiscordRpcSettings) => ["discordPreview", show] as const,
   hardware: ["hardware"] as const,
+  cloud: ["cloud"] as const,
   mediaTools: ["mediaTools"] as const,
   presets: ["exportPresets"] as const,
   projects: ["projects"] as const,
@@ -93,6 +94,14 @@ export function useDiscordPreview(show: DiscordRpcSettings) {
     queryFn: () => commands.discordPreview(show),
     placeholderData: keepPreviousData,
   })
+}
+
+/**
+ * This computer's AutoScene Cloud account: refreshed by `cloud:changed`, and
+ * when the window comes back (from the browser's payment page).
+ */
+export function useCloudStatus() {
+  return useQuery({ queryKey: qk.cloud, queryFn: () => commands.cloudStatus(), retry: false, refetchOnWindowFocus: true })
 }
 
 /**

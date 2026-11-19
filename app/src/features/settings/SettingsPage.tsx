@@ -1,6 +1,6 @@
 import type * as React from "react"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { DownloadSimple, Info, Keyboard, SlidersHorizontal, Users } from "@/components/icons"
+import { Cloud, DownloadSimple, Info, Keyboard, SlidersHorizontal, Users } from "@/components/icons"
 import { DiscordMark } from "@/components/brand/DiscordMark"
 import { ContextArea } from "@/components/ui/context-area"
 import { ContextMenuItem, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuSeparator } from "@/components/ui/context-menu"
@@ -9,6 +9,7 @@ import { SETTINGS_SECTIONS, type SettingsSection, isAppSection, useAppActions } 
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import { AboutSection } from "./sections/AboutSection"
+import { CloudSection } from "./sections/CloudSection"
 import { ContributorsSection } from "./sections/ContributorsSection"
 import { DiscordSection } from "./sections/DiscordSection"
 import { GeneralSection } from "./sections/GeneralSection"
@@ -18,6 +19,7 @@ import { sectionLabel } from "./sections"
 
 const META: Record<SettingsSection, { icon: React.ReactNode; render: () => React.ReactNode }> = {
   general: { icon: <SlidersHorizontal />, render: () => <GeneralSection /> },
+  cloud: { icon: <Cloud />, render: () => <CloudSection /> },
   // White, and black on the gold of the open section: colours Discord allows.
   discord: {
     icon: <DiscordMark className="text-white group-data-[status=active]:text-black" />,

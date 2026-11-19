@@ -34,6 +34,8 @@ tauri-build.workspace = true
 [dependencies]
 as-core.workspace = true
 as-api.workspace = true
+# AutoScene Cloud: the gateway's client (cloud.rs).
+as-cloud = { workspace = true, features = ["client"] }
 # The catalog's row (plugins/catalog.rs).
 as-db.workspace = true
 as-engine.workspace = true
@@ -45,11 +47,14 @@ as-models.workspace = true
 as-plugin = { workspace = true, features = ["wasm"] }
 as-project.workspace = true
 base64.workspace = true
+# The cloud's device token (cloud.rs).
+keyring.workspace = true
 parking_lot.workspace = true
 # Which catalog version is newer than the one installed (plugins/catalog.rs).
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 specta.workspace = true
 specta-serde.workspace = true
 specta-util.workspace = true
@@ -57,6 +62,7 @@ specta-util.workspace = true
 sys-locale.workspace = true
 # Links pasted for plugins' sources (plugins/sources.rs).
 url.workspace = true
+uuid.workspace = true
 # Discord's local pipe or socket (discord.rs).
 tokio = { workspace = true, features = ["net"] }
 log = "0.4.34"

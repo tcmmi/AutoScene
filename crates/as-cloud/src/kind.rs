@@ -141,8 +141,9 @@ impl ScanKind {
         if f.anime != anime || f.fast != (self.depth == Depth::Fast) || f.best != (self.depth == Depth::Best) {
             return false;
         }
-        // The `animated` flag means nothing to anime's models.
-        if !anime && f.animated != (self.footage == Footage::Animated) {
+        // The `animated` flag means nothing to anime's models, nor to a job
+        // that looks for people alone (faces found before: `known`).
+        if !anime && !f.known && f.animated != (self.footage == Footage::Animated) {
             return false;
         }
         !(f.bodies || f.known) || self.people
@@ -180,6 +181,9 @@ mod tests {
         assert!(!cgi.admits(&FacesFlags::default()));
         // People cost nothing extra but must have been asked for.
         assert!(!cgi.admits(&FacesFlags { animated: true, bodies: true, ..Default::default() }));
+        // People alone, for faces of a 3D scan found before: no 3D flag.
+        let cgi_people = kind(Footage::Animated, Depth::Standard, true);
+        assert!(cgi_people.admits(&FacesFlags { known: true, bodies: true, ..Default::default() }));
         let people = kind(Footage::Live, Depth::Standard, true);
         assert!(people.admits(&FacesFlags { known: true, ..Default::default() }));
     }

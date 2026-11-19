@@ -16,6 +16,12 @@ use tauri_specta::Event;
 #[tauri_specta(event_name = "hardware:changed")]
 pub struct HardwareChanged;
 
+/// The cloud balance may have changed: a cloud scan ended, a code was
+/// redeemed, a payment page closed (`cloud_status` answers anew).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+#[tauri_specta(event_name = "cloud:changed")]
+pub struct CloudChanged;
+
 /// How far the download of NVIDIA's files is, in bytes of `total`.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 #[tauri_specta(event_name = "accel:progress")]

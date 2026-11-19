@@ -44,10 +44,23 @@ For that check to pass, the worker image must carry the same pinned FFmpeg build
 
 The worker points each job at its local copy, feeds the engine, and posts every reply line back. Both directions carry cursors (`after`, `first`), so a lost answer neither loses nor repeats lines. It ends in any of these cases:
 - the app closes the session;
-- `worker_idle_secs` pass without a job while no job is open (an engine `fatal` frees open jobs);
+- `worker_idle_secs` (15 minutes by default) pass without a job while no job is open (an engine `fatal` frees open jobs);
 - the session's deadline arrives: 30 minutes plus four times the video's length.
 
 Its token is good for its own session only.
+
+## In the app
+
+- **Settings → Cloud** shows the balance (never a key), about how many minutes it pays for, the Support ID, the prices, "Add funds" (Stripe's page in the browser) and "Redeem a code". A switch sends new analyses to the cloud. It can always be turned off, even when the account can't be read.
+- **Connecting:** the gateway's address is the library setting `cloud.gateway`, else `AUTOSCENE_CLOUD_URL`, else the built-in one (none yet: the section says the cloud isn't available). Only https is accepted, or plain http to this computer.
+- **The device token** lives in the system's keychain (service "AutoScene Cloud"). The hardware id the gateway sees is a SHA-256 of the machine id, salted with the gateway's address.
+- **A cloud analysis** (`app/src-tauri/src/cloud.rs`, `work.rs`):
+  1. A quick account check refuses what the gateway would refuse (blocked, paused, kind off, balance).
+  2. The file is hashed, uploaded (resuming after a break) and measured.
+  3. The usual passes run on an `Engine::remote` whose jobs go to the session.
+  4. The session is closed when the analysis ends, however it ends, and on quit.
+  5. A second connect after a failed job resumes the replies where they were.
+- **Session scope:** the scan kind is fixed when the session opens. Changing Fast Scan, Best, 3D, people or scenes during a cloud analysis makes the later jobs refused.
 
 ## Prices and money
 

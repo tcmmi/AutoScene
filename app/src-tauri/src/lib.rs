@@ -7,6 +7,7 @@
 //! take the UI down.
 
 mod accel;
+mod cloud;
 mod commands;
 mod discord;
 mod error;
@@ -143,6 +144,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
             commands::plugins::plugin_page_heartbeat,
             commands::discord::discord_view,
             commands::discord::discord_preview,
+            commands::cloud::cloud_status,
+            commands::cloud::cloud_set_enabled,
+            commands::cloud::cloud_redeem,
+            commands::cloud::cloud_add_funds,
+            commands::cloud::cloud_set_gateway,
             commands::jobs::jobs_list,
             commands::jobs::job_cancel,
             commands::jobs::jobs_clear_finished,
@@ -152,6 +158,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::DynRuntime> {
         ])
         .events(collect_events![
             events::HardwareChanged,
+            events::CloudChanged,
             events::AccelProgress,
             events::AccelFinished,
             events::MenuAction,

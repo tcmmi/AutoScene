@@ -55,6 +55,29 @@
     "unreadableCertificate": "The catalog's epoch certificate can't be read.",
     "unreadableSignature": "The catalog's signature can't be read."
   },
+  "cloud": {
+    "balance": "Your cloud balance doesn't cover this scan. Add funds in Settings → Cloud.",
+    "blocked": "Your cloud account is blocked. Contact support.",
+    "browser": "The payment page couldn't be opened in your browser.",
+    "busy": "The cloud is busy. Try again in a few minutes.",
+    "cancelled": "The cloud scan was stopped.",
+    "checksum": "The upload arrived damaged. Try again.",
+    "codeInvalid": "That code doesn't exist or has expired.",
+    "codeUsed": "That code was already used.",
+    "gatewayHttps": "The address must start with https://.",
+    "gone": "The cloud scan ended early. Try again.",
+    "keychain": "AutoScene couldn't use the system's keychain.",
+    "kind": "The kind of scan couldn't be read: {{e}}",
+    "kindOff": "This kind of scan isn't offered in the cloud right now.",
+    "offline": "AutoScene Cloud couldn't be reached. Check your connection.",
+    "paused": "Cloud scans are paused right now. Try again later.",
+    "rateLimited": "Too many tries. Wait an hour and try again.",
+    "server": "AutoScene Cloud had a problem. Try again later.",
+    "settingFailed": "The setting couldn't be saved.",
+    "tooLarge": "This file is too large for the cloud.",
+    "unavailable": "AutoScene Cloud isn't available yet.",
+    "unreadable": "The cloud couldn't read this file as video."
+  },
   "db": {
     "busy": "Another program is using AutoScene's data. Close it and try again.",
     "cannotOpen": "AutoScene couldn't open its data. Check that the drive is connected.",
@@ -70,6 +93,7 @@
   "engine": {
     "badRequest": "The analysis engine got a bad request.",
     "cancelled": "Cancelled.",
+    "cloudStart": "The cloud couldn't start the analysis.",
     "couldntStart": "The analysis engine couldn't start. Details are in the log.",
     "crashed": "The analysis engine stopped unexpectedly. Details are in the log.",
     "noEmbedding": "The engine gave no embedding.",
@@ -226,6 +250,9 @@
     "sharpeningPosters": "Sharpening posters",
     "stage": {
       "clip": "Clip {{n, number}} of {{total, number}}",
+      "cloudChecking": "Preparing the upload",
+      "cloudMeasuring": "Starting the cloud GPU",
+      "cloudUploading": "Uploading to AutoScene Cloud",
       "comparingCharacters": "Comparing characters",
       "creatingPoster": "Creating poster",
       "downloadingModel": "Downloading AI model",

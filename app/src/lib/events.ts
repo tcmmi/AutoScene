@@ -30,6 +30,7 @@ import { exportsQuery, isMadePack, qk, queryClient } from "./queries"
  * | catalog:progress | the install review's download (progress only)      |
  * | plugin-page:event | an open plugin page (PluginFrame listens)         |
  * | hardware:changed | hardware (the graphics the analysis runs on)       |
+ * | cloud:changed    | cloud (the balance: a cloud scan ended, a code)    |
  * | plugins:opened   | packages opened from outside (useOpenedPackages listens) |
  * | accel:progress   | hardware: the bar of NVIDIA's download             |
  * | accel:finished   | settings; toast unless Settings is open            |
@@ -118,6 +119,7 @@ export function startEventBridge(where: { goPlugins: () => void; goRescan?: (pid
       if (payload.pluginId == null) void queryClient.invalidateQueries({ queryKey: qk.settings })
     }),
     events.hardwareChanged.listen(() => void queryClient.invalidateQueries({ queryKey: qk.hardware })),
+    events.cloudChanged.listen(() => void queryClient.invalidateQueries({ queryKey: qk.cloud })),
     events.catalogChanged.listen(({ payload }) => {
       // A check may offer new versions, and withdraw installed plugins.
       void queryClient.invalidateQueries({ queryKey: qk.catalog })

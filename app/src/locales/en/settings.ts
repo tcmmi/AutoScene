@@ -11,6 +11,7 @@ export default {
   /** The sections in the list on the left; each is also the heading of its page and the end of the window title. */
   section: {
     general: "General",
+    cloud: "Cloud",
     discord: "Discord",
     shortcuts: "Shortcuts",
     updates: "Updates",
@@ -203,6 +204,51 @@ export default {
         failed: "Couldn't remove NVIDIA's files",
       },
     },
+  },
+
+  /** Settings → Cloud: scans on a rented GPU, paid from a balance. */
+  cloud: {
+    title: "AutoScene Cloud",
+    description: "Analyse on a fast cloud GPU instead of this computer. You pay per minute of video from a prepaid balance.",
+    unavailable: "AutoScene Cloud isn't available yet.",
+    use: {
+      /** Label of the switch and its accessible name. */
+      label: "Analyse in the cloud",
+      description: "New analyses upload the episode, run on a cloud GPU and come back here. The file is deleted from the cloud right after.",
+    },
+    balance: {
+      label: "Balance",
+      /** Under the balance: about how long a standard scan it pays for. */
+      minutes_one: "About {{count}} minute of video",
+      minutes_other: "About {{count}} minutes of video",
+      /** A free beta pass: no balance is used until the date. */
+      beta: "Beta pass: free scans until {{date}}",
+      blocked: "This account is blocked. Contact support with your Support ID.",
+      paused: "Cloud scans are paused right now.",
+    },
+    supportId: {
+      label: "Support ID",
+      description: "Give this when you ask for help. It isn't secret.",
+      copy: "Copy",
+    },
+    addFunds: {
+      label: "Add funds",
+      description: "Opens a secure payment page (card or PayPal) in your browser. The balance updates once you've paid.",
+    },
+    redeem: {
+      label: "Redeem a code",
+      description: "A top-up or beta code, like ABCD-EFGH-JKMN-PQRS.",
+      placeholder: "XXXX-XXXX-XXXX-XXXX",
+      /** The button. */
+      action: "Redeem",
+      done: "Code redeemed",
+    },
+    prices: {
+      label: "Prices per minute of video",
+      /** The three scans and what each costs per minute: {{price}} is like "€0.01". */
+      line: "Standard {{standard}} · Fast Scan {{fast}} · Best {{best}}",
+    },
+    failed: "Couldn't reach AutoScene Cloud",
   },
 
   discord: {

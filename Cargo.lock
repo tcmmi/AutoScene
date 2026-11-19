@@ -666,6 +666,7 @@ name = "autoscene-app"
 version = "1.0.6-BETA"
 dependencies = [
  "as-api",
+ "as-cloud",
  "as-core",
  "as-db",
  "as-engine",
@@ -677,6 +678,7 @@ dependencies = [
  "as-project",
  "as-testkit",
  "base64 0.23.1",
+ "keyring",
  "libc",
  "log",
  "minisign",
@@ -707,6 +709,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "uuid",
  "webkit2gtk",
  "webview2-com",
  "windows-core 0.62.2",

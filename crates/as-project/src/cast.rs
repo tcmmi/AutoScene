@@ -153,6 +153,17 @@ fn box_tag(bbox: [f32; 4]) -> String {
     format!("{:06x}", h & 0xff_ffff)
 }
 
+/// How this project's faces pass looks, as the faces jobs will say it:
+/// what a cloud scan session is opened for before any job is sent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScanFlags {
+    pub anime: bool,
+    pub fast: bool,
+    pub best: bool,
+    /// 3D animation (searched at more sizes).
+    pub animated: bool,
+}
+
 /// What the engine needs to find a media's faces.
 #[derive(Clone, Debug)]
 pub struct FacesPlan {
@@ -909,6 +920,18 @@ impl Project {
     /// finds them now.
     fn faces_key_now(&self, model: &str) -> ProjectResult<String> {
         Ok(faces_key(model, self.searched_harder()?, self.fast_scan()))
+    }
+
+    /// The flags this project's faces jobs carry now (see [`FacesPlan`]).
+    pub fn scan_flags(&self) -> ProjectResult<ScanFlags> {
+        let model = self.face_embedder();
+        let key = self.faces_key_now(model)?;
+        Ok(ScanFlags {
+            anime: anime_embedder(model),
+            fast: found_fast(&key),
+            best: model == as_models::ids::ANIME_BERKELEY,
+            animated: self.searched_harder()? && !anime_embedder(model),
+        })
     }
 
     /// Whether the faces of `id` are being found (or were found) another way

@@ -139,8 +139,10 @@ const fn upload_ttl() -> u64 {
 const fn app_idle() -> u64 {
     30 * 60
 }
+/// Long enough for the app's own work between passes (grouping a large
+/// cast); a closed session ends the worker at once anyway.
 const fn worker_idle() -> u64 {
-    120
+    900
 }
 const fn worker_timeout() -> u64 {
     300

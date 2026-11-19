@@ -19,6 +19,11 @@
 //! again. A job it has a part in and finishes clears the count. A job it has
 //! no part in (shots, live-action faces) counts neither way: a driver reset
 //! under one is a crash like any other. "Processor only" never starts it.
+//!
+//! An engine somewhere else ([`Remote`], AutoScene Cloud) takes the same
+//! jobs over the same protocol. It gets one attempt per job (its session
+//! can't be started again from here) and as long to say it is ready as its
+//! [`Remote::start_timeout`] allows.
 
 use std::cell::Cell;
 use std::ffi::OsString;
@@ -95,6 +100,26 @@ impl EngineError {
     fn saving(detail: String) -> Self {
         Self::Failed { message: msg!("engine.savingFailed", "Saving the analysis failed."), detail }
     }
+}
+
+/// An engine somewhere else (AutoScene Cloud): requests go out as JSON
+/// lines, reply lines come back. The app implements it; the engine client
+/// treats it as a process it can't restart.
+pub trait Remote: Send + Sync {
+    /// Connect: reply lines go into `replies` until the far end ends, when
+    /// the sender is dropped.
+    fn connect(&self, replies: mpsc::Sender<String>) -> Result<Box<dyn RemoteIo>, String>;
+    /// How long its engine may take to say it is ready (a cold start and a
+    /// download can take minutes).
+    fn start_timeout(&self) -> Duration;
+}
+
+/// The far end of a [`Remote`].
+pub trait RemoteIo: Send {
+    fn send(&mut self, request: &str) -> Result<(), String>;
+    fn alive(&mut self) -> bool;
+    /// Let it go: no more requests.
+    fn stop(&mut self);
 }
 
 /// How to start the engine process.
@@ -311,9 +336,14 @@ enum Msg {
     Exited,
 }
 
+/// How a running engine is reached.
+enum Io {
+    Child { child: Child, stdin: ChildStdin },
+    Remote(Box<dyn RemoteIo>),
+}
+
 struct Proc {
-    child: Child,
-    stdin: ChildStdin,
+    io: Io,
     replies: mpsc::Receiver<Msg>,
     device: String,
     /// The launch it was started with ([`Engine::set_launch`] counts them).
@@ -328,19 +358,48 @@ struct Proc {
 impl Proc {
     fn send(&mut self, r: &Request) -> std::io::Result<()> {
         let mut line = serde_json::to_string(r).expect("requests always serialise");
-        line.push('\n');
-        self.stdin.write_all(line.as_bytes())?;
-        self.stdin.flush()
+        match &mut self.io {
+            Io::Child { stdin, .. } => {
+                line.push('\n');
+                stdin.write_all(line.as_bytes())?;
+                stdin.flush()
+            }
+            Io::Remote(io) => io.send(&line).map_err(std::io::Error::other),
+        }
     }
 
     fn alive(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None))
+        match &mut self.io {
+            Io::Child { child, .. } => matches!(child.try_wait(), Ok(None)),
+            Io::Remote(io) => io.alive(),
+        }
     }
 
     /// Kill (if still running) and reap.
     fn kill(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        match &mut self.io {
+            Io::Child { child, .. } => {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            Io::Remote(io) => io.stop(),
+        }
+    }
+
+    /// How it ended, for the log (after [`Proc::kill`]).
+    fn status(&mut self) -> String {
+        match &mut self.io {
+            Io::Child { child, .. } => child.wait().map(|s| s.to_string()).unwrap_or_else(|e| e.to_string()),
+            Io::Remote(_) => "the cloud session ended".into(),
+        }
+    }
+
+    /// Its process id; 0 for a remote engine.
+    fn pid(&self) -> u32 {
+        match &self.io {
+            Io::Child { child, .. } => child.id(),
+            Io::Remote(_) => 0,
+        }
     }
 }
 
@@ -412,6 +471,8 @@ pub struct Engine {
     hardware: Mutex<Option<Hardware>>,
     /// What became of NVIDIA's engine in the last engine to start.
     accel: Mutex<Option<AccelState>>,
+    /// Jobs go to this engine somewhere else, not to a process here.
+    remote: Option<std::sync::Arc<dyn Remote>>,
     /// NVIDIA's engine failed this session: engines start without it.
     pack_broken: AtomicBool,
     /// Where the last job's models ran, as its engine last said.
@@ -422,7 +483,16 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// An engine that runs its jobs on `remote` (AutoScene Cloud).
+    pub fn remote(remote: std::sync::Arc<dyn Remote>) -> Self {
+        Self::build(Launch::default(), Some(remote))
+    }
+
     pub fn new(launch: Launch) -> Self {
+        Self::build(launch, None)
+    }
+
+    fn build(launch: Launch, remote: Option<std::sync::Arc<dyn Remote>>) -> Self {
         Self {
             launch: Mutex::new((launch, 1)),
             proc: Mutex::new(None),
@@ -431,6 +501,7 @@ impl Engine {
             busy: AtomicU64::new(0),
             hardware: Mutex::new(None),
             accel: Mutex::new(None),
+            remote,
             pack_broken: AtomicBool::new(false),
             devices: Mutex::new(None),
             decoder: Mutex::new(None),
@@ -814,7 +885,9 @@ impl Engine {
                 _ => {}
             }
             match r {
-                Err(EngineError::Crashed(why)) if attempt + 1 < ATTEMPTS && !cancel.is_cancelled() => {
+                Err(EngineError::Crashed(why))
+                    if attempt + 1 < ATTEMPTS && !cancel.is_cancelled() && self.remote.is_none() =>
+                {
                     attempt += 1;
                     tracing::warn!(%why, "engine went away; resuming in a fresh one");
                 }
@@ -982,7 +1055,7 @@ impl Engine {
                 Ok(Msg::Exited) | Err(mpsc::RecvTimeoutError::Disconnected) => {
                     let mut p = slot.take().expect("running");
                     p.kill();
-                    let status = p.child.wait().map(|s| s.to_string()).unwrap_or_else(|e| e.to_string());
+                    let status = p.status();
                     self.pid.store(0, Ordering::Relaxed);
                     // A failed save outranks the crash: retrying past an
                     // unsaved chunk would leave a hole.
@@ -1007,6 +1080,12 @@ impl Engine {
     /// without it starts right away.
     fn start(&self, cancel: &CancelToken) -> Result<Proc, EngineError> {
         let (launch, generation) = self.launch();
+        if let Some(remote) = &self.remote {
+            return self.connect(remote.as_ref(), generation, cancel).map_err(|e| match e {
+                StartError::Died(detail) => EngineError::Start { message: couldnt_start(), detail },
+                StartError::Other(e) => e,
+            });
+        }
         if let Some(dir) = self.pack(&launch) {
             match self.spawn(&launch, generation, Some(dir.clone()), cancel) {
                 Ok(p) => return Ok(p),
@@ -1073,8 +1152,48 @@ impl Engine {
             }
             let _ = tx.send(Msg::Exited);
         });
-        let mut p = Proc { child, stdin, replies: rx, device: String::new(), generation, pack, pack_active: false };
-        let deadline = Instant::now() + START_TIMEOUT;
+        let p = Proc {
+            io: Io::Child { child, stdin },
+            replies: rx,
+            device: String::new(),
+            generation,
+            pack,
+            pack_active: false,
+        };
+        self.ready(p, START_TIMEOUT, cancel)
+    }
+
+    /// Connect to `remote` and wait until its engine is ready.
+    fn connect(&self, remote: &dyn Remote, generation: u64, cancel: &CancelToken) -> Result<Proc, StartError> {
+        let (lines_tx, lines_rx) = mpsc::channel::<String>();
+        let io = remote.connect(lines_tx).map_err(|detail| {
+            StartError::Other(EngineError::Start {
+                message: msg!("engine.cloudStart", "The cloud couldn't start the analysis."),
+                detail,
+            })
+        })?;
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in lines_rx {
+                match serde_json::from_str::<Reply>(&line) {
+                    Ok(r) => {
+                        if tx.send(Msg::Reply(r)).is_err() {
+                            return;
+                        }
+                    }
+                    Err(e) => tracing::warn!(target: "engine", error = %e, "unreadable cloud reply: {line}"),
+                }
+            }
+            let _ = tx.send(Msg::Exited);
+        });
+        let p =
+            Proc { io: Io::Remote(io), replies: rx, device: String::new(), generation, pack: None, pack_active: false };
+        self.ready(p, remote.start_timeout(), cancel)
+    }
+
+    /// Wait until the engine in `p` says it is ready.
+    fn ready(&self, mut p: Proc, timeout: Duration, cancel: &CancelToken) -> Result<Proc, StartError> {
+        let deadline = Instant::now() + timeout;
         loop {
             if cancel.is_cancelled() {
                 p.kill();
@@ -1083,8 +1202,8 @@ impl Engine {
             let left = deadline.saturating_duration_since(Instant::now());
             match p.replies.recv_timeout(left.min(Duration::from_millis(100))) {
                 Ok(Msg::Reply(Reply::Ready { device, hardware, accel })) => {
-                    tracing::info!(%device, pid = p.child.id(), ?accel, "analysis engine ready on {hardware}");
-                    self.pid.store(p.child.id(), Ordering::Relaxed);
+                    tracing::info!(%device, pid = p.pid(), ?accel, "analysis engine ready on {hardware}");
+                    self.pid.store(p.pid(), Ordering::Relaxed);
                     p.device = device;
                     p.pack_active = p.pack.is_some() && accel == AccelState::Active;
                     *self.hardware.lock() = Some(hardware.clone());
@@ -1100,7 +1219,7 @@ impl Engine {
                 Err(mpsc::RecvTimeoutError::Timeout) if !left.is_zero() => {}
                 Ok(Msg::Exited) | Err(_) => {
                     p.kill();
-                    let status = p.child.wait().map(|s| s.to_string()).unwrap_or_else(|e| e.to_string());
+                    let status = p.status();
                     return Err(StartError::Died(if left.is_zero() {
                         "no ready message in time".into()
                     } else {
@@ -1240,5 +1359,94 @@ mod tests {
         let raw: &[u8] = b"one\r\n\xff\xfe bad\ntwo";
         let lines: Vec<String> = pipe_lines(raw).collect();
         assert_eq!(lines, ["one", "\u{fffd}\u{fffd} bad", "two"]);
+    }
+
+    /// A remote engine that answers a shots job, or ends after `die_after`
+    /// requests.
+    struct FakeCloud {
+        die_after: usize,
+    }
+
+    struct FakeIo {
+        replies: Option<mpsc::Sender<String>>,
+        seen: usize,
+        die_after: usize,
+    }
+
+    impl Remote for FakeCloud {
+        fn connect(&self, replies: mpsc::Sender<String>) -> Result<Box<dyn RemoteIo>, String> {
+            replies.send(r#"{"event":"ready","device":"GPU (CUDA, cloud)"}"#.into()).unwrap();
+            Ok(Box::new(FakeIo { replies: Some(replies), seen: 0, die_after: self.die_after }))
+        }
+
+        fn start_timeout(&self) -> Duration {
+            Duration::from_secs(5)
+        }
+    }
+
+    impl RemoteIo for FakeIo {
+        fn send(&mut self, request: &str) -> Result<(), String> {
+            let req: serde_json::Value = serde_json::from_str(request).unwrap();
+            self.seen += 1;
+            if self.seen > self.die_after {
+                // The session ends: no more replies.
+                self.replies = None;
+                return Ok(());
+            }
+            let id = req["id"].as_u64().unwrap_or(0);
+            let tx = self.replies.as_ref().ok_or("ended")?;
+            for line in [
+                format!(r#"{{"event":"progress","id":{id},"fraction":0.5}}"#),
+                format!(r#"{{"event":"shot_chunk","id":{id},"start":0,"len":4,"signals":"AQID"}}"#),
+                format!(r#"{{"event":"done","id":{id}}}"#),
+            ] {
+                tx.send(line).map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+
+        fn alive(&mut self) -> bool {
+            self.replies.is_some()
+        }
+
+        fn stop(&mut self) {
+            self.replies = None;
+        }
+    }
+
+    fn shots(engine: &Engine) -> (Result<(), EngineError>, Vec<Vec<u8>>) {
+        let mut chunks = Vec::new();
+        let r = engine.shots(
+            PathBuf::from("ep.mkv"),
+            crate::protocol::tests::info(),
+            vec![1],
+            0,
+            4,
+            &CancelToken::new(),
+            |e| {
+                if let ShotsEvent::Chunk { signals, .. } = e {
+                    chunks.push(signals);
+                }
+                Ok(())
+            },
+        );
+        (r, chunks)
+    }
+
+    #[test]
+    fn a_remote_engine_runs_jobs_like_a_local_one() {
+        let engine = Engine::remote(std::sync::Arc::new(FakeCloud { die_after: usize::MAX }));
+        let (r, chunks) = shots(&engine);
+        r.unwrap();
+        assert_eq!(chunks, [vec![1, 2, 3]]);
+        assert_eq!(engine.device().as_deref(), Some("GPU (CUDA, cloud)"));
+    }
+
+    #[test]
+    fn a_remote_engine_that_ends_fails_the_job_without_retrying() {
+        let engine = Engine::remote(std::sync::Arc::new(FakeCloud { die_after: 0 }));
+        let (r, chunks) = shots(&engine);
+        assert!(matches!(r, Err(EngineError::Crashed(_))), "{r:?}");
+        assert!(chunks.is_empty());
     }
 }

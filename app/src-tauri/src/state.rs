@@ -269,6 +269,9 @@ pub fn shutdown_work(app: &AppHandle) {
         if let Some(plugins) = &state.plugins {
             plugins.set_quitting(true);
         }
+        // Cloud scans stop and are priced now: the app is about to be gone,
+        // and a cancel sent by a stopping job might not reach the cloud.
+        crate::cloud::close_all();
         std::thread::scope(|s| {
             // Plugins' services stop beside the jobs, each in its own grace.
             if let Some(plugins) = &state.plugins {

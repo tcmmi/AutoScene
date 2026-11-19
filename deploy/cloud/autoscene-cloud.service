@@ -1,0 +1,27 @@
+[Unit]
+Description=AutoScene Cloud gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=autoscene-cloud
+Group=autoscene-cloud
+ExecStart=/opt/autoscene-cloud/bin/autoscene-cloud-gateway /etc/autoscene-cloud/gateway.toml
+EnvironmentFile=/etc/autoscene-cloud/gateway.env
+Environment=RUST_LOG=info
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadWritePaths=/var/lib/autoscene-cloud
+
+[Install]
+WantedBy=multi-user.target

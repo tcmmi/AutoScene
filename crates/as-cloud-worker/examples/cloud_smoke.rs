@@ -174,10 +174,10 @@ fn cloud(o: &Opts, jobs: &[Value], duration_ms: u64) -> Res<Tally> {
             let r = c.events(&s.id, after)?;
             after = r.next;
             for line in &r.lines {
-                if let Some(id) = tally.take(&serde_json::from_str(line)?) {
-                    if id == want || id == 0 {
-                        break 'job;
-                    }
+                if let Some(id) = tally.take(&serde_json::from_str(line)?)
+                    && (id == want || id == 0)
+                {
+                    break 'job;
                 }
             }
             if r.ended {
@@ -215,10 +215,10 @@ fn local(o: &Opts, engine: &Path, jobs: &[Value]) -> Res<Tally> {
         writeln!(stdin, "{job}")?;
         stdin.flush()?;
         for line in lines.by_ref() {
-            if let Some(id) = tally.take(&serde_json::from_str(&line?)?) {
-                if id == want || id == 0 {
-                    break;
-                }
+            if let Some(id) = tally.take(&serde_json::from_str(&line?)?)
+                && (id == want || id == 0)
+            {
+                break;
             }
         }
         tally.secs.push(t.elapsed().as_secs_f64());

@@ -1,0 +1,30 @@
+[package]
+name = "as-cloud-worker"
+description = "AutoScene Cloud's GPU worker: fetches one session's file, runs the analysis engine on it, and relays the app's jobs and the engine's replies through the gateway"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "autoscene-cloud-worker"
+path = "src/main.rs"
+
+[dependencies]
+as-cloud.workspace = true
+as-core.workspace = true
+as-media.workspace = true
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+ureq.workspace = true
+
+[dev-dependencies]
+as-cloud = { workspace = true, features = ["client"] }
+as-cloud-gateway = { path = "../as-cloud-gateway" }
+axum = "=0.8.9"
+tempfile.workspace = true
+tokio = { workspace = true, features = ["net"] }

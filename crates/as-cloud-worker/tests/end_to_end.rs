@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use as_cloud::admin;
 use as_cloud::client::{Client, ClientError, file_sha256};
-use as_cloud::{Depth, ErrorCode, Footage, RegisterRequest, ScanKind, SessionRequest, Switch};
+use as_cloud::{Depth, ErrorCode, Footage, RegisterRequest, ScanKind, SessionRequest, Stage, Switch};
 use as_cloud_gateway::config::{self, Config};
 use as_cloud_gateway::db::Db;
 use as_cloud_gateway::dispatch::{Local, Prober};
@@ -58,7 +58,22 @@ fn start_with(prober: Box<dyn Prober>) -> Cloud {
 }
 
 /// `verify`: the worker reads the file itself and refuses jobs that don't fit it.
+/// The cloud is open: Stripe's test mode may sell here.
 fn start_opts(prober: Box<dyn Prober>, verify: bool) -> Cloud {
+    let cloud = start_cfg(prober, verify, None, |c| c.stripe.test_mode_ok = true);
+    let (status, stats) = admin_post(&cloud, admin::STAGE, json!({"stage": "open"}));
+    assert_eq!((status, stats["stage"].as_str()), (200, Some("open")));
+    cloud
+}
+
+/// A gateway with `tweak` made to its settings, its database holding `stored` as
+/// the launch stage (none: it starts hidden).
+fn start_cfg(
+    prober: Box<dyn Prober>,
+    verify: bool,
+    stored: Option<&'static str>,
+    tweak: impl FnOnce(&mut Config) + Send + 'static,
+) -> Cloud {
     let data = tempfile::tempdir().unwrap();
     let (tx, rx) = std::sync::mpsc::channel();
     let dir = data.path().to_path_buf();
@@ -69,7 +84,7 @@ fn start_opts(prober: Box<dyn Prober>, verify: bool) -> Cloud {
             let admin = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let (pa, aa): (SocketAddr, SocketAddr) = (public.local_addr().unwrap(), admin.local_addr().unwrap());
             let worker = PathBuf::from(env!("CARGO_BIN_EXE_autoscene-cloud-worker"));
-            let cfg = Config {
+            let mut cfg = Config {
                 listen: pa,
                 admin_listen: aa,
                 public_base: format!("http://{pa}"),
@@ -89,6 +104,7 @@ fn start_opts(prober: Box<dyn Prober>, verify: bool) -> Cloud {
                 stripe: config::Stripe { webhook_secret: WEBHOOK.into(), ..Default::default() },
                 backend: config::Backend::None,
             };
+            tweak(&mut cfg);
             let backend = Box::new(Local {
                 worker: worker.clone(),
                 args: [
@@ -104,6 +120,9 @@ fn start_opts(prober: Box<dyn Prober>, verify: bool) -> Cloud {
                 .concat(),
             });
             let db = Db::open(&dir.join("gateway.db")).unwrap();
+            if let Some(stage) = stored {
+                db.set_setting("stage", stage).unwrap();
+            }
             let gw = Gateway::new(cfg, db, backend, prober, Box::new(NoStripe)).unwrap();
             tx.send((pa, aa)).unwrap();
             serve_on(gw, public, admin, std::future::pending()).await.unwrap();
@@ -476,4 +495,65 @@ fn the_worker_refuses_jobs_that_dont_fit_its_own_copy() {
     .unwrap();
     until_done(&app, &s.id, 2);
     assert_eq!(app.close(&s.id).unwrap().charged, 20_000);
+}
+
+#[test]
+fn the_launch_stage_decides_what_the_cloud_takes() {
+    // Stripe's test key, and no leave to sell with it: the cloud can't open.
+    let test_key = |c: &mut Config| {
+        c.stripe.secret_key = "sk_test_for_the_tests".into();
+        c.stripe.test_mode_ok = false;
+    };
+    let cloud = start_cfg(Box::new(TwoMinutes), false, None, test_key);
+    let nobody = Client::new(cloud.base.clone(), None);
+    assert_eq!(nobody.info().unwrap().stage, Stage::Hidden, "hidden until the owner moves it");
+    let reg = RegisterRequest { hwid: format!("{:064x}", 1), platform: "test".into(), app_version: "1.0.6".into() };
+    assert_eq!(code(Client::new(cloud.base.clone(), None).register(&reg).unwrap_err()), ErrorCode::Closed);
+
+    // The beta: codes and scans, no payments.
+    let (status, stats) = admin_post(&cloud, admin::STAGE, json!({"stage": "beta"}));
+    assert_eq!((status, stats["stage"].as_str(), stats["live_payments"].as_bool()), (200, Some("beta"), Some(false)));
+    let app = funded(&cloud, 1);
+    assert_eq!(app.account().unwrap().stage, Stage::Beta);
+    assert_eq!(code(app.checkout(500).unwrap_err()), ErrorCode::Closed);
+    let ep = file(cloud.data.path(), 1 << 20);
+    let sha = file_sha256(&ep, |_| true).unwrap();
+    let req = SessionRequest { kind: ANIME, size: 1 << 20, sha256: sha, duration_ms: 120_000 };
+    // A whole scan runs and is paid from the balance an admin gave.
+    let s = app.open_session(&req).unwrap();
+    app.upload(&s.id, &ep, |_, _| true).unwrap();
+    assert_eq!(app.ready(&s.id).unwrap().price, 20_000);
+    app.send_jobs(&s.id, vec![json!({"op": "faces", "id": 1, "path": "x", "anime": true})]).unwrap();
+    until_done(&app, &s.id, 1);
+    assert_eq!(app.close(&s.id).unwrap().charged, 20_000);
+
+    // Opening needs a key that takes real money: refused, the beta goes on.
+    let (status, _) = admin_post(&cloud, admin::STAGE, json!({"stage": "open"}));
+    assert_eq!(status, 400);
+    assert_eq!(nobody.info().unwrap().stage, Stage::Beta);
+
+    // Hidden while a file is uploaded: no GPU starts, nothing is charged.
+    let s = app.open_session(&req).unwrap();
+    app.upload(&s.id, &ep, |_, _| true).unwrap();
+    assert_eq!(admin_post(&cloud, admin::STAGE, json!({"stage": "hidden"})).0, 200);
+    assert_eq!(code(app.ready(&s.id).unwrap_err()), ErrorCode::Closed);
+    let _ = app.close(&s.id);
+    // The account still shows; nothing new is taken.
+    let a = app.account().unwrap();
+    assert_eq!((a.stage, a.balance), (Stage::Hidden, 1_000_000 - 20_000));
+    assert_eq!(code(app.open_session(&req).unwrap_err()), ErrorCode::Closed);
+    let (_, made) = admin_post(&cloud, admin::CODES, json!({"worth": {"kind": "credit", "cents": 100}, "count": 1}));
+    assert_eq!(code(app.redeem(made["codes"][0].as_str().unwrap()).unwrap_err()), ErrorCode::Closed);
+    assert_eq!(code(app.checkout(500).unwrap_err()), ErrorCode::Closed);
+
+    // `open` stored while the key is a test one (swapped after opening): it acts as the beta.
+    let swapped = start_cfg(Box::new(TwoMinutes), false, Some("open"), test_key);
+    assert_eq!(Client::new(swapped.base.clone(), None).info().unwrap().stage, Stage::Beta);
+    assert_eq!(admin_get(&swapped, admin::STATS)["stage"], "beta");
+    assert_eq!(code(device(&swapped, 1).checkout(500).unwrap_err()), ErrorCode::Closed);
+
+    // Open, where payments may be sold: the payment page too.
+    let open = start();
+    assert_eq!(Client::new(open.base.clone(), None).info().unwrap().stage, Stage::Open);
+    assert_eq!(device(&open, 1).checkout(500).unwrap(), "https://checkout.test/500");
 }

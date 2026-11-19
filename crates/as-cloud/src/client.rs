@@ -11,8 +11,9 @@ use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    Account, ApiError, CheckoutReply, CheckoutRequest, CloseReply, ErrorCode, EventsReply, JobsRequest, ReadyReply,
-    RedeemReply, RedeemRequest, RegisterReply, RegisterRequest, SessionReply, SessionRequest, UploadState, path,
+    Account, ApiError, CheckoutReply, CheckoutRequest, CloseReply, ErrorCode, EventsReply, Info, JobsRequest,
+    ReadyReply, RedeemReply, RedeemRequest, RegisterReply, RegisterRequest, SessionReply, SessionRequest, UploadState,
+    path,
 };
 
 /// Bytes sent per upload request: a failed one costs at most this much again.
@@ -115,6 +116,12 @@ impl Client {
             .call()
             .map_err(|e| ClientError::Net(e.to_string()))?;
         Self::read(resp)
+    }
+
+    /// How far the cloud is open, asked before this computer has an account
+    /// (none is made while it's hidden).
+    pub fn info(&self) -> ClientResult<Info> {
+        self.get(path::INFO, Duration::from_secs(15))
     }
 
     /// This device's account, made on its first call; keeps the token.

@@ -11,6 +11,8 @@ ffprobe = "/usr/bin/ffprobe"
 [stripe]
 success_url = "https://autoscene.io/paid"
 cancel_url = "https://autoscene.io/cancelled"
+# The cloud opens (Add funds for everyone) only with the live key in gateway.env.
+# test_mode_ok = true would let it open with a test key: staging only.
 
 [backend]
 # No GPU provider yet: scans stay paused (POST /admin/pause).

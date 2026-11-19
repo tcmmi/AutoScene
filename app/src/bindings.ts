@@ -1164,11 +1164,19 @@ export type CloudPrices = {
 	best: string,
 };
 
+/**
+ *  How far AutoScene Cloud is open: hidden before the launch, then a closed
+ *  beta (codes, no payments), then open to everyone.
+ */
+export type CloudStage = "hidden" | "beta" | "open";
+
 export type CloudStatus = {
 	/**  A gateway is set up for this build (or by the person). */
 	available: boolean,
 	/**  Analyses run in the cloud. */
 	enabled: boolean,
+	/**  How far the cloud is open; unknown while it can't be reached. */
+	stage: CloudStage | null,
 	account: CloudAccount | null,
 	/**  Why the account couldn't be read. */
 	error: Msg | null,

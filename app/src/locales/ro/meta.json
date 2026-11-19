@@ -9279,6 +9279,18 @@
     "state": "draft",
     "en": "bc5346b4"
   },
+  "settings:cloud.use.hiddenHint": {
+    "state": "draft",
+    "en": "f0a34213"
+  },
+  "settings:cloud.beta.label": {
+    "state": "draft",
+    "en": "be0f6435"
+  },
+  "settings:cloud.beta.description": {
+    "state": "draft",
+    "en": "e17db658"
+  },
   "settings:cloud.balance.label": {
     "state": "draft",
     "en": "4b7a788b"
@@ -9450,5 +9462,17 @@
   "backend:cloud.server": {
     "state": "draft",
     "en": "81d0e2d3"
+  },
+  "backend:cloud.betaBalance": {
+    "state": "draft",
+    "en": "3e80dac2"
+  },
+  "backend:cloud.closed": {
+    "state": "draft",
+    "en": "5d77aac5"
+  },
+  "backend:cloud.hidden": {
+    "state": "draft",
+    "en": "a762e48a"
   }
 }

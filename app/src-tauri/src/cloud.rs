@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use as_cloud::client::{Client, ClientError, file_sha256};
-use as_cloud::{Account, ApiError, Depth, ErrorCode, Footage, RegisterRequest, ScanKind, SessionRequest};
+use as_cloud::{Account, ApiError, Depth, ErrorCode, Footage, RegisterRequest, ScanKind, SessionRequest, Stage};
 use as_core::{CancelToken, Msg, msg};
 use as_engine::Engine;
 use as_engine::client::{Remote, RemoteIo};
@@ -39,6 +39,11 @@ const KEYCHAIN: &str = "AutoScene Cloud";
 pub enum CloudError {
     /// No gateway is set up for this build.
     Unavailable,
+    /// The cloud isn't open ([`Stage::Hidden`]): nothing new is taken.
+    Hidden,
+    /// The closed beta: a scan needs a beta pass (or balance an admin gave),
+    /// and money can't be added yet.
+    NeedsPass,
     Gateway(ClientError),
     Keychain(String),
     /// The person stopped it.
@@ -49,6 +54,14 @@ impl CloudError {
     pub fn msg(&self) -> Msg {
         match self {
             CloudError::Unavailable => msg!("cloud.unavailable", "AutoScene Cloud isn't available yet."),
+            CloudError::Hidden => msg!(
+                "cloud.hidden",
+                "AutoScene Cloud isn't available right now. Turn off Analyse in the cloud in Settings → Cloud to analyse on this computer."
+            ),
+            CloudError::NeedsPass => msg!(
+                "cloud.betaBalance",
+                "AutoScene Cloud is in a closed beta: scans need a beta pass. Redeem yours in Settings → Cloud."
+            ),
             CloudError::Keychain(_) => msg!("cloud.keychain", "AutoScene couldn't use the system's keychain."),
             CloudError::Cancelled => msg!("cloud.cancelled", "The cloud scan was stopped."),
             CloudError::Gateway(e) => match e.code() {
@@ -60,6 +73,7 @@ impl CloudError {
                     msg!("cloud.kindOff", "This kind of scan isn't offered in the cloud right now.")
                 }
                 Some(ErrorCode::Paused) => msg!("cloud.paused", "Cloud scans are paused right now. Try again later."),
+                Some(ErrorCode::Closed) => msg!("cloud.closed", "AutoScene Cloud isn't open for this yet."),
                 Some(ErrorCode::Busy) => msg!("cloud.busy", "The cloud is busy. Try again in a few minutes."),
                 Some(ErrorCode::TooLarge) => msg!("cloud.tooLarge", "This file is too large for the cloud."),
                 Some(ErrorCode::Unreadable) => msg!("cloud.unreadable", "The cloud couldn't read this file as video."),
@@ -79,6 +93,8 @@ impl CloudError {
     pub fn detail(&self) -> String {
         match self {
             CloudError::Unavailable => "no gateway configured".into(),
+            CloudError::Hidden => "the cloud isn't open (stage hidden)".into(),
+            CloudError::NeedsPass => "beta: no pass and not enough balance".into(),
             CloudError::Gateway(e) => e.to_string(),
             CloudError::Keychain(e) => e.clone(),
             CloudError::Cancelled => "cancelled".into(),
@@ -198,6 +214,10 @@ pub fn client(library: &Library) -> Result<Client, CloudError> {
         }
     }
     let mut c = Client::new(base.clone(), None);
+    // No account is made before the launch: the gateway would refuse it anyway.
+    if c.info()?.stage == Stage::Hidden {
+        return Err(CloudError::Hidden);
+    }
     c.register(&RegisterRequest {
         hwid: hwid(library, &base),
         platform: std::env::consts::OS.into(),
@@ -289,10 +309,14 @@ pub fn close_all() {
     }
 }
 
-/// Refuse at once what the gateway would refuse after the upload: a blocked
-/// account, paused scans, a kind switched off, a balance that won't do.
+/// Refuse at once what the gateway would refuse after the upload: a cloud
+/// that isn't open, a blocked account, paused scans, a kind switched off, a
+/// balance that won't do.
 fn precheck(account: &Account, kind: &ScanKind, duration_ms: u64) -> Result<(), CloudError> {
     let refuse = |code, m: &str| Err(CloudError::Gateway(ClientError::Api(ApiError::new(code, m))));
+    if account.stage == Stage::Hidden {
+        return Err(CloudError::Hidden);
+    }
     if account.blocked {
         return refuse(ErrorCode::Blocked, "the account is blocked");
     }
@@ -303,9 +327,24 @@ fn precheck(account: &Account, kind: &ScanKind, duration_ms: u64) -> Result<(), 
         return refuse(ErrorCode::KindOff, "this kind of scan is off");
     }
     if account.beta_until.is_none() && account.balance < account.prices.price(kind, duration_ms) {
+        // In the beta money can't be added: the way in is a pass.
+        if account.stage == Stage::Beta {
+            return Err(CloudError::NeedsPass);
+        }
         return refuse(ErrorCode::Balance, "the balance doesn't cover this scan");
     }
     Ok(())
+}
+
+/// A refusal of the gateway's, said for the cloud's stage: the gateway can
+/// price a file above the app's guess (its size floor, its own measure), and
+/// in the beta money can't be added; a cloud closed since the check is hidden.
+fn staged(stage: Stage, e: ClientError) -> CloudError {
+    match e.code() {
+        Some(ErrorCode::Closed) => CloudError::Hidden,
+        Some(ErrorCode::Balance) if stage == Stage::Beta => CloudError::NeedsPass,
+        _ => CloudError::Gateway(e),
+    }
 }
 
 /// A cloud session for one analysis, and the engine whose jobs go to it.
@@ -328,7 +367,10 @@ impl Run {
         mut progress: impl FnMut(Preparing),
     ) -> Result<Run, CloudError> {
         let client = client(library)?;
-        precheck(&client.account()?, &kind, duration_ms)?;
+        let account = client.account()?;
+        precheck(&account, &kind, duration_ms)?;
+        // The gateway's own refusals later on, said for the stage the cloud was in.
+        let said = |e: ClientError| staged(account.stage, e);
         let size = std::fs::metadata(file).map_err(ClientError::Io)?.len();
         let sha256 = file_sha256(file, |done| {
             progress(Preparing::Checking(done as f64 / size.max(1) as f64));
@@ -338,7 +380,7 @@ impl Run {
         if cancel.is_cancelled() {
             return Err(CloudError::Cancelled);
         }
-        let session = client.open_session(&SessionRequest { kind, size, sha256, duration_ms })?;
+        let session = client.open_session(&SessionRequest { kind, size, sha256, duration_ms }).map_err(said)?;
         let client = Arc::new(client);
         opened(&client, &session.id);
         // From here on, however `begin` ends, the session is closed (Drop).
@@ -371,7 +413,7 @@ impl Run {
         std::thread::spawn(move || drop(tx.send(c.ready(&id))));
         let ready = loop {
             match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(r) => break r?,
+                Ok(r) => break r.map_err(said)?,
                 Err(mpsc::RecvTimeoutError::Timeout) if !cancel.is_cancelled() => {}
                 Err(mpsc::RecvTimeoutError::Timeout) => return Err(CloudError::Cancelled),
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -520,6 +562,7 @@ mod tests {
             open: Switch::ALL.to_vec(),
             paused: false,
             top_ups: vec![],
+            stage: Stage::Open,
         }
     }
 
@@ -539,5 +582,25 @@ mod tests {
         assert_eq!(code(precheck(&off, &ANIME, 1)), Some(ErrorCode::KindOff));
         assert_eq!(code(precheck(&Account { blocked: true, ..account() }, &ANIME, 1)), Some(ErrorCode::Blocked));
         assert_eq!(code(precheck(&Account { paused: true, ..account() }, &ANIME, 1)), Some(ErrorCode::Paused));
+    }
+
+    #[test]
+    fn the_launch_stage_words_the_refusal() {
+        // Before the launch: nothing runs in the cloud, and the person is told how to go on.
+        let hidden = Account { stage: Stage::Hidden, beta_until: Some(i64::MAX), ..account() };
+        assert!(matches!(precheck(&hidden, &ANIME, 1), Err(CloudError::Hidden)));
+        // The beta: money can't be added, so a short balance asks for a pass.
+        let beta = Account { stage: Stage::Beta, ..account() };
+        assert!(precheck(&beta, &ANIME, 600_000).is_ok(), "balance an admin gave still pays");
+        assert!(matches!(precheck(&beta, &ANIME, 660_000), Err(CloudError::NeedsPass)));
+        let pass = Account { stage: Stage::Beta, balance: 0, beta_until: Some(i64::MAX), ..account() };
+        assert!(precheck(&pass, &ANIME, 3_600_000).is_ok());
+        assert!(CloudError::NeedsPass.msg().text.contains("Redeem"), "the beta never sends people to Add funds");
+        // The gateway's later refusals (its size floor, its own measure, a cloud closed since).
+        let api = |code| ClientError::Api(ApiError::new(code, "no"));
+        assert!(matches!(staged(Stage::Beta, api(ErrorCode::Balance)), CloudError::NeedsPass));
+        assert!(matches!(staged(Stage::Open, api(ErrorCode::Balance)), CloudError::Gateway(_)));
+        assert!(matches!(staged(Stage::Open, api(ErrorCode::Closed)), CloudError::Hidden));
+        assert!(matches!(staged(Stage::Beta, api(ErrorCode::Busy)), CloudError::Gateway(_)));
     }
 }

@@ -30,9 +30,9 @@ use std::time::Duration;
 use as_cloud::admin::{self, AccountView, CodeWorth};
 use as_cloud::engine::{self, Event, Op};
 use as_cloud::{
-    Account, ApiError, CheckoutReply, CheckoutRequest, CloseReply, ErrorCode, EventsReply, JobsRequest, Micros,
+    Account, ApiError, CheckoutReply, CheckoutRequest, CloseReply, ErrorCode, EventsReply, Info, JobsRequest, Micros,
     ReadyReply, RedeemReply, RedeemRequest, RegisterReply, RegisterRequest, ScanKind, SessionReply, SessionRequest,
-    TOP_UPS_CENTS, UploadState, WorkerDone, WorkerEvents, WorkerJobs, WorkerLaunch, path,
+    Stage, TOP_UPS_CENTS, UploadState, WorkerDone, WorkerEvents, WorkerJobs, WorkerLaunch, path,
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State};
@@ -121,7 +121,7 @@ impl IntoResponse for Fail {
         let status = match self.0.code {
             ErrorCode::BadRequest | ErrorCode::CodeInvalid => StatusCode::BAD_REQUEST,
             ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
-            ErrorCode::Blocked | ErrorCode::KindOff => StatusCode::FORBIDDEN,
+            ErrorCode::Blocked | ErrorCode::KindOff | ErrorCode::Closed => StatusCode::FORBIDDEN,
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
             ErrorCode::Balance => StatusCode::PAYMENT_REQUIRED,
             ErrorCode::Paused => StatusCode::SERVICE_UNAVAILABLE,
@@ -354,6 +354,19 @@ impl Gateway {
         Ok(db.setting("paused")?.as_deref() == Some("1") || self.month_gpu_spend(db)? >= self.cfg.guard.stop)
     }
 
+    /// Payments may be sold: a live Stripe key, or a gateway that says test
+    /// mode is fine (staging, the tests).
+    fn may_sell(&self) -> bool {
+        self.cfg.stripe.live() || self.cfg.stripe.test_mode_ok
+    }
+
+    /// The launch stage as it acts: hidden until the owner moves it, and
+    /// `open` acts as the beta while payments can't be sold.
+    fn stage(&self, db: &Db) -> Result<Stage> {
+        let set = db.setting("stage")?.as_deref().and_then(Stage::from_key).unwrap_or_default();
+        Ok(if set == Stage::Open && !self.may_sell() { Stage::Beta } else { set })
+    }
+
     fn account_view(&self, db: &Db, a: &AccountRow) -> Result<Account> {
         let paused = self.paused(db)?;
         let open =
@@ -367,6 +380,7 @@ impl Gateway {
             open,
             paused,
             top_ups: TOP_UPS_CENTS.to_vec(),
+            stage: self.stage(db)?,
         })
     }
 
@@ -485,6 +499,9 @@ async fn register(
     let token = crypto::token();
     let hwid = crypto::keyed(&gw.cfg.pepper, &req.hwid.to_ascii_lowercase());
     let mut db = gw.db.lock();
+    if gw.stage(&db)? == Stage::Hidden {
+        return Err(fail(ErrorCode::Closed, "AutoScene Cloud isn't open yet"));
+    }
     let (a, created) = db.register(
         &hwid,
         &crypto::sha256_hex(token.as_bytes()),
@@ -506,6 +523,12 @@ async fn account(State(gw): State<Shared>, headers: HeaderMap) -> Result<Json<Ac
     Ok(Json(gw.account_view(&db, &a)?))
 }
 
+/// How far the cloud is open, for an app that has no account yet.
+async fn info(State(gw): State<Shared>) -> Result<Json<Info>> {
+    let db = gw.db.lock();
+    Ok(Json(Info { stage: gw.stage(&db)? }))
+}
+
 async fn redeem(
     State(gw): State<Shared>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -519,6 +542,9 @@ async fn redeem(
     let ip = client_ip(&gw, peer, &headers);
     let t = now();
     let mut db = gw.db.lock();
+    if gw.stage(&db)? == Stage::Hidden {
+        return Err(fail(ErrorCode::Closed, "AutoScene Cloud isn't open yet"));
+    }
     let (by_account, by_ip) = db.misses(a.id, &ip, t)?;
     if by_account >= MISSES_PER_ACCOUNT || by_ip >= MISSES_PER_IP {
         return Err(fail(ErrorCode::RateLimited, "too many wrong codes: try again in an hour"));
@@ -555,6 +581,10 @@ async fn checkout(
     }
     if !TOP_UPS_CENTS.contains(&req.cents) {
         return Err(fail(ErrorCode::BadRequest, "not one of the top-ups on offer"));
+    }
+    let stage = gw.stage(&gw.db.lock())?;
+    if stage != Stage::Open {
+        return Err(fail(ErrorCode::Closed, "payments open when AutoScene Cloud leaves the beta"));
     }
     if !gw.allow(&format!("checkout:{}", a.id), 30) {
         return Err(fail(ErrorCode::RateLimited, "too many payment pages"));
@@ -626,6 +656,9 @@ async fn open_session(
     let opened = (|| -> Result<()> {
         std::fs::File::create(&file).map_err(|e| fail(ErrorCode::Server, e.to_string()))?;
         let mut db = gw.db.lock();
+        if gw.stage(&db)? == Stage::Hidden {
+            return Err(fail(ErrorCode::Closed, "AutoScene Cloud isn't open yet"));
+        }
         if gw.paused(&db)? {
             return Err(fail(ErrorCode::Paused, "cloud scans are paused"));
         }
@@ -730,6 +763,17 @@ async fn read_body(body: Body, limit: usize) -> Result<Bytes> {
 async fn ready(State(gw): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Result<Json<ReadyReply>> {
     let a = gw.device(&headers)?;
     let live = gw.session(&a, &id)?;
+    // A cloud hidden since the session opened starts no GPU, and charges nothing.
+    let hidden = |gw: &Shared| -> Result<Option<Fail>> {
+        if gw.stage(&gw.db.lock())? != Stage::Hidden {
+            return Ok(None);
+        }
+        gw.drop_session(&live, "AutoScene Cloud closed");
+        Ok(Some(fail(ErrorCode::Closed, "AutoScene Cloud isn't open yet")))
+    };
+    if let Some(no) = hidden(&gw)? {
+        return Err(no);
+    }
     {
         let mut st = live.st.lock();
         if st.phase != Phase::Uploading || st.received != live.size || st.writing > 0 {
@@ -779,6 +823,10 @@ async fn ready(State(gw): State<Shared>, Path(id): Path<String>, headers: Header
             return Err(fail(ErrorCode::Unreadable, "the file couldn't be read as video"));
         }
     };
+    // Measuring can take minutes: the stage may have moved meanwhile.
+    if let Some(no) = hidden(&gw)? {
+        return Err(no);
+    }
     let price = gw.cfg.prices.price(&live.kind, duration);
     // The database lock must be gone before `drop_session` takes it again.
     let priced = gw.db.lock().price_session(&id, duration, price, live.beta)?;
@@ -1353,6 +1401,27 @@ async fn admin_pause(
     admin_stats(State(gw), headers).await
 }
 
+async fn admin_stage(
+    State(gw): State<Shared>,
+    headers: HeaderMap,
+    Json(req): Json<admin::SetStage>,
+) -> Result<Json<admin::Stats>> {
+    let actor = admin_auth(&gw, &headers)?;
+    if req.stage == Stage::Open && !gw.may_sell() {
+        return Err(fail(
+            ErrorCode::BadRequest,
+            "opening needs Stripe's live key (sk_live_…): with a test key nobody could pay",
+        ));
+    }
+    {
+        let db = gw.db.lock();
+        db.set_setting("stage", req.stage.key())?;
+        db.audit(actor.as_deref(), "stage", req.stage.key(), now())?;
+    }
+    tracing::info!("stage: {}", req.stage.key());
+    admin_stats(State(gw), headers).await
+}
+
 async fn admin_stats(State(gw): State<Shared>, headers: HeaderMap) -> Result<Json<admin::Stats>> {
     admin_auth(&gw, &headers)?;
     let db = gw.db.lock();
@@ -1370,6 +1439,8 @@ async fn admin_stats(State(gw): State<Shared>, headers: HeaderMap) -> Result<Jso
         guard_stop: gw.cfg.guard.stop,
         paused: gw.paused(&db)?,
         open_sessions: open,
+        stage: gw.stage(&db)?,
+        live_payments: gw.cfg.stripe.live(),
     }))
 }
 
@@ -1380,6 +1451,7 @@ async fn admin_stats(State(gw): State<Shared>, headers: HeaderMap) -> Result<Jso
 /// The app's, Stripe's and the worker's routes (public, behind the proxy).
 pub fn public_router(gw: Shared) -> Router {
     Router::new()
+        .route(path::INFO, get(info))
         .route(path::DEVICES, post(register))
         .route(path::ACCOUNT, get(account))
         .route(path::REDEEM, post(redeem))
@@ -1413,6 +1485,7 @@ pub fn admin_router(gw: Shared) -> Router {
         .route(admin::SWITCHES, get(admin_switches).post(admin_set_switch))
         .route(admin::STATS, get(admin_stats))
         .route(admin::PAUSE, post(admin_pause))
+        .route(admin::STAGE, post(admin_stage))
         .with_state(gw)
 }
 

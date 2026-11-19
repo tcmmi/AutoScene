@@ -8,6 +8,8 @@ use crate::{Micros, Prices, ScanKind, Switch};
 
 /// The gateway's addresses, relative to its base URL.
 pub mod path {
+    /// How far the cloud is open ([`super::Info`]): asked before an account exists.
+    pub const INFO: &str = "/v1/info";
     pub const DEVICES: &str = "/v1/devices";
     pub const ACCOUNT: &str = "/v1/account";
     pub const REDEEM: &str = "/v1/redeem";
@@ -65,6 +67,9 @@ pub enum ErrorCode {
     KindOff,
     /// Cloud scans are paused (the month's GPU budget is spent, or the owner).
     Paused,
+    /// AutoScene Cloud isn't open for this ([`Stage`]): before the launch it
+    /// takes no new computer, code, payment or scan; in the beta, no payment.
+    Closed,
     RateLimited,
     /// A code that doesn't exist, was revoked or has expired.
     CodeInvalid,
@@ -106,6 +111,45 @@ impl std::error::Error for ApiError {}
 // The app
 // ---------------------------------------------------------------------------
 
+/// How far AutoScene Cloud is open. The owner moves it from Discord; it only
+/// goes forward in normal use (pausing scans is [`Account::paused`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stage {
+    /// Not launched: the app says "not available yet", and the gateway takes
+    /// no new computer, code, payment or scan.
+    #[default]
+    Hidden,
+    /// A closed beta: codes (beta passes, balance an admin gave) and scans,
+    /// but no payments.
+    Beta,
+    /// Open to everyone: payments too.
+    Open,
+}
+
+impl Stage {
+    pub const ALL: [Stage; 3] = [Stage::Hidden, Stage::Beta, Stage::Open];
+
+    /// The name stored and sent: `hidden`, `beta`, `open`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Stage::Hidden => "hidden",
+            Stage::Beta => "beta",
+            Stage::Open => "open",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Stage> {
+        Stage::ALL.into_iter().find(|s| s.key() == key)
+    }
+}
+
+/// What anyone may ask before having an account.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Info {
+    pub stage: Stage,
+}
+
 /// A device asks for its account. The same hardware gets the same account
 /// back (a reinstall keeps the balance) with a new token.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -142,6 +186,10 @@ pub struct Account {
     pub paused: bool,
     /// The top-ups on offer, in cents.
     pub top_ups: Vec<i64>,
+    /// How far the cloud is open: payments only when it's [`Stage::Open`].
+    /// A gateway that doesn't say counts as not open yet.
+    #[serde(default)]
+    pub stage: Stage,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -285,6 +333,7 @@ pub mod admin {
     pub const SWITCHES: &str = "/admin/switches";
     pub const STATS: &str = "/admin/stats";
     pub const PAUSE: &str = "/admin/pause";
+    pub const STAGE: &str = "/admin/stage";
 
     pub fn account(support_id: &str) -> String {
         format!("/admin/accounts/{support_id}")
@@ -371,6 +420,13 @@ pub mod admin {
         pub paused: bool,
     }
 
+    /// Move the launch stage. `open` needs Stripe's live key (or the
+    /// gateway's `stripe.test_mode_ok`): test mode would sell nothing real.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct SetStage {
+        pub stage: Stage,
+    }
+
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct SetSwitch {
         pub switch: Switch,
@@ -436,5 +492,9 @@ pub mod admin {
         pub guard_stop: Micros,
         pub paused: bool,
         pub open_sessions: u64,
+        /// The launch stage as it acts now.
+        pub stage: Stage,
+        /// Stripe's key is a live one: payments are real money.
+        pub live_payments: bool,
     }
 }

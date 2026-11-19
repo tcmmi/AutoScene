@@ -48,6 +48,26 @@ pub struct CloudAccount {
     pub top_ups: Vec<CloudTopUp>,
 }
 
+/// How far AutoScene Cloud is open: hidden before the launch, then a closed
+/// beta (codes, no payments), then open to everyone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum CloudStage {
+    Hidden,
+    Beta,
+    Open,
+}
+
+impl From<as_cloud::Stage> for CloudStage {
+    fn from(s: as_cloud::Stage) -> Self {
+        match s {
+            as_cloud::Stage::Hidden => CloudStage::Hidden,
+            as_cloud::Stage::Beta => CloudStage::Beta,
+            as_cloud::Stage::Open => CloudStage::Open,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudStatus {
@@ -55,6 +75,8 @@ pub struct CloudStatus {
     pub available: bool,
     /// Analyses run in the cloud.
     pub enabled: bool,
+    /// How far the cloud is open; unknown while it can't be reached.
+    pub stage: Option<CloudStage>,
     pub account: Option<CloudAccount>,
     /// Why the account couldn't be read.
     pub error: Option<Msg>,
@@ -95,14 +117,19 @@ fn per_minute(m: as_cloud::Micros) -> String {
 fn status(state: &AppState) -> CloudStatus {
     let available = cloud::gateway(&state.library).is_some();
     let enabled = cloud::enabled(&state.library);
+    let closed = CloudStatus { available, enabled, stage: Some(CloudStage::Hidden), account: None, error: None };
     if !available {
-        return CloudStatus { available, enabled, account: None, error: None };
+        return closed;
     }
     match cloud::account(&state.library) {
-        Ok(a) => CloudStatus { available, enabled, account: Some(account_view(a)), error: None },
+        Ok(a) => {
+            CloudStatus { available, enabled, stage: Some(a.stage.into()), account: Some(account_view(a)), error: None }
+        }
+        // Not launched: no account was made, and there's nothing to say.
+        Err(CloudError::Hidden) => closed,
         Err(e) => {
             log::warn!("cloud account: {}", e.detail());
-            CloudStatus { available, enabled, account: None, error: Some(e.msg()) }
+            CloudStatus { available, enabled, stage: None, account: None, error: Some(e.msg()) }
         }
     }
 }

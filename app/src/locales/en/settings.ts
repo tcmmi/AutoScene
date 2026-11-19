@@ -215,6 +215,13 @@ export default {
       /** Label of the switch and its accessible name. */
       label: "Analyse in the cloud",
       description: "New analyses upload the episode, run on a cloud GPU and come back here. The file is deleted from the cloud right after.",
+      /** Under the switch while the cloud is closed and the switch is still on. */
+      hiddenHint: "AutoScene Cloud is off for now. Turn this off to analyse on this computer.",
+    },
+    /** The closed beta: scans need a beta pass, and money can't be added yet. */
+    beta: {
+      label: "Closed beta",
+      description: "Scans need a beta pass for now: Beta Testers get one on the AutoScene Discord. Adding funds opens after the beta.",
     },
     balance: {
       label: "Balance",

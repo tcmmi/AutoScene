@@ -1174,6 +1174,7 @@ function cloudStatus() {
   return {
     available: true,
     enabled: cloud.enabled,
+    stage: "open",
     account: {
       balance: euros(cloud.cents),
       minutes: cloud.cents,

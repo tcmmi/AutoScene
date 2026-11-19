@@ -573,6 +573,9 @@
     "cancelled": "Scanarea în cloud a fost oprită.",
     "checksum": "Încărcarea a ajuns deteriorată. Încearcă din nou.",
     "gone": "Scanarea în cloud s-a încheiat mai devreme. Încearcă din nou.",
-    "server": "AutoScene Cloud a avut o problemă. Încearcă mai târziu."
+    "server": "AutoScene Cloud a avut o problemă. Încearcă mai târziu.",
+    "betaBalance": "AutoScene Cloud este într-o beta închisă: scanările au nevoie de un permis beta. Folosește-l în Setări → Cloud.",
+    "closed": "AutoScene Cloud nu este încă deschis pentru asta.",
+    "hidden": "AutoScene Cloud nu este disponibil momentan. Dezactivează Analizează în cloud din Setări → Cloud ca să analizezi pe acest calculator."
   }
 }

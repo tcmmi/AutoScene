@@ -99,6 +99,19 @@ pub struct Stripe {
     /// Kleinunternehmer note): Stripe charges for these invoices.
     #[serde(default)]
     pub invoice_footer: Option<String>,
+    /// Let the cloud open without a live key (`sk_live_…`/`rk_live_…`): a
+    /// staging gateway or the tests. Off, `open` waits for the live key and a
+    /// test key's payments are never sold.
+    #[serde(default)]
+    pub test_mode_ok: bool,
+}
+
+impl Stripe {
+    /// The key takes real money.
+    pub fn live(&self) -> bool {
+        let k = self.secret_key.trim();
+        k.starts_with("sk_live_") || k.starts_with("rk_live_")
+    }
 }
 
 /// Where workers run.

@@ -314,7 +314,12 @@
     "unavailable": "AutoScene Cloud nu este încă disponibil.",
     "use": {
       "label": "Analizează în cloud",
-      "description": "Analizele noi încarcă episodul, rulează pe un GPU din cloud și revin aici. Fișierul este șters din cloud imediat după."
+      "description": "Analizele noi încarcă episodul, rulează pe un GPU din cloud și revin aici. Fișierul este șters din cloud imediat după.",
+      "hiddenHint": "AutoScene Cloud este oprit deocamdată. Dezactivează asta ca să analizezi pe acest calculator."
+    },
+    "beta": {
+      "label": "Beta închisă",
+      "description": "Deocamdată, scanările au nevoie de un permis beta: membrii cu rolul Beta Tester primesc unul pe Discordul AutoScene. Adăugarea de fonduri se deschide după beta."
     },
     "balance": {
       "label": "Sold",

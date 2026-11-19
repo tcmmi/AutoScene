@@ -12,7 +12,7 @@ Scans on a rented GPU instead of the user's computer, paid from a prepaid balanc
 
 ## How a scan runs
 
-1. The app registers its computer with `POST /v1/devices`.
+1. The app asks `GET /v1/info` how far the cloud is open (see [Launch stages](#launch-stages)). Unless it is hidden, the app registers its computer with `POST /v1/devices`.
    - It sends a salted hash of its hardware ids and gets back a device token.
    - The same computer gets the same account back, so a reinstall keeps the balance.
    - People see a balance and a Support ID, never a key.
@@ -51,7 +51,7 @@ Its token is good for its own session only.
 
 ## In the app
 
-- **Settings → Cloud** shows the balance (never a key), about how many minutes it pays for, the Support ID, the prices, "Add funds" (Stripe's page in the browser) and "Redeem a code". A switch sends new analyses to the cloud. It can always be turned off, even when the account can't be read.
+- **Settings → Cloud** shows the balance (never a key), about how many minutes it pays for, the Support ID, the prices, "Add funds" (Stripe's page in the browser) and "Redeem a code". A switch sends new analyses to the cloud. It can always be turned off, even when the account can't be read. What shows depends on the [launch stage](#launch-stages).
 - **Connecting:** the gateway's address is the library setting `cloud.gateway`, else `AUTOSCENE_CLOUD_URL`, else the built-in `https://api.autoscene.io`. Only https is accepted, or plain http to this computer.
 - **The device token** lives in the system's keychain (service "AutoScene Cloud"). The hardware id the gateway sees is a SHA-256 of the machine id, salted with the gateway's address.
 - **A cloud analysis** (`app/src-tauri/src/cloud.rs`, `work.rs`):
@@ -61,6 +61,21 @@ Its token is good for its own session only.
   4. The session is closed when the analysis ends, however it ends, and on quit.
   5. A second connect after a failed job resumes the replies where they were.
 - **Session scope:** the scan kind is fixed when the session opens. Changing Fast Scan, Best, 3D, people or scenes during a cloud analysis makes the later jobs refused.
+
+## Launch stages
+
+The owner moves the cloud through three stages with the Discord bot (`/cloud stats`, `POST /admin/stage`). The stage is the gateway's setting `stage`; a gateway that never had one is hidden. Anyone can ask it with `GET /v1/info` (`{"stage": "hidden" | "beta" | "open"}`), and every account reply carries it.
+
+| Stage | The app shows | The gateway takes |
+|---|---|---|
+| `hidden` | "isn't available yet", and the switch only while it is still on (to turn it off) | No new computer, code, payment or scan (`closed`); a file uploaded before the switch starts no GPU and costs nothing (`ready` refuses it). An account that exists can still be read. The Stripe webhook and running workers go on. |
+| `beta` | Balance, "Redeem a code", the switch and a closed-beta note; no "Add funds" | Codes (beta passes, balance an admin gave) and scans; no payment page (`closed`) |
+| `open` | Everything | Everything |
+
+- **Opening needs real money:** `open` is refused unless Stripe's key is live (`sk_live_…` or `rk_live_…`), and a stored `open` acts as the beta if the key is later swapped for a test one. A staging gateway can allow test mode with `stripe.test_mode_ok = true`.
+- **Before the launch the app makes no account:** it asks `GET /v1/info` first and registers only when the cloud isn't hidden.
+- **An analysis in the beta** without a pass and without enough balance is refused with "redeem a beta code", never "add funds".
+- **Going back to hidden** after people paid hides their balance in the app. Use the pause instead to stop scans for a while.
 
 ## Prices and money
 
@@ -99,6 +114,7 @@ gpu_per_hour = 740_000    # what an hour of a worker costs, in micro-euros
 success_url = "https://cloud.example.com/paid"
 cancel_url = "https://cloud.example.com/cancelled"
 # invoice_footer = "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet."
+# test_mode_ok = true     # staging only: let the cloud open without a live key
 
 [backend]
 kind = "http"             # or "local" (worker = "/path", args = [...]) or "none"
@@ -156,7 +172,8 @@ Admin calls go to `admin_listen` only. Each call carries:
 | `POST /admin/transfer` | `{"from": "AS-…", "to": "AS-…", "note": "receipt cs_…"}` → `{"moved": micros}`. Moves the whole balance and the beta pass. Refused while a scan runs. |
 | `GET` or `POST /admin/switches` | `{"switch": "live" \| "live_fast" \| "animated" \| "animated_fast" \| "anime" \| "anime_fast" \| "anime_best" \| "people" \| "scenes", "on": bool}` |
 | `POST /admin/pause` | `{"paused": bool}` → stats. Paused, no session opens; accounts, codes and payments still work |
-| `GET /admin/stats` | This month: paid in, refunded, charged, sessions, GPU seconds and spend, guard thresholds, paused, open sessions |
+| `POST /admin/stage` | `{"stage": "hidden" \| "beta" \| "open"}` → stats. `open` is refused (400) without Stripe's live key unless `stripe.test_mode_ok`. See [Launch stages](#launch-stages). |
+| `GET /admin/stats` | This month: paid in, refunded, charged, sessions, GPU seconds and spend, guard thresholds, paused, open sessions; the stage as it acts (`stage`) and whether Stripe's key is live (`live_payments`) |
 
 ## Abuse limits
 

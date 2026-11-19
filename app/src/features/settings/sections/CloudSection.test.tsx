@@ -3,20 +3,24 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { CloudStatus } from "@/bindings"
+import type { CloudStage, CloudStatus } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
 import { CloudSection } from "./CloudSection"
 
-const { state } = vi.hoisted(() => ({ state: { cents: 420, enabled: false, available: true } }))
+const { state } = vi.hoisted(() => ({
+  state: { cents: 420, enabled: false, available: true, stage: "open" as CloudStage },
+}))
 
-/** As `commands::cloud` answers: a balance, never a key. */
+/** As `commands::cloud` answers: a balance, never a key; no account before the launch. */
 function status(): CloudStatus {
   const euros = (c: number) => `€${Math.floor(c / 100)}.${String(c % 100).padStart(2, "0")}`
+  const launched = state.available && state.stage !== "hidden"
   return {
     available: state.available,
     enabled: state.enabled,
-    account: state.available
+    stage: state.available ? state.stage : "hidden",
+    account: launched
       ? {
           balance: euros(state.cents),
           minutes: state.cents,
@@ -59,7 +63,7 @@ const open = () =>
   )
 
 beforeEach(() => {
-  Object.assign(state, { cents: 420, enabled: false, available: true })
+  Object.assign(state, { cents: 420, enabled: false, available: true, stage: "open" })
   queryClient.clear()
   vi.clearAllMocks()
 })
@@ -106,5 +110,34 @@ describe("Settings → Cloud", () => {
     open()
     expect(await screen.findByText("AutoScene Cloud isn't available yet.")).toBeTruthy()
     expect(screen.queryByRole("switch")).toBeNull()
+  })
+
+  it("shows nothing but that before the launch", async () => {
+    state.stage = "hidden"
+    open()
+    expect(await screen.findByText("AutoScene Cloud isn't available yet.")).toBeTruthy()
+    expect(screen.queryByRole("switch")).toBeNull()
+    expect(screen.queryByRole("textbox", { name: "Redeem a code" })).toBeNull()
+  })
+
+  it("keeps a switch left on in reach while the cloud is closed", async () => {
+    Object.assign(state, { stage: "hidden", enabled: true })
+    open()
+    expect(
+      await screen.findByText("AutoScene Cloud is off for now. Turn this off to analyse on this computer."),
+    ).toBeTruthy()
+    const use = screen.getByRole("switch", { name: "Analyse in the cloud" })
+    await userEvent.click(use)
+    expect(commands.cloudSetEnabled).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(screen.queryByRole("switch")).toBeNull())
+  })
+
+  it("takes codes in the beta, but no money", async () => {
+    state.stage = "beta"
+    open()
+    expect(await screen.findByText("Closed beta")).toBeTruthy()
+    expect(screen.getByRole("textbox", { name: "Redeem a code" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "€10.00" })).toBeNull()
+    expect(screen.queryByText("Add funds")).toBeNull()
   })
 })

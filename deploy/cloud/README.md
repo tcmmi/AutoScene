@@ -53,3 +53,4 @@ Calls go to `http://127.0.0.1:8741` with `Authorization: Bearer $AS_CLOUD_ADMIN_
 
 - While there is no GPU backend (`[backend] kind = "none"`), scans stay paused: `POST /admin/pause {"paused": true}`.
 - Accounts, codes and payments work while paused.
+- The launch stage starts hidden: the app shows "not available yet" and the gateway takes no new computer, code, payment or scan. `/cloud stats` in Discord moves it to Beta (codes and passes, no payments) and Open (payments; refused until `gateway.env` has the live `sk_live_` key). Check it with `curl https://api.autoscene.io/v1/info`.

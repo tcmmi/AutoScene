@@ -35,10 +35,21 @@ export function CloudSection() {
   const [paying, setPaying] = useState<number | null>(null)
   const account = status?.account ?? null
 
-  if (!isLoading && status && !status.available) {
+  // Before the launch (or without a gateway) there's nothing to show but that.
+  if (!isLoading && status && (!status.available || status.stage === "hidden")) {
     return (
       <SettingsGroup title={t("cloud.title")} description={t("cloud.description")}>
         <SettingRow label={t("cloud.unavailable")} />
+        {/* Off is always in reach: a switch left on would send analyses to a cloud that isn't there. */}
+        {status.enabled && (
+          <SettingRow label={t("cloud.use.label")} description={t("cloud.use.hiddenHint")}>
+            <Switch
+              aria-label={t("cloud.use.label")}
+              checked
+              onCheckedChange={(on) => void run(() => commands.cloudSetEnabled(on), t("saveFailed"))}
+            />
+          </SettingRow>
+        )}
       </SettingsGroup>
     )
   }
@@ -92,21 +103,27 @@ export function CloudSection() {
           >
             <span className="text-2xl font-semibold tabular-nums text-fg-1">{account.balance}</span>
           </SettingRow>
-          <SettingRow label={t("cloud.addFunds.label")} description={t("cloud.addFunds.description")}>
-            <div className="flex gap-2">
-              {account.topUps.map((top) => (
-                <Button
-                  key={top.cents}
-                  variant="secondary"
-                  busy={paying === top.cents}
-                  disabled={account.blocked || paying !== null}
-                  onClick={() => void addFunds(top.cents)}
-                >
-                  {top.label}
-                </Button>
-              ))}
-            </div>
-          </SettingRow>
+          {status?.stage === "beta" && (
+            <SettingRow label={t("cloud.beta.label")} description={t("cloud.beta.description")} />
+          )}
+          {/* Money comes in only once the cloud is open: the beta runs on passes. */}
+          {status?.stage === "open" && (
+            <SettingRow label={t("cloud.addFunds.label")} description={t("cloud.addFunds.description")}>
+              <div className="flex gap-2">
+                {account.topUps.map((top) => (
+                  <Button
+                    key={top.cents}
+                    variant="secondary"
+                    busy={paying === top.cents}
+                    disabled={account.blocked || paying !== null}
+                    onClick={() => void addFunds(top.cents)}
+                  >
+                    {top.label}
+                  </Button>
+                ))}
+              </div>
+            </SettingRow>
+          )}
           <SettingRow
             label={t("cloud.redeem.label")}
             description={t("cloud.redeem.description")}

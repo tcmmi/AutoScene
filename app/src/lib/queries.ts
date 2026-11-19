@@ -97,11 +97,20 @@ export function useDiscordPreview(show: DiscordRpcSettings) {
 }
 
 /**
- * This computer's AutoScene Cloud account: refreshed by `cloud:changed`, and
- * when the window comes back (from the browser's payment page).
+ * This computer's AutoScene Cloud account: refreshed by `cloud:changed`, each
+ * time Settings → Cloud opens, and when the window comes back (from the
+ * browser's payment page). Read afresh (`staleTime: 0`): the owner may have
+ * moved the launch stage meanwhile, and the client's `Infinity` would keep
+ * focus from refetching.
  */
 export function useCloudStatus() {
-  return useQuery({ queryKey: qk.cloud, queryFn: () => commands.cloudStatus(), retry: false, refetchOnWindowFocus: true })
+  return useQuery({
+    queryKey: qk.cloud,
+    queryFn: () => commands.cloudStatus(),
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  })
 }
 
 /**

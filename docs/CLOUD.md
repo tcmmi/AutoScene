@@ -52,7 +52,7 @@ Its token is good for its own session only.
 ## In the app
 
 - **Settings → Cloud** shows the balance (never a key), about how many minutes it pays for, the Support ID, the prices, "Add funds" (Stripe's page in the browser) and "Redeem a code". A switch sends new analyses to the cloud. It can always be turned off, even when the account can't be read.
-- **Connecting:** the gateway's address is the library setting `cloud.gateway`, else `AUTOSCENE_CLOUD_URL`, else the built-in one (none yet: the section says the cloud isn't available). Only https is accepted, or plain http to this computer.
+- **Connecting:** the gateway's address is the library setting `cloud.gateway`, else `AUTOSCENE_CLOUD_URL`, else the built-in `https://api.autoscene.io`. Only https is accepted, or plain http to this computer.
 - **The device token** lives in the system's keychain (service "AutoScene Cloud"). The hardware id the gateway sees is a SHA-256 of the machine id, salted with the gateway's address.
 - **A cloud analysis** (`app/src-tauri/src/cloud.rs`, `work.rs`):
   1. A quick account check refuses what the gateway would refuse (blocked, paused, kind off, balance).

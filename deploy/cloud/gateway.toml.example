@@ -3,7 +3,7 @@
 listen = "127.0.0.1:8740"
 admin_listen = "127.0.0.1:8741"
 # The address the GPU worker and Stripe reach the gateway at.
-public_base = "https://autoscene.io"
+public_base = "https://api.autoscene.io"
 data_dir = "/var/lib/autoscene-cloud"
 trust_proxy = true
 ffprobe = "/usr/bin/ffprobe"

@@ -284,6 +284,7 @@ pub mod admin {
     pub const TRANSFER: &str = "/admin/transfer";
     pub const SWITCHES: &str = "/admin/switches";
     pub const STATS: &str = "/admin/stats";
+    pub const PAUSE: &str = "/admin/pause";
 
     pub fn account(support_id: &str) -> String {
         format!("/admin/accounts/{support_id}")
@@ -361,6 +362,13 @@ pub mod admin {
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Transferred {
         pub moved: Micros,
+    }
+
+    /// Pause cloud scans for everyone (no GPU yet, an outage), or go on.
+    /// Accounts, codes and payments keep working.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct SetPause {
+        pub paused: bool,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]

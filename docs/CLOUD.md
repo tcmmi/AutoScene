@@ -155,6 +155,7 @@ Admin calls go to `admin_listen` only. Each call carries:
 | `POST /admin/accounts/{id}/reset_device` | The device token stops working; the computer's next visit gets a new one |
 | `POST /admin/transfer` | `{"from": "AS-…", "to": "AS-…", "note": "receipt cs_…"}` → `{"moved": micros}`. Moves the whole balance and the beta pass. Refused while a scan runs. |
 | `GET` or `POST /admin/switches` | `{"switch": "live" \| "live_fast" \| "animated" \| "animated_fast" \| "anime" \| "anime_fast" \| "anime_best" \| "people" \| "scenes", "on": bool}` |
+| `POST /admin/pause` | `{"paused": bool}` → stats. Paused, no session opens; accounts, codes and payments still work |
 | `GET /admin/stats` | This month: paid in, refunded, charged, sessions, GPU seconds and spend, guard thresholds, paused, open sessions |
 
 ## Abuse limits

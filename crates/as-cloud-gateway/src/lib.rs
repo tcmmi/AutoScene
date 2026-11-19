@@ -1339,6 +1339,20 @@ async fn admin_set_switch(
     admin_switches(State(gw), headers).await
 }
 
+async fn admin_pause(
+    State(gw): State<Shared>,
+    headers: HeaderMap,
+    Json(req): Json<admin::SetPause>,
+) -> Result<Json<admin::Stats>> {
+    let actor = admin_auth(&gw, &headers)?;
+    {
+        let db = gw.db.lock();
+        db.set_setting("paused", if req.paused { "1" } else { "0" })?;
+        db.audit(actor.as_deref(), "pause", &req.paused.to_string(), now())?;
+    }
+    admin_stats(State(gw), headers).await
+}
+
 async fn admin_stats(State(gw): State<Shared>, headers: HeaderMap) -> Result<Json<admin::Stats>> {
     admin_auth(&gw, &headers)?;
     let db = gw.db.lock();
@@ -1398,6 +1412,7 @@ pub fn admin_router(gw: Shared) -> Router {
         .route(admin::TRANSFER, post(admin_transfer))
         .route(admin::SWITCHES, get(admin_switches).post(admin_set_switch))
         .route(admin::STATS, get(admin_stats))
+        .route(admin::PAUSE, post(admin_pause))
         .with_state(gw)
 }
 

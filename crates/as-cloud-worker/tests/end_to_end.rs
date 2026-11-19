@@ -260,6 +260,13 @@ fn the_cloud_end_to_end() {
     assert_eq!(code(app.ready(&s.id).unwrap_err()), ErrorCode::Checksum);
     assert_eq!(app.account().unwrap().balance, 11_000_000 - 20_000);
 
+    // Paused for everyone: no session opens, the account still reads.
+    let (status, stats) = admin_post(&cloud, admin::PAUSE, json!({"paused": true}));
+    assert_eq!((status, stats["paused"].as_bool()), (200, Some(true)));
+    assert!(app.account().unwrap().paused);
+    assert_eq!(code(app.open_session(&req).unwrap_err()), ErrorCode::Paused);
+    admin_post(&cloud, admin::PAUSE, json!({"paused": false}));
+
     // A kind switched off opens no session.
     let (status, _) = admin_post(&cloud, admin::SWITCHES, json!({"switch": "anime", "on": false}));
     assert_eq!(status, 200);

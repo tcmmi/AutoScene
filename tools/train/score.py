@@ -10,7 +10,7 @@ the scorer (`ADAPT=0`, `LINK=0.3`, …). The set-up is the one the tuning number
 were made with: figure level, main cast from 15 s, 2,000 bootstrap draws.
 
 Where things are, from the environment: `ANIME_RUN` (the joined tracks `<project>.<ARM>.tracks` and
-`<project>.segments.tsv`; default `F:/as-ownmodels/anime/run`), `ARM` (`std3`), `IDENTITY_BENCH` (the
+`<project>.segments.tsv`; default `E:/as-ownmodels/anime/run`), `ARM` (`std3`), `IDENTITY_BENCH` (the
 example of `as-analysis`, built in release; default `E:/as-ownmodels/train/bin/identity_bench.exe`).
 """
 import os
@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 BENCH = REPO / "bench" / "anime"
-RUN = Path(os.environ.get("ANIME_RUN", "F:/as-ownmodels/anime/run"))
+RUN = Path(os.environ.get("ANIME_RUN", "E:/as-ownmodels/anime/run"))
 WORK = Path(os.environ.get("TRAIN_WORK", "E:/as-ownmodels/train"))
 EXE = os.environ.get("IDENTITY_BENCH", str(WORK / "bin" / "identity_bench.exe"))
 ARM = os.environ.get("ARM", "std3")

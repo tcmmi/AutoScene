@@ -8,7 +8,7 @@ Run everything with the environment on a drive with room (the CUDA build of
 torch alone is about 3 GB):
 
 ```bash
-export UV_CACHE_DIR=F:/as-ownmodels/uv-cache UV_PROJECT_ENVIRONMENT=F:/as-ownmodels/venv/train
+export UV_CACHE_DIR=E:/as-ownmodels/uv-cache UV_PROJECT_ENVIRONMENT=E:/as-ownmodels/venv/train
 export HF_HOME=E:/as-ownmodels/hf HF_HUB_DISABLE_XET=1   # DINOv2's weights, fetched once by timm
 uv run <script> …
 ```

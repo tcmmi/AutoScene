@@ -46,7 +46,7 @@
       },
       "fastScan": {
         "label": "Scanare rapidă",
-        "description": "Se uită doar la câteva cadre din fiecare plan: mult mai repede, dar găsește mai puține fețe și pe nimeni fără față vizibilă. Se aplică proiectelor noi; Editează detaliile… schimbă un proiect existent. Modelele de fețe pot fi folosite pentru orice lucrare, iar cele ale scanării complete doar pentru lucrări necomerciale.",
+        "description": "Se uită doar la câteva cadre din fiecare plan: mult mai repede, dar găsește mai puține fețe și pe nimeni fără față vizibilă. Se aplică proiectelor noi; Editează detaliile… schimbă un proiect existent. La fel ca scanarea completă, găsește fețele cu un model care poate fi folosit doar pentru lucrări necomerciale.",
         "aria": "Scanare rapidă pentru proiecte noi",
         "auto": "Automat",
         "on": "Activat",
@@ -264,7 +264,7 @@
     },
     "models": {
       "title": "Modele AI",
-      "description": "Se descarcă prima dată când o analiză are nevoie de ele. Modelele marcate ca necomerciale pot fi folosite doar pentru lucrări necomerciale; scanarea rapidă nu folosește niciunul dintre ele.",
+      "description": "Se descarcă prima dată când o analiză are nevoie de ele. Modelele marcate ca necomerciale pot fi folosite doar pentru lucrări necomerciale.",
       "downloaded": "Descărcat",
       "notDownloaded": "Încă nu este descărcat",
       "nonCommercial": "Necomercial",

@@ -97,7 +97,9 @@ describe("AboutSection", () => {
     expect(screen.getByText("Shot boundaries (hard cuts and gradual transitions)")).toBeTruthy()
     // Only the restricted model carries the mark.
     expect(screen.getAllByText("Non-commercial")).toHaveLength(1)
-    expect(screen.getByText(/Fast Scan uses none of them/)).toBeTruthy()
+    expect(screen.getByText(/Models marked non-commercial may only be used for non-commercial work\.$/)).toBeTruthy()
+    // Fast Scan's face finder is non-commercial too: nothing may say it is free for any work.
+    expect(screen.queryByText(/Fast Scan uses none of them/)).toBeNull()
     expect(screen.getByText(/^Downloaded · 29\.8 MB/)).toBeTruthy()
     expect(screen.getByText(/^Not downloaded yet/)).toBeTruthy()
   })

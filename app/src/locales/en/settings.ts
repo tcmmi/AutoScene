@@ -74,7 +74,7 @@ export default {
         label: "Fast Scan",
         /** A line saying what Automatic means on this computer follows it. */
         description:
-          "Looks at only a few frames of each shot: much faster, but it finds fewer faces and no one without a visible face. Applies to new projects; Edit details… changes one. Its face models may be used for any work, the full scan's only for non-commercial work.",
+          "Looks at only a few frames of each shot: much faster, but it finds fewer faces and no one without a visible face. Applies to new projects; Edit details… changes one. Like the full scan, it finds faces with a model that may only be used for non-commercial work.",
         /** The accessible name of the three-way choice. */
         aria: "Fast Scan for new projects",
         /** The three choices of the pill switch: short words. */
@@ -397,7 +397,7 @@ export default {
     models: {
       title: "AI models",
       description:
-        "Downloaded the first time an analysis needs them. Models marked non-commercial may only be used for non-commercial work; Fast Scan uses none of them.",
+        "Downloaded the first time an analysis needs them. Models marked non-commercial may only be used for non-commercial work.",
       downloaded: "Downloaded",
       notDownloaded: "Not downloaded yet",
       /** A badge on a model that may not be used for paid work. */

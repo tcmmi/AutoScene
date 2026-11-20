@@ -350,6 +350,31 @@
       "label": "Prețuri pe minut de video",
       "line": "Standard {{standard}} · Scanare rapidă {{fast}} · Cel mai bun {{best}}"
     },
-    "failed": "Nu s-a putut contacta AutoScene Cloud"
+    "failed": "Nu s-a putut contacta AutoScene Cloud",
+    "limits": {
+      "label": "Limitele tale",
+      "note": "Zilele, săptămânile (de luni) și lunile se socotesc în UTC.",
+      "day": "Azi: {{used}} din {{limit}}",
+      "week": "Săptămâna aceasta: {{used}} din {{limit}}",
+      "month": "Luna aceasta: {{used}} din {{limit}}",
+      "scans_one": "{{used}} din {{count}} scanare azi",
+      "scans_few": "{{used}} din {{count}} scanări azi",
+      "scans_other": "{{used}} din {{count}} de scanări azi",
+      "minutes_one": "Până la {{count}} minut de video pe scanare",
+      "minutes_few": "Până la {{count}} minute de video pe scanare",
+      "minutes_other": "Până la {{count}} de minute de video pe scanare",
+      "kinds": "Doar: {{list}}",
+      "kind": {
+        "live": "Cu actori reali",
+        "live_fast": "Cu actori reali, cu scanare rapidă",
+        "animated": "Animație 3D",
+        "animated_fast": "Animație 3D, cu scanare rapidă",
+        "anime": "Anime",
+        "anime_fast": "Anime, cu scanare rapidă",
+        "anime_best": "Anime, cu Cel mai bun",
+        "people": "Personaje fără față vizibilă",
+        "scenes": "Scene întregi"
+      }
+    }
   }
 }

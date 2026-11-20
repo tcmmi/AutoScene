@@ -23,6 +23,33 @@ pub struct CloudPrices {
     pub best: String,
 }
 
+/// One period's allowance, as people read it ("€0.40" of "€2.00").
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudAllowance {
+    pub used: String,
+    pub limit: String,
+}
+
+/// What this account may scan, when an admin or a code limited it. Days,
+/// weeks (from Monday) and months count in UTC.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudLimits {
+    pub day: Option<CloudAllowance>,
+    pub week: Option<CloudAllowance>,
+    pub month: Option<CloudAllowance>,
+    /// Scans started today.
+    pub scans_today: u32,
+    pub scans_per_day: Option<u32>,
+    /// The longest video a scan may take, in minutes.
+    pub max_minutes: Option<u32>,
+    /// The kinds of scan allowed (`live`, `live_fast`, `animated`,
+    /// `animated_fast`, `anime`, `anime_fast`, `anime_best`, `people`,
+    /// `scenes`), when not every kind.
+    pub kinds: Option<Vec<String>>,
+}
+
 /// A top-up on offer.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +73,7 @@ pub struct CloudAccount {
     pub paused: bool,
     pub prices: CloudPrices,
     pub top_ups: Vec<CloudTopUp>,
+    pub limits: Option<CloudLimits>,
 }
 
 /// How far AutoScene Cloud is open: hidden before the launch, then a closed
@@ -101,6 +129,21 @@ fn account_view(a: as_cloud::Account) -> CloudAccount {
             .into_iter()
             .map(|c| CloudTopUp { cents: c as i32, label: as_cloud::euros(c * as_cloud::MICROS_PER_CENT) })
             .collect(),
+        limits: a.limits.map(|l| {
+            let u = a.usage.unwrap_or_default();
+            let allowance = |limit: Option<as_cloud::Micros>, used: as_cloud::Micros| {
+                limit.map(|l| CloudAllowance { used: as_cloud::euros_fine(used), limit: as_cloud::euros_fine(l) })
+            };
+            CloudLimits {
+                day: allowance(l.per_day, u.day),
+                week: allowance(l.per_week, u.week),
+                month: allowance(l.per_month, u.month),
+                scans_today: u.scans_today,
+                scans_per_day: l.scans_per_day,
+                max_minutes: l.max_minutes,
+                kinds: l.kinds.map(|k| k.iter().map(|s| s.key().to_string()).collect()),
+            }
+        }),
     }
 }
 

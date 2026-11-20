@@ -105,6 +105,22 @@ The owner moves the cloud through three stages with the Discord bot (`/cloud sta
   | `charge.refunded` | Debits the refunded part not taken yet |
   | `charge.dispute.created` | Blocks the account |
 
+## Limits
+
+An account can be limited (`as_cloud::Limits`, `crates/as-cloud/src/limits.rs`); without limits it scans as far as its balance or pass goes. Every limit is optional:
+
+| Limit | What it stops |
+|---|---|
+| `per_day`, `per_week`, `per_month` | Scans worth more than this (micro-euros) in the UTC calendar day, the week from Monday, the month from the 1st. A scan counts at what it was charged; on a beta pass at what it would have been charged (its GPU-time floor included), so free scans count too. It counts in the period it was priced in (`ready`), not the one it was opened in. |
+| `scans_per_day` | Scans whose GPU was launched in the UTC day (a launch that failed doesn't count). |
+| `max_minutes` | A video longer than this. |
+| `kinds` | A scan whose switches aren't all in the list (`live`, `live_fast`, `animated`, `animated_fast`, `anime`, `anime_fast`, `anime_best`, `people`, `scenes`). |
+
+- **Where they come from.** An admin sets or lifts an account's own (`POST /admin/accounts/{support_id}/limits`). A code made with `limits` gives them to the account that redeems it as its code limits: they replace an earlier code's, never an admin's, and a beta pass's end with the pass (a credit code's stay until another code or an admin changes them). The account follows the stricter of the two, field by field (`Limits::stricter`). A transfer moves both, the stricter of each where the new account has some.
+- **Admin input is strict.** An empty limits object is refused (`null` lifts them), and so is an unknown field (`LimitsInput`, 422 from the JSON reader), so a typo can't lift a limit.
+- **When they're checked.** Opening a session checks the kind, the app's length, the day's scans and the allowances with the app's length. `ready` checks again with the length and price measured here and drops the session (nothing charged) when it doesn't fit. Both refuse with `limit` (403) and name the limit in the error's `over`. One session per account at a time, so two scans can't slip past an allowance together.
+- **In the app.** The account carries `limits` and `usage` (what the day, week and month used, today's scans, when each period starts again). The app checks them before uploading and says which limit stops the scan; **Settings → Cloud** lists them as "Your limits".
+
 ## Running the gateway
 
 ```toml
@@ -181,9 +197,10 @@ Admin calls go to `admin_listen` only. Each call carries:
 
 | Call | Body → reply |
 |---|---|
-| `POST /admin/codes` | `{"worth": {"kind": "credit", "cents": 500} \| {"kind": "beta", "until": <unix>}, "count": 1..500, "expires": <unix>?, "note": "…"?}` → `{"codes": ["XXXX-XXXX-XXXX-XXXX"]}`. The codes are shown once and stored only hashed. |
+| `POST /admin/codes` | `{"worth": {"kind": "credit", "cents": 500} \| {"kind": "beta", "until": <unix>}, "count": 1..500, "expires": <unix>?, "note": "…"?, "limits": {…}?}` → `{"codes": ["XXXX-XXXX-XXXX-XXXX"]}`. The codes are shown once and stored only hashed. A code's [limits](#limits) go to the account that redeems it. |
+| `POST /admin/accounts/{support_id}/limits` | `{"limits": {"per_day": 2000000, "scans_per_day": 5, …}}` sets an account's admin [limits](#limits), `{"limits": null}` lifts them (a code's stay) → `{}` |
 | `POST /admin/codes/revoke` | `{"code": "…"}` → `{"revoked": bool}` |
-| `GET /admin/accounts/{support_id}` | → balance, held, beta pass, block, device, the last 25 ledger rows and the last 10 sessions |
+| `GET /admin/accounts/{support_id}` | → balance, held, beta pass, block, device, the last 25 ledger rows and the last 10 sessions; its limits in force and their usage, the admin's and the code's (and until when) |
 | `POST /admin/accounts/{id}/adjust` | `{"amount": micros, "note": "…"}` |
 | `POST /admin/accounts/{id}/block` | `{"blocked": bool, "reason": "…"?}` |
 | `POST /admin/accounts/{id}/reset_device` | The device token stops working; the computer's next visit gets a new one |

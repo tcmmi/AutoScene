@@ -9,7 +9,8 @@
 use std::path::Path;
 
 use as_cloud::admin::{LedgerRow, SessionRow};
-use as_cloud::{Micros, ScanKind, Switch};
+use as_cloud::limits::{day_start, month_start, next_month, week_start};
+use as_cloud::{Limits, Micros, ScanKind, Switch, Usage};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use rusqlite_migration::{M, Migrations};
 
@@ -123,8 +124,35 @@ CREATE TABLE audit(
 );
 ";
 
+/// Limits (`as_cloud::Limits` as JSON): an admin's on an account, a code's
+/// (on the code, and on the account that redeemed it, until they end). A
+/// session's worth (what it was charged, or would have been on a beta pass),
+/// when it was priced (the period it counts in) and launched (a scan of the
+/// day's).
+const LIMITS: &str = "
+ALTER TABLE accounts ADD COLUMN limits TEXT;
+ALTER TABLE accounts ADD COLUMN code_limits TEXT;
+ALTER TABLE accounts ADD COLUMN code_limits_until INTEGER;
+ALTER TABLE codes ADD COLUMN limits TEXT;
+ALTER TABLE sessions ADD COLUMN worth INTEGER;
+ALTER TABLE sessions ADD COLUMN priced_at INTEGER;
+ALTER TABLE sessions ADD COLUMN launched_at INTEGER;
+";
+
 fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(SCHEMA)])
+    Migrations::new(vec![M::up(SCHEMA), M::up(LIMITS)])
+}
+
+fn limits_json(limits: Option<&Limits>) -> DbResult<Option<String>> {
+    limits.filter(|l| !l.is_empty()).map(serde_json::to_string).transpose().map_err(|e| DbError::Corrupt(e.to_string()))
+}
+
+fn read_limits(json: Option<String>, col: usize) -> rusqlite::Result<Option<Limits>> {
+    json.map(|j| {
+        serde_json::from_str(&j)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(col, rusqlite::types::Type::Text, Box::new(e)))
+    })
+    .transpose()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -135,6 +163,26 @@ pub struct AccountRow {
     pub beta_until: Option<i64>,
     pub blocked: bool,
     pub block_reason: Option<String>,
+    /// An admin's limits.
+    pub admin_limits: Option<Limits>,
+    /// The last code's limits, until `code_limits_until` (none: for good).
+    pub code_limits: Option<Limits>,
+    pub code_limits_until: Option<i64>,
+}
+
+impl AccountRow {
+    /// The code's limits while they last.
+    pub fn code_limits_at(&self, now: i64) -> Option<&Limits> {
+        self.code_limits.as_ref().filter(|_| self.code_limits_until.is_none_or(|u| u > now))
+    }
+
+    /// The limits in force at `now`: the stricter of an admin's and a code's.
+    pub fn limits_at(&self, now: i64) -> Option<Limits> {
+        match (self.admin_limits.as_ref(), self.code_limits_at(now)) {
+            (Some(a), Some(c)) => Some(a.stricter(c)),
+            (a, c) => a.or(c).cloned(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -163,7 +211,7 @@ pub struct Db {
     conn: Connection,
 }
 
-const ACCOUNT_COLS: &str = "a.id, a.support_id, a.created, a.beta_until, a.blocked, a.block_reason";
+const ACCOUNT_COLS: &str = "a.id, a.support_id, a.created, a.beta_until, a.blocked, a.block_reason, a.limits, a.code_limits, a.code_limits_until";
 
 fn account_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<AccountRow> {
     Ok(AccountRow {
@@ -173,6 +221,9 @@ fn account_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<AccountRow> {
         beta_until: r.get(3)?,
         blocked: r.get(4)?,
         block_reason: r.get(5)?,
+        admin_limits: read_limits(r.get(6)?, 6)?,
+        code_limits: read_limits(r.get(7)?, 7)?,
+        code_limits_until: r.get(8)?,
     })
 }
 
@@ -313,13 +364,14 @@ impl Db {
         credit: Option<Micros>,
         beta_until: Option<i64>,
         expires: Option<i64>,
+        limits: Option<&Limits>,
         note: Option<&str>,
         by: Option<&str>,
         now: i64,
     ) -> DbResult<()> {
         self.conn.execute(
-            "INSERT INTO codes(hash, credit, beta_until, expires, note, created, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![hash, credit, beta_until, expires, note, now, by],
+            "INSERT INTO codes(hash, credit, beta_until, expires, limits, note, created, created_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![hash, credit, beta_until, expires, limits_json(limits)?, note, now, by],
         )?;
         Ok(())
     }
@@ -350,14 +402,14 @@ impl Db {
     #[allow(clippy::type_complexity)]
     pub fn redeem(&mut self, account: i64, hash: &str, now: i64) -> DbResult<Result<Redeem, RedeemError>> {
         let tx = self.conn.transaction()?;
-        let row: Option<(i64, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>)> = tx
+        let row: Option<(i64, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>)> = tx
             .query_row(
-                "SELECT id, credit, beta_until, expires, redeemed_by, revoked_at FROM codes WHERE hash = ?1",
+                "SELECT id, credit, beta_until, expires, redeemed_by, revoked_at, limits FROM codes WHERE hash = ?1",
                 [hash],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
             )
             .optional()?;
-        let Some((id, credit, beta, expires, redeemed_by, revoked)) = row else {
+        let Some((id, credit, beta, expires, redeemed_by, revoked, limits)) = row else {
             return Ok(Err(RedeemError::Invalid));
         };
         if redeemed_by.is_some() {
@@ -384,6 +436,15 @@ impl Db {
             }
             (None, None) => return Err(DbError::Corrupt(format!("code {id} is worth nothing"))),
         };
+        // A code's limits replace an earlier code's (an admin's stay); a beta
+        // pass's end with it.
+        if let Some(limits) = limits {
+            let until = if credit.is_none() { beta } else { None };
+            tx.execute(
+                "UPDATE accounts SET code_limits = ?2, code_limits_until = ?3 WHERE id = ?1",
+                params![account, limits, until],
+            )?;
+        }
         tx.commit()?;
         Ok(Ok(got))
     }
@@ -395,6 +456,45 @@ impl Db {
             .query_row("SELECT redeemed_by FROM codes WHERE hash = ?1", [hash], |r| r.get(0))
             .optional()?
             .flatten())
+    }
+
+    /// Set an account's admin limits; none (or empty ones) lifts them. A
+    /// code's limits stay.
+    pub fn set_limits(&self, account: i64, limits: Option<&Limits>) -> DbResult<()> {
+        self.conn.execute("UPDATE accounts SET limits = ?2 WHERE id = ?1", params![account, limits_json(limits)?])?;
+        Ok(())
+    }
+
+    /// What an account's scans were worth this day, week and month (UTC),
+    /// each in the period it was priced in, and how many were launched today.
+    /// A scan is worth what it was charged, on a beta pass what it would have
+    /// been (GPU-time floor included).
+    pub fn usage(&self, account: i64, now: i64) -> DbResult<Usage> {
+        let worth = |since: i64| -> DbResult<Micros> {
+            Ok(self.conn.query_row(
+                "SELECT COALESCE(SUM(COALESCE(worth, CASE WHEN beta
+                     THEN CAST(COALESCE(price, 0) * MIN(MAX(share, 0), 1) AS INTEGER)
+                     ELSE COALESCE(charged, 0) END)), 0)
+                 FROM sessions WHERE account_id = ?1 AND COALESCE(priced_at, at) >= ?2
+                     AND closed_at IS NOT NULL AND price IS NOT NULL",
+                params![account, since],
+                |r| r.get(0),
+            )?)
+        };
+        let day = day_start(now);
+        Ok(Usage {
+            day: worth(day)?,
+            week: worth(week_start(now))?,
+            month: worth(month_start(now))?,
+            scans_today: self.conn.query_row(
+                "SELECT COUNT(*) FROM sessions WHERE account_id = ?1 AND launched_at >= ?2",
+                params![account, day],
+                |r| r.get(0),
+            )?,
+            day_ends: day + 86_400,
+            week_ends: week_start(now) + 7 * 86_400,
+            month_ends: next_month(now),
+        })
     }
 
     pub fn revoke_code(&self, hash: &str, now: i64) -> DbResult<bool> {
@@ -449,7 +549,14 @@ impl Db {
 
     /// The file is in and measured: hold its real price. `Ok(false)`: the
     /// balance (with this session's estimate given back) can't pay it.
-    pub fn price_session(&mut self, id: &str, duration_ms: u64, price: Micros, beta: bool) -> DbResult<Priced> {
+    pub fn price_session(
+        &mut self,
+        id: &str,
+        duration_ms: u64,
+        price: Micros,
+        beta: bool,
+        now: i64,
+    ) -> DbResult<Priced> {
         let tx = self.conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let open: Option<i64> = tx
             .query_row("SELECT account_id FROM sessions WHERE id = ?1 AND closed_at IS NULL", [id], |r| r.get(0))
@@ -464,8 +571,8 @@ impl Db {
             tx.execute("UPDATE holds SET amount = ?2 WHERE session = ?1", params![id, price])?;
         }
         tx.execute(
-            "UPDATE sessions SET duration_ms = ?2, price = ?3, state = 'running' WHERE id = ?1 AND closed_at IS NULL",
-            params![id, duration_ms as i64, price],
+            "UPDATE sessions SET duration_ms = ?2, price = ?3, priced_at = ?4, state = 'running' WHERE id = ?1 AND closed_at IS NULL",
+            params![id, duration_ms as i64, price, now],
         )?;
         tx.commit()?;
         Ok(Priced::Yes)
@@ -474,6 +581,21 @@ impl Db {
     /// End a session: charge `charge` (never more than its price), give the
     /// rest of the hold back. Settling twice charges once.
     pub fn settle(&mut self, id: &str, charge: Micros, state: &str, error: Option<&str>, now: i64) -> DbResult<Micros> {
+        self.settle_worth(id, charge, charge, state, error, now)
+    }
+
+    /// [`Self::settle`], and what the session was worth against the account's
+    /// limits: its charge, or on a beta pass `worth` (what it would have
+    /// been charged).
+    pub fn settle_worth(
+        &mut self,
+        id: &str,
+        charge: Micros,
+        worth: Micros,
+        state: &str,
+        error: Option<&str>,
+        now: i64,
+    ) -> DbResult<Micros> {
         let tx = self.conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let (account, price, beta, done): (i64, Option<Micros>, bool, Option<i64>) =
             tx.query_row("SELECT account_id, price, beta, closed_at FROM sessions WHERE id = ?1", [id], |r| {
@@ -492,12 +614,19 @@ impl Db {
             )?;
         }
         tx.execute("DELETE FROM holds WHERE session = ?1", [id])?;
+        let worth = if beta { worth.clamp(0, price.unwrap_or(0)) } else { charge };
         tx.execute(
-            "UPDATE sessions SET charged = ?2, state = ?3, error = ?4, closed_at = ?5 WHERE id = ?1",
-            params![id, charge, state, error, now],
+            "UPDATE sessions SET charged = ?2, state = ?3, error = ?4, closed_at = ?5, worth = ?6 WHERE id = ?1",
+            params![id, charge, state, error, now, worth],
         )?;
         tx.commit()?;
         Ok(charge)
+    }
+
+    /// Its worker started: a scan of the day's.
+    pub fn mark_launched(&self, id: &str, now: i64) -> DbResult<()> {
+        self.conn.execute("UPDATE sessions SET launched_at = ?2 WHERE id = ?1", params![id, now])?;
+        Ok(())
     }
 
     pub fn set_share(&self, id: &str, share: f64) -> DbResult<()> {
@@ -525,7 +654,7 @@ impl Db {
                     Ok((r.get(0)?, r.get(1)?))
                 })?;
             let charge = (price.unwrap_or(0) as f64 * share.clamp(0.0, 1.0)).ceil() as Micros;
-            self.settle(id, charge, "failed", Some("the gateway restarted"), now)?;
+            self.settle_worth(id, charge, charge, "failed", Some("the gateway restarted"), now)?;
         }
         Ok(ids)
     }
@@ -644,6 +773,34 @@ impl Db {
             params![from, to],
         )?;
         tx.execute("UPDATE accounts SET beta_until = NULL WHERE id = ?1", [from])?;
+        // The limits go along: on the new account, the stricter of both.
+        let both = |col: &str| -> DbResult<()> {
+            let read = |id: i64| -> DbResult<Option<Limits>> {
+                let json: Option<String> =
+                    tx.query_row(&format!("SELECT {col} FROM accounts WHERE id = ?1"), [id], |r| r.get(0))?;
+                Ok(read_limits(json, 0)?)
+            };
+            let merged = match (read(from)?, read(to)?) {
+                (Some(a), Some(b)) => Some(a.stricter(&b)),
+                (a, b) => a.or(b),
+            };
+            tx.execute(
+                &format!("UPDATE accounts SET {col} = ?2 WHERE id = ?1"),
+                params![to, limits_json(merged.as_ref())?],
+            )?;
+            Ok(())
+        };
+        both("limits")?;
+        both("code_limits")?;
+        tx.execute(
+            "UPDATE accounts SET code_limits_until = (SELECT code_limits_until FROM accounts WHERE id = ?1)
+             WHERE id = ?2 AND (SELECT code_limits FROM accounts WHERE id = ?1) IS NOT NULL",
+            params![from, to],
+        )?;
+        tx.execute(
+            "UPDATE accounts SET limits = NULL, code_limits = NULL, code_limits_until = NULL WHERE id = ?1",
+            [from],
+        )?;
         tx.commit()?;
         Ok(Some(amount))
     }
@@ -820,12 +977,16 @@ mod tests {
         assert!(db.open_session("s1", a, &KIND, 1, "x", false, 300_000, 0).unwrap());
         assert_eq!(db.held(a).unwrap(), 300_000);
         // The real price may be higher than the estimate if the balance pays it.
-        assert_eq!(db.price_session("s1", 60_000, 900_000, false).unwrap(), Priced::Yes);
-        assert_eq!(db.price_session("s1", 60_000, 1_100_000, false).unwrap(), Priced::Short);
+        assert_eq!(db.price_session("s1", 60_000, 900_000, false, 1).unwrap(), Priced::Yes);
+        assert_eq!(db.price_session("s1", 60_000, 1_100_000, false, 1).unwrap(), Priced::Short);
         assert_eq!(db.held(a).unwrap(), 900_000);
         assert_eq!(db.settle("s1", 5_000_000, "closed", None, 1).unwrap(), 900_000, "capped at the price");
         assert_eq!(db.settle("s1", 1, "closed", None, 2).unwrap(), 900_000, "settled once");
-        assert_eq!(db.price_session("s1", 60_000, 1, false).unwrap(), Priced::Closed, "a closed session stays closed");
+        assert_eq!(
+            db.price_session("s1", 60_000, 1, false, 1).unwrap(),
+            Priced::Closed,
+            "a closed session stays closed"
+        );
         assert_eq!((db.balance(a).unwrap(), db.held(a).unwrap()), (100_000, 0));
     }
 
@@ -834,7 +995,7 @@ mod tests {
         let mut db = Db::memory().unwrap();
         let a = account(&mut db);
         assert!(db.open_session("s", a, &KIND, 1, "x", true, 0, 0).unwrap());
-        assert_eq!(db.price_session("s", 60_000, 10_000, true).unwrap(), Priced::Yes);
+        assert_eq!(db.price_session("s", 60_000, 10_000, true, 1).unwrap(), Priced::Yes);
         assert_eq!(db.settle("s", 10_000, "closed", None, 1).unwrap(), 0);
         assert_eq!(db.balance(a).unwrap(), 0);
     }
@@ -843,9 +1004,9 @@ mod tests {
     fn a_code_counts_once() {
         let mut db = Db::memory().unwrap();
         let a = account(&mut db);
-        db.insert_code("h1", Some(500_000), None, None, None, None, 0).unwrap();
-        db.insert_code("h2", None, Some(1_000), Some(50), None, None, 0).unwrap();
-        db.insert_code("h3", Some(1), None, None, None, None, 0).unwrap();
+        db.insert_code("h1", Some(500_000), None, None, None, None, None, 0).unwrap();
+        db.insert_code("h2", None, Some(1_000), Some(50), None, None, None, 0).unwrap();
+        db.insert_code("h3", Some(1), None, None, None, None, None, 0).unwrap();
         assert_eq!(db.redeem(a, "h1", 1).unwrap(), Ok(Redeem::Credit(500_000)));
         assert_eq!(db.redeem(a, "h1", 2).unwrap(), Err(RedeemError::Used));
         assert_eq!(db.redeem(a, "nope", 2).unwrap(), Err(RedeemError::Invalid));
@@ -880,7 +1041,7 @@ mod tests {
         let a = account(&mut db);
         let (b, _) = db.register("hw2", "tok2", || "AS-TEST-0002".into(), "windows", "1", 0).unwrap();
         db.adjust(a, 1_234_567, "test", 0).unwrap();
-        db.insert_code("beta", None, Some(9_999), None, None, None, 0).unwrap();
+        db.insert_code("beta", None, Some(9_999), None, None, None, None, 0).unwrap();
         db.redeem(a, "beta", 1).unwrap().unwrap();
         assert!(db.open_session("s", a, &KIND, 1, "x", false, 1, 0).unwrap());
         assert_eq!(db.transfer(a, b.id, "lost pc", 1).unwrap(), None);
@@ -888,5 +1049,64 @@ mod tests {
         assert_eq!(db.transfer(a, b.id, "lost pc", 2).unwrap(), Some(1_234_567));
         assert_eq!((db.balance(a).unwrap(), db.balance(b.id).unwrap()), (0, 1_234_567));
         assert_eq!((db.account(a).unwrap().beta_until, db.account(b.id).unwrap().beta_until), (None, Some(9_999)));
+    }
+
+    #[test]
+    fn a_codes_limits_go_to_its_account_and_usage_counts_by_period() {
+        let mut db = Db::memory().unwrap();
+        let a = account(&mut db);
+        assert_eq!(db.account(a).unwrap().limits_at(0), None);
+        // A pass's limits, until the pass ends at 1000.
+        let limits = Limits { per_day: Some(2_000_000), scans_per_day: Some(3), ..Limits::default() };
+        db.insert_code("pass", None, Some(1_000), None, Some(&limits), None, None, 0).unwrap();
+        db.redeem(a, "pass", 1).unwrap().unwrap();
+        assert_eq!(db.account(a).unwrap().limits_at(999), Some(limits.clone()));
+        assert_eq!(db.account(a).unwrap().limits_at(1_000), None, "they end with the pass");
+        // A code without limits leaves them; an admin's stricter ones count beside them.
+        db.insert_code("cash", Some(1_000_000), None, None, None, None, None, 0).unwrap();
+        db.redeem(a, "cash", 2).unwrap().unwrap();
+        assert_eq!(db.account(a).unwrap().limits_at(3), Some(limits.clone()));
+        let admin = Limits { per_day: Some(500_000), ..Limits::default() };
+        db.set_limits(a, Some(&admin)).unwrap();
+        assert_eq!(db.account(a).unwrap().limits_at(3), Some(Limits { per_day: Some(500_000), ..limits.clone() }));
+        // A looser code doesn't lift the admin's.
+        let loose = Limits { per_day: Some(9_000_000), ..Limits::default() };
+        db.insert_code("loose", Some(1), None, None, Some(&loose), None, None, 0).unwrap();
+        db.redeem(a, "loose", 4).unwrap().unwrap();
+        let row = db.account(a).unwrap();
+        assert_eq!((row.code_limits.clone(), row.code_limits_until), (Some(loose), None), "a credit code's last");
+        assert_eq!(row.limits_at(5).and_then(|l| l.per_day), Some(500_000));
+        db.set_limits(a, Some(&Limits::default())).unwrap();
+        assert_eq!(db.account(a).unwrap().admin_limits, None, "empty ones lift an admin's");
+
+        // 2026-11-19 12:00 UTC (a Thursday); the day before; the 2nd of the month.
+        let t = 1_795_089_600;
+        let run = |db: &mut Db, id: &str, at: i64, beta: bool, price: Micros, share: f64, charge: Micros| {
+            assert!(db.open_session(id, a, &KIND, 1, "x", beta, 0, at).unwrap());
+            assert_eq!(db.price_session(id, 60_000, price, beta, at).unwrap(), Priced::Yes);
+            db.mark_launched(id, at).unwrap();
+            db.set_share(id, share).unwrap();
+            let worth = (price as f64 * share) as Micros;
+            db.settle_worth(id, charge, worth, "closed", None, at + 60).unwrap();
+        };
+        run(&mut db, "today", t - 3600, false, 300_000, 1.0, 300_000);
+        run(&mut db, "beta-half", t - 1800, true, 400_000, 0.5, 0);
+        run(&mut db, "yesterday", t - 86_400, false, 100_000, 1.0, 100_000);
+        run(&mut db, "this-month", 1_793_491_200 + 86_400, false, 50_000, 1.0, 50_000);
+        // Never priced (a bad upload): no worth, no scan.
+        assert!(db.open_session("dropped", a, &KIND, 1, "x", false, 0, t - 60).unwrap());
+        db.settle("dropped", 0, "failed", None, t - 50).unwrap();
+        // Priced, but no GPU could start: no scan of the day's.
+        assert!(db.open_session("no-gpu", a, &KIND, 1, "x", true, 0, t - 40).unwrap());
+        assert_eq!(db.price_session("no-gpu", 60_000, 10_000, true, t - 40).unwrap(), Priced::Yes);
+        db.settle("no-gpu", 0, "failed", None, t - 30).unwrap();
+        // Opened yesterday, priced today: it counts today.
+        assert!(db.open_session("midnight", a, &KIND, 1, "x", true, 0, 1_795_046_400 - 60).unwrap());
+        assert_eq!(db.price_session("midnight", 60_000, 30_000, true, 1_795_046_400 + 60).unwrap(), Priced::Yes);
+        db.mark_launched("midnight", 1_795_046_400 + 60).unwrap();
+        db.settle_worth("midnight", 0, 30_000, "closed", None, 1_795_046_400 + 120).unwrap();
+        let u = db.usage(a, t).unwrap();
+        assert_eq!((u.day, u.week, u.month, u.scans_today), (530_000, 630_000, 680_000, 3));
+        assert_eq!((u.day_ends, u.week_ends, u.month_ends), (1_795_132_800, 1_795_392_000, 1_796_083_200));
     }
 }

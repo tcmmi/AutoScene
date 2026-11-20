@@ -606,3 +606,68 @@ fn prices_that_follow_the_gpu_service_are_shown_and_charged() {
     let info = Client::new(fixed.base.clone(), None).info().unwrap();
     assert_eq!((info.prices, info.price_basis), (Some(Prices::default()), None));
 }
+
+#[test]
+fn limits_from_a_code_or_an_admin_hold_when_a_scan_opens_and_when_it_is_measured() {
+    let cloud = start();
+    // A pass for anime only, three minutes a scan, €0.03 a day.
+    let limits = json!({"per_day": 30_000, "max_minutes": 3, "kinds": ["anime"]});
+    let (status, made) = admin_post(
+        &cloud,
+        admin::CODES,
+        json!({"worth": {"kind": "beta", "until": 4_000_000_000i64}, "count": 1, "limits": limits}),
+    );
+    assert_eq!(status, 200, "{made}");
+    let app = device(&cloud, 1);
+    app.redeem(made["codes"][0].as_str().unwrap()).unwrap();
+    let account = app.account().unwrap();
+    let sid = account.support_id.clone();
+    assert_eq!(account.limits.as_ref().and_then(|l| l.per_day), Some(30_000));
+    assert_eq!(account.usage.map(|u| (u.day, u.scans_today)), Some((0, 0)));
+
+    let ep = file(cloud.data.path(), 1 << 20);
+    let sha = file_sha256(&ep, |_| true).unwrap();
+    let req = |kind, duration_ms| SessionRequest { kind, size: 1 << 20, sha256: sha.clone(), duration_ms };
+    let live = ScanKind { footage: Footage::Live, depth: Depth::Standard, people: false, scenes: false };
+    assert_eq!(code(app.open_session(&req(live, 60_000)).unwrap_err()), ErrorCode::Limit, "not anime");
+    assert_eq!(code(app.open_session(&req(ANIME, 4 * 60_000)).unwrap_err()), ErrorCode::Limit, "too long");
+
+    // Two minutes measured, €0.02 of the day's €0.03: it runs, free on the pass but counted.
+    let s = app.open_session(&req(ANIME, 60_000)).unwrap();
+    app.upload(&s.id, &ep, |_, _| true).unwrap();
+    assert_eq!(app.ready(&s.id).unwrap().price, 0, "free on the pass");
+    app.send_jobs(&s.id, vec![json!({"op": "faces", "id": 1, "path": "x", "anime": true})]).unwrap();
+    until_done(&app, &s.id, 1);
+    assert_eq!(app.close(&s.id).unwrap().charged, 0);
+    assert_eq!(app.account().unwrap().usage.map(|u| (u.day, u.scans_today)), Some((20_000, 1)));
+
+    // The app says half a minute (it fits), the gateway measures two (€0.02 more): refused, nothing used.
+    let s = app.open_session(&req(ANIME, 30_000)).unwrap();
+    app.upload(&s.id, &ep, |_, _| true).unwrap();
+    assert_eq!(code(app.ready(&s.id).unwrap_err()), ErrorCode::Limit);
+    assert_eq!(app.account().unwrap().usage.map(|u| (u.day, u.scans_today)), Some((20_000, 1)));
+
+    // An admin allows one scan a day beside the pass's limits: today's is used.
+    assert_eq!(admin_post(&cloud, &admin::limits(&sid), json!({"limits": {"scans_per_day": 1}})).0, 200);
+    assert_eq!(code(app.open_session(&req(ANIME, 60_000)).unwrap_err()), ErrorCode::Limit);
+    let view = admin_get(&cloud, &admin::account(&sid));
+    assert_eq!((view["limits"]["scans_per_day"].as_u64(), view["usage"]["scans_today"].as_u64()), (Some(1), Some(1)));
+    assert_eq!(view["limits"]["per_day"].as_i64(), Some(30_000), "the pass's limits still count");
+    assert_eq!(view["code_limits_until"].as_i64(), Some(4_000_000_000));
+    // Lifting the admin's leaves the pass's.
+    assert_eq!(admin_post(&cloud, &admin::limits(&sid), json!({"limits": null})).0, 200);
+    let account = app.account().unwrap();
+    assert_eq!(account.limits.map(|l| (l.per_day, l.scans_per_day)), Some((Some(30_000), None)));
+    assert!(admin_get(&cloud, &admin::account(&sid))["admin_limits"].is_null());
+    // Limits that can't hold, empty ones and misspelled ones are refused.
+    // (A field the gateway doesn't know never reaches it: the JSON reader refuses it.)
+    for (bad, status) in [(json!({"per_day": 0}), 400), (json!({}), 400), (json!({"per_days": 100}), 422)] {
+        assert_eq!(admin_post(&cloud, &admin::limits(&sid), json!({ "limits": bad })).0, status, "{bad}");
+    }
+    let (status, _) = admin_post(
+        &cloud,
+        admin::CODES,
+        json!({"worth": {"kind": "credit", "cents": 100}, "count": 1, "limits": {"kinds": []}}),
+    );
+    assert_eq!(status, 400);
+}

@@ -62,6 +62,18 @@ pub struct PriceBasis {
     pub at: i64,
 }
 
+/// `m` to the hundredth of a cent where it has one, else with two decimals
+/// ("€0.005", "€0.0125", "€2.00"), rounded down: a scan's worth and what is
+/// left of an allowance, which whole cents would hide.
+pub fn euros_fine(m: Micros) -> String {
+    let sign = if m < 0 { "-" } else { "" };
+    let units = (m.unsigned_abs() / 100) as u128;
+    let digits = format!("{:04}", units % 10_000);
+    let digits = digits.trim_end_matches('0');
+    let digits = if digits.len() < 2 { format!("{digits:0<2}") } else { digits.to_string() };
+    format!("{sign}€{}.{digits}", units / 10_000)
+}
+
 /// `m` as people read it: euros with two decimals, rounded down, so a
 /// balance never shows money that isn't there ("€4.99", "-€0.20").
 pub fn euros(m: Micros) -> String {
@@ -73,6 +85,18 @@ pub fn euros(m: Micros) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn fine_amounts_keep_their_tenths_of_a_cent() {
+        assert_eq!(euros_fine(5_000), "€0.005");
+        assert_eq!(euros_fine(12_500), "€0.0125");
+        assert_eq!(euros_fine(10_000), "€0.01");
+        assert_eq!(euros_fine(2_000_000), "€2.00");
+        assert_eq!(euros_fine(0), "€0.00");
+        assert_eq!(euros_fine(1_234_599), "€1.2345");
+        assert_eq!(euros_fine(-200_000), "-€0.20");
+    }
+
     use super::*;
     use crate::Footage;
 

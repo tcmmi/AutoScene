@@ -3,13 +3,13 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { toast } from "sonner"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { CloudStage, CloudStatus } from "@/bindings"
+import type { CloudLimits, CloudStage, CloudStatus } from "@/bindings"
 import { commands } from "@/lib/ipc"
 import { queryClient } from "@/lib/queries"
 import { CloudSection } from "./CloudSection"
 
 const { state } = vi.hoisted(() => ({
-  state: { cents: 420, enabled: false, available: true, stage: "open" as CloudStage },
+  state: { cents: 420, enabled: false, available: true, stage: "open" as CloudStage, limits: null as CloudLimits | null },
 }))
 
 /** As `commands::cloud` answers: a balance, never a key; no account before the launch. */
@@ -30,6 +30,7 @@ function status(): CloudStatus {
           paused: false,
           prices: { standard: "€0.01", fast: "€0.005", best: "€0.0125" },
           topUps: [500, 1000, 2000].map((cents) => ({ cents, label: euros(cents) })),
+          limits: state.limits,
         }
       : null,
     error: null,
@@ -63,13 +64,40 @@ const open = () =>
   )
 
 beforeEach(() => {
-  Object.assign(state, { cents: 420, enabled: false, available: true, stage: "open" })
+  Object.assign(state, { cents: 420, enabled: false, available: true, stage: "open", limits: null })
   queryClient.clear()
   vi.clearAllMocks()
 })
 afterEach(cleanup)
 
 describe("Settings → Cloud", () => {
+  it("shows an account's limits and what it used of them", async () => {
+    state.limits = {
+      day: { used: "€0.40", limit: "€2.00" },
+      week: null,
+      month: { used: "€4.00", limit: "€10.00" },
+      scansToday: 2,
+      scansPerDay: 5,
+      maxMinutes: 60,
+      kinds: ["live_fast", "anime_fast", "scenes"],
+    }
+    open()
+    expect(await screen.findByText("Your limits")).toBeTruthy()
+    expect(screen.getByText("Today: €0.40 of €2.00")).toBeTruthy()
+    expect(screen.getByText("This month: €4.00 of €10.00")).toBeTruthy()
+    expect(screen.queryByText(/This week/)).toBeNull()
+    expect(screen.getByText("2 of 5 scans today")).toBeTruthy()
+    expect(screen.getByText("Up to 60 minutes of video a scan")).toBeTruthy()
+    expect(screen.getByText("Only: Live action with Fast Scan, Anime with Fast Scan, Whole scenes")).toBeTruthy()
+    expect(screen.getByText("Days, weeks (from Monday) and months count in UTC.")).toBeTruthy()
+  })
+
+  it("has no limits row for an account without limits", async () => {
+    open()
+    await screen.findByText("€4.20")
+    expect(screen.queryByText("Your limits")).toBeNull()
+  })
+
   it("shows the balance, never a key", async () => {
     open()
     expect(await screen.findByText("€4.20")).toBeTruthy()

@@ -1184,6 +1184,7 @@ function cloudStatus() {
       paused: false,
       prices: { standard: "€0.01", fast: "€0.005", best: "€0.0125" },
       topUps: [500, 1000, 2000].map((cents) => ({ cents, label: euros(cents) })),
+      limits: null,
     },
     error: null,
   }

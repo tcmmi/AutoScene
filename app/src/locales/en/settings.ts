@@ -255,6 +255,35 @@ export default {
       /** The three scans and what each costs per minute: {{price}} is like "€0.01". */
       line: "Standard {{standard}} · Fast Scan {{fast}} · Best {{best}}",
     },
+    /** The account's limits: set by AutoScene, or brought by a code the person redeemed. */
+    limits: {
+      label: "Your limits",
+      /** Under the lines: how the periods count. */
+      note: "Days, weeks (from Monday) and months count in UTC.",
+      /** What a period's scans were worth, of what it allows: amounts like "€0.40" and "€2.00". */
+      day: "Today: {{used}} of {{limit}}",
+      week: "This week: {{used}} of {{limit}}",
+      month: "This month: {{used}} of {{limit}}",
+      /** Scans started today, of how many a day may start. */
+      scans_one: "{{used}} of {{count}} scan today",
+      scans_other: "{{used}} of {{count}} scans today",
+      /** The longest video one scan may take. */
+      minutes_one: "Up to {{count}} minute of video a scan",
+      minutes_other: "Up to {{count}} minutes of video a scan",
+      /** The kinds of scan the account may run, when not every kind: a list of the names below. */
+      kinds: "Only: {{list}}",
+      kind: {
+        live: "Live action",
+        live_fast: "Live action with Fast Scan",
+        animated: "3D animation",
+        animated_fast: "3D animation with Fast Scan",
+        anime: "Anime",
+        anime_fast: "Anime with Fast Scan",
+        anime_best: "Anime with Best",
+        people: "Characters without a visible face",
+        scenes: "Whole scenes",
+      },
+    },
     failed: "Couldn't reach AutoScene Cloud",
   },
 

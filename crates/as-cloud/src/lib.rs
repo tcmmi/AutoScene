@@ -17,6 +17,7 @@
 pub mod code;
 pub mod engine;
 mod kind;
+pub mod limits;
 mod money;
 mod wire;
 
@@ -24,5 +25,6 @@ mod wire;
 pub mod client;
 
 pub use kind::{Depth, FacesFlags, Footage, ScanKind, Switch};
-pub use money::{MICROS_PER_CENT, MICROS_PER_EURO, Micros, PriceBasis, Prices, TOP_UPS_CENTS, euros};
+pub use limits::{Limits, LimitsInput, Over, Usage};
+pub use money::{MICROS_PER_CENT, MICROS_PER_EURO, Micros, PriceBasis, Prices, TOP_UPS_CENTS, euros, euros_fine};
 pub use wire::*;

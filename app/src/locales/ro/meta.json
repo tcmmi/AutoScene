@@ -9474,5 +9474,101 @@
   "backend:cloud.hidden": {
     "state": "draft",
     "en": "a762e48a"
+  },
+  "settings:cloud.limits.label": {
+    "state": "draft",
+    "en": "b8f0269a"
+  },
+  "settings:cloud.limits.note": {
+    "state": "draft",
+    "en": "fc678e4e"
+  },
+  "settings:cloud.limits.day": {
+    "state": "draft",
+    "en": "073bd109"
+  },
+  "settings:cloud.limits.week": {
+    "state": "draft",
+    "en": "9e33531a"
+  },
+  "settings:cloud.limits.month": {
+    "state": "draft",
+    "en": "2693c226"
+  },
+  "settings:cloud.limits.scans": {
+    "state": "draft",
+    "en": "542ae5ee"
+  },
+  "settings:cloud.limits.minutes": {
+    "state": "draft",
+    "en": "a9ef38b0"
+  },
+  "settings:cloud.limits.kinds": {
+    "state": "draft",
+    "en": "8be347ed"
+  },
+  "settings:cloud.limits.kind.live": {
+    "state": "draft",
+    "en": "0e07c207"
+  },
+  "settings:cloud.limits.kind.live_fast": {
+    "state": "draft",
+    "en": "75790a96"
+  },
+  "settings:cloud.limits.kind.animated": {
+    "state": "draft",
+    "en": "bb32cbb4"
+  },
+  "settings:cloud.limits.kind.animated_fast": {
+    "state": "draft",
+    "en": "80c465fb"
+  },
+  "settings:cloud.limits.kind.anime": {
+    "state": "draft",
+    "en": "3e234f0f"
+  },
+  "settings:cloud.limits.kind.anime_fast": {
+    "state": "draft",
+    "en": "dde9757e"
+  },
+  "settings:cloud.limits.kind.anime_best": {
+    "state": "draft",
+    "en": "0e4f0445"
+  },
+  "settings:cloud.limits.kind.people": {
+    "state": "draft",
+    "en": "30ad2ab1"
+  },
+  "settings:cloud.limits.kind.scenes": {
+    "state": "draft",
+    "en": "3653d605"
+  },
+  "backend:cloud.limit": {
+    "state": "draft",
+    "en": "9eb721a7"
+  },
+  "backend:cloud.limitDay": {
+    "state": "draft",
+    "en": "2e30edfc"
+  },
+  "backend:cloud.limitKind": {
+    "state": "draft",
+    "en": "c994c01c"
+  },
+  "backend:cloud.limitLength": {
+    "state": "draft",
+    "en": "7b1ce466"
+  },
+  "backend:cloud.limitMonth": {
+    "state": "draft",
+    "en": "26b410b6"
+  },
+  "backend:cloud.limitScans": {
+    "state": "draft",
+    "en": "d57f9732"
+  },
+  "backend:cloud.limitWeek": {
+    "state": "draft",
+    "en": "01dee693"
   }
 }

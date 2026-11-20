@@ -32,7 +32,7 @@ use as_cloud::admin::{self, AccountView, CodeWorth};
 use as_cloud::engine::{self, Event, Op};
 use as_cloud::{
     Account, ApiError, CheckoutReply, CheckoutRequest, CloseReply, ErrorCode, EventsReply, Info, JobsRequest, Micros,
-    Prices, ReadyReply, RedeemReply, RedeemRequest, RegisterReply, RegisterRequest, ScanKind, SessionReply,
+    Over, Prices, ReadyReply, RedeemReply, RedeemRequest, RegisterReply, RegisterRequest, ScanKind, SessionReply,
     SessionRequest, Stage, TOP_UPS_CENTS, UploadState, WorkerDone, WorkerEvents, WorkerJobs, WorkerLaunch, path,
 };
 use axum::body::{Body, Bytes};
@@ -111,6 +111,22 @@ fn fail(code: ErrorCode, message: impl Into<String>) -> Fail {
     Fail(ApiError::new(code, message))
 }
 
+/// The account's limits stop a scan: which one travels with the refusal.
+fn over_limit(over: Over) -> Fail {
+    Fail(ApiError { over: Some(over), ..ApiError::new(ErrorCode::Limit, over_message(&over)) })
+}
+
+/// Limits an admin sent: none lifts them, empty ones are a mistake.
+fn admin_limits_of(input: Option<as_cloud::LimitsInput>) -> Result<Option<as_cloud::Limits>> {
+    let Some(input) = input else { return Ok(None) };
+    let limits = as_cloud::Limits::from(input);
+    if limits.is_empty() {
+        return Err(fail(ErrorCode::BadRequest, "no limit given: send null to lift them"));
+    }
+    limits.check().map_err(|e| fail(ErrorCode::BadRequest, e))?;
+    Ok(Some(limits))
+}
+
 impl From<DbError> for Fail {
     fn from(e: DbError) -> Self {
         tracing::error!("{e}");
@@ -123,7 +139,7 @@ impl IntoResponse for Fail {
         let status = match self.0.code {
             ErrorCode::BadRequest | ErrorCode::CodeInvalid => StatusCode::BAD_REQUEST,
             ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
-            ErrorCode::Blocked | ErrorCode::KindOff | ErrorCode::Closed => StatusCode::FORBIDDEN,
+            ErrorCode::Blocked | ErrorCode::KindOff | ErrorCode::Closed | ErrorCode::Limit => StatusCode::FORBIDDEN,
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
             ErrorCode::Balance => StatusCode::PAYMENT_REQUIRED,
             ErrorCode::Paused => StatusCode::SERVICE_UNAVAILABLE,
@@ -132,7 +148,7 @@ impl IntoResponse for Fail {
             ErrorCode::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             ErrorCode::Checksum | ErrorCode::Unreadable => StatusCode::UNPROCESSABLE_ENTITY,
             ErrorCode::Gone => StatusCode::GONE,
-            ErrorCode::Server => StatusCode::INTERNAL_SERVER_ERROR,
+            ErrorCode::Server | ErrorCode::Unknown => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, Json(self.0)).into_response()
     }
@@ -194,6 +210,9 @@ struct LiveState {
     /// The worker said how long it ran.
     worker_reported: bool,
     price: Micros,
+    /// Its price on the price list, beta pass or not: what it is worth
+    /// against the account's limits.
+    list_price: Micros,
     /// Every job line the app sent, in order; the worker reads on from its cursor.
     jobs: Vec<Value>,
     jobs_bytes: usize,
@@ -237,6 +256,7 @@ impl LiveState {
             worker_token: None,
             worker_reported: false,
             price: 0,
+            list_price: 0,
             jobs: Vec::new(),
             jobs_bytes: 0,
             job_ids: HashSet::new(),
@@ -276,8 +296,13 @@ impl LiveState {
     /// (the app can make jobs fail, so a failure is never free), and never
     /// less than the GPU time it held (`floor`), never more than its price.
     fn charge(&self, floor: Micros) -> Micros {
-        let earned = (self.price as f64 * self.share()).ceil() as Micros;
-        earned.max(floor).min(self.price)
+        self.earned(self.price, floor)
+    }
+
+    /// What it did of `price`, never less than `floor`, never more than `price`.
+    fn earned(&self, price: Micros, floor: Micros) -> Micros {
+        let earned = (price as f64 * self.share()).ceil() as Micros;
+        earned.max(floor).min(price)
     }
 
     fn end(&mut self, error: Option<String>) {
@@ -476,6 +501,8 @@ impl Gateway {
             paused,
             top_ups: TOP_UPS_CENTS.to_vec(),
             stage: self.stage(db)?,
+            usage: a.limits_at(now()).map(|_| db.usage(a.id, now())).transpose()?,
+            limits: a.limits_at(now()),
         })
     }
 
@@ -514,7 +541,7 @@ impl Gateway {
         if let Some(charged) = *settled {
             return Ok(charged);
         }
-        let (charge, error) = {
+        let (charge, worth, error) = {
             let mut st = live.st.lock();
             st.close = true;
             // The replies the charge saw are the ones the app gets.
@@ -524,9 +551,9 @@ impl Gateway {
             } else {
                 0
             };
-            (st.charge(floor), st.error.clone())
+            (st.charge(floor), st.earned(st.list_price, floor), st.error.clone())
         };
-        let charged = self.db.lock().settle(&live.id, charge, state, error.as_deref(), now())?;
+        let charged = self.db.lock().settle_worth(&live.id, charge, worth, state, error.as_deref(), now())?;
         *settled = Some(charged);
         {
             let mut st = live.st.lock();
@@ -661,7 +688,8 @@ async fn redeem(
             });
         }
     };
-    db.audit(Some(&a.support_id), "redeem", &format!("added {added}"), t)?;
+    let limits = db.account(a.id)?.code_limits;
+    db.audit(Some(&a.support_id), "redeem", &format!("added {added}, code limits {limits:?}"), t)?;
     let a = db.account(a.id)?;
     Ok(Json(RedeemReply { added, account: gw.account_view(&db, &a)? }))
 }
@@ -770,6 +798,13 @@ async fn open_session(
         }
         if db.open_session_count(a.id)? > 0 {
             return Err(fail(ErrorCode::Busy, "another scan of this account is still open"));
+        }
+        // The app's length here; `ready` checks again with the one measured.
+        if let Some(limits) = a.limits_at(t) {
+            let worth = rates.price(&req.kind, req.duration_ms);
+            if let Some(over) = limits.over(&db.usage(a.id, t)?, &req.kind, req.duration_ms, worth, true) {
+                return Err(over_limit(over));
+            }
         }
         if !db.open_session(&id, a.id, &req.kind, req.size, &req.sha256.to_ascii_lowercase(), beta, estimate, t)? {
             return Err(fail(ErrorCode::Balance, "the balance doesn't cover this scan"));
@@ -928,8 +963,20 @@ async fn ready(State(gw): State<Shared>, Path(id): Path<String>, headers: Header
         return Err(no);
     }
     let price = live.rates.price(&live.kind, duration);
+    // The account's limits, with the length and the price measured here.
+    let over = {
+        let db = gw.db.lock();
+        match db.account(live.account)?.limits_at(now()) {
+            Some(limits) => limits.over(&db.usage(live.account, now())?, &live.kind, duration, price, false),
+            None => None,
+        }
+    };
+    if let Some(over) = over {
+        gw.drop_session(&live, &over_message(&over));
+        return Err(over_limit(over));
+    }
     // The database lock must be gone before `drop_session` takes it again.
-    let priced = gw.db.lock().price_session(&id, duration, price, live.beta)?;
+    let priced = gw.db.lock().price_session(&id, duration, price, live.beta, now())?;
     match priced {
         Priced::Yes => {}
         Priced::Short => {
@@ -947,6 +994,7 @@ async fn ready(State(gw): State<Shared>, Path(id): Path<String>, headers: Header
         let t = now();
         st.phase = Phase::Running;
         st.price = if live.beta { 0 } else { price };
+        st.list_price = price;
         st.worker_token = Some(crypto::sha256_hex(token.as_bytes()));
         st.worker_seen = t;
         st.launched_at = t;
@@ -968,6 +1016,7 @@ async fn ready(State(gw): State<Shared>, Path(id): Path<String>, headers: Header
         gw.drop_session(&live, "no cloud GPU could be started");
         return Err(fail(ErrorCode::Server, "no cloud GPU could be started: nothing was charged"));
     }
+    gw.db.lock().mark_launched(&id, now())?;
     Ok(Json(ReadyReply { duration_ms: duration, price: if live.beta { 0 } else { price } }))
 }
 
@@ -1322,6 +1371,7 @@ async fn admin_codes(
     if req.count == 0 || req.count > 500 {
         return Err(fail(ErrorCode::BadRequest, "between 1 and 500 codes"));
     }
+    let limits = admin_limits_of(req.limits)?;
     let (credit, beta) = match req.worth {
         CodeWorth::Credit { cents } if (1..=100_000).contains(&cents) => {
             (Some(cents * as_cloud::MICROS_PER_CENT), None)
@@ -1341,13 +1391,14 @@ async fn admin_codes(
             credit,
             beta,
             req.expires,
+            limits.as_ref(),
             req.note.as_deref(),
             actor.as_deref(),
             t,
         )?;
         codes.push(code);
     }
-    db.audit(actor.as_deref(), "codes", &format!("{} × {:?}", req.count, req.worth), t)?;
+    db.audit(actor.as_deref(), "codes", &format!("{} × {:?}, limits {:?}", req.count, req.worth, limits), t)?;
     Ok(Json(admin::Codes { codes }))
 }
 
@@ -1391,7 +1442,42 @@ async fn admin_account(
         has_device: device.as_ref().is_some_and(|d| d.3),
         ledger: db.ledger(a.id, 25)?,
         sessions: db.sessions(a.id, 10)?,
+        usage: a.limits_at(now()).map(|_| db.usage(a.id, now())).transpose()?,
+        limits: a.limits_at(now()),
+        admin_limits: a.admin_limits.clone(),
+        code_limits: a.code_limits.clone(),
+        code_limits_until: a.code_limits_until,
     }))
+}
+
+async fn admin_limits(
+    State(gw): State<Shared>,
+    Path(sid): Path<String>,
+    headers: HeaderMap,
+    Json(req): Json<admin::SetLimits>,
+) -> Result<Json<Value>> {
+    let actor = admin_auth(&gw, &headers)?;
+    let limits = admin_limits_of(req.limits)?;
+    let db = gw.db.lock();
+    let a = by_support(&db, &sid)?;
+    db.set_limits(a.id, limits.as_ref())?;
+    db.audit(actor.as_deref(), "limits", &format!("{}: {:?}", a.support_id, limits), now())?;
+    Ok(Json(serde_json::json!({})))
+}
+
+/// Which limit stops a scan, in English for logs and the app's fallback.
+fn over_message(over: &Over) -> String {
+    let left = |l: Micros, left: Micros, until: i64| {
+        format!("{} of {} left, more from {until} (Unix time)", as_cloud::euros_fine(left), as_cloud::euros_fine(l))
+    };
+    match *over {
+        Over::Kind => "this kind of scan isn't among the account's".into(),
+        Over::Length { max_minutes } => format!("a scan may take at most {max_minutes} minutes of video"),
+        Over::Scans { per_day, until } => format!("{per_day} scans a day are used, more from {until} (Unix time)"),
+        Over::Day { limit, left: l, until } => format!("over the day's allowance: {}", left(limit, l, until)),
+        Over::Week { limit, left: l, until } => format!("over the week's allowance: {}", left(limit, l, until)),
+        Over::Month { limit, left: l, until } => format!("over the month's allowance: {}", left(limit, l, until)),
+    }
 }
 
 async fn admin_adjust(
@@ -1583,6 +1669,7 @@ pub fn admin_router(gw: Shared) -> Router {
         .route("/admin/accounts/{sid}", get(admin_account))
         .route("/admin/accounts/{sid}/adjust", post(admin_adjust))
         .route("/admin/accounts/{sid}/block", post(admin_block))
+        .route("/admin/accounts/{sid}/limits", post(admin_limits))
         .route("/admin/accounts/{sid}/reset_device", post(admin_reset_device))
         .route(admin::TRANSFER, post(admin_transfer))
         .route(admin::SWITCHES, get(admin_switches).post(admin_set_switch))

@@ -1149,6 +1149,13 @@ export type CloudAccount = {
 	paused: boolean,
 	prices: CloudPrices,
 	topUps: CloudTopUp[],
+	limits: CloudLimits | null,
+};
+
+/**  One period's allowance, as people read it ("€0.40" of "€2.00"). */
+export type CloudAllowance = {
+	used: string,
+	limit: string,
 };
 
 /**
@@ -1156,6 +1163,27 @@ export type CloudAccount = {
  *  redeemed, a payment page closed (`cloud_status` answers anew).
  */
 export type CloudChanged = null;
+
+/**
+ *  What this account may scan, when an admin or a code limited it. Days,
+ *  weeks (from Monday) and months count in UTC.
+ */
+export type CloudLimits = {
+	day: CloudAllowance | null,
+	week: CloudAllowance | null,
+	month: CloudAllowance | null,
+	/**  Scans started today. */
+	scansToday: number,
+	scansPerDay: number | null,
+	/**  The longest video a scan may take, in minutes. */
+	maxMinutes: number | null,
+	/**
+	 *  The kinds of scan allowed (`live`, `live_fast`, `animated`,
+	 *  `animated_fast`, `anime`, `anime_fast`, `anime_best`, `people`,
+	 *  `scenes`), when not every kind.
+	 */
+	kinds: string[] | null,
+};
 
 /**  What one minute of video costs, as people read it. */
 export type CloudPrices = {

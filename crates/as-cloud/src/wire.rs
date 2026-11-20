@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{Micros, PriceBasis, Prices, ScanKind, Switch};
+use crate::{Limits, LimitsInput, Micros, Over, PriceBasis, Prices, ScanKind, Switch, Usage};
 
 /// The gateway's addresses, relative to its base URL.
 pub mod path {
@@ -81,9 +81,16 @@ pub enum ErrorCode {
     Unreadable,
     /// Another scan session of this account is open.
     Busy,
+    /// The account's limits (a code's or an admin's) don't allow this scan:
+    /// its kind, its length, the day's scans or the day's, week's or month's
+    /// allowance ([`crate::Over`]).
+    Limit,
     /// The session is over (closed, expired, or its worker failed).
     Gone,
     Server,
+    /// A code a later gateway sends and this build doesn't know.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,11 +98,14 @@ pub struct ApiError {
     pub code: ErrorCode,
     /// English, for logs and as a fallback; the app words each code itself.
     pub message: String,
+    /// With [`ErrorCode::Limit`]: which limit, so the app can say it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub over: Option<Over>,
 }
 
 impl ApiError {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self { code, message: message.into(), over: None }
     }
 }
 
@@ -196,6 +206,12 @@ pub struct Account {
     /// A gateway that doesn't say counts as not open yet.
     #[serde(default)]
     pub stage: Stage,
+    /// What this account may scan, when it is limited ([`crate::limits`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<Limits>,
+    /// What it used of them so far, with them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -353,6 +369,10 @@ pub mod admin {
     pub fn reset_device(support_id: &str) -> String {
         format!("/admin/accounts/{support_id}/reset_device")
     }
+    /// `POST` [`SetLimits`]: an account's limits, or none.
+    pub fn limits(support_id: &str) -> String {
+        format!("/admin/accounts/{support_id}/limits")
+    }
 
     /// Who acts (a Discord user), for the audit log: header `X-Actor`.
     pub const ACTOR: &str = "x-actor";
@@ -373,6 +393,11 @@ pub mod admin {
         /// Unredeemed codes stop working then (unix seconds).
         pub expires: Option<i64>,
         pub note: Option<String>,
+        /// Limits the account takes on when it redeems one: they replace
+        /// those of a code it redeemed before (an admin's stay, the stricter
+        /// counts), and a beta pass's end with the pass.
+        #[serde(default)]
+        pub limits: Option<LimitsInput>,
     }
 
     /// The codes as people type them: shown this once, stored only hashed.
@@ -481,6 +506,26 @@ pub mod admin {
         pub has_device: bool,
         pub ledger: Vec<LedgerRow>,
         pub sessions: Vec<SessionRow>,
+        /// The limits in force: the stricter of an admin's and a code's.
+        #[serde(default)]
+        pub limits: Option<Limits>,
+        #[serde(default)]
+        pub usage: Option<Usage>,
+        /// An admin's limits ([`SetLimits`]).
+        #[serde(default)]
+        pub admin_limits: Option<Limits>,
+        /// The last code's limits, and when they end (a beta pass's end).
+        #[serde(default)]
+        pub code_limits: Option<Limits>,
+        #[serde(default)]
+        pub code_limits_until: Option<i64>,
+    }
+
+    /// An account's admin limits: `None` lifts them (empty ones are refused).
+    /// A code's limits stay; the stricter of both counts.
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub struct SetLimits {
+        pub limits: Option<LimitsInput>,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]

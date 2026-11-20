@@ -576,6 +576,17 @@
     "server": "AutoScene Cloud a avut o problemă. Încearcă mai târziu.",
     "betaBalance": "AutoScene Cloud este într-o beta închisă: scanările au nevoie de un permis beta. Folosește-l în Setări → Cloud.",
     "closed": "AutoScene Cloud nu este încă deschis pentru asta.",
-    "hidden": "AutoScene Cloud nu este disponibil momentan. Dezactivează Analizează în cloud din Setări → Cloud ca să analizezi pe acest calculator."
+    "hidden": "AutoScene Cloud nu este disponibil momentan. Dezactivează Analizează în cloud din Setări → Cloud ca să analizezi pe acest calculator.",
+    "limit": "Scanarea depășește limitele contului tău de cloud. Setări → Cloud le arată.",
+    "limitKind": "Contul tău de cloud nu include acest tip de scanare.",
+    "limitLength_one": "Videoclipul e mai lung decât poate fi o scanare în cloud: {{count}} minut.",
+    "limitLength_few": "Videoclipul e mai lung decât poate fi o scanare în cloud: {{count}} minute.",
+    "limitLength_other": "Videoclipul e mai lung decât poate fi o scanare în cloud: {{count}} de minute.",
+    "limitScans_one": "Scanarea în cloud de azi e folosită ({{count}} pe zi). Poți scana din nou de la miezul nopții (UTC).",
+    "limitScans_few": "Cele {{count}} scanări în cloud de azi sunt folosite. Poți scana din nou de la miezul nopții (UTC).",
+    "limitScans_other": "Cele {{count}} de scanări în cloud de azi sunt folosite. Poți scana din nou de la miezul nopții (UTC).",
+    "limitDay": "Scanarea ar depăși limita de azi din cloud: au rămas {{left}} din {{limit}}. Se reînnoiește la miezul nopții (UTC).",
+    "limitWeek": "Scanarea ar depăși limita din această săptămână din cloud: au rămas {{left}} din {{limit}}. Se reînnoiește luni (UTC).",
+    "limitMonth": "Scanarea ar depăși limita din această lună din cloud: au rămas {{left}} din {{limit}}. Se reînnoiește pe 1 (UTC)."
   }
 }

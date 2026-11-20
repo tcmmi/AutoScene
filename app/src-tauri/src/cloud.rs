@@ -16,7 +16,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use as_cloud::client::{Client, ClientError, file_sha256};
-use as_cloud::{Account, ApiError, Depth, ErrorCode, Footage, RegisterRequest, ScanKind, SessionRequest, Stage};
+use as_cloud::{
+    Account, ApiError, Depth, ErrorCode, Footage, Over, RegisterRequest, ScanKind, SessionRequest, Stage, euros_fine,
+};
 use as_core::{CancelToken, Msg, msg};
 use as_engine::Engine;
 use as_engine::client::{Remote, RemoteIo};
@@ -44,6 +46,8 @@ pub enum CloudError {
     /// The closed beta: a scan needs a beta pass (or balance an admin gave),
     /// and money can't be added yet.
     NeedsPass,
+    /// The account's limits (a code's or an admin's) don't allow this scan.
+    Over(Over),
     Gateway(ClientError),
     Keychain(String),
     /// The person stopped it.
@@ -62,8 +66,11 @@ impl CloudError {
                 "cloud.betaBalance",
                 "AutoScene Cloud is in a closed beta: scans need a beta pass. Redeem yours in Settings → Cloud."
             ),
+            CloudError::Over(over) => over_msg(over),
             CloudError::Keychain(_) => msg!("cloud.keychain", "AutoScene couldn't use the system's keychain."),
             CloudError::Cancelled => msg!("cloud.cancelled", "The cloud scan was stopped."),
+            // The gateway says which limit, when it is one.
+            CloudError::Gateway(ClientError::Api(ApiError { over: Some(over), .. })) => over_msg(over),
             CloudError::Gateway(e) => match e.code() {
                 Some(ErrorCode::Balance) => {
                     msg!("cloud.balance", "Your cloud balance doesn't cover this scan. Add funds in Settings → Cloud.")
@@ -75,6 +82,9 @@ impl CloudError {
                 Some(ErrorCode::Paused) => msg!("cloud.paused", "Cloud scans are paused right now. Try again later."),
                 Some(ErrorCode::Closed) => msg!("cloud.closed", "AutoScene Cloud isn't open for this yet."),
                 Some(ErrorCode::Busy) => msg!("cloud.busy", "The cloud is busy. Try again in a few minutes."),
+                Some(ErrorCode::Limit) => {
+                    msg!("cloud.limit", "This scan goes past your cloud account's limits. Settings → Cloud shows them.")
+                }
                 Some(ErrorCode::TooLarge) => msg!("cloud.tooLarge", "This file is too large for the cloud."),
                 Some(ErrorCode::Unreadable) => msg!("cloud.unreadable", "The cloud couldn't read this file as video."),
                 Some(ErrorCode::CodeInvalid) => msg!("cloud.codeInvalid", "That code doesn't exist or has expired."),
@@ -84,7 +94,9 @@ impl CloudError {
                 }
                 Some(ErrorCode::Checksum) => msg!("cloud.checksum", "The upload arrived damaged. Try again."),
                 Some(ErrorCode::Gone) => msg!("cloud.gone", "The cloud scan ended early. Try again."),
-                Some(ErrorCode::Server) => msg!("cloud.server", "AutoScene Cloud had a problem. Try again later."),
+                Some(ErrorCode::Server | ErrorCode::Unknown) => {
+                    msg!("cloud.server", "AutoScene Cloud had a problem. Try again later.")
+                }
                 _ => msg!("cloud.offline", "AutoScene Cloud couldn't be reached. Check your connection."),
             },
         }
@@ -95,10 +107,49 @@ impl CloudError {
             CloudError::Unavailable => "no gateway configured".into(),
             CloudError::Hidden => "the cloud isn't open (stage hidden)".into(),
             CloudError::NeedsPass => "beta: no pass and not enough balance".into(),
+            CloudError::Over(over) => format!("over the account's limits: {over:?}"),
             CloudError::Gateway(e) => e.to_string(),
             CloudError::Keychain(e) => e.clone(),
             CloudError::Cancelled => "cancelled".into(),
         }
+    }
+}
+
+/// Which of the account's limits a scan breaks, and when it allows more
+/// (days, weeks and months count in UTC).
+fn over_msg(over: &Over) -> Msg {
+    match *over {
+        Over::Kind => msg!("cloud.limitKind", "Your cloud account doesn't include this kind of scan."),
+        Over::Length { max_minutes } => msg!(
+            "cloud.limitLength",
+            one = "This video is longer than a cloud scan may be: {{count}} minute.",
+            other = "This video is longer than a cloud scan may be: {{count}} minutes.",
+            count = max_minutes
+        ),
+        Over::Scans { per_day, .. } => msg!(
+            "cloud.limitScans",
+            one = "Today's cloud scan is used ({{count}} a day). More from midnight (UTC).",
+            other = "Today's {{count}} cloud scans are used. More from midnight (UTC).",
+            count = per_day
+        ),
+        Over::Day { limit, left, .. } => msg!(
+            "cloud.limitDay",
+            "This scan would go past today's cloud allowance: {{left}} of {{limit}} is left. It renews at midnight (UTC).",
+            left = euros_fine(left),
+            limit = euros_fine(limit)
+        ),
+        Over::Week { limit, left, .. } => msg!(
+            "cloud.limitWeek",
+            "This scan would go past this week's cloud allowance: {{left}} of {{limit}} is left. It renews on Monday (UTC).",
+            left = euros_fine(left),
+            limit = euros_fine(limit)
+        ),
+        Over::Month { limit, left, .. } => msg!(
+            "cloud.limitMonth",
+            "This scan would go past this month's cloud allowance: {{left}} of {{limit}} is left. It renews on the 1st (UTC).",
+            left = euros_fine(left),
+            limit = euros_fine(limit)
+        ),
     }
 }
 
@@ -325,6 +376,12 @@ fn precheck(account: &Account, kind: &ScanKind, duration_ms: u64) -> Result<(), 
     }
     if kind.switches().iter().any(|s| !account.open.contains(s)) {
         return refuse(ErrorCode::KindOff, "this kind of scan is off");
+    }
+    // The gateway checks again with the length it measures.
+    if let (Some(limits), Some(usage)) = (&account.limits, &account.usage)
+        && let Some(over) = limits.over(usage, kind, duration_ms, account.prices.price(kind, duration_ms), true)
+    {
+        return Err(CloudError::Over(over));
     }
     if account.beta_until.is_none() && account.balance < account.prices.price(kind, duration_ms) {
         // In the beta money can't be added: the way in is a pass.
@@ -563,6 +620,8 @@ mod tests {
             paused: false,
             top_ups: vec![],
             stage: Stage::Open,
+            limits: None,
+            usage: None,
         }
     }
 
@@ -582,6 +641,53 @@ mod tests {
         assert_eq!(code(precheck(&off, &ANIME, 1)), Some(ErrorCode::KindOff));
         assert_eq!(code(precheck(&Account { blocked: true, ..account() }, &ANIME, 1)), Some(ErrorCode::Blocked));
         assert_eq!(code(precheck(&Account { paused: true, ..account() }, &ANIME, 1)), Some(ErrorCode::Paused));
+    }
+
+    #[test]
+    fn the_accounts_limits_are_checked_before_the_upload() {
+        use as_cloud::{Limits, Usage};
+        let used = Usage { day: 40_000, scans_today: 1, ..Usage::default() };
+        let limited = |limits: Limits| Account {
+            beta_until: Some(i64::MAX),
+            limits: Some(limits),
+            usage: Some(used),
+            ..account()
+        };
+        let over = |r: Result<(), CloudError>| match r {
+            Err(CloudError::Over(o)) => Some(o),
+            _ => None,
+        };
+        // €0.05 a day, €0.04 used: a minute of anime (€0.01) fits, two don't.
+        let day = limited(Limits { per_day: Some(50_000), ..Limits::default() });
+        assert!(precheck(&day, &ANIME, 60_000).is_ok());
+        let two = over(precheck(&day, &ANIME, 120_000));
+        assert!(matches!(two, Some(Over::Day { left: 10_000, .. })));
+        assert!(CloudError::Over(two.unwrap()).msg().text.contains("€0.01 of €0.05"));
+        let short = limited(Limits { max_minutes: Some(20), ..Limits::default() });
+        assert_eq!(over(precheck(&short, &ANIME, 21 * 60_000)), Some(Over::Length { max_minutes: 20 }));
+        let one = limited(Limits { scans_per_day: Some(1), ..Limits::default() });
+        assert!(matches!(over(precheck(&one, &ANIME, 60_000)), Some(Over::Scans { per_day: 1, .. })));
+        let live_only = limited(Limits { kinds: Some(vec![Switch::Live]), ..Limits::default() });
+        assert_eq!(over(precheck(&live_only, &ANIME, 60_000)), Some(Over::Kind));
+        // The gateway's own refusal names the limit too.
+        let refused = CloudError::Gateway(ClientError::Api(ApiError {
+            over: Some(Over::Length { max_minutes: 20 }),
+            ..ApiError::new(ErrorCode::Limit, "no")
+        }));
+        assert!(refused.msg().text.contains("20 minutes"));
+        let plain = CloudError::Gateway(ClientError::Api(ApiError::new(ErrorCode::Limit, "no")));
+        assert!(plain.msg().text.contains("Settings → Cloud"));
+        let later = CloudError::Gateway(ClientError::Api(ApiError::new(ErrorCode::Unknown, "a later code")));
+        assert!(later.msg().text.contains("had a problem"));
+        // Half a cent shows as such.
+        let half = limited(Limits { per_day: Some(45_000), ..Limits::default() });
+        let fast = ScanKind { depth: Depth::Fast, ..ANIME };
+        assert!(
+            CloudError::Over(over(precheck(&half, &fast, 120_000)).unwrap()).msg().text.contains("€0.005 of €0.045")
+        );
+        // Limits the gateway didn't send usage for are left to the gateway.
+        let no_usage = Account { usage: None, ..short };
+        assert!(precheck(&no_usage, &ANIME, 21 * 60_000).is_ok());
     }
 
     #[test]

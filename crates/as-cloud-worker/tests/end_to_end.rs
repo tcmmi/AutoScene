@@ -659,6 +659,13 @@ fn limits_from_a_code_or_an_admin_hold_when_a_scan_opens_and_when_it_is_measured
     let account = app.account().unwrap();
     assert_eq!(account.limits.map(|l| (l.per_day, l.scans_per_day)), Some((Some(30_000), None)));
     assert!(admin_get(&cloud, &admin::account(&sid))["admin_limits"].is_null());
+    // The pass's can only be lifted, and then nothing limits the account.
+    let pass = json!({"limits": {"per_day": 1}, "code": true});
+    assert_eq!(admin_post(&cloud, &admin::limits(&sid), pass).0, 400);
+    assert_eq!(admin_post(&cloud, &admin::limits(&sid), json!({"limits": null, "code": true})).0, 200);
+    assert_eq!(app.account().unwrap().limits, None);
+    let view = admin_get(&cloud, &admin::account(&sid));
+    assert!(view["code_limits"].is_null() && view["code_limits_until"].is_null() && view["usage"].is_null());
     // Limits that can't hold, empty ones and misspelled ones are refused.
     // (A field the gateway doesn't know never reaches it: the JSON reader refuses it.)
     for (bad, status) in [(json!({"per_day": 0}), 400), (json!({}), 400), (json!({"per_days": 100}), 422)] {

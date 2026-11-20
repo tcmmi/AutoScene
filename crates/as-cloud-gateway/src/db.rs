@@ -623,6 +623,13 @@ impl Db {
         Ok(charge)
     }
 
+    /// Lift the limits the account's last code brought (an admin's stay).
+    pub fn clear_code_limits(&self, account: i64) -> DbResult<()> {
+        self.conn
+            .execute("UPDATE accounts SET code_limits = NULL, code_limits_until = NULL WHERE id = ?1", [account])?;
+        Ok(())
+    }
+
     /// Its worker started: a scan of the day's.
     pub fn mark_launched(&self, id: &str, now: i64) -> DbResult<()> {
         self.conn.execute("UPDATE sessions SET launched_at = ?2 WHERE id = ?1", params![id, now])?;

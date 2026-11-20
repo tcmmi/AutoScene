@@ -1457,6 +1457,17 @@ async fn admin_limits(
     Json(req): Json<admin::SetLimits>,
 ) -> Result<Json<Value>> {
     let actor = admin_auth(&gw, &headers)?;
+    if req.code {
+        // A code's limits came with the code: an admin can only lift them.
+        if req.limits.is_some() {
+            return Err(fail(ErrorCode::BadRequest, "a code's limits can only be lifted: send null"));
+        }
+        let db = gw.db.lock();
+        let a = by_support(&db, &sid)?;
+        db.clear_code_limits(a.id)?;
+        db.audit(actor.as_deref(), "limits", &format!("{}: code limits lifted", a.support_id), now())?;
+        return Ok(Json(serde_json::json!({})));
+    }
     let limits = admin_limits_of(req.limits)?;
     let db = gw.db.lock();
     let a = by_support(&db, &sid)?;

@@ -522,10 +522,13 @@ pub mod admin {
     }
 
     /// An account's admin limits: `None` lifts them (empty ones are refused).
-    /// A code's limits stay; the stricter of both counts.
+    /// A code's limits stay; the stricter of both counts. With `code`, the
+    /// code's limits instead, which can only be lifted (`limits: None`).
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct SetLimits {
         pub limits: Option<LimitsInput>,
+        #[serde(default)]
+        pub code: bool,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]

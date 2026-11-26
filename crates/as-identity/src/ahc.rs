@@ -39,7 +39,8 @@
 //! own faces are stay two when they are far less alike to each other: two
 //! tight groups with a gap between them, in both runs. The rule knows no
 //! pins: what the user merged by hand stays one character by its key
-//! (`keep_own_faces` in `identify`), whatever the groups here do.
+//! (`pins_together` and `keep_own_faces` in `identify`), whatever the groups
+//! here do.
 
 use std::collections::HashMap;
 
@@ -64,6 +65,27 @@ pub(crate) struct Levels {
 }
 
 const LEVELS: Levels = Levels { single: 4000, second: 6000 };
+
+/// The most start groups of one face that the faces pinned to one
+/// character keep (see `initial_groups`): each costs every later pinned face
+/// of the character a comparison, and thousands of unlike faces put on one
+/// character by hand (a bin) must not make thousands of groups. Groups of
+/// several like faces (a look) have a bound of their own (`MAX_LOOKS`).
+/// Enough for the first faces
+/// of that many looks to wait for their second ones (the tracks come
+/// episode by episode: a character with many looks shows the first face of
+/// each before the second of any).
+const MAX_ALONE: usize = 256;
+
+/// The most looks (start groups of several faces) that the faces pinned to
+/// one character start as. A character with that many is a bin (extras the
+/// user collected there, some seen twice or more): a face that fits none of
+/// its start groups goes to its odd faces. (Its faces alone may still
+/// become looks: it ends with at most `MAX_LOOKS` + `MAX_ALONE`.) Each start
+/// group costs every
+/// later pinned face of the character a comparison, and a bin of ten
+/// thousand extras seen twice must not cost every face ten thousand.
+const MAX_LOOKS: usize = 512;
 
 #[cfg(test)]
 thread_local! {
@@ -107,12 +129,50 @@ enum Together {
     Copies,
 }
 
-/// Pinned groups first, then the heaviest; at most `cap` of them (all the
-/// pinned ones). Returns the rest.
+/// The groups a run takes, at most `cap` of them; returns what is left out.
+/// First one pinned group per character, its heaviest (all of these go in,
+/// also when they are more than `cap` by themselves): what is pinned to a
+/// character meets the faces that may be it. When everything fits, all the
+/// rest. Else the character's other pinned groups (looks merged into it,
+/// faces put on it by hand), heaviest first, in a quarter of `cap` (no
+/// more than the room left), and the heaviest of the unpinned groups in
+/// what is left. A character the
+/// user made a bin of thousands of extras, some seen twice, has thousands
+/// of pinned groups: they must not crowd out the groups that formed, or a
+/// long series would stop finding its people again across episodes, nor
+/// make one run of them. The ones left out are their character's all the
+/// same: `identify` joins what is pinned to one.
 fn heaviest(groups: &mut Vec<Group>, cap: usize) -> Vec<Group> {
-    groups.sort_by(|a, b| b.pin.is_some().cmp(&a.pin.is_some()).then(b.weight.total_cmp(&a.weight)));
-    let pinned = groups.iter().filter(|g| g.pin.is_some()).count();
-    groups.split_off(groups.len().min(cap.max(pinned)))
+    // Per character, its heaviest pinned group (of equals, the first).
+    let mut first_of: HashMap<CharKey, usize> = HashMap::new();
+    for (i, g) in groups.iter().enumerate() {
+        if let Some(k) = g.pin {
+            let j = first_of.entry(k).or_insert(i);
+            if g.weight > groups[*j].weight {
+                *j = i;
+            }
+        }
+    }
+    let rank: Vec<u8> = groups
+        .iter()
+        .enumerate()
+        .map(|(i, g)| match g.pin {
+            Some(k) if first_of[&k] == i => 0,
+            Some(_) => 1,
+            None => 2,
+        })
+        .collect();
+    let mut order: Vec<usize> = (0..groups.len()).collect();
+    order.sort_by(|&a, &b| rank[a].cmp(&rank[b]).then(groups[b].weight.total_cmp(&groups[a].weight)));
+    let mut slots: Vec<Option<Group>> = groups.drain(..).map(Some).collect();
+    groups.extend(order.iter().map(|&i| slots[i].take().expect("every group once")));
+    let first = rank.iter().filter(|&&r| r == 0).count();
+    let more = rank.iter().filter(|&&r| r == 1).count();
+    let room = cap.saturating_sub(first);
+    let kept = if groups.len() <= cap { more } else { more.min((cap / 4).min(room)) };
+    let mut rest: Vec<Group> = groups.drain(first + kept..first + more).collect();
+    rest.extend(groups.split_off(groups.len().min(cap.max(first + kept))));
+    rest
 }
 
 /// Group the tracks `core` (indices into `tracks`) by identity. Returns the
@@ -122,7 +182,8 @@ pub fn cluster(tracks: &[TrackIn], core: &[usize], p: &Params) -> Vec<Vec<usize>
     cluster_in(tracks, core, p, LEVELS)
 }
 
-/// [`cluster`] in runs of at most `levels` groups (but all the pinned ones).
+/// [`cluster`] in runs of at most `levels` groups (but every pinned group
+/// that stands for a character, see `heaviest`).
 pub(crate) fn cluster_in(tracks: &[TrackIn], core: &[usize], p: &Params, levels: Levels) -> Vec<Vec<usize>> {
     let mut groups = initial_groups(tracks, core, p);
     let mut aside = Vec::new();
@@ -146,8 +207,10 @@ pub(crate) fn cluster_in(tracks: &[TrackIn], core: &[usize], p: &Params, levels:
                 level1.extend(merge(tracks, part, p, Together::Apart, &mut aside));
             }
         }
-        // Pinned groups and then the heaviest meet across media (and a long
-        // media's stretches). A person seen once per episode is a single
+        // One pinned group per character, its others as far as a quarter of
+        // the cap goes, and the heaviest of the rest meet across media (and a
+        // long media's stretches; see `heaviest`). A
+        // person seen once per episode is a single
         // track in each: those join too, as far as the cap allows. Faces
         // seen together on either side of a cut are still two people: the
         // run finds them from the groups' tracks.
@@ -207,9 +270,25 @@ fn stretches(tracks: &[TrackIn], mut groups: Vec<Group>, cap: usize) -> Vec<Vec<
 /// here: the few faces a merge pins of the character that stays must not
 /// start among the many of the one merged in, which they are about as like
 /// as the bar asks when the two are a hero and the everyday self.
+///
+/// A character keeps at most `MAX_ALONE` start groups of one pinned face:
+/// when it has that many and a face fits none of its start groups, the
+/// lightest of them (of equals, the face that came first) makes room for it
+/// and joins the character's odd faces. The odd faces are one more group,
+/// which as long as its faces are unlike each other is like nobody and
+/// gathers no one (what one group of all pinned faces was). Groups of
+/// several faces (looks) never make room: every look of a character, however
+/// late in the tracks' order, starts as a group of its own, where its new
+/// faces find it, up to `MAX_LOOKS` looks. A character with that many is a
+/// bin, and a face that fits none of its start groups goes to its odd faces
+/// (its faces alone may still become looks). What is lost is a face alone
+/// that the next face did not join, and in a bin a look whose first face
+/// comes late.
 fn initial_groups(tracks: &[TrackIn], core: &[usize], p: &Params) -> Vec<Group> {
     let dim = tracks.first().map_or(0, |t| t.embedding.len());
     let mut by_pin: HashMap<CharKey, Vec<usize>> = HashMap::new();
+    // Per character with more unlike pinned faces than `MAX_ALONE`, the group of its odd faces.
+    let mut odd: HashMap<CharKey, usize> = HashMap::new();
     let mut groups: Vec<Group> = Vec::with_capacity(core.len());
     // Per group, the sum of its tracks' squared weights (for its cohesion).
     let mut squares: Vec<f32> = Vec::with_capacity(core.len());
@@ -220,7 +299,11 @@ fn initial_groups(tracks: &[TrackIn], core: &[usize], p: &Params) -> Vec<Group> 
         let alike = |slot: usize| {
             let g: &Group = &groups[slot];
             let mean = dot(&g.sum, &t.embedding) / g.weight.max(1e-9);
-            let within = if g.members.len() < 2 { 1.0 } else { cohesion(norm(&g.sum), g.weight, squares[slot]) };
+            let within = if g.members.len() < 2 || p.tight <= 0.0 {
+                1.0
+            } else {
+                cohesion(norm(&g.sum), g.weight, squares[slot])
+            };
             (mean >= p.link.max(p.tight * within)).then_some((mean, slot))
         };
         let like = t.pin.and_then(|k| {
@@ -230,14 +313,54 @@ fn initial_groups(tracks: &[TrackIn], core: &[usize], p: &Params) -> Vec<Group> 
                 .filter_map(|&slot| alike(slot))
                 .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)))
         });
-        let slot = like.map(|(_, slot)| slot).unwrap_or_else(|| {
-            groups.push(Group { members: vec![], sum: vec![0.0; dim], weight: 0.0, pin: t.pin });
-            squares.push(0.0);
-            if let Some(k) = t.pin {
-                by_pin.entry(k).or_default().push(groups.len() - 1);
-            }
-            groups.len() - 1
+        let empty = || Group { members: vec![], sum: vec![0.0; dim], weight: 0.0, pin: t.pin };
+        // The character's start groups of one face, and its looks.
+        let (alone, looks) = t.pin.and_then(|k| by_pin.get(&k)).map_or((0, 0), |starts| {
+            let alone = starts.iter().filter(|&&s| groups[s].members.len() == 1).count();
+            (alone, starts.len() - alone)
         });
+        let bin = t.pin.filter(|_| like.is_none() && looks >= MAX_LOOKS);
+        let full = t.pin.filter(|_| like.is_none() && alone >= MAX_ALONE);
+        let slot = match (like, bin, full) {
+            (Some((_, slot)), _, _) => slot,
+            (None, Some(k), _) => *odd.entry(k).or_insert_with(|| {
+                groups.push(empty());
+                squares.push(0.0);
+                groups.len() - 1
+            }),
+            (None, None, Some(k)) => {
+                let bag = *odd.entry(k).or_insert_with(|| {
+                    groups.push(empty());
+                    squares.push(0.0);
+                    groups.len() - 1
+                });
+                // What makes room: the lightest start group of one face (of equals, the face that came first).
+                let s = by_pin[&k]
+                    .iter()
+                    .copied()
+                    .filter(|&s| groups[s].members.len() == 1)
+                    .min_by(|&a, &b| {
+                        let first = |s: usize| groups[s].members[0];
+                        groups[a].weight.total_cmp(&groups[b].weight).then(first(a).cmp(&first(b)))
+                    })
+                    .expect("a full character has start groups of one face");
+                let gone = std::mem::replace(&mut groups[s], empty());
+                let to = &mut groups[bag];
+                to.sum.iter_mut().zip(&gone.sum).for_each(|(a, x)| *a += x);
+                to.weight += gone.weight;
+                to.members.extend(gone.members);
+                squares[s] = 0.0;
+                s
+            }
+            (None, None, None) => {
+                groups.push(empty());
+                squares.push(0.0);
+                if let Some(k) = t.pin {
+                    by_pin.entry(k).or_default().push(groups.len() - 1);
+                }
+                groups.len() - 1
+            }
+        };
         let g = &mut groups[slot];
         for (s, x) in g.sum.iter_mut().zip(&t.embedding) {
             *s += w * x;
@@ -728,6 +851,196 @@ mod tests {
         assert_eq!(starts(&Params { tight: 0.70, ..Params::default() }), [vec![0, 1, 2], vec![3]]);
         // (0.9 of a single face's "cohesion" of 1 is over 0.70; 0.5 is not.)
         assert_eq!(starts(&Params { tight: 0.95, ..Params::default() }), [vec![0], vec![1], vec![2], vec![3]]);
+    }
+
+    #[test]
+    fn a_characters_pinned_faces_alone_start_as_a_bounded_number_of_groups() {
+        // Forty faces, each unlike all the others, pinned to character 3;
+        // then two faces alike (a look that comes late in the tracks' order)
+        // and one more odd face. The character keeps `MAX_ALONE` groups of
+        // one face; the faces that made room, the earliest first (all weigh
+        // the same), are its odd faces. The late look is a group of its own,
+        // and once its second face joined it there is room for one more face
+        // alone.
+        let n = MAX_ALONE + 8;
+        let face = |i: usize, axis: usize| {
+            let mut t = at(i as u32 * 100);
+            t.embedding = (0..n + 2).map(|d| f32::from(d == axis)).collect();
+            t.pin = Some(3);
+            t
+        };
+        let mut tracks: Vec<TrackIn> = (0..n).map(|i| face(i, i)).collect();
+        tracks.extend([face(n, n), face(n + 1, n), face(n + 2, n + 1)]);
+        let core: Vec<usize> = (0..tracks.len()).collect();
+        let groups = initial_groups(&tracks, &core, &Params::default());
+        assert!(groups.iter().all(|g| g.pin == Some(3)));
+        assert_eq!(groups.len(), MAX_ALONE + 2);
+        assert!(groups.iter().any(|g| g.members == [n, n + 1]), "the late look starts as a group");
+        assert!(groups.iter().any(|g| g.members == [n + 2]), "the last face starts alone");
+        let odd: Vec<&Group> = groups.iter().filter(|g| g.members.len() > 2).collect();
+        assert_eq!(odd.len(), 1);
+        assert_eq!(odd[0].members, (0..9).collect::<Vec<_>>());
+        assert!((odd[0].weight - 9.0).abs() < 1e-6 && (norm(&odd[0].sum) - 3.0).abs() < 1e-5);
+        let mut all: Vec<usize> = groups.iter().flat_map(|g| g.members.iter().copied()).collect();
+        all.sort_unstable();
+        assert_eq!(all, core);
+        // Looks never make room: after forty pairs, a late look and one more
+        // odd face each start as a group, and no face goes to odd faces.
+        let mut tracks: Vec<TrackIn> = (0..2 * n).map(|i| face(i, i / 2)).collect();
+        let late = 2 * n;
+        tracks.extend([face(late, n), face(late + 1, n), face(late + 2, n + 1)]);
+        let core: Vec<usize> = (0..tracks.len()).collect();
+        let groups = initial_groups(&tracks, &core, &Params::default());
+        assert_eq!(groups.len(), n + 2);
+        assert!(groups[..n].iter().enumerate().all(|(i, g)| g.members == [2 * i, 2 * i + 1]));
+        assert_eq!(groups[n].members, [late, late + 1], "the late look starts as a group");
+        assert_eq!(groups[n + 1].members, [late + 2]);
+    }
+
+    #[test]
+    fn a_run_takes_one_pinned_group_per_character_and_the_others_in_a_quarter_of_the_cap() {
+        // Groups by weight: character 1 pinned in a look of six faces (its
+        // heaviest), four pairs and six single faces; character 9 in one
+        // face; and unpinned groups. Character 1's look and 9's face are in
+        // every run. When everything fits, all is; else 1's other groups get
+        // a quarter of the cap (no more than the room left), heaviest first,
+        // and the heaviest unpinned groups what is left.
+        let group = |members: usize, weight: f32, pin: Option<CharKey>| Group {
+            members: (0..members).collect(),
+            sum: vec![],
+            weight,
+            pin,
+        };
+        let kept = |unpinned: usize, cap: usize| {
+            let mut groups: Vec<Group> = (0..4).map(|_| group(2, 1.0, Some(1))).collect();
+            groups.extend((0..6).map(|i| group(1, 0.1 + i as f32 * 0.1, Some(1))));
+            groups.push(group(6, 3.0, Some(1)));
+            groups.push(group(1, 0.2, Some(9)));
+            groups.extend((0..unpinned).map(|i| group(3, 10.0 + i as f32, None)));
+            let all = groups.len();
+            let rest = heaviest(&mut groups, cap);
+            assert_eq!(groups.len() + rest.len(), all);
+            assert!(groups.iter().any(|g| g.members.len() == 6) && groups.iter().any(|g| g.pin == Some(9)));
+            let more: Vec<usize> =
+                groups.iter().filter(|g| g.pin == Some(1) && g.members.len() < 6).map(|g| g.members.len()).collect();
+            let unpinned: Vec<f32> = groups.iter().filter(|g| g.pin.is_none()).map(|g| g.weight).collect();
+            (more, unpinned)
+        };
+        // Room for all: all of them.
+        assert_eq!(kept(3, 20), (vec![2, 2, 2, 2, 1, 1, 1, 1, 1, 1], vec![12.0, 11.0, 10.0]));
+        // Not: three of 1's other groups (a quarter of twelve), its pairs first, and the seven heaviest unpinned.
+        let (more, unpinned) = kept(20, 12);
+        assert_eq!(more, [2, 2, 2]);
+        assert_eq!(unpinned, (23..30).rev().map(|w| w as f32).collect::<Vec<_>>());
+        // Few unpinned groups: the room they leave stays free.
+        assert_eq!(kept(2, 8), (vec![2, 2], vec![11.0, 10.0]));
+        // The two that stand for a character are more than the room: they go in, nothing else.
+        assert_eq!(kept(20, 1), (vec![], vec![]));
+        // Of two equally heavy groups of a character, the first stands for it.
+        let mut groups = vec![group(2, 1.0, Some(2)), group(3, 1.0, Some(2)), group(4, 5.0, None)];
+        heaviest(&mut groups, 1);
+        assert_eq!(groups.iter().map(|g| g.members.len()).collect::<Vec<_>>(), [2]);
+    }
+
+    #[test]
+    fn a_character_with_as_many_looks_as_it_starts_puts_new_faces_among_its_odd_faces() {
+        // Character 3 starts as `MAX_LOOKS` looks of two faces (a bin of
+        // extras seen twice). Two new faces, like none of them, go to its
+        // odd faces instead of starting groups of their own; a face like one
+        // of its looks joins that look.
+        let n = MAX_LOOKS;
+        let face = |i: usize, axis: usize| {
+            let mut t = at(i as u32 * 100);
+            t.embedding = (0..n + 2).map(|d| f32::from(d == axis)).collect();
+            t.pin = Some(3);
+            t
+        };
+        let mut tracks: Vec<TrackIn> = (0..2 * n).map(|i| face(i, i / 2)).collect();
+        let late = 2 * n;
+        tracks.extend([face(late, n), face(late + 1, n + 1), face(late + 2, 5)]);
+        let core: Vec<usize> = (0..tracks.len()).collect();
+        let groups = initial_groups(&tracks, &core, &Params::default());
+        assert_eq!(groups.len(), n + 1);
+        assert_eq!(groups[n].members, [late, late + 1], "the odd faces");
+        assert_eq!(groups[5].members, [10, 11, late + 2]);
+        // Faces alone do not count as looks: 300 looks and `MAX_ALONE` - 1
+        // faces alone are no bin, and one more face starts alone.
+        let looks = 300;
+        let wide = |i: usize, axis: usize| {
+            let mut t = face(i, 0);
+            t.embedding = (0..looks + MAX_ALONE + 1).map(|d| f32::from(d == axis)).collect();
+            t
+        };
+        let mut tracks: Vec<TrackIn> = (0..2 * looks).map(|i| wide(i, i / 2)).collect();
+        tracks.extend((0..MAX_ALONE - 1).map(|a| wide(2 * looks + a, looks + a)));
+        let x = tracks.len();
+        tracks.push(wide(x, looks + MAX_ALONE));
+        let core: Vec<usize> = (0..tracks.len()).collect();
+        let groups = initial_groups(&tracks, &core, &Params::default());
+        assert_eq!(groups.len(), looks + MAX_ALONE);
+        assert_eq!(groups.last().map(|g| g.members.clone()), Some(vec![x]));
+    }
+
+    #[test]
+    fn a_full_character_makes_room_with_its_lightest_face_alone() {
+        // Character 3 starts as a look of two faces seen badly (together they
+        // weigh least), then `MAX_ALONE` faces alone, each a little lighter
+        // than the one before. One more odd face makes room: the lightest
+        // face alone goes among the odd faces, not the light look (a look
+        // never makes room) and not the first or the heaviest face alone.
+        let dim = MAX_ALONE + 2;
+        let face = |i: usize, axis: usize, quality: f32| {
+            let mut t = at(i as u32 * 100);
+            t.embedding = (0..dim).map(|d| f32::from(d == axis)).collect();
+            t.quality = quality;
+            t.pin = Some(3);
+            t
+        };
+        let mut tracks = vec![face(0, 0, 0.1), face(1, 0, 0.1)];
+        tracks.extend((1..=MAX_ALONE).map(|a| face(a + 1, a, 3.0 - a as f32 * 0.01)));
+        let x = tracks.len();
+        tracks.push(face(x, MAX_ALONE + 1, 1.0));
+        let core: Vec<usize> = (0..tracks.len()).collect();
+        let groups = initial_groups(&tracks, &core, &Params::default());
+        assert_eq!(groups.len(), MAX_ALONE + 2);
+        assert_eq!(groups[0].members, [0, 1], "the light look keeps its group");
+        assert_eq!(groups[MAX_ALONE].members, [x], "the new face takes the lightest face's place");
+        assert_eq!(groups[MAX_ALONE + 1].members, [x - 1], "the lightest face alone is the odd faces");
+    }
+
+    #[test]
+    fn a_place_made_for_a_face_holds_nothing_of_the_face_that_left_it() {
+        // Character 3 is full of start groups of one face each, all unlike.
+        // A new face makes room, and a second one 0.9 like it joins it.
+        // Where tight groups stay two (`tight` 0.7), a third face 0.6 like
+        // the two on average is not close enough to a pair 0.9 alike within
+        // (it would have to be 0.63): it starts as a group of its own. Had
+        // the place kept the squared weight of the face that left it, the
+        // pair would seem 0.8 alike within, and the third face would join.
+        let dim = MAX_ALONE + 3;
+        let face = |i: usize, embedding: Vec<f32>| {
+            let mut t = at(i as u32 * 100);
+            t.embedding = embedding;
+            t.pin = Some(3);
+            t
+        };
+        let along = |parts: &[(usize, f32)]| {
+            let mut e = vec![0.0; dim];
+            parts.iter().for_each(|&(d, x)| e[d] = x);
+            e
+        };
+        let mut tracks: Vec<TrackIn> = (0..MAX_ALONE).map(|i| face(i, along(&[(i, 1.0)]))).collect();
+        let (b, c, d) = (MAX_ALONE, MAX_ALONE + 1, MAX_ALONE + 2);
+        let z = 0.6 / 0.95;
+        tracks.extend([
+            face(b, along(&[(b, 1.0)])),
+            face(c, along(&[(b, 0.9), (c, 0.19f32.sqrt())])),
+            face(d, along(&[(b, z), (d, (1.0 - z * z).sqrt())])),
+        ]);
+        let core: Vec<usize> = (0..tracks.len()).collect();
+        let groups = initial_groups(&tracks, &core, &Params { tight: 0.7, ..Params::default() });
+        assert!(groups.iter().any(|g| g.members == [b, c]), "the pair is a group");
+        assert!(groups.iter().any(|g| g.members == [d]), "the third face starts alone");
     }
 
     #[test]

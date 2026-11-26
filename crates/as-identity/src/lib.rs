@@ -5,8 +5,9 @@
 //!    found in the same frame are two people (cannot-link) — unless their
 //!    groups are clearly one person: then the face in the way was a mirror
 //!    image, a photo, a screen or a stranger, and steps aside (see `ahc`).
-//!    Tracks the user pinned to one character start out together
-//!    (must-link), pinned to different characters never meet.
+//!    Tracks the user pinned to one character start in groups of like
+//!    faces and are one character in the end (`pins_together`), pinned to
+//!    different characters never meet.
 //! 2. Groups with enough screen time (or a pin) become characters — except
 //!    a group that is only ever on screen with a bigger one it clearly is
 //!    (a reflection, a face on a screen). Each gets a handful of prototypes
@@ -399,31 +400,56 @@ pub(crate) fn together(a: &TrackIn, b: &TrackIn) -> bool {
 /// besides the pins) and what it holds of other characters outweighs its
 /// pins and the character's earlier faces in it. A group of pinned faces
 /// that another character's faces join in smaller number keeps them: two
-/// characters that turn out to be one person become one.
+/// characters that turn out to be one person become one. For a character
+/// that is nothing but its pinned faces (one the user just made of a few
+/// faces), only another character's own faces weigh against the pins, most
+/// of what that one held: a few faces of a second person inside another
+/// character have no character to go back to, and follow the faces picked
+/// of them.
+///
+/// And no face comes to a character through one of the groups pinned to it
+/// beside a face of the character's own in another: when the pinned faces
+/// were one group, a face seen in a frame with any of them could not join
+/// it. So a face that is neither pinned nor was the character before, and
+/// was seen in a frame with a face in another of the groups that is pinned
+/// or was the character before, leaves. If it was another character, that
+/// one's other faces in its group leave with it: one face seen beside the
+/// character says who the others are not (a look-alike must not be taken in
+/// by halves). What leaves one group is a group of its own. Two new faces
+/// seen together stay, one in each group: the user may have merged two
+/// people who are on screen together. (A group that follows the pinned one
+/// later, in `keep_own_faces`, is not looked at here.)
 fn pins_together(tracks: &[TrackIn], core: &[usize], groups: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
     let pin_of = |g: &[usize]| g.iter().find_map(|&i| tracks[i].pin);
     if !groups.iter().any(|g| pin_of(g).is_some()) {
         return groups;
     }
     let held = held_besides_pins(tracks, core);
+    let held_by = |k: CharKey| held.get(&k).copied().unwrap_or(0.0);
     let mut out: Vec<Vec<usize>> = Vec::with_capacity(groups.len());
-    let mut at: HashMap<CharKey, usize> = HashMap::new();
+    // Per pinned character, in the order they come: where its groups are in `out`.
+    let mut keys: Vec<CharKey> = Vec::new();
+    let mut at: HashMap<CharKey, Vec<usize>> = HashMap::new();
     let mut apart: Vec<Vec<usize>> = Vec::new();
     for g in groups {
         let Some(k) = pin_of(&g) else {
             out.push(g);
             continue;
         };
-        let (mut pins, mut own, mut others) = (0f32, 0f32, 0f32);
+        let (mut pins, mut own) = (0f32, 0f32);
+        let mut of_others: HashMap<CharKey, f32> = HashMap::new();
         for &i in &g {
             match (tracks[i].pin, tracks[i].previous) {
                 (Some(_), _) => pins += tracks[i].quality,
                 (None, Some(was)) if was == k => own += tracks[i].quality,
-                (None, Some(_)) => others += tracks[i].quality,
+                (None, Some(was)) => *of_others.entry(was).or_default() += tracks[i].quality,
                 (None, None) => {}
             }
         }
-        let its_own = own > 0.5 * held.get(&k).copied().unwrap_or(0.0);
+        let made_by_hand = held_by(k) <= 0.0;
+        let others: f32 =
+            of_others.iter().filter(|&(&c, &w)| !made_by_hand || w > 0.5 * held_by(c)).map(|(_, &w)| w).sum();
+        let its_own = own > 0.5 * held_by(k);
         let g = if !its_own && others > own + pins {
             let (stay, go): (Vec<usize>, Vec<usize>) =
                 g.into_iter().partition(|&i| tracks[i].pin.is_some() || tracks[i].previous == Some(k));
@@ -432,19 +458,137 @@ fn pins_together(tracks: &[TrackIn], core: &[usize], groups: Vec<Vec<usize>>) ->
         } else {
             g
         };
-        match at.get(&k) {
-            Some(&to) => out[to].extend(g),
-            None => {
-                at.insert(k, out.len());
-                out.push(g);
+        let slots = at.entry(k).or_default();
+        if slots.is_empty() {
+            keys.push(k);
+        }
+        slots.push(out.len());
+        out.push(g);
+    }
+    for k in keys {
+        let slots = &at[&k];
+        if slots.len() < 2 {
+            continue;
+        }
+        let parts: Vec<&[usize]> = slots.iter().map(|&s| out[s].as_slice()).collect();
+        let leaving = beside_their_own(tracks, k, &parts);
+        for (&s, beside) in slots.iter().zip(leaving) {
+            if beside.is_empty() {
+                continue;
             }
+            // With them, the other faces here of the characters they were.
+            let beside: HashSet<usize> = beside.into_iter().collect();
+            let were: HashSet<CharKey> = beside.iter().filter_map(|&i| tracks[i].previous).collect();
+            let (gone, stay): (Vec<usize>, Vec<usize>) = std::mem::take(&mut out[s]).into_iter().partition(|i| {
+                let t = &tracks[*i];
+                beside.contains(i) || (t.pin.is_none() && t.previous.is_some_and(|c| c != k && were.contains(&c)))
+            });
+            out[s] = stay;
+            apart.push(gone);
+        }
+        for &s in &slots[1..] {
+            let g = std::mem::take(&mut out[s]);
+            out[slots[0]].extend(g);
         }
     }
+    out.retain(|g| !g.is_empty());
     out.extend(apart);
     out.iter_mut().for_each(|g| g.sort_unstable());
     // Largest first, as the clustering hands them over (the order among equals stays).
     out.sort_by_key(|g| std::cmp::Reverse(g.len()));
     out
+}
+
+/// Per group of `groups` (all pinned to `k`), its faces that are neither
+/// pinned nor were `k` before and were seen in a frame with one of `k`'s own
+/// faces (pinned, or `k` before) in another of the groups, unless the own
+/// faces of the two groups are themselves seen together: then the character
+/// holds two people the user merged who share the screen, and a face beside
+/// the other one is no stranger. Seen together means in more than one frame:
+/// on each side at least two own faces, and a tenth of the smaller group's,
+/// share a frame with the other's (a face on a screen, a poster or a face
+/// tracked wrong once must not count).
+fn beside_their_own(tracks: &[TrackIn], k: CharKey, groups: &[&[usize]]) -> Vec<Vec<usize>> {
+    let own = |i: usize| tracks[i].pin.is_some() || tracks[i].previous == Some(k);
+    let beside = Beside::new(
+        tracks,
+        groups.iter().enumerate().flat_map(|(gi, g)| g.iter().filter(|&&i| own(i)).map(move |&i| (i, gi))),
+    );
+    // Per group and other group: its own faces seen in a frame with an own face of the other.
+    let mut shared: HashMap<(usize, usize), usize> = HashMap::new();
+    for (gi, g) in groups.iter().enumerate() {
+        for &i in g.iter().filter(|&&i| own(i)) {
+            let mut with: HashSet<usize> = HashSet::new();
+            beside.any(&tracks[i], |_, gj| {
+                if gj != gi {
+                    with.insert(gj);
+                }
+                false
+            });
+            with.into_iter().for_each(|gj| *shared.entry((gi, gj)).or_default() += 1);
+        }
+    }
+    let owns: Vec<usize> = groups.iter().map(|g| g.iter().filter(|&&i| own(i)).count()).collect();
+    let mut two: HashSet<(usize, usize)> = HashSet::new();
+    for (&(gi, gj), &n) in &shared {
+        let back = shared.get(&(gj, gi)).copied().unwrap_or(0);
+        let need = 2usize.max(owns[gi].min(owns[gj]).div_ceil(10));
+        if n >= need && back >= need {
+            two.insert((gi.min(gj), gi.max(gj)));
+        }
+    }
+    groups
+        .iter()
+        .enumerate()
+        .map(|(gi, g)| {
+            g.iter()
+                .copied()
+                .filter(|&u| {
+                    !own(u) && beside.any(&tracks[u], |_, gj| gj != gi && !two.contains(&(gi.min(gj), gi.max(gj))))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Faces by media and start, to find the ones a face was seen in a frame
+/// with (`together`) without looking at all of them.
+struct Beside<'a> {
+    tracks: &'a [TrackIn],
+    by_media: HashMap<u32, Starts>,
+}
+
+/// The faces of one media by their start (start, track, tag), and the
+/// longest of them: no face that starts more than that before another
+/// reaches it.
+type Starts = (Vec<(u32, usize, usize)>, u32);
+
+impl<'a> Beside<'a> {
+    /// `faces`: track and tag.
+    fn new(tracks: &'a [TrackIn], faces: impl IntoIterator<Item = (usize, usize)>) -> Self {
+        let mut by_media: HashMap<u32, Starts> = HashMap::new();
+        for (i, tag) in faces {
+            let t = &tracks[i];
+            let (list, longest) = by_media.entry(t.media).or_default();
+            list.push((t.start, i, tag));
+            *longest = (*longest).max(t.end.saturating_sub(t.start));
+        }
+        by_media.values_mut().for_each(|(list, _)| list.sort_unstable());
+        Self { tracks, by_media }
+    }
+
+    /// Whether `f` says yes to one of the faces `t` was seen in a frame with
+    /// (it is given the face's track and tag).
+    fn any(&self, t: &TrackIn, mut f: impl FnMut(usize, usize) -> bool) -> bool {
+        let Some((faces, reach)) = self.by_media.get(&t.media) else {
+            return false;
+        };
+        let from = faces.partition_point(|&(start, _, _)| start.saturating_add(*reach) <= t.start);
+        faces[from..]
+            .iter()
+            .take_while(|&&(start, _, _)| start < t.end)
+            .any(|&(_, v, tag)| together(t, &self.tracks[v]) && f(v, tag))
+    }
 }
 
 /// Per character, what it held besides the user's pins: the quality of the
@@ -475,7 +619,24 @@ fn held_besides_pins(tracks: &[TrackIn], core: &[usize]) -> HashMap<CharKey, f32
 /// character: it joins the group pinned to it. (A few faces once placed
 /// with a character are not its own faces: the group must hold as many of
 /// them as make a character.)
-fn keep_own_faces(tracks: &[TrackIn], core: &[usize], chars: &mut Vec<(Vec<usize>, Option<CharKey>)>, p: &Params) {
+///
+/// The few faces a merge pins do not always start as a group of their own:
+/// a character's most typical faces are also the ones most like its other
+/// look, and where they are as like the merged-in faces as two groups must
+/// be to join, they start among those. Then the character's own faces have
+/// no pinned group to join, and are not most of what it held once the
+/// merged-in person outgrew them. So a group that was this character more
+/// than any other also follows when the pins say so (`held_by_pins`).
+/// `company`: per track, the group it left the clustering in; `loose`: the
+/// faces of no group.
+fn keep_own_faces(
+    tracks: &[TrackIn],
+    core: &[usize],
+    chars: &mut Vec<(Vec<usize>, Option<CharKey>)>,
+    loose: &[usize],
+    p: &Params,
+    company: &[usize],
+) {
     let pin_of = |g: &[usize]| g.iter().find_map(|&i| tracks[i].pin);
     let pinned: HashMap<CharKey, usize> =
         chars.iter().enumerate().filter_map(|(ci, (g, _))| Some((pin_of(g)?, ci))).collect();
@@ -483,26 +644,62 @@ fn keep_own_faces(tracks: &[TrackIn], core: &[usize], chars: &mut Vec<(Vec<usize
         return;
     }
     let held = held_besides_pins(tracks, core);
+    // Per unpinned group: the pinned group of the character most of its earlier faces were (a tie:
+    // the lower key), with their quality and number.
+    let was: Vec<Option<(usize, CharKey, f32, usize)>> = chars
+        .iter()
+        .map(|(g, _)| {
+            if pin_of(g).is_some() {
+                return None;
+            }
+            let mut was: HashMap<CharKey, (f32, usize)> = HashMap::new();
+            for &i in g {
+                if let Some(k) = tracks[i].previous {
+                    let of = was.entry(k).or_default();
+                    *of = (of.0 + tracks[i].quality, of.1 + 1);
+                }
+            }
+            let (&k, &(w, n)) = was.iter().max_by(|a, b| a.1.0.total_cmp(&b.1.0).then(b.0.cmp(a.0)))?;
+            Some((*pinned.get(&k)?, k, w, n))
+        })
+        .collect();
+    // Per pinned group, its pinned faces ready to vote; every clear face, tagged by the group it is in
+    // (`usize::MAX`: none). Both made when first asked.
+    let mut votes: HashMap<usize, Vec<(usize, f32)>> = HashMap::new();
+    let mut around: Option<Beside<'_>> = None;
+    // Per character pinned, its faces of no group that were it (too vague to make one): one more part of it.
+    let mut vague: HashMap<CharKey, Vec<usize>> = HashMap::new();
+    for &i in loose {
+        if let Some(k) = tracks[i].previous.filter(|k| tracks[i].pin.is_none() && pinned.contains_key(k)) {
+            vague.entry(k).or_default().push(i);
+        }
+    }
     let mut follows: Vec<(usize, usize)> = Vec::new();
     for (ci, (g, _)) in chars.iter().enumerate() {
-        if pin_of(g).is_some() {
-            continue;
-        }
-        let mut was: HashMap<CharKey, (f32, usize)> = HashMap::new();
-        for &i in g {
-            if let Some(k) = tracks[i].previous {
-                let of = was.entry(k).or_default();
-                *of = (of.0 + tracks[i].quality, of.1 + 1);
-            }
-        }
-        // The character most of the group's earlier faces were (a tie: the lower key).
-        let Some((&k, &(w, n))) = was.iter().max_by(|a, b| a.1.0.total_cmp(&b.1.0).then(b.0.cmp(a.0))) else {
+        let Some((pi, k, w, n)) = was[ci] else {
             continue;
         };
-        if let Some(&pi) = pinned.get(&k)
-            && w > 0.5 * held[&k]
-            && n >= p.min_tracks
-        {
+        if n < p.min_tracks {
+            continue;
+        }
+        let follow = w > 0.5 * held[&k] || {
+            let pins = votes.entry(pi).or_insert_with(|| pins_and_their_company(tracks, &chars[pi].0, k, company));
+            let around = around.get_or_insert_with(|| {
+                let mut tag = vec![usize::MAX; tracks.len()];
+                chars.iter().enumerate().for_each(|(cj, (g, _))| g.iter().for_each(|&i| tag[i] = cj));
+                Beside::new(tracks, core.iter().map(|&i| (i, tag[i])))
+            });
+            // The character's other parts: groups that may follow it, and its vague faces.
+            let mut parts: Vec<&[usize]> = was
+                .iter()
+                .enumerate()
+                .filter(|&(cj, x)| cj != ci && x.is_some_and(|(pj, _, _, nj)| pj == pi && nj >= p.min_tracks))
+                .map(|(cj, _)| chars[cj].0.as_slice())
+                .collect();
+            parts.extend(vague.get(&k).map(Vec::as_slice));
+            held_by_pins(tracks, g, ci, pins, around, &parts, p)
+        };
+        if follow {
             follows.push((ci, pi));
         }
     }
@@ -511,6 +708,128 @@ fn keep_own_faces(tracks: &[TrackIn], core: &[usize], chars: &mut Vec<(Vec<usize
         chars[pi].0.extend(g);
     }
     chars.retain(|(g, _)| !g.is_empty());
+}
+
+/// Whether the faces pinned to a character hold the group `g` (number `me`
+/// among the groups; faces that were the character and grouped apart from
+/// the group pinned to it). At least two of them must vote for it: be as
+/// like the faces of `g` on average as a face must be to be placed on a
+/// character (`assign`, and at least `link`), more like them than like the
+/// other faces of the group they left the clustering in, and seen in no
+/// frame with a face of `g`. Such pins are of `g`'s look and started
+/// in other company. The company is the clustering's group, not all that is
+/// pinned to the character: on a character that also holds someone merged
+/// in by hand, every pin would be in unlike company, and a part the grouping
+/// rightly parted (the other self of a named character) would be held.
+///
+/// And the faces seen in a frame with a face of `g` that are as like the
+/// pins that vote as two groups must be to join (`around`: every clear face,
+/// tagged by its group) must be on average less like them than `g` is: if
+/// they are as like them, the pins are theirs, and `g` is someone beside
+/// them (someone like the character, once on it by mistake). Two people
+/// merged into one character who share the screen are unlike each other,
+/// and each part is held.
+///
+/// And the pins hold the part of the character they are most like: another
+/// of its `parts` (groups that were it) more like the pins that vote, and
+/// too unlike `g` to be one person with it, is their person, and `g`
+/// someone else (someone like them, placed on the character where it was
+/// not on screen, so never seen beside its faces). `pins`: see
+/// `pins_and_their_company`.
+fn held_by_pins(
+    tracks: &[TrackIn],
+    g: &[usize],
+    me: usize,
+    pins: &[(usize, f32)],
+    around: &Beside<'_>,
+    parts: &[&[usize]],
+    p: &Params,
+) -> bool {
+    let weight = |i: usize| tracks[i].quality.max(0.05);
+    let dot = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>();
+    let dim = tracks[g[0]].embedding.len();
+    let mut of_g = vec![0f32; dim];
+    let mut total = 0f32;
+    for &i in g {
+        of_g.iter_mut().zip(&tracks[i].embedding).for_each(|(s, x)| *s += weight(i) * x);
+        total += weight(i);
+    }
+    let beside = Beside::new(tracks, g.iter().map(|&i| (i, 0)));
+    let votes: Vec<usize> = pins
+        .iter()
+        .filter(|&&(i, to_own)| {
+            let to_g = dot(&tracks[i].embedding, &of_g) / total.max(1e-9);
+            to_g >= p.assign.max(p.link) && to_g > to_own && !beside.any(&tracks[i], |_, _| true)
+        })
+        .map(|&(i, _)| i)
+        .collect();
+    if votes.len() < 2 {
+        return false;
+    }
+    // Who the pins that vote are: their weighted mean (a face's likeness to it is its average likeness to them).
+    let mut who = vec![0f32; dim];
+    let mut of_votes = 0f32;
+    for &i in &votes {
+        who.iter_mut().zip(&tracks[i].embedding).for_each(|(s, x)| *s += weight(i) * x);
+        of_votes += weight(i);
+    }
+    who.iter_mut().for_each(|s| *s /= of_votes);
+    let to_g = dot(&who, &of_g) / total.max(1e-9);
+    let mut near: HashMap<usize, f32> = HashMap::new();
+    for &i in g {
+        around.any(&tracks[i], |j, cj| {
+            let like = dot(&who, &tracks[j].embedding);
+            if cj != me && like >= p.link {
+                near.insert(j, like);
+            }
+            false
+        });
+    }
+    let near_weight: f32 = near.keys().map(|&j| weight(j)).sum();
+    let to_near = near.iter().map(|(&j, &like)| weight(j) * like).sum::<f32>() / near_weight.max(1e-9);
+    if !near.is_empty() && to_near >= to_g {
+        return false;
+    }
+    !parts.iter().any(|h| {
+        let mut of_h = vec![0f32; dim];
+        let mut weight_h = 0f32;
+        for &i in h.iter() {
+            of_h.iter_mut().zip(&tracks[i].embedding).for_each(|(s, x)| *s += weight(i) * x);
+            weight_h += weight(i);
+        }
+        dot(&who, &of_h) / weight_h.max(1e-9) > to_g && dot(&of_g, &of_h) / (total * weight_h).max(1e-9) < p.link
+    })
+}
+
+/// The faces pinned to `k` in `pinned` (the group pinned to it, with what
+/// joined that), each with how like it is on average to the other faces of
+/// the group it left the clustering in (`company`, per track; a face alone
+/// there is like no one): what the face must beat to vote in
+/// `held_by_pins`.
+fn pins_and_their_company(tracks: &[TrackIn], pinned: &[usize], k: CharKey, company: &[usize]) -> Vec<(usize, f32)> {
+    let weight = |i: usize| tracks[i].quality.max(0.05);
+    let dot = |a: &[f32], b: &[f32]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f32>();
+    let dim = pinned.first().map_or(0, |&i| tracks[i].embedding.len());
+    // Per group of the clustering that the pinned group's faces came from: their weighted sum, their weight.
+    let mut companies: HashMap<usize, (Vec<f32>, f32)> = HashMap::new();
+    for &i in pinned {
+        let (sum, total) = companies.entry(company[i]).or_insert_with(|| (vec![0f32; dim], 0.0));
+        sum.iter_mut().zip(&tracks[i].embedding).for_each(|(s, x)| *s += weight(i) * x);
+        *total += weight(i);
+    }
+    pinned
+        .iter()
+        .copied()
+        .filter(|&i| tracks[i].pin == Some(k))
+        .map(|i| {
+            let e = &tracks[i].embedding;
+            let (sum, total) = &companies[&company[i]];
+            // (Unit-length faces: the face itself is `weight` of its group's sum.)
+            let rest = total - weight(i);
+            let to_own = if rest > 1e-6 { (dot(e, sum) - weight(i) * dot(e, e)) / rest } else { 0.0 };
+            (i, to_own)
+        })
+        .collect()
 }
 
 /// Groups that are (nearly) only ever on screen with a bigger group, most of
@@ -787,7 +1106,13 @@ fn identify_in(tracks: &[TrackIn], p: &Params) -> Outcome {
     let core: Vec<usize> = (0..n).filter(|&i| is_core[i]).collect();
 
     // 1. Constrained clustering of the core tracks.
-    let groups = pins_together(tracks, &core, cluster(tracks, &core, p));
+    let clustered = cluster(tracks, &core, p);
+    // Per track, the group it left the clustering in (for `held_by_pins`).
+    let mut company = vec![usize::MAX; n];
+    for (gi, g) in clustered.iter().enumerate() {
+        g.iter().for_each(|&i| company[i] = gi);
+    }
+    let groups = pins_together(tracks, &core, clustered);
 
     // 2. Which groups are characters; which existing character each one is.
     let frames = |g: &[usize]| -> u32 { g.iter().map(|&i| tracks[i].end - tracks[i].start).sum() };
@@ -803,7 +1128,7 @@ fn identify_in(tracks: &[TrackIn], p: &Params) -> Outcome {
             loose.extend(g);
         }
     }
-    keep_own_faces(tracks, &core, &mut chars, p);
+    keep_own_faces(tracks, &core, &mut chars, &loose, p, &company);
     let copied = drop_copies(tracks, &mut chars, &mut loose, p);
     // Pins decide first; then the biggest previous overlaps, one to one.
     let mut taken: HashSet<CharKey> = HashSet::new();

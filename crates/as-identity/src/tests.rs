@@ -2037,3 +2037,1167 @@ fn only_the_space_fitted_to_animation_holds_tight_groups_apart() {
     assert_eq!(fit.params(&Params::anime()).tight, 0.0);
     assert_eq!(fit.params(&Params { animated: true, ..Params::sface() }).tight, 0.0);
 }
+
+/// B (`per[1]` faces, 0.85 like their centre) and A (`per[0]` faces, `fid`
+/// like theirs, the first five `typical`), the centres `alike`; B's faces
+/// come first in track order when `b_first`. Never in a frame together.
+fn typical_pair(
+    rng: &mut Rng,
+    per: [u32; 2],
+    alike: f32,
+    fid: f32,
+    typical: f32,
+    b_first: bool,
+) -> (Vec<TrackIn>, [Vec<usize>; 2]) {
+    let b_centre = rng.unit();
+    let a_centre = around(rng, &b_centre, alike);
+    let mut tracks = Vec::new();
+    let mut ids = [Vec::new(), Vec::new()];
+    for s in if b_first { [1usize, 0] } else { [0, 1] } {
+        for i in 0..per[s] {
+            let f = if s == 1 {
+                0.85
+            } else if i < 5 {
+                typical
+            } else {
+                fid
+            };
+            let centre = if s == 1 { &b_centre } else { &a_centre };
+            ids[s].push(tracks.len());
+            tracks.push(track(0, (s as u32 * 1000 + i) * 100, around(rng, centre, f), 0.8));
+        }
+    }
+    (tracks, ids)
+}
+
+#[test]
+fn a_merge_holds_when_the_pinned_faces_of_the_one_that_stays_are_its_most_typical() {
+    // One person in two looks, about 0.24 alike on average: under the link
+    // bar, so the grouping leaves them two characters and the user merges 2
+    // into 1. The merge pins five typical faces of 1 (`as-project`
+    // `anchors`: the sharpest of its most typical faces): closer to the
+    // person than the others, so more like the other look too (0.32, over
+    // the link bar), and they start among the merged-in faces. Later
+    // episodes bring more of the merged-in look, until 1's own faces are not
+    // most of what it held: the pins hold them (`held_by_pins`).
+    let mut rng = Rng(1040);
+    let (mut tracks, [a, b]) = typical_pair(&mut rng, [40, 60], 0.40, 0.70, 0.95, false);
+    assert!(are_two(&identify(&tracks, &Params::default()), &a, &b), "two characters without the merge");
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(1));
+    b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let (mut all_a, mut all_b) = (a.clone(), b.clone());
+    for episode in 1..4 {
+        // (Each look in a media of its own: no two new faces in one frame.)
+        all_a.extend(more_of(&mut rng, &mut tracks, &a, episode, 10));
+        all_b.extend(more_of(&mut rng, &mut tracks, &b, 10 + episode, 60));
+        let o = identify(&tracks, &Params::default());
+        assert_eq!(o.characters.len(), 1, "episode {episode}");
+        assert!(!are_two(&o, &all_a, &all_b), "episode {episode}");
+        remember(&mut tracks, &o);
+    }
+}
+
+#[test]
+fn a_merge_of_two_selves_holds_whatever_the_order_of_the_tracks() {
+    // The two selves 0.66 of their own cohesion alike (the rule holds them
+    // apart), the five pinned faces of the one that stays typical ones, and
+    // the merged-in self's faces first in track order (its episode was
+    // analysed first).
+    for b_first in [false, true] {
+        let mut rng = Rng(12_066);
+        let (mut tracks, [a, b]) = typical_pair(&mut rng, [40, 60], 0.66, 0.80, 0.95, b_first);
+        assert!(are_two(&identify(&tracks, &as_animation()), &a, &b), "two characters without the merge");
+        a.iter().for_each(|&i| tracks[i].previous = Some(1));
+        a[..5].iter().for_each(|&i| tracks[i].pin = Some(1));
+        b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+        let (mut all_a, mut all_b) = (a.clone(), b.clone());
+        for episode in 1..4 {
+            all_a.extend(more_of(&mut rng, &mut tracks, &a, episode, 10));
+            all_b.extend(more_of(&mut rng, &mut tracks, &b, 10 + episode, 60));
+            let o = identify(&tracks, &as_animation());
+            assert_eq!(o.characters.len(), 1, "merged-in first: {b_first}, episode {episode}");
+            assert!(!are_two(&o, &all_a, &all_b), "merged-in first: {b_first}, episode {episode}");
+            remember(&mut tracks, &o);
+        }
+    }
+}
+
+#[test]
+fn faces_put_on_characters_by_hand_do_not_take_the_room_of_a_run() {
+    // One person in two episodes, and sixty faces of sixty other people
+    // that the user collected in one character (extras, to hide them), or
+    // put ten each on six characters. The clustering runs per media first
+    // (a big project; here forced by small levels): the person's two groups
+    // must still meet across the episodes, and every pinned face is still
+    // there.
+    for one_character in [true, false] {
+        let mut rng = Rng(77);
+        let person = rng.unit();
+        let mut tracks = Vec::new();
+        for m in 0..2u32 {
+            for i in 0..12u32 {
+                tracks.push(track(m, i * 100, around(&mut rng, &person, 0.85), 0.8));
+            }
+        }
+        let x: Vec<usize> = (0..tracks.len()).collect();
+        for i in 0..60u32 {
+            let mut t = track(i % 2, 10_000 + i * 100, rng.unit(), 0.8);
+            t.pin = Some(if one_character { 9 } else { 100 + i % 6 });
+            tracks.push(t);
+        }
+        let core: Vec<usize> = (0..tracks.len()).collect();
+        let levels = crate::ahc::Levels { single: 10, second: 40 };
+        let groups = crate::ahc::cluster_in(&tracks, &core, &Params::default(), levels);
+        assert!(
+            groups.iter().any(|g| x.iter().all(|i| g.contains(i))),
+            "one group of the person across both episodes (one character: {one_character})"
+        );
+        let pinned: usize = groups.iter().filter(|g| tracks[g[0]].pin.is_some()).map(Vec::len).sum();
+        assert_eq!(pinned, 60);
+    }
+}
+
+#[test]
+fn a_look_pinned_after_many_odd_faces_still_takes_its_new_faces() {
+    // Character 1 holds 300 faces of 300 people, pinned to it one by one
+    // (more than `MAX_ALONE`: the last ones make room, and the first go to
+    // its odd faces), all earlier in the tracks' order than the thirty faces
+    // of a character merged into it. The merged-in faces still start as a
+    // group of their own, not among the odd faces (which are like nobody):
+    // new faces of that person join the character.
+    let mut rng = Rng(79);
+    let mut tracks = Vec::new();
+    for i in 0..300u32 {
+        tracks.push(TrackIn { pin: Some(1), previous: Some(1), ..track(0, i * 100, rng.unit(), 0.8) });
+    }
+    let person = rng.unit();
+    let merged: Vec<usize> = (0..30u32)
+        .map(|i| {
+            tracks.push(TrackIn {
+                pin: Some(1),
+                previous: Some(1),
+                ..track(1, i * 100, around(&mut rng, &person, 0.85), 0.8)
+            });
+            tracks.len() - 1
+        })
+        .collect();
+    let new = more_of(&mut rng, &mut tracks, &merged, 2, 20);
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1);
+    assert_eq!(o.characters[one_character(&o, &new)].key, Some(1));
+    assert_eq!(one_character(&o, &new), one_character(&o, &merged));
+}
+
+#[test]
+fn someone_seen_beside_a_characters_own_faces_does_not_come_to_it_through_its_other_look() {
+    // Character 1 has pinned faces in two looks that are nothing alike (two
+    // people merged by hand): fifteen of the second, all pinned, and
+    // seventeen of the first, all pinned or only five of them (the others
+    // were 1 before). Someone else, character 5, resembles the second look
+    // and is on screen with a face of the first in every shot. Their twelve
+    // faces group with the second look's; they are not 1, whose own faces
+    // they were seen beside, and stay 5.
+    for all_pinned in [true, false] {
+        let mut rng = Rng(80);
+        let (mut tracks, [first, second]) = two_people(&mut rng, [17, 15]);
+        first.iter().for_each(|&i| tracks[i].previous = Some(1));
+        first[..if all_pinned { 17 } else { 5 }].iter().for_each(|&i| tracks[i].pin = Some(1));
+        second.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+        let mut look = vec![0f32; tracks[0].embedding.len()];
+        second.iter().for_each(|&i| look.iter_mut().zip(&tracks[i].embedding).for_each(|(s, x)| *s += x));
+        proto_normalize(&mut look);
+        let other = around(&mut rng, &look, 0.8);
+        let others: Vec<usize> = (0..12)
+            .map(|i| {
+                let beside = tracks[first[5 + i]].start;
+                tracks.push(TrackIn { previous: Some(5), ..track(0, beside, around(&mut rng, &other, 0.85), 0.8) });
+                tracks.len() - 1
+            })
+            .collect();
+        let o = identify(&tracks, &Params::default());
+        let c = one_character(&o, &[first.clone(), second.clone()].concat());
+        assert_eq!(o.characters[c].key, Some(1), "all pinned: {all_pinned}");
+        assert_eq!(o.characters[one_character(&o, &others)].key, Some(5), "all pinned: {all_pinned}");
+        assert_eq!(o.characters.len(), 2, "all pinned: {all_pinned}");
+    }
+}
+
+#[test]
+fn new_faces_of_two_merged_people_seen_together_are_both_the_character() {
+    // Two people merged by hand into 1 (all faces of the one pinned, five of
+    // the other), who are on screen together in the next episode: a new face
+    // of each in every shot. Both are 1: only a face seen beside the
+    // character's own faces is held off, not one seen beside another new face.
+    let mut rng = Rng(81);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [30, 30]);
+    a.iter().for_each(|&i| tracks[i].previous = Some(1));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(1));
+    b.iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let new_a = more_of(&mut rng, &mut tracks, &a, 1, 20);
+    let new_b = more_of(&mut rng, &mut tracks, &b, 1, 20);
+    assert!(new_a.iter().zip(&new_b).all(|(&x, &y)| together(&tracks[x], &tracks[y])));
+    for round in 0..2 {
+        let o = identify(&tracks, &Params::default());
+        assert_eq!(o.characters.len(), 1, "round {round}");
+        assert_eq!(one_character(&o, &new_a), one_character(&o, &new_b), "round {round}");
+        remember(&mut tracks, &o);
+    }
+}
+
+#[test]
+fn a_character_made_of_a_few_faces_of_someone_inside_another_takes_that_persons_other_faces() {
+    // Character 2 holds two people (an older grouping's mistake): forty
+    // faces of one and ten of another. The user makes a new character (9) of
+    // three of the ten. The ten group together, apart from the forty: they
+    // are all 9, and 2 keeps the forty.
+    let mut rng = Rng(2000);
+    let (mut tracks, [x, y]) = two_people(&mut rng, [40, 10]);
+    tracks.iter_mut().for_each(|t| t.previous = Some(2));
+    y[..3].iter().for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(9), Some(9)));
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters[one_character(&o, &x)].key, Some(2));
+    assert_eq!(o.characters[one_character(&o, &y)].key, Some(9));
+}
+
+#[test]
+fn a_pinned_face_never_steps_aside_where_two_tight_groups_stay_two() {
+    // `a_pinned_face_never_steps_aside`, in the space fitted to animation:
+    // the odd pinned face starts apart from the other pinned faces of its
+    // character there, and the face in the mirror beside it must still not
+    // end on the character.
+    let mut rng = Rng(67);
+    let person = rng.unit();
+    let mut tracks = Vec::new();
+    let [l1, l2] = two_looks(&mut rng, &mut tracks, &person, 0, 10);
+    for &i in &l1 {
+        tracks[i].pin = Some(7);
+    }
+    tracks[l1[3]].embedding = around(&mut rng, &person, 0.6);
+    let at = tracks[l1[3]].start;
+    tracks[l2[3]].start = at;
+    tracks[l2[3]].end = at + 48;
+    tracks[l2[3]].seen = tracks[l1[3]].seen.clone();
+    let o = identify(&tracks, &as_animation());
+    let c = one_character(&o, &l1);
+    assert_ne!(o.tracks[l2[3]].0.character(), Some(c), "two faces of one character in one frame");
+}
+
+/// The mean face of `ids` (unit length).
+fn mean_face(tracks: &[TrackIn], ids: &[usize]) -> Vec<f32> {
+    let mut sum = vec![0f32; tracks[ids[0]].embedding.len()];
+    ids.iter().for_each(|&i| sum.iter_mut().zip(&tracks[i].embedding).for_each(|(s, x)| *s += x));
+    proto_normalize(&mut sum);
+    sum
+}
+
+#[test]
+fn a_face_that_shares_no_frame_with_the_characters_own_is_not_beside_them() {
+    // Two people merged by hand into 1, every face pinned. New faces of the
+    // second, in the first one's media and at the very time of that one's
+    // faces, but found in other frames (a track that fills the gaps of
+    // another): never in a frame together, so nothing holds them off.
+    let mut rng = Rng(82);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [15, 15]);
+    tracks.iter_mut().for_each(|t| (t.pin, t.previous) = (Some(1), Some(1)));
+    let new: Vec<usize> = (0..12)
+        .map(|i| {
+            let start = tracks[a[i]].start;
+            let face = around(&mut rng, &tracks[b[i]].embedding, 0.95);
+            let seen = (start..start + 48).filter(|f| f % 3 == 1).collect();
+            tracks.push(TrackIn { seen, ..track(0, start, face, 0.8) });
+            tracks.len() - 1
+        })
+        .collect();
+    assert!(new.iter().zip(&a).all(|(&x, &y)| !together(&tracks[x], &tracks[y])));
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1);
+    assert_eq!(one_character(&o, &new), one_character(&o, &b));
+}
+
+#[test]
+fn two_people_pinned_to_one_character_who_are_on_screen_together_are_one_character() {
+    // Every face of two people pinned to 4, each face of the one in the
+    // frames of a face of the other: pinned faces are the character's, beside
+    // whomever they were seen.
+    let mut rng = Rng(83);
+    let (mut tracks, [a, b]) = two_people(&mut rng, [20, 20]);
+    for (&x, &y) in a.iter().zip(&b) {
+        (tracks[y].start, tracks[y].end, tracks[y].seen) = (tracks[x].start, tracks[x].end, tracks[x].seen.clone());
+    }
+    tracks.iter_mut().for_each(|t| t.pin = Some(4));
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1);
+    assert_eq!(o.characters[one_character(&o, &[a, b].concat())].key, Some(4));
+}
+
+#[test]
+fn pinned_faces_that_resemble_no_part_of_a_character_hold_none() {
+    // Character 3 is twenty faces of twenty people, pinned to it one by one,
+    // and three people it held besides (ten, ten and eight faces: none is
+    // most of it). The pinned faces resemble none of them, however little
+    // they resemble each other: the three go on as characters of their own.
+    let mut rng = Rng(84);
+    let (mut tracks, [x, y]) = two_people(&mut rng, [10, 10]);
+    let third = rng.unit();
+    let z: Vec<usize> = (0..8u32)
+        .map(|i| {
+            tracks.push(track(2, i * 100, around(&mut rng, &third, 0.85), 0.8));
+            tracks.len() - 1
+        })
+        .collect();
+    tracks.iter_mut().for_each(|t| t.previous = Some(3));
+    let odd: Vec<usize> = (0..20u32)
+        .map(|i| {
+            tracks.push(TrackIn { pin: Some(3), previous: Some(3), ..track(1, i * 100, rng.unit(), 0.8) });
+            tracks.len() - 1
+        })
+        .collect();
+    let o = identify(&tracks, &Params::default());
+    let c = one_character(&o, &odd);
+    assert_eq!(o.characters[c].key, Some(3));
+    assert_eq!(o.characters.len(), 4);
+    for part in [&x, &y, &z] {
+        assert_ne!(one_character(&o, part), c);
+    }
+}
+
+#[test]
+fn one_pinned_face_that_resembles_a_part_does_not_hold_it() {
+    // Character 1: forty faces of one person, five of them pinned (a name),
+    // and ten faces of a second person it held besides (a wrong join that
+    // the grouping now parts). One more face pinned to 1 resembles the
+    // second person and was seen beside one of their faces, so it is no
+    // group with them. A single such pin does not hold the part: the ten go
+    // on as a new character.
+    let mut rng = Rng(85);
+    let (mut tracks, [x, y]) = two_people(&mut rng, [40, 10]);
+    tracks.iter_mut().for_each(|t| t.previous = Some(1));
+    x[..5].iter().for_each(|&i| tracks[i].pin = Some(1));
+    let face = around(&mut rng, &mean_face(&tracks, &y), 0.6);
+    tracks.push(TrackIn { pin: Some(1), previous: Some(1), ..track(0, tracks[y[0]].start, face, 0.8) });
+    let pinned = tracks.len() - 1;
+    let o = identify(&tracks, &Params::default());
+    let c = one_character(&o, &x);
+    assert_eq!(o.characters[c].key, Some(1));
+    assert_eq!(o.tracks[pinned].0.character(), Some(c));
+    assert_ne!(one_character(&o, &y), c);
+}
+
+#[test]
+fn one_face_of_someone_inside_another_character_moved_to_a_third_moves_alone() {
+    // Character 2 holds two people, forty faces and ten. The user moves one
+    // of the ten to character 1, which has thirty faces of its own (a third
+    // person). It moves alone, as a face of a whole character does: only a
+    // character made of nothing but the picked faces takes the others of
+    // their person along.
+    let mut rng = Rng(86);
+    let (mut tracks, [x, y]) = two_people(&mut rng, [40, 10]);
+    tracks.iter_mut().for_each(|t| t.previous = Some(2));
+    let third = rng.unit();
+    let a: Vec<usize> = (0..30u32)
+        .map(|i| {
+            tracks.push(TrackIn { previous: Some(1), ..track(1, i * 100, around(&mut rng, &third, 0.85), 0.8) });
+            tracks.len() - 1
+        })
+        .collect();
+    (tracks[y[0]].pin, tracks[y[0]].previous) = (Some(1), Some(1));
+    let o = identify(&tracks, &Params::default());
+    let c = one_character(&o, &a);
+    assert_eq!(o.characters[c].key, Some(1));
+    assert_eq!(o.tracks[y[0]].0.character(), Some(c));
+    assert!(y[1..].iter().all(|&i| o.tracks[i].0.character() != Some(c)));
+    assert_eq!(o.characters[one_character(&o, &x)].key, Some(2));
+}
+
+/// `n` faces around `centre`, one after another from `from` on in media `media`.
+fn faces_of(rng: &mut Rng, tracks: &mut Vec<TrackIn>, centre: &[f32], media: u32, from: u32, n: u32) -> Vec<usize> {
+    let first = tracks.len();
+    for i in 0..n {
+        tracks.push(track(media, from + i * 100, around(rng, centre, 0.85), 0.8));
+    }
+    (first..tracks.len()).collect()
+}
+
+#[test]
+fn a_named_character_that_also_holds_a_merge_lets_the_other_self_go() {
+    // As `a_named_character_lets_the_other_self_go_and_keeps_its_name`: an
+    // older grouping made the two selves one character (7), named: five
+    // faces of the bigger self are pinned. Here 7 also holds someone else,
+    // merged into it by hand (eighty faces pinned, unlike both selves). The
+    // rule parts the selves all the same: the pins of the bigger self are in
+    // their own self's group, not in other company, and do not hold the
+    // other self (`held_by_pins` goes by the group a pin left the clustering
+    // in, not by all that is pinned to the character).
+    let mut rng = Rng(20_000);
+    let one = rng.unit();
+    let other = around(&mut rng, &one, 0.6);
+    let third = rng.unit();
+    let mut tracks = Vec::new();
+    let a = faces_of(&mut rng, &mut tracks, &one, 0, 0, 60);
+    let b = faces_of(&mut rng, &mut tracks, &other, 0, 100_000, 40);
+    let c = faces_of(&mut rng, &mut tracks, &third, 0, 200_000, 80);
+    tracks.iter_mut().for_each(|t| t.previous = Some(7));
+    a[..5].iter().for_each(|&i| tracks[i].pin = Some(7));
+    c.iter().for_each(|&i| tracks[i].pin = Some(7));
+    let o = identify(&tracks, &as_animation());
+    assert!(!are_two(&o, &a, &c), "the merge holds");
+    assert_eq!(o.characters[one_character(&o, &a)].key, Some(7));
+    assert!(are_two(&o, &a, &b), "the other self goes on as a character of its own");
+}
+
+#[test]
+fn someone_beside_a_character_in_a_few_of_their_shots_stays_whole() {
+    // 7 is named and holds two unlike looks (three faces pinned of the
+    // first, two of the second). Someone else (character 8, twenty faces)
+    // resembles the second look and is on screen with a face of the first
+    // look in three of their shots. Those three say who the other seventeen
+    // are not: all twenty stay 8, not three of them.
+    let mut rng = Rng(22_000);
+    let (mut tracks, [l1, l2]) = two_people(&mut rng, [25, 20]);
+    tracks.iter_mut().for_each(|t| t.previous = Some(7));
+    l1[..3].iter().for_each(|&i| tracks[i].pin = Some(7));
+    l2[..2].iter().for_each(|&i| tracks[i].pin = Some(7));
+    let other = around(&mut rng, &mean_face(&tracks, &l2), 0.6);
+    let first = tracks.len();
+    for k in 0..20usize {
+        let start = if k < 3 { tracks[l1[k]].start } else { 500_000 + k as u32 * 100 };
+        tracks.push(TrackIn { previous: Some(8), ..track(0, start, around(&mut rng, &other, 0.85), 0.8) });
+    }
+    let y: Vec<usize> = (first..tracks.len()).collect();
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters[one_character(&o, &l1)].key, Some(7));
+    assert_eq!(o.characters[one_character(&o, &y)].key, Some(8));
+}
+
+#[test]
+fn looks_merged_into_a_character_full_of_start_groups_take_their_new_faces() {
+    // Character 1 has forty pairs of pinned faces (each pair unlike the
+    // others) and twenty single ones. Two looks are merged into it later in
+    // the tracks' order (forty pinned faces each); the next episode brings
+    // thirty new faces of each. They are 1's: looks never make room, and
+    // each starts as a group of its own.
+    let mut rng = Rng(23_000);
+    let mut tracks = Vec::new();
+    let mut at = 0u32;
+    for pair in 0..60u32 {
+        let c = rng.unit();
+        for _ in 0..(if pair < 40 { 2 } else { 1 }) {
+            tracks.push(TrackIn { pin: Some(1), previous: Some(1), ..track(0, at, around(&mut rng, &c, 0.97), 0.8) });
+            at += 100;
+        }
+    }
+    let (b_centre, c_centre) = (rng.unit(), rng.unit());
+    let b = faces_of(&mut rng, &mut tracks, &b_centre, 0, 1_000_000, 40);
+    let c = faces_of(&mut rng, &mut tracks, &c_centre, 0, 2_000_000, 40);
+    b.iter().chain(&c).for_each(|&i| (tracks[i].pin, tracks[i].previous) = (Some(1), Some(1)));
+    let new_b = faces_of(&mut rng, &mut tracks, &b_centre, 1, 0, 30);
+    let new_c = faces_of(&mut rng, &mut tracks, &c_centre, 1, 100_000, 30);
+    let o = identify(&tracks, &Params::default());
+    let one = one_character(&o, &b);
+    assert_eq!(o.characters[one].key, Some(1));
+    assert_eq!(one_character(&o, &new_b), one, "the first look's new faces");
+    assert_eq!(one_character(&o, &new_c), one, "the second look's new faces");
+}
+
+/// Two unlike looks of character 1, fifteen faces each, every face pinned,
+/// a thousand frames apart (the second look half a thousand after the
+/// first). Returns the tracks and each look's indices.
+fn two_pinned_looks(rng: &mut Rng) -> (Vec<TrackIn>, [Vec<usize>; 2]) {
+    let centres = [rng.unit(), rng.unit()];
+    let mut tracks = Vec::new();
+    let mut ids = [Vec::new(), Vec::new()];
+    for i in 0..15u32 {
+        for s in 0..2 {
+            ids[s].push(tracks.len());
+            let face = around(rng, &centres[s], 0.85);
+            tracks.push(TrackIn {
+                pin: Some(1),
+                previous: Some(1),
+                ..track(0, 100 + i * 1000 + s as u32 * 500, face, 0.8)
+            });
+        }
+    }
+    (tracks, ids)
+}
+
+#[test]
+fn beside_is_a_shared_frame_whichever_face_starts_first_and_however_long_the_other_lasts() {
+    // Someone else (character 5) resembles the second look of 1 and is in
+    // frames of the first look's faces: starting after the face beside them,
+    // before it, or late in a face that lasts far longer than the others.
+    // Each time they stay 5.
+    for kind in 0..3 {
+        let mut rng = Rng(87);
+        let (mut tracks, [first, second]) = two_pinned_looks(&mut rng);
+        if kind == 2 {
+            for &i in &first {
+                let t = &mut tracks[i];
+                t.end = t.start + 348;
+                t.seen = (t.start..t.end).filter(|f| f % 3 == 0).collect();
+            }
+        }
+        let other = around(&mut rng, &mean_face(&tracks, &second), 0.8);
+        let others: Vec<usize> = (0..12)
+            .map(|i| {
+                let beside = tracks[first[i]].start;
+                let start = [beside + 24, beside - 24, beside + 300][kind];
+                tracks.push(TrackIn { previous: Some(5), ..track(0, start, around(&mut rng, &other, 0.85), 0.8) });
+                tracks.len() - 1
+            })
+            .collect();
+        assert!(others.iter().zip(&first).all(|(&x, &y)| together(&tracks[x], &tracks[y])), "kind {kind}");
+        let o = identify(&tracks, &Params::default());
+        let c = one_character(&o, &[first.clone(), second.clone()].concat());
+        assert_eq!(o.characters[c].key, Some(1), "kind {kind}");
+        assert_eq!(o.characters[one_character(&o, &others)].key, Some(5), "kind {kind}");
+    }
+}
+
+#[test]
+fn what_leaves_two_of_a_characters_groups_stays_two_groups() {
+    // Two people, characters 5 and 6: the one resembles the second look of
+    // 1 and is in the frames of the first look's faces, the other resembles
+    // the first look and is in the frames of the second's. Both leave 1's
+    // groups, each as what it was.
+    let mut rng = Rng(88);
+    let (mut tracks, [first, second]) = two_pinned_looks(&mut rng);
+    let mut beside = |tracks: &mut Vec<TrackIn>, like: &[usize], with: &[usize], key: CharKey| -> Vec<usize> {
+        let other = around(&mut rng, &mean_face(tracks, like), 0.8);
+        (0..12)
+            .map(|i| {
+                let start = tracks[with[i]].start;
+                tracks.push(TrackIn { previous: Some(key), ..track(0, start, around(&mut rng, &other, 0.85), 0.8) });
+                tracks.len() - 1
+            })
+            .collect()
+    };
+    let five = beside(&mut tracks, &second, &first, 5);
+    let six = beside(&mut tracks, &first, &second, 6);
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters[one_character(&o, &[first, second].concat())].key, Some(1));
+    assert_eq!(o.characters[one_character(&o, &five)].key, Some(5));
+    assert_eq!(o.characters[one_character(&o, &six)].key, Some(6));
+    assert_eq!(o.characters.len(), 3);
+}
+
+/// A face of quality 1 in media 0 from `start` on (48 frames), with the pin
+/// and the character before as the cast left them.
+fn left_as(start: u32, embedding: Vec<f32>, pin: Option<CharKey>, previous: Option<CharKey>) -> TrackIn {
+    TrackIn { pin, previous, ..track(0, start, embedding, 1.0) }
+}
+
+/// A unit face in eight dimensions, `cos` like the first axis and the rest along `axis`.
+fn leaning(cos: f32, axis: usize) -> Vec<f32> {
+    let mut e = vec![0.0; 8];
+    e[0] = cos;
+    e[axis] += (1.0 - cos * cos).max(0.0).sqrt();
+    e
+}
+
+/// Whether the faces pinned to character 1 in `pinned` hold the part `g`
+/// (`company`: per track, its group in the clustering).
+fn holds(tracks: &[TrackIn], g: &[usize], pinned: &[usize], company: &[usize]) -> bool {
+    let around = Beside::new(tracks, std::iter::empty());
+    held_by_pins(tracks, g, 0, &pins_and_their_company(tracks, pinned, 1, company), &around, &[], &Params::default())
+}
+
+#[test]
+fn pins_each_alone_in_their_company_hold_a_part_they_resemble() {
+    // A part of character 1 (two faces) and two faces pinned to 1, each 0.5
+    // like the part and each the only face of its group in the clustering.
+    // A face alone is like no one in its company, so both vote: the pins
+    // hold the part.
+    let tracks = [
+        left_as(0, leaning(1.0, 1), None, Some(1)),
+        left_as(100, leaning(1.0, 1), None, Some(1)),
+        left_as(200, leaning(0.5, 2), Some(1), Some(1)),
+        left_as(300, leaning(0.5, 3), Some(1), Some(1)),
+    ];
+    assert!(holds(&tracks, &[0, 1], &[2, 3], &[0, 0, 1, 2]));
+}
+
+#[test]
+fn a_pin_is_not_its_own_company() {
+    // Two faces pinned to 1, each 0.45 like a part of 1 and each in a group
+    // of the clustering with one face unlike it (0). They are more like the
+    // part than like the rest of their company, so they hold it. (Counted in
+    // its own company, a pin would be 0.5 like it.)
+    let tracks = [
+        left_as(0, leaning(1.0, 1), None, Some(1)),
+        left_as(100, leaning(1.0, 1), None, Some(1)),
+        left_as(200, leaning(0.45, 2), Some(1), Some(1)),
+        left_as(300, leaning(0.45, 3), Some(1), Some(1)),
+        left_as(400, leaning(0.0, 4), None, Some(1)),
+        left_as(500, leaning(0.0, 5), None, Some(1)),
+    ];
+    assert!(holds(&tracks, &[0, 1], &[2, 3, 4, 5], &[0, 0, 1, 2, 1, 2]));
+}
+
+#[test]
+fn only_faces_pinned_to_the_character_vote_to_hold_a_part() {
+    // The group pinned to 1 holds a face pinned to it and a face it held
+    // before, both 0.5 like a part of 1 and each alone in its company. The
+    // face that is not pinned has no vote, and one vote does not hold.
+    let tracks = [
+        left_as(0, leaning(1.0, 1), None, Some(1)),
+        left_as(100, leaning(1.0, 1), None, Some(1)),
+        left_as(200, leaning(0.5, 2), Some(1), Some(1)),
+        left_as(300, leaning(0.5, 3), None, Some(1)),
+    ];
+    assert!(!holds(&tracks, &[0, 1], &[2, 3], &[0, 0, 1, 2]));
+}
+
+#[test]
+fn a_character_that_held_a_face_besides_its_pins_was_not_made_by_hand() {
+    // Character 1 held one face besides its pins, elsewhere. A group pinned
+    // to it is one pinned face and three faces of character 2, which holds
+    // ten more elsewhere. Not made by hand, character 1 weighs all of 2's
+    // faces against its pin: they outweigh it and leave.
+    let face = || leaning(1.0, 1);
+    let mut tracks = vec![left_as(0, face(), None, Some(1)), left_as(100, face(), Some(1), Some(1))];
+    tracks.extend((0..13).map(|i| left_as(200 + 100 * i, face(), None, Some(2))));
+    let core: Vec<usize> = (0..tracks.len()).collect();
+    let out = pins_together(&tracks, &core, vec![vec![0], vec![1, 2, 3, 4], (5..15).collect()]);
+    assert!(out.contains(&vec![1]), "{out:?}");
+    assert!(out.contains(&vec![2, 3, 4]), "{out:?}");
+}
+
+#[test]
+fn a_face_put_on_a_character_by_hand_never_leaves_with_the_person_it_was() {
+    // Character 1 is pinned in two groups: its own face with a pin, and a
+    // face the user moved to it from character 2 with a face 2 held (not
+    // pinned), seen in a frame with 1's own face. The face of 2 leaves; the
+    // face the user moved stays with character 1.
+    let face = || leaning(1.0, 1);
+    let tracks = [
+        left_as(0, face(), None, Some(1)),
+        left_as(1000, face(), Some(1), Some(1)),
+        left_as(2000, face(), Some(1), Some(2)),
+        left_as(0, face(), None, Some(2)),
+    ];
+    let out = pins_together(&tracks, &[0, 1, 2, 3], vec![vec![0, 1], vec![2, 3]]);
+    assert_eq!(out, [vec![0, 1, 2], vec![3]]);
+}
+
+#[test]
+fn a_pin_seen_beside_a_part_does_not_vote_for_it() {
+    // Two faces pinned to 1, each 0.5 like a part of 1 and alone in its
+    // company, but one of them is seen in a frame with a face of the part:
+    // it is not of the part's person. One vote does not hold.
+    let tracks = [
+        left_as(0, leaning(1.0, 1), None, Some(1)),
+        left_as(100, leaning(1.0, 1), None, Some(1)),
+        left_as(200, leaning(0.5, 2), Some(1), Some(1)),
+        left_as(110, leaning(0.5, 3), Some(1), Some(1)),
+    ];
+    assert!(!holds(&tracks, &[0, 1], &[2, 3], &[0, 0, 1, 2]));
+}
+
+#[test]
+fn the_staying_persons_unplaced_faces_beside_the_merged_in_one_stay() {
+    // Two people on screen together (B's first twenty faces in the frames
+    // of A's faces), merged by hand: B's faces pinned to 1, five of A's
+    // pinned. Ten more faces of A, in shots where B was found too, were no
+    // character before (left unsure, or on another). They are A's: they
+    // belong on 1, not on a character of their own. (Review 6.)
+    for prev in [None, Some(5)] {
+        let mut rng = Rng(7701);
+        let (ca, cb) = (rng.unit(), rng.unit());
+        let mut tracks = Vec::new();
+        for i in 0..30u32 {
+            tracks.push(TrackIn { previous: Some(1), ..track(0, i * 1000, around(&mut rng, &ca, 0.85), 0.8) });
+        }
+        for i in 0..30u32 {
+            let start = if i < 20 { i * 1000 } else { 100_000 + i * 1000 };
+            tracks.push(TrackIn {
+                pin: Some(1),
+                previous: Some(1),
+                ..track(0, start, around(&mut rng, &cb, 0.85), 0.8)
+            });
+        }
+        (0..5).for_each(|i| tracks[i].pin = Some(1));
+        let x: Vec<usize> = (20..30u32)
+            .map(|i| {
+                tracks
+                    .push(TrackIn { previous: prev, ..track(0, 100_000 + i * 1000, around(&mut rng, &ca, 0.85), 0.8) });
+                tracks.len() - 1
+            })
+            .collect();
+        let o = identify(&tracks, &Params::default());
+        let on_1 =
+            x.iter().filter(|&&i| o.tracks[i].0.character().is_some_and(|c| o.characters[c].key == Some(1))).count();
+        assert_eq!(on_1, 10, "previous {prev:?}: {} characters", o.characters.len());
+    }
+}
+
+#[test]
+fn forty_looks_of_one_character_take_their_new_faces() {
+    // Forty looks of one character (five pinned faces each, as after
+    // several merges); a new episode brings ten faces of every look. Every
+    // look is a start group, so all new faces are the character's.
+    // (Review 6.)
+    let mut rng = Rng(31377);
+    let centres: Vec<Vec<f32>> = (0..40).map(|_| rng.unit()).collect();
+    let mut tracks = Vec::new();
+    for ep in 0..5u32 {
+        for (l, c) in centres.iter().enumerate() {
+            tracks.push(TrackIn {
+                pin: Some(1),
+                previous: Some(1),
+                ..track(ep, l as u32 * 100, around(&mut rng, c, 0.85), 0.8)
+            });
+        }
+    }
+    let first_new = tracks.len();
+    for (l, c) in centres.iter().enumerate() {
+        for i in 0..10u32 {
+            tracks.push(track(100, (l as u32 * 10 + i) * 100, around(&mut rng, c, 0.85), 0.8));
+        }
+    }
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1, "new faces of {} looks are other characters", o.characters.len() - 1);
+    assert!((first_new..tracks.len()).all(|i| o.tracks[i].0.character().is_some()));
+}
+
+#[test]
+fn pins_do_not_hold_a_look_alike_seen_beside_the_character() {
+    // B (60 faces) merged into A (40): B's faces pinned to 1, and A's five
+    // most typical faces, which start among B's (as like them as the bar
+    // asks). Someone who resembles A (12 faces) was on 1 before, wrongly,
+    // in frames where A's faces were not; the grouping parts them from A.
+    // They must not come back to 1 through A's pins beside A's own faces:
+    // A's faces stay on 1, the look-alike's do not. (Review 6.)
+    let cases = [(0.40f32, 0.70f32, 0.6f32), (0.50, 0.75, 0.8)];
+    for ((alike, fid, l_alike), beside_was) in cases.into_iter().flat_map(|c| [(c, None), (c, Some(1))]) {
+        let mut rng = Rng(1307 + (alike * 100.0) as u64);
+        let b_c = rng.unit();
+        let a_c = around(&mut rng, &b_c, alike);
+        let l_c = around(&mut rng, &a_c, l_alike);
+        let mut tracks = Vec::new();
+        for i in 0..40u32 {
+            let f = if i < 5 { 0.95 } else { fid };
+            let pin = (i < 5).then_some(1);
+            // A's faces in the look-alike's frames were not on 1 (one character per frame), or
+            // were, as no grouping leaves it.
+            let previous = if (5..17).contains(&i) { beside_was } else { Some(1) };
+            tracks.push(TrackIn { pin, previous, ..track(0, i * 1000, around(&mut rng, &a_c, f), 0.8) });
+        }
+        for i in 0..60u32 {
+            tracks.push(TrackIn {
+                pin: Some(1),
+                previous: Some(1),
+                ..track(1, i * 1000, around(&mut rng, &b_c, 0.85), 0.8)
+            });
+        }
+        let l: Vec<usize> = (0..12u32)
+            .map(|i| {
+                let beside = tracks[5 + i as usize].start;
+                tracks.push(TrackIn { previous: Some(1), ..track(0, beside, around(&mut rng, &l_c, 0.85), 0.8) });
+                tracks.len() - 1
+            })
+            .collect();
+        let o = identify(&tracks, &Params::default());
+        let on = |i: usize| o.tracks[i].0.character().is_some_and(|c| o.characters[c].key == Some(1));
+        let a_on = (0..40).filter(|&i| on(i)).count();
+        let l_on = l.iter().filter(|&&i| on(i)).count();
+        assert_eq!(
+            (a_on, l_on),
+            (40, 0),
+            "alike {alike}, beside {beside_was:?}: A's faces on 1, the look-alike's on 1"
+        );
+    }
+}
+
+#[test]
+fn faces_beside_a_part_that_are_like_no_pin_say_nothing_about_it() {
+    // A part of character 1 (two faces, 0.5 like its pins) and two pins,
+    // each alone in its company: they vote for it. Beside the part's faces:
+    // strangers (like no pin) and, in one frame, a face 0.9 like the pins.
+    // That face says the pins are someone beside the part, however many
+    // strangers are there too: not held. Without it the strangers alone say
+    // nothing: held.
+    let part = [left_as(0, leaning(0.5, 1), None, Some(1)), left_as(100, leaning(0.5, 1), None, Some(1))];
+    let pins = [left_as(1000, leaning(1.0, 1), Some(1), Some(1)), left_as(2000, leaning(1.0, 1), Some(1), Some(1))];
+    let strangers = (3..7).map(|axis| left_as(if axis % 2 == 0 { 0 } else { 100 }, leaning(0.0, axis), None, None));
+    let mut tracks: Vec<TrackIn> = part.into_iter().chain(pins).chain(strangers).collect();
+    let held = |tracks: &[TrackIn]| {
+        let company: Vec<usize> = (0..tracks.len()).collect();
+        let around = Beside::new(tracks, (0..tracks.len()).map(|i| (i, usize::from(i >= 2))));
+        let votes = pins_and_their_company(tracks, &[2, 3], 1, &company);
+        held_by_pins(tracks, &[0, 1], 0, &votes, &around, &[], &Params::default())
+    };
+    assert!(held(&tracks), "strangers beside the part");
+    tracks.push(left_as(0, leaning(0.9, 2), None, None));
+    assert!(!held(&tracks), "a face like the pins beside the part");
+}
+
+#[test]
+fn one_shared_frame_between_two_looks_lets_no_look_alike_in() {
+    // Character 1 is pinned in two unlike looks; one face of each look is
+    // in one frame (a screen, a poster, a face tracked wrong once). Someone
+    // like the second look (character 5) is seen in frames of the first.
+    // One frame does not make the two looks two people who share the
+    // screen: the look-alike stays 5. (Review 7.)
+    let mut rng = Rng(87);
+    let (mut tracks, [first, second]) = two_pinned_looks(&mut rng);
+    let at = tracks[first[14]].start;
+    let seen = tracks[first[14]].seen.clone();
+    (tracks[second[14]].start, tracks[second[14]].end, tracks[second[14]].seen) = (at, at + 48, seen);
+    let other = around(&mut rng, &mean_face(&tracks, &second), 0.8);
+    let others: Vec<usize> = (0..12)
+        .map(|i| {
+            let b = tracks[first[i]].start;
+            tracks.push(TrackIn { previous: Some(5), ..track(0, b + 24, around(&mut rng, &other, 0.85), 0.8) });
+            tracks.len() - 1
+        })
+        .collect();
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters[one_character(&o, &others)].key, Some(5));
+}
+
+/// B (60 faces, pinned to 1) merged into A (40 faces, the five most typical
+/// pinned to 1: they start among B's); and someone like A (12 faces), on 1
+/// before where A was not on screen. With `media` 2 the look-alike is in no
+/// frame with anyone of 1; with 1, beside B's faces. Returns the tracks, A
+/// and the look-alike.
+fn a_merge_and_a_look_alike_never_beside_its_own(
+    rng: &mut Rng,
+    media: u32,
+    alike: f32,
+    l_alike: f32,
+) -> (Vec<TrackIn>, Vec<usize>, Vec<usize>) {
+    let b_c = rng.unit();
+    let a_c = around(rng, &b_c, alike);
+    let l_c = around(rng, &a_c, l_alike);
+    let mut tracks = Vec::new();
+    for i in 0..40u32 {
+        let pin = (i < 5).then_some(1);
+        let f = if i < 5 { 0.95 } else { 0.70 };
+        tracks.push(TrackIn { pin, previous: Some(1), ..track(0, i * 1000, around(rng, &a_c, f), 0.8) });
+    }
+    for i in 0..60u32 {
+        tracks.push(TrackIn { pin: Some(1), previous: Some(1), ..track(1, i * 1000, around(rng, &b_c, 0.85), 0.8) });
+    }
+    let l: Vec<usize> = (0..12u32)
+        .map(|i| {
+            tracks.push(TrackIn { previous: Some(1), ..track(media, i * 1000, around(rng, &l_c, 0.85), 0.8) });
+            tracks.len() - 1
+        })
+        .collect();
+    (tracks, (0..40).collect(), l)
+}
+
+#[test]
+fn pins_do_not_hold_a_look_alike_that_was_never_beside_the_character() {
+    // The pins are less like the look-alike than a face must be to be
+    // placed on a character: A stays on 1, the look-alike goes on as a
+    // character of its own. (Review 7.)
+    for media in [2u32, 1] {
+        let mut rng = Rng(19140);
+        let (tracks, a, l) = a_merge_and_a_look_alike_never_beside_its_own(&mut rng, media, 0.40, 0.45);
+        let o = identify(&tracks, &Params::default());
+        assert_eq!(o.characters[one_character(&o, &a)].key, Some(1));
+        assert!(are_two(&o, &a, &l), "media {media}");
+    }
+}
+
+#[test]
+fn pins_hold_the_part_of_the_character_they_are_most_like() {
+    // As above, with the anime bars (a face is placed as soon as it is over
+    // the link bar), and a look-alike the pins are about that like: they
+    // vote for both parts, but A's faces are more like them, and too unlike
+    // the look-alike to be one person with it. A stays on 1, the look-alike
+    // does not.
+    for media in [2u32, 1] {
+        let mut rng = Rng(19141);
+        let (tracks, a, l) = a_merge_and_a_look_alike_never_beside_its_own(&mut rng, media, 0.55, 0.60);
+        let o = identify(&tracks, &Params::anime());
+        let on = |i: usize| o.tracks[i].0.character().is_some_and(|c| o.characters[c].key == Some(1));
+        let (a_on, l_on) = (a.iter().filter(|&&i| on(i)).count(), l.iter().filter(|&&i| on(i)).count());
+        assert_eq!((a_on, l_on), (40, 0), "media {media}");
+    }
+}
+
+#[test]
+fn pins_hold_the_part_of_the_character_they_are_most_like_also_where_its_faces_are_unclear() {
+    // As above (anime bars), but A is mostly seen from afar: besides the
+    // pins, 13 clear faces too vague to group and 30 unclear ones (no
+    // clustering takes them), typical of A. Only the unclear ones show that
+    // the look-alike is not the pins' person: its vague faces are a part of
+    // A too, unclear or not.
+    let (clear, far, unclear) = (13, 0.4, 30);
+    for media in [2u32, 1] {
+        let mut rng = Rng(19141);
+        let b_c = rng.unit();
+        let a_c = around(&mut rng, &b_c, 0.55);
+        let l_c = around(&mut rng, &a_c, 0.60);
+        let mut tracks = Vec::new();
+        for i in 0..5u32 {
+            tracks.push(TrackIn {
+                pin: Some(1),
+                previous: Some(1),
+                ..track(0, i * 1000, around(&mut rng, &a_c, 0.95), 0.8)
+            });
+        }
+        for i in 5..5 + clear {
+            tracks.push(TrackIn { previous: Some(1), ..track(0, i * 1000, around(&mut rng, &a_c, far), 0.8) });
+        }
+        for i in 5 + clear..5 + clear + unclear {
+            tracks.push(TrackIn { previous: Some(1), ..track(0, i * 1000, around(&mut rng, &a_c, 0.90), 0.1) });
+        }
+        let a: Vec<usize> = (0..tracks.len()).collect();
+        for i in 0..60u32 {
+            tracks.push(TrackIn {
+                pin: Some(1),
+                previous: Some(1),
+                ..track(1, i * 1000, around(&mut rng, &b_c, 0.85), 0.8)
+            });
+        }
+        let l: Vec<usize> = (0..12u32)
+            .map(|i| {
+                tracks.push(TrackIn { previous: Some(1), ..track(media, i * 1000, around(&mut rng, &l_c, 0.85), 0.8) });
+                tracks.len() - 1
+            })
+            .collect();
+        let o = identify(&tracks, &Params::anime());
+        let on = |i: usize| o.tracks[i].0.character().is_some_and(|c| o.characters[c].key == Some(1));
+        let (a_on, l_on) = (a.iter().filter(|&&i| on(i)).count(), l.iter().filter(|&&i| on(i)).count());
+        assert_eq!(l_on, 0, "media {media}");
+        assert!(a_on >= 5 + unclear as usize, "media {media}: {a_on} of A's faces on 1");
+    }
+}
+
+#[test]
+fn a_bin_of_extras_seen_twice_does_not_take_the_room_of_a_run() {
+    // One person in two episodes, and sixty extras, each seen twice, that
+    // the user collected in one character: sixty looks pinned to it. The
+    // clustering runs per media first (a big project; here forced by small
+    // levels): the person's two groups must still meet across the episodes.
+    let mut rng = Rng(78);
+    let person = rng.unit();
+    let mut tracks = Vec::new();
+    for m in 0..2u32 {
+        for i in 0..12u32 {
+            tracks.push(track(m, i * 100, around(&mut rng, &person, 0.85), 0.8));
+        }
+    }
+    let x: Vec<usize> = (0..tracks.len()).collect();
+    for i in 0..60u32 {
+        let extra = rng.unit();
+        for m in 0..2u32 {
+            tracks.push(TrackIn { pin: Some(9), ..track(m, 10_000 + i * 100, around(&mut rng, &extra, 0.95), 0.8) });
+        }
+    }
+    let core: Vec<usize> = (0..tracks.len()).collect();
+    let levels = crate::ahc::Levels { single: 10, second: 40 };
+    let groups = crate::ahc::cluster_in(&tracks, &core, &Params::default(), levels);
+    assert!(groups.iter().any(|g| x.iter().all(|i| g.contains(i))), "one group of the person across both episodes");
+    let pinned: usize = groups.iter().filter(|g| tracks[g[0]].pin.is_some()).map(Vec::len).sum();
+    assert_eq!(pinned, 120);
+}
+
+#[test]
+fn two_hundred_looks_of_one_character_whose_first_faces_come_first_take_their_new_faces() {
+    // Two hundred looks of one character (five pinned faces each, one per
+    // episode: the first face of every look comes before the second of
+    // any), and a new episode with ten faces of every look. All are the
+    // character's: the first faces wait for their second ones.
+    let mut rng = Rng(31378);
+    let centres: Vec<Vec<f32>> = (0..200).map(|_| rng.unit()).collect();
+    let mut tracks = Vec::new();
+    for ep in 0..5u32 {
+        for (l, c) in centres.iter().enumerate() {
+            tracks.push(TrackIn {
+                pin: Some(1),
+                previous: Some(1),
+                ..track(ep, l as u32 * 100, around(&mut rng, c, 0.85), 0.8)
+            });
+        }
+    }
+    let first_new = tracks.len();
+    for (l, c) in centres.iter().enumerate() {
+        for i in 0..10u32 {
+            tracks.push(track(100, (l as u32 * 10 + i) * 100, around(&mut rng, c, 0.85), 0.8));
+        }
+    }
+    let o = identify(&tracks, &Params::default());
+    assert_eq!(o.characters.len(), 1, "new faces of {} looks are other characters", o.characters.len() - 1);
+    assert!((first_new..tracks.len()).all(|i| o.tracks[i].0.character().is_some()));
+}
+
+/// Character 1 pinned in two unlike looks of `per` faces each (the second after the first), someone like
+/// the second look (character 5) beside twelve faces of the first, and the faces of the second look in
+/// `share` that are moved into frames of the first look's faces `with` (each to the frame of the one at
+/// the same place; a face that is longer than one frame of the first look reaches several). Returns
+/// whether the look-alike stays 5.
+fn look_alike_stays(per: u32, share: &[(usize, usize, u32)]) -> bool {
+    look_alike_stays_beside([per, per], share)
+}
+
+/// `look_alike_stays` with looks of `per[0]` and `per[1]` faces.
+fn look_alike_stays_beside(per: [u32; 2], share: &[(usize, usize, u32)]) -> bool {
+    let mut rng = Rng(88);
+    let centres = [rng.unit(), rng.unit()];
+    let mut tracks = Vec::new();
+    let mut looks = [Vec::new(), Vec::new()];
+    for i in 0..per[0].max(per[1]) {
+        for s in (0..2).filter(|&s| i < per[s]) {
+            looks[s].push(tracks.len());
+            let t = track(0, s as u32 * 100_000 + i * 1000, around(&mut rng, &centres[s], 0.85), 0.8);
+            tracks.push(TrackIn { pin: Some(1), previous: Some(1), ..t });
+        }
+    }
+    for &(of_second, at_first, long) in share {
+        let at = tracks[looks[0][at_first]].start;
+        let t = &mut tracks[looks[1][of_second]];
+        (t.start, t.end) = (at, at + long);
+        t.seen = (at..at + long).filter(|f| f % 3 == 0).collect();
+    }
+    let other = around(&mut rng, &mean_face(&tracks, &looks[1]), 0.8);
+    let others: Vec<usize> = (0..12)
+        .map(|i| {
+            let b = tracks[looks[0][i]].start;
+            tracks.push(TrackIn { previous: Some(5), ..track(0, b + 24, around(&mut rng, &other, 0.85), 0.8) });
+            tracks.len() - 1
+        })
+        .collect();
+    let o = identify(&tracks, &Params::default());
+    o.characters[one_character(&o, &others)].key == Some(5)
+}
+
+#[test]
+fn two_looks_share_the_screen_only_when_each_has_faces_beside_the_other() {
+    // One face of the second look, long (on a screen through a scene),
+    // shares frames with three faces of the first: three on one side, one
+    // on the other. Not two people who share the screen: the look-alike
+    // stays 5. Three faces of each beside three of the other are.
+    assert!(look_alike_stays(15, &[(14, 12, 2500)]), "one long face beside three");
+    assert!(!look_alike_stays(15, &[(12, 12, 48), (13, 13, 48), (14, 14, 48)]), "three beside three");
+}
+
+#[test]
+fn big_looks_share_the_screen_only_in_a_tenth_of_their_faces() {
+    // Two looks of forty faces each: two faces of each beside two of the
+    // other are not a tenth of either, so not two people who share the
+    // screen; four are.
+    assert!(look_alike_stays(40, &[(38, 38, 48), (39, 39, 48)]), "two of forty");
+    assert!(!look_alike_stays(40, &[(36, 36, 48), (37, 37, 48), (38, 38, 48), (39, 39, 48)]), "four of forty");
+}
+
+#[test]
+fn two_looks_share_the_screen_in_two_faces_each_up_to_twenty() {
+    // Up to twenty faces a tenth is two or less: two faces of each look
+    // beside two of the other are two people who share the screen. Of
+    // twenty-five, a tenth rounds up to three.
+    let two = [(13, 13, 48), (14, 14, 48)];
+    assert!(!look_alike_stays(15, &two), "two of fifteen");
+    assert!(look_alike_stays(25, &[(23, 23, 48), (24, 24, 48)]), "two of twenty-five");
+    assert!(!look_alike_stays(25, &[(22, 22, 48), (23, 23, 48), (24, 24, 48)]), "three of twenty-five");
+}
+
+#[test]
+fn the_tenth_is_of_the_smaller_look() {
+    // Looks of forty and fifteen faces: two of each beside two of the other
+    // are a tenth of the smaller one, so two people who share the screen.
+    assert!(!look_alike_stays_beside([40, 15], &[(13, 38, 48), (14, 39, 48)]));
+}
+
+#[test]
+fn a_merged_pair_takes_in_a_double_of_the_one_that_stays_only_when_they_share_the_screen_enough() {
+    // B (40 faces, all pinned) merged into A (60, five pinned); C is a
+    // double of A (twelve faces, character 7, split off by an older
+    // grouping), one of its faces beside B. With A and B in four shots
+    // together (a tenth of B's forty) they are two people who share the
+    // screen, and C joins the character. In three, they are not: C's face
+    // beside B could be a look-alike's, and C stays 7 (the price of not
+    // letting a screen or a poster count; review 8).
+    let c_is = |shared: usize| {
+        let mut rng = Rng(8140);
+        let (ca, cb) = (rng.unit(), rng.unit());
+        let mut tracks = Vec::new();
+        for i in 0..60u32 {
+            let (pin, f) = if i < 5 { (Some(1), 0.92) } else { (None, 0.85) };
+            tracks.push(TrackIn { pin, previous: Some(1), ..track(0, i * 1000, around(&mut rng, &ca, f), 0.8) });
+        }
+        let b: Vec<usize> = (0..40u32)
+            .map(|i| {
+                let t = track(0, 300_000 + i * 1000, around(&mut rng, &cb, 0.85), 0.8);
+                tracks.push(TrackIn { pin: Some(1), previous: Some(1), ..t });
+                tracks.len() - 1
+            })
+            .collect();
+        let put = |tracks: &mut Vec<TrackIn>, i: usize, j: usize| {
+            let (s, e, seen) = (tracks[j].start, tracks[j].end, tracks[j].seen.clone());
+            (tracks[i].start, tracks[i].end, tracks[i].seen) = (s, e, seen);
+        };
+        for (i, &bi) in b.iter().enumerate().take(shared) {
+            put(&mut tracks, bi, 10 + i);
+        }
+        let c: Vec<usize> = (0..12u32)
+            .map(|i| {
+                let t = track(0, 600_000 + i * 1000, around(&mut rng, &ca, 0.85), 0.8);
+                tracks.push(TrackIn { previous: Some(7), ..t });
+                tracks.len() - 1
+            })
+            .collect();
+        put(&mut tracks, c[0], b[39]);
+        let o = identify(&tracks, &Params::default());
+        o.characters[one_character(&o, &c)].key
+    };
+    assert_eq!(c_is(4), Some(1), "four shots together");
+    assert_eq!(c_is(3), Some(7), "three");
+}
+
+#[test]
+fn pins_hold_a_part_only_as_like_it_as_a_face_placed_on_a_character() {
+    // Two pins alone in their companies, 0.4 like a part of 1: over the
+    // link bar (0.30), under the bar a face is placed at (0.45). Not held.
+    let tracks = [
+        left_as(0, leaning(0.4, 1), None, Some(1)),
+        left_as(100, leaning(0.4, 1), None, Some(1)),
+        left_as(200, leaning(1.0, 2), Some(1), Some(1)),
+        left_as(300, leaning(1.0, 3), Some(1), Some(1)),
+    ];
+    assert!(!holds(&tracks, &[0, 1], &[2, 3], &[0, 0, 1, 2]));
+    // 0.47 like it: over `assign`, so held; but not where the link bar is
+    // higher (0.5), as in a fitted space.
+    let tracks = [
+        left_as(0, leaning(0.47, 1), None, Some(1)),
+        left_as(100, leaning(0.47, 1), None, Some(1)),
+        left_as(200, leaning(1.0, 2), Some(1), Some(1)),
+        left_as(300, leaning(1.0, 3), Some(1), Some(1)),
+    ];
+    let held = |p: &Params| {
+        let around = Beside::new(&tracks, std::iter::empty());
+        let votes = pins_and_their_company(&tracks, &[2, 3], 1, &[0, 0, 1, 2]);
+        held_by_pins(&tracks, &[0, 1], 0, &votes, &around, &[], p)
+    };
+    assert!(held(&Params::default()));
+    assert!(!held(&Params { link: 0.5, ..Params::default() }));
+}
+
+#[test]
+fn a_part_of_the_same_person_as_one_more_like_the_pins_is_held_too() {
+    // A part of 1 (two faces, 0.5 like its pins) and another part of it
+    // more like the pins. If the two are alike as one person's parts are
+    // (0.92), the pins hold both; if not (0.28), the other part is the
+    // pins' person, and this one someone else.
+    let pins = [left_as(1000, leaning(1.0, 3), Some(1), Some(1)), left_as(2000, leaning(1.0, 3), Some(1), Some(1))];
+    let held = |other: Vec<f32>| {
+        let mut tracks = vec![left_as(0, leaning(0.5, 1), None, Some(1)), left_as(100, leaning(0.5, 1), None, Some(1))];
+        tracks.extend(pins.iter().cloned());
+        tracks.extend([left_as(3000, other.clone(), None, Some(1)), left_as(3100, other, None, Some(1))]);
+        let company: Vec<usize> = (0..tracks.len()).collect();
+        let around = Beside::new(&tracks, std::iter::empty());
+        let votes = pins_and_their_company(&tracks, &[2, 3], 1, &company);
+        held_by_pins(&tracks, &[0, 1], 0, &votes, &around, &[&[4, 5]], &Params::default())
+    };
+    assert!(held(leaning(0.8, 1)), "a part of the same person");
+    assert!(!held(leaning(0.55, 2)), "a part of someone else");
+    // 0.38 like the part: over the link bar (0.30), so one person with it,
+    // though under the bar a face is placed at (0.45).
+    let b = 0.08 / 0.75f32.sqrt();
+    let c = (1.0 - 0.36 - b * b).sqrt();
+    assert!(held(vec![0.6, b, c, 0.0, 0.0, 0.0, 0.0, 0.0]), "a part as like it as the link bar asks");
+}

@@ -443,8 +443,9 @@ Three things hold a merge now.
 
 **The cast remembers it by pins on both sides.** A merge also pins a few
 typical faces of the character that stays (`NAME_ANCHORS`, as naming a
-character pins them): A's own faces are then held by the user's word like
-B's.
+character pins them): A's own faces are then held by the user's word too,
+as long as those few start a group of their own (see the next two parts and
+"Pins that started among the merged-in faces").
 
 **Pinned faces start with their like, and end as one character.** The
 grouping used to start with all faces pinned to one character as a single
@@ -469,6 +470,89 @@ quality), was that character more than any other and holds as many of its
 earlier faces as make a character, goes on as that character together with
 the group pinned to it.
 
+A fifth review (2026-11-16, a reader without context, on the commit of the
+three parts) found four faults; mended 2026-11-25, and the mends mended
+again after a sixth, a seventh and an eighth review of them (row 39 of
+`bench/models/DECISIONS.md`):
+
+**Pins that started among the merged-in faces still hold their own**
+(`held_by_pins`). A character's most typical faces, the ones a merge pins,
+are also the ones most like its other look. Where they are as like the
+merged-in faces as two groups must be to join, they start among those, and
+the character's own faces have no pinned group to join: once the merged-in
+person outgrew them, the merge came undone (synthetic casts in the default,
+anime and 3D spaces: 0.08 of the staying side's own faces left after the
+second episode; on the real 3D tracks it did not happen, see the table).
+Now an unpinned group that was the character more than any other also
+follows when two of the faces pinned to the character vote for it: each is
+as like it on average as a face must be to be placed on a character (the
+`assign` bar, at least the link bar), more like it than like the rest of
+the group it left the clustering in (a face alone there is like no one),
+and seen in no frame with a face of it. Someone who resembles the character
+and was placed on it once by mistake is like its pins too, so two more
+checks: the faces seen in a frame with the group that are as like those pins
+as the link bar asks must be, on average, less like them than the group is
+(the character's own faces beside a look-alike are more so); and no other
+part of the character (a group that was it, or its faces too vague to make
+a group) may be more like the pins and too unlike the group to be one
+person with it (a look-alike placed where the character was not on screen
+is never beside its faces). The sixth review found that the first version
+held such a look-alike for good; the seventh, that it still did where the
+two were never on screen together. Two people merged into one character who
+share the screen are unlike each other, and each part is held.
+
+**A character keeps at most 256 start groups of one pinned face**
+(`MAX_ALONE` in `ahc::initial_groups`). Each start group went into every run
+of the clustering whatever the run's room, so a character the user filled
+with thousands of unlike faces (a bin) crowded out the groups that formed,
+and a long series stopped finding its people across episodes (synthetic,
+40,000 tracks with 5,500 faces in one bin: 192 characters before the three
+parts, 1,282 after, a person's faces 0.80 on their main character instead
+of 1.00). Past 256, a face that fits no start group takes the place of the
+lightest start group of one face, which joins the character's odd faces
+(one more group). Groups of several faces never make room: every look of a
+character starts as a group of its own, up to 512 looks (`MAX_LOOKS`); a
+character with that many is a bin (extras the user collected there, some
+seen twice), and a face that fits none of its start groups goes to its odd
+faces. Each start group costs every later pinned face of the character a
+comparison: the seventh review's bin of ten thousand extras seen twice
+took 79 s with the run rule below alone (see Time below). (The first
+version bounded all start groups at 32 and lost every look past 32: the
+sixth review's third finding. 256 single faces leave room for the first
+faces of that many looks before any second one comes, as when the looks
+come episode by episode.) A run of the clustering takes one pinned group
+per character, its heaviest, always; when everything fits, all the rest;
+else the other pinned groups, heaviest first, in a quarter of the cap (no
+more than the room left), and the heaviest unpinned groups in what is left
+(`ahc::heaviest`). (The first
+version took every pinned group of several faces into every run: a bin of
+extras seen twice or more, which makes looks, still made runs as big as the
+bin, slow and without room for anyone else: the seventh review's third
+finding.)
+
+**No face comes to a character through one of its pinned groups beside the
+character's own faces in another.** When the pinned faces were one group, a
+face seen in a frame with any of them could not join it; with a group per
+look, a look-alike seen beside one look could join the character through the
+other look, and a mirror image could join beside its person. Now such a face
+(not pinned, not the character before) leaves its group, with the other
+faces in that group of the character it was; two new faces seen together
+stay. And where the character's own faces of the two groups are themselves
+seen together, the character holds two people the user merged who share the
+screen: a face beside the other one is no stranger and stays (the sixth
+review's second finding: the first version threw out the staying person's
+faces that had been on no character, in every shot with the other).
+Together means on each side at least two own faces, and a tenth of the
+smaller group's, in a frame with the other's: one frame (a screen, a
+poster, a face tracked wrong once) let any look-alike in (the seventh
+review's first finding). (`beside_their_own` in `pins_together`.) The price
+(the eighth review): two people merged who share the screen in fewer shots
+than that are taken for one person in two looks, and the faces that had
+been on no character, in those shots, leave again, as in the sixth
+review's second finding; so does a double of the staying person (a
+character an older grouping split off) with a face beside the other one:
+it stays the character it was.
+
 What it does not do, and what stays as it was:
 
 - **One face moved to another character moves alone.** It groups with its
@@ -477,8 +561,13 @@ What it does not do, and what stays as it was:
   is not the character's own (it holds no more than half of what the
   character held besides the pins) lets go of what it swept up of another
   character, when that outweighs its pins and the character's earlier faces
-  in it; what it lets go of is a group of its own again. So does a new
-  character the user made of a few faces of another.
+  in it; what it lets go of is a group of its own again. A new character
+  the user made of a few faces of someone who is a smaller part of another
+  character is different (mended 2026-11-25): only the other character's own
+  faces, most of what it held, weigh against its pins, so the rest of that
+  person's faces, who have no character to go back to, follow the faces
+  picked of them. A character that held any face besides its pins is not
+  one made of a few faces.
 - **Characters that turn out to be one person still become one.** A group of
   pinned faces that fewer faces of another character join keeps them, and a
   named character's own group keeps a bigger unnamed one that joins it.
@@ -498,10 +587,17 @@ On the real tracks of the two tuning episodes (3D, the rule on; scratch
 
 | What was done | Holds |
 |---|---|
-| S01E11 grouped; one of its seven biggest characters merged into another (42 ways); S05E21 added; grouped three times: both sides keep 0.8 of their faces on the character | 42 of 42 with the pins a merge makes now; 41 of 42 for a merge made before (the bigger self merged into the smaller: its own 55 faces are a new character from the second grouping on) |
+| S01E11 grouped; one of its seven biggest characters merged into another (42 ways); S05E21 added; grouped three times: both sides keep 0.8 of their faces on the character | 42 of 42 with five pins on the side that stays, in all eight ways: its five clearest faces (the harness's stand-in) or the five the app picks (its typical faces, `anchors`), the tracks in their order or reversed, the rule on or off; 41 of 42 for a merge made before (the bigger self merged into the smaller: its own 55 faces are a new character from the second grouping on) |
 | Both episodes; one of the nine biggest merged into another (72 ways), grouped twice: both keep 0.9 | 72 of 72 (before 2026-11-14: none) |
 | ... one face of one moved to another that nobody named (72 ways), grouped three times: both keep 0.9 of their own under their own characters, the moved face where it was put | 72 of 72 |
 | ... the same, to a named character | 72 of 72 |
+| Marinette and Ladybug as one named character (five pins, all Marinette's), zero to four other characters merged into it by hand, grouped again with the rule on (ten set-ups: pins picked from the whole character or from Marinette's faces) | Ladybug leaves as a character of her own in all ten, as on the commit of the three parts (a first version of the mends kept her on the character once others were merged in: it weighed a pin against everything pinned to the character, not against the group it left the clustering in) |
+
+Every row measured again on the mends after the seventh review (scratch
+`E:\as-ownmodels\3d\fix5`: `real9.log`, `bench\real_p1-round5.log`,
+`bench\real_selves-round5.log`), and the first and last rows after the
+eighth (`bench\real_p1-round6.log`, `bench\real_selves-round6.log`), with
+the same results.
 
 In the running app (scratch library, the same two episodes): the bigger self
 merged into the smaller pins 157 faces (152 merged in, five of the other's
@@ -516,14 +612,90 @@ Limits that stay:
   and that lets go when later episodes bring so many faces of the merged-in
   person that the character's own group is no longer most of what it held
   (the 1 of 42 above). Naming the character, or merging something into it
-  again, pins its own faces.
+  again, pins a few of its typical faces, and those are mostly but not
+  always its own: on the real tracks (72 merges made before, then named),
+  all five were the character's own in 64, at least one in 69, none in 3.
 - Own faces that group in several parts without a pin in them, none of them
   over half: none follows.
 - A merge cannot be taken apart again short of moving the faces back.
-- A long series with a merge of two big characters starts its grouping with
-  more pinned groups than before (one per look of each side, not one in
-  all); how that weighs on a cast of many thousand pinned faces was not
-  timed.
+- **Time.** A cast starts its grouping with more pinned groups than before
+  the three parts (one per look, not one per character; at most 256 faces
+  alone and 512 looks per character). Timed with the fifth review's programs
+  (scratch `E:\as-ownmodels\3d\fix5\bench\timing-round6.txt`; before the
+  three parts / the commit of the three parts / the mends, two runs each,
+  alternating; the graphics card busy with other work, so the ratios count
+  more than the seconds): 20,000 synthetic tracks with 1,000 or 5,000 unlike
+  faces pinned to one character 9.1 / 12.0 / 9.8 s and 4.0 / 23.3 / 4.7 s
+  (the latter 82 / 229 / 91 MB; the mends give the same outcome as before
+  the three parts in both); 40,000 tracks with 5,500 in one character
+  18.1 / 35.0 / 18.7 s (298 / 511 / 300 MB; every person on one character,
+  190 characters instead of 192); the same 5,500 spread over 200
+  characters 17.8 / 30.6 / 25.7 s (298 / 553 / 308 MB, every person on one
+  character as before, 212 characters instead of 200: the one case the
+  mends leave much slower than before the three parts); synthetic merges
+  and named casts unchanged (4.9 s, 5.1 s). The seventh review's bin of
+  extras seen twice (review 7's program, `bench\e4c-timing.txt`): 36,000
+  tracks of 40 people, 20,000 of them 10,000 extras pinned to one
+  character, 10.0 / 140.8 / 14.7 s, all 40 people whole / none / all; 100
+  people with 3,000, 5,000 or 7,000 such pins 12.6 / 20.8 / 15.0 s, 12.7 /
+  27.9 / 15.6 s and 12.9 / 37.4 / 16.3 s, all whole in all. The 15 real
+  episodes of the 3D series (10,736 tracks): 3 or 30 merges 6.7 / 6.9 /
+  6.9 s and 6.3 / 6.4 / 6.4 s; every unsure face confirmed (1,040 or 1,895
+  pinned faces) 7.2 / 7.9 / 7.9 s and 7.1 / 8.3 / 8.3 s; peak memory 156 to
+  158 MB in all.
+- **A full character.** A character keeps 256 start groups of one pinned
+  face; a face alone past that goes among the odd faces, and if it was the
+  first face of a look whose second face comes later, that look's new
+  faces may not find it. Looks are not lost once two of their faces met,
+  up to 512 looks; past that the character is taken for a bin, and a look
+  whose first face comes later starts among its odd faces (its faces alone
+  may still become looks: at most 768).
+- **A face beside the character is looked for only in its pinned groups.**
+  A new face that groups with a part that follows the pinned group later
+  (`keep_own_faces`) can still reach the character beside one of its
+  pinned faces. Looking for such faces costs little on real casts (93 to
+  604 faces looked at on the 15 episodes), but with a face as long as the
+  media every face of it is compared with every other (20,000: 1.4 s).
+  A pair of the character's groups whose own faces share frames (on each
+  side two and a tenth of the smaller group's) counts as two people who
+  share the screen, so a look-alike beside the other one stays there.
+- **Two people merged who share the screen in few shots** (fewer than two,
+  or a tenth of the smaller one's own faces, on each side) are taken for one
+  person in two looks: the faces in those shots that were on no character
+  leave again, and so does a double of the staying person with a face
+  beside the other one (it stays the character it was). A bar that counted
+  a few shots would let a scene with a screen or a poster in; the real
+  merges of the nine biggest characters (people who share the screen a lot)
+  hold all the same.
+- **A look-alike can join a pinned look itself** (3D, the rule on): one that
+  was on the character before then counts as one of its own faces and never
+  leaves (the eighth review: 14 of 16 set-ups beside the merged-in faces;
+  as on the commit of the three parts, 6 of 16 before it).
+- **A look-alike that outnumbers the character's own clear faces** follows
+  it by the rule of most of what it held, before the pins are asked (as
+  before the three parts). Where the character's own faces are few and
+  vague and the rest unclear, the pins can also hold it, which the commit
+  of the three parts did not: the parts rule weighs unclear faces by their
+  low quality (synthetic, anime bars: 15 clear faces far from the typical
+  and 60 unclear ones let the pins hold it; 13 nearer and 30 did not).
+- **A small named character whose clear faces are all pinned** counts as
+  made by hand: only another character's own faces weigh against its pins.
+- **Some real merges keep a little less of the staying side than before the
+  three parts.** 30 merges on the 15 real episodes of the 3D series, then a
+  regrouping: eight keep less of the staying character's faces than the code
+  before the three parts (0.97, 0.91, 0.99, 0.96, 0.94, 0.95, 0.85, 0.76
+  instead of 0.99, 0.98, 1.00, 0.97, 0.96, 1.00, 1.00, 1.00), two keep more
+  (1.00 instead of 0.99 and 0.96); against the commit of the three parts the
+  mends keep more in one (0.97 instead of 0.94) and the same in the other 29.
+  Every merged-in side keeps all its faces, before and after. Of 3 merges,
+  the mends and their commit keep more than before (1.00 and 1.00 instead of
+  0.99 and 0.97). What goes is mostly faces no label
+  names (not the main cast): of the 114 faces of a character (mostly Nino)
+  that another was merged into, 17 become a new character, two of them
+  labelled and neither Nino; of a small character's five Reflekta faces,
+  four go to another character, whose one labelled face was Ivan's
+  (`fix5\bench\timing-round5.txt`, the sixth review's
+  `E:\as-ownmodels\3d\review6\scratch\real30-labels.log`).
 
 Unit tests in `as-identity`: a merge of two unlike characters in three sizes,
 with new episodes and a second grouping after it; a merge whose merged-in
@@ -535,7 +707,41 @@ groupings, and one to ten faces moved to a named character; a stray face;
 what a character held, weighed by its clear faces; how pinned faces start.
 In `as-project`: the bigger of two characters merged into the smaller, then
 two episodes with far more of the merged-in one (it fails on the code
-before). Twenty ways of breaking the three parts each fail a test.
+before). Twenty ways of breaking the three parts each fail a test. Since
+the mends of 2026-11-25 also: a merge whose pins are the character's most
+typical faces, in either order of the tracks; a merge into a character full
+of odd pinned faces, and looks merged in after them; forty looks of one
+character whose first faces all come before their second ones; a bin of
+unlike pinned faces in a run with little room; a look-alike beside a
+character pinned in two looks; two merged people on screen together, with
+new faces and with faces of the staying one that were on no character; a
+look-alike once on a merged character, seen beside its own faces; a new
+character made of a few faces of someone inside another; a named character
+that also holds a merge letting its other self go; when pins hold a part and
+when not (alone in their company, in unlike company, one pin, a face not
+pinned, a pin seen beside the part, faces beside the part like the pins or
+like none of them). Since the seventh review also: two looks that share
+one frame, or one long face beside three faces of the other, and two big
+looks whose faces share the screen in less than a tenth of them (a
+look-alike beside the other look still leaves); a look-alike never on
+screen with the character, and pins that hold the part they are most like;
+pins as like a part as the link bar but not as a face placed on a character
+asks; a part of the same person as one more like the pins; a bin of extras
+seen twice in a run with little room; two hundred looks whose first faces
+all come first; a run that takes one pinned group per character and the
+others in a quarter of the cap; a character with as many looks as it
+starts, and one with fewer that still starts a new face alone. Since the
+eighth review also: looks that share the screen in two faces each up to
+twenty faces and in three of twenty-five, the tenth of the smaller of two
+looks, a merged pair that takes in a double of the staying person only when
+they share the screen enough; the vote bar where the link bar is over
+`assign` (a fitted space), the parts rule's bar for one person, a part made
+of a character's unclear faces; the first of two equally heavy pinned groups
+in a run. Of 66 ways of breaking the mends (the eighth review's 13 among
+them), 65 each fail a test (`E:\as-ownmodels\3d\fix5\mutants.py`,
+`mutants6.log`); the one left, parts with fewer earlier faces than make a
+character, changes nothing in any set-up tried (such a group is rarely more
+like the pins than the character's own part).
 
 ## Rescan
 
